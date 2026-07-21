@@ -1,0 +1,149 @@
+name: Android Build & Release
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+
+    steps:
+      - name: 拉取代码 Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: 版本检测 Version Gate
+        id: gate
+        run: |
+          V_NAME=$(grep "versionName =" app/build.gradle.kts | sed 's/.*"\(.*\)".*/\1/')
+          V_CODE=$(grep "versionCode =" app/build.gradle.kts | sed 's/[^0-9]//g')
+          echo "name=$V_NAME" >> $GITHUB_OUTPUT
+          echo "code=$V_CODE" >> $GITHUB_OUTPUT
+
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          if [ -n "$PREV_TAG" ]; then
+            echo "prev_tag=$PREV_TAG" >> $GITHUB_OUTPUT
+          fi
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "skip=false" >> $GITHUB_OUTPUT
+            echo "manual trigger, proceeding"
+            exit 0
+          fi
+          if git rev-parse HEAD~1 >/dev/null 2>&1; then
+            PREV_NAME=$(git show HEAD~1:app/build.gradle.kts | grep "versionName =" | sed 's/.*"\(.*\)".*/\1/')
+            PREV_CODE=$(git show HEAD~1:app/build.gradle.kts | grep "versionCode =" | sed 's/[^0-9]//g')
+            if [ "$V_NAME" != "$PREV_NAME" ] || [ "$V_CODE" != "$PREV_CODE" ]; then
+              echo "skip=false" >> $GITHUB_OUTPUT
+              echo "version changed (Name: $PREV_NAME -> $V_NAME, Code: $PREV_CODE -> $V_CODE), proceeding"
+            else
+              echo "skip=true" >> $GITHUB_OUTPUT
+              echo "version unchanged (Name: $V_NAME, Code: $V_CODE), skipping build"
+            fi
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: 安装 JDK Setup Java
+        if: steps.gate.outputs.skip != 'true'
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: 安装 Android SDK Setup Android SDK
+        if: steps.gate.outputs.skip != 'true'
+        uses: android-actions/setup-android@v4
+        with:
+          api-level: 34
+          build-tools: '34.0.0'
+
+      - name: 配置 Gradle Setup Gradle
+        if: steps.gate.outputs.skip != 'true'
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: wrapper
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+
+      - name: 授权脚本 Grant Permission
+        if: steps.gate.outputs.skip != 'true'
+        run: chmod +x gradlew
+
+      - name: 构建 Build
+        if: steps.gate.outputs.skip != 'true'
+        run: ./gradlew assembleOnlineRelease assembleOfflineRelease --build-cache
+
+      - name: 上传 Debug APK Upload Debug Artifact
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v7
+        with:
+          name: debug-apks
+          path: app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+
+      - name: 解码签名密钥 Decode Keystore
+        if: github.event_name != 'pull_request' && steps.gate.outputs.skip == 'false'
+        env:
+          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+        run: echo "$SIGNING_KEY" | base64 -d > release.jks
+
+      - name: 签名 Sign APKs
+        if: github.event_name != 'pull_request' && steps.gate.outputs.skip == 'false'
+        env:
+          STORE_PASS: ${{ secrets.KEY_STORE_PASSWORD }}
+          KEY_PASS: ${{ secrets.KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ALIAS }}
+        run: |
+          BTDIR="$ANDROID_SDK_ROOT/build-tools/34.0.0"
+          ZA="$BTDIR/zipalign"
+          AS="$BTDIR/apksigner"
+
+          V_NAME="${{ steps.gate.outputs.name }}"
+          V_CODE="${{ steps.gate.outputs.code }}"
+
+          # online
+          ONLINE_IN=$(echo app/build/outputs/apk/online/release/*.apk)
+          $ZA -v -p 4 $ONLINE_IN online-aligned.apk
+          $AS sign --ks release.jks --ks-pass env:STORE_PASS --ks-key-alias "$KEY_ALIAS" --key-pass env:KEY_PASS --out "HyperLyric-${V_CODE}-${V_NAME}-online-release.apk" online-aligned.apk
+
+          # offline
+          OFFLINE_IN=$(echo app/build/outputs/apk/offline/release/*.apk)
+          $ZA -v -p 4 $OFFLINE_IN offline-aligned.apk
+          $AS sign --ks release.jks --ks-pass env:STORE_PASS --ks-key-alias "$KEY_ALIAS" --key-pass env:KEY_PASS --out "HyperLyric-${V_CODE}-${V_NAME}-offline-release.apk" offline-aligned.apk
+
+      - name: 生成发布说明 Generate Release Body
+        if: github.event_name != 'pull_request' && steps.gate.outputs.skip == 'false'
+        id: release_body
+        run: |
+          echo "body<<EOF" >> $GITHUB_OUTPUT
+          PREV_TAG="${{ steps.gate.outputs.prev_tag }}"
+          if [ -z "$PREV_TAG" ]; then
+            git log --pretty=format:"%s" --no-merges | awk '!seen[$0]++' | awk 'NF' | head -20 | awk '{print NR "、" $0}' >> $GITHUB_OUTPUT
+          else
+            git log $PREV_TAG..HEAD --pretty=format:"%s" --no-merges | awk '!seen[$0]++' | awk 'NF' | head -20 | awk '{print NR "、" $0}' >> $GITHUB_OUTPUT
+          fi
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: 创建发布 Create Release
+        if: github.event_name != 'pull_request' && steps.gate.outputs.skip == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.gate.outputs.code }}-${{ steps.gate.outputs.name }}
+          name: ${{ steps.gate.outputs.code }}-${{ steps.gate.outputs.name }}
+          body: ${{ steps.release_body.outputs.body }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            HyperLyric-${{ steps.gate.outputs.code }}-${{ steps.gate.outputs.name }}-online-release.apk
+            HyperLyric-${{ steps.gate.outputs.code }}-${{ steps.gate.outputs.name }}-offline-release.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
