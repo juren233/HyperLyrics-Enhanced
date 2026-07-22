@@ -4,9 +4,12 @@ package com.juren233.hyperlyricsenhanced.ui.page
 
 import android.content.Intent
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
@@ -23,10 +26,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.R
+import com.juren233.hyperlyricsenhanced.ui.component.MarkdownText
 import com.juren233.hyperlyricsenhanced.ui.component.SuperComponent
 import com.juren233.hyperlyricsenhanced.ui.navigation.LocalNavigator
 import com.juren233.hyperlyricsenhanced.ui.utils.BlurredBar
@@ -183,11 +188,30 @@ private fun LazyListScope.changelogPageSections(
                         }
                     }
                     item(key = "content_${item.version}_${item.title}_$index") {
-                        SuperComponent(
+                        Card(
                             modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth(),
-                            title = item.title,
-                            summary = item.summary
-                        )
+                            insideMargin = PaddingValues(16.dp),
+                        ) {
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                if (item.title.isNotBlank()) {
+                                    top.yukonga.miuix.kmp.basic.Text(
+                                        text = item.title,
+                                        fontSize = MiuixTheme.textStyles.headline1.fontSize,
+                                        fontWeight = FontWeight.Medium,
+                                        color = MiuixTheme.colorScheme.onBackground,
+                                    )
+                                }
+                                if (item.title.isNotBlank() && item.summary.isNotBlank()) {
+                                    Spacer(Modifier.height(4.dp))
+                                }
+                                if (item.summary.isNotBlank()) {
+                                    MarkdownText(
+                                        markdown = item.summary,
+                                        modifier = Modifier.fillMaxWidth(),
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }

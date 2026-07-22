@@ -29,8 +29,8 @@ jobs:
             echo "versionName must use X.X.X format: $V_NAME"
             exit 1
           fi
-          if ! [[ "$V_CODE" =~ ^100[0-9]{3}$ ]]; then
-            echo "versionCode must use 100XXX format: $V_CODE"
+          if ! [[ "$V_CODE" =~ ^[1-9][0-9]*$ ]]; then
+            echo "versionCode must be a positive integer: $V_CODE"
             exit 1
           fi
           echo "name=$V_NAME" >> $GITHUB_OUTPUT
@@ -131,24 +131,11 @@ jobs:
         if: github.event_name != 'pull_request' && steps.gate.outputs.skip == 'false'
         id: release_body
         run: |
-          echo "body<<EOF" >> "$GITHUB_OUTPUT"
-          echo "## 最新提交" >> "$GITHUB_OUTPUT"
-          git log -1 --pretty=format:"%B" >> "$GITHUB_OUTPUT"
-          echo >> "$GITHUB_OUTPUT"
-          echo >> "$GITHUB_OUTPUT"
-          echo "<details>" >> "$GITHUB_OUTPUT"
-          echo "<summary>自上次 Release 以来的提交记录</summary>" >> "$GITHUB_OUTPUT"
-          echo >> "$GITHUB_OUTPUT"
           PREV_TAG="${{ steps.gate.outputs.prev_tag }}"
-          if [ -z "$PREV_TAG" ]; then
-            git log HEAD --pretty=format:"- %s" --no-merges >> "$GITHUB_OUTPUT"
-          else
-            git log "$PREV_TAG"..HEAD --pretty=format:"- %s" --no-merges >> "$GITHUB_OUTPUT"
-          fi
-          echo >> "$GITHUB_OUTPUT"
-          echo >> "$GITHUB_OUTPUT"
-          echo "</details>" >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
+          BODY_DELIMITER="release_body_$(git rev-parse HEAD)"
+          echo "body<<$BODY_DELIMITER" >> "$GITHUB_OUTPUT"
+          .github/scripts/generate-release-body.sh "$PREV_TAG" >> "$GITHUB_OUTPUT"
+          echo "$BODY_DELIMITER" >> "$GITHUB_OUTPUT"
 
       - name: 创建发布 Create Release
         if: github.event_name != 'pull_request' && steps.gate.outputs.skip == 'false'

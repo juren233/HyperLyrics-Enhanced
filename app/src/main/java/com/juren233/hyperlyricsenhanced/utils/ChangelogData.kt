@@ -43,7 +43,7 @@ object ChangelogData {
                 ChangelogItem(
                     version = release.tagName,
                     title = release.name.orEmpty().takeUnless { it == release.tagName }.orEmpty(),
-                    summary = release.body.orEmpty().trim()
+                    summary = normalizeReleaseMarkdown(release.body.orEmpty())
                 )
             }
             .toList()
@@ -92,6 +92,15 @@ object ChangelogData {
         return compareVersionParts(parsed, currentParts) <= 0
     }
 
+    internal fun normalizeReleaseMarkdown(markdown: String): String = markdown
+        .replace(DETAILS_OPEN_REGEX, "")
+        .replace(DETAILS_SUMMARY_REGEX) { match ->
+            "\n### ${match.groupValues[1].trim()}\n"
+        }
+        .replace(DETAILS_CLOSE_REGEX, "")
+        .replace(EXCESS_BLANK_LINES_REGEX, "\n\n")
+        .trim()
+
     private fun parseReleaseVersion(tagName: String): List<Int>? {
         val match = Regex("^v(\\d+\\.\\d+\\.\\d+)$").matchEntire(tagName.trim())
             ?: return null
@@ -113,4 +122,12 @@ object ChangelogData {
         }
         return 0
     }
+
+    private val DETAILS_OPEN_REGEX = Regex("<details(?:\\s[^>]*)?>", RegexOption.IGNORE_CASE)
+    private val DETAILS_SUMMARY_REGEX = Regex(
+        "<summary(?:\\s[^>]*)?>(.*?)</summary>",
+        setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
+    )
+    private val DETAILS_CLOSE_REGEX = Regex("</details\\s*>", RegexOption.IGNORE_CASE)
+    private val EXCESS_BLANK_LINES_REGEX = Regex("\\n[\\t ]*\\n(?:[\\t ]*\\n)+")
 }

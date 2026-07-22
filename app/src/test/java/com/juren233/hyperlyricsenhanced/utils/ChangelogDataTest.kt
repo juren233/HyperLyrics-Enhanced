@@ -1,6 +1,7 @@
 package com.juren233.hyperlyricsenhanced.utils
 
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -28,5 +29,36 @@ class ChangelogDataTest {
     fun `unknown tags are excluded`() {
         assertFalse(ChangelogData.isReleaseVisible("latest", "7.0.0"))
         assertFalse(ChangelogData.isReleaseVisible("release-v7.0.0", "7.0.0"))
+    }
+
+    @Test
+    fun `release details html is normalized for markdown rendering`() {
+        val source = """
+            ## 最新提交
+
+            **修复** Markdown 渲染
+
+            <details>
+            <summary>自上次 Release 以来的提交记录</summary>
+
+            - 修复 A
+            - 修复 B
+
+            </details>
+        """.trimIndent()
+
+        assertEquals(
+            """
+                ## 最新提交
+
+                **修复** Markdown 渲染
+
+                ### 自上次 Release 以来的提交记录
+
+                - 修复 A
+                - 修复 B
+            """.trimIndent(),
+            ChangelogData.normalizeReleaseMarkdown(source)
+        )
     }
 }

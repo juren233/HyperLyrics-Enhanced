@@ -8,6 +8,11 @@
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
     <color name="app_icon_red">#FFE60012</color>
-    <color name="ic_launcher_background">@color/app_icon_red</color>
-    <color name="ic_launcher_foreground">#FFFFFFFF</color>
+    <color name="ic_launcher_background">#FFFAFAFB</color>
+    <color name="ic_launcher_foreground">#FF15171A</color>
+    <color name="ic_launcher_foreground_mid">#FF0B0C0E</color>
+    <color name="ic_launcher_foreground_end">#FF050607</color>
+    <color name="ic_launcher_detail">#FF5D6167</color>
+    <color name="ic_launcher_accent_start">#FF58D7FF</color>
+    <color name="ic_launcher_accent_end">#FFF26BEA</color>
 </resources>

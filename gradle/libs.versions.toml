@@ -26,6 +26,7 @@ superlyricapi = "3.4"
 lyricon-subscriber = "0.1.70"
 lyricon-provider = "0.1.70"
 junit = "4.13.2"
+markwon = "4.6.2"
 
 
 [libraries]
@@ -82,6 +83,7 @@ superlyricapi = { group = "com.github.HChenX", name = "SuperLyricApi", version.r
 lyricon-subscriber = { group = "io.github.proify.lyricon", name = "subscriber", version.ref = "lyricon-subscriber" }
 lyricon-provider = { group = "io.github.proify.lyricon", name = "provider", version.ref = "lyricon-provider" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
+markwon-core = { group = "io.noties.markwon", name = "core", version.ref = "markwon" }
 
 # --- 动画库 (YoYo) ---
 daimajia-animations = { group = "com.daimajia.androidanimations", name = "library", version.ref = "daimajia-animations" }

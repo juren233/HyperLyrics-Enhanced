@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">HyperLyrics app icon concept</title>
+  <desc id="desc">A black lyric capsule with colorful source and translation elements on a clean light background.</desc>
+
+  <defs>
+    <linearGradient id="shell" x1="40" y1="180" x2="472" y2="332" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#15171A"/>
+      <stop offset="0.55" stop-color="#0B0C0E"/>
+      <stop offset="1" stop-color="#050607"/>
+    </linearGradient>
+    <linearGradient id="accent-left" x1="54" y1="308" x2="146" y2="204" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#58D7FF"/>
+      <stop offset="0.42" stop-color="#7E8BFF"/>
+      <stop offset="1" stop-color="#F26BEA"/>
+    </linearGradient>
+    <linearGradient id="accent-right" x1="308" y1="256" x2="468" y2="256" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F16FE7"/>
+      <stop offset="0.5" stop-color="#A486FF"/>
+      <stop offset="1" stop-color="#5BB9FF"/>
+    </linearGradient>
+    <linearGradient id="lyric-line" x1="174" y1="230" x2="286" y2="282" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#777B82"/>
+      <stop offset="1" stop-color="#4C5056"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="512" height="512" fill="#FAFAFB"/>
+
+  <g transform="translate(256 256) scale(0.9) translate(-256 -256)">
+    <rect x="18" y="180" width="476" height="152" rx="76" fill="url(#shell)"/>
+
+    <rect x="50" y="204" width="96" height="104" rx="36" fill="url(#accent-left)"/>
+
+    <rect x="174" y="224" width="112" height="20" rx="10" fill="url(#lyric-line)"/>
+    <rect x="174" y="268" width="74" height="20" rx="10" fill="url(#lyric-line)"/>
+
+    <rect x="308" y="214" width="160" height="84" rx="42" fill="url(#accent-right)"/>
+  </g>
+</svg>

@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/hyperlyrics-app-icon-rounded.png" alt="HyperLyrics Enhanced" width="160" />
+</p>
+
 <h1 align="center">HyperLyrics Enhanced</h1>
 
 <p align="center">

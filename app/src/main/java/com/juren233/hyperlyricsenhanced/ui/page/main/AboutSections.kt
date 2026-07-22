@@ -17,8 +17,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.colorResource
@@ -61,14 +59,13 @@ fun LazyListScope.aboutPageSections(
                 modifier = Modifier
                     .size(80.dp)
                     .squircleClip(20.dp)
-                    .background(colorResource(R.color.app_icon_red)),
+                    .background(colorResource(R.color.ic_launcher_background)),
                 contentAlignment = Alignment.Center,
             ) {
                 Image(
                     painter = painterResource(R.drawable.ic_launcher_foreground),
                     contentDescription = null,
                     contentScale = ContentScale.Fit,
-                    colorFilter = ColorFilter.tint(Color.White),
                     modifier = Modifier
                         .fillMaxSize()
                         .scale(1.5f),
