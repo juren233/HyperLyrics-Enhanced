@@ -24,6 +24,8 @@ hiddenapibypass = "4.3"
 shizuku = "13.1.5"
 superlyricapi = "3.4"
 lyricon-subscriber = "0.1.70"
+lyricon-provider = "0.1.70"
+junit = "4.13.2"
 
 
 [libraries]
@@ -78,6 +80,8 @@ superlyricapi = { group = "com.github.HChenX", name = "SuperLyricApi", version.r
 
 # --- Lyricon Subscriber ---
 lyricon-subscriber = { group = "io.github.proify.lyricon", name = "subscriber", version.ref = "lyricon-subscriber" }
+lyricon-provider = { group = "io.github.proify.lyricon", name = "provider", version.ref = "lyricon-provider" }
+junit = { group = "junit", name = "junit", version.ref = "junit" }
 
 # --- 动画库 (YoYo) ---
 daimajia-animations = { group = "com.daimajia.androidanimations", name = "library", version.ref = "daimajia-animations" }

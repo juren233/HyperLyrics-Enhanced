@@ -3,6 +3,7 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
 
@@ -16,12 +17,25 @@
 
     <application
         android:name=".root.RootApplication"
-        android:label="HyperLyric"
+        android:label="@string/app_name"
         android:description="@string/app_description"
         android:testOnly="false"
         android:theme="@style/Theme.MaterialComponents.DayNight.NoActionBar"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round">
+
+        <meta-data
+            android:name="lyricon_module"
+            android:value="true" />
+        <meta-data
+            android:name="lyricon_module_author"
+            android:value="juren233, Tomakino" />
+        <meta-data
+            android:name="lyricon_module_description"
+            android:value="@string/apple_music_provider_description" />
+        <meta-data
+            android:name="lyricon_module_tags"
+            android:resource="@array/lyricon_module_tags" />
 
 
 

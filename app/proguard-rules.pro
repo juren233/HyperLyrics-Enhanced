@@ -1,7 +1,7 @@
--keep class com.lidesheng.hyperlyric.root.** { *; }
--keep class com.lidesheng.hyperlyric.common.RootConstants { *; }
--keep class com.lidesheng.hyperlyric.common.ServiceConstants { *; }
--keep class com.lidesheng.hyperlyric.common.UIConstants { *; }
+-keep class com.juren233.hyperlyricsenhanced.root.** { *; }
+-keep class com.juren233.hyperlyricsenhanced.common.RootConstants { *; }
+-keep class com.juren233.hyperlyricsenhanced.common.ServiceConstants { *; }
+-keep class com.juren233.hyperlyricsenhanced.common.UIConstants { *; }
 
 # 保护 libxposed 接口
 -keep class io.github.libxposed.api.** { *; }
@@ -17,13 +17,13 @@
 # --- Serialization 和在线网络模型防止混淆 ---
 -keep @kotlinx.serialization.Serializable class * { *; }
 -keepclassmembers @kotlinx.serialization.Serializable class * { *; }
--keep class com.lidesheng.hyperlyric.online.** { *; }
+-keep class com.juren233.hyperlyricsenhanced.online.** { *; }
 
 # --- 歌词数据模型（Parcelable + Serializable）---
--keep class com.lidesheng.hyperlyric.lyric.model.** { *; }
+-keep class com.juren233.hyperlyricsenhanced.lyric.model.** { *; }
 
 # --- Shizuku User Service ---
--keep class com.lidesheng.hyperlyric.service.utils.shizuku.PrivilegedServiceImpl { *; }
+-keep class com.juren233.hyperlyricsenhanced.service.utils.shizuku.PrivilegedServiceImpl { *; }
 
 # --- SuperLyric API ---
 -keep class com.hchen.superlyricapi.* { *; }

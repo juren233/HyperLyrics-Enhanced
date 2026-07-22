@@ -1,0 +1,96 @@
+import groovy.json.JsonSlurper
+
+import javax.imageio.ImageIO
+
+tasks.register("generateContributors") {
+    doLast {
+        try {
+            def url = new URL("https://api.github.com/repos/limczhh/HyperLyric/contributors")
+            def connection = url.openConnection()
+            connection.setRequestProperty("User-Agent", "Mozilla/5.0")
+            def response = connection.inputStream.withReader("UTF-8") { it.text }
+
+            def jsonParser = new JsonSlurper()
+            def contributors = jsonParser.parseText(response) as List<Map<String, Object>>
+
+            def content = '''package com.juren233.hyperlyricsenhanced.ui.utils
+
+data class ContributorItem(
+    val name: String,
+    val summary: String,
+    val githubUrl: String,
+    val avatarRes: Int
+)
+
+object ContributorsProvider {
+    val list = listOf(
+'''
+            def maintainerLogin = "juren233"
+            def maintainerDrawableName = "contributor_juren233"
+            try {
+                def image = ImageIO.read(new URL("https://avatars.githubusercontent.com/u/66105563?v=4&s=120"))
+                if (image == null) {
+                    throw new GradleException("Unsupported avatar format for ${maintainerLogin}")
+                }
+                ImageIO.write(
+                    image,
+                    "png",
+                    new File(projectDir, "src/main/res/drawable/${maintainerDrawableName}.png")
+                )
+            } catch (Exception ignored) {
+                println("Failed to download avatar for ${maintainerLogin}")
+            }
+            content += "        ContributorItem(\"Cavan\", \"@juren233\", \"https://github.com/juren233\", com.juren233.hyperlyricsenhanced.R.drawable.contributor_juren233),\n"
+
+            for (def user : contributors) {
+                def login = user["login"] as String
+                def htmlUrl = user["html_url"] as String
+                def avatarUrl = (user["avatar_url"] as String) + "&s=120"
+                if (login == maintainerLogin || login.endsWith("[bot]")) {
+                    continue
+                }
+
+                def safeLogin = login.toLowerCase(Locale.ROOT).replace("-", "_")
+                def drawableName = "contributor_${safeLogin}"
+
+                try {
+                    def image = ImageIO.read(new URL(avatarUrl))
+                    if (image == null) {
+                        throw new GradleException("Unsupported avatar format for ${login}")
+                    }
+                    ImageIO.write(
+                        image,
+                        "png",
+                        new File(projectDir, "src/main/res/drawable/${drawableName}.png")
+                    )
+                } catch (Exception ignored) {
+                    println("Failed to download avatar for ${login}")
+                }
+
+                def name = login
+                try {
+                    def userUrl = new URL("https://api.github.com/users/${login}")
+                    def userConnection = userUrl.openConnection()
+                    userConnection.setRequestProperty("User-Agent", "Mozilla/5.0")
+                    def userResponse = userConnection.inputStream.withReader("UTF-8") { it.text }
+                    def userDetail = jsonParser.parseText(userResponse) as Map<String, Object>
+                    def actualName = userDetail["name"] as String
+                    if (actualName) {
+                        name = actualName
+                    }
+                } catch (Exception ignored) {
+                    // Fall back to the GitHub login.
+                }
+
+                content += "        ContributorItem(\"${name}\", \"@${login}\", \"${htmlUrl}\", com.juren233.hyperlyricsenhanced.R.drawable.${drawableName}),\n"
+            }
+            content += "    )\n}\n"
+
+            def file = new File(projectDir, "src/main/java/com/juren233/hyperlyricsenhanced/ui/utils/ContributorsProvider.kt")
+            file.setText(content, "UTF-8")
+            println("ContributorsProvider.kt generated.")
+        } catch (Exception exception) {
+            println("Failed to fetch contributors: ${exception.message}")
+        }
+    }
+}

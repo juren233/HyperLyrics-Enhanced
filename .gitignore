@@ -7,6 +7,9 @@
 .externalNativeBuild
 .cxx
 local.properties
+keystore.properties
+*.jks
+*.keystore
 .idea
 .mimocode
 .agent/
@@ -21,8 +24,7 @@ app/release/
 app/offline/
 app/online/
 app/src/androidTest
-app/src/test
 AGENTS.md
 CLAUDE.md
-app/src/main/java/com/lidesheng/hyperlyric/ui/utils/ContributorsProvider.kt
+app/src/main/java/com/juren233/hyperlyricsenhanced/ui/utils/ContributorsProvider.kt
 app/src/main/res/drawable/contributor_*.png

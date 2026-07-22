@@ -2,5 +2,9 @@
 <resources>
     <string-array name="xposed_scope">
         <item>com.android.systemui</item>
+        <item>com.apple.android.music</item>
+    </string-array>
+    <string-array name="lyricon_module_tags">
+        <item>Apple Music</item>
     </string-array>
 </resources>

@@ -25,6 +25,14 @@ jobs:
         run: |
           V_NAME=$(grep "versionName =" app/build.gradle.kts | sed 's/.*"\(.*\)".*/\1/')
           V_CODE=$(grep "versionCode =" app/build.gradle.kts | sed 's/[^0-9]//g')
+          if ! [[ "$V_NAME" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "versionName must use X.X.X format: $V_NAME"
+            exit 1
+          fi
+          if ! [[ "$V_CODE" =~ ^100[0-9]{3}$ ]]; then
+            echo "versionCode must use 100XXX format: $V_CODE"
+            exit 1
+          fi
           echo "name=$V_NAME" >> $GITHUB_OUTPUT
           echo "code=$V_CODE" >> $GITHUB_OUTPUT
 
@@ -77,15 +85,15 @@ jobs:
         if: steps.gate.outputs.skip != 'true'
         run: chmod +x gradlew
 
-      - name: 构建 Build
+      - name: 构建 Debug 与 Release Build Debug and Release
         if: steps.gate.outputs.skip != 'true'
-        run: ./gradlew assembleOnlineRelease assembleOfflineRelease --build-cache
+        run: ./gradlew assembleDebug assembleRelease --build-cache
 
-      - name: 上传 Debug APK Upload Debug Artifact
+      - name: 上传构建产物 Upload Build Artifacts
         if: github.event_name == 'pull_request'
         uses: actions/upload-artifact@v7
         with:
-          name: debug-apks
+          name: debug-release-apks
           path: app/build/outputs/apk/**/*.apk
           if-no-files-found: error
 
@@ -109,41 +117,51 @@ jobs:
           V_NAME="${{ steps.gate.outputs.name }}"
           V_CODE="${{ steps.gate.outputs.code }}"
 
-          # online
-          ONLINE_IN=$(echo app/build/outputs/apk/online/release/*.apk)
-          $ZA -v -p 4 $ONLINE_IN online-aligned.apk
-          $AS sign --ks release.jks --ks-pass env:STORE_PASS --ks-key-alias "$KEY_ALIAS" --key-pass env:KEY_PASS --out "HyperLyric-${V_CODE}-${V_NAME}-online-release.apk" online-aligned.apk
+          DEBUG_IN=$(find app/build/outputs/apk/debug -maxdepth 1 -type f -name '*-debug.apk' -print -quit)
+          RELEASE_IN=$(find app/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' -print -quit)
+          test -n "$DEBUG_IN"
+          test -n "$RELEASE_IN"
 
-          # offline
-          OFFLINE_IN=$(echo app/build/outputs/apk/offline/release/*.apk)
-          $ZA -v -p 4 $OFFLINE_IN offline-aligned.apk
-          $AS sign --ks release.jks --ks-pass env:STORE_PASS --ks-key-alias "$KEY_ALIAS" --key-pass env:KEY_PASS --out "HyperLyric-${V_CODE}-${V_NAME}-offline-release.apk" offline-aligned.apk
+          $ZA -f -v -p 4 "$DEBUG_IN" debug-aligned.apk
+          $ZA -f -v -p 4 "$RELEASE_IN" release-aligned.apk
+          $AS sign --ks release.jks --ks-pass env:STORE_PASS --ks-key-alias "$KEY_ALIAS" --key-pass env:KEY_PASS --out "HyperLyrics Enhanced-debug-v${V_NAME}-${V_CODE}.apk" debug-aligned.apk
+          $AS sign --ks release.jks --ks-pass env:STORE_PASS --ks-key-alias "$KEY_ALIAS" --key-pass env:KEY_PASS --out "HyperLyrics Enhanced-release-v${V_NAME}-${V_CODE}.apk" release-aligned.apk
 
       - name: 生成发布说明 Generate Release Body
         if: github.event_name != 'pull_request' && steps.gate.outputs.skip == 'false'
         id: release_body
         run: |
-          echo "body<<EOF" >> $GITHUB_OUTPUT
+          echo "body<<EOF" >> "$GITHUB_OUTPUT"
+          echo "## 最新提交" >> "$GITHUB_OUTPUT"
+          git log -1 --pretty=format:"%B" >> "$GITHUB_OUTPUT"
+          echo >> "$GITHUB_OUTPUT"
+          echo >> "$GITHUB_OUTPUT"
+          echo "<details>" >> "$GITHUB_OUTPUT"
+          echo "<summary>自上次 Release 以来的提交记录</summary>" >> "$GITHUB_OUTPUT"
+          echo >> "$GITHUB_OUTPUT"
           PREV_TAG="${{ steps.gate.outputs.prev_tag }}"
           if [ -z "$PREV_TAG" ]; then
-            git log --pretty=format:"%s" --no-merges | awk '!seen[$0]++' | awk 'NF' | head -20 | awk '{print NR "、" $0}' >> $GITHUB_OUTPUT
+            git log HEAD --pretty=format:"- %s" --no-merges >> "$GITHUB_OUTPUT"
           else
-            git log $PREV_TAG..HEAD --pretty=format:"%s" --no-merges | awk '!seen[$0]++' | awk 'NF' | head -20 | awk '{print NR "、" $0}' >> $GITHUB_OUTPUT
+            git log "$PREV_TAG"..HEAD --pretty=format:"- %s" --no-merges >> "$GITHUB_OUTPUT"
           fi
-          echo "EOF" >> $GITHUB_OUTPUT
+          echo >> "$GITHUB_OUTPUT"
+          echo >> "$GITHUB_OUTPUT"
+          echo "</details>" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
 
       - name: 创建发布 Create Release
         if: github.event_name != 'pull_request' && steps.gate.outputs.skip == 'false'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.gate.outputs.code }}-${{ steps.gate.outputs.name }}
-          name: ${{ steps.gate.outputs.code }}-${{ steps.gate.outputs.name }}
+          tag_name: v${{ steps.gate.outputs.name }}
+          name: v${{ steps.gate.outputs.name }}
           body: ${{ steps.release_body.outputs.body }}
           draft: false
           prerelease: false
-          generate_release_notes: true
+          generate_release_notes: false
           files: |
-            HyperLyric-${{ steps.gate.outputs.code }}-${{ steps.gate.outputs.name }}-online-release.apk
-            HyperLyric-${{ steps.gate.outputs.code }}-${{ steps.gate.outputs.name }}-offline-release.apk
+            HyperLyrics Enhanced-debug-v${{ steps.gate.outputs.name }}-${{ steps.gate.outputs.code }}.apk
+            HyperLyrics Enhanced-release-v${{ steps.gate.outputs.name }}-${{ steps.gate.outputs.code }}.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

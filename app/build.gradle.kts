@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -6,15 +8,36 @@ plugins {
 
 }
 
+val keystoreProperties = Properties().apply {
+    val propertiesFile = rootProject.file("keystore.properties")
+    if (propertiesFile.isFile) {
+        propertiesFile.inputStream().use(::load)
+    }
+}
+
+fun signingValue(environmentName: String, propertyName: String): String? =
+    System.getenv(environmentName) ?: keystoreProperties.getProperty(propertyName)
+
+val releaseStoreFile = signingValue("RELEASE_STORE_FILE", "storeFile")
+val releaseStorePassword = signingValue("RELEASE_STORE_PASSWORD", "storePassword")
+val releaseKeyAlias = signingValue("RELEASE_KEY_ALIAS", "keyAlias")
+val releaseKeyPassword = signingValue("RELEASE_KEY_PASSWORD", "keyPassword")
+val hasReleaseSigning = listOf(
+    releaseStoreFile,
+    releaseStorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword
+).none { it.isNullOrBlank() }
+
 android {
-    namespace = "com.lidesheng.hyperlyric"
+    namespace = "com.juren233.hyperlyricsenhanced"
     compileSdk = 37
     defaultConfig {
-        applicationId = "com.lidesheng.hyperlyric"
+        applicationId = "com.juren233.hyperlyricsenhanced"
         minSdk = 33
         targetSdk = 37
-        versionCode = 1934
-        versionName = "6.5"
+        versionCode = 100001
+        versionName = "7.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -23,8 +46,20 @@ android {
         }
     }
 
+    val releaseSigning = if (hasReleaseSigning) {
+        signingConfigs.create("release") {
+            storeFile = file(requireNotNull(releaseStoreFile))
+            storePassword = releaseStorePassword
+            keyAlias = releaseKeyAlias
+            keyPassword = releaseKeyPassword
+        }
+    } else {
+        null
+    }
+
     buildTypes {
         release {
+            releaseSigning?.let { signingConfig = it }
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
@@ -34,24 +69,11 @@ android {
         }
     }
 
-    flavorDimensions += "version"
-    productFlavors {
-        create("online") {
-            dimension = "version"
-            buildConfigField("boolean", "ONLINE_FEATURES_ENABLED", "true")
-            isDefault = true
-        }
-        create("offline") {
-            dimension = "version"
-            buildConfigField("boolean", "ONLINE_FEATURES_ENABLED", "false")
-        }
-    }
-
     afterEvaluate {
         base {
             val vName = android.defaultConfig.versionName ?: "0"
             val vCode = android.defaultConfig.versionCode ?: 0
-            archivesName.set("HyperLyric-v${vName}.${vCode}")
+            archivesName.set("HyperLyrics Enhanced-v${vName}-${vCode}")
         }
     }
 
@@ -89,6 +111,9 @@ dependencies {
 
     // Lyricon Subscriber SDK
     implementation(libs.lyricon.subscriber)
+    implementation(libs.lyricon.provider)
+
+    testImplementation(libs.junit)
 
     // --- 布局兼容 ---
     implementation(libs.androidx.constraintlayout)
@@ -121,16 +146,16 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.coroutines.android)
-    "onlineImplementation"(libs.retrofit2.retrofit)
-    "onlineImplementation"(libs.squareup.okhttp3)
-    "onlineImplementation"(libs.retrofit2.kotlinx.serialization.converter)
+    implementation(libs.retrofit2.retrofit)
+    implementation(libs.squareup.okhttp3)
+    implementation(libs.retrofit2.kotlinx.serialization.converter)
 
     // --- 动画库 (YoYo) ---
     implementation(libs.daimajia.animations) { artifact { type = "aar" } }
     implementation(libs.daimajia.easing) { artifact { type = "aar" } }
 }
 
-apply(from = "fetch_contributors.gradle.kts")
+apply(from = "fetch_contributors.gradle")
 tasks.named("preBuild") {
     dependsOn("generateContributors")
 }
