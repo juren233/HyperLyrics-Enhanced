@@ -18,12 +18,15 @@ import com.juren233.hyperlyricsenhanced.root.island.IslandSlotContentAssembler
 import com.juren233.hyperlyricsenhanced.root.island.IslandSlotRuntimeConfig
 import com.juren233.hyperlyricsenhanced.root.island.IslandViewRegistry
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
+import com.juren233.hyperlyricsenhanced.root.island.NextSongPreviewPolicy
+import java.util.WeakHashMap
 
 object BaseIslandRenderer : IslandRenderer {
 
     private const val REFRESH_DEBOUNCE_MS = 32L
     private val mainHandler = Handler(Looper.getMainLooper())
     private val refreshRunnable = Runnable { performRefreshActiveIsland() }
+    private val nextSongPreviewActive = WeakHashMap<ViewGroup, Boolean>()
 
     @Volatile
     private var playbackActive = true
@@ -67,6 +70,7 @@ object BaseIslandRenderer : IslandRenderer {
         val lyricPkg = LyriconDataBridge.currentLyricPackageName?.takeIf { it.isNotEmpty() } ?: return
 
         IslandSlotContentAssembler.invalidate()
+        synchronized(nextSongPreviewActive) { nextSongPreviewActive.clear() }
 
         val activeViews = IslandViewRegistry.snapshotAttached(lyricPkg)
         val config = IslandSlotRuntimeConfig.from(prefs)
@@ -134,6 +138,13 @@ object BaseIslandRenderer : IslandRenderer {
                         indexedViews.forEach { view -> updateViewPosition(view, position, isSeek) }
                     }
                     IslandHostFacade.updateProgressGlow(cv, lyricPkg, prefs)
+                    updateEndOfSongPreview(
+                        cv,
+                        lyricPkg,
+                        prefs,
+                        IslandSlotRuntimeConfig.from(prefs),
+                        position
+                    )
                 }
             }
     }
@@ -247,6 +258,7 @@ object BaseIslandRenderer : IslandRenderer {
         IslandHostFacade.updateProgressGlow(cv, packageName, mediaInfo, prefs)
         updateSlot(cv, IslandProbeUtils.LEFT_TEST_VIEW_TAG, config.leftMode, prefs, config, mediaInfo)
         updateSlot(cv, IslandProbeUtils.RIGHT_TEST_VIEW_TAG, config.rightMode, prefs, config, mediaInfo)
+        updateEndOfSongPreview(cv, packageName, prefs, config, LyriconDataBridge.currentPosition)
     }
 
     private fun updateLyricContentForView(
@@ -254,8 +266,11 @@ object BaseIslandRenderer : IslandRenderer {
         prefs: android.content.SharedPreferences,
         config: IslandSlotRuntimeConfig
     ) {
+        val packageName = LyriconDataBridge.currentLyricPackageName.orEmpty()
+        if (updateEndOfSongPreview(cv, packageName, prefs, config, LyriconDataBridge.currentPosition)) {
+            return
+        }
         if (config.adjacentBackgroundTranslation && config.supportsAdjacentBackgroundTranslation) {
-            val packageName = LyriconDataBridge.currentLyricPackageName.orEmpty()
             val mediaInfo = MediaMetadataHelper.getMediaInfo(cv.context, packageName, HookLogger)
             updateSlot(cv, IslandProbeUtils.LEFT_TEST_VIEW_TAG, config.leftMode, prefs, config, mediaInfo)
             updateSlot(cv, IslandProbeUtils.RIGHT_TEST_VIEW_TAG, config.rightMode, prefs, config, mediaInfo)
@@ -324,6 +339,69 @@ object BaseIslandRenderer : IslandRenderer {
             playbackActive = playbackActive,
             mediaInfo = mediaInfo
         )
+    }
+
+    private fun updateEndOfSongPreview(
+        cv: ViewGroup,
+        packageName: String,
+        prefs: android.content.SharedPreferences,
+        config: IslandSlotRuntimeConfig,
+        position: Long
+    ): Boolean {
+        val mediaInfo = MediaMetadataHelper.getMediaInfo(cv.context, packageName, HookLogger)
+        val song = LyriconDataBridge.currentSong
+        val duration = song?.duration?.takeIf { it > 0L } ?: mediaInfo.duration
+        val lastLyricStart = song?.lyrics?.maxOfOrNull { it.begin } ?: -1L
+        val lastSyllableEnd = song?.lyrics
+            .orEmpty()
+            .asSequence()
+            .flatMap { line ->
+                sequenceOf(line.words.orEmpty(), line.secondaryWords.orEmpty()).flatten()
+            }
+            .mapNotNull { word ->
+                when {
+                    word.end > word.begin -> word.end
+                    word.duration > 0L -> word.begin + word.duration
+                    else -> null
+                }
+            }
+            .maxOrNull()
+        val shouldShow = config.nextSongPreviewEnabled && NextSongPreviewPolicy.shouldShow(
+            positionMs = position,
+            durationMs = duration,
+            lastLyricStartMs = lastLyricStart,
+            lastSyllableEndMs = lastSyllableEnd,
+            previewDurationMs = config.nextSongDurationMs,
+            force = config.forceNextSongAtEnd
+        )
+        val wasShowing = synchronized(nextSongPreviewActive) {
+            nextSongPreviewActive[cv] == true
+        }
+        if (shouldShow == wasShowing) return shouldShow
+
+        if (shouldShow) {
+            val nextSong = MediaMetadataHelper.getNextMediaInfo(cv.context, packageName, mediaInfo)
+            if (nextSong.title.isBlank()) return false
+            val left = cv.findViewWithTag<View>(IslandProbeUtils.LEFT_TEST_VIEW_TAG)
+            val right = cv.findViewWithTag<View>(IslandProbeUtils.RIGHT_TEST_VIEW_TAG)
+            if (left == null || right == null) return false
+            synchronized(nextSongPreviewActive) { nextSongPreviewActive[cv] = true }
+            IslandSlotContentAssembler.applyNextSongPreviewContent(
+                left, prefs, config, isLeft = true, nextSong = nextSong, label = "下一首",
+                playbackActive = playbackActive
+            )
+            IslandSlotContentAssembler.applyNextSongPreviewContent(
+                right, prefs, config, isLeft = false, nextSong = nextSong, label = "下一首",
+                playbackActive = playbackActive
+            )
+            return true
+        }
+
+        if (!wasShowing) return false
+        synchronized(nextSongPreviewActive) { nextSongPreviewActive.remove(cv) }
+        updateSlot(cv, IslandProbeUtils.LEFT_TEST_VIEW_TAG, config.leftMode, prefs, config, mediaInfo)
+        updateSlot(cv, IslandProbeUtils.RIGHT_TEST_VIEW_TAG, config.rightMode, prefs, config, mediaInfo)
+        return false
     }
 
 }

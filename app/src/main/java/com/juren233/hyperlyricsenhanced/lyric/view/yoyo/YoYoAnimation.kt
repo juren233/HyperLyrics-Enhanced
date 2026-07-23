@@ -63,6 +63,38 @@ object YoYoAnimation {
         target.setTag(KEY_ANIM_HANDLE, outHandle)
     }
 
+    fun <T : View> revealContent(
+        target: T,
+        inConfig: AnimConfig,
+        action: (T) -> Unit
+    ) {
+        cancelAnimation(target)
+        action(target)
+        if (target.parent == null || !target.isAttachedToWindow) return
+
+        target.setTag(KEY_ANIM_LOCK, true)
+        val inHandle = YoYo.with(inConfig.technique)
+            .duration(inConfig.duration)
+            .interpolate(inConfig.interpolator)
+            .withListener(object : Animator.AnimatorListener {
+                override fun onAnimationStart(animation: Animator) = Unit
+                override fun onAnimationRepeat(animation: Animator) = Unit
+
+                override fun onAnimationCancel(animation: Animator) {
+                    target.setTag(KEY_ANIM_LOCK, false)
+                    target.setTag(KEY_ANIM_HANDLE, null)
+                }
+
+                override fun onAnimationEnd(animation: Animator) {
+                    target.setTag(KEY_ANIM_LOCK, false)
+                    target.setTag(KEY_ANIM_HANDLE, null)
+                }
+            })
+            .playOn(target)
+
+        target.setTag(KEY_ANIM_HANDLE, inHandle)
+    }
+
     fun cancelAnimation(target: View) {
         val handle = target.getTag(KEY_ANIM_HANDLE) as? YoYo.YoYoString
         handle?.stop(true)
@@ -80,6 +112,15 @@ fun <T : View> T.animateUpdate(
     block: T.() -> Unit
 ) {
     YoYoAnimation.switchContent(this, preset.first, preset.second) {
+        it.block()
+    }
+}
+
+fun <T : View> T.animateEntrance(
+    preset: Pair<AnimConfig, AnimConfig> = YoYoPresets.FadeOut_FadeIn,
+    block: T.() -> Unit
+) {
+    YoYoAnimation.revealContent(this, preset.second) {
         it.block()
     }
 }

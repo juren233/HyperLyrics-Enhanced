@@ -19,6 +19,30 @@ import org.junit.Test
 class AppleSongMapperTest {
 
     @Test
+    fun `carries Apple internal catalog metadata`() {
+        val mappedSong = AppleSongMapper.map(
+            AppleSong(
+                genre = "J-Pop",
+                originalTitle = "カワキヲアメク",
+                originalArtist = "美波"
+            )
+        )
+
+        assertEquals(
+            "J-Pop",
+            mappedSong.metadata?.getString(LyricMetadataKeys.APPLE_CATALOG_GENRE)
+        )
+        assertEquals(
+            "カワキヲアメク",
+            mappedSong.metadata?.getString(LyricMetadataKeys.APPLE_ORIGINAL_TITLE)
+        )
+        assertEquals(
+            "美波",
+            mappedSong.metadata?.getString(LyricMetadataKeys.APPLE_ORIGINAL_ARTIST)
+        )
+    }
+
+    @Test
     fun `builds secondary text from background words when line text is blank`() {
         val appleSong = AppleSong(
             lyrics = mutableListOf(

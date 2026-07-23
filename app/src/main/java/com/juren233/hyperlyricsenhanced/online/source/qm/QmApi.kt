@@ -46,14 +46,14 @@ data class QmSearchBody(
 
 @Serializable
 data class QmSongItem(
-    val id: String,
+    val id: Long,
     val mid: String,
     val title: String,
     val singer: List<QmSinger> = emptyList(),
     val album: QmAlbum,
     val interval: Int,
-    @SerialName("index_album") val trackerNumber: String = "",
-    @SerialName("genre") val genre: String = "",
+    @SerialName("index_album") val trackerNumber: Int = 0,
+    @SerialName("genre") val genre: Int = 0,
     @SerialName("time_public") val timePublic: String? = null
 )
 

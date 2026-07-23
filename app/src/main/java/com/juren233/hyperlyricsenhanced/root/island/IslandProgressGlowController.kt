@@ -82,7 +82,8 @@ internal object IslandProgressGlowController {
                 "媒体进度不可用: package=$packageName, position=${playbackProgress.position}, " +
                     "duration=${playbackProgress.duration}, playing=${playbackProgress.isPlaying}"
             )
-            clear(rootView)
+            // MediaSession can briefly publish no duration/position while switching tracks.
+            // Keep the last drawn state; subsequent position callbacks continue retrying.
             return
         }
 
@@ -175,6 +176,9 @@ internal object IslandProgressGlowController {
 
         val progress = MediaMetadataHelper.getPlaybackProgress(rootView.context, packageName)
         synchronized(playbackProgressByPackage) {
+            if (progress.fraction < 0f) {
+                return playbackProgressByPackage[packageName]?.estimate(now) ?: progress
+            }
             if (
                 playbackProgressByPackage.size >= MAX_CACHED_PACKAGES &&
                 packageName !in playbackProgressByPackage

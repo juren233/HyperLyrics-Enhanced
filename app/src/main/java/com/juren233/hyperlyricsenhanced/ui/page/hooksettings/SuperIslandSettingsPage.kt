@@ -78,6 +78,8 @@ fun SuperIslandSettingsPage() {
     var leftContentWidth by remember { mutableIntStateOf(prefs.getInt(RootConstants.KEY_HOOK_ISLAND_LEFT_CONTENT_MAX_WIDTH, RootConstants.DEFAULT_HOOK_ISLAND_LEFT_CONTENT_MAX_WIDTH).coerceIn(20, 100)) }
     var rightContentWidth by remember { mutableIntStateOf(prefs.getInt(RootConstants.KEY_HOOK_ISLAND_RIGHT_CONTENT_MAX_WIDTH, RootConstants.DEFAULT_HOOK_ISLAND_RIGHT_CONTENT_MAX_WIDTH).coerceIn(20, 100)) }
     var afterPauseBehavior by remember { mutableIntStateOf(prefs.getInt(RootConstants.KEY_HOOK_ISLAND_BEHAVIOR_AFTER_PAUSE, RootConstants.DEFAULT_HOOK_ISLAND_BEHAVIOR_AFTER_PAUSE)) }
+    var forceNextSongAtEnd by remember { mutableStateOf(prefs.getBoolean(RootConstants.KEY_HOOK_ISLAND_FORCE_NEXT_SONG_AT_END, RootConstants.DEFAULT_HOOK_ISLAND_FORCE_NEXT_SONG_AT_END)) }
+    var nextSongDurationSeconds by remember { mutableIntStateOf(prefs.getInt(RootConstants.KEY_HOOK_ISLAND_NEXT_SONG_DURATION, RootConstants.DEFAULT_HOOK_ISLAND_NEXT_SONG_DURATION).coerceIn(0, 5)) }
     var extractGlowColor by remember { mutableStateOf(prefs.getBoolean(RootConstants.KEY_HOOK_ISLAND_GLOW_EXTRACT_COLOR, RootConstants.DEFAULT_HOOK_ISLAND_GLOW_EXTRACT_COLOR)) }
     var progressGlow by remember { mutableStateOf(prefs.getBoolean(RootConstants.KEY_HOOK_ISLAND_PROGRESS_GLOW, RootConstants.DEFAULT_HOOK_ISLAND_PROGRESS_GLOW)) }
     var progressGradient by remember { mutableStateOf(prefs.getBoolean(RootConstants.KEY_HOOK_ISLAND_PROGRESS_GRADIENT, RootConstants.DEFAULT_HOOK_ISLAND_PROGRESS_GRADIENT)) }
@@ -116,6 +118,16 @@ fun SuperIslandSettingsPage() {
     }.map { stringResource(id = it) }
     val afterPauseOptions = remember {
         listOf(R.string.option_after_pause_default, R.string.option_after_pause_keep)
+    }.map { stringResource(id = it) }
+    val nextSongDurationOptions = remember {
+        listOf(
+            R.string.option_next_song_duration_disabled,
+            R.string.option_next_song_duration_1,
+            R.string.option_next_song_duration_2,
+            R.string.option_next_song_duration_3,
+            R.string.option_next_song_duration_4,
+            R.string.option_next_song_duration_5
+        )
     }.map { stringResource(id = it) }
     val audioCoverStyleValues = remember {
         listOf(
@@ -303,6 +315,27 @@ fun SuperIslandSettingsPage() {
                                         )
                                     }
                                 )
+                                OverlayDropdownPreference(
+                                    title = stringResource(id = R.string.title_next_song_at_end),
+                                    summary = stringResource(id = R.string.summary_next_song_at_end),
+                                    items = nextSongDurationOptions,
+                                    selectedIndex = nextSongDurationSeconds,
+                                    onSelectedIndexChange = {
+                                        nextSongDurationSeconds = it
+                                        saveConfig(RootConstants.KEY_HOOK_ISLAND_NEXT_SONG_DURATION, it)
+                                    }
+                                )
+                                AnimatedVisibility(visible = nextSongDurationSeconds > 0) {
+                                    SwitchPreference(
+                                        title = stringResource(id = R.string.title_force_next_song_at_end),
+                                        summary = stringResource(id = R.string.summary_force_next_song_at_end),
+                                        checked = forceNextSongAtEnd,
+                                        onCheckedChange = {
+                                            forceNextSongAtEnd = it
+                                            saveConfig(RootConstants.KEY_HOOK_ISLAND_FORCE_NEXT_SONG_AT_END, it)
+                                        }
+                                    )
+                                }
                                 }
                         }
                     }

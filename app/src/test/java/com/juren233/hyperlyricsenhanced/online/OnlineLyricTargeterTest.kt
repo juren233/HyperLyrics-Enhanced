@@ -50,6 +50,43 @@ class OnlineLyricTargeterTest {
     }
 
     @Test
+    fun `retries when Apple internal metadata differs`() {
+        assertEquals(
+            true,
+            OnlineLyricTargeter.shouldRetryWithOriginalMetadata(
+                "Kawakiwoameku",
+                "Minami",
+                "カワキヲアメク",
+                "美波"
+            )
+        )
+        assertEquals(
+            false,
+            OnlineLyricTargeter.shouldRetryWithOriginalMetadata(
+                "カワキヲアメク",
+                "美波",
+                "カワキヲアメク",
+                "美波"
+            )
+        )
+    }
+
+    @Test
+    fun `normalizes internal spaces in Apple original artist names`() {
+        assertEquals(
+            "藤井風",
+            OnlineLyricTargeter.compactWhitespace("藤井 風")
+        )
+    }
+
+    @Test
+    fun `accepts catalog duration drift up to five seconds`() {
+        assertEquals(10, OnlineLyricTargeter.durationScore(315_000L, 310_000L))
+        assertEquals(15, OnlineLyricTargeter.durationScore(315_000L, 315_386L))
+        assertEquals(-30, OnlineLyricTargeter.durationScore(315_000L, 309_999L))
+    }
+
+    @Test
     fun `keeps timestamp-aligned translation in fallback lines`() {
         val result = LyricsResult(
             tags = emptyMap(),

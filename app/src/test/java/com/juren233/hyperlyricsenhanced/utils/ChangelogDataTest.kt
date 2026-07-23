@@ -61,4 +61,27 @@ class ChangelogDataTest {
             ChangelogData.normalizeReleaseMarkdown(source)
         )
     }
+
+    @Test
+    fun `latest commit label is replaced by the actual enlarged title`() {
+        val content = ChangelogData.normalizeReleaseContent(
+            """
+                ## 最新提交
+                chores: 更新应用图标并完善更新日志UI
+
+                - 重新设计应用图标
+                - 为更新日志接入 Markdown 渲染
+            """.trimIndent()
+        )
+
+        assertEquals("chores: 更新应用图标并完善更新日志UI", content.title)
+        assertEquals(
+            """
+                - 重新设计应用图标
+                - 为更新日志接入 Markdown 渲染
+            """.trimIndent(),
+            content.summary
+        )
+        assertFalse(content.summary.contains("最新提交"))
+    }
 }

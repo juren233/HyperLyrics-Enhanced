@@ -7,7 +7,12 @@
 package io.github.proify.lyricon.amprovider.xposed
 
 import android.app.Application
+import android.net.Uri
+import android.os.Handler
+import android.os.Looper
 import com.juren233.hyperlyricsenhanced.BuildConfig
+import com.juren233.hyperlyricsenhanced.common.RootConstants
+import com.juren233.hyperlyricsenhanced.common.UIConstants
 import io.github.libxposed.api.XposedInterface.Chain
 import io.github.libxposed.api.XposedInterface.Hooker
 import io.github.libxposed.api.XposedModule
@@ -40,12 +45,22 @@ object AppleMusicProvider {
     private lateinit var module: XposedModule
 
     private var isPlaying = false
-    private var exoMediaPlayerInstance: Any? = null
-    private var getPositionMethod: Method? = null
+    @Volatile
+    private var playbackPositionSource: PlaybackPositionSource? = null
+    @Volatile
+    private var activePlaybackPlayer: Any? = null
     private val coroutineScope by lazy { CoroutineScope(Dispatchers.Default + SupervisorJob()) }
     private var progressJob: Job? = null
     private var player: RemotePlayer? = null
+    private var zeroPositionReadCount = 0
+    private var hasLoggedNonZeroPosition = false
     private lateinit var lyricRequester: LyricRequester
+    private lateinit var internalCatalogResolver: AppleInternalCatalogResolver
+    private var contentUiLanguagePrefs: android.content.SharedPreferences? = null
+    private var contentUiLanguageListener:
+        android.content.SharedPreferences.OnSharedPreferenceChangeListener? = null
+    @Volatile
+    private var lastLoggedContentLanguage: String? = null
     private val pendingLyricsRequestSources =
         ConcurrentHashMap<String, ConcurrentLinkedQueue<String>>()
 
@@ -72,6 +87,11 @@ object AppleMusicProvider {
                 }
             }
             DiskSongManager.initialize(application)
+            internalCatalogResolver = AppleInternalCatalogResolver(
+                classLoader = classLoader,
+                mainHandler = Handler(Looper.getMainLooper())
+            )
+            initializeContentUiLanguage()
             initScreenStateMonitor()
             initProvider()
             startHooks()
@@ -80,6 +100,34 @@ object AppleMusicProvider {
             initialized.set(false)
             ProviderLogger.error("Apple Music 内置歌词提供器初始化失败", it)
         }
+    }
+
+    private fun initializeContentUiLanguage() {
+        val prefs = runCatching {
+            module.getRemotePreferences(UIConstants.PREF_NAME)
+        }.getOrNull() ?: return
+        contentUiLanguagePrefs = prefs
+        Handler(Looper.getMainLooper()).post {
+            applyConfiguredContentUiLanguage(prefs)
+        }
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { changed, key ->
+            if (key == RootConstants.KEY_HOOK_APPLE_MUSIC_CONTENT_UI_LANGUAGE) {
+                applyConfiguredContentUiLanguage(changed)
+            }
+        }
+        contentUiLanguageListener = listener
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+    }
+
+    private fun applyConfiguredContentUiLanguage(
+        prefs: android.content.SharedPreferences? = contentUiLanguagePrefs
+    ) {
+        prefs ?: return
+        val selection = prefs.getInt(
+            RootConstants.KEY_HOOK_APPLE_MUSIC_CONTENT_UI_LANGUAGE,
+            RootConstants.DEFAULT_HOOK_APPLE_MUSIC_CONTENT_UI_LANGUAGE
+        )
+        internalCatalogResolver.applyContentUiLanguage(selection)
     }
 
     private fun initProvider() {
@@ -104,6 +152,8 @@ object AppleMusicProvider {
 
     private fun startHooks() {
         hookTranslationPreference()
+        hookMediaApiLocalization()
+        hookContentHttpLocalization()
         hookExoMediaPlayer()
         hookMediaMetadataChange()
         hookLyricBuildMethod()
@@ -112,6 +162,116 @@ object AppleMusicProvider {
             hookLyricsCookies()
             hookFinalLyricsHttp()
         }
+    }
+
+    /** Apple Music overwrites every MediaApi query's `l` parameter from the system locale. */
+    private fun hookMediaApiLocalization() {
+        runCatching {
+            val mediaApiClass = classLoader.loadClass("s8.E")
+            val method = AppleReflection.findMethod(mediaApiClass, "c0", parameterCount = 1)
+            installHook(method, after = { _, result ->
+                @Suppress("UNCHECKED_CAST")
+                val params = result as? MutableMap<Any?, Any?> ?: return@installHook
+                val prefs = contentUiLanguagePrefs ?: return@installHook
+                val selection = prefs.getInt(
+                    RootConstants.KEY_HOOK_APPLE_MUSIC_CONTENT_UI_LANGUAGE,
+                    RootConstants.DEFAULT_HOOK_APPLE_MUSIC_CONTENT_UI_LANGUAGE
+                )
+                internalCatalogResolver.applyContentUiLanguage(selection)
+                internalCatalogResolver.languageTagForCurrentRequest(selection)?.let { language ->
+                    params["l"] = language
+                    if (lastLoggedContentLanguage != language) {
+                        lastLoggedContentLanguage = language
+                        ProviderLogger.info(
+                            "Apple Music 内容本地化参数已覆盖: language=$language"
+                        )
+                    }
+                }
+            })
+            ProviderLogger.info("Apple Music 内容本地化参数 Hook 已安装")
+        }.onFailure {
+            ProviderLogger.error("Apple Music 内容本地化参数 Hook 安装失败", it)
+        }
+    }
+
+    private fun hookContentHttpLocalization() {
+        runCatching {
+            val method = AppleReflection.findMethod(
+                classLoader.loadClass("u8.a"),
+                "a",
+                parameterCount = 1
+            )
+            installHook(method, before = { chain ->
+                val prefs = contentUiLanguagePrefs ?: return@installHook
+                val selection = prefs.getInt(
+                    RootConstants.KEY_HOOK_APPLE_MUSIC_CONTENT_UI_LANGUAGE,
+                    RootConstants.DEFAULT_HOOK_APPLE_MUSIC_CONTENT_UI_LANGUAGE
+                )
+                val storefront =
+                    AppleInternalCatalogResolver.storefrontForContentUiLanguage(selection)
+                        ?: return@installHook
+                val language = internalCatalogResolver.languageTagForCurrentRequest(selection)
+                    ?: return@installHook
+                val httpChain = chain.args.firstOrNull() ?: return@installHook
+                val request = AppleReflection.field(httpChain, "e") ?: return@installHook
+                val rewritten = rewriteContentRequest(request, storefront, language)
+                    ?: return@installHook
+                AppleReflection.setField(httpChain, "e", rewritten)
+            })
+            ProviderLogger.info("Apple 内容 HTTP 本地化 Hook 已安装")
+        }.onFailure {
+            ProviderLogger.error("Apple 内容 HTTP 本地化 Hook 安装失败", it)
+        }
+    }
+
+    private fun rewriteContentRequest(
+        request: Any,
+        storefront: String,
+        language: String
+    ): Any? {
+        val url = AppleReflection.field(request, "a")?.toString().orEmpty()
+        val uri = Uri.parse(url)
+        val host = uri.host.orEmpty()
+        if (!host.contains("apple", ignoreCase = true)) return null
+
+        val segments = uri.pathSegments.toMutableList()
+        val pathStorefront = AppleInternalCatalogResolver.storefrontFromContentPath(segments)
+        val entityType = segments.getOrNull(3)
+        val isPersonalizedContent = segments.take(3) == listOf("v1", "me", "recommendations")
+        val isLyricsRequest = entityType == "songs" &&
+            segments.lastOrNull()?.contains("lyrics") == true
+        if (pathStorefront == null && !isPersonalizedContent) return null
+        if (isLyricsRequest) return null
+        if (
+            pathStorefront != null &&
+            !internalCatalogResolver.shouldPreserveCatalogStorefront(
+                pathStorefront,
+                entityType
+            )
+        ) {
+            segments[2] = storefront
+        }
+
+        val builder = uri.buildUpon()
+        builder.encodedPath(
+            segments.joinToString(separator = "/", prefix = "/") { Uri.encode(it) }
+        )
+        builder.clearQuery()
+        uri.queryParameterNames.forEach { name ->
+            if (name != "l") {
+                uri.getQueryParameters(name).forEach { value ->
+                    builder.appendQueryParameter(name, value)
+                }
+            }
+        }
+        builder.appendQueryParameter("l", language)
+        val rewrittenUrl = builder.build().toString()
+        if (rewrittenUrl == url) return null
+
+        val requestBuilder = AppleReflection.call(request, "b") ?: return null
+        AppleReflection.call(requestBuilder, "h", rewrittenUrl)
+        AppleReflection.call(requestBuilder, "d", "Accept-Language", language)
+        return AppleReflection.call(requestBuilder, "b")
     }
 
     private fun hookTranslationPreference() {
@@ -138,7 +298,25 @@ object AppleMusicProvider {
             parameterCount = 2
         )
         installHook(metadataMethod, after = { chain, _ ->
-            handleQueueItem(chain.args.getOrNull(1), "onMetadataUpdated")
+            val mediaPlayer = chain.args.firstOrNull()
+            if (!isActivePlaybackCallback(mediaPlayer, activePlaybackPlayer)) {
+                ProviderLogger.debug(
+                    "忽略非活动播放器的歌曲元数据：source=onMetadataUpdated, " +
+                        "callback=${mediaPlayer?.let(System::identityHashCode)}, " +
+                        "active=${activePlaybackPlayer?.let(System::identityHashCode)}"
+                )
+                return@installHook
+            }
+            val callbackPlayer = mediaPlayer ?: return@installHook
+            val changedItem = chain.args.getOrNull(1)
+            val currentItem = runCatching {
+                AppleReflection.call(callbackPlayer, "getCurrentItem")
+            }.getOrNull()
+            handleQueueItem(
+                queueItem = changedItem,
+                source = "onMetadataUpdated",
+                publishAsCurrent = isCurrentQueueItem(changedItem, currentItem)
+            )
         })
 
         val indexMethod = AppleReflection.findMethod(
@@ -147,9 +325,24 @@ object AppleMusicProvider {
             parameterCount = 3
         )
         installHook(indexMethod, after = { chain, _ ->
-            refreshCurrentQueueItem(chain.args.firstOrNull(), "onPlaybackIndexChanged")
+            refreshCurrentQueueItemIfActive(
+                chain.args.firstOrNull(),
+                "onPlaybackIndexChanged"
+            )
         })
         ProviderLogger.debug("歌曲元数据 Hook 已安装")
+    }
+
+    private fun refreshCurrentQueueItemIfActive(mediaPlayer: Any?, source: String) {
+        if (!isActivePlaybackCallback(mediaPlayer, activePlaybackPlayer)) {
+            ProviderLogger.debug(
+                "忽略非活动播放器的歌曲元数据：source=$source, " +
+                    "callback=${mediaPlayer?.let(System::identityHashCode)}, " +
+                    "active=${activePlaybackPlayer?.let(System::identityHashCode)}"
+            )
+            return
+        }
+        refreshCurrentQueueItem(mediaPlayer, source)
     }
 
     private fun refreshCurrentQueueItem(mediaPlayer: Any?, source: String) {
@@ -164,7 +357,11 @@ object AppleMusicProvider {
         }
     }
 
-    private fun handleQueueItem(queueItem: Any?, source: String) {
+    private fun handleQueueItem(
+        queueItem: Any?,
+        source: String,
+        publishAsCurrent: Boolean = true
+    ) {
         if (queueItem == null) {
             ProviderLogger.debug("歌曲元数据更新失败：$source 的 PlayerQueueItem 为空")
             return
@@ -184,6 +381,7 @@ object AppleMusicProvider {
                 id = mediaId,
                 title = AppleReflection.call(mediaItem, "getTitle") as? String,
                 artist = AppleReflection.call(mediaItem, "getArtistName") as? String,
+                genre = AppleReflection.call(mediaItem, "getGenreName") as? String,
                 duration = AppleReflection.call(mediaItem, "getDuration") as? Long ?: 0L,
                 queueId = AppleReflection.call(queueItem, "getPlaybackQueueId") as? Long ?: 0L
             )
@@ -192,10 +390,43 @@ object AppleMusicProvider {
                 "歌曲元数据已更新：source=$source, id=${metadata.id}, " +
                     "queueId=${metadata.queueId}, 标题=${metadata.title}"
             )
-            PlaybackManager.onSongChanged(metadata.id)
+            if (publishAsCurrent) {
+                PlaybackManager.onSongChanged(metadata.id)
+                internalCatalogResolver.resolve(metadata) { alias ->
+                    if (alias == null) return@resolve
+                    MediaMetadataCache.updateOriginalMetadata(
+                        mediaId = metadata.id,
+                        title = alias.title,
+                        artist = alias.artist
+                    )
+                    PlaybackManager.onCatalogMetadataResolved(metadata.id)
+                }
+            }
         }.onFailure {
             ProviderLogger.error("歌曲元数据解析异常：source=$source", it)
         }
+    }
+
+    private fun isCurrentQueueItem(candidate: Any?, current: Any?): Boolean {
+        if (candidate == null || current == null) return false
+        if (candidate === current) return true
+        val candidateQueueId = AppleReflection.call(candidate, "getPlaybackQueueId") as? Long ?: 0L
+        val currentQueueId = AppleReflection.call(current, "getPlaybackQueueId") as? Long ?: 0L
+        if (candidateQueueId > 0L && currentQueueId > 0L) {
+            return candidateQueueId == currentQueueId
+        }
+        val candidateMediaId = queueItemMediaId(candidate)
+        val currentMediaId = queueItemMediaId(current)
+        return candidateMediaId != null && candidateMediaId == currentMediaId
+    }
+
+    private fun queueItemMediaId(queueItem: Any): String? {
+        val mediaItem = AppleReflection.call(queueItem, "getItem") ?: return null
+        val subscriptionStoreId =
+            AppleReflection.call(mediaItem, "getSubscriptionStoreId") as? String
+        if (!subscriptionStoreId.isNullOrBlank()) return subscriptionStoreId
+        val persistentId = AppleReflection.call(mediaItem, "getPersistentId") as? Long ?: 0L
+        return persistentId.takeIf { it > 0L }?.toString()
     }
 
     private fun hookLyricBuildMethod() {
@@ -251,6 +482,7 @@ object AppleMusicProvider {
 
             val source = if (lyricRequester.ownsViewModel(chain.thisObject)) "module" else "apple"
             PlaybackManager.onLyricsBuilt(songNative, source)
+            applyConfiguredContentUiLanguage()
         })
         ProviderLogger.debug("歌词构建 Hook 已安装")
     }
@@ -260,12 +492,14 @@ object AppleMusicProvider {
             classLoader.loadClass("com.apple.android.music.playback.player.ExoMediaPlayer")
         exoPlayerClass.declaredConstructors.forEach { constructor ->
             installHook(constructor, after = { chain, _ ->
-                exoMediaPlayerInstance = chain.thisObject
-                getPositionMethod = chain.thisObject?.javaClass?.let {
-                    AppleReflection.findMethod(it, "getCurrentPosition", parameterCount = 0)
-                }
+                capturePlaybackPositionSource(
+                    mediaPlayer = chain.thisObject,
+                    source = "ExoMediaPlayer.<init>",
+                    replace = false
+                )
             })
         }
+        hookExoPlaybackLifecycle(exoPlayerClass)
 
         val seekMethod = AppleReflection.findMethod(
             exoPlayerClass,
@@ -285,10 +519,19 @@ object AppleMusicProvider {
             parameterCount = 3
         )
         installHook(stateMethod, after = { chain, _ ->
-            refreshCurrentQueueItem(chain.args.firstOrNull(), "onPlaybackStateChanged")
+            val activeMediaPlayer = chain.args.firstOrNull()
             when (PlaybackState.of(chain.args.getOrNull(2) as? Int ?: -1)) {
-                PlaybackState.PLAYING -> startSyncAction()
-                else -> stopSyncAction()
+                PlaybackState.PLAYING -> {
+                    activatePlaybackPlayer(
+                        mediaPlayer = activeMediaPlayer,
+                        source = "LocalMediaPlayerController.onPlaybackStateChanged"
+                    )
+                    refreshCurrentQueueItem(activeMediaPlayer, "onPlaybackStateChanged")
+                    startSyncAction()
+                }
+                else -> {
+                    if (activePlaybackPlayer === activeMediaPlayer) stopSyncAction()
+                }
             }
         })
     }
@@ -311,11 +554,97 @@ object AppleMusicProvider {
         progressJob = coroutineScope.launch {
             while (isActive && isPlaying) {
                 runCatching {
-                    val position = getPositionMethod?.invoke(exoMediaPlayerInstance) as? Long ?: 0L
-                    player?.setPosition(position)
+                    playbackPositionSource?.readPosition()?.let { position ->
+                        logPositionSyncState(position)
+                        player?.setPosition(position)
+                    }
+                }.onFailure {
+                    ProviderLogger.error("读取 Apple Music 当前播放进度失败", it)
                 }
                 delay(ProviderConstants.DEFAULT_POSITION_UPDATE_INTERVAL)
             }
+        }
+    }
+
+    private fun hookExoPlaybackLifecycle(exoPlayerClass: Class<*>) {
+        val playMethod = AppleReflection.findMethod(exoPlayerClass, "play", parameterCount = 0)
+        installHook(playMethod, after = { chain, _ ->
+            activatePlaybackPlayer(
+                mediaPlayer = chain.thisObject,
+                source = "ExoMediaPlayer.play"
+            )
+            refreshCurrentQueueItem(chain.thisObject, "ExoMediaPlayer.play")
+            startSyncAction()
+        })
+
+        listOf("pause", "stop", "release").forEach { methodName ->
+            val method = AppleReflection.findMethod(exoPlayerClass, methodName, parameterCount = 0)
+            installHook(method, after = { chain, _ ->
+                if (playbackPositionSource?.player === chain.thisObject) {
+                    stopSyncAction()
+                    if (methodName == "release") {
+                        playbackPositionSource = null
+                        if (activePlaybackPlayer === chain.thisObject) {
+                            activePlaybackPlayer = null
+                        }
+                    }
+                }
+            })
+        }
+        ProviderLogger.info("Apple Music 播放生命周期 Hook 已安装")
+    }
+
+    private fun activatePlaybackPlayer(mediaPlayer: Any?, source: String) {
+        if (mediaPlayer == null) return
+        activePlaybackPlayer = mediaPlayer
+        capturePlaybackPositionSource(
+            mediaPlayer = mediaPlayer,
+            source = source,
+            replace = true
+        )
+    }
+
+    private fun capturePlaybackPositionSource(
+        mediaPlayer: Any?,
+        source: String,
+        replace: Boolean
+    ) {
+        if (mediaPlayer == null || (!replace && playbackPositionSource != null)) return
+        val resolved = resolvePlaybackPositionSource(mediaPlayer)
+        if (resolved == null) {
+            ProviderLogger.error(
+                "Apple Music 播放器缺少 getCurrentPosition：class=${mediaPlayer.javaClass.name}"
+            )
+            return
+        }
+        val previous = playbackPositionSource
+        playbackPositionSource = resolved
+        if (previous?.player !== mediaPlayer) {
+            zeroPositionReadCount = 0
+            hasLoggedNonZeroPosition = false
+            ProviderLogger.info(
+                "播放进度源已绑定：source=$source, class=${mediaPlayer.javaClass.name}, " +
+                    "instance=${System.identityHashCode(mediaPlayer)}"
+            )
+        }
+    }
+
+    private fun logPositionSyncState(position: Long) {
+        if (position > 0L) {
+            if (!hasLoggedNonZeroPosition) {
+                hasLoggedNonZeroPosition = true
+                ProviderLogger.info("播放进度同步已启动：position=$position")
+            }
+            zeroPositionReadCount = 0
+            return
+        }
+        zeroPositionReadCount += 1
+        if (zeroPositionReadCount == 10) {
+            val source = playbackPositionSource
+            ProviderLogger.info(
+                "播放进度连续为 0：class=${source?.player?.javaClass?.name}, " +
+                    "instance=${source?.player?.let(System::identityHashCode)}"
+            )
         }
     }
 
@@ -479,3 +808,25 @@ object AppleMusicProvider {
         }
     }
 }
+
+internal data class PlaybackPositionSource(
+    val player: Any,
+    val getCurrentPosition: Method
+) {
+    fun readPosition(): Long? = getCurrentPosition.invoke(player) as? Long
+}
+
+internal fun resolvePlaybackPositionSource(mediaPlayer: Any?): PlaybackPositionSource? {
+    mediaPlayer ?: return null
+    val method = runCatching {
+        AppleReflection.findMethod(
+            mediaPlayer.javaClass,
+            "getCurrentPosition",
+            parameterCount = 0
+        )
+    }.getOrNull() ?: return null
+    return PlaybackPositionSource(mediaPlayer, method)
+}
+
+internal fun isActivePlaybackCallback(callbackPlayer: Any?, activePlayer: Any?): Boolean =
+    callbackPlayer != null && callbackPlayer === activePlayer

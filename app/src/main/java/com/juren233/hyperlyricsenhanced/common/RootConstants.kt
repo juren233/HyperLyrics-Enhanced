@@ -25,6 +25,8 @@ object RootConstants {
     const val KEY_HOOK_ISLAND_LEFT_CONTENT_MAX_WIDTH = "key_hook_island_left_content_max_width"
     const val KEY_HOOK_ISLAND_RIGHT_CONTENT_MAX_WIDTH = "key_hook_island_right_content_max_width"
     const val KEY_HOOK_ISLAND_BEHAVIOR_AFTER_PAUSE = "key_hook_island_behavior_after_pause"
+    const val KEY_HOOK_ISLAND_FORCE_NEXT_SONG_AT_END = "key_hook_island_force_next_song_at_end"
+    const val KEY_HOOK_ISLAND_NEXT_SONG_DURATION = "key_hook_island_next_song_duration"
     const val KEY_HOOK_NOTIFICATION_MEDIA_AMBIENT_FLOW_MODE =
         "key_hook_notification_media_ambient_flow_mode"
     const val KEY_HOOK_ISLAND_EXPANDED_MEDIA_AMBIENT_FLOW_MODE =
@@ -135,6 +137,8 @@ object RootConstants {
         "key_hook_apple_music_match_online_translation"
     const val KEY_HOOK_APPLE_MUSIC_TRANSLATION_QQ_FIRST =
         "key_hook_apple_music_translation_qq_first"
+    const val KEY_HOOK_APPLE_MUSIC_CONTENT_UI_LANGUAGE =
+        "key_hook_apple_music_content_ui_language"
     const val KEY_HOOK_AI_TRANS_ENABLE = "key_hook_ai_trans_enable"
     const val KEY_HOOK_AI_TRANS_AUTO_IGNORE_CHINESE = "key_hook_ai_trans_auto_ignore_chinese"
     const val KEY_HOOK_AI_TRANS_SKIP_EXISTING_TRANSLATION = "key_hook_ai_trans_skip_existing_translation"
@@ -154,6 +158,15 @@ object RootConstants {
     const val DEFAULT_HOOK_LYRICON_PROVIDER_DELAY = 0
     const val DEFAULT_HOOK_APPLE_MUSIC_ONLINE_FALLBACK = true
     const val DEFAULT_HOOK_APPLE_MUSIC_FALLBACK_QQ_FIRST = false
+    const val APPLE_MUSIC_CONTENT_UI_LANGUAGE_NONE = 0
+    const val APPLE_MUSIC_CONTENT_UI_LANGUAGE_ZH_HANS_CN = 1
+    const val APPLE_MUSIC_CONTENT_UI_LANGUAGE_ZH_HANS_US = 2
+    const val APPLE_MUSIC_CONTENT_UI_LANGUAGE_ZH_HANT_HK = 3
+    const val APPLE_MUSIC_CONTENT_UI_LANGUAGE_ZH_HANT_TW = 4
+    const val APPLE_MUSIC_CONTENT_UI_LANGUAGE_KO_KR = 5
+    const val APPLE_MUSIC_CONTENT_UI_LANGUAGE_JA_JP = 6
+    const val DEFAULT_HOOK_APPLE_MUSIC_CONTENT_UI_LANGUAGE =
+        APPLE_MUSIC_CONTENT_UI_LANGUAGE_NONE
     const val MIN_HOOK_LYRICON_PROVIDER_DELAY = -5000
     const val MAX_HOOK_LYRICON_PROVIDER_DELAY = 5000
 
@@ -177,6 +190,8 @@ object RootConstants {
     const val DEFAULT_HOOK_ISLAND_LEFT_CONTENT_MAX_WIDTH = 80
     const val DEFAULT_HOOK_ISLAND_RIGHT_CONTENT_MAX_WIDTH = 100
     const val DEFAULT_HOOK_ISLAND_BEHAVIOR_AFTER_PAUSE = 0
+    const val DEFAULT_HOOK_ISLAND_FORCE_NEXT_SONG_AT_END = false
+    const val DEFAULT_HOOK_ISLAND_NEXT_SONG_DURATION = 4
     const val NOTIFICATION_MEDIA_AMBIENT_FLOW_MODE_DISABLED = 0
     const val NOTIFICATION_MEDIA_AMBIENT_FLOW_MODE_DYNAMIC = 1
     const val NOTIFICATION_MEDIA_AMBIENT_FLOW_MODE_COVER_COLOR = 2

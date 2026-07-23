@@ -14,6 +14,7 @@ import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
+import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 
 fun LazyListScope.homePageSections(
     enableSuperIsland: Boolean,
@@ -28,6 +29,9 @@ fun LazyListScope.homePageSections(
     onRemoveFocusWhitelistToggle: (Boolean) -> Unit,
     removeIslandWhitelist: Boolean,
     onRemoveIslandWhitelistToggle: (Boolean) -> Unit,
+    appleMusicContentUiLanguage: Int,
+    appleMusicContentUiLanguageOptions: List<String>,
+    onAppleMusicContentUiLanguageChange: (Int) -> Unit,
     onAppSettingsClick: () -> Unit,
 ) {
     item(key = "enhanced_version_notice") {
@@ -109,6 +113,13 @@ fun LazyListScope.homePageSections(
                     title = stringResource(R.string.title_remove_island_whitelist),
                     checked = removeIslandWhitelist,
                     onCheckedChange = onRemoveIslandWhitelistToggle,
+                )
+                OverlayDropdownPreference(
+                    title = stringResource(R.string.title_apple_music_content_ui_language),
+                    summary = stringResource(R.string.summary_apple_music_content_ui_language),
+                    items = appleMusicContentUiLanguageOptions,
+                    selectedIndex = appleMusicContentUiLanguage.coerceIn(0, appleMusicContentUiLanguageOptions.lastIndex),
+                    onSelectedIndexChange = onAppleMusicContentUiLanguageChange,
                 )
             }
         }

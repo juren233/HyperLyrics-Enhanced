@@ -143,6 +143,14 @@ fun MainPage() {
     var removeIslandWhitelist by remember {
         mutableStateOf(prefs.getBoolean(RootConstants.KEY_HOOK_REMOVE_ISLAND_WHITELIST, RootConstants.DEFAULT_HOOK_REMOVE_ISLAND_WHITELIST))
     }
+    var appleMusicContentUiLanguage by remember {
+        mutableStateOf(
+            prefs.getInt(
+                RootConstants.KEY_HOOK_APPLE_MUSIC_CONTENT_UI_LANGUAGE,
+                RootConstants.DEFAULT_HOOK_APPLE_MUSIC_CONTENT_UI_LANGUAGE
+            )
+        )
+    }
 
     // --- dialogs ---
     var showRestartDialog by remember { mutableStateOf(false) }
@@ -171,6 +179,11 @@ fun MainPage() {
                     enableSuperIsland = p.getBoolean(RootConstants.KEY_HOOK_ENABLE_SUPER_ISLAND, RootConstants.DEFAULT_HOOK_ENABLE_SUPER_ISLAND)
                 RootConstants.KEY_HOOK_ENABLE_DYNAMIC_ISLAND ->
                     enableDynamicIsland = p.getBoolean(RootConstants.KEY_HOOK_ENABLE_DYNAMIC_ISLAND, RootConstants.DEFAULT_HOOK_ENABLE_DYNAMIC_ISLAND)
+                RootConstants.KEY_HOOK_APPLE_MUSIC_CONTENT_UI_LANGUAGE ->
+                    appleMusicContentUiLanguage = p.getInt(
+                        RootConstants.KEY_HOOK_APPLE_MUSIC_CONTENT_UI_LANGUAGE,
+                        RootConstants.DEFAULT_HOOK_APPLE_MUSIC_CONTENT_UI_LANGUAGE
+                    )
             }
         }
     }
@@ -277,6 +290,27 @@ fun MainPage() {
             PrefsBridge.putBoolean(RootConstants.KEY_HOOK_REMOVE_ISLAND_WHITELIST, false)
         }
     } }
+
+    val appleMusicContentUiLanguageOptions = listOf(
+        stringResource(R.string.option_apple_music_content_ui_language_none),
+        stringResource(R.string.option_apple_music_content_ui_language_zh_hans_cn),
+        stringResource(R.string.option_apple_music_content_ui_language_zh_hans_us),
+        stringResource(R.string.option_apple_music_content_ui_language_zh_hant_hk),
+        stringResource(R.string.option_apple_music_content_ui_language_zh_hant_tw),
+        stringResource(R.string.option_apple_music_content_ui_language_ko_kr),
+        stringResource(R.string.option_apple_music_content_ui_language_ja_jp),
+    )
+    val onAppleMusicContentUiLanguageChange: (Int) -> Unit = remember {
+        { selected ->
+            val value = selected.coerceIn(
+                RootConstants.APPLE_MUSIC_CONTENT_UI_LANGUAGE_NONE,
+                RootConstants.APPLE_MUSIC_CONTENT_UI_LANGUAGE_JA_JP
+            )
+            appleMusicContentUiLanguage = value
+            prefs.edit { putInt(RootConstants.KEY_HOOK_APPLE_MUSIC_CONTENT_UI_LANGUAGE, value) }
+            PrefsBridge.putInt(RootConstants.KEY_HOOK_APPLE_MUSIC_CONTENT_UI_LANGUAGE, value)
+        }
+    }
 
     val confirmPermissionSheet: () -> Unit = remember { {
         val hasPostNotification = ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
@@ -515,6 +549,9 @@ fun MainPage() {
                         onRemoveFocusWhitelistToggle = toggleRemoveFocusWhitelist,
                         removeIslandWhitelist = removeIslandWhitelist,
                         onRemoveIslandWhitelistToggle = toggleRemoveIslandWhitelist,
+                        appleMusicContentUiLanguage = appleMusicContentUiLanguage,
+                        appleMusicContentUiLanguageOptions = appleMusicContentUiLanguageOptions,
+                        onAppleMusicContentUiLanguageChange = onAppleMusicContentUiLanguageChange,
                         onAppSettingsClick = { navigator.navigate(Route.Settings) },
                     )
                 } else {

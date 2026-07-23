@@ -3,6 +3,7 @@ package com.juren233.hyperlyricsenhanced.online
 import android.content.Context
 import com.juren233.hyperlyricsenhanced.lyric.LrcLine
 import com.juren233.hyperlyricsenhanced.online.model.LyricsResult
+import com.juren233.hyperlyricsenhanced.online.model.SearchSource
 import com.juren233.hyperlyricsenhanced.online.model.SongSearchResult
 import com.juren233.hyperlyricsenhanced.online.model.Source
 import com.juren233.hyperlyricsenhanced.online.utils.ChineseUtils
@@ -21,6 +22,8 @@ object OnlineLyricTargeter {
         title: String, 
         artist: String, 
         durationMs: Long,
+        originalTitle: String? = null,
+        originalArtist: String? = null,
         preferredSource: Source? = null,
         requireTranslation: Boolean = false,
         fallbackToOtherSources: Boolean = true
@@ -34,11 +37,55 @@ object OnlineLyricTargeter {
             fallbackToOtherSources = fallbackToOtherSources
         ).mapNotNull(sourcesByType::get)
 
+        searchSources(
+            context = context,
+            sources = sources,
+            title = title,
+            artist = artist,
+            durationMs = durationMs,
+            requireTranslation = requireTranslation,
+            metadataLabel = "当前元数据"
+        )?.let { return it }
+
+        if (!shouldRetryWithOriginalMetadata(title, artist, originalTitle, originalArtist)) {
+            return null
+        }
+        val resolvedTitle = originalTitle?.takeIf { it.isNotBlank() } ?: title
+        val resolvedArtist = originalArtist?.takeIf { it.isNotBlank() } ?: artist
+        LogManager.d(
+            "OnlineTargeter",
+            "使用 Apple 内部原名重试: $resolvedTitle / $resolvedArtist"
+        )
+        return searchSources(
+            context = context,
+            sources = sources,
+            title = resolvedTitle,
+            artist = resolvedArtist,
+            durationMs = durationMs,
+            requireTranslation = requireTranslation,
+            metadataLabel = "Apple 内部原名"
+        )
+    }
+
+    private suspend fun searchSources(
+        context: Context,
+        sources: List<SearchSource>,
+        title: String,
+        artist: String,
+        durationMs: Long,
+        requireTranslation: Boolean,
+        metadataLabel: String
+    ): List<LrcLine>? {
+
         val keyword = "$title $artist"
-        LogManager.d("OnlineTargeter", "正在搜索: 关键词=\"$keyword\", 源顺序=${sources.joinToString { it.javaClass.simpleName }}")
+        LogManager.d(
+            "OnlineTargeter",
+            "正在搜索: 类型=$metadataLabel, 关键词=\"$keyword\", " +
+                "源顺序=${sources.joinToString { it.javaClass.simpleName }}"
+        )
 
         val cleanLocalTitle = cleanString(context, title)
-        val localArtists = artist.split("&", ",", "，", "、").map { cleanString(context, it) }
+        val localArtists = splitArtists(artist).map { cleanString(context, it) }
         val featureKeywords = listOf("live", "remastered", "翻唱", "cover")
         val localFeatures = featureKeywords.filter { title.lowercase().contains(it) }
         
@@ -98,14 +145,34 @@ object OnlineLyricTargeter {
                             )
                             continue
                         }
-                        LogManager.d("OnlineTargeter", "歌词命中: 源=${source.javaClass.simpleName}, 得分=$bestScore, 行数=${list.size}")
+                        LogManager.d(
+                            "OnlineTargeter",
+                            "歌词命中: 类型=$metadataLabel, 源=${source.javaClass.simpleName}, " +
+                                "得分=$bestScore, 行数=${list.size}"
+                        )
                         return list
                     }
                 }
             }
         }
-        LogManager.d("OnlineTargeter", "歌词未命中: 最佳得分=$bestScore < 阈值 $PASS_SCORE")
+        LogManager.d(
+            "OnlineTargeter",
+            "歌词未命中: 类型=$metadataLabel, 最佳得分=$bestScore < 阈值 $PASS_SCORE"
+        )
         return null
+    }
+
+    internal fun shouldRetryWithOriginalMetadata(
+        title: String,
+        artist: String,
+        originalTitle: String?,
+        originalArtist: String?
+    ): Boolean {
+        val resolvedTitle = originalTitle?.trim().orEmpty()
+        val resolvedArtist = originalArtist?.trim().orEmpty()
+        if (resolvedTitle.isEmpty() && resolvedArtist.isEmpty()) return false
+        return !resolvedTitle.equals(title.trim(), ignoreCase = true) ||
+            !resolvedArtist.equals(artist.trim(), ignoreCase = true)
     }
 
     internal fun resolveSourceOrder(
@@ -153,12 +220,7 @@ object OnlineLyricTargeter {
         var score = 0
 
         if (localDurationMs > 0 && song.duration > 0) {
-            val diffMs = abs(localDurationMs - song.duration)
-            if (diffMs > 5000) {
-                score -= 30
-            } else if (diffMs < 1500) {
-                score += 15
-            }
+            score += durationScore(localDurationMs, song.duration)
         }
 
         val cleanSongTitle = cleanString(context, song.title)
@@ -167,7 +229,7 @@ object OnlineLyricTargeter {
             score += 50
         }
 
-        val songArtists = song.artist.split("&", ",", "，", "、").map { cleanString(context, it) }
+        val songArtists = splitArtists(song.artist).map { cleanString(context, it) }
         
         val hasCommonArtist = localArtists.any { lArtist -> songArtists.any { sArtist -> lArtist == sArtist || sArtist.contains(lArtist) || lArtist.contains(sArtist) } }
         if (hasCommonArtist) {
@@ -188,6 +250,20 @@ object OnlineLyricTargeter {
 
     private fun cleanString(context: Context, input: String): String {
         val cleaned = input.replace(Regex("\\(.*?\\)|\\[.*?]|\\{.*?\\}"), "").trim().lowercase()
-        return ChineseUtils.toSimplified(context, cleaned)
+        return compactWhitespace(ChineseUtils.toSimplified(context, cleaned))
     }
+
+    internal fun durationScore(localDurationMs: Long, remoteDurationMs: Long): Int {
+        val diffMs = abs(localDurationMs - remoteDurationMs)
+        return when {
+            diffMs > 5_000L -> -30
+            diffMs < 1_500L -> 15
+            else -> 10
+        }
+    }
+
+    internal fun compactWhitespace(value: String): String = value.replace(Regex("\\s+"), "")
+
+    private fun splitArtists(value: String): List<String> =
+        value.split("&", ",", "，", "、", "/", "／")
 }

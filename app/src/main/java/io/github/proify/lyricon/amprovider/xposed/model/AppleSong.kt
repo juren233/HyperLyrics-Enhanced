@@ -12,6 +12,9 @@ import kotlinx.serialization.Serializable
 data class AppleSong(
     var name: String? = null,
     var artist: String? = null,
+    var genre: String? = null,
+    var originalTitle: String? = null,
+    var originalArtist: String? = null,
     var adamId: String? = null,
     var agents: MutableList<LyricAgent> = mutableListOf(),
     var duration: Int = 0,

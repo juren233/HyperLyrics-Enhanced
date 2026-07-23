@@ -67,6 +67,46 @@ object MediaMetadataHelper {
     }
 
     /**
+     * 从当前 MediaSession 的播放队列中读取当前项目之后的歌曲。
+     * Apple Music 将队列项目的标题、艺术家和专辑写入 QueueItem.description，
+     * 因此这里不依赖应用私有 API，也能与系统媒体岛展示保持一致。
+     */
+    fun getNextMediaInfo(
+        context: Context,
+        packageName: String,
+        current: MediaInfo = getMediaInfo(context, packageName)
+    ): MediaInfo {
+        if (packageName.isEmpty()) return MediaInfo()
+        return try {
+            val controller = findController(context, packageName) ?: return MediaInfo()
+            val queue = controller.queue.orEmpty()
+            if (queue.isEmpty()) return MediaInfo()
+            val currentMediaId = controller.metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)
+            val activeQueueItemId = controller.playbackState?.activeQueueItemId ?: -1L
+            val queueIdIndex = if (activeQueueItemId >= 0L) {
+                queue.indexOfFirst { it.queueId == activeQueueItemId }
+            } else {
+                -1
+            }
+            val currentIndex = queueIdIndex.takeIf { it >= 0 } ?: queue.indexOfFirst { item ->
+                (currentMediaId != null && item.description.mediaId == currentMediaId) ||
+                    (current.title.isNotBlank() && item.description.title?.toString() == current.title)
+            }
+            if (currentIndex < 0) return MediaInfo()
+            val nextItem = queue.getOrNull(currentIndex + 1) ?: return MediaInfo()
+            val description = nextItem.description
+            MediaInfo(
+                title = description.title?.toString().orEmpty(),
+                artist = description.subtitle?.toString().orEmpty(),
+                album = description.description?.toString().orEmpty(),
+                albumArt = description.iconBitmap
+            )
+        } catch (_: Exception) {
+            MediaInfo()
+        }
+    }
+
+    /**
      * 获取指定包名的当前播放位置（毫秒）。未播放或无控制器时返回 -1。
      */
     fun getPlaybackPosition(context: Context, packageName: String): Long {

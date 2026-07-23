@@ -54,8 +54,22 @@ class SpaceGateRichLyricLineView(
     private var centerMainLine: Boolean? = null
     private var centerSecondaryLine: Boolean? = null
 
-    internal val isShowingNextLinePreview: Boolean
-        get() = secondaryIsNextLinePreview
+    internal fun willAnimateNextLinePromotion(
+        targetLine: IRichLyricLine?,
+        previousLine: IRichLyricLine? = rawLine
+    ): Boolean {
+        val nextMainText = assembler.buildMain(targetLine).line.text
+        return canAnimateNextLinePromotion(
+            wasPreview = secondaryIsNextLinePreview,
+            currentMainText = currentMainText,
+            previewText = secondary.model.text,
+            nextMainText = nextMainText,
+            lineAdvanced = hasLyricLineAdvanced(previousLine, targetLine),
+            attached = isAttachedToWindow,
+            mainHeight = main.height,
+            secondaryHeight = secondary.height
+        )
+    }
 
     var line: IRichLyricLine?
         get() = rawLine
@@ -119,6 +133,17 @@ class SpaceGateRichLyricLineView(
     }
 
     fun notifyLineChanged() = refreshLines()
+
+    fun setDisplayOptions(showTranslation: Boolean, showRoma: Boolean) {
+        displayTranslation = showTranslation
+        displayRoma = showRoma
+        assembler.updateFlags(
+            displayTranslation,
+            displayRoma,
+            enableRelativeProgress,
+            enableRelativeProgressHighlight
+        )
+    }
 
     fun seekTo(position: Long) {
         if (animationTransition) {
@@ -262,6 +287,7 @@ class SpaceGateRichLyricLineView(
     private fun refreshLines(allowNextLinePromotion: Boolean = true, bypassIdentityCheck: Boolean = false) {
         if (nextLineTransitionRunning) return
         if (!bypassIdentityCheck && oldLine === line && line.isTitleLine()) return
+        val previousLine = oldLine
         oldLine = line
 
         assembler.updateFlags(displayTranslation, displayRoma, enableRelativeProgress, enableRelativeProgressHighlight)
@@ -269,13 +295,7 @@ class SpaceGateRichLyricLineView(
         val secResult = assembler.buildSecondary(line)
 
         val shouldPromote = allowNextLinePromotion &&
-                shouldPromoteNextLinePreview(
-                    secondaryIsNextLinePreview,
-                    currentMainText,
-                    secondary.model.text,
-                    mainResult.line.text
-                ) &&
-                isAttachedToWindow && main.height > 0 && secondary.height > 0
+            willAnimateNextLinePromotion(line, previousLine)
         if (shouldPromote) {
             animateNextLinePromotion()
             return

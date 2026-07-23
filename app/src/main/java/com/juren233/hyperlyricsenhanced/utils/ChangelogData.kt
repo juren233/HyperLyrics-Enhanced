@@ -15,6 +15,11 @@ data class ChangelogItem(
     val summary: String
 )
 
+internal data class NormalizedReleaseContent(
+    val title: String,
+    val summary: String
+)
+
 @Serializable
 private data class GitHubRelease(
     @SerialName("tag_name") val tagName: String,
@@ -40,10 +45,13 @@ object ChangelogData {
             .filterNot { it.draft || it.prerelease }
             .filter { isReleaseVisible(it.tagName, currentVersionName) }
             .map { release ->
+                val content = normalizeReleaseContent(release.body.orEmpty())
                 ChangelogItem(
                     version = release.tagName,
-                    title = release.name.orEmpty().takeUnless { it == release.tagName }.orEmpty(),
-                    summary = normalizeReleaseMarkdown(release.body.orEmpty())
+                    title = content.title.ifBlank {
+                        release.name.orEmpty().takeUnless { it == release.tagName }.orEmpty()
+                    },
+                    summary = content.summary
                 )
             }
             .toList()
@@ -101,6 +109,34 @@ object ChangelogData {
         .replace(EXCESS_BLANK_LINES_REGEX, "\n\n")
         .trim()
 
+    internal fun normalizeReleaseContent(markdown: String): NormalizedReleaseContent {
+        val normalized = normalizeReleaseMarkdown(markdown)
+        val lines = normalized.lines()
+        val markerIndex = lines.indexOfFirst { line ->
+            LATEST_COMMIT_HEADING_REGEX.matches(line.trim())
+        }
+        if (markerIndex < 0) return NormalizedReleaseContent("", normalized)
+
+        val titleIndex = (markerIndex + 1 until lines.size).firstOrNull { index ->
+            val line = lines[index].trim()
+            line.isNotEmpty() && !THEMATIC_BREAK_REGEX.matches(line)
+        }
+        if (titleIndex == null) {
+            val summary = (lines.take(markerIndex) + lines.drop(markerIndex + 1))
+                .joinToString("\n")
+                .replace(EXCESS_BLANK_LINES_REGEX, "\n\n")
+                .trim()
+            return NormalizedReleaseContent("", summary)
+        }
+
+        val title = lines[titleIndex].trim().replace(HEADING_PREFIX_REGEX, "").trim()
+        val summary = (lines.take(markerIndex) + lines.drop(titleIndex + 1))
+            .joinToString("\n")
+            .replace(EXCESS_BLANK_LINES_REGEX, "\n\n")
+            .trim()
+        return NormalizedReleaseContent(title, summary)
+    }
+
     private fun parseReleaseVersion(tagName: String): List<Int>? {
         val match = Regex("^v(\\d+\\.\\d+\\.\\d+)$").matchEntire(tagName.trim())
             ?: return null
@@ -130,4 +166,10 @@ object ChangelogData {
     )
     private val DETAILS_CLOSE_REGEX = Regex("</details\\s*>", RegexOption.IGNORE_CASE)
     private val EXCESS_BLANK_LINES_REGEX = Regex("\\n[\\t ]*\\n(?:[\\t ]*\\n)+")
+    private val LATEST_COMMIT_HEADING_REGEX = Regex(
+        "^#{1,6}\\s*(?:最新提交|latest\\s+commit)\\s*$",
+        RegexOption.IGNORE_CASE
+    )
+    private val THEMATIC_BREAK_REGEX = Regex("^(?:-{3,}|_{3,}|\\*{3,})$")
+    private val HEADING_PREFIX_REGEX = Regex("^#{1,6}\\s+")
 }

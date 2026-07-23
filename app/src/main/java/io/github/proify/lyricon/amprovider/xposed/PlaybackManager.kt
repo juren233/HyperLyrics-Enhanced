@@ -60,6 +60,18 @@ object PlaybackManager {
         }
     }
 
+    fun onCatalogMetadataResolved(id: String) {
+        if (id != currentSongId) return
+        val resolvedSong = SongRepository.getSong(id)
+        val mergedSong = mergeCatalogMetadata(lastSong, resolvedSong)
+        ProviderLogger.info(
+            "PlaybackManager: Catalog metadata ready for current song $id, " +
+                "resolvedLines=${resolvedSong.lyrics?.size ?: 0}, " +
+                "publishedLines=${mergedSong.lyrics?.size ?: 0}."
+        )
+        setSong(mergedSong)
+    }
+
     /**
      * 当 Hook 捕获到歌词构建完成时调用
      */
@@ -95,6 +107,23 @@ object PlaybackManager {
     }
 
     private var lastSong: Song? = null
+
+    internal fun mergeCatalogMetadata(currentSong: Song?, resolvedSong: Song): Song {
+        val currentLyrics = currentSong
+            ?.takeIf { it.id == resolvedSong.id }
+            ?.lyrics
+            ?.takeIf { it.isNotEmpty() }
+        if (!resolvedSong.lyrics.isNullOrEmpty() || currentLyrics == null) return resolvedSong
+
+        return resolvedSong.copy(
+            name = resolvedSong.name ?: currentSong.name,
+            artist = resolvedSong.artist ?: currentSong.artist,
+            duration = resolvedSong.duration.takeIf { it > 0L } ?: currentSong.duration,
+            metadata = resolvedSong.metadata ?: currentSong.metadata,
+            lyrics = currentLyrics
+        )
+    }
+
     private fun setSong(song: Song?) {
         lastSong = song
         val sent = player?.setSong(song) ?: false

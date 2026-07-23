@@ -18,11 +18,38 @@ internal fun shouldPromoteNextLinePreview(
     wasPreview: Boolean,
     currentMainText: String?,
     previewText: String?,
-    nextMainText: String?
+    nextMainText: String?,
+    lineAdvanced: Boolean
 ): Boolean = wasPreview &&
     currentMainText != null &&
-    currentMainText != nextMainText &&
+    lineAdvanced &&
     previewText == nextMainText
+
+internal fun hasLyricLineAdvanced(
+    previousLine: IRichLyricLine?,
+    targetLine: IRichLyricLine?
+): Boolean = previousLine != null && targetLine != null && (
+    previousLine.begin != targetLine.begin ||
+        previousLine.end != targetLine.end ||
+        previousLine.duration != targetLine.duration
+    )
+
+internal fun canAnimateNextLinePromotion(
+    wasPreview: Boolean,
+    currentMainText: String?,
+    previewText: String?,
+    nextMainText: String?,
+    lineAdvanced: Boolean,
+    attached: Boolean,
+    mainHeight: Int,
+    secondaryHeight: Int
+): Boolean = shouldPromoteNextLinePreview(
+    wasPreview = wasPreview,
+    currentMainText = currentMainText,
+    previewText = previewText,
+    nextMainText = nextMainText,
+    lineAdvanced = lineAdvanced
+) && attached && mainHeight > 0 && secondaryHeight > 0
 
 internal class LyricLineAssembler(
     private var displayTranslation: Boolean = true,

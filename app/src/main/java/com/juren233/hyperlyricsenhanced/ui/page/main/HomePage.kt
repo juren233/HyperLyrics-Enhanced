@@ -36,6 +36,9 @@ fun HomePage(
     onRemoveFocusWhitelistToggle: (Boolean) -> Unit,
     removeIslandWhitelist: Boolean,
     onRemoveIslandWhitelistToggle: (Boolean) -> Unit,
+    appleMusicContentUiLanguage: Int,
+    appleMusicContentUiLanguageOptions: List<String>,
+    onAppleMusicContentUiLanguageChange: (Int) -> Unit,
     onAppSettingsClick: () -> Unit,
 ) {
     val backdrop = rememberBlurBackdrop()
@@ -86,6 +89,9 @@ fun HomePage(
                     onRemoveFocusWhitelistToggle = onRemoveFocusWhitelistToggle,
                     removeIslandWhitelist = removeIslandWhitelist,
                     onRemoveIslandWhitelistToggle = onRemoveIslandWhitelistToggle,
+                    appleMusicContentUiLanguage = appleMusicContentUiLanguage,
+                    appleMusicContentUiLanguageOptions = appleMusicContentUiLanguageOptions,
+                    onAppleMusicContentUiLanguageChange = onAppleMusicContentUiLanguageChange,
                     onAppSettingsClick = onAppSettingsClick,
                 )
             }

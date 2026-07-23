@@ -21,11 +21,25 @@ fun AppleSong.toSong(): Song = AppleSongMapper.map(this)
 object AppleSongMapper {
 
     fun map(song: AppleSong): Song {
+        val metadataEntries = buildList {
+            song.genre?.takeIf { it.isNotBlank() }?.let {
+                add(LyricMetadataKeys.APPLE_CATALOG_GENRE to it)
+            }
+            song.originalTitle?.takeIf { it.isNotBlank() }?.let {
+                add(LyricMetadataKeys.APPLE_ORIGINAL_TITLE to it)
+            }
+            song.originalArtist?.takeIf { it.isNotBlank() }?.let {
+                add(LyricMetadataKeys.APPLE_ORIGINAL_ARTIST to it)
+            }
+        }
         return Song(
             id = song.adamId,
             name = song.name,
             artist = song.artist,
             duration = song.duration.toLong(),
+            metadata = metadataEntries
+                .takeIf { it.isNotEmpty() }
+                ?.let { lyricMetadataOf(*it.toTypedArray()) },
             lyrics = convertLyrics(song.lyrics, song.agents)
         )
     }

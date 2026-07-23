@@ -8,6 +8,7 @@ import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.common.lyric.LyricMetadataKeys
 import com.juren233.hyperlyricsenhanced.common.lyric.RichLyricLineSplitter
 import com.juren233.hyperlyricsenhanced.common.media.MediaMetadataHelper
+import com.juren233.hyperlyricsenhanced.lyric.model.LyricWord
 import com.juren233.hyperlyricsenhanced.lyric.model.RichLyricLine
 import com.juren233.hyperlyricsenhanced.lyric.model.lyricMetadataOf
 import com.juren233.hyperlyricsenhanced.lyric.model.interfaces.IRichLyricLine
@@ -16,7 +17,9 @@ import com.juren233.hyperlyricsenhanced.lyric.view.METADATA_NEXT_LINE_PREVIEW_AL
 import com.juren233.hyperlyricsenhanced.lyric.view.METADATA_NEXT_LINE_PREVIEW_CENTERED
 import com.juren233.hyperlyricsenhanced.lyric.view.RichLyricLineView
 import com.juren233.hyperlyricsenhanced.lyric.view.SpaceGateRichLyricLineView
+import com.juren233.hyperlyricsenhanced.lyric.view.isTitleLine
 import com.juren233.hyperlyricsenhanced.lyric.view.yoyo.YoYoPresets
+import com.juren233.hyperlyricsenhanced.lyric.view.yoyo.animateEntrance
 import com.juren233.hyperlyricsenhanced.lyric.view.yoyo.animateUpdate
 import com.juren233.hyperlyricsenhanced.root.LyriconDataBridge
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
@@ -28,6 +31,18 @@ import java.util.WeakHashMap
 internal object IslandSlotContentAssembler {
     private val lastContentSignatures = WeakHashMap<View, String>()
     private val lastStyleSignatures = WeakHashMap<View, String>()
+    // Keep this across global refreshes so delayed fallback lyrics can detect the prior placeholder state.
+    private val lastLyricAvailability = WeakHashMap<View, LyricAvailability>()
+
+    private data class LyricAvailability(
+        val songVersion: Int,
+        val hasLyrics: Boolean
+    )
+
+    internal data class LyricDisplayOptions(
+        val showTranslation: Boolean,
+        val showRoma: Boolean
+    )
 
     fun invalidate(view: View? = null) {
         if (view == null) {
@@ -37,6 +52,7 @@ internal object IslandSlotContentAssembler {
         }
         synchronized(lastContentSignatures) { lastContentSignatures.remove(view) }
         synchronized(lastStyleSignatures) { lastStyleSignatures.remove(view) }
+        synchronized(lastLyricAvailability) { lastLyricAvailability.remove(view) }
     }
 
     fun configureView(
@@ -47,9 +63,7 @@ internal object IslandSlotContentAssembler {
         mediaInfo: MediaMetadataHelper.MediaInfo = currentMediaInfo(view.context),
         force: Boolean = false
     ) {
-        val nextLinePreview = isNextLinePreviewEnabled(prefs, config)
-        val disableAll = TranslationHelper.isTranslationDisabled(prefs) || nextLinePreview
-        val translationOnly = TranslationHelper.isTranslationOnly(prefs)
+        applyDynamicDisplayOptions(view, prefs, config)
         val lyricSong = LyriconDataBridge.currentSong
         val lyricTitle = lyricSong?.name?.takeIf { it.isNotBlank() }
             ?: LyriconDataBridge.currentSongName?.takeIf { it.isNotBlank() }
@@ -73,7 +87,7 @@ internal object IslandSlotContentAssembler {
             mediaInfo.title,
             mediaInfo.artist,
             mediaInfo.album,
-            albumBitmap?.generationId ?: 0
+            albumBitmap?.let(CoverColorHelper::artworkContentKey) ?: 0
         ).joinToString("|")
 
         if (!force && lastStyleSignatures[view] == signature) return
@@ -86,13 +100,9 @@ internal object IslandSlotContentAssembler {
         )
         when (view) {
             is RichLyricLineView -> {
-                view.displayTranslation = !disableAll
-                view.displayRoma = !disableAll && !translationOnly
                 view.setStyle(style)
             }
             is SpaceGateRichLyricLineView -> {
-                view.displayTranslation = !disableAll
-                view.displayRoma = !disableAll && !translationOnly
                 view.setStyle(style)
             }
         }
@@ -118,7 +128,7 @@ internal object IslandSlotContentAssembler {
         return if (mode == 7) {
             applyLyricContent(view, prefs, config, lineOverride, force, playbackActive, suppressAnimation)
         } else {
-            applyMetadataContent(view, config, mode, force, mediaInfo)
+            applyMetadataContent(view, config, mode, force, mediaInfo, suppressAnimation)
         }
     }
 
@@ -128,15 +138,67 @@ internal object IslandSlotContentAssembler {
         config: IslandSlotRuntimeConfig,
         lineOverride: IRichLyricLine?,
         playbackActive: Boolean = true
-    ): Boolean = applyLyricContent(
-        view = view,
-        prefs = prefs,
-        config = config,
-        lineOverride = lineOverride,
-        force = false,
-        playbackActive = playbackActive,
-        suppressAnimation = false
-    )
+    ): Boolean {
+        applyDynamicDisplayOptions(view, prefs, config)
+        return applyLyricContent(
+            view = view,
+            prefs = prefs,
+            config = config,
+            lineOverride = lineOverride,
+            force = false,
+            playbackActive = playbackActive,
+            suppressAnimation = false
+        )
+    }
+
+    fun applyNextSongPreviewContent(
+        view: View,
+        prefs: SharedPreferences,
+        config: IslandSlotRuntimeConfig,
+        isLeft: Boolean,
+        nextSong: MediaMetadataHelper.MediaInfo,
+        label: String,
+        playbackActive: Boolean = true
+    ): Boolean {
+        configureView(view, prefs, config, mode = 5, force = true)
+        val line = if (isLeft) {
+            RichLyricLine(text = label, words = emptyList())
+        } else {
+            RichLyricLine(
+                text = nextSong.title,
+                words = emptyList(),
+                secondary = nextSong.artist,
+                secondaryWords = emptyList()
+            )
+        }
+        val signature = listOf(
+            "next-song",
+            isLeft,
+            nextSong.title,
+            nextSong.artist,
+            config.styleSignature
+        ).joinToString("|")
+        val contentChanged = hasViewLineContentChanged(view, line)
+        if (lastContentSignatures[view] == signature && !contentChanged) return false
+
+        applyContentUpdate(view, config, contentChanged = contentChanged) { target ->
+            applyLineCentering(target, config.centerLyric)
+            when (target) {
+                is RichLyricLineView -> {
+                    target.line = line
+                    target.setPlaybackActive(playbackActive)
+                    if (!isLeft) applyMetadataMarquee(target, config, force = true)
+                }
+                is SpaceGateRichLyricLineView -> {
+                    target.line = line
+                    target.setPlaybackActive(playbackActive)
+                    if (!isLeft) applyMetadataMarquee(target, config, force = true)
+                }
+            }
+        }
+        lastContentSignatures[view] = signature
+        return true
+    }
 
     fun buildAdjacentTranslationLine(
         prefs: SharedPreferences,
@@ -175,7 +237,33 @@ internal object IslandSlotContentAssembler {
             text = mainTranslation,
             words = emptyList(),
             secondary = backgroundTranslation,
-            secondaryWords = emptyList()
+            secondaryWords = buildBackgroundTranslationWords(source, backgroundTranslation)
+        )
+    }
+
+    internal fun buildBackgroundTranslationWords(
+        source: IRichLyricLine,
+        translation: String
+    ): List<LyricWord> {
+        val timedWords = source.secondaryWords.orEmpty().mapNotNull { word ->
+            val end = when {
+                word.end > word.begin -> word.end
+                word.duration > 0L -> word.begin + word.duration
+                else -> return@mapNotNull null
+            }
+            if (word.begin < 0L || end <= word.begin) return@mapNotNull null
+            word.begin to end
+        }
+        if (timedWords.isEmpty()) return emptyList()
+        val begin = timedWords.minOf { it.first }
+        val end = timedWords.maxOf { it.second }
+        return listOf(
+            LyricWord(
+                text = translation,
+                begin = begin,
+                end = end,
+                duration = end - begin
+            )
         )
     }
 
@@ -260,7 +348,9 @@ internal object IslandSlotContentAssembler {
             centerCurrentLine
         }
         val signature = "lyric|${lineContentSignature(targetLine)}|${config.styleSignature}"
-        if (!force && lastContentSignatures[view] == signature) {
+        val contentChanged = hasViewLineContentChanged(view, targetLine)
+        val lyricsJustBecameAvailable = recordLyricAvailability(view, targetLine)
+        if (!force && lastContentSignatures[view] == signature && !contentChanged) {
             applyLineCentering(view, centerCurrentLine, centerSecondaryLine)
             applyPlaybackActive(view, playbackActive)
             return false
@@ -282,26 +372,23 @@ internal object IslandSlotContentAssembler {
             }
         }
 
-        val hasDisplayedNextLinePreview = when (view) {
-            is RichLyricLineView -> view.isShowingNextLinePreview
-            is SpaceGateRichLyricLineView -> view.isShowingNextLinePreview
+        val willAnimateNextLinePromotion = when (view) {
+            is RichLyricLineView -> view.willAnimateNextLinePromotion(targetLine)
+            is SpaceGateRichLyricLineView -> view.willAnimateNextLinePromotion(targetLine)
             else -> false
         }
         val suppressContentAnimation = suppressAnimation ||
-            isNextLinePreviewEnabled(prefs, config) ||
-            hasDisplayedNextLinePreview ||
+            (willAnimateNextLinePromotion && !lyricsJustBecameAvailable) ||
             view.parent == null ||
             !view.isAttachedToWindow
-        if (config.lyricAnimationEnabled && !suppressContentAnimation) {
-            val preset = YoYoPresets.getById(config.lyricAnimationId) ?: YoYoPresets.Default
-            when (view) {
-                is RichLyricLineView -> view.animateUpdate(preset) { applyLine(this) }
-                is SpaceGateRichLyricLineView -> view.animateUpdate(preset) { applyLine(this) }
-                else -> applyLine(view)
-            }
-        } else {
-            applyLine(view)
-        }
+        applyContentUpdate(
+            view = view,
+            config = config,
+            suppressAnimation = suppressContentAnimation,
+            contentChanged = contentChanged,
+            entranceOnly = lyricsJustBecameAvailable,
+            update = applyLine
+        )
         lastContentSignatures[view] = signature
         return true
     }
@@ -311,7 +398,8 @@ internal object IslandSlotContentAssembler {
         config: IslandSlotRuntimeConfig,
         mode: Int,
         force: Boolean,
-        mediaInfo: MediaMetadataHelper.MediaInfo
+        mediaInfo: MediaMetadataHelper.MediaInfo,
+        suppressAnimation: Boolean
     ): Boolean {
         val songName = LyriconDataBridge.currentSongName?.takeIf { it.isNotEmpty() } ?: mediaInfo.title
         val artistName = mediaInfo.artist
@@ -329,8 +417,6 @@ internal object IslandSlotContentAssembler {
             config.metadataMarqueeLoopDelay,
             config.metadataMarqueeInfinite
         ).joinToString("|")
-        if (!force && lastContentSignatures[view] == signature) return false
-
         val singleModeText = when (mode) {
             1 -> songName
             2 -> artistName
@@ -347,22 +433,66 @@ internal object IslandSlotContentAssembler {
             }
             else -> null
         }
+        val contentChanged = hasViewLineContentChanged(view, newLine)
+        if (!force && lastContentSignatures[view] == signature && !contentChanged) return false
 
-        applyLineCentering(view, config.centerLyric)
-
-        when (view) {
-            is RichLyricLineView -> {
-                view.line = newLine
-                applyMetadataMarquee(view, config)
-            }
-            is SpaceGateRichLyricLineView -> {
-                view.line = newLine
-                applyMetadataMarquee(view, config)
+        applyContentUpdate(view, config, suppressAnimation, contentChanged) { target ->
+            applyLineCentering(target, config.centerLyric)
+            when (target) {
+                is RichLyricLineView -> {
+                    target.line = newLine
+                    applyMetadataMarquee(target, config)
+                }
+                is SpaceGateRichLyricLineView -> {
+                    target.line = newLine
+                    applyMetadataMarquee(target, config)
+                }
             }
         }
         lastContentSignatures[view] = signature
         return true
     }
+
+    private fun applyContentUpdate(
+        view: View,
+        config: IslandSlotRuntimeConfig,
+        suppressAnimation: Boolean = false,
+        contentChanged: Boolean = true,
+        entranceOnly: Boolean = false,
+        update: (View) -> Unit
+    ) {
+        val shouldAnimate = shouldAnimateContentUpdate(
+            animationEnabled = config.lyricAnimationEnabled,
+            suppressAnimation = suppressAnimation,
+            contentChanged = contentChanged,
+            attached = view.parent != null && view.isAttachedToWindow
+        )
+        if (!shouldAnimate) {
+            update(view)
+            return
+        }
+        val preset = YoYoPresets.getById(config.lyricAnimationId) ?: YoYoPresets.Default
+        when (view) {
+            is RichLyricLineView -> if (entranceOnly) {
+                view.animateEntrance(preset) { update(this) }
+            } else {
+                view.animateUpdate(preset) { update(this) }
+            }
+            is SpaceGateRichLyricLineView -> if (entranceOnly) {
+                view.animateEntrance(preset) { update(this) }
+            } else {
+                view.animateUpdate(preset) { update(this) }
+            }
+            else -> update(view)
+        }
+    }
+
+    internal fun shouldAnimateContentUpdate(
+        animationEnabled: Boolean,
+        suppressAnimation: Boolean,
+        contentChanged: Boolean,
+        attached: Boolean
+    ): Boolean = animationEnabled && !suppressAnimation && contentChanged && attached
 
     private fun applyPlaybackActive(view: View, playbackActive: Boolean) {
         when (view) {
@@ -371,8 +501,40 @@ internal object IslandSlotContentAssembler {
         }
     }
 
-    private fun applyMetadataMarquee(view: RichLyricLineView, config: IslandSlotRuntimeConfig) {
-        if (!config.metadataMarqueeEnabled) return
+    private fun applyDynamicDisplayOptions(
+        view: View,
+        prefs: SharedPreferences,
+        config: IslandSlotRuntimeConfig
+    ) {
+        val options = resolveLyricDisplayOptions(
+            translationDisabled = TranslationHelper.isTranslationDisabled(prefs),
+            translationOnly = TranslationHelper.isTranslationOnly(prefs),
+            nextLinePreview = isNextLinePreviewEnabled(prefs, config)
+        )
+        when (view) {
+            is RichLyricLineView -> view.setDisplayOptions(options.showTranslation, options.showRoma)
+            is SpaceGateRichLyricLineView -> view.setDisplayOptions(options.showTranslation, options.showRoma)
+        }
+    }
+
+    internal fun resolveLyricDisplayOptions(
+        translationDisabled: Boolean,
+        translationOnly: Boolean,
+        nextLinePreview: Boolean
+    ): LyricDisplayOptions {
+        val hideSecondaryContent = translationDisabled || nextLinePreview
+        return LyricDisplayOptions(
+            showTranslation = !hideSecondaryContent,
+            showRoma = !hideSecondaryContent && !translationOnly
+        )
+    }
+
+    private fun applyMetadataMarquee(
+        view: RichLyricLineView,
+        config: IslandSlotRuntimeConfig,
+        force: Boolean = false
+    ) {
+        if (!force && !config.metadataMarqueeEnabled) return
         view.setMetadataMarqueeConfig(
             config.metadataMarqueeSpeed.toFloat(),
             config.metadataMarqueeDelay,
@@ -383,8 +545,12 @@ internal object IslandSlotContentAssembler {
         view.post { view.requestStartMarquee() }
     }
 
-    private fun applyMetadataMarquee(view: SpaceGateRichLyricLineView, config: IslandSlotRuntimeConfig) {
-        if (!config.metadataMarqueeEnabled) return
+    private fun applyMetadataMarquee(
+        view: SpaceGateRichLyricLineView,
+        config: IslandSlotRuntimeConfig,
+        force: Boolean = false
+    ) {
+        if (!force && !config.metadataMarqueeEnabled) return
         view.setMetadataMarqueeConfig(
             config.metadataMarqueeSpeed.toFloat(),
             config.metadataMarqueeDelay,
@@ -417,6 +583,60 @@ internal object IslandSlotContentAssembler {
             line.metadata
         ).hashCode()
     }
+
+    private fun hasViewLineContentChanged(view: View, targetLine: IRichLyricLine?): Boolean {
+        val currentLine = when (view) {
+            is RichLyricLineView -> view.line
+            is SpaceGateRichLyricLineView -> view.line
+            else -> null
+        }
+        return hasLineContentChanged(currentLine, targetLine)
+    }
+
+    private fun recordLyricAvailability(view: View, targetLine: IRichLyricLine?): Boolean {
+        val songVersion = LyriconDataBridge.versionCounter.get()
+        val hasLyrics = isActualLyricAvailable(
+            sourceLine = LyriconDataBridge.currentLyricLine,
+            targetLine = targetLine
+        )
+        val previousAvailability = synchronized(lastLyricAvailability) {
+            val previous = lastLyricAvailability[view]
+            val availability = when {
+                previous?.songVersion == songVersion -> previous.hasLyrics
+                previous?.hasLyrics == false -> false
+                else -> null
+            }
+            lastLyricAvailability[view] = LyricAvailability(songVersion, hasLyrics)
+            availability
+        }
+        return previousAvailability == false && hasLyrics
+    }
+
+    internal fun isActualLyricAvailable(
+        sourceLine: IRichLyricLine?,
+        targetLine: IRichLyricLine?
+    ): Boolean = hasVisibleLyricContent(sourceLine) && hasVisibleLyricContent(targetLine)
+
+    internal fun hasLineContentChanged(
+        currentLine: IRichLyricLine?,
+        targetLine: IRichLyricLine?
+    ): Boolean = lineContentSignature(currentLine) != lineContentSignature(targetLine)
+
+    internal fun isEmptyToPopulatedLyricTransition(
+        currentLine: IRichLyricLine?,
+        targetLine: IRichLyricLine?
+    ): Boolean = !hasVisibleLyricContent(currentLine) && hasVisibleLyricContent(targetLine)
+
+    private fun hasVisibleLyricContent(line: IRichLyricLine?): Boolean =
+        line?.isTitleLine() != true && (
+            !line?.text.isNullOrBlank() ||
+            !line?.words.isNullOrEmpty() ||
+            !line?.secondary.isNullOrBlank() ||
+            !line?.secondaryWords.isNullOrEmpty() ||
+            !line?.translation.isNullOrBlank() ||
+            !line?.translationWords.isNullOrEmpty() ||
+            !line?.roma.isNullOrBlank()
+        )
 
     private fun shouldCenterLine(
         config: IslandSlotRuntimeConfig,

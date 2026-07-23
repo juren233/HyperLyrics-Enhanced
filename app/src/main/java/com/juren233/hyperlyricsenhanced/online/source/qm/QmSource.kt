@@ -71,14 +71,14 @@ class QmSource(
                     ""
                 }
                 SongSearchResult(
-                    id = item.id,
+                    id = item.id.toString(),
                     title = item.title,
                     artist = singerList.joinToString(separator),
                     album = item.album.name,
                     duration = item.interval * 1000L,
                     source = Source.QM,
                     date = item.timePublic ?: "",
-                    trackerNumber = item.trackerNumber,
+                    trackerNumber = item.trackerNumber.toString(),
                     picUrl = picUrl
                 )
             }

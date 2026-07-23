@@ -7,9 +7,12 @@
 package io.github.proify.lyricon.amprovider.xposed
 
 import com.juren233.hyperlyricsenhanced.BuildConfig
+import com.juren233.hyperlyricsenhanced.common.lyric.LyricMetadataKeys
 import io.github.proify.lyricon.amprovider.xposed.parser.AppleSongParser
+import io.github.proify.lyricon.amprovider.xposed.model.AppleSong
 import io.github.proify.lyricon.amprovider.xposed.util.toSong
 import io.github.proify.lyricon.lyric.model.Song
+import io.github.proify.lyricon.lyric.model.lyricMetadataOf
 
 object SongRepository {
 
@@ -21,7 +24,7 @@ object SongRepository {
         // 1. 尝试从磁盘缓存读取
         val cache = DiskSongManager.load(id)
         if (cache != null) {
-            return cache.toSong()
+            return cache.applyCurrentMetadata().toSong()
         }
 
         // 2. 缓存未命中，从 Metadata 生成占位符（只有标题/歌手，无歌词）
@@ -30,7 +33,8 @@ object SongRepository {
             id = id,
             name = metadata?.title,
             artist = metadata?.artist,
-            duration = metadata?.duration ?: 0L
+            duration = metadata?.duration ?: 0L,
+            metadata = metadata?.toLyricMetadata()
         )
     }
 
@@ -50,7 +54,23 @@ object SongRepository {
                     "translatedBackgroundLines=${song.lyrics.count { !it.htmlTranslatedBackgroundVocalsLineText.isNullOrBlank() }}"
             )
         }
-        DiskSongManager.save(song)
-        return song.toSong()
+        val songWithMetadata = song.applyCurrentMetadata()
+        DiskSongManager.save(songWithMetadata)
+        return songWithMetadata.toSong()
     }
+
+    private fun AppleSong.applyCurrentMetadata(): AppleSong = apply {
+        val metadata = adamId?.let(MediaMetadataCache::getMetadataById) ?: return@apply
+        name = metadata.title
+        artist = metadata.artist
+        genre = metadata.genre
+        originalTitle = metadata.originalTitle
+        originalArtist = metadata.originalArtist
+    }
+
+    private fun MediaMetadataCache.Metadata.toLyricMetadata() = lyricMetadataOf(
+        LyricMetadataKeys.APPLE_CATALOG_GENRE to genre,
+        LyricMetadataKeys.APPLE_ORIGINAL_TITLE to originalTitle,
+        LyricMetadataKeys.APPLE_ORIGINAL_ARTIST to originalArtist
+    )
 }

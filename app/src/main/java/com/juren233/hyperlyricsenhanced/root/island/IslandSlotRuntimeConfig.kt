@@ -18,6 +18,8 @@ internal data class IslandSlotRuntimeConfig(
     val leftMaxWidthDp: Int,
     val rightMaxWidthDp: Int,
     val pauseBehavior: Int,
+    val forceNextSongAtEnd: Boolean,
+    val nextSongDurationSeconds: Int,
     val textSizeSp: Int,
     val textSizeRatio: Float,
     val fontWeight: Int,
@@ -90,6 +92,8 @@ internal data class IslandSlotRuntimeConfig(
         nextLyricLine,
         autoSwitchTranslation,
         adjacentBackgroundTranslation,
+        forceNextSongAtEnd,
+        nextSongDurationSeconds,
         extractCoverTextColor,
         extractCoverTextGradient,
         customFontPath,
@@ -111,18 +115,24 @@ internal data class IslandSlotRuntimeConfig(
         get() = AdjacentTranslationPolicy.targetIsLeft(leftMode, rightMode)
 
     val shouldInjectLeft: Boolean
-        get() = leftMode != 0 || (
+        get() = nextSongPreviewEnabled || leftMode != 0 || (
             adjacentBackgroundTranslation &&
                 supportsAdjacentBackgroundTranslation &&
                 adjacentTranslationTargetIsLeft == true
             )
 
     val shouldInjectRight: Boolean
-        get() = rightMode != 0 || (
+        get() = nextSongPreviewEnabled || rightMode != 0 || (
             adjacentBackgroundTranslation &&
                 supportsAdjacentBackgroundTranslation &&
                 adjacentTranslationTargetIsLeft == false
             )
+
+    val nextSongPreviewEnabled: Boolean
+        get() = nextSongDurationSeconds > 0
+
+    val nextSongDurationMs: Long
+        get() = nextSongDurationSeconds * 1_000L
 
     fun isLeftTag(tag: String): Boolean {
         return tag == IslandProbeUtils.LEFT_TEST_VIEW_TAG
@@ -174,6 +184,14 @@ internal data class IslandSlotRuntimeConfig(
                 leftMaxWidthDp = prefs.getInt(RootConstants.KEY_HOOK_ISLAND_LEFT_CONTENT_MAX_WIDTH, RootConstants.DEFAULT_HOOK_ISLAND_LEFT_CONTENT_MAX_WIDTH),
                 rightMaxWidthDp = prefs.getInt(RootConstants.KEY_HOOK_ISLAND_RIGHT_CONTENT_MAX_WIDTH, RootConstants.DEFAULT_HOOK_ISLAND_RIGHT_CONTENT_MAX_WIDTH),
                 pauseBehavior = prefs.getInt(RootConstants.KEY_HOOK_ISLAND_BEHAVIOR_AFTER_PAUSE, RootConstants.DEFAULT_HOOK_ISLAND_BEHAVIOR_AFTER_PAUSE),
+                forceNextSongAtEnd = prefs.getBoolean(
+                    RootConstants.KEY_HOOK_ISLAND_FORCE_NEXT_SONG_AT_END,
+                    RootConstants.DEFAULT_HOOK_ISLAND_FORCE_NEXT_SONG_AT_END
+                ),
+                nextSongDurationSeconds = prefs.getInt(
+                    RootConstants.KEY_HOOK_ISLAND_NEXT_SONG_DURATION,
+                    RootConstants.DEFAULT_HOOK_ISLAND_NEXT_SONG_DURATION
+                ).coerceIn(0, 5),
                 textSizeSp = prefs.getInt(RootConstants.KEY_HOOK_TEXT_SIZE, RootConstants.DEFAULT_HOOK_TEXT_SIZE),
                 textSizeRatio = prefs.getFloat(RootConstants.KEY_HOOK_TEXT_SIZE_RATIO, RootConstants.DEFAULT_HOOK_TEXT_SIZE_RATIO),
                 fontWeight = prefs.getInt(RootConstants.KEY_HOOK_FONT_WEIGHT, RootConstants.DEFAULT_HOOK_FONT_WEIGHT),

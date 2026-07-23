@@ -83,6 +83,12 @@ internal object AppleReflection {
         return field.get(instance)
     }
 
+    fun setField(instance: Any, name: String, value: Any?) {
+        val field = findField(instance.javaClass, name)
+        field.isAccessible = true
+        field.set(instance, value)
+    }
+
     fun intField(instance: Any, name: String): Int {
         val field = findField(instance.javaClass, name)
         field.isAccessible = true

@@ -70,7 +70,8 @@ class LyricLineAssemblerTest {
                 wasPreview = true,
                 currentMainText = "Current",
                 previewText = "Next",
-                nextMainText = "Next"
+                nextMainText = "Next",
+                lineAdvanced = true
             )
         )
         assertFalse(
@@ -78,7 +79,90 @@ class LyricLineAssemblerTest {
                 wasPreview = true,
                 currentMainText = "Current",
                 previewText = "Different",
-                nextMainText = "Next"
+                nextMainText = "Next",
+                lineAdvanced = true
+            )
+        )
+    }
+
+    @Test
+    fun `identical consecutive lyrics still promote when the timeline advances`() {
+        val previous = RichLyricLine(begin = 1_000, end = 2_000, text = "Again")
+        val target = RichLyricLine(begin = 2_000, end = 3_000, text = "Again")
+
+        assertTrue(hasLyricLineAdvanced(previous, target))
+        assertTrue(
+            shouldPromoteNextLinePreview(
+                wasPreview = true,
+                currentMainText = "Again",
+                previewText = "Again",
+                nextMainText = "Again",
+                lineAdvanced = hasLyricLineAdvanced(previous, target)
+            )
+        )
+    }
+
+    @Test
+    fun `same lyric refresh does not trigger preview promotion`() {
+        val previous = RichLyricLine(begin = 1_000, end = 2_000, text = "Again")
+        val target = RichLyricLine(begin = 1_000, end = 2_000, text = "Again")
+
+        assertFalse(hasLyricLineAdvanced(previous, target))
+        assertFalse(
+            shouldPromoteNextLinePreview(
+                wasPreview = true,
+                currentMainText = "Again",
+                previewText = "Again",
+                nextMainText = "Again",
+                lineAdvanced = hasLyricLineAdvanced(previous, target)
+            )
+        )
+    }
+
+    @Test
+    fun `interlude indicator uses outer transition instead of preview promotion`() {
+        assertFalse(
+            canAnimateNextLinePromotion(
+                wasPreview = true,
+                currentMainText = "Current lyric",
+                previewText = "Next lyric",
+                nextMainText = "•••",
+                lineAdvanced = true,
+                attached = true,
+                mainHeight = 40,
+                secondaryHeight = 24
+            )
+        )
+    }
+
+    @Test
+    fun `matching laid out preview uses internal promotion`() {
+        assertTrue(
+            canAnimateNextLinePromotion(
+                wasPreview = true,
+                currentMainText = "•••",
+                previewText = "Next lyric",
+                nextMainText = "Next lyric",
+                lineAdvanced = true,
+                attached = true,
+                mainHeight = 40,
+                secondaryHeight = 24
+            )
+        )
+    }
+
+    @Test
+    fun `unmeasured preview falls back to outer transition`() {
+        assertFalse(
+            canAnimateNextLinePromotion(
+                wasPreview = true,
+                currentMainText = "Current lyric",
+                previewText = "Next lyric",
+                nextMainText = "Next lyric",
+                lineAdvanced = true,
+                attached = true,
+                mainHeight = 0,
+                secondaryHeight = 0
             )
         )
     }

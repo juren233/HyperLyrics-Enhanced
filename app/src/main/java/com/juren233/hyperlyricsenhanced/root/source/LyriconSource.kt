@@ -5,6 +5,7 @@ import android.os.Handler
 import android.os.Looper
 import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.common.RootConstants
+import com.juren233.hyperlyricsenhanced.common.lyric.LyricMetadataKeys
 import com.juren233.hyperlyricsenhanced.common.media.MediaMetadataHelper
 import com.juren233.hyperlyricsenhanced.lyric.model.Song as LocalSong
 import com.juren233.hyperlyricsenhanced.lyric.source.LyricSink
@@ -243,6 +244,14 @@ class LyriconSource : LyricSource {
         )
         val previousSong = currentAppleSong
         val sameTrack = previousSong != null && song != null && isSameTrack(previousSong, song)
+        val preservesCurrentLyrics = previousSong != null && song != null &&
+            AppleSongUpdatePolicy.shouldPreserveCurrentLyrics(previousSong, song, sameTrack)
+        if (preservesCurrentLyrics) {
+            debug("忽略同一首歌的空歌词降级: title=${song.name}")
+            return
+        }
+        val originalMetadataChanged = sameTrack &&
+            AppleOnlineTranslationRequestPolicy.originalMetadataChanged(previousSong, song)
         val repeatedEmptySong = sameTrack && song.lyrics.isNullOrEmpty() &&
             (fallbackSongActive || fallbackDelayRunnable != null || fallbackJob?.isActive == true)
         if (repeatedEmptySong) {
@@ -254,6 +263,7 @@ class LyriconSource : LyricSource {
         val repeatedNativeWithoutTranslation = sameTrack &&
             !song.lyrics.isNullOrEmpty() &&
             !hasTranslation(song) &&
+            !originalMetadataChanged &&
             (onlineTranslationJob?.isActive == true || onlineMatchedTranslationActive)
         if (repeatedNativeWithoutTranslation) {
             currentAppleSong = song
@@ -264,7 +274,7 @@ class LyriconSource : LyricSource {
         cancelFallback(clearAppleSong = false, reason = "apple_song_updated")
         val incomingHasTranslation = hasTranslation(song)
         cancelOnlineTranslation(
-            clearAttempt = !sameTrack || incomingHasTranslation,
+            clearAttempt = !sameTrack || incomingHasTranslation || originalMetadataChanged,
             clearMatched = true,
             reason = "apple_song_updated"
         )
@@ -278,6 +288,13 @@ class LyriconSource : LyricSource {
         if (song != null && !song.lyrics.isNullOrEmpty() && !incomingHasTranslation &&
             isOnlineTranslationMatchEnabled()
         ) {
+            if (originalMetadataChanged) {
+                HookLogger.i(
+                    TAG,
+                    "Apple Music 原名已更新，重新匹配在线翻译: " +
+                        "title=${song.name}, originalTitle=${song.metadata?.getString(LyricMetadataKeys.APPLE_ORIGINAL_TITLE)}"
+                )
+            }
             scheduleOnlineTranslation(song)
         }
         runCatching {
@@ -339,6 +356,10 @@ class LyriconSource : LyricSource {
                             title = baseSong.name.orEmpty(),
                             artist = baseSong.artist.orEmpty(),
                             durationMs = baseSong.duration,
+                            originalTitle = baseSong.metadata
+                                ?.getString(LyricMetadataKeys.APPLE_ORIGINAL_TITLE),
+                            originalArtist = baseSong.metadata
+                                ?.getString(LyricMetadataKeys.APPLE_ORIGINAL_ARTIST),
                             preferredSource = preferredSource
                         )
                         val fallbackSong = lines?.let {
@@ -496,6 +517,11 @@ class LyriconSource : LyricSource {
                         "preferred=$preferredSource, selected=${selected?.source}, " +
                         "compared=${alternativeCandidate != null}"
                     )
+                    HookLogger.i(
+                        TAG,
+                        "Apple Music 在线翻译来源选择: title=${baseSong.name}, " +
+                            "selected=${selected?.source}, compared=${alternativeCandidate != null}"
+                    )
                     val selectedMatchedCount = selected?.result?.matchedCount ?: 0
                     if (mergedResult != null && mergedResult.matchedCount > selectedMatchedCount) {
                         diagnostic(
@@ -531,6 +557,10 @@ class LyriconSource : LyricSource {
             title = baseSong.name.orEmpty(),
             artist = baseSong.artist.orEmpty(),
             durationMs = baseSong.duration,
+            originalTitle = baseSong.metadata
+                ?.getString(LyricMetadataKeys.APPLE_ORIGINAL_TITLE),
+            originalArtist = baseSong.metadata
+                ?.getString(LyricMetadataKeys.APPLE_ORIGINAL_ARTIST),
             preferredSource = source,
             requireTranslation = true,
             fallbackToOtherSources = false
@@ -584,6 +614,7 @@ class LyriconSource : LyricSource {
         onlineTranslationJob = null
         if (result == null || result.matchedCount == 0) {
             diagnostic("Apple Music 在线翻译匹配未命中: title=${baseSong.name}")
+            HookLogger.i(TAG, "Apple Music 在线翻译匹配未命中: title=${baseSong.name}")
             if (!onlineMatchedTranslationActive) {
                 sink?.onOnlineTranslationUnavailable(nativeSong)
             }
@@ -592,6 +623,11 @@ class LyriconSource : LyricSource {
 
         onlineMatchedTranslationActive = true
         diagnostic(
+            "Apple Music 在线翻译匹配命中: title=${baseSong.name}, " +
+                "matched=${result.matchedCount}, total=${baseSong.lyrics.orEmpty().size}"
+        )
+        HookLogger.i(
+            TAG,
             "Apple Music 在线翻译匹配命中: title=${baseSong.name}, " +
                 "matched=${result.matchedCount}, total=${baseSong.lyrics.orEmpty().size}"
         )
@@ -662,6 +698,15 @@ class LyriconSource : LyricSource {
         lastObservedMediaKey = mediaKey
 
         val nativeSong = currentAppleSong
+        if (AppleSongUpdatePolicy.shouldIgnoreMediaSessionCandidate(
+                currentSong = nativeSong,
+                candidate = mediaSong,
+                currentHasNativeLyrics = currentAppleHasNativeLyrics
+            )
+        ) {
+            debug("忽略同一首歌的媒体会话空歌词占位: title=${media.title}")
+            return
+        }
         if (nativeSong != null && isSameTrack(nativeSong, mediaSong)) {
             val fallbackPending = fallbackDelayRunnable != null || fallbackJob?.isActive == true
             if (!currentAppleHasNativeLyrics && !fallbackPending && !fallbackSongActive) {
@@ -734,11 +779,8 @@ class LyriconSource : LyricSource {
         !it.translation.isNullOrBlank()
     } == true
 
-    private fun translationIdentity(song: LocalSong): String {
-        val id = song.id?.trim().orEmpty()
-        if (id.isNotEmpty()) return "id:$id"
-        return "${normalizeIdentity(song.name)}|${normalizeIdentity(song.artist)}"
-    }
+    private fun translationIdentity(song: LocalSong): String =
+        AppleOnlineTranslationRequestPolicy.attemptKey(song)
 
     private fun hasActiveCentralPlayer(): Boolean = activeCentralPlayerPackageName != null
 
