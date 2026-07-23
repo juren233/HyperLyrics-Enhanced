@@ -87,6 +87,8 @@ jobs:
 
       - name: 构建 Debug 与 Release Build Debug and Release
         if: steps.gate.outputs.skip != 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ./gradlew assembleDebug assembleRelease --build-cache
 
       - name: 上传构建产物 Upload Build Artifacts

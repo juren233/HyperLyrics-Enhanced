@@ -2,18 +2,71 @@ import groovy.json.JsonSlurper
 
 import javax.imageio.ImageIO
 
+def contributorFallback = [
+    [login: "juren233", name: "Cavan", html_url: "https://github.com/juren233", avatar_url: "https://github.com/juren233.png"],
+    [login: "limczhh", name: "lidesheng", html_url: "https://github.com/limczhh", avatar_url: "https://github.com/limczhh.png"],
+    [login: "zszf114514", name: "zszf114514", html_url: "https://github.com/zszf114514", avatar_url: "https://github.com/zszf114514.png"],
+]
+
 tasks.register("generateContributors") {
     doLast {
+        def jsonParser = new JsonSlurper()
+        def githubToken = System.getenv("GITHUB_TOKEN") ?: System.getenv("GH_TOKEN")
+        def githubApiUrl = (System.getenv("GITHUB_API_URL") ?: "https://api.github.com").replaceAll('/+$', '')
+        def fetchJson = { String url ->
+            def connection = new URL(url).openConnection()
+            connection.setConnectTimeout(15_000)
+            connection.setReadTimeout(15_000)
+            connection.setRequestProperty("Accept", "application/vnd.github+json")
+            connection.setRequestProperty("User-Agent", "HyperLyrics-Enhanced-Gradle")
+            if (githubToken) {
+                connection.setRequestProperty("Authorization", "Bearer ${githubToken}")
+                connection.setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
+            }
+            connection.inputStream.withReader("UTF-8") { reader ->
+                jsonParser.parseText(reader.text)
+            }
+        }
+
+        def contributors
         try {
-            def url = new URL("https://api.github.com/repos/limczhh/HyperLyric/contributors")
-            def connection = url.openConnection()
-            connection.setRequestProperty("User-Agent", "Mozilla/5.0")
-            def response = connection.inputStream.withReader("UTF-8") { it.text }
+            contributors = fetchJson("${githubApiUrl}/repos/limczhh/HyperLyric/contributors") as List<Map<String, Object>>
+            contributors = contributors.findAll { user ->
+                def login = user["login"] as String
+                login && login != "juren233" && !login.endsWith("[bot]")
+            }
 
-            def jsonParser = new JsonSlurper()
-            def contributors = jsonParser.parseText(response) as List<Map<String, Object>>
+            contributors.each { user ->
+                def login = user["login"] as String
+                try {
+                    def userDetail = fetchJson("${githubApiUrl}/users/${login}") as Map<String, Object>
+                    def actualName = userDetail["name"] as String
+                    if (actualName) {
+                        user["name"] = actualName
+                    }
+                } catch (Exception ignored) {
+                    // The login remains a valid display-name fallback.
+                }
+            }
 
-            def content = '''package com.juren233.hyperlyricsenhanced.ui.utils
+            contributors.add(0, contributorFallback.first())
+        } catch (Exception exception) {
+            println("Failed to fetch contributors, using local fallback: ${exception.message}")
+            contributors = contributorFallback.collect { user ->
+                [login: user.login, name: user.name, html_url: user.html_url]
+            }
+        }
+
+        def escapeKotlinString = { String value ->
+            (value ?: "")
+                .replace("\\", "\\\\")
+                .replace("\"", "\\\"")
+                .replace("\r", "\\r")
+                .replace("\n", "\\n")
+                .replace("\t", "\\t")
+        }
+
+        def content = '''package com.juren233.hyperlyricsenhanced.ui.utils
 
 data class ContributorItem(
     val name: String,
@@ -25,72 +78,45 @@ data class ContributorItem(
 object ContributorsProvider {
     val list = listOf(
 '''
-            def maintainerLogin = "juren233"
-            def maintainerDrawableName = "contributor_juren233"
-            try {
-                def image = ImageIO.read(new URL("https://avatars.githubusercontent.com/u/66105563?v=4&s=120"))
-                if (image == null) {
-                    throw new GradleException("Unsupported avatar format for ${maintainerLogin}")
-                }
-                ImageIO.write(
-                    image,
-                    "png",
-                    new File(projectDir, "src/main/res/drawable/${maintainerDrawableName}.png")
-                )
-            } catch (Exception ignored) {
-                println("Failed to download avatar for ${maintainerLogin}")
-            }
-            content += "        ContributorItem(\"Cavan\", \"@juren233\", \"https://github.com/juren233\", com.juren233.hyperlyricsenhanced.R.drawable.contributor_juren233),\n"
 
-            for (def user : contributors) {
-                def login = user["login"] as String
-                def htmlUrl = user["html_url"] as String
-                def avatarUrl = (user["avatar_url"] as String) + "&s=120"
-                if (login == maintainerLogin || login.endsWith("[bot]")) {
-                    continue
-                }
+        contributors.each { user ->
+            def login = user["login"] as String
+            def name = (user["name"] as String) ?: login
+            def htmlUrl = (user["html_url"] as String) ?: "https://github.com/${login}"
+            def avatarUrl = user["avatar_url"] as String
+            def safeLogin = login.toLowerCase(Locale.ROOT).replace("-", "_")
+            def drawableName = "contributor_${safeLogin}"
+            def drawableFile = new File(projectDir, "src/main/res/drawable/${drawableName}.png")
+            def avatarResource = "android.R.drawable.sym_def_app_icon"
 
-                def safeLogin = login.toLowerCase(Locale.ROOT).replace("-", "_")
-                def drawableName = "contributor_${safeLogin}"
-
+            if (avatarUrl) {
                 try {
-                    def image = ImageIO.read(new URL(avatarUrl))
+                    def separator = avatarUrl.contains("?") ? "&" : "?"
+                    def avatarConnection = new URL("${avatarUrl}${separator}s=120").openConnection()
+                    avatarConnection.setConnectTimeout(15_000)
+                    avatarConnection.setReadTimeout(15_000)
+                    avatarConnection.setRequestProperty("User-Agent", "HyperLyrics-Enhanced-Gradle")
+                    def image = avatarConnection.inputStream.withCloseable { ImageIO.read(it) }
                     if (image == null) {
                         throw new GradleException("Unsupported avatar format for ${login}")
                     }
-                    ImageIO.write(
-                        image,
-                        "png",
-                        new File(projectDir, "src/main/res/drawable/${drawableName}.png")
-                    )
-                } catch (Exception ignored) {
-                    println("Failed to download avatar for ${login}")
-                }
-
-                def name = login
-                try {
-                    def userUrl = new URL("https://api.github.com/users/${login}")
-                    def userConnection = userUrl.openConnection()
-                    userConnection.setRequestProperty("User-Agent", "Mozilla/5.0")
-                    def userResponse = userConnection.inputStream.withReader("UTF-8") { it.text }
-                    def userDetail = jsonParser.parseText(userResponse) as Map<String, Object>
-                    def actualName = userDetail["name"] as String
-                    if (actualName) {
-                        name = actualName
+                    drawableFile.parentFile.mkdirs()
+                    if (!ImageIO.write(image, "png", drawableFile)) {
+                        throw new GradleException("PNG writer unavailable for ${login}")
                     }
-                } catch (Exception ignored) {
-                    // Fall back to the GitHub login.
+                    avatarResource = "com.juren233.hyperlyricsenhanced.R.drawable.${drawableName}"
+                } catch (Exception exception) {
+                    println("Failed to download avatar for ${login}, using system fallback: ${exception.message}")
                 }
-
-                content += "        ContributorItem(\"${name}\", \"@${login}\", \"${htmlUrl}\", com.juren233.hyperlyricsenhanced.R.drawable.${drawableName}),\n"
             }
-            content += "    )\n}\n"
 
-            def file = new File(projectDir, "src/main/java/com/juren233/hyperlyricsenhanced/ui/utils/ContributorsProvider.kt")
-            file.setText(content, "UTF-8")
-            println("ContributorsProvider.kt generated.")
-        } catch (Exception exception) {
-            println("Failed to fetch contributors: ${exception.message}")
+            content += "        ContributorItem(\"${escapeKotlinString(name)}\", \"@${escapeKotlinString(login)}\", \"${escapeKotlinString(htmlUrl)}\", ${avatarResource}),\n"
         }
+        content += "    )\n}\n"
+
+        def file = new File(projectDir, "src/main/java/com/juren233/hyperlyricsenhanced/ui/utils/ContributorsProvider.kt")
+        file.parentFile.mkdirs()
+        file.setText(content, "UTF-8")
+        println("ContributorsProvider.kt generated with ${contributors.size()} contributor(s).")
     }
 }
