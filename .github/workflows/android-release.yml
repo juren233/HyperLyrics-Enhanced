@@ -154,3 +154,64 @@ jobs:
             HyperLyrics Enhanced-release-v${{ steps.gate.outputs.name }}-${{ steps.gate.outputs.code }}.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 同步 LSPosed 仓库资料 Sync LSPosed Metadata
+        if: github.event_name != 'pull_request' && steps.gate.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.LSP_REPO_TOKEN }}
+          LSP_REPO: Xposed-Modules-Repo/com.juren233.hyperlyricsenhanced
+        run: |
+          set -euo pipefail
+
+          LSP_CHECKOUT="$RUNNER_TEMP/lsp-repository"
+          gh auth setup-git
+          gh repo clone "$LSP_REPO" "$LSP_CHECKOUT"
+
+          mkdir -p "$LSP_CHECKOUT/assets"
+          cp README.md "$LSP_CHECKOUT/README.md"
+          cp LICENSE "$LSP_CHECKOUT/LICENSE"
+          cp assets/hyperlyrics-app-icon-rounded.png \
+            "$LSP_CHECKOUT/assets/hyperlyrics-app-icon-rounded.png"
+
+          git -C "$LSP_CHECKOUT" config user.name "github-actions[bot]"
+          git -C "$LSP_CHECKOUT" config user.email \
+            "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C "$LSP_CHECKOUT" add \
+            README.md LICENSE assets/hyperlyrics-app-icon-rounded.png
+
+          if ! git -C "$LSP_CHECKOUT" diff --cached --quiet; then
+            git -C "$LSP_CHECKOUT" commit \
+              -m "chore: 同步上游展示资料" \
+              -m "- 更新 README、开源协议与应用图标"
+            git -C "$LSP_CHECKOUT" push origin HEAD:main
+          fi
+
+      - name: 发布到 LSPosed 仓库 Publish LSPosed Release
+        if: github.event_name != 'pull_request' && steps.gate.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.LSP_REPO_TOKEN }}
+          LSP_REPO: Xposed-Modules-Repo/com.juren233.hyperlyricsenhanced
+          RELEASE_BODY: ${{ steps.release_body.outputs.body }}
+        run: |
+          set -euo pipefail
+
+          V_NAME="${{ steps.gate.outputs.name }}"
+          V_CODE="${{ steps.gate.outputs.code }}"
+          TARGET_TAG="${V_CODE}-${V_NAME// /_}"
+          RELEASE_APK="HyperLyrics Enhanced-release-v${V_NAME}-${V_CODE}.apk"
+          LSP_BODY="$RUNNER_TEMP/lsp-release-body.md"
+
+          test -f "$RELEASE_APK"
+          printf '%s\n' "$RELEASE_BODY" \
+            | sed '1{/^## 最新提交$/d;}' > "$LSP_BODY"
+
+          if gh release view "$TARGET_TAG" --repo "$LSP_REPO" >/dev/null 2>&1; then
+            echo "LSPosed release $TARGET_TAG already exists; skipping."
+            exit 0
+          fi
+
+          gh release create "$TARGET_TAG" "$RELEASE_APK" \
+            --repo "$LSP_REPO" \
+            --target main \
+            --title "$V_NAME" \
+            --notes-file "$LSP_BODY"
