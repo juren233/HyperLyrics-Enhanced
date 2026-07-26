@@ -22,6 +22,8 @@ object NotificationBuilder {
     private const val CHANNEL_ID_FOCUS = "hyper_lyric_focus_v1"
     const val NORMAL_NOTIFICATION_ID = 2002
     const val FOCUS_NOTIFICATION_ID = 2003
+    const val CLASSIC_AOD_SONG_INFO_NOTIFICATION_ID = 2004
+    const val CLASSIC_AOD_SONG_INFO_NOTIFICATION_ID_SECONDARY = 2005
 
     data class UiState(
         val title: String,
@@ -181,6 +183,8 @@ object NotificationBuilder {
             .setSmallIcon(smallIconCompat)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
+            .setWhen(System.currentTimeMillis())
+            .setShowWhen(false)
             .setCustomContentView(null)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -225,6 +229,15 @@ object NotificationBuilder {
             notificationManager.cancel(FOCUS_NOTIFICATION_ID)
         } catch (e: Exception) {
             LogManager.e("NotificationBuilder", "取消焦点通知失败", e)
+        }
+    }
+
+    fun cancelClassicAodSongInfoNotification(notificationManager: NotificationManager) {
+        try {
+            notificationManager.cancel(CLASSIC_AOD_SONG_INFO_NOTIFICATION_ID)
+            notificationManager.cancel(CLASSIC_AOD_SONG_INFO_NOTIFICATION_ID_SECONDARY)
+        } catch (e: Exception) {
+            LogManager.e("NotificationBuilder", "取消经典 AOD 歌曲信息通知失败", e)
         }
     }
 

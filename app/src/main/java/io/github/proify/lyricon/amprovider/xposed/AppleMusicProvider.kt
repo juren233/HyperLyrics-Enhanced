@@ -111,8 +111,15 @@ object AppleMusicProvider {
             applyConfiguredContentUiLanguage(prefs)
         }
         val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { changed, key ->
-            if (key == RootConstants.KEY_HOOK_APPLE_MUSIC_CONTENT_UI_LANGUAGE) {
-                applyConfiguredContentUiLanguage(changed)
+            when (key) {
+                RootConstants.KEY_HOOK_APPLE_MUSIC_CONTENT_UI_LANGUAGE ->
+                    applyConfiguredContentUiLanguage(changed)
+                RootConstants.KEY_HOOK_ENABLE_AOD_LYRICS -> {
+                    if (ScreenStateMonitor.state == ScreenStateMonitor.ScreenState.OFF) {
+                        if (isPlaying && isAodLyricsEnabled()) resumeCoroutineTask()
+                        else pauseCoroutineTask()
+                    }
+                }
             }
         }
         contentUiLanguageListener = listener
@@ -561,7 +568,7 @@ object AppleMusicProvider {
                 }.onFailure {
                     ProviderLogger.error("读取 Apple Music 当前播放进度失败", it)
                 }
-                delay(ProviderConstants.DEFAULT_POSITION_UPDATE_INTERVAL)
+                delay(positionUpdateInterval())
             }
         }
     }
@@ -660,12 +667,31 @@ object AppleMusicProvider {
                 if (isPlaying) resumeCoroutineTask()
             }
 
-            override fun onScreenOff() = pauseCoroutineTask()
+            override fun onScreenOff() {
+                if (isPlaying && isAodLyricsEnabled()) resumeCoroutineTask()
+                else pauseCoroutineTask()
+            }
 
             override fun onScreenUnlocked() {
                 if (isPlaying && progressJob == null) resumeCoroutineTask()
             }
         })
+    }
+
+    private fun isAodLyricsEnabled(): Boolean = contentUiLanguagePrefs?.getBoolean(
+        RootConstants.KEY_HOOK_ENABLE_AOD_LYRICS,
+        RootConstants.DEFAULT_HOOK_ENABLE_AOD_LYRICS
+    ) ?: RootConstants.DEFAULT_HOOK_ENABLE_AOD_LYRICS
+
+    private fun positionUpdateInterval(): Long {
+        return if (
+            ScreenStateMonitor.state == ScreenStateMonitor.ScreenState.OFF &&
+            isAodLyricsEnabled()
+        ) {
+            250L
+        } else {
+            ProviderConstants.DEFAULT_POSITION_UPDATE_INTERVAL
+        }
     }
 
     /** Debug-only request diagnostics; sensitive values are represented by length and hash. */

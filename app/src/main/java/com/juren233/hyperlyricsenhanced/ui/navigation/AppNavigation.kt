@@ -21,6 +21,8 @@ import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.LyricAnimationPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.LyricSettingsPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.SuperIslandSettingsPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.media.MediaCardSettingsPage
+import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.aod.ClassicAodSettingsPage
+import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.aod.LockScreenAodSettingsPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.display.LyricDisplayPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.scroll.LyricScrollPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.translation.LyricTranslationPage
@@ -57,6 +59,8 @@ fun AppNavigation(startRoute: Route) {
                 entry<Route.LyricTranslation> { LyricTranslationPage() }
                 entry<Route.SuperIslandSettings> { SuperIslandSettingsPage() }
                 entry<Route.MediaCardSettings> { MediaCardSettingsPage() }
+                entry<Route.LockScreenAodSettings> { LockScreenAodSettingsPage() }
+                entry<Route.ClassicAodSettings> { ClassicAodSettingsPage() }
                 entry<Route.DynamicIslandNotification> { DynamicIslandNotificationPage() }
                 entry<Route.Log> { LogPage() }
                 entry<Route.Licenses> { LicensesPage() }

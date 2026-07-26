@@ -14,6 +14,7 @@ import com.juren233.hyperlyricsenhanced.root.island.SystemUIHookRegistry
 import com.juren233.hyperlyricsenhanced.root.island.IslandWidthHooker
 import com.juren233.hyperlyricsenhanced.root.island.RealIslandHooker
 import com.juren233.hyperlyricsenhanced.root.mediacard.notification.NotificationMediaAmbientFlowHooker
+import com.juren233.hyperlyricsenhanced.root.mediacard.notification.NotificationMediaAodLyricHooker
 import com.juren233.hyperlyricsenhanced.root.mediacard.notification.NotificationMediaCoverStyleHooker
 import com.juren233.hyperlyricsenhanced.root.mediacard.island.IslandExpandedMediaAmbientFlowHooker
 import com.juren233.hyperlyricsenhanced.root.mediacard.notification.background.MediaBackgroundRendererPool
@@ -65,6 +66,11 @@ class HookEntry : XposedModule() {
             RootConstants.KEY_HOOK_ISLAND_LEFT_CONTENT_MAX_WIDTH,
             RootConstants.KEY_HOOK_ISLAND_RIGHT_CONTENT_MAX_WIDTH,
             RootConstants.KEY_HOOK_ISLAND_BEHAVIOR_AFTER_PAUSE,
+            RootConstants.KEY_HOOK_ISLAND_FORCE_NEXT_SONG_AT_END,
+            RootConstants.KEY_HOOK_ISLAND_NEXT_SONG_DURATION,
+            RootConstants.KEY_HOOK_ISLAND_NEXT_SONG_PREVIEW_STYLE,
+            RootConstants.KEY_HOOK_ISLAND_NEXT_SONG_PREVIEW_POSITION,
+            RootConstants.KEY_HOOK_ISLAND_NEXT_SONG_PREVIEW_WEIGHT,
             RootConstants.KEY_HOOK_ISLAND_GLOW_EXTRACT_COLOR,
             RootConstants.KEY_HOOK_ISLAND_PROGRESS_GLOW,
             RootConstants.KEY_HOOK_ISLAND_PROGRESS_GRADIENT,
@@ -91,10 +97,12 @@ class HookEntry : XposedModule() {
             RootConstants.KEY_HOOK_MARQUEE_METADATA_INFINITE,
             RootConstants.KEY_HOOK_SYLLABLE_RELATIVE,
             RootConstants.KEY_HOOK_SYLLABLE_HIGHLIGHT,
+            RootConstants.KEY_HOOK_TRANSLATION_DISPLAY,
             RootConstants.KEY_HOOK_DISABLE_TRANSLATION,
             RootConstants.KEY_HOOK_TRANSLATION_ONLY,
             RootConstants.KEY_HOOK_SWAP_TRANSLATION,
             RootConstants.KEY_HOOK_NEXT_LYRIC_LINE,
+            RootConstants.KEY_HOOK_AUTO_SWITCH_TRANSLATION,
             RootConstants.KEY_HOOK_ADJACENT_BACKGROUND_TRANSLATION,
             RootConstants.KEY_HOOK_EXTRACT_COVER_TEXT_COLOR,
             RootConstants.KEY_HOOK_EXTRACT_COVER_TEXT_GRADIENT,
@@ -137,6 +145,7 @@ class HookEntry : XposedModule() {
         IslandExpandedMediaAmbientFlowHooker.releaseAll()
         NotificationMediaCoverStyleHooker.releaseAll()
         NotificationMediaAmbientFlowHooker.releaseAll()
+        NotificationMediaAodLyricHooker.releaseAll()
         IslandProgressGlowController.clearAll()
         MediaBackgroundRendererPool.releaseAll()
         BaseIslandRenderer.clearAllViews()
@@ -148,6 +157,7 @@ class HookEntry : XposedModule() {
     override fun onHotReloaded(param: HotReloadedParam) {
         instance = this
         HookLogger.module = this
+        NotificationMediaAodLyricHooker.initialize(this)
         lyricsOnlyAfterHotReload = true
 
         var replacedCount = 0
@@ -193,6 +203,7 @@ class HookEntry : XposedModule() {
         val packageName = param.packageName
         
         if (packageName == "com.android.systemui") {
+            NotificationMediaAodLyricHooker.hook(this, param.defaultClassLoader)
             if (!lyricsOnlyAfterHotReload) {
                 IslandExpandedMediaAmbientFlowHooker.hook(this, param.defaultClassLoader)
                 NotificationMediaAmbientFlowHooker.hook(this, param.defaultClassLoader)
@@ -299,9 +310,10 @@ class HookEntry : XposedModule() {
                 RootConstants.KEY_HOOK_LYRIC_MODE,
                 RootConstants.DEFAULT_HOOK_LYRIC_MODE
             )
-            if (SystemUiEnhancementGate.isEnabled()) {
+            if (SystemUiEnhancementGate.isLyricRuntimeEnabled()) {
                 sourceManager?.start()
             }
+            ClassicAodFocusNotificationRecovery.ensureListenerCanRecover(app, prefs)
 
             prefListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
                 if (key?.startsWith(RootConstants.KEY_HOOK_LYRICON_PROVIDER_DELAY_PREFIX) == true ||
@@ -316,7 +328,7 @@ class HookEntry : XposedModule() {
                     RootConstants.KEY_HOOK_LYRIC_SOURCE -> {
                         val newSourceId = prefs.getString(key, RootConstants.DEFAULT_HOOK_LYRIC_SOURCE)
                             ?: RootConstants.DEFAULT_HOOK_LYRIC_SOURCE
-                        if (!SystemUiEnhancementGate.isEnabled()) {
+                        if (!SystemUiEnhancementGate.isLyricRuntimeEnabled()) {
                             return@OnSharedPreferenceChangeListener
                         }
                         HookLogger.i("HookEntry", "切换歌词源: source=$newSourceId")
@@ -333,9 +345,47 @@ class HookEntry : XposedModule() {
                             BaseIslandRenderer.refreshActiveIsland()
                         }
                     }
-                    RootConstants.KEY_HOOK_ENABLE_SUPER_ISLAND -> {
+                    RootConstants.KEY_HOOK_ENABLE_SUPER_ISLAND,
+                    RootConstants.KEY_HOOK_ENABLE_AOD_LYRICS -> {
                         android.os.Handler(android.os.Looper.getMainLooper()).post {
-                            updateSystemUiEnhancements(SystemUiEnhancementGate.isEnabled())
+                            ClassicAodFocusNotificationRecovery.ensureListenerCanRecover(app, prefs)
+                            updateFeatureRuntime()
+                        }
+                    }
+                    RootConstants.KEY_HOOK_LOCK_SCREEN_AOD_MAIN_TEXT_SIZE,
+                    RootConstants.KEY_HOOK_LOCK_SCREEN_AOD_BACKING_TEXT_SIZE,
+                    RootConstants.KEY_HOOK_LOCK_SCREEN_AOD_TRANSLATION_TEXT_SIZE,
+                    RootConstants.KEY_HOOK_LOCK_SCREEN_AOD_SHOW_NEXT_LYRIC,
+                    RootConstants.KEY_HOOK_LOCK_SCREEN_AOD_NEXT_LYRIC_STYLE,
+                    RootConstants.KEY_HOOK_LOCK_SCREEN_AOD_DUET_LYRICS,
+                    RootConstants.KEY_HOOK_LOCK_SCREEN_AOD_CENTER_NON_DUET_SONG,
+                    RootConstants.KEY_HOOK_LOCK_SCREEN_AOD_CENTER_GROUP_VOCALS,
+                    RootConstants.KEY_HOOK_LOCK_SCREEN_AOD_PAUSE_STYLE,
+                    RootConstants.KEY_HOOK_LOCK_SCREEN_AOD_TRANSLATION_DISPLAY,
+                    RootConstants.KEY_HOOK_LOCK_SCREEN_AOD_SWAP_TRANSLATION,
+                    RootConstants.KEY_HOOK_LOCK_SCREEN_AOD_NEXT_SONG_PREVIEW,
+                    RootConstants.KEY_HOOK_LOCK_SCREEN_AOD_NEXT_SONG_PREVIEW_POSITION,
+                    RootConstants.KEY_HOOK_CLASSIC_AOD_MAIN_TEXT_SIZE,
+                    RootConstants.KEY_HOOK_CLASSIC_AOD_BACKING_TEXT_SIZE,
+                    RootConstants.KEY_HOOK_CLASSIC_AOD_TRANSLATION_TEXT_SIZE,
+                    RootConstants.KEY_HOOK_CLASSIC_AOD_SHOW_NEXT_LYRIC,
+                    RootConstants.KEY_HOOK_CLASSIC_AOD_NEXT_LYRIC_STYLE,
+                    RootConstants.KEY_HOOK_CLASSIC_AOD_DUET_LYRICS,
+                    RootConstants.KEY_HOOK_CLASSIC_AOD_CENTER_NON_DUET_SONG,
+                    RootConstants.KEY_HOOK_CLASSIC_AOD_CENTER_GROUP_VOCALS,
+                    RootConstants.KEY_HOOK_CLASSIC_AOD_PAUSE_STYLE,
+                    RootConstants.KEY_HOOK_CLASSIC_AOD_TRANSLATION_DISPLAY,
+                    RootConstants.KEY_HOOK_CLASSIC_AOD_SWAP_TRANSLATION,
+                    RootConstants.KEY_HOOK_CLASSIC_AOD_SONG_INFO_FORMAT,
+                    RootConstants.KEY_HOOK_CLASSIC_AOD_SONG_INFO_DISPLAY_STYLE,
+                    RootConstants.KEY_HOOK_CLASSIC_AOD_SONG_INFO_POSITION,
+                    RootConstants.KEY_HOOK_CLASSIC_AOD_SONG_INFO_TEXT_SIZE,
+                    RootConstants.KEY_HOOK_CLASSIC_AOD_SONG_INFO_SHOW_ICON,
+                    RootConstants.KEY_HOOK_CLASSIC_AOD_NEXT_SONG_PREVIEW,
+                    RootConstants.KEY_HOOK_CLASSIC_AOD_NEXT_SONG_PREVIEW_POSITION -> {
+                        android.os.Handler(android.os.Looper.getMainLooper()).post {
+                            ClassicAodFocusNotificationRecovery.ensureListenerCanRecover(app, prefs)
+                            NotificationMediaAodLyricHooker.refresh()
                         }
                     }
                     RootConstants.KEY_HOOK_ISLAND_ALBUM_COVER_STYLE,
@@ -420,7 +470,8 @@ class HookEntry : XposedModule() {
 
             HookLogger.i(
                 "HookEntry",
-                "系统环境初始化完成: enabled=${SystemUiEnhancementGate.isEnabled()}, " +
+                "系统环境初始化完成: superIsland=${SystemUiEnhancementGate.isEnabled()}, " +
+                    "lyricRuntime=${SystemUiEnhancementGate.isLyricRuntimeEnabled()}, " +
                     "source=${sourceManager?.getActiveSource()?.displayName ?: "inactive"}, " +
                     "mode=$activeMode"
             )
@@ -429,8 +480,10 @@ class HookEntry : XposedModule() {
         }
     }
 
-    private fun updateSystemUiEnhancements(enabled: Boolean) {
-        if (enabled) {
+    private fun updateFeatureRuntime() {
+        val superIslandEnabled = SystemUiEnhancementGate.isEnabled()
+        val lyricRuntimeEnabled = SystemUiEnhancementGate.isLyricRuntimeEnabled()
+        if (lyricRuntimeEnabled) {
             sourceManager?.start()
         } else {
             sourceManager?.stop()
@@ -440,19 +493,28 @@ class HookEntry : XposedModule() {
             IslandProgressGlowController.clearAll()
         }
 
+        if (!superIslandEnabled) {
+            BaseIslandRenderer.clearAllViews()
+            IslandProgressGlowController.clearAll()
+        }
+
         IslandAlbumCoverStyleHooker.refresh()
         IslandMusicWaveColorHooker.refresh()
         NotificationMediaAmbientFlowHooker.refreshBackgroundStyle()
         NotificationMediaAmbientFlowHooker.refreshCardTheme()
         NotificationMediaCoverStyleHooker.refresh()
+        NotificationMediaAodLyricHooker.refresh()
         IslandExpandedMediaAmbientFlowHooker.refreshBackgroundStyle()
         IslandExpandedMediaAmbientFlowHooker.refreshCardTheme()
         IslandExpandedMediaAmbientFlowHooker.refreshMediaElements()
 
-        if (enabled) {
+        if (superIslandEnabled) {
             BaseIslandRenderer.refreshActiveIsland()
         }
-        HookLogger.i("HookEntry", "更新系统界面增强状态: enabled=$enabled")
+        HookLogger.i(
+            "HookEntry",
+            "更新功能运行状态: superIsland=$superIslandEnabled, lyricRuntime=$lyricRuntimeEnabled"
+        )
     }
 
     private fun cleanupRuntime() {
@@ -485,7 +547,10 @@ class HookEntry : XposedModule() {
         if (executable !is Method) return null
 
         val name = executable.name
+        UnlockFocusWhitelist.replacementHooker(executable)?.let { return it }
         return when {
+            NotificationMediaAodLyricHooker.isTargetMethod(executable) ->
+                NotificationMediaAodLyricHooker.hookerFor(executable)
             owner == "android.app.Application" && name == "onCreate" ->
                 AppCreateHooker()
             name == "updateBigIslandView" ->
@@ -516,6 +581,7 @@ class HookEntry : XposedModule() {
             val result = chain.proceed()
             val cl = chain.thisObject as? ClassLoader ?: return result
             try {
+                NotificationMediaAodLyricHooker.hookAodPlugin(this@HookEntry, cl)
                 SystemUIHookRegistry.hook(
                     this@HookEntry,
                     cl,

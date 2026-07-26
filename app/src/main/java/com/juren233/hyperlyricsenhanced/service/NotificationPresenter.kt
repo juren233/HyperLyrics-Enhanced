@@ -2,20 +2,23 @@ package com.juren233.hyperlyricsenhanced.service
 
 import android.app.Notification
 import android.app.NotificationManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import com.juren233.hyperlyricsenhanced.utils.LogManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.media.AudioManager
-import android.os.PowerManager
 import android.view.KeyEvent
 import com.juren233.hyperlyricsenhanced.common.RootConstants
+import com.juren233.hyperlyricsenhanced.common.ClassicAodSongInfoConfig
 import com.juren233.hyperlyricsenhanced.common.ServiceConstants
 import com.juren233.hyperlyricsenhanced.common.UIConstants
 import com.juren233.hyperlyricsenhanced.common.lyric.LyricSplitter
 import com.juren233.hyperlyricsenhanced.lyric.ConfigRepository
 import com.juren233.hyperlyricsenhanced.lyric.DynamicLyricData
+import com.juren233.hyperlyricsenhanced.root.ClassicAodFocusNotificationPolicy
 import com.juren233.hyperlyricsenhanced.service.source.SyncData
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -40,12 +43,18 @@ class NotificationPresenter(
     private val notificationManager by lazy { context.getSystemService(NotificationManager::class.java) }
     private var lastUiState: NotificationBuilder.UiState? = null
     private var pauseDebounceJob: Job? = null
+    private var screenTransitionJob: Job? = null
+    private var classicAodVerificationJob: Job? = null
     private val pauseDebounceMs = 150L
 
     private var networkCutJob: Job? = null
     private val networkCutMutex = kotlinx.coroutines.sync.Mutex()
     private val networkCutDurationMs = 100L
     private var networkCutSeq = 0L
+    private var lastClassicAodSongInfo = ""
+    private var activeClassicAodNotificationId: Int? = null
+    private var cachedSourceIconPackage = ""
+    private var cachedSourceIcon: Bitmap? = null
 
     private val isBypassFocusLimitEnabled: Boolean
         get() = context.getSharedPreferences(UIConstants.PREF_NAME, Context.MODE_PRIVATE)
@@ -72,12 +81,25 @@ class NotificationPresenter(
             }
         }
     }
+    private val screenStateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(ctx: Context?, intent: Intent?) {
+            when (intent?.action) {
+                Intent.ACTION_SCREEN_OFF -> scheduleClassicAodScreenRefresh()
+                Intent.ACTION_SCREEN_ON -> scheduleInteractiveScreenCleanup()
+            }
+        }
+    }
 
     // ─── 生命周期 ─────────────────────────────────────────
 
     fun register() {
         val filter = IntentFilter("com.juren233.hyperlyricsenhanced.ACTION_TOGGLE_PLAYBACK")
         context.registerReceiver(playbackToggleReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        val screenFilter = IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_OFF)
+            addAction(Intent.ACTION_SCREEN_ON)
+        }
+        context.registerReceiver(screenStateReceiver, screenFilter, Context.RECEIVER_NOT_EXPORTED)
         NotificationBuilder.createNotificationChannel(context, notificationManager)
     }
 
@@ -87,7 +109,11 @@ class NotificationPresenter(
         } catch (e: Exception) {
             LogManager.w("NotificationPresenter", "注销播放控制接收器失败", e)
         }
+        runCatching { context.unregisterReceiver(screenStateReceiver) }
         pauseDebounceJob?.cancel()
+        screenTransitionJob?.cancel()
+        classicAodVerificationJob?.cancel()
+        NotificationBuilder.cancelClassicAodSongInfoNotification(notificationManager)
     }
 
     // ─── 核心入口：接收数据并决定是否发射通知 ──────────────
@@ -98,10 +124,13 @@ class NotificationPresenter(
      */
     fun updateState(globalState: com.juren233.hyperlyricsenhanced.lyric.LyricState, force: Boolean) {
         val isWhitelisted = ConfigRepository.whitelistState.value.contains(globalState.targetPackageName)
-        if (!isWhitelisted) {
+        val classicAodSongInfoEnabled = isClassicAodSongInfoEnabled()
+        if (!isWhitelisted && !classicAodSongInfoEnabled) {
+            clearClassicAodSongInfoNotification()
             clearNotifications()
             return
         }
+        updateClassicAodSongInfoNotification(globalState)
 
         val sp = context.getSharedPreferences(UIConstants.PREF_NAME, Context.MODE_PRIVATE)
         if (!sp.getBoolean(RootConstants.KEY_HOOK_ENABLE_DYNAMIC_ISLAND, RootConstants.DEFAULT_HOOK_ENABLE_DYNAMIC_ISLAND)) {
@@ -140,7 +169,7 @@ class NotificationPresenter(
             focusShowNotification = sp.getBoolean(ServiceConstants.KEY_NOTIFICATION_FOCUS_SHOW, ServiceConstants.DEFAULT_NOTIFICATION_FOCUS_SHOW)
         )
 
-        val isScreenOn = (context.getSystemService(Context.POWER_SERVICE) as? PowerManager)?.isInteractive == true
+        val isScreenOn = DisplayStateResolver.isInteractive(context)
         val showProgressSetting = sp.getBoolean(ServiceConstants.KEY_NOTIFICATION_SHOW_PROGRESS, ServiceConstants.DEFAULT_NOTIFICATION_SHOW_PROGRESS)
 
         if (!force && lastUiState != null) {
@@ -267,6 +296,12 @@ class NotificationPresenter(
         }
     }
 
+    fun refreshClassicAodSongInfo() {
+        updateClassicAodSongInfoNotification(
+            com.juren233.hyperlyricsenhanced.lyric.DynamicLyricData.currentState
+        )
+    }
+
     private var lastDispatchedIslandLeft = ""
     private var lastDispatchedIsPlaying = false
     private var lastDispatchedShowAlbum = false
@@ -326,6 +361,218 @@ class NotificationPresenter(
         DynamicLyricData.updateIslandLeftIconStyle(islandLeftIconStyle)
         DynamicLyricData.updateLeftTitles(finalIslandLeft, finalNotificationLeft)
         DynamicLyricData.updateRightTitles(finalIslandRight,
-            finalNotificationRight, songLyric, songInfo, data.duration, data.isPlaying, data.currentPackageName, showIslandLeftAlbum)
+            finalNotificationRight,
+            songLyric,
+            songInfo,
+            data.duration,
+            data.isPlaying,
+            data.currentPackageName,
+            showIslandLeftAlbum,
+            newTrackTitle = data.identityTitle,
+            newTrackArtist = data.identityArtist,
+            newTrackIdentifier = data.identifier,
+        )
+    }
+
+    private fun updateClassicAodSongInfoNotification(
+        state: com.juren233.hyperlyricsenhanced.lyric.LyricState
+    ) {
+        val prefs = context.getSharedPreferences(UIConstants.PREF_NAME, Context.MODE_PRIVATE)
+        val displayStyle = ClassicAodSongInfoConfig.displayStyle(prefs)
+        val format = ClassicAodSongInfoConfig.format(prefs)
+        val title = state.trackTitle.trim()
+        val artist = state.trackArtist.trim()
+        val songInfo = ClassicAodSongInfoConfig.formatSongInfo(title, artist, format)
+        val shouldShow = prefs.getBoolean(
+            RootConstants.KEY_HOOK_ENABLE_AOD_LYRICS,
+            RootConstants.DEFAULT_HOOK_ENABLE_AOD_LYRICS,
+        ) &&
+            displayStyle ==
+                RootConstants.AOD_SONG_INFO_DISPLAY_STYLE_FOCUS_NOTIFICATION &&
+            !isScreenInteractive() &&
+            songInfo.isNotBlank()
+        LogManager.i(
+            "NotificationPresenter",
+            "经典AOD歌曲信息: displayStyle=$displayStyle, format=$format, " +
+                "title=$title, artist=$artist, " +
+                "interactive=${isScreenInteractive()}, shouldShow=$shouldShow"
+        )
+        val signature = if (shouldShow) {
+            ClassicAodFocusNotificationPolicy.songSignature(
+                packageName = state.targetPackageName,
+                identifier = state.trackIdentifier,
+                title = title,
+                artist = artist,
+                format = format,
+            )
+        } else {
+            ""
+        }
+        if (signature == lastClassicAodSongInfo) return
+        lastClassicAodSongInfo = signature
+        if (!shouldShow) {
+            clearClassicAodSongInfoNotification(resetSignature = false)
+            return
+        }
+
+        val notification = NotificationBuilder.buildFocusNotification(
+            context = context,
+            uiState = NotificationBuilder.UiState(
+                title = songInfo,
+                songInfo = "",
+                islandTitleLeft = "",
+                notificationTitleLeft = songInfo,
+                color = 0,
+                colorEnd = 0,
+                progress = 0,
+                isPlaying = state.isPlaying,
+                notificationAlbumBitmap = sourceApplicationIcon(state.targetPackageName),
+                islandLeftIconStyle = 1,
+                disableLyricSplit = true,
+                showAlbumArt = true,
+                focusShowNotification = true,
+            ),
+            showProgress = false,
+        )
+        val notificationId = ClassicAodFocusNotificationPolicy.nextNotificationId(
+            activeNotificationId = activeClassicAodNotificationId,
+            primaryNotificationId =
+                NotificationBuilder.CLASSIC_AOD_SONG_INFO_NOTIFICATION_ID,
+            secondaryNotificationId =
+                NotificationBuilder.CLASSIC_AOD_SONG_INFO_NOTIFICATION_ID_SECONDARY,
+        )
+        NotificationBuilder.cancelClassicAodSongInfoNotification(notificationManager)
+        notifyWrapper(notificationId, notification)
+        activeClassicAodNotificationId = notificationId
+        scheduleClassicAodNotificationVerification(
+            signature = signature,
+            notificationId = notificationId,
+            notification = notification,
+            songInfo = songInfo,
+        )
+        LogManager.i(
+            "NotificationPresenter",
+            "经典AOD歌曲信息焦点通知已重新发布: id=$notificationId, song=$songInfo"
+        )
+    }
+
+    private fun clearClassicAodSongInfoNotification(resetSignature: Boolean = true) {
+        classicAodVerificationJob?.cancel()
+        classicAodVerificationJob = null
+        if (resetSignature) {
+            lastClassicAodSongInfo = ""
+        }
+        activeClassicAodNotificationId = null
+        NotificationBuilder.cancelClassicAodSongInfoNotification(notificationManager)
+    }
+
+    private fun scheduleClassicAodNotificationVerification(
+        signature: String,
+        notificationId: Int,
+        notification: Notification,
+        songInfo: String,
+    ) {
+        classicAodVerificationJob?.cancel()
+        classicAodVerificationJob = scope.launch {
+            delay(400L)
+            if (
+                signature != lastClassicAodSongInfo ||
+                isScreenInteractive()
+            ) {
+                return@launch
+            }
+            val stillActive = runCatching {
+                notificationManager.activeNotifications.any { it.id == notificationId }
+            }.onFailure {
+                LogManager.w(
+                    "NotificationPresenter",
+                    "检查经典AOD焦点通知状态失败: id=$notificationId",
+                    it
+                )
+            }.getOrDefault(true)
+            if (stillActive) {
+                LogManager.i(
+                    "NotificationPresenter",
+                    "经典AOD焦点通知状态确认正常: id=$notificationId, song=$songInfo"
+                )
+                return@launch
+            }
+
+            val retryId = ClassicAodFocusNotificationPolicy.nextNotificationId(
+                activeNotificationId = notificationId,
+                primaryNotificationId =
+                    NotificationBuilder.CLASSIC_AOD_SONG_INFO_NOTIFICATION_ID,
+                secondaryNotificationId =
+                    NotificationBuilder.CLASSIC_AOD_SONG_INFO_NOTIFICATION_ID_SECONDARY,
+            )
+            NotificationBuilder.cancelClassicAodSongInfoNotification(notificationManager)
+            notifyWrapper(retryId, notification)
+            activeClassicAodNotificationId = retryId
+            LogManager.w(
+                "NotificationPresenter",
+                "经典AOD焦点通知被系统移除，已自动重发: oldId=$notificationId, " +
+                    "newId=$retryId, song=$songInfo"
+            )
+        }
+    }
+
+    private fun scheduleClassicAodScreenRefresh() {
+        screenTransitionJob?.cancel()
+        screenTransitionJob = scope.launch {
+            var previousDelay = 0L
+            listOf(200L, 800L, 1_800L).forEach { targetDelay ->
+                delay(targetDelay - previousDelay)
+                previousDelay = targetDelay
+                updateClassicAodSongInfoNotification(
+                    com.juren233.hyperlyricsenhanced.lyric.DynamicLyricData.currentState
+                )
+            }
+        }
+    }
+
+    private fun scheduleInteractiveScreenCleanup() {
+        screenTransitionJob?.cancel()
+        screenTransitionJob = scope.launch {
+            delay(250L)
+            if (isScreenInteractive()) {
+                clearClassicAodSongInfoNotification()
+            } else {
+                updateClassicAodSongInfoNotification(
+                    com.juren233.hyperlyricsenhanced.lyric.DynamicLyricData.currentState
+                )
+            }
+        }
+    }
+
+    private fun isScreenInteractive(): Boolean = DisplayStateResolver.isInteractive(context)
+
+    private fun sourceApplicationIcon(packageName: String): Bitmap? {
+        if (packageName.isBlank()) return null
+        if (packageName == cachedSourceIconPackage) return cachedSourceIcon
+        cachedSourceIconPackage = packageName
+        cachedSourceIcon = runCatching {
+            val drawable = context.packageManager.getApplicationIcon(packageName)
+            val size = 128
+            Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888).also { bitmap ->
+                drawable.setBounds(0, 0, size, size)
+                drawable.draw(Canvas(bitmap))
+            }
+        }.onFailure {
+            LogManager.w(
+                "NotificationPresenter",
+                "读取播放来源图标失败: package=$packageName",
+                it
+            )
+        }.getOrNull()
+        return cachedSourceIcon
+    }
+
+    private fun isClassicAodSongInfoEnabled(): Boolean {
+        val prefs = context.getSharedPreferences(UIConstants.PREF_NAME, Context.MODE_PRIVATE)
+        return prefs.getBoolean(
+            RootConstants.KEY_HOOK_ENABLE_AOD_LYRICS,
+            RootConstants.DEFAULT_HOOK_ENABLE_AOD_LYRICS,
+        ) && ClassicAodSongInfoConfig.displayStyle(prefs) ==
+            RootConstants.AOD_SONG_INFO_DISPLAY_STYLE_FOCUS_NOTIFICATION
     }
 }

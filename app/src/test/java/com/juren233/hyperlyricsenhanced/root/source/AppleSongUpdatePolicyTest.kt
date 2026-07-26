@@ -71,4 +71,41 @@ class AppleSongUpdatePolicyTest {
             )
         )
     }
+
+    @Test
+    fun `media session alone cannot start online fallback`() {
+        val mediaSessionSong = nativeSong.copy(lyrics = emptyList())
+
+        assertFalse(
+            AppleSongUpdatePolicy.canStartFallbackFromMediaSession(
+                currentSong = null,
+                mediaSessionSong = mediaSessionSong,
+                currentHasNativeLyrics = false
+            )
+        )
+    }
+
+    @Test
+    fun `provider confirmed empty lyrics can start online fallback`() {
+        val emptyAppleSong = nativeSong.copy(lyrics = emptyList())
+
+        assertTrue(
+            AppleSongUpdatePolicy.canStartFallbackFromMediaSession(
+                currentSong = emptyAppleSong,
+                mediaSessionSong = emptyAppleSong,
+                currentHasNativeLyrics = false
+            )
+        )
+    }
+
+    @Test
+    fun `confirmed native apple lyrics cannot start online fallback`() {
+        assertFalse(
+            AppleSongUpdatePolicy.canStartFallbackFromMediaSession(
+                currentSong = nativeSong,
+                mediaSessionSong = nativeSong.copy(lyrics = emptyList()),
+                currentHasNativeLyrics = true
+            )
+        )
+    }
 }

@@ -6,6 +6,15 @@ object LyricMetadataKeys {
     const val APPLE_ORIGINAL_ARTIST = "appleOriginalArtist"
     const val GROUP_VOCALS = "groupVocals"
     const val BACKGROUND_VOCALS_TRANSLATION = "backgroundVocalsTranslation"
+    const val CONCURRENT_SECONDARY_ALIGNED_RIGHT = "concurrentSecondaryAlignedRight"
+    const val OVERLAPPING_LYRICS_GROUP = "overlappingLyricsGroup"
+    const val OVERLAPPING_PRIMARY_BACKING = "overlappingPrimaryBacking"
+    const val OVERLAPPING_PRIMARY_BACKING_TRANSLATION =
+        "overlappingPrimaryBackingTranslation"
+    const val OVERLAPPING_SECONDARY_TRANSLATION = "overlappingSecondaryTranslation"
+    const val OVERLAPPING_SECONDARY_BACKING = "overlappingSecondaryBacking"
+    const val OVERLAPPING_SECONDARY_BACKING_TRANSLATION =
+        "overlappingSecondaryBackingTranslation"
     const val INSTRUMENTAL = "instrumental"
     const val INSTRUMENTAL_TYPE = "instrumentalType"
 }

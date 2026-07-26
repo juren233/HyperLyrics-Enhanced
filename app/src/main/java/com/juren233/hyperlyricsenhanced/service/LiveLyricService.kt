@@ -18,6 +18,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 class LiveLyricService : NotificationListenerService() {
@@ -28,6 +29,7 @@ class LiveLyricService : NotificationListenerService() {
 
     override fun onCreate() {
         super.onCreate()
+        activeInstance = this
 
         val textPaint = createTextPaint()
         val lyricSplitter = LyricSplitter(textPaint, resources.displayMetrics)
@@ -38,7 +40,15 @@ class LiveLyricService : NotificationListenerService() {
         ConfigRepository.initWhitelist(this)
 
         val componentName = ComponentName(this, LiveLyricService::class.java)
-        metadataSource = MetadataSource(this, serviceScope, componentName)
+        metadataSource = MetadataSource(
+            context = this,
+            scope = serviceScope,
+            componentName = componentName,
+            onMediaSessionAccessLost = {
+                LogManager.w("LiveLyricService", "媒体会话访问失效，正在自动重绑通知监听服务")
+                ensureListenerBound(this)
+            },
+        )
         appLyricSink = AppLyricSink(this, serviceScope, notificationPresenter)
 
         appLyricSink.startCollecting(metadataSource.lyricUpdateFlow, metadataSource.newSongFlow)
@@ -52,6 +62,18 @@ class LiveLyricService : NotificationListenerService() {
                 notificationPresenter.updateState(state, force = false)
             }
         }
+
+        serviceScope.launch {
+            var lastInteractive = DisplayStateResolver.isInteractive(this@LiveLyricService)
+            while (isActive) {
+                val interactive = DisplayStateResolver.isInteractive(this@LiveLyricService)
+                if (interactive != lastInteractive) {
+                    lastInteractive = interactive
+                    notificationPresenter.refreshClassicAodSongInfo()
+                }
+                kotlinx.coroutines.delay(500L)
+            }
+        }
     }
 
     override fun onListenerConnected() {
@@ -61,6 +83,9 @@ class LiveLyricService : NotificationListenerService() {
 
     override fun onDestroy() {
         super.onDestroy()
+        if (activeInstance === this) {
+            activeInstance = null
+        }
         appLyricSink.stop()
         metadataSource.disconnect()
         notificationPresenter.unregister()
@@ -81,6 +106,22 @@ class LiveLyricService : NotificationListenerService() {
     }
 
     companion object {
+        @Volatile
+        private var activeInstance: LiveLyricService? = null
+
+        fun requestClassicAodRefresh(context: Context) {
+            val service = activeInstance
+            if (service == null) {
+                ensureListenerBound(context)
+                return
+            }
+            service.serviceScope.launch {
+                LogManager.d("LiveLyricService", "收到 SystemUI AOD 焦点通知刷新请求")
+                service.metadataSource.refreshNow()
+                service.notificationPresenter.refreshClassicAodSongInfo()
+            }
+        }
+
         fun ensureListenerBound(context: Context) {
             LogManager.d("LiveLyricService", "正在尝试静默重连 NotificationListenerService")
             try {

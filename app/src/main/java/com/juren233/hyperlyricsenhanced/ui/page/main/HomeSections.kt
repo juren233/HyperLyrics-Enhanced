@@ -17,13 +17,18 @@ import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 
 fun LazyListScope.homePageSections(
+    availableUpdateVersion: String?,
     enableSuperIsland: Boolean,
     onSuperIslandToggle: (Boolean) -> Unit,
     enableDynamicIsland: Boolean,
     onDynamicIslandToggle: (Boolean) -> Unit,
+    enableAodLyrics: Boolean,
+    onAodLyricsToggle: (Boolean) -> Unit,
     onSuperIslandConfigClick: () -> Unit,
     onMediaCardConfigClick: () -> Unit,
     onDynamicIslandConfigClick: () -> Unit,
+    onLockScreenAodConfigClick: () -> Unit,
+    onClassicAodConfigClick: () -> Unit,
     onRestartClick: () -> Unit,
     removeFocusWhitelist: Boolean,
     onRemoveFocusWhitelistToggle: (Boolean) -> Unit,
@@ -36,6 +41,7 @@ fun LazyListScope.homePageSections(
 ) {
     item(key = "enhanced_version_notice") {
         EnhancedVersionNotice(
+            updateAvailable = availableUpdateVersion != null,
             modifier = Modifier.padding(horizontal = 12.dp).fillMaxWidth()
         )
     }
@@ -85,6 +91,37 @@ fun LazyListScope.homePageSections(
                         title = stringResource(R.string.title_dynamic_island_config),
                         onClick = onDynamicIslandConfigClick,
                     )
+                }
+            }
+        }
+    }
+
+    item(key = "extra_features_title") {
+        SmallTitle(
+            text = stringResource(R.string.title_extra_features)
+        )
+    }
+
+    item(key = "extra_features_content_aod_lyrics") {
+        Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
+            Column {
+                SwitchPreference(
+                    title = stringResource(R.string.title_aod_lyrics),
+                    summary = stringResource(R.string.summary_aod_lyrics),
+                    checked = enableAodLyrics,
+                    onCheckedChange = onAodLyricsToggle,
+                )
+                AnimatedVisibility(visible = enableAodLyrics) {
+                    Column {
+                        ArrowPreference(
+                            title = stringResource(R.string.title_lock_screen_aod),
+                            onClick = onLockScreenAodConfigClick,
+                        )
+                        ArrowPreference(
+                            title = stringResource(R.string.title_classic_aod),
+                            onClick = onClassicAodConfigClick,
+                        )
+                    }
                 }
             }
         }

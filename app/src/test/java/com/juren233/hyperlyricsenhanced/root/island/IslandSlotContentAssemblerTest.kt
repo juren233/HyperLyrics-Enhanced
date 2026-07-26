@@ -1,5 +1,6 @@
 package com.juren233.hyperlyricsenhanced.root.island
 
+import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.lyric.model.LyricWord
 import com.juren233.hyperlyricsenhanced.lyric.model.RichLyricLine
 import org.junit.Assert.assertFalse
@@ -51,6 +52,44 @@ class IslandSlotContentAssemblerTest {
                 attached = true
             )
         )
+    }
+
+    @Test
+    fun `half preview puts song info on primary line by default`() {
+        val line = IslandSlotContentAssembler.buildHalfNextSongPreviewLine(
+            title = "Song",
+            artist = "Artist",
+            label = "下一首",
+            weight = RootConstants.ISLAND_NEXT_SONG_PREVIEW_WEIGHT_TOP
+        )
+
+        assertEquals("Song-Artist", line.text)
+        assertEquals("下一首", line.secondary)
+    }
+
+    @Test
+    fun `half preview bottom weight puts label on primary line`() {
+        val line = IslandSlotContentAssembler.buildHalfNextSongPreviewLine(
+            title = "Song",
+            artist = "Artist",
+            label = "下一首",
+            weight = RootConstants.ISLAND_NEXT_SONG_PREVIEW_WEIGHT_BOTTOM
+        )
+
+        assertEquals("下一首", line.text)
+        assertEquals("Song-Artist", line.secondary)
+    }
+
+    @Test
+    fun `half preview omits separator when artist is blank`() {
+        val line = IslandSlotContentAssembler.buildHalfNextSongPreviewLine(
+            title = "Song",
+            artist = "",
+            label = "下一首",
+            weight = RootConstants.ISLAND_NEXT_SONG_PREVIEW_WEIGHT_TOP
+        )
+
+        assertEquals("Song", line.text)
     }
 
     @Test
@@ -125,14 +164,14 @@ class IslandSlotContentAssemblerTest {
     }
 
     @Test
-    fun `auto switch shows next line for a line without translation or backing vocals`() {
+    fun `next line is shown when there is no translation or backing vocal`() {
         val line = RichLyricLine(text = "Current lyric")
 
         assertTrue(IslandSlotContentAssembler.shouldUseNextLinePreview(true, line))
     }
 
     @Test
-    fun `auto switch keeps translation or backing vocals in the second line`() {
+    fun `translation display keeps translation or backing vocals in the second line`() {
         assertFalse(
             IslandSlotContentAssembler.shouldUseNextLinePreview(
                 true,
@@ -151,11 +190,41 @@ class IslandSlotContentAssemblerTest {
     }
 
     @Test
-    fun `next line mode without auto switch always occupies the second line`() {
+    fun `disabled translation display lets the next line replace translation`() {
         assertTrue(
             IslandSlotContentAssembler.shouldUseNextLinePreview(
                 false,
-                RichLyricLine(text = "Current lyric", translation = "当前歌词", secondary = "Backing")
+                RichLyricLine(text = "Current lyric", translation = "当前歌词")
+            )
+        )
+    }
+
+    @Test
+    fun `backing vocals keep priority over the next line when translations are hidden`() {
+        assertFalse(
+            IslandSlotContentAssembler.shouldUseNextLinePreview(
+                false,
+                RichLyricLine(text = "Current lyric", secondary = "Backing")
+            )
+        )
+    }
+
+    @Test
+    fun `overlapping lyrics keep their timed second line instead of using next line preview`() {
+        val overlappingLine = RichLyricLine(
+            begin = 1_000,
+            end = 3_000,
+            text = "Main lyric",
+            secondary = "Overlapping lyric",
+            secondaryWords = listOf(
+                LyricWord(begin = 1_800, end = 2_800, text = "Overlapping lyric")
+            )
+        )
+
+        assertFalse(
+            IslandSlotContentAssembler.shouldUseNextLinePreview(
+                false,
+                overlappingLine
             )
         )
     }
@@ -163,18 +232,18 @@ class IslandSlotContentAssemblerTest {
     @Test
     fun `display options switch back to translation when the next line has translation`() {
         val previewOptions = IslandSlotContentAssembler.resolveLyricDisplayOptions(
-            translationDisabled = false,
+            translationDisplayed = true,
             translationOnly = false,
             nextLinePreview = IslandSlotContentAssembler.shouldUseNextLinePreview(
-                autoSwitchTranslation = true,
+                translationDisplayed = true,
                 currentLine = RichLyricLine(text = "No translation")
             )
         )
         val translationOptions = IslandSlotContentAssembler.resolveLyricDisplayOptions(
-            translationDisabled = false,
+            translationDisplayed = true,
             translationOnly = false,
             nextLinePreview = IslandSlotContentAssembler.shouldUseNextLinePreview(
-                autoSwitchTranslation = true,
+                translationDisplayed = true,
                 currentLine = RichLyricLine(text = "Translated", translation = "有翻译")
             )
         )
@@ -183,6 +252,18 @@ class IslandSlotContentAssemblerTest {
         assertFalse(previewOptions.showRoma)
         assertTrue(translationOptions.showTranslation)
         assertTrue(translationOptions.showRoma)
+    }
+
+    @Test
+    fun `disabled translation display hides translation and romanization`() {
+        val options = IslandSlotContentAssembler.resolveLyricDisplayOptions(
+            translationDisplayed = false,
+            translationOnly = false,
+            nextLinePreview = false
+        )
+
+        assertFalse(options.showTranslation)
+        assertFalse(options.showRoma)
     }
 
     @Test

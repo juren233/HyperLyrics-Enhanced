@@ -151,7 +151,7 @@ internal object IslandSlotContentAssembler {
         )
     }
 
-    fun applyNextSongPreviewContent(
+    fun applyFullNextSongPreviewContent(
         view: View,
         prefs: SharedPreferences,
         config: IslandSlotRuntimeConfig,
@@ -160,7 +160,6 @@ internal object IslandSlotContentAssembler {
         label: String,
         playbackActive: Boolean = true
     ): Boolean {
-        configureView(view, prefs, config, mode = 5, force = true)
         val line = if (isLeft) {
             RichLyricLine(text = label, words = emptyList())
         } else {
@@ -171,11 +170,90 @@ internal object IslandSlotContentAssembler {
                 secondaryWords = emptyList()
             )
         }
+        return applyNextSongPreviewLine(
+            view = view,
+            prefs = prefs,
+            config = config,
+            line = line,
+            signaturePrefix = "next-song-full",
+            signatureParts = listOf(isLeft, nextSong.title, nextSong.artist),
+            marquee = !isLeft,
+            playbackActive = playbackActive
+        )
+    }
+
+    fun applyHalfNextSongPreviewContent(
+        view: View,
+        prefs: SharedPreferences,
+        config: IslandSlotRuntimeConfig,
+        nextSong: MediaMetadataHelper.MediaInfo,
+        label: String,
+        playbackActive: Boolean = true
+    ): Boolean {
+        val line = buildHalfNextSongPreviewLine(
+            title = nextSong.title,
+            artist = nextSong.artist,
+            label = label,
+            weight = config.nextSongPreviewWeight
+        )
+        return applyNextSongPreviewLine(
+            view = view,
+            prefs = prefs,
+            config = config,
+            line = line,
+            signaturePrefix = "next-song-half",
+            signatureParts = listOf(
+                nextSong.title,
+                nextSong.artist,
+                config.nextSongPreviewWeight
+            ),
+            marquee = true,
+            playbackActive = playbackActive
+        )
+    }
+
+    internal fun buildHalfNextSongPreviewLine(
+        title: String,
+        artist: String,
+        label: String,
+        weight: Int
+    ): RichLyricLine {
+        val songInfo = when {
+            title.isBlank() -> artist
+            artist.isBlank() -> title
+            else -> "$title-$artist"
+        }
+        return if (weight == RootConstants.ISLAND_NEXT_SONG_PREVIEW_WEIGHT_BOTTOM) {
+            RichLyricLine(
+                text = label,
+                words = emptyList(),
+                secondary = songInfo,
+                secondaryWords = emptyList()
+            )
+        } else {
+            RichLyricLine(
+                text = songInfo,
+                words = emptyList(),
+                secondary = label,
+                secondaryWords = emptyList()
+            )
+        }
+    }
+
+    private fun applyNextSongPreviewLine(
+        view: View,
+        prefs: SharedPreferences,
+        config: IslandSlotRuntimeConfig,
+        line: RichLyricLine,
+        signaturePrefix: String,
+        signatureParts: List<Any>,
+        marquee: Boolean,
+        playbackActive: Boolean
+    ): Boolean {
+        configureView(view, prefs, config, mode = 5)
         val signature = listOf(
-            "next-song",
-            isLeft,
-            nextSong.title,
-            nextSong.artist,
+            signaturePrefix,
+            *signatureParts.toTypedArray(),
             config.styleSignature
         ).joinToString("|")
         val contentChanged = hasViewLineContentChanged(view, line)
@@ -187,12 +265,12 @@ internal object IslandSlotContentAssembler {
                 is RichLyricLineView -> {
                     target.line = line
                     target.setPlaybackActive(playbackActive)
-                    if (!isLeft) applyMetadataMarquee(target, config, force = true)
+                    if (marquee) applyMetadataMarquee(target, config, force = true)
                 }
                 is SpaceGateRichLyricLineView -> {
                     target.line = line
                     target.setPlaybackActive(playbackActive)
-                    if (!isLeft) applyMetadataMarquee(target, config, force = true)
+                    if (marquee) applyMetadataMarquee(target, config, force = true)
                 }
             }
         }
@@ -211,7 +289,7 @@ internal object IslandSlotContentAssembler {
         ) {
             return null
         }
-        if (TranslationHelper.isTranslationDisabled(prefs) ||
+        if (!TranslationHelper.isTranslationDisplayed(prefs) ||
             TranslationHelper.isTranslationOnly(prefs) ||
             TranslationHelper.isSwapTranslation(prefs)
         ) {
@@ -301,7 +379,9 @@ internal object IslandSlotContentAssembler {
 
     fun processedRawLine(prefs: SharedPreferences, config: IslandSlotRuntimeConfig? = null): IRichLyricLine? {
         val songName = LyriconDataBridge.currentSongName?.takeIf { it.isNotEmpty() } ?: ""
-        var rawLine = LyriconDataBridge.currentLyricLine
+        var rawLine = LyriconDataBridge.currentLyricLineForIsland(
+            nextLyricLineEnabled = config?.nextLyricLine != false
+        )
             ?: RichLyricLine(text = songName, words = emptyList())
 
         if (config != null && isNextLinePreviewEnabled(prefs, config, rawLine)) {
@@ -312,10 +392,12 @@ internal object IslandSlotContentAssembler {
             )
         }
 
-        if (TranslationHelper.isTranslationOnly(prefs)) {
-            rawLine = TranslationHelper.applyTranslationOnly(rawLine)
-        } else if (TranslationHelper.isSwapTranslation(prefs)) {
-            rawLine = TranslationHelper.swapTranslation(rawLine)
+        if (TranslationHelper.isTranslationDisplayed(prefs)) {
+            if (TranslationHelper.isTranslationOnly(prefs)) {
+                rawLine = TranslationHelper.applyTranslationOnly(rawLine)
+            } else if (TranslationHelper.isSwapTranslation(prefs)) {
+                rawLine = TranslationHelper.swapTranslation(rawLine)
+            }
         }
         return rawLine
     }
@@ -507,7 +589,7 @@ internal object IslandSlotContentAssembler {
         config: IslandSlotRuntimeConfig
     ) {
         val options = resolveLyricDisplayOptions(
-            translationDisabled = TranslationHelper.isTranslationDisabled(prefs),
+            translationDisplayed = TranslationHelper.isTranslationDisplayed(prefs),
             translationOnly = TranslationHelper.isTranslationOnly(prefs),
             nextLinePreview = isNextLinePreviewEnabled(prefs, config)
         )
@@ -518,11 +600,11 @@ internal object IslandSlotContentAssembler {
     }
 
     internal fun resolveLyricDisplayOptions(
-        translationDisabled: Boolean,
+        translationDisplayed: Boolean,
         translationOnly: Boolean,
         nextLinePreview: Boolean
     ): LyricDisplayOptions {
-        val hideSecondaryContent = translationDisabled || nextLinePreview
+        val hideSecondaryContent = !translationDisplayed || nextLinePreview
         return LyricDisplayOptions(
             showTranslation = !hideSecondaryContent,
             showRoma = !hideSecondaryContent && !translationOnly
@@ -670,16 +752,17 @@ internal object IslandSlotContentAssembler {
         if (LyriconDataBridge.isTextMode) return false
         val source = prefs.getString(RootConstants.KEY_HOOK_LYRIC_SOURCE, RootConstants.DEFAULT_HOOK_LYRIC_SOURCE)
         if (source != "lyricon" && source != "lyricinfo") return false
-        return shouldUseNextLinePreview(config.autoSwitchTranslation, currentLine)
+        return shouldUseNextLinePreview(config.translationDisplay, currentLine)
     }
 
     internal fun shouldUseNextLinePreview(
-        autoSwitchTranslation: Boolean,
+        translationDisplayed: Boolean,
         currentLine: IRichLyricLine?
     ): Boolean {
-        if (!autoSwitchTranslation) return true
-        val hasTranslation = !currentLine?.translation.isNullOrBlank() ||
-            !currentLine?.translationWords.isNullOrEmpty()
+        val hasTranslation = translationDisplayed && (
+            !currentLine?.translation.isNullOrBlank() ||
+                !currentLine?.translationWords.isNullOrEmpty()
+            )
         val hasSecondary = !currentLine?.secondary.isNullOrBlank() ||
             !currentLine?.secondaryWords.isNullOrEmpty()
         return !hasTranslation && !hasSecondary

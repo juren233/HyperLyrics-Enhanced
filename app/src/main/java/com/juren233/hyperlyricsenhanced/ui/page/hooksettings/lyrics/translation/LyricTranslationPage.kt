@@ -12,6 +12,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import com.juren233.hyperlyricsenhanced.R
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.common.lyric.AdjacentTranslationPolicy
+import com.juren233.hyperlyricsenhanced.root.utils.TranslationHelper
 import com.juren233.hyperlyricsenhanced.ui.component.TextInputDialog
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.common.XposedLyricSettingPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.common.rememberHookConfigSaver
@@ -26,11 +27,11 @@ fun LyricTranslationPage() {
     val lyricSource by remember { mutableStateOf(prefs.getString(RootConstants.KEY_HOOK_LYRIC_SOURCE, RootConstants.DEFAULT_HOOK_LYRIC_SOURCE) ?: "lyricon") }
     val islandContentLeft by remember { mutableIntStateOf(prefs.getInt(RootConstants.KEY_HOOK_ISLAND_CONTENT_LEFT, RootConstants.DEFAULT_HOOK_ISLAND_CONTENT_LEFT)) }
     val islandContentRight by remember { mutableIntStateOf(prefs.getInt(RootConstants.KEY_HOOK_ISLAND_CONTENT_RIGHT, RootConstants.DEFAULT_HOOK_ISLAND_CONTENT_RIGHT)) }
-    var disableTranslation by remember { mutableStateOf(prefs.getBoolean(RootConstants.KEY_HOOK_DISABLE_TRANSLATION, RootConstants.DEFAULT_HOOK_DISABLE_TRANSLATION)) }
+    var translationDisplay by remember {
+        mutableStateOf(TranslationHelper.isTranslationDisplayed(prefs))
+    }
     var translationOnly by remember { mutableStateOf(prefs.getBoolean(RootConstants.KEY_HOOK_TRANSLATION_ONLY, RootConstants.DEFAULT_HOOK_TRANSLATION_ONLY)) }
     var swapTranslation by remember { mutableStateOf(prefs.getBoolean(RootConstants.KEY_HOOK_SWAP_TRANSLATION, RootConstants.DEFAULT_HOOK_SWAP_TRANSLATION)) }
-    var nextLyricLine by remember { mutableStateOf(prefs.getBoolean(RootConstants.KEY_HOOK_NEXT_LYRIC_LINE, RootConstants.DEFAULT_HOOK_NEXT_LYRIC_LINE)) }
-    var autoSwitchTranslation by remember { mutableStateOf(prefs.getBoolean(RootConstants.KEY_HOOK_AUTO_SWITCH_TRANSLATION, RootConstants.DEFAULT_HOOK_AUTO_SWITCH_TRANSLATION)) }
     var adjacentBackgroundTranslation by remember { mutableStateOf(prefs.getBoolean(RootConstants.KEY_HOOK_ADJACENT_BACKGROUND_TRANSLATION, RootConstants.DEFAULT_HOOK_ADJACENT_BACKGROUND_TRANSLATION)) }
     var appleMusicMatchOnlineTranslation by remember {
         mutableStateOf(
@@ -119,16 +120,15 @@ fun LyricTranslationPage() {
     XposedLyricSettingPage(title = stringResource(id = R.string.title_translation)) {
         translationSections(
             lyricSource = lyricSource,
-            lyricMode = lyricMode,
             adjacentBackgroundTranslationAvailable = AdjacentTranslationPolicy.isEligible(
                 lyricMode,
                 islandContentLeft,
                 islandContentRight
             ),
-            disableTranslation = disableTranslation,
-            onDisableTranslationChange = {
-                disableTranslation = it
-                saveConfig(RootConstants.KEY_HOOK_DISABLE_TRANSLATION, it)
+            translationDisplay = translationDisplay,
+            onTranslationDisplayChange = {
+                translationDisplay = it
+                saveConfig(RootConstants.KEY_HOOK_TRANSLATION_DISPLAY, it)
             },
             translationOnly = translationOnly,
             onTranslationOnlyChange = {
@@ -147,16 +147,6 @@ fun LyricTranslationPage() {
                     translationOnly = false
                     saveConfig(RootConstants.KEY_HOOK_TRANSLATION_ONLY, false)
                 }
-            },
-            nextLyricLine = nextLyricLine,
-            onNextLyricLineChange = {
-                nextLyricLine = it
-                saveConfig(RootConstants.KEY_HOOK_NEXT_LYRIC_LINE, it)
-            },
-            autoSwitchTranslation = autoSwitchTranslation,
-            onAutoSwitchTranslationChange = {
-                autoSwitchTranslation = it
-                saveConfig(RootConstants.KEY_HOOK_AUTO_SWITCH_TRANSLATION, it)
             },
             adjacentBackgroundTranslation = adjacentBackgroundTranslation,
             onAdjacentBackgroundTranslationChange = {

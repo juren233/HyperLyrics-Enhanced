@@ -17,7 +17,7 @@
 
 ---
 
-HyperLyrics Enhanced 是一款专为小米 HyperOS 量身定制且针对性优化 Apple Music 歌词体验的歌词显示增强工具。项目基于 [limczhh/HyperLyric](https://github.com/limczhh/HyperLyric) 开发，在保留原项目主要能力的基础上，重点优化 **Apple Music 歌词体验**、补全**无歌词场景**（将online与offline合并且补进超级岛歌词里），并改善在线歌词与 AI 翻译的匹配、补充和显示体验。
+HyperLyrics Enhanced 是一款专为小米 HyperOS 量身定制且针对性优化 Apple Music 歌词体验的歌词显示增强工具。项目基于 [limczhh/HyperLyric](https://github.com/limczhh/HyperLyric) 二次开发，在保留原项目主要能力的基础上，重点优化 **Apple Music 歌词体验**、补全**无歌词场景**（将online与offline合并且补进超级岛歌词里），并改善在线歌词与 AI 翻译的匹配、补充和显示体验。
 
 项目提供双模运行机制，既支持以 **Xposed 模块** 方式注入 SystemUI 媒体超级岛，提供贴合原生风格的逐字动态歌词，也支持作为 **独立应用** 接收系统通知栏/小米焦点通知，实现零 Root、免模块的歌词显示。
 

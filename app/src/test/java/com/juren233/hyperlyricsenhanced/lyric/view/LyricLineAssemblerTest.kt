@@ -6,6 +6,7 @@
 
 package com.juren233.hyperlyricsenhanced.lyric.view
 
+import com.juren233.hyperlyricsenhanced.common.lyric.LyricMetadataKeys
 import com.juren233.hyperlyricsenhanced.lyric.model.LyricWord
 import com.juren233.hyperlyricsenhanced.lyric.model.RichLyricLine
 import com.juren233.hyperlyricsenhanced.lyric.model.lyricMetadataOf
@@ -60,6 +61,23 @@ class LyricLineAssemblerTest {
         )
 
         assertTrue(result.isNextLinePreview)
+        assertTrue(result.line.isAlignedRight)
+    }
+
+    @Test
+    fun `uses the concurrent lyric direction for a simultaneous duet secondary line`() {
+        val result = LyricLineAssembler().buildSecondary(
+            RichLyricLine(
+                text = "Left duet",
+                secondary = "Right duet",
+                isAlignedRight = false,
+                metadata = lyricMetadataOf(
+                    LyricMetadataKeys.CONCURRENT_SECONDARY_ALIGNED_RIGHT to "true"
+                )
+            )
+        )
+
+        assertTrue(result.alwaysShow)
         assertTrue(result.line.isAlignedRight)
     }
 

@@ -18,18 +18,13 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 fun LazyListScope.translationSections(
     lyricSource: String,
-    lyricMode: Int,
     adjacentBackgroundTranslationAvailable: Boolean,
-    disableTranslation: Boolean,
-    onDisableTranslationChange: (Boolean) -> Unit,
+    translationDisplay: Boolean,
+    onTranslationDisplayChange: (Boolean) -> Unit,
     translationOnly: Boolean,
     onTranslationOnlyChange: (Boolean) -> Unit,
     swapTranslation: Boolean,
     onSwapTranslationChange: (Boolean) -> Unit,
-    nextLyricLine: Boolean,
-    onNextLyricLineChange: (Boolean) -> Unit,
-    autoSwitchTranslation: Boolean,
-    onAutoSwitchTranslationChange: (Boolean) -> Unit,
     adjacentBackgroundTranslation: Boolean,
     onAdjacentBackgroundTranslationChange: (Boolean) -> Unit,
     appleMusicMatchOnlineTranslation: Boolean,
@@ -56,8 +51,7 @@ fun LazyListScope.translationSections(
     onPromptClick: () -> Unit
 ) {
     item(key = "translation") {
-        val supportsNextLyricLine = (lyricSource == "lyricon" || lyricSource == "lyricinfo") && lyricMode == 0
-        val translationControlsEnabled = !supportsNextLyricLine || !nextLyricLine || autoSwitchTranslation
+        val translationControlsEnabled = translationDisplay
         val translationActionColor = if (translationControlsEnabled) {
             MiuixTheme.colorScheme.onSurfaceVariantActions
         } else {
@@ -66,33 +60,17 @@ fun LazyListScope.translationSections(
 
         Column {
             SmallTitle(text = stringResource(id = R.string.title_translation))
-            if (supportsNextLyricLine) {
-                Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
-                    Column {
-                        SwitchPreference(
-                            title = stringResource(id = R.string.title_next_lyric_line),
-                            summary = stringResource(id = R.string.summary_next_lyric_line),
-                            checked = nextLyricLine,
-                            onCheckedChange = onNextLyricLineChange
-                        )
-                        SwitchPreference(
-                            title = stringResource(id = R.string.title_auto_switch_translation),
-                            summary = stringResource(id = R.string.summary_auto_switch_translation),
-                            checked = autoSwitchTranslation,
-                            onCheckedChange = onAutoSwitchTranslationChange,
-                            enabled = nextLyricLine
-                        )
-                    }
+            Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
+                Column {
+                    SwitchPreference(
+                        title = stringResource(id = R.string.title_translation_display),
+                        checked = translationDisplay,
+                        onCheckedChange = onTranslationDisplayChange
+                    )
                 }
             }
             Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
                 Column {
-                    SwitchPreference(
-                        title = stringResource(id = R.string.title_disable_translation),
-                        checked = disableTranslation,
-                        onCheckedChange = onDisableTranslationChange,
-                        enabled = translationControlsEnabled
-                    )
                     SwitchPreference(
                         title = stringResource(id = R.string.title_translation_only),
                         checked = translationOnly,

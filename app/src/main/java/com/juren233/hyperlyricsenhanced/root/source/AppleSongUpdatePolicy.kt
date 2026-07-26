@@ -22,6 +22,16 @@ internal object AppleSongUpdatePolicy {
         return sameTitleAndArtist(currentSong, candidate)
     }
 
+    fun canStartFallbackFromMediaSession(
+        currentSong: Song?,
+        mediaSessionSong: Song,
+        currentHasNativeLyrics: Boolean
+    ): Boolean {
+        if (currentSong == null || currentHasNativeLyrics) return false
+        if (!currentSong.lyrics.isNullOrEmpty()) return false
+        return sameTitleAndArtist(currentSong, mediaSessionSong)
+    }
+
     private fun sameTitleAndArtist(first: Song, second: Song): Boolean =
         normalize(first.name) == normalize(second.name) &&
             normalize(first.artist) == normalize(second.artist)

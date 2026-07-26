@@ -36,6 +36,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -56,12 +57,14 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.edit
 import androidx.core.content.pm.PackageInfoCompat
 import com.juren233.hyperlyricsenhanced.common.RootConstants
+import com.juren233.hyperlyricsenhanced.common.ClassicAodSongInfoConfig
 import com.juren233.hyperlyricsenhanced.common.UIConstants
 import com.juren233.hyperlyricsenhanced.R
 import com.juren233.hyperlyricsenhanced.common.PrefsBridge
 import com.juren233.hyperlyricsenhanced.root.RootApplication
 import com.juren233.hyperlyricsenhanced.ui.component.EnhancedVersionNotice
 import com.juren233.hyperlyricsenhanced.utils.MigrationData
+import com.juren233.hyperlyricsenhanced.utils.UpdateData
 import com.juren233.hyperlyricsenhanced.root.utils.ShellUtils
 import com.juren233.hyperlyricsenhanced.service.LiveLyricService
 import com.juren233.hyperlyricsenhanced.ui.navigation.LocalNavigator
@@ -110,6 +113,7 @@ fun MainPage() {
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     val sheetSnackbarHostState = remember { SnackbarHostState() }
+    val availableUpdate by UpdateData.availableUpdate.collectAsState()
 
     // --- pager ---
     val pagerState = rememberPagerState(pageCount = { 2 })
@@ -136,6 +140,9 @@ fun MainPage() {
     }
     var enableDynamicIsland by remember {
         mutableStateOf(prefs.getBoolean(RootConstants.KEY_HOOK_ENABLE_DYNAMIC_ISLAND, RootConstants.DEFAULT_HOOK_ENABLE_DYNAMIC_ISLAND))
+    }
+    var enableAodLyrics by remember {
+        mutableStateOf(prefs.getBoolean(RootConstants.KEY_HOOK_ENABLE_AOD_LYRICS, RootConstants.DEFAULT_HOOK_ENABLE_AOD_LYRICS))
     }
     var removeFocusWhitelist by remember {
         mutableStateOf(prefs.getBoolean(RootConstants.KEY_HOOK_REMOVE_FOCUS_WHITELIST, RootConstants.DEFAULT_HOOK_REMOVE_FOCUS_WHITELIST))
@@ -179,6 +186,8 @@ fun MainPage() {
                     enableSuperIsland = p.getBoolean(RootConstants.KEY_HOOK_ENABLE_SUPER_ISLAND, RootConstants.DEFAULT_HOOK_ENABLE_SUPER_ISLAND)
                 RootConstants.KEY_HOOK_ENABLE_DYNAMIC_ISLAND ->
                     enableDynamicIsland = p.getBoolean(RootConstants.KEY_HOOK_ENABLE_DYNAMIC_ISLAND, RootConstants.DEFAULT_HOOK_ENABLE_DYNAMIC_ISLAND)
+                RootConstants.KEY_HOOK_ENABLE_AOD_LYRICS ->
+                    enableAodLyrics = p.getBoolean(RootConstants.KEY_HOOK_ENABLE_AOD_LYRICS, RootConstants.DEFAULT_HOOK_ENABLE_AOD_LYRICS)
                 RootConstants.KEY_HOOK_APPLE_MUSIC_CONTENT_UI_LANGUAGE ->
                     appleMusicContentUiLanguage = p.getInt(
                         RootConstants.KEY_HOOK_APPLE_MUSIC_CONTENT_UI_LANGUAGE,
@@ -198,7 +207,12 @@ fun MainPage() {
     LaunchedEffect(Unit) {
         val hasListenerPermission = NotificationManagerCompat.getEnabledListenerPackages(context).contains(context.packageName)
         val isDynamicIslandEnabled = prefs.getBoolean(RootConstants.KEY_HOOK_ENABLE_DYNAMIC_ISLAND, RootConstants.DEFAULT_HOOK_ENABLE_DYNAMIC_ISLAND)
-        if (hasListenerPermission && isDynamicIslandEnabled) {
+        val isClassicAodSongInfoEnabled = prefs.getBoolean(
+            RootConstants.KEY_HOOK_ENABLE_AOD_LYRICS,
+            RootConstants.DEFAULT_HOOK_ENABLE_AOD_LYRICS,
+        ) && ClassicAodSongInfoConfig.displayStyle(prefs) ==
+            RootConstants.AOD_SONG_INFO_DISPLAY_STYLE_FOCUS_NOTIFICATION
+        if (hasListenerPermission && (isDynamicIslandEnabled || isClassicAodSongInfoEnabled)) {
             LiveLyricService.ensureListenerBound(context)
         }
     }
@@ -246,6 +260,27 @@ fun MainPage() {
             enableDynamicIsland = false
             prefs.edit { putBoolean(RootConstants.KEY_HOOK_ENABLE_DYNAMIC_ISLAND, false) }
             PrefsBridge.putBoolean(RootConstants.KEY_HOOK_ENABLE_DYNAMIC_ISLAND, false)
+        }
+    } }
+
+    val toggleAodLyrics: (Boolean) -> Unit = remember { { checked ->
+        if (checked) {
+            if (RootApplication.xposedService != null) {
+                enableAodLyrics = true
+                prefs.edit { putBoolean(RootConstants.KEY_HOOK_ENABLE_AOD_LYRICS, true) }
+                PrefsBridge.putBoolean(RootConstants.KEY_HOOK_ENABLE_AOD_LYRICS, true)
+            } else {
+                scope.launch {
+                    snackbarHostState.showSnackbar(
+                        message = msgXposedNotActive,
+                        duration = SnackbarDuration.Custom(2000L)
+                    )
+                }
+            }
+        } else {
+            enableAodLyrics = false
+            prefs.edit { putBoolean(RootConstants.KEY_HOOK_ENABLE_AOD_LYRICS, false) }
+            PrefsBridge.putBoolean(RootConstants.KEY_HOOK_ENABLE_AOD_LYRICS, false)
         }
     } }
 
@@ -537,13 +572,18 @@ fun MainPage() {
                 if (page == 0) {
                     HomePage(
                         outerPadding = innerPadding,
+                        availableUpdateVersion = availableUpdate?.displayVersion,
                         enableSuperIsland = enableSuperIsland,
                         onSuperIslandToggle = toggleSuperIsland,
                         enableDynamicIsland = enableDynamicIsland,
                         onDynamicIslandToggle = toggleDynamicIsland,
+                        enableAodLyrics = enableAodLyrics,
+                        onAodLyricsToggle = toggleAodLyrics,
                         onSuperIslandConfigClick = { navigator.navigate(Route.HookSettings) },
                         onMediaCardConfigClick = { navigator.navigate(Route.MediaCardSettings) },
                         onDynamicIslandConfigClick = { navigator.navigate(Route.DynamicIslandNotification) },
+                        onLockScreenAodConfigClick = { navigator.navigate(Route.LockScreenAodSettings) },
+                        onClassicAodConfigClick = { navigator.navigate(Route.ClassicAodSettings) },
                         onRestartClick = { showRestartDialog = true },
                         removeFocusWhitelist = removeFocusWhitelist,
                         onRemoveFocusWhitelistToggle = toggleRemoveFocusWhitelist,
@@ -558,6 +598,7 @@ fun MainPage() {
                     AboutPage(
                         outerPadding = innerPadding,
                         aboutAppVersion = aboutAppVersion,
+                        availableUpdateVersion = availableUpdate?.displayVersion,
                         aboutDeviceModel = aboutDeviceModel,
                         aboutOsVersion = aboutOsVersion,
                         aboutAndroidVersion = aboutAndroidVersion,

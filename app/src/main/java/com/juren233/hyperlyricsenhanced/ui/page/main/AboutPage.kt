@@ -27,6 +27,7 @@ import com.juren233.hyperlyricsenhanced.ui.utils.rememberBlurBackdrop
 fun AboutPage(
     outerPadding: PaddingValues,
     aboutAppVersion: String?,
+    availableUpdateVersion: String?,
     aboutDeviceModel: String,
     aboutOsVersion: String,
     aboutAndroidVersion: String,
@@ -71,6 +72,7 @@ fun AboutPage(
             ) {
                 aboutPageSections(
                     aboutAppVersion = aboutAppVersion,
+                    availableUpdateVersion = availableUpdateVersion,
                     aboutDeviceModel = aboutDeviceModel,
                     aboutOsVersion = aboutOsVersion,
                     aboutAndroidVersion = aboutAndroidVersion,

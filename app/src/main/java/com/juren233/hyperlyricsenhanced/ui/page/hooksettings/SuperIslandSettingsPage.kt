@@ -56,6 +56,22 @@ fun SuperIslandSettingsPage() {
     var islandContentLeft by remember { mutableIntStateOf(prefs.getInt(RootConstants.KEY_HOOK_ISLAND_CONTENT_LEFT, RootConstants.DEFAULT_HOOK_ISLAND_CONTENT_LEFT)) }
     var islandContentRight by remember { mutableIntStateOf(prefs.getInt(RootConstants.KEY_HOOK_ISLAND_CONTENT_RIGHT, RootConstants.DEFAULT_HOOK_ISLAND_CONTENT_RIGHT)) }
     val lyricMode by remember { mutableIntStateOf(prefs.getInt(RootConstants.KEY_HOOK_LYRIC_MODE, RootConstants.DEFAULT_HOOK_LYRIC_MODE)) }
+    val lyricSource by remember {
+        mutableStateOf(
+            prefs.getString(
+                RootConstants.KEY_HOOK_LYRIC_SOURCE,
+                RootConstants.DEFAULT_HOOK_LYRIC_SOURCE
+            ) ?: RootConstants.DEFAULT_HOOK_LYRIC_SOURCE
+        )
+    }
+    var nextLyricLine by remember {
+        mutableStateOf(
+            prefs.getBoolean(
+                RootConstants.KEY_HOOK_NEXT_LYRIC_LINE,
+                RootConstants.DEFAULT_HOOK_NEXT_LYRIC_LINE
+            )
+        )
+    }
     var audioCover by remember { mutableStateOf(prefs.getBoolean(RootConstants.KEY_HOOK_ISLAND_LEFT_ALBUM, RootConstants.DEFAULT_HOOK_ISLAND_LEFT_ALBUM)) }
     var audioCoverStyle by remember {
         mutableIntStateOf(
@@ -79,7 +95,56 @@ fun SuperIslandSettingsPage() {
     var rightContentWidth by remember { mutableIntStateOf(prefs.getInt(RootConstants.KEY_HOOK_ISLAND_RIGHT_CONTENT_MAX_WIDTH, RootConstants.DEFAULT_HOOK_ISLAND_RIGHT_CONTENT_MAX_WIDTH).coerceIn(20, 100)) }
     var afterPauseBehavior by remember { mutableIntStateOf(prefs.getInt(RootConstants.KEY_HOOK_ISLAND_BEHAVIOR_AFTER_PAUSE, RootConstants.DEFAULT_HOOK_ISLAND_BEHAVIOR_AFTER_PAUSE)) }
     var forceNextSongAtEnd by remember { mutableStateOf(prefs.getBoolean(RootConstants.KEY_HOOK_ISLAND_FORCE_NEXT_SONG_AT_END, RootConstants.DEFAULT_HOOK_ISLAND_FORCE_NEXT_SONG_AT_END)) }
-    var nextSongDurationSeconds by remember { mutableIntStateOf(prefs.getInt(RootConstants.KEY_HOOK_ISLAND_NEXT_SONG_DURATION, RootConstants.DEFAULT_HOOK_ISLAND_NEXT_SONG_DURATION).coerceIn(0, 5)) }
+    val storedNextSongDuration = prefs.getInt(
+        RootConstants.KEY_HOOK_ISLAND_NEXT_SONG_DURATION,
+        RootConstants.DEFAULT_HOOK_ISLAND_NEXT_SONG_DURATION
+    ).coerceIn(0, 5)
+    val storedNextSongPreviewStyle = prefs.getInt(
+        RootConstants.KEY_HOOK_ISLAND_NEXT_SONG_PREVIEW_STYLE,
+        Int.MIN_VALUE
+    )
+    var nextSongPreviewStyle by remember {
+        mutableIntStateOf(
+            if (storedNextSongPreviewStyle != Int.MIN_VALUE) {
+                storedNextSongPreviewStyle.coerceIn(
+                    RootConstants.ISLAND_NEXT_SONG_PREVIEW_STYLE_NONE,
+                    RootConstants.ISLAND_NEXT_SONG_PREVIEW_STYLE_HALF
+                )
+            } else if (storedNextSongDuration > 0) {
+                RootConstants.ISLAND_NEXT_SONG_PREVIEW_STYLE_FULL
+            } else {
+                RootConstants.ISLAND_NEXT_SONG_PREVIEW_STYLE_NONE
+            }
+        )
+    }
+    var nextSongDurationSeconds by remember {
+        mutableIntStateOf(
+            storedNextSongDuration.takeIf { it > 0 }
+                ?: RootConstants.DEFAULT_HOOK_ISLAND_NEXT_SONG_DURATION
+        )
+    }
+    var nextSongPreviewPosition by remember {
+        mutableIntStateOf(
+            prefs.getInt(
+                RootConstants.KEY_HOOK_ISLAND_NEXT_SONG_PREVIEW_POSITION,
+                RootConstants.DEFAULT_HOOK_ISLAND_NEXT_SONG_PREVIEW_POSITION
+            ).coerceIn(
+                RootConstants.ISLAND_NEXT_SONG_PREVIEW_POSITION_OTHER_SIDE,
+                RootConstants.ISLAND_NEXT_SONG_PREVIEW_POSITION_RIGHT
+            )
+        )
+    }
+    var nextSongPreviewWeight by remember {
+        mutableIntStateOf(
+            prefs.getInt(
+                RootConstants.KEY_HOOK_ISLAND_NEXT_SONG_PREVIEW_WEIGHT,
+                RootConstants.DEFAULT_HOOK_ISLAND_NEXT_SONG_PREVIEW_WEIGHT
+            ).coerceIn(
+                RootConstants.ISLAND_NEXT_SONG_PREVIEW_WEIGHT_TOP,
+                RootConstants.ISLAND_NEXT_SONG_PREVIEW_WEIGHT_BOTTOM
+            )
+        )
+    }
     var extractGlowColor by remember { mutableStateOf(prefs.getBoolean(RootConstants.KEY_HOOK_ISLAND_GLOW_EXTRACT_COLOR, RootConstants.DEFAULT_HOOK_ISLAND_GLOW_EXTRACT_COLOR)) }
     var progressGlow by remember { mutableStateOf(prefs.getBoolean(RootConstants.KEY_HOOK_ISLAND_PROGRESS_GLOW, RootConstants.DEFAULT_HOOK_ISLAND_PROGRESS_GLOW)) }
     var progressGradient by remember { mutableStateOf(prefs.getBoolean(RootConstants.KEY_HOOK_ISLAND_PROGRESS_GRADIENT, RootConstants.DEFAULT_HOOK_ISLAND_PROGRESS_GRADIENT)) }
@@ -121,12 +186,31 @@ fun SuperIslandSettingsPage() {
     }.map { stringResource(id = it) }
     val nextSongDurationOptions = remember {
         listOf(
-            R.string.option_next_song_duration_disabled,
             R.string.option_next_song_duration_1,
             R.string.option_next_song_duration_2,
             R.string.option_next_song_duration_3,
             R.string.option_next_song_duration_4,
             R.string.option_next_song_duration_5
+        )
+    }.map { stringResource(id = it) }
+    val nextSongPreviewStyleOptions = remember {
+        listOf(
+            R.string.option_island_next_song_preview_none,
+            R.string.option_island_next_song_preview_full,
+            R.string.option_island_next_song_preview_half
+        )
+    }.map { stringResource(id = it) }
+    val nextSongPreviewPositionOptions = remember {
+        listOf(
+            R.string.option_island_next_song_preview_other_side,
+            R.string.option_island_next_song_preview_left,
+            R.string.option_island_next_song_preview_right
+        )
+    }.map { stringResource(id = it) }
+    val nextSongPreviewWeightOptions = remember {
+        listOf(
+            R.string.option_island_next_song_preview_weight_top,
+            R.string.option_island_next_song_preview_weight_bottom
         )
     }.map { stringResource(id = it) }
     val audioCoverStyleValues = remember {
@@ -315,19 +399,90 @@ fun SuperIslandSettingsPage() {
                                         )
                                     }
                                 )
+                                if (lyricSource == "lyricon" || lyricSource == "lyricinfo") {
+                                    SwitchPreference(
+                                        title = stringResource(id = R.string.title_next_lyric_line),
+                                        summary = stringResource(id = R.string.summary_next_lyric_line),
+                                        checked = nextLyricLine,
+                                        onCheckedChange = {
+                                            nextLyricLine = it
+                                            saveConfig(RootConstants.KEY_HOOK_NEXT_LYRIC_LINE, it)
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    item(key = "next_song_preview") {
+                        Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
+                            Column {
                                 OverlayDropdownPreference(
-                                    title = stringResource(id = R.string.title_next_song_at_end),
-                                    summary = stringResource(id = R.string.summary_next_song_at_end),
-                                    items = nextSongDurationOptions,
-                                    selectedIndex = nextSongDurationSeconds,
+                                    title = stringResource(id = R.string.title_island_next_song_preview),
+                                    items = nextSongPreviewStyleOptions,
+                                    selectedIndex = nextSongPreviewStyle,
                                     onSelectedIndexChange = {
-                                        nextSongDurationSeconds = it
-                                        saveConfig(RootConstants.KEY_HOOK_ISLAND_NEXT_SONG_DURATION, it)
+                                        nextSongPreviewStyle = it
+                                        saveConfig(
+                                            RootConstants.KEY_HOOK_ISLAND_NEXT_SONG_PREVIEW_STYLE,
+                                            it
+                                        )
                                     }
                                 )
-                                AnimatedVisibility(visible = nextSongDurationSeconds > 0) {
-                                    SwitchPreference(
-                                        title = stringResource(id = R.string.title_force_next_song_at_end),
+                                AnimatedVisibility(
+                                    visible = nextSongPreviewStyle ==
+                                        RootConstants.ISLAND_NEXT_SONG_PREVIEW_STYLE_HALF
+                                ) {
+                                    Column {
+                                        OverlayDropdownPreference(
+                                            title = stringResource(
+                                                id = R.string.title_island_next_song_preview_position
+                                            ),
+                                            items = nextSongPreviewPositionOptions,
+                                            selectedIndex = nextSongPreviewPosition,
+                                            onSelectedIndexChange = {
+                                                nextSongPreviewPosition = it
+                                                saveConfig(
+                                                    RootConstants.KEY_HOOK_ISLAND_NEXT_SONG_PREVIEW_POSITION,
+                                                    it
+                                                )
+                                            }
+                                        )
+                                        OverlayDropdownPreference(
+                                            title = stringResource(
+                                                id = R.string.title_island_next_song_preview_weight
+                                            ),
+                                            items = nextSongPreviewWeightOptions,
+                                            selectedIndex = nextSongPreviewWeight,
+                                            onSelectedIndexChange = {
+                                                nextSongPreviewWeight = it
+                                                saveConfig(
+                                                    RootConstants.KEY_HOOK_ISLAND_NEXT_SONG_PREVIEW_WEIGHT,
+                                                    it
+                                                )
+                                            }
+                                        )
+                                    }
+                                }
+                                AnimatedVisibility(
+                                    visible = nextSongPreviewStyle ==
+                                        RootConstants.ISLAND_NEXT_SONG_PREVIEW_STYLE_FULL
+                                ) {
+                                    Column {
+                                        OverlayDropdownPreference(
+                                            title = stringResource(id = R.string.title_next_song_at_end),
+                                            summary = stringResource(id = R.string.summary_next_song_at_end),
+                                            items = nextSongDurationOptions,
+                                            selectedIndex = nextSongDurationSeconds - 1,
+                                            onSelectedIndexChange = {
+                                                nextSongDurationSeconds = it + 1
+                                                saveConfig(
+                                                    RootConstants.KEY_HOOK_ISLAND_NEXT_SONG_DURATION,
+                                                    it + 1
+                                                )
+                                            }
+                                        )
+                                        SwitchPreference(
+                                            title = stringResource(id = R.string.title_force_next_song_at_end),
                                         summary = stringResource(id = R.string.summary_force_next_song_at_end),
                                         checked = forceNextSongAtEnd,
                                         onCheckedChange = {
@@ -335,6 +490,7 @@ fun SuperIslandSettingsPage() {
                                             saveConfig(RootConstants.KEY_HOOK_ISLAND_FORCE_NEXT_SONG_AT_END, it)
                                         }
                                     )
+                                    }
                                 }
                                 }
                         }

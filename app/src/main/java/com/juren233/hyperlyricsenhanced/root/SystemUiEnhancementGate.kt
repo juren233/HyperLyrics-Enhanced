@@ -12,4 +12,14 @@ internal object SystemUiEnhancementGate {
             )
         }.getOrDefault(false)
     }
+
+    fun isLyricRuntimeEnabled(): Boolean {
+        val entry = HookEntry.instance ?: return false
+        return runCatching {
+            isEnabled() || entry.prefs.getBoolean(
+                RootConstants.KEY_HOOK_ENABLE_AOD_LYRICS,
+                RootConstants.DEFAULT_HOOK_ENABLE_AOD_LYRICS
+            )
+        }.getOrDefault(false)
+    }
 }

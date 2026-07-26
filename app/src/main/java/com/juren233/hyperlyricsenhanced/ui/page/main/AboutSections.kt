@@ -39,6 +39,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 fun LazyListScope.aboutPageSections(
     aboutAppVersion: String?,
+    availableUpdateVersion: String?,
     aboutDeviceModel: String,
     aboutOsVersion: String,
     aboutAndroidVersion: String,
@@ -84,6 +85,17 @@ fun LazyListScope.aboutPageSections(
                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                 modifier = Modifier.padding(top = 4.dp)
             )
+            if (availableUpdateVersion != null) {
+                Text(
+                    text = stringResource(
+                        R.string.module_update_available_version,
+                        availableUpdateVersion,
+                    ),
+                    fontSize = MiuixTheme.textStyles.body2.fontSize,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+            }
         }
     }
 

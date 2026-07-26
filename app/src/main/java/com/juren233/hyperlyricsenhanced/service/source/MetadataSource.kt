@@ -6,6 +6,7 @@ import android.media.MediaMetadata
 import android.media.session.MediaController
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
+import android.os.SystemClock
 import com.juren233.hyperlyricsenhanced.common.image.AlbumImageHelper
 import com.juren233.hyperlyricsenhanced.lyric.DynamicLyricData
 import com.juren233.hyperlyricsenhanced.utils.LogManager
@@ -20,12 +21,18 @@ import kotlin.time.Duration.Companion.milliseconds
 class MetadataSource(
     private val context: Context,
     private val scope: CoroutineScope,
-    private val componentName: ComponentName
+    private val componentName: ComponentName,
+    private val onMediaSessionAccessLost: () -> Unit = {},
 ) {
     private var mediaSessionManager: MediaSessionManager? = null
     private var activeSessionsListener: MediaSessionManager.OnActiveSessionsChangedListener? = null
     private val currentControllers = mutableListOf<MediaController>()
     private var bitmapRetryJob: Job? = null
+    private var mediaSessionPollJob: Job? = null
+    private var emptySessionsSinceElapsedRealtime: Long? = null
+    private var emptyStatePublished = false
+    private var consecutiveMediaSessionAccessFailures = 0
+    private var lastMediaSessionRecoveryElapsedRealtime = 0L
     private var bitmapRetryCount = 0
     private val maxBitmapRetries = 5
     private val bitmapRetryDelayMs = 500L
@@ -73,21 +80,33 @@ class MetadataSource(
             mediaSessionManager = manager
             activeSessionsListener = listener
 
-            updateCurrentController(manager.getActiveSessions(componentName))
+            mediaSessionPollJob = scope.launch {
+                while (true) {
+                    delay(mediaSessionPollIntervalMs.milliseconds)
+                    refreshTrackedMediaSession()
+                }
+            }
+            refreshTrackedMediaSession()
             LogManager.d(TAG, "媒体会话监听注册成功")
         } catch (e: Exception) {
             LogManager.e(TAG, "媒体会话监听注册失败", e)
+            requestMediaSessionRecovery()
         }
     }
 
     fun disconnect() {
         unregisterAllControllers()
         cancelBitmapRetry()
+        mediaSessionPollJob?.cancel()
+        mediaSessionPollJob = null
         activeSessionsListener?.let { listener ->
             mediaSessionManager?.removeOnActiveSessionsChangedListener(listener)
         }
         activeSessionsListener = null
         mediaSessionManager = null
+        emptySessionsSinceElapsedRealtime = null
+        emptyStatePublished = false
+        consecutiveMediaSessionAccessFailures = 0
     }
 
     fun clearState() {
@@ -97,20 +116,59 @@ class MetadataSource(
         DynamicLyricData.updateLoadingAlbumArt(false)
         DynamicLyricData.updateFetchingLyrics(false)
         DynamicLyricData.updateAnchor(0L, false)
+        DynamicLyricData.updateTrackInfo("", "", "")
         DynamicLyricData.updateRightTitles(" ", " ", " ", " ", 0L, false, "")
     }
 
     private fun refreshActiveSessions() {
-        mediaSessionManager?.let { manager ->
+        refreshTrackedMediaSession()
+    }
+
+    private fun refreshTrackedMediaSession() {
+        val manager = mediaSessionManager ?: return
+        try {
             updateCurrentController(manager.getActiveSessions(componentName))
+            consecutiveMediaSessionAccessFailures = 0
+        } catch (e: Exception) {
+            consecutiveMediaSessionAccessFailures++
+            if (
+                consecutiveMediaSessionAccessFailures == 1 ||
+                consecutiveMediaSessionAccessFailures % 10 == 0
+            ) {
+                LogManager.w(
+                    TAG,
+                    "轮询媒体会话失败: 连续${consecutiveMediaSessionAccessFailures}次",
+                    e,
+                )
+            }
+            if (consecutiveMediaSessionAccessFailures >= mediaSessionRecoveryFailureThreshold) {
+                requestMediaSessionRecovery()
+            }
         }
+    }
+
+    fun refreshNow() {
+        refreshTrackedMediaSession()
     }
 
     private fun updateCurrentController(controllers: List<MediaController>?) {
         if (controllers.isNullOrEmpty()) {
-            LogManager.d(TAG, "控制器列表为空，正在清除歌词状态")
+            val now = SystemClock.elapsedRealtime()
+            val emptySince = emptySessionsSinceElapsedRealtime ?: now.also {
+                emptySessionsSinceElapsedRealtime = it
+                LogManager.d(TAG, "控制器列表暂时为空，保留当前歌曲状态")
+            }
+            if (
+                emptyStatePublished ||
+                now - emptySince < emptySessionGracePeriodMs
+            ) {
+                return
+            }
+
+            LogManager.d(TAG, "控制器持续为空，正在清除歌词状态")
             unregisterAllControllers()
             clearState()
+            emptyStatePublished = true
             lyricUpdateFlow.tryEmit(
                 SyncData(
                     identityTitle = "",
@@ -131,6 +189,8 @@ class MetadataSource(
             return
         }
 
+        emptySessionsSinceElapsedRealtime = null
+        emptyStatePublished = false
         val playingController = controllers.find {
             it.playbackState?.state == PlaybackState.STATE_PLAYING
         }
@@ -143,6 +203,10 @@ class MetadataSource(
                 unregisterAllControllers()
                 currentControllers.add(playingController)
                 playingController.registerCallback(mediaCallback)
+                syncToGlobalData(playingController)
+            } else if (hasTrackedMediaStateChanged(playingController)) {
+                // MIUI/部分播放器在息屏后可能不派发 MediaController 回调。
+                // 用当前会话对象补一次同步，确保切歌仍能刷新 AOD 焦点通知。
                 syncToGlobalData(playingController)
             }
         } else {
@@ -157,6 +221,42 @@ class MetadataSource(
                 syncToGlobalData(controllers.first())
             }
         }
+    }
+
+    private fun requestMediaSessionRecovery() {
+        val now = SystemClock.elapsedRealtime()
+        if (
+            now - lastMediaSessionRecoveryElapsedRealtime <
+            mediaSessionRecoveryCooldownMs
+        ) {
+            return
+        }
+        lastMediaSessionRecoveryElapsedRealtime = now
+        LogManager.w(TAG, "媒体会话访问持续失败，触发通知监听服务自动重绑")
+        onMediaSessionAccessLost()
+    }
+
+    private fun hasTrackedMediaStateChanged(controller: MediaController): Boolean {
+        val metadata = controller.metadata ?: return false
+        val playbackState = controller.playbackState
+        val title = metadata.getString(MediaMetadata.METADATA_KEY_TITLE)
+            ?.lines()
+            ?.firstOrNull { it.isNotBlank() }
+            ?.trim()
+            ?: "Playing~"
+        val artist = metadata.getString(MediaMetadata.METADATA_KEY_ARTIST) ?: ""
+        val album = metadata.getString(MediaMetadata.METADATA_KEY_ALBUM) ?: ""
+        val duration = metadata.getLong(MediaMetadata.METADATA_KEY_DURATION)
+        val identifier = MediaSongIdentity.build(
+            packageName = controller.packageName ?: "",
+            title = title,
+            artist = artist,
+            album = album,
+            duration = duration,
+        )
+        val playing = playbackState?.state == PlaybackState.STATE_PLAYING
+        return identifier != currentSongIdentifier ||
+            playing != DynamicLyricData.currentState.isPlaying
     }
 
     private fun unregisterAllControllers() {
@@ -207,7 +307,13 @@ class MetadataSource(
         }
         val lyricRaw = try { metadata.getString("android.media.metadata.LYRIC") } catch (_: Exception) { null }
 
-        val newIdentifier = "$currentPackageName-$artist-$album-$duration"
+        val newIdentifier = MediaSongIdentity.build(
+            packageName = currentPackageName,
+            title = rawTitle,
+            artist = artist,
+            album = album,
+            duration = duration,
+        )
         val isNewSong = (newIdentifier != currentSongIdentifier) || DynamicLyricData.currentState.albumBitmap == null
         LogManager.d(TAG, "同步元数据: pkg=$currentPackageName, 标题=$rawTitle, 艺术家=$artist, 专辑=$album, 时长=${duration}ms, 新歌=$isNewSong")
 
@@ -298,5 +404,27 @@ class MetadataSource(
 
     companion object {
         private const val TAG = "MetadataSource"
+        private const val mediaSessionPollIntervalMs = 1000L
+        private const val emptySessionGracePeriodMs = 5000L
+        private const val mediaSessionRecoveryFailureThreshold = 2
+        private const val mediaSessionRecoveryCooldownMs = 15000L
     }
+}
+
+internal object MediaSongIdentity {
+    private const val SEPARATOR = '\u001F'
+
+    fun build(
+        packageName: String,
+        title: String,
+        artist: String,
+        album: String,
+        duration: Long,
+    ): String = listOf(
+        packageName.trim(),
+        title.trim(),
+        artist.trim(),
+        album.trim(),
+        duration.toString(),
+    ).joinToString(SEPARATOR.toString())
 }

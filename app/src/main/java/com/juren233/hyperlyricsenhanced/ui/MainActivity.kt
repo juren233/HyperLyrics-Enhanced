@@ -7,13 +7,24 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.common.UIConstants
 import com.juren233.hyperlyricsenhanced.ui.navigation.AppNavigation
 import com.juren233.hyperlyricsenhanced.ui.navigation.Route
 import com.juren233.hyperlyricsenhanced.ui.utils.LocaleUtils
 import com.juren233.hyperlyricsenhanced.ui.utils.ThemeUtils
+import com.juren233.hyperlyricsenhanced.utils.UpdateData
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
+    private val updateCheckScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var updateCheckJob: Job? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -48,5 +59,21 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        updateCheckJob?.cancel()
+        updateCheckJob = updateCheckScope.launch {
+            UpdateData.refresh(
+                currentVersionName = BuildConfig.VERSION_NAME,
+                currentVersionCode = BuildConfig.VERSION_CODE.toLong(),
+            )
+        }
+    }
+
+    override fun onDestroy() {
+        updateCheckScope.cancel()
+        super.onDestroy()
     }
 }

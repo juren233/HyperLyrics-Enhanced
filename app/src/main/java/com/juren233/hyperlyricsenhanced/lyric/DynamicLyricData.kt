@@ -40,6 +40,9 @@ data class LyricState(
     val notificationTitleRight: String = "",
     val songLyric: String = "",
     val songInfo: String = "",
+    val trackTitle: String = "",
+    val trackArtist: String = "",
+    val trackIdentifier: String = "",
     val showIslandLeftAlbum: Boolean = false,
     val duration: Long = 100L,
     val isPlaying: Boolean = false,
@@ -113,6 +116,20 @@ object DynamicLyricData {
         _musicState.update { it.copy(albumColor = color, albumColorEnd = colorEnd) }
     }
 
+    fun updateTrackInfo(
+        title: String,
+        artist: String,
+        identifier: String = "",
+    ) {
+        _musicState.update {
+            it.copy(
+                trackTitle = title,
+                trackArtist = artist,
+                trackIdentifier = identifier,
+            )
+        }
+    }
+
     fun updateRightTitles(
         islandText: String,
         notificationText: String = "",
@@ -121,7 +138,10 @@ object DynamicLyricData {
         newDuration: Long,
         newIsPlaying: Boolean,
         newPackageName: String,
-        newShowIslandLeftAlbum: Boolean = false
+        newShowIslandLeftAlbum: Boolean = false,
+        newTrackTitle: String? = null,
+        newTrackArtist: String? = null,
+        newTrackIdentifier: String? = null,
     ) {
         _musicState.update { oldState ->
             oldState.copy(
@@ -132,7 +152,10 @@ object DynamicLyricData {
                 duration = if (newDuration > 0) newDuration else oldState.duration,
                 isPlaying = newIsPlaying,
                 targetPackageName = newPackageName,
-                showIslandLeftAlbum = newShowIslandLeftAlbum
+                showIslandLeftAlbum = newShowIslandLeftAlbum,
+                trackTitle = newTrackTitle ?: oldState.trackTitle,
+                trackArtist = newTrackArtist ?: oldState.trackArtist,
+                trackIdentifier = newTrackIdentifier ?: oldState.trackIdentifier,
             )
         }
     }

@@ -12,10 +12,19 @@ import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
-fun EnhancedVersionNotice(modifier: Modifier = Modifier) {
+fun EnhancedVersionNotice(
+    updateAvailable: Boolean = false,
+    modifier: Modifier = Modifier,
+) {
     Card(modifier = modifier) {
         Text(
-            text = stringResource(R.string.enhanced_version_notice),
+            text = stringResource(
+                if (updateAvailable) {
+                    R.string.module_update_available_notice
+                } else {
+                    R.string.enhanced_version_notice
+                }
+            ),
             fontSize = 13.sp,
             lineHeight = 18.sp,
             color = MiuixTheme.colorScheme.onSurface,

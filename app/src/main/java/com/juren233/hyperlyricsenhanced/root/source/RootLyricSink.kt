@@ -9,6 +9,7 @@ import com.juren233.hyperlyricsenhanced.lyric.source.LyricSink
 import com.juren233.hyperlyricsenhanced.root.LyriconDataBridge
 import com.juren233.hyperlyricsenhanced.root.island.IslandSlotContentAssembler
 import com.juren233.hyperlyricsenhanced.root.island.renderer.IslandRenderer
+import com.juren233.hyperlyricsenhanced.root.mediacard.notification.NotificationMediaAodLyricHooker
 import com.juren233.hyperlyricsenhanced.root.aitrans.AITranslator
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import com.juren233.hyperlyricsenhanced.common.RootConstants
@@ -107,6 +108,7 @@ class RootLyricSink(
     
             LyriconDataBridge.updateLyricLine(line)
             renderer.updateLyricLine()
+            NotificationMediaAodLyricHooker.onLyricChanged()
         }
     }
 
@@ -114,6 +116,7 @@ class RootLyricSink(
 
         LyriconDataBridge.updateLyric(text)
         renderer.updateLyricLine()
+        NotificationMediaAodLyricHooker.onLyricChanged()
     }
 
     override fun onStop() {
@@ -125,6 +128,7 @@ class RootLyricSink(
         lastDispatchedPosition = Long.MIN_VALUE
         renderer.clearAllViews()
         LyriconDataBridge.clearState()
+        NotificationMediaAodLyricHooker.onLyricChanged()
     }
 
     override fun onMetadata(title: String?, artist: String?, album: String?, publisher: String?) {
@@ -138,16 +142,20 @@ class RootLyricSink(
 
     override fun onPlaybackStateChanged(isPlaying: Boolean) {
         playbackActive = isPlaying
+        LyriconDataBridge.updatePlaybackState(isPlaying)
         if (!isPlaying) cancelPendingPositionDispatch()
         renderer.onPlaybackStateChanged(isPlaying)
+        NotificationMediaAodLyricHooker.onPlaybackStateChanged(isPlaying)
     }
 
     override fun onPositionChanged(position: Long) {
         if (position == lastReceivedPosition) return
         lastReceivedPosition = position
         val lyricChanged = LyriconDataBridge.updatePosition(position)
+        LyriconDataBridge.updatePlaybackState(playbackActive)
         if (lyricChanged) {
             renderer.updateLyricLine()
+            NotificationMediaAodLyricHooker.onLyricChanged()
         }
         if (playbackActive) {
             dispatchPositionThrottled(position)
@@ -162,8 +170,11 @@ class RootLyricSink(
         lastDispatchedPosition = position
         lastPositionDispatchTimeMs = SystemClock.uptimeMillis()
 
-        if (LyriconDataBridge.updatePosition(position)) {
+        val lyricChanged = LyriconDataBridge.updatePosition(position)
+        LyriconDataBridge.updatePlaybackState(playbackActive)
+        if (lyricChanged) {
             renderer.updateLyricLine()
+            NotificationMediaAodLyricHooker.onLyricChanged()
         }
         renderer.seekTo(position)
     }

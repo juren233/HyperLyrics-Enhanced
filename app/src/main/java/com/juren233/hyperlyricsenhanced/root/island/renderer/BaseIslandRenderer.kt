@@ -26,7 +26,14 @@ object BaseIslandRenderer : IslandRenderer {
     private const val REFRESH_DEBOUNCE_MS = 32L
     private val mainHandler = Handler(Looper.getMainLooper())
     private val refreshRunnable = Runnable { performRefreshActiveIsland() }
-    private val nextSongPreviewActive = WeakHashMap<ViewGroup, Boolean>()
+    private val nextSongPreviewActive = WeakHashMap<ViewGroup, NextSongPreviewState>()
+    private val nextSongPreviewFailures = WeakHashMap<ViewGroup, String>()
+
+    private data class NextSongPreviewState(
+        val style: Int,
+        val targetIsLeft: Boolean?,
+        val nextSong: MediaMetadataHelper.MediaInfo
+    )
 
     @Volatile
     private var playbackActive = true
@@ -71,6 +78,7 @@ object BaseIslandRenderer : IslandRenderer {
 
         IslandSlotContentAssembler.invalidate()
         synchronized(nextSongPreviewActive) { nextSongPreviewActive.clear() }
+        synchronized(nextSongPreviewFailures) { nextSongPreviewFailures.clear() }
 
         val activeViews = IslandViewRegistry.snapshotAttached(lyricPkg)
         val config = IslandSlotRuntimeConfig.from(prefs)
@@ -287,6 +295,7 @@ object BaseIslandRenderer : IslandRenderer {
         prefs: android.content.SharedPreferences,
         config: IslandSlotRuntimeConfig
     ) {
+        if (isSlotReservedByNextSongPreview(cv, tag)) return
         if (mode != 7) return
         val view = cv.findViewWithTag<View>(tag) ?: return
         val line = IslandSlotContentAssembler.buildSlotLyricLine(
@@ -312,6 +321,7 @@ object BaseIslandRenderer : IslandRenderer {
         config: IslandSlotRuntimeConfig,
         mediaInfo: MediaMetadataHelper.MediaInfo
     ) {
+        if (isSlotReservedByNextSongPreview(cv, tag)) return
         val view = cv.findViewWithTag<View>(tag) ?: return
         val isLeft = tag == IslandProbeUtils.LEFT_TEST_VIEW_TAG
         val adjacentTranslation = IslandSlotContentAssembler.buildAdjacentTranslationLine(
@@ -341,6 +351,17 @@ object BaseIslandRenderer : IslandRenderer {
         )
     }
 
+    private fun isSlotReservedByNextSongPreview(cv: ViewGroup, tag: String): Boolean {
+        val state = synchronized(nextSongPreviewActive) {
+            nextSongPreviewActive[cv]
+        } ?: return false
+        return NextSongPreviewPolicy.reservesSlot(
+            previewStyle = state.style,
+            targetIsLeft = state.targetIsLeft,
+            slotIsLeft = tag == IslandProbeUtils.LEFT_TEST_VIEW_TAG
+        )
+    }
+
     private fun updateEndOfSongPreview(
         cv: ViewGroup,
         packageName: String,
@@ -350,7 +371,10 @@ object BaseIslandRenderer : IslandRenderer {
     ): Boolean {
         val mediaInfo = MediaMetadataHelper.getMediaInfo(cv.context, packageName, HookLogger)
         val song = LyriconDataBridge.currentSong
-        val duration = song?.duration?.takeIf { it > 0L } ?: mediaInfo.duration
+        val duration = NextSongPreviewPolicy.resolveTrackDuration(
+            mediaDurationMs = mediaInfo.duration,
+            lyricDurationMs = song?.duration ?: -1L
+        )
         val lastLyricStart = song?.lyrics?.maxOfOrNull { it.begin } ?: -1L
         val lastSyllableEnd = song?.lyrics
             .orEmpty()
@@ -372,36 +396,127 @@ object BaseIslandRenderer : IslandRenderer {
             lastLyricStartMs = lastLyricStart,
             lastSyllableEndMs = lastSyllableEnd,
             previewDurationMs = config.nextSongDurationMs,
-            force = config.forceNextSongAtEnd
+            force = config.shouldForceNextSongPreview
         )
-        val wasShowing = synchronized(nextSongPreviewActive) {
-            nextSongPreviewActive[cv] == true
+        var previewState = synchronized(nextSongPreviewActive) {
+            nextSongPreviewActive[cv]
         }
-        if (shouldShow == wasShowing) return shouldShow
 
-        if (shouldShow) {
+        if (!shouldShow) {
+            synchronized(nextSongPreviewFailures) { nextSongPreviewFailures.remove(cv) }
+            if (previewState == null) return false
+            synchronized(nextSongPreviewActive) { nextSongPreviewActive.remove(cv) }
+            updateSlot(cv, IslandProbeUtils.LEFT_TEST_VIEW_TAG, config.leftMode, prefs, config, mediaInfo)
+            updateSlot(cv, IslandProbeUtils.RIGHT_TEST_VIEW_TAG, config.rightMode, prefs, config, mediaInfo)
+            HookLogger.i("BaseIslandRenderer", "已结束下首歌曲信息预览")
+            return false
+        }
+
+        val expectedTargetIsLeft = if (
+            config.nextSongPreviewStyle == RootConstants.ISLAND_NEXT_SONG_PREVIEW_STYLE_HALF
+        ) {
+            config.halfPreviewTargetIsLeft
+        } else {
+            null
+        }
+        val previewStateMatches = previewState?.let { state ->
+            state.style == config.nextSongPreviewStyle &&
+                state.targetIsLeft == expectedTargetIsLeft
+        } == true
+        if (!previewStateMatches) {
+            synchronized(nextSongPreviewActive) { nextSongPreviewActive.remove(cv) }
+            previewState = null
+        } else if (
+            config.nextSongPreviewStyle == RootConstants.ISLAND_NEXT_SONG_PREVIEW_STYLE_FULL
+        ) {
+            return true
+        }
+
+        if (previewState == null) {
             val nextSong = MediaMetadataHelper.getNextMediaInfo(cv.context, packageName, mediaInfo)
-            if (nextSong.title.isBlank()) return false
-            val left = cv.findViewWithTag<View>(IslandProbeUtils.LEFT_TEST_VIEW_TAG)
-            val right = cv.findViewWithTag<View>(IslandProbeUtils.RIGHT_TEST_VIEW_TAG)
-            if (left == null || right == null) return false
-            synchronized(nextSongPreviewActive) { nextSongPreviewActive[cv] = true }
-            IslandSlotContentAssembler.applyNextSongPreviewContent(
-                left, prefs, config, isLeft = true, nextSong = nextSong, label = "下一首",
-                playbackActive = playbackActive
+            if (nextSong.title.isBlank()) {
+                val failureSignature = "${mediaInfo.title}|$duration"
+                val shouldLog = synchronized(nextSongPreviewFailures) {
+                    if (nextSongPreviewFailures[cv] == failureSignature) {
+                        false
+                    } else {
+                        nextSongPreviewFailures[cv] = failureSignature
+                        true
+                    }
+                }
+                if (shouldLog) {
+                    HookLogger.w(
+                        "BaseIslandRenderer",
+                        "无法显示下首歌曲信息：媒体队列未解析到下一首，当前歌曲=${mediaInfo.title}"
+                    )
+                }
+                return false
+            }
+            synchronized(nextSongPreviewFailures) { nextSongPreviewFailures.remove(cv) }
+            val createdState = NextSongPreviewState(
+                style = config.nextSongPreviewStyle,
+                targetIsLeft = expectedTargetIsLeft,
+                nextSong = nextSong
             )
-            IslandSlotContentAssembler.applyNextSongPreviewContent(
-                right, prefs, config, isLeft = false, nextSong = nextSong, label = "下一首",
+            previewState = createdState
+            synchronized(nextSongPreviewActive) { nextSongPreviewActive[cv] = createdState }
+            HookLogger.i(
+                "BaseIslandRenderer",
+                "开始下首歌曲信息预览: style=${config.nextSongPreviewStyle}, " +
+                    "target=${expectedTargetIsLeft?.let { if (it) "left" else "right" } ?: "full"}, " +
+                    "position=$position, duration=$duration, next=${nextSong.title}"
+            )
+        }
+        val activePreviewState = previewState
+
+        if (activePreviewState.style == RootConstants.ISLAND_NEXT_SONG_PREVIEW_STYLE_HALF) {
+            val targetIsLeft = activePreviewState.targetIsLeft ?: return false
+            val targetTag = if (targetIsLeft) {
+                IslandProbeUtils.LEFT_TEST_VIEW_TAG
+            } else {
+                IslandProbeUtils.RIGHT_TEST_VIEW_TAG
+            }
+            val otherTag = if (targetIsLeft) {
+                IslandProbeUtils.RIGHT_TEST_VIEW_TAG
+            } else {
+                IslandProbeUtils.LEFT_TEST_VIEW_TAG
+            }
+            updateSlot(
+                cv = cv,
+                tag = otherTag,
+                mode = config.modeForTag(otherTag),
+                prefs = prefs,
+                config = config,
+                mediaInfo = mediaInfo
+            )
+            if (previewStateMatches) return true
+            val target = cv.findViewWithTag<View>(targetTag) ?: run {
+                synchronized(nextSongPreviewActive) { nextSongPreviewActive.remove(cv) }
+                return false
+            }
+            IslandSlotContentAssembler.applyHalfNextSongPreviewContent(
+                view = target,
+                prefs = prefs,
+                config = config,
+                nextSong = activePreviewState.nextSong,
+                label = "下一首",
                 playbackActive = playbackActive
             )
             return true
         }
 
-        if (!wasShowing) return false
-        synchronized(nextSongPreviewActive) { nextSongPreviewActive.remove(cv) }
-        updateSlot(cv, IslandProbeUtils.LEFT_TEST_VIEW_TAG, config.leftMode, prefs, config, mediaInfo)
-        updateSlot(cv, IslandProbeUtils.RIGHT_TEST_VIEW_TAG, config.rightMode, prefs, config, mediaInfo)
-        return false
+        val left = cv.findViewWithTag<View>(IslandProbeUtils.LEFT_TEST_VIEW_TAG)
+        val right = cv.findViewWithTag<View>(IslandProbeUtils.RIGHT_TEST_VIEW_TAG)
+        if (left == null || right == null) return false
+        IslandSlotContentAssembler.applyFullNextSongPreviewContent(
+            left, prefs, config, isLeft = true, nextSong = activePreviewState.nextSong, label = "下一首",
+            playbackActive = playbackActive
+        )
+        IslandSlotContentAssembler.applyFullNextSongPreviewContent(
+            right, prefs, config, isLeft = false, nextSong = activePreviewState.nextSong, label = "下一首",
+            playbackActive = playbackActive
+        )
+        return true
     }
 
 }

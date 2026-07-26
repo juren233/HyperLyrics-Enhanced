@@ -6,8 +6,45 @@ import com.juren233.hyperlyricsenhanced.lyric.model.interfaces.IRichLyricLine
 
 object TranslationHelper {
 
-    fun isTranslationDisabled(prefs: SharedPreferences): Boolean {
-        return prefs.getBoolean(RootConstants.KEY_HOOK_DISABLE_TRANSLATION, RootConstants.DEFAULT_HOOK_DISABLE_TRANSLATION)
+    fun isTranslationDisplayed(prefs: SharedPreferences): Boolean {
+        return resolveTranslationDisplay(
+            hasTranslationDisplayPreference = prefs.contains(
+                RootConstants.KEY_HOOK_TRANSLATION_DISPLAY
+            ),
+            translationDisplay = prefs.getBoolean(
+                RootConstants.KEY_HOOK_TRANSLATION_DISPLAY,
+                RootConstants.DEFAULT_HOOK_TRANSLATION_DISPLAY
+            ),
+            legacyTranslationDisabled = prefs.getBoolean(
+                RootConstants.KEY_HOOK_DISABLE_TRANSLATION,
+                RootConstants.DEFAULT_HOOK_DISABLE_TRANSLATION
+            ),
+            nextLyricLine = prefs.getBoolean(
+                RootConstants.KEY_HOOK_NEXT_LYRIC_LINE,
+                RootConstants.DEFAULT_HOOK_NEXT_LYRIC_LINE
+            ),
+            hasLegacyAutoSwitchPreference = prefs.contains(
+                RootConstants.KEY_HOOK_AUTO_SWITCH_TRANSLATION
+            ),
+            legacyAutoSwitchTranslation = prefs.getBoolean(
+                RootConstants.KEY_HOOK_AUTO_SWITCH_TRANSLATION,
+                RootConstants.DEFAULT_HOOK_AUTO_SWITCH_TRANSLATION
+            )
+        )
+    }
+
+    internal fun resolveTranslationDisplay(
+        hasTranslationDisplayPreference: Boolean,
+        translationDisplay: Boolean,
+        legacyTranslationDisabled: Boolean,
+        nextLyricLine: Boolean,
+        hasLegacyAutoSwitchPreference: Boolean,
+        legacyAutoSwitchTranslation: Boolean
+    ): Boolean = when {
+        hasTranslationDisplayPreference -> translationDisplay
+        legacyTranslationDisabled -> false
+        nextLyricLine && hasLegacyAutoSwitchPreference -> legacyAutoSwitchTranslation
+        else -> RootConstants.DEFAULT_HOOK_TRANSLATION_DISPLAY
     }
 
     fun isTranslationOnly(prefs: SharedPreferences): Boolean {
@@ -56,4 +93,3 @@ object TranslationHelper {
         )
     }
 }
-

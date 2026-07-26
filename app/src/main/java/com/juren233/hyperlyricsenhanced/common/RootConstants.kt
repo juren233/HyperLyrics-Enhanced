@@ -1,9 +1,76 @@
 package com.juren233.hyperlyricsenhanced.common
 
 object RootConstants {
+    const val CLASSIC_AOD_FOCUS_REFRESH_AUTHORITY =
+        "com.juren233.hyperlyricsenhanced.classic_aod_focus_refresh"
+    const val CLASSIC_AOD_FOCUS_REFRESH_METHOD = "refresh"
+
     // ================= HOOK & SUPER ISLAND KEYS =================
     const val KEY_HOOK_ENABLE_SUPER_ISLAND = "key_hook_enable_super_island"
     const val KEY_HOOK_ENABLE_DYNAMIC_ISLAND = "key_hook_enable_dynamic_island"
+    const val KEY_HOOK_ENABLE_AOD_LYRICS = "key_hook_enable_aod_lyrics"
+    const val KEY_HOOK_LOCK_SCREEN_AOD_MAIN_TEXT_SIZE =
+        "key_hook_lock_screen_aod_main_text_size"
+    const val KEY_HOOK_LOCK_SCREEN_AOD_BACKING_TEXT_SIZE =
+        "key_hook_lock_screen_aod_backing_text_size"
+    const val KEY_HOOK_LOCK_SCREEN_AOD_TRANSLATION_TEXT_SIZE =
+        "key_hook_lock_screen_aod_translation_text_size"
+    const val KEY_HOOK_LOCK_SCREEN_AOD_SHOW_NEXT_LYRIC =
+        "key_hook_lock_screen_aod_show_next_lyric"
+    const val KEY_HOOK_LOCK_SCREEN_AOD_NEXT_LYRIC_STYLE =
+        "key_hook_lock_screen_aod_next_lyric_style"
+    const val KEY_HOOK_LOCK_SCREEN_AOD_DUET_LYRICS =
+        "key_hook_lock_screen_aod_duet_lyrics"
+    const val KEY_HOOK_LOCK_SCREEN_AOD_CENTER_GROUP_VOCALS =
+        "key_hook_lock_screen_aod_center_group_vocals"
+    const val KEY_HOOK_LOCK_SCREEN_AOD_CENTER_NON_DUET_SONG =
+        "key_hook_lock_screen_aod_center_non_duet_song"
+    const val KEY_HOOK_LOCK_SCREEN_AOD_PAUSE_STYLE =
+        "key_hook_lock_screen_aod_pause_style"
+    const val KEY_HOOK_LOCK_SCREEN_AOD_TRANSLATION_DISPLAY =
+        "key_hook_lock_screen_aod_translation_display"
+    const val KEY_HOOK_LOCK_SCREEN_AOD_SWAP_TRANSLATION =
+        "key_hook_lock_screen_aod_swap_translation"
+    const val KEY_HOOK_LOCK_SCREEN_AOD_NEXT_SONG_PREVIEW =
+        "key_hook_lock_screen_aod_next_song_preview"
+    const val KEY_HOOK_LOCK_SCREEN_AOD_NEXT_SONG_PREVIEW_POSITION =
+        "key_hook_lock_screen_aod_next_song_preview_position"
+    const val KEY_HOOK_CLASSIC_AOD_MAIN_TEXT_SIZE =
+        "key_hook_classic_aod_main_text_size"
+    const val KEY_HOOK_CLASSIC_AOD_BACKING_TEXT_SIZE =
+        "key_hook_classic_aod_backing_text_size"
+    const val KEY_HOOK_CLASSIC_AOD_TRANSLATION_TEXT_SIZE =
+        "key_hook_classic_aod_translation_text_size"
+    const val KEY_HOOK_CLASSIC_AOD_SHOW_NEXT_LYRIC =
+        "key_hook_classic_aod_show_next_lyric"
+    const val KEY_HOOK_CLASSIC_AOD_NEXT_LYRIC_STYLE =
+        "key_hook_classic_aod_next_lyric_style"
+    const val KEY_HOOK_CLASSIC_AOD_DUET_LYRICS =
+        "key_hook_classic_aod_duet_lyrics"
+    const val KEY_HOOK_CLASSIC_AOD_CENTER_GROUP_VOCALS =
+        "key_hook_classic_aod_center_group_vocals"
+    const val KEY_HOOK_CLASSIC_AOD_CENTER_NON_DUET_SONG =
+        "key_hook_classic_aod_center_non_duet_song"
+    const val KEY_HOOK_CLASSIC_AOD_PAUSE_STYLE =
+        "key_hook_classic_aod_pause_style"
+    const val KEY_HOOK_CLASSIC_AOD_TRANSLATION_DISPLAY =
+        "key_hook_classic_aod_translation_display"
+    const val KEY_HOOK_CLASSIC_AOD_SWAP_TRANSLATION =
+        "key_hook_classic_aod_swap_translation"
+    const val KEY_HOOK_CLASSIC_AOD_SONG_INFO_FORMAT =
+        "key_hook_classic_aod_song_info_style"
+    const val KEY_HOOK_CLASSIC_AOD_SONG_INFO_DISPLAY_STYLE =
+        "key_hook_classic_aod_song_info_display_style"
+    const val KEY_HOOK_CLASSIC_AOD_SONG_INFO_POSITION =
+        "key_hook_classic_aod_song_info_position"
+    const val KEY_HOOK_CLASSIC_AOD_SONG_INFO_TEXT_SIZE =
+        "key_hook_classic_aod_song_info_text_size"
+    const val KEY_HOOK_CLASSIC_AOD_SONG_INFO_SHOW_ICON =
+        "key_hook_classic_aod_song_info_show_icon"
+    const val KEY_HOOK_CLASSIC_AOD_NEXT_SONG_PREVIEW =
+        "key_hook_classic_aod_next_song_preview"
+    const val KEY_HOOK_CLASSIC_AOD_NEXT_SONG_PREVIEW_POSITION =
+        "key_hook_classic_aod_next_song_preview_position"
     const val KEY_HOOK_LYRIC_MODE = "key_hook_lyric_mode"
     const val KEY_HOOK_LYRIC_SOURCE = "key_hook_lyric_source"
     const val DEFAULT_HOOK_LYRIC_SOURCE = "lyricon"
@@ -27,6 +94,12 @@ object RootConstants {
     const val KEY_HOOK_ISLAND_BEHAVIOR_AFTER_PAUSE = "key_hook_island_behavior_after_pause"
     const val KEY_HOOK_ISLAND_FORCE_NEXT_SONG_AT_END = "key_hook_island_force_next_song_at_end"
     const val KEY_HOOK_ISLAND_NEXT_SONG_DURATION = "key_hook_island_next_song_duration"
+    const val KEY_HOOK_ISLAND_NEXT_SONG_PREVIEW_STYLE =
+        "key_hook_island_next_song_preview_style"
+    const val KEY_HOOK_ISLAND_NEXT_SONG_PREVIEW_POSITION =
+        "key_hook_island_next_song_preview_position"
+    const val KEY_HOOK_ISLAND_NEXT_SONG_PREVIEW_WEIGHT =
+        "key_hook_island_next_song_preview_weight"
     const val KEY_HOOK_NOTIFICATION_MEDIA_AMBIENT_FLOW_MODE =
         "key_hook_notification_media_ambient_flow_mode"
     const val KEY_HOOK_ISLAND_EXPANDED_MEDIA_AMBIENT_FLOW_MODE =
@@ -106,6 +179,7 @@ object RootConstants {
     const val KEY_HOOK_SYLLABLE_HIGHLIGHT = "key_hook_syllable_highlight"
 
     // ================= TRANSLATION KEYS =================
+    const val KEY_HOOK_TRANSLATION_DISPLAY = "key_hook_translation_display"
     const val KEY_HOOK_DISABLE_TRANSLATION = "key_hook_disable_translation"
     const val KEY_HOOK_TRANSLATION_ONLY = "key_hook_translation_only"
     const val KEY_HOOK_SWAP_TRANSLATION = "key_hook_swap_translation"
@@ -172,6 +246,55 @@ object RootConstants {
 
     const val DEFAULT_HOOK_ENABLE_SUPER_ISLAND = false
     const val DEFAULT_HOOK_ENABLE_DYNAMIC_ISLAND = false
+    const val DEFAULT_HOOK_ENABLE_AOD_LYRICS = false
+    const val AOD_SONG_INFO_FORMAT_NONE = 0
+    const val AOD_SONG_INFO_FORMAT_TITLE = 1
+    const val AOD_SONG_INFO_FORMAT_TITLE_ARTIST = 2
+    const val AOD_SONG_INFO_FORMAT_ARTIST_TITLE = 3
+    const val DEFAULT_HOOK_CLASSIC_AOD_SONG_INFO_FORMAT = AOD_SONG_INFO_FORMAT_TITLE
+    const val AOD_SONG_INFO_DISPLAY_STYLE_NONE = 0
+    const val AOD_SONG_INFO_DISPLAY_STYLE_FOCUS_NOTIFICATION = 1
+    const val AOD_SONG_INFO_DISPLAY_STYLE_TEXT_EMBEDDED = 2
+    const val DEFAULT_HOOK_CLASSIC_AOD_SONG_INFO_DISPLAY_STYLE =
+        AOD_SONG_INFO_DISPLAY_STYLE_NONE
+    const val AOD_SONG_INFO_POSITION_LEFT = 0
+    const val AOD_SONG_INFO_POSITION_CENTER = 1
+    const val AOD_SONG_INFO_POSITION_RIGHT = 2
+    const val DEFAULT_HOOK_CLASSIC_AOD_SONG_INFO_POSITION =
+        AOD_SONG_INFO_POSITION_CENTER
+    const val MIN_HOOK_AOD_MAIN_TEXT_SIZE = 12
+    const val MAX_HOOK_AOD_MAIN_TEXT_SIZE = 40
+    const val MIN_HOOK_AOD_BACKING_TEXT_SIZE = 10
+    const val MAX_HOOK_AOD_BACKING_TEXT_SIZE = 36
+    const val MIN_HOOK_AOD_TRANSLATION_TEXT_SIZE = 10
+    const val MAX_HOOK_AOD_TRANSLATION_TEXT_SIZE = 32
+    const val DEFAULT_HOOK_LOCK_SCREEN_AOD_MAIN_TEXT_SIZE = 18
+    const val DEFAULT_HOOK_LOCK_SCREEN_AOD_BACKING_TEXT_SIZE = 17
+    const val DEFAULT_HOOK_LOCK_SCREEN_AOD_TRANSLATION_TEXT_SIZE = 15
+    const val DEFAULT_HOOK_CLASSIC_AOD_MAIN_TEXT_SIZE = 26
+    const val DEFAULT_HOOK_CLASSIC_AOD_BACKING_TEXT_SIZE = 23
+    const val DEFAULT_HOOK_CLASSIC_AOD_TRANSLATION_TEXT_SIZE = 21
+    const val DEFAULT_HOOK_CLASSIC_AOD_SONG_INFO_TEXT_SIZE =
+        DEFAULT_HOOK_CLASSIC_AOD_TRANSLATION_TEXT_SIZE
+    const val DEFAULT_HOOK_CLASSIC_AOD_SONG_INFO_SHOW_ICON = true
+    const val AOD_NEXT_LYRIC_STYLE_BACKING = 0
+    const val AOD_NEXT_LYRIC_STYLE_TRANSLATION = 1
+    const val DEFAULT_HOOK_AOD_SHOW_NEXT_LYRIC = false
+    const val DEFAULT_HOOK_AOD_NEXT_LYRIC_STYLE = AOD_NEXT_LYRIC_STYLE_TRANSLATION
+    const val DEFAULT_HOOK_AOD_DUET_LYRICS = false
+    const val DEFAULT_HOOK_AOD_CENTER_NON_DUET_SONG = false
+    const val DEFAULT_HOOK_AOD_CENTER_GROUP_VOCALS = false
+    const val AOD_PAUSE_STYLE_RESTORE = 0
+    const val AOD_PAUSE_STYLE_KEEP_LYRICS = 1
+    const val DEFAULT_HOOK_AOD_PAUSE_STYLE = AOD_PAUSE_STYLE_RESTORE
+    const val DEFAULT_HOOK_AOD_TRANSLATION_DISPLAY = true
+    const val DEFAULT_HOOK_AOD_SWAP_TRANSLATION = false
+    const val DEFAULT_HOOK_AOD_NEXT_SONG_PREVIEW = true
+    const val AOD_NEXT_SONG_PREVIEW_POSITION_LEFT = 0
+    const val AOD_NEXT_SONG_PREVIEW_POSITION_CENTER = 1
+    const val AOD_NEXT_SONG_PREVIEW_POSITION_RIGHT = 2
+    const val DEFAULT_HOOK_AOD_NEXT_SONG_PREVIEW_POSITION =
+        AOD_NEXT_SONG_PREVIEW_POSITION_CENTER
     const val DEFAULT_HOOK_ISLAND_LEFT_ALBUM = true
     const val ISLAND_ALBUM_COVER_STYLE_DEFAULT = 0
     const val ISLAND_ALBUM_COVER_STYLE_CIRCLE = 1
@@ -192,6 +315,21 @@ object RootConstants {
     const val DEFAULT_HOOK_ISLAND_BEHAVIOR_AFTER_PAUSE = 0
     const val DEFAULT_HOOK_ISLAND_FORCE_NEXT_SONG_AT_END = false
     const val DEFAULT_HOOK_ISLAND_NEXT_SONG_DURATION = 4
+    const val ISLAND_NEXT_SONG_PREVIEW_STYLE_NONE = 0
+    const val ISLAND_NEXT_SONG_PREVIEW_STYLE_FULL = 1
+    const val ISLAND_NEXT_SONG_PREVIEW_STYLE_HALF = 2
+    const val DEFAULT_HOOK_ISLAND_NEXT_SONG_PREVIEW_STYLE =
+        ISLAND_NEXT_SONG_PREVIEW_STYLE_FULL
+    const val ISLAND_NEXT_SONG_PREVIEW_POSITION_OTHER_SIDE = 0
+    const val ISLAND_NEXT_SONG_PREVIEW_POSITION_LEFT = 1
+    const val ISLAND_NEXT_SONG_PREVIEW_POSITION_RIGHT = 2
+    const val DEFAULT_HOOK_ISLAND_NEXT_SONG_PREVIEW_POSITION =
+        ISLAND_NEXT_SONG_PREVIEW_POSITION_OTHER_SIDE
+    const val ISLAND_NEXT_SONG_PREVIEW_WEIGHT_TOP = 0
+    const val ISLAND_NEXT_SONG_PREVIEW_WEIGHT_BOTTOM = 1
+    const val DEFAULT_HOOK_ISLAND_NEXT_SONG_PREVIEW_WEIGHT =
+        ISLAND_NEXT_SONG_PREVIEW_WEIGHT_TOP
+    const val ISLAND_NEXT_SONG_HALF_PREVIEW_DURATION_MS = 5_000L
     const val NOTIFICATION_MEDIA_AMBIENT_FLOW_MODE_DISABLED = 0
     const val NOTIFICATION_MEDIA_AMBIENT_FLOW_MODE_DYNAMIC = 1
     const val NOTIFICATION_MEDIA_AMBIENT_FLOW_MODE_COVER_COLOR = 2
@@ -283,6 +421,7 @@ object RootConstants {
     const val DEFAULT_HOOK_SYLLABLE_RELATIVE = true
     const val DEFAULT_HOOK_SYLLABLE_HIGHLIGHT = false
 
+    const val DEFAULT_HOOK_TRANSLATION_DISPLAY = true
     const val DEFAULT_HOOK_DISABLE_TRANSLATION = false
     const val DEFAULT_HOOK_TRANSLATION_ONLY = false
     const val DEFAULT_HOOK_SWAP_TRANSLATION = false

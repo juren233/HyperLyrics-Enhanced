@@ -283,11 +283,19 @@ class LyriconSource : LyricSource {
         if (!sameTrack) lastAdjustedPosition = 0L
 
         if (song != null && song.lyrics.isNullOrEmpty() && isFallbackEnabled()) {
+            HookLogger.i(
+                TAG,
+                "Apple Music 原生歌词未返回，允许在线兜底: title=${song.name}"
+            )
             scheduleFallback(song, APPLE_LYRICS_GRACE_MS)
         }
         if (song != null && !song.lyrics.isNullOrEmpty() && !incomingHasTranslation &&
             isOnlineTranslationMatchEnabled()
         ) {
+            HookLogger.i(
+                TAG,
+                "Apple Music 原生歌词已接收: title=${song.name}, lines=${song.lyrics.orEmpty().size}"
+            )
             if (originalMetadataChanged) {
                 HookLogger.i(
                     TAG,
@@ -414,7 +422,8 @@ class LyriconSource : LyricSource {
             .position
             .takeIf { it >= 0L }
             ?.let { lastAdjustedPosition = it }
-        diagnostic(
+        HookLogger.i(
+            TAG,
             "Apple Music 在线兜底命中: title=${baseSong.name}, " +
                 "lines=${fallbackSong.lyrics.orEmpty().size}, " +
                 "translations=${fallbackSong.lyrics.orEmpty().count { !it.translation.isNullOrBlank() }}"
@@ -698,32 +707,28 @@ class LyriconSource : LyricSource {
         lastObservedMediaKey = mediaKey
 
         val nativeSong = currentAppleSong
-        if (AppleSongUpdatePolicy.shouldIgnoreMediaSessionCandidate(
+        if (
+            AppleSongUpdatePolicy.canStartFallbackFromMediaSession(
                 currentSong = nativeSong,
-                candidate = mediaSong,
+                mediaSessionSong = mediaSong,
                 currentHasNativeLyrics = currentAppleHasNativeLyrics
             )
         ) {
-            debug("忽略同一首歌的媒体会话空歌词占位: title=${media.title}")
-            return
-        }
-        if (nativeSong != null && isSameTrack(nativeSong, mediaSong)) {
             val fallbackPending = fallbackDelayRunnable != null || fallbackJob?.isActive == true
-            if (!currentAppleHasNativeLyrics && !fallbackPending && !fallbackSongActive) {
+            if (!fallbackPending && !fallbackSongActive) {
                 diagnostic(
-                    "Apple Music 媒体会话补充触发在线兜底: title=${media.title}, " +
+                    "Apple Music Provider 已确认无歌词，媒体会话补充触发在线兜底: title=${media.title}, " +
                         "artist=${media.artist}, duration=${media.duration}"
                 )
-                scheduleFallback(nativeSong, APPLE_LYRICS_GRACE_MS)
+                scheduleFallback(nativeSong ?: return, APPLE_LYRICS_GRACE_MS)
             }
             return
         }
 
         diagnostic(
-            "Apple Music 媒体会话检测到歌曲: title=${media.title}, " +
-                "artist=${media.artist}, duration=${media.duration}"
+            "Apple Music 媒体会话只用于观察，等待原生歌词通道确认: " +
+                "title=${media.title}, artist=${media.artist}, duration=${media.duration}"
         )
-        handleAppleSong(mediaSong)
     }
 
     private fun startMediaPositionPolling() {

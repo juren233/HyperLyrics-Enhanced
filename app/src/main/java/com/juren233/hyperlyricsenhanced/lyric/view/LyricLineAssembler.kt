@@ -6,6 +6,7 @@
 
 package com.juren233.hyperlyricsenhanced.lyric.view
 
+import com.juren233.hyperlyricsenhanced.common.lyric.LyricMetadataKeys
 import com.juren233.hyperlyricsenhanced.lyric.model.LyricLine
 import com.juren233.hyperlyricsenhanced.lyric.model.interfaces.IRichLyricLine
 import com.juren233.hyperlyricsenhanced.lyric.model.lyricMetadataOf
@@ -107,7 +108,10 @@ internal class LyricLineAssembler(
                     source.isAlignedRight
                 ) ?: source.isAlignedRight
             } else {
-                source.isAlignedRight
+                source.metadata?.getBoolean(
+                    LyricMetadataKeys.CONCURRENT_SECONDARY_ALIGNED_RIGHT,
+                    source.isAlignedRight
+                ) ?: source.isAlignedRight
             }
 
             when {

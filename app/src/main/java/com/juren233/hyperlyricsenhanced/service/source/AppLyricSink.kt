@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.launch
 import com.juren233.hyperlyricsenhanced.common.RootConstants
+import com.juren233.hyperlyricsenhanced.common.ClassicAodSongInfoConfig
 import com.juren233.hyperlyricsenhanced.common.ServiceConstants
 import com.juren233.hyperlyricsenhanced.common.UIConstants
 
@@ -77,6 +78,7 @@ class AppLyricSink(
         DynamicLyricData.updateLoadingAlbumArt(false)
         DynamicLyricData.updateFetchingLyrics(false)
         DynamicLyricData.updateAnchor(0L, false)
+        DynamicLyricData.updateTrackInfo("", "", "")
         DynamicLyricData.updateRightTitles(" ", " ", " ", " ", 0L, false, "")
         notificationPresenter.clearNotifications()
     }
@@ -89,11 +91,20 @@ class AppLyricSink(
 
         val sp = context.getSharedPreferences(UIConstants.PREF_NAME, Context.MODE_PRIVATE)
         val enableDynamicIsland = sp.getBoolean(RootConstants.KEY_HOOK_ENABLE_DYNAMIC_ISLAND, RootConstants.DEFAULT_HOOK_ENABLE_DYNAMIC_ISLAND)
-        val pauseListening = !enableDynamicIsland
+        val classicAodSongInfoEnabled = sp.getBoolean(
+            RootConstants.KEY_HOOK_ENABLE_AOD_LYRICS,
+            RootConstants.DEFAULT_HOOK_ENABLE_AOD_LYRICS,
+        ) && ClassicAodSongInfoConfig.displayStyle(sp) ==
+            RootConstants.AOD_SONG_INFO_DISPLAY_STYLE_FOCUS_NOTIFICATION
+        val pauseListening = !enableDynamicIsland && !classicAodSongInfoEnabled
         val isWhitelisted = ConfigRepository.whitelistState.value.contains(data.currentPackageName)
-        LogManager.d("AppLyricSink", "processSyncData: 超级岛开关=$enableDynamicIsland, 白名单通过=$isWhitelisted, pkg=${data.currentPackageName}")
+        LogManager.d(
+            "AppLyricSink",
+            "processSyncData: 超级岛开关=$enableDynamicIsland, 经典AOD歌曲信息=$classicAodSongInfoEnabled, " +
+                "白名单通过=$isWhitelisted, pkg=${data.currentPackageName}"
+        )
 
-        if (pauseListening || !isWhitelisted) {
+        if (pauseListening || (!isWhitelisted && !classicAodSongInfoEnabled)) {
             isCurrentlyPlaying = false
             DynamicLyricData.updateAnchor(data.position, false)
             DynamicLyricData.updateRightTitles(

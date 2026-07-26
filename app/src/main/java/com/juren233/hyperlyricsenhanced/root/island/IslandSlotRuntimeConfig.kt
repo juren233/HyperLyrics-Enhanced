@@ -20,6 +20,9 @@ internal data class IslandSlotRuntimeConfig(
     val pauseBehavior: Int,
     val forceNextSongAtEnd: Boolean,
     val nextSongDurationSeconds: Int,
+    val nextSongPreviewStyle: Int,
+    val nextSongPreviewPosition: Int,
+    val nextSongPreviewWeight: Int,
     val textSizeSp: Int,
     val textSizeRatio: Float,
     val fontWeight: Int,
@@ -43,11 +46,10 @@ internal data class IslandSlotRuntimeConfig(
     val metadataMarqueeInfinite: Boolean,
     val syllableRelative: Boolean,
     val syllableHighlight: Boolean,
-    val disableTranslation: Boolean,
+    val translationDisplay: Boolean,
     val translationOnly: Boolean,
     val swapTranslation: Boolean,
     val nextLyricLine: Boolean,
-    val autoSwitchTranslation: Boolean,
     val adjacentBackgroundTranslation: Boolean,
     val extractCoverTextColor: Boolean,
     val extractCoverTextGradient: Boolean,
@@ -86,14 +88,16 @@ internal data class IslandSlotRuntimeConfig(
         metadataMarqueeInfinite,
         syllableRelative,
         syllableHighlight,
-        disableTranslation,
+        translationDisplay,
         translationOnly,
         swapTranslation,
         nextLyricLine,
-        autoSwitchTranslation,
         adjacentBackgroundTranslation,
         forceNextSongAtEnd,
         nextSongDurationSeconds,
+        nextSongPreviewStyle,
+        nextSongPreviewPosition,
+        nextSongPreviewWeight,
         extractCoverTextColor,
         extractCoverTextGradient,
         customFontPath,
@@ -115,24 +119,50 @@ internal data class IslandSlotRuntimeConfig(
         get() = AdjacentTranslationPolicy.targetIsLeft(leftMode, rightMode)
 
     val shouldInjectLeft: Boolean
-        get() = nextSongPreviewEnabled || leftMode != 0 || (
+        get() = leftMode != 0 ||
+            nextSongPreviewStyle == RootConstants.ISLAND_NEXT_SONG_PREVIEW_STYLE_FULL ||
+            (
+                nextSongPreviewStyle == RootConstants.ISLAND_NEXT_SONG_PREVIEW_STYLE_HALF &&
+                    halfPreviewTargetIsLeft
+                ) || (
             adjacentBackgroundTranslation &&
                 supportsAdjacentBackgroundTranslation &&
                 adjacentTranslationTargetIsLeft == true
             )
 
     val shouldInjectRight: Boolean
-        get() = nextSongPreviewEnabled || rightMode != 0 || (
+        get() = rightMode != 0 ||
+            nextSongPreviewStyle == RootConstants.ISLAND_NEXT_SONG_PREVIEW_STYLE_FULL ||
+            (
+                nextSongPreviewStyle == RootConstants.ISLAND_NEXT_SONG_PREVIEW_STYLE_HALF &&
+                    !halfPreviewTargetIsLeft
+                ) || (
             adjacentBackgroundTranslation &&
                 supportsAdjacentBackgroundTranslation &&
                 adjacentTranslationTargetIsLeft == false
             )
 
     val nextSongPreviewEnabled: Boolean
-        get() = nextSongDurationSeconds > 0
+        get() = nextSongPreviewStyle != RootConstants.ISLAND_NEXT_SONG_PREVIEW_STYLE_NONE
 
     val nextSongDurationMs: Long
-        get() = nextSongDurationSeconds * 1_000L
+        get() = resolveNextSongPreviewDurationMs(
+            style = nextSongPreviewStyle,
+            fullDurationSeconds = nextSongDurationSeconds
+        )
+
+    val shouldForceNextSongPreview: Boolean
+        get() = resolveShouldForceNextSongPreview(
+            style = nextSongPreviewStyle,
+            fullForceEnabled = forceNextSongAtEnd
+        )
+
+    val halfPreviewTargetIsLeft: Boolean
+        get() = resolveHalfPreviewTargetIsLeft(
+            position = nextSongPreviewPosition,
+            leftMode = leftMode,
+            rightMode = rightMode
+        )
 
     fun isLeftTag(tag: String): Boolean {
         return tag == IslandProbeUtils.LEFT_TEST_VIEW_TAG
@@ -169,8 +199,74 @@ internal data class IslandSlotRuntimeConfig(
     }
 
     companion object {
+        internal fun resolveNextSongPreviewStyle(
+            hasStoredStyle: Boolean,
+            storedStyle: Int,
+            legacyDurationSeconds: Int
+        ): Int {
+            if (!hasStoredStyle) {
+                return if (legacyDurationSeconds > 0) {
+                    RootConstants.ISLAND_NEXT_SONG_PREVIEW_STYLE_FULL
+                } else {
+                    RootConstants.ISLAND_NEXT_SONG_PREVIEW_STYLE_NONE
+                }
+            }
+            return storedStyle.coerceIn(
+                RootConstants.ISLAND_NEXT_SONG_PREVIEW_STYLE_NONE,
+                RootConstants.ISLAND_NEXT_SONG_PREVIEW_STYLE_HALF
+            )
+        }
+
+        internal fun resolveHalfPreviewTargetIsLeft(
+            position: Int,
+            leftMode: Int,
+            rightMode: Int
+        ): Boolean {
+            return when (position) {
+                RootConstants.ISLAND_NEXT_SONG_PREVIEW_POSITION_LEFT -> true
+                RootConstants.ISLAND_NEXT_SONG_PREVIEW_POSITION_RIGHT -> false
+                else -> when {
+                    leftMode == 7 && rightMode != 7 -> false
+                    rightMode == 7 && leftMode != 7 -> true
+                    else -> true
+                }
+            }
+        }
+
+        internal fun resolveNextSongPreviewDurationMs(
+            style: Int,
+            fullDurationSeconds: Int
+        ): Long {
+            return when (style) {
+                RootConstants.ISLAND_NEXT_SONG_PREVIEW_STYLE_FULL ->
+                    fullDurationSeconds * 1_000L
+                RootConstants.ISLAND_NEXT_SONG_PREVIEW_STYLE_HALF ->
+                    RootConstants.ISLAND_NEXT_SONG_HALF_PREVIEW_DURATION_MS
+                else -> 0L
+            }
+        }
+
+        internal fun resolveShouldForceNextSongPreview(
+            style: Int,
+            fullForceEnabled: Boolean
+        ): Boolean {
+            return when (style) {
+                RootConstants.ISLAND_NEXT_SONG_PREVIEW_STYLE_FULL -> fullForceEnabled
+                RootConstants.ISLAND_NEXT_SONG_PREVIEW_STYLE_HALF -> true
+                else -> false
+            }
+        }
+
         fun from(prefs: SharedPreferences): IslandSlotRuntimeConfig {
             val activeMode = prefs.getInt(RootConstants.KEY_HOOK_LYRIC_MODE, RootConstants.DEFAULT_HOOK_LYRIC_MODE)
+            val nextSongDurationSeconds = prefs.getInt(
+                RootConstants.KEY_HOOK_ISLAND_NEXT_SONG_DURATION,
+                RootConstants.DEFAULT_HOOK_ISLAND_NEXT_SONG_DURATION
+            ).coerceIn(0, 5)
+            val storedNextSongPreviewStyle = prefs.getInt(
+                RootConstants.KEY_HOOK_ISLAND_NEXT_SONG_PREVIEW_STYLE,
+                Int.MIN_VALUE
+            )
             return IslandSlotRuntimeConfig(
                 activeMode = activeMode,
                 leftMode = if (activeMode == 1) 7 else prefs.getInt(RootConstants.KEY_HOOK_ISLAND_CONTENT_LEFT, RootConstants.DEFAULT_HOOK_ISLAND_CONTENT_LEFT),
@@ -188,10 +284,26 @@ internal data class IslandSlotRuntimeConfig(
                     RootConstants.KEY_HOOK_ISLAND_FORCE_NEXT_SONG_AT_END,
                     RootConstants.DEFAULT_HOOK_ISLAND_FORCE_NEXT_SONG_AT_END
                 ),
-                nextSongDurationSeconds = prefs.getInt(
-                    RootConstants.KEY_HOOK_ISLAND_NEXT_SONG_DURATION,
-                    RootConstants.DEFAULT_HOOK_ISLAND_NEXT_SONG_DURATION
-                ).coerceIn(0, 5),
+                nextSongDurationSeconds = nextSongDurationSeconds,
+                nextSongPreviewStyle = resolveNextSongPreviewStyle(
+                    hasStoredStyle = storedNextSongPreviewStyle != Int.MIN_VALUE,
+                    storedStyle = storedNextSongPreviewStyle,
+                    legacyDurationSeconds = nextSongDurationSeconds
+                ),
+                nextSongPreviewPosition = prefs.getInt(
+                    RootConstants.KEY_HOOK_ISLAND_NEXT_SONG_PREVIEW_POSITION,
+                    RootConstants.DEFAULT_HOOK_ISLAND_NEXT_SONG_PREVIEW_POSITION
+                ).coerceIn(
+                    RootConstants.ISLAND_NEXT_SONG_PREVIEW_POSITION_OTHER_SIDE,
+                    RootConstants.ISLAND_NEXT_SONG_PREVIEW_POSITION_RIGHT
+                ),
+                nextSongPreviewWeight = prefs.getInt(
+                    RootConstants.KEY_HOOK_ISLAND_NEXT_SONG_PREVIEW_WEIGHT,
+                    RootConstants.DEFAULT_HOOK_ISLAND_NEXT_SONG_PREVIEW_WEIGHT
+                ).coerceIn(
+                    RootConstants.ISLAND_NEXT_SONG_PREVIEW_WEIGHT_TOP,
+                    RootConstants.ISLAND_NEXT_SONG_PREVIEW_WEIGHT_BOTTOM
+                ),
                 textSizeSp = prefs.getInt(RootConstants.KEY_HOOK_TEXT_SIZE, RootConstants.DEFAULT_HOOK_TEXT_SIZE),
                 textSizeRatio = prefs.getFloat(RootConstants.KEY_HOOK_TEXT_SIZE_RATIO, RootConstants.DEFAULT_HOOK_TEXT_SIZE_RATIO),
                 fontWeight = prefs.getInt(RootConstants.KEY_HOOK_FONT_WEIGHT, RootConstants.DEFAULT_HOOK_FONT_WEIGHT),
@@ -215,11 +327,10 @@ internal data class IslandSlotRuntimeConfig(
                 metadataMarqueeInfinite = prefs.getBoolean(RootConstants.KEY_HOOK_MARQUEE_METADATA_INFINITE, RootConstants.DEFAULT_HOOK_MARQUEE_METADATA_INFINITE),
                 syllableRelative = prefs.getBoolean(RootConstants.KEY_HOOK_SYLLABLE_RELATIVE, RootConstants.DEFAULT_HOOK_SYLLABLE_RELATIVE),
                 syllableHighlight = prefs.getBoolean(RootConstants.KEY_HOOK_SYLLABLE_HIGHLIGHT, RootConstants.DEFAULT_HOOK_SYLLABLE_HIGHLIGHT),
-                disableTranslation = prefs.getBoolean(RootConstants.KEY_HOOK_DISABLE_TRANSLATION, RootConstants.DEFAULT_HOOK_DISABLE_TRANSLATION),
+                translationDisplay = com.juren233.hyperlyricsenhanced.root.utils.TranslationHelper.isTranslationDisplayed(prefs),
                 translationOnly = prefs.getBoolean(RootConstants.KEY_HOOK_TRANSLATION_ONLY, RootConstants.DEFAULT_HOOK_TRANSLATION_ONLY),
                 swapTranslation = prefs.getBoolean(RootConstants.KEY_HOOK_SWAP_TRANSLATION, RootConstants.DEFAULT_HOOK_SWAP_TRANSLATION),
                 nextLyricLine = prefs.getBoolean(RootConstants.KEY_HOOK_NEXT_LYRIC_LINE, RootConstants.DEFAULT_HOOK_NEXT_LYRIC_LINE),
-                autoSwitchTranslation = prefs.getBoolean(RootConstants.KEY_HOOK_AUTO_SWITCH_TRANSLATION, RootConstants.DEFAULT_HOOK_AUTO_SWITCH_TRANSLATION),
                 adjacentBackgroundTranslation = prefs.getBoolean(RootConstants.KEY_HOOK_ADJACENT_BACKGROUND_TRANSLATION, RootConstants.DEFAULT_HOOK_ADJACENT_BACKGROUND_TRANSLATION),
                 extractCoverTextColor = prefs.getBoolean(RootConstants.KEY_HOOK_EXTRACT_COVER_TEXT_COLOR, RootConstants.DEFAULT_HOOK_EXTRACT_COVER_TEXT_COLOR),
                 extractCoverTextGradient = prefs.getBoolean(RootConstants.KEY_HOOK_EXTRACT_COVER_TEXT_GRADIENT, RootConstants.DEFAULT_HOOK_EXTRACT_COVER_TEXT_GRADIENT),
