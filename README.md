@@ -5,101 +5,147 @@
 <h1 align="center">HyperLyrics Enhanced</h1>
 
 <p align="center">
-  <strong>基于 HyperLyric 针对性优化 Apple Music 的 HyperOS 超级岛歌词增强工具 & 独立应用通知歌词服务</strong>
+  <strong>面向 HyperOS 的 Apple Music 深度适配与系统级歌词展示增强工具</strong>
 </p>
 
 <p align="center">
-  <a href="https://github.com/limczhh/HyperLyric/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0-blue.svg" alt="License GPL-3.0"/></a>
-  <a href="https://android.com"><img src="https://img.shields.io/badge/Android-13.0%20--%2016-green.svg" alt="Android Support"/></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0-blue.svg" alt="License GPL-3.0"/></a>
+  <a href="https://android.com"><img src="https://img.shields.io/badge/Android-13%2B-green.svg" alt="Android Support"/></a>
   <a href="https://github.com/compose-miuix-ui/miuix"><img src="https://img.shields.io/badge/UI--Framework-Miuix--Compose-orange.svg" alt="Miuix UI"/></a>
-  <a href="https://github.com/libxposed/api"><img src="https://img.shields.io/badge/Hook--Framework-libxposed%20101-purple.svg" alt="libxposed"/></a>
+  <a href="https://github.com/libxposed/api"><img src="https://img.shields.io/badge/Hook--Framework-libxposed-purple.svg" alt="libxposed"/></a>
 </p>
 
 ---
 
-HyperLyrics Enhanced 是一款专为小米 HyperOS 量身定制且针对性优化 Apple Music 歌词体验的歌词显示增强工具。项目基于 [limczhh/HyperLyric](https://github.com/limczhh/HyperLyric) 二次开发，在保留原项目主要能力的基础上，重点优化 **Apple Music 歌词体验**、补全**无歌词场景**（将online与offline合并且补进超级岛歌词里），并改善在线歌词与 AI 翻译的匹配、补充和显示体验。
+## 项目定位
 
-项目提供双模运行机制，既支持以 **Xposed 模块** 方式注入 SystemUI 媒体超级岛，提供贴合原生风格的逐字动态歌词，也支持作为 **独立应用** 接收系统通知栏/小米焦点通知，实现零 Root、免模块的歌词显示。
+HyperLyrics Enhanced 是一个为小米 HyperOS 设备打造的 Android 模块与独立应用，也为其他安卓品牌手机提供 Apple Music 体验优化。
+
+- 将 Apple Music 的逐字歌词、翻译、伴唱和歌曲信息更完整地带入小米 HyperOS 的超级岛、媒体卡片与 AOD。
+- 将 Apple Music 体验进一步优化，且面向所有安卓品牌手机。
+- 同时兼容原项目支持的其他音乐软件，如 QQ 音乐、网易云音乐等。
+
+本项目基于 [limczhh/HyperLyric](https://github.com/limczhh/HyperLyric) 二次开发，现已形成独立的功能方向和维护边界。
 
 > [!WARNING]
-> 本项目不是原项目的官方后续版本。遇到仅在 HyperLyrics Enhanced 中出现的问题，请在本项目的 Issue 中反馈，不要打扰原项目维护者！
+> HyperLyrics Enhanced 不是 HyperLyric 的官方后续版本。仅在本项目中出现的问题，请在本项目的 Issue 中反馈，不要打扰原项目维护者。
 
 ## 相较原项目的主要优化
 
-### Apple Music 专项增强
+### 1. Apple Music 从外部 Provider 变成内置能力
 
-- **内置 Apple Music 逐字歌词 Provider**：无需另行安装 Lyricon、Lyricon Central 或独立 LyricProvider，只需在 LSPosed 中勾选推荐作用域即可做到开箱即用。
-- **歌词直连传输**：Apple Music 可将歌词、播放状态和进度直接传递给 SystemUI；连接恢复后会自动补发当前歌曲，降低切歌或 SystemUI 重连后的歌词丢失概率。
-- **完整保留 Apple Music 歌词信息**：支持逐字时间轴、原生翻译、背景人声、伴唱翻译、合唱标记和多人演唱布局，并处理不同的对唱方向。你现在还可以将合唱歌词居中显示。
-- **无原生歌词时自动兜底**：优先等待 Apple Music 原生歌词；确认无歌词后，可从 QQ 音乐或网易云音乐获取逐行歌词，并允许设置优先歌词源。
+- 内置 Apple Music 逐字歌词 Provider。Apple Music 用户不需要额外安装 Lyricon、Lyricon Central 或独立 LyricProvider，即可使用推荐作用域配置。
+- 直接传递歌词、播放状态和进度，并在 SystemUI 重连、切歌或数据延迟后重新同步当前歌曲。
+- 支持在 Apple Music App 内进行更细粒度的体验调整：内容 UI 地区语言、歌曲信息地区化、原地区名称恢复、元数据检索缓存、繁体歌词转简体、歌词模糊效果、跟随系统字体粗细等优化。
+- Apple Music 的原生歌词翻译和发音数据优先显示；缺失内容可按配置从在线歌词源补全。
 
-### 歌词补全与同步修复
+### 2. 统一在线、离线与兜底歌词管线
 
-- **合并 Online 与 Offline 版本**：移除原有 `online`、`offline` 构建变体，将在线歌词能力整合进统一版本，并接入超级岛歌词管线，在 Apple Music 缺少原生歌词时自动补全。
-- **补全无歌词场景**：根据歌曲标题、歌手、时长及版本特征匹配在线歌词，降低同名歌曲、Live、Remastered 或翻唱版本的误匹配。
-- **改善重复歌词刷新**：即使相邻歌词文本相同，也会依据时间轴切换到正确歌词行，避免重复句不刷新。
-- **规范兜底歌词时间轴**：过滤无效行、按时间排序并去除重复时间戳，同时补齐行结束时间，减少歌词跳行和停留时间异常。
-- **按时间戳绑定译文**：在线歌词与译文按对应时间匹配，避免将其他时间点的翻译错误附加到当前歌词行。
+- 移除原有在线/离线构建分支，将在线歌词能力整合进统一版本。
+- Apple Music 原生歌词优先；确认没有可用原生歌词后，才从 QQ 音乐或网易云音乐获取逐行歌词兜底。
+- 根据标题、歌手、时长和版本特征进行匹配，尽量区分同名歌曲、Live、Remastered、翻唱和不同剪辑版本。
+- 处理 LRC/QRC、逐行歌词和逐字歌词之间的结构转换，并修复无效行、重复时间戳、缺失结束时间、相邻重复歌词不刷新等常见问题。
+- 在线歌词和译文按时间轴与结构进行匹配，支持一行对多行、多行对一行等差异，减少翻译错位。
 
-### 歌词翻译体验优化
+### 3. 翻译优先级更明确，也更可控
 
-- **Apple Music 同款间奏动画**：识别前奏、较长间奏和普通歌词间隔，在适用时显示随时长推进的三点动画。
-- **在线译文智能补全**：当 Apple Music 原生歌词没有翻译时，可从 QQ 音乐或网易云音乐匹配译文；支持一行对多行、多行对一行等结构差异。
-- **翻译源软优先与质量选择**：可独立设置优先使用 QQ 音乐或网易云音乐翻译（但如果自行设置的优先源质量不如另一个源，默认会使用另一个源）；系统综合覆盖率和匹配可信度选择质量更好的结果，并使用另一来源补齐仍然缺失的译文。
-- **按优先级补全译文**：优先保留 Apple Music 原生译文和匹配到的在线译文，AI 翻译仅补充剩余缺失行；即使开启强制 AI 翻译，已匹配的在线译文仍具有更高优先级。
-- **更灵活的第二行显示策略**：支持原文与译文交换、仅显示译文；自动切换时优先显示翻译或伴唱，没有可用内容时显示下一句歌词（如开启了“显示下一句歌词”）。在适用的逐字歌词布局中，还可将伴唱译文临时显示到相邻歌词槽位。
+- Apple Music 原生译文优先。
+- 已匹配的 QQ 音乐/网易云音乐在线译文优先于 AI 补全；可以配置在线翻译的偏好来源，系统仍会根据覆盖率和匹配质量选择更合适的结果。
+- AI 翻译只补充缺失内容；需要时也可以开启强制 AI 翻译覆盖已有译文。
 
----
+### 4. 米系 AOD 也纳入同一套歌词体验
 
-## 🌟 双模运行机制与核心黑科技
+- 提供两套 AOD 歌词路径：锁屏 AOD 与经典 AOD。
+- AOD 支持主句、伴唱、翻译、下一句歌词、对唱居中、暂停行为、下首歌曲预览和显示位置配置。
+- 经典 AOD 还可以选择显示歌曲信息的样式：焦点通知样式或嵌入式文本样式。
 
-项目为了适配不同权限、不同玩家的定制化需求，提供了两种完全解耦的运行模式：
+## 运行模式
 
-### 1. Xposed 模式 (SystemUI 进程)
-对于已解锁 Root 并启用 Xposed 框架（如 LSPosed）的极客用户，HyperLyrics Enhanced 作为 Xposed 模块，通过 Modern Xposed API (libxposed API 101) 深度注入 SystemUI 插件：
-- **原生级别的视图注入**：动态拦截 `BaseDexClassLoader` 并在 `SystemUIHookRegistry` 中统一入口，挂钩超级岛插槽（Slot），注入自定义 Canvas 绘制的富歌词渲染器（`RichLyricLineView`）。
-- **完全运行时热更新**：通过 `OnSharedPreferenceChangeListener` 监听偏好变动，对超级岛样式与动效实现 **免重启 SystemUI 立即生效**。
-
-### 2. 独立应用模式 (App 进程) — 免 Root 首选
-对于未解锁设备，HyperLyrics Enhanced 作为普通独立应用运行。
-
----
-
-
-## 📱 适配与兼容性说明
-
-> ⚠️ 注意：各系统与安卓版本的插件更新频繁，实际效果以具体设备环境为准。
-
-| 功能模块 | 支持安卓版本 | 支持系统版本 | 说明 |
+| 模式 | 适合人群 | 主要能力 | 依赖 |
 | :--- | :--- | :--- | :--- |
-| **Xposed 超级岛歌词** | Android 15+ | HyperOS 3 | 需要注入 `miui.systemui.plugin` |
-| **Xposed 移除焦点通知白名单** | Android 13+ | HyperOS 2、HyperOS 3 | 拦截 `com.xiaomi.xmsf` 进行判定 |
-| **Xposed 移除媒体超级岛下拉白名单** | Android 16 | HyperOS 3.0.300+ | 突破下拉扩展岛的使用限制 |
-| **Live update 安卓实时通知歌词** | Android 16 | HyperOS 3.0.300+、ColorOS 16 | 采用常规安卓实时通知接口推送歌词 |
-| **Notification Spotlight 焦点通知歌词** | Android 13+ | HyperOS 2、HyperOS 3 | 独立应用配合 Shizuku 绕过发送 |
+| **Xposed / LSPosed 模式** | 已 Root、希望使用原生超级岛/系统界面注入 | HyperOS 超级岛、SystemUI 媒体卡片、Apple Music 深度适配、AOD 与系统白名单增强 | LSPosed v2.0+；HyperOS 3 相关功能需要对应 SystemUI |
+| **通知歌词模式** | 未 Root 或不使用 Xposed 的设备 | 实时通知/焦点通知歌词、通知型灵动岛、基础媒体信息展示 | 通知发送权限、通知使用权；部分功能可选 Shizuku |
 
----
+两种模式可以分别配置。Apple Music 内置 Provider 与体验优化功能均属于 Xposed 侧能力；通知模式则依赖播放器提供媒体信息或歌词通知数据。
 
-## 🔌 歌词源详解 (Lyric Sources)
+## 安装与配置
 
-HyperLyrics Enhanced 解耦了歌词来源。无论是哪种数据源，均由项目底层的 `RootLyricSink` 统一分发并驱动 AI 翻译。
+### Xposed / LSPosed 模式
 
-| 歌词源 | 工作原理（通俗解释） | 适用音乐播放器示例 | 额外依赖与下载 |
-| :--- | :--- | :--- | :--- |
-| **Lyricon** (`lyricon`) | Apple Music 通过内置 Provider 直接取词；其他播放器读取词幕转发的数据。 | Apple Music、网易云音乐、QQ音乐、酷狗音乐等 | Apple Music 无需额外 Provider 或 Lyricon central；其他播放器仍需 [Lyricon central](https://github.com/tomakino/lyricon/releases/tag/core) 和对应 [LyricProvider](https://github.com/proify/LyricProvider/releases) |
-| **SuperLyric** (`superlyric`) | 获取 SuperLyric 高精度的逐字/词级时间戳歌词。 | 酷我音乐、QQ音乐、汽水音乐等 | 需安装 [SuperLyric](https://github.com/HChenX/SuperLyric) 并开启其广播 |
-| **LyricInfo** (`lyricinfo`) | 读取 mediasession 内的 lyricinfo 内置歌词。 | QQ音乐、椒盐音乐 (Salt Player) 等 | 建议安装 [LyricInfo](https://github.com/limczhh/LyricInfo) (可选) |
+1. 从本项目的 [Releases](https://github.com/juren233/HyperLyrics-Enhanced/releases) 下载并安装 APK。
+2. 在 LSPosed 中启用 HyperLyrics Enhanced，并勾选推荐作用域：
+   - com.android.systemui
+   - miui.systemui.plugin
+   - com.apple.android.music
+3. 打开应用主页的“超级岛歌词”，在“歌词设置”中选择歌词模式和歌词来源。
+4. Apple Music 用户可以直接使用内置 Provider；其他播放器仍可能需要 Lyricon Central （词幕服务） 与对应 LyricProvider。
+5. 根据提示重启 SystemUI 和音乐 App。
 
----
+### 通知歌词模式
 
-## 📎 致谢与开源协议
+1. 打开应用主页的“通知型灵动岛歌词”。
+2. 授予发送通知权限和通知使用权。
+3. 在歌词白名单中添加需要显示歌词的音乐 App。
+4. 选择实时通知或焦点通知，并按需配置图标、进度条、歌曲信息和点击行为。
+5. 如果设备后台限制较严格，可以在页面内配置自启动、电池优化；焦点通知限制绕过功能需要运行中的 Shizuku。
 
-- 本项目采用 **GNU General Public License v3.0** 开源协议发布。
-- 特别感谢以下项目：
+具体系统版本、权限入口和通知表现可能因 HyperOS/Android 版本而变化，请以应用内“使用帮助”和设备实际行为为准。
 
-  - [HyperLyric](https://github.com/limczhh/HyperLyric) — 本项目基于其开发，感谢原作者提供的完整基础实现。
-  - [miuix-kmp](https://github.com/compose-miuix-ui/miuix) — HyperOS 风格的 Compose 组件库。
-  - [lyricon](https://github.com/tomakino/lyricon) — 本项目大多数歌词动画均移植于 lyricon 项目。
-  - [SuperLyric](https://github.com/HChenX/SuperLyric)
-  - [LyricInfo](https://github.com/limczhh/LyricInfo)
-  - [libxposed](https://github.com/libxposed/api)
+## 兼容性说明
+
+项目最低支持 Android 13（API 33），但不同功能依赖不同的系统界面实现：
+
+| 功能 | 当前目标环境 | 备注 |
+| :--- | :--- | :--- |
+| HyperOS 超级岛歌词与 SystemUI 注入 | Android 15+ / HyperOS 3 | 需要 LSPosed v2.0+ 以及 miui.systemui.plugin |
+| Apple Music 内置 Provider | Android 13+，配合 LSPosed | 作用于 com.apple.android.music；Apple Music 版本变化可能影响兼容性 |
+| 锁屏 AOD / 经典 AOD | 米系 Android 13+ | 取决于设备的 AOD 实现和对应作用域 |
+| 通知型灵动岛歌词 | Android 13+ | 需要通知发送权限、通知使用权和播放器数据 |
+| 小米焦点通知增强 | HyperOS 2 / HyperOS 3 | 可能需要移除焦点通知白名单 |
+| 下拉小窗白名单增强 | Android 16 / HyperOS 3.0.300+ | 依赖对应系统版本 |
+| Android 实时通知 | Android 16；部分 HyperOS 3 / ColorOS 16 | 是否显示为系统级实时通知由系统决定 |
+
+系统更新、SystemUI 插件更新和 Apple Music 更新都可能改变内部实现。遇到不适配时，建议先导出应用日志，并在 Issue 中附上设备型号、Android/HyperOS 版本、音乐 App 版本和复现步骤。
+
+## 歌词来源与外部依赖
+
+| 歌词源 | 说明 | 额外依赖 |
+| :--- | :--- | :--- |
+| **Lyricon** | Apple Music 内置 Provider 使用的统一歌词管线；其他播放器可以通过 Lyricon 接入 | Apple Music 无需额外 Provider；其他播放器通常需要 [Lyricon Central](https://github.com/tomakino/lyricon/releases/tag/core) 与 [LyricProvider](https://github.com/proify/LyricProvider/releases) |
+| **SuperLyric** | 获取逐行或逐字歌词以及更细粒度的时间轴 | [SuperLyric](https://github.com/HChenX/SuperLyric)，并按其说明开启广播 |
+| **LyricInfo** | 读取媒体会话中的 lyricinfo 数据 | [LyricInfo](https://github.com/limczhh/LyricInfo)，可选 |
+| **在线兜底** | Apple Music 没有原生歌词时，从 QQ 音乐或网易云音乐匹配逐行歌词与译文 | 需要联网；可在歌词设置中关闭或调整优先来源 |
+| **AI 翻译** | 对缺失译文进行补全，支持 OpenAI 兼容接口 | 需要用户自行提供 API Key、模型和接口地址 |
+
+## 构建
+
+本项目使用 Gradle 和 Kotlin/Compose。常用本地检查命令：
+
+~~~bash
+./gradlew :app:testDebugUnitTest
+./gradlew :app:assembleDebug
+~~~
+
+Release 构建需要在项目根目录提供 keystore.properties，或设置构建脚本读取的 Release 签名环境变量。APK 输出名称会包含版本名和 versionCode。
+
+## 数据、权限与使用边界
+
+- Xposed 模式需要 LSPosed 及相应作用域；通知模式不要求 Root。
+- 在线歌词、在线译文和 AI 翻译仅在对应功能开启时使用网络。
+- AI 翻译使用的 API Key、模型和服务地址由用户自行配置，第三方服务的隐私政策和费用由用户自行承担。
+- 焦点通知、实时通知、AOD 和 SystemUI 注入均受设备厂商实现、系统版本、电池策略和后台限制影响。
+
+## 致谢与许可证
+
+本项目采用 **GNU General Public License v3.0** 开源协议发布。
+
+感谢以下项目和贡献者：
+
+- [HyperLyric](https://github.com/limczhh/HyperLyric)：本项目的基础项目，原有能力和上游贡献仍归原作者及其贡献者。
+- [miuix-kmp](https://github.com/compose-miuix-ui/miuix)：HyperOS 风格 Compose 组件库。
+- [lyricon](https://github.com/tomakino/lyricon)：歌词订阅、数据模型和部分歌词动画基础。
+- [SuperLyric](https://github.com/HChenX/SuperLyric)
+- [LyricInfo](https://github.com/limczhh/LyricInfo)
+- [libxposed](https://github.com/libxposed/api)
+
+请在提交 Issue 或 Pull Request 时保留相关上游项目、第三方库和原作者的归属信息。
