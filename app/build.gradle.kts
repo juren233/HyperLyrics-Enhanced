@@ -41,7 +41,7 @@ android {
         minSdk = 33
         targetSdk = 37
         versionCode = 131000
-        versionName = ciVersionName ?: "7.3.1-beta"
+        versionName = ciVersionName ?: "7.3.1-canary"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
