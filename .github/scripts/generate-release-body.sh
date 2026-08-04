@@ -3,6 +3,7 @@ set -euo pipefail
 
 previous_tag="${1:-}"
 release_commit="${2:-HEAD}"
+channel="${3:-stable}"
 
 git rev-parse --verify "${release_commit}^{commit}" >/dev/null
 
@@ -29,4 +30,9 @@ if [[ -n "${history//[[:space:]]/}" ]]; then
 fi
 
 printf '\n## 下载说明\n\n'
+if [[ "$channel" == "beta" ]]; then
+  printf '> [!WARNING]\n'
+  printf '> 这是 Beta 测试版本，可能存在不稳定、性能缺陷以及尚未完成的问题。\n'
+  printf '> 仅建议愿意在日常使用中提供调试日志的用户使用；普通用户请使用正式版 Release 包。\n\n'
+fi
 printf '日常使用请选择 **Release** 包；**Debug** 包仅用于调试和查找问题。\n'

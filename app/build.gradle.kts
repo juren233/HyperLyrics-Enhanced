@@ -29,6 +29,10 @@ val hasReleaseSigning = listOf(
     releaseKeyPassword
 ).none { it.isNullOrBlank() }
 
+// CI materializes the beta/canary suffix at build time; local development keeps
+// the versionName declared in this file.
+val ciVersionName = providers.gradleProperty("ciVersionName").orNull
+
 android {
     namespace = "com.juren233.hyperlyricsenhanced"
     compileSdk = 37
@@ -36,8 +40,8 @@ android {
         applicationId = "com.juren233.hyperlyricsenhanced"
         minSdk = 33
         targetSdk = 37
-        versionCode = 130290
-        versionName = "7.3.0"
+        versionCode = 131000
+        versionName = ciVersionName ?: "7.3.1-beta"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

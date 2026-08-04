@@ -7,12 +7,17 @@ on:
     branches: [main]
   workflow_dispatch:
 
+concurrency:
+  group: android-build-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  actions: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      actions: read
 
     steps:
       - name: 拉取代码 Checkout
@@ -22,42 +27,33 @@ jobs:
 
       - name: 版本检测 Version Gate
         id: gate
+        env:
+          EVENT_NAME: ${{ github.event_name }}
         run: |
-          V_NAME=$(grep "versionName =" app/build.gradle.kts | sed 's/.*"\(.*\)".*/\1/')
-          V_CODE=$(grep "versionCode =" app/build.gradle.kts | sed 's/[^0-9]//g')
-          if ! [[ "$V_NAME" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "versionName must use X.X.X format: $V_NAME"
-            exit 1
-          fi
-          if ! [[ "$V_CODE" =~ ^[1-9][0-9]*$ ]]; then
-            echo "versionCode must be a positive integer: $V_CODE"
-            exit 1
-          fi
-          echo "name=$V_NAME" >> $GITHUB_OUTPUT
-          echo "code=$V_CODE" >> $GITHUB_OUTPUT
+          set -euo pipefail
 
-          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
-          if [ -n "$PREV_TAG" ]; then
-            echo "prev_tag=$PREV_TAG" >> $GITHUB_OUTPUT
-          fi
+          while IFS= read -r line; do
+            echo "$line" >> "$GITHUB_OUTPUT"
+          done < <(bash .github/scripts/resolve-version.sh)
 
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "skip=false" >> $GITHUB_OUTPUT
-            echo "manual trigger, proceeding"
-            exit 0
-          fi
-          if git rev-parse HEAD~1 >/dev/null 2>&1; then
-            PREV_NAME=$(git show HEAD~1:app/build.gradle.kts | grep "versionName =" | sed 's/.*"\(.*\)".*/\1/')
-            PREV_CODE=$(git show HEAD~1:app/build.gradle.kts | grep "versionCode =" | sed 's/[^0-9]//g')
-            if [ "$V_NAME" != "$PREV_NAME" ] || [ "$V_CODE" != "$PREV_CODE" ]; then
-              echo "skip=false" >> $GITHUB_OUTPUT
-              echo "version changed (Name: $PREV_NAME -> $V_NAME, Code: $PREV_CODE -> $V_CODE), proceeding"
+          if [[ "$EVENT_NAME" == "pull_request" || "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "${EVENT_NAME} trigger, proceeding with resolved version"
+          elif git rev-parse HEAD^ >/dev/null 2>&1; then
+            previous_name="$(git show HEAD^:app/build.gradle.kts 2>/dev/null | sed -nE 's/^[[:space:]]*versionName[[:space:]]*=.*"([^"]+)".*/\1/p' | head -n1 || true)"
+            previous_code="$(git show HEAD^:app/build.gradle.kts 2>/dev/null | sed -nE 's/^[[:space:]]*versionCode[[:space:]]*=*[[:space:]]*([0-9]+).*/\1/p' | head -n1 || true)"
+            current_name="$(sed -nE 's/^[[:space:]]*versionName[[:space:]]*=.*"([^"]+)".*/\1/p' app/build.gradle.kts | head -n1)"
+            current_code="$(sed -nE 's/^[[:space:]]*versionCode[[:space:]]*=*[[:space:]]*([0-9]+).*/\1/p' app/build.gradle.kts | head -n1)"
+
+            if [[ "$current_name" != "$previous_name" || "$current_code" != "$previous_code" ]]; then
+              echo "skip=false" >> "$GITHUB_OUTPUT"
+              echo "version changed (Name: $previous_name -> $current_name, Code: $previous_code -> $current_code), proceeding"
             else
-              echo "skip=true" >> $GITHUB_OUTPUT
-              echo "version unchanged (Name: $V_NAME, Code: $V_CODE), skipping build"
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              echo "version unchanged (Name: $current_name, Code: $current_code), skipping build"
             fi
           else
-            echo "skip=false" >> $GITHUB_OUTPUT
+            echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: 安装 JDK Setup Java
@@ -83,19 +79,29 @@ jobs:
 
       - name: 授权脚本 Grant Permission
         if: steps.gate.outputs.skip != 'true'
-        run: chmod +x gradlew
+        run: chmod +x gradlew .github/scripts/resolve-version.sh
 
-      - name: 构建 Debug 与 Release Build Debug and Release
+      - name: 构建 Debug 或 Release Build
         if: steps.gate.outputs.skip != 'true'
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: ./gradlew assembleDebug assembleRelease --build-cache
+          CHANNEL: ${{ steps.gate.outputs.channel }}
+          FULL_NAME: ${{ steps.gate.outputs.full_name }}
+        run: |
+          set -euo pipefail
 
-      - name: 上传构建产物 Upload Build Artifacts
-        if: github.event_name == 'pull_request'
+          if [[ "$CHANNEL" == "stable" ]]; then
+            ./gradlew --no-daemon --max-workers=2 assembleDebug assembleRelease \
+              --build-cache -PciVersionName="$FULL_NAME"
+          else
+            ./gradlew --no-daemon --max-workers=2 assembleDebug \
+              --build-cache -PciVersionName="$FULL_NAME"
+          fi
+
+      - name: 上传 PR 构建产物 Upload PR Artifacts
+        if: github.event_name == 'pull_request' && steps.gate.outputs.skip == 'false'
         uses: actions/upload-artifact@v7
         with:
-          name: debug-release-apks
+          name: ${{ steps.gate.outputs.channel }}-debug-v${{ steps.gate.outputs.full_name }}-${{ steps.gate.outputs.code }}
           path: app/build/outputs/apk/**/*.apk
           if-no-files-found: error
 
@@ -105,58 +111,100 @@ jobs:
           SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
         run: echo "$SIGNING_KEY" | base64 -d > release.jks
 
-      - name: 签名 Sign APKs
+      - name: 签名 Debug APK Sign Debug APK
         if: github.event_name != 'pull_request' && steps.gate.outputs.skip == 'false'
         env:
           STORE_PASS: ${{ secrets.KEY_STORE_PASSWORD }}
           KEY_PASS: ${{ secrets.KEY_PASSWORD }}
           KEY_ALIAS: ${{ secrets.ALIAS }}
+          CHANNEL: ${{ steps.gate.outputs.channel }}
+          V_NAME: ${{ steps.gate.outputs.full_name }}
+          V_CODE: ${{ steps.gate.outputs.code }}
         run: |
+          set -euo pipefail
+
           BTDIR="$ANDROID_SDK_ROOT/build-tools/34.0.0"
           ZA="$BTDIR/zipalign"
           AS="$BTDIR/apksigner"
 
-          V_NAME="${{ steps.gate.outputs.name }}"
-          V_CODE="${{ steps.gate.outputs.code }}"
-
           DEBUG_IN=$(find app/build/outputs/apk/debug -maxdepth 1 -type f -name '*-debug.apk' -print -quit)
-          RELEASE_IN=$(find app/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' -print -quit)
           test -n "$DEBUG_IN"
-          test -n "$RELEASE_IN"
 
           $ZA -f -v -p 4 "$DEBUG_IN" debug-aligned.apk
-          $ZA -f -v -p 4 "$RELEASE_IN" release-aligned.apk
-          $AS sign --ks release.jks --ks-pass env:STORE_PASS --ks-key-alias "$KEY_ALIAS" --key-pass env:KEY_PASS --out "HyperLyrics Enhanced-debug-v${V_NAME}-${V_CODE}.apk" debug-aligned.apk
-          $AS sign --ks release.jks --ks-pass env:STORE_PASS --ks-key-alias "$KEY_ALIAS" --key-pass env:KEY_PASS --out "HyperLyrics Enhanced-release-v${V_NAME}-${V_CODE}.apk" release-aligned.apk
+          $AS sign \
+            --ks release.jks \
+            --ks-pass env:STORE_PASS \
+            --ks-key-alias "$KEY_ALIAS" \
+            --key-pass env:KEY_PASS \
+            --out "HyperLyrics Enhanced-debug-v${V_NAME}-${V_CODE}.apk" \
+            debug-aligned.apk
+
+          if [[ "$CHANNEL" == "stable" ]]; then
+            RELEASE_IN=$(find app/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' -print -quit)
+            test -n "$RELEASE_IN"
+            $ZA -f -v -p 4 "$RELEASE_IN" release-aligned.apk
+            $AS sign \
+              --ks release.jks \
+              --ks-pass env:STORE_PASS \
+              --ks-key-alias "$KEY_ALIAS" \
+              --key-pass env:KEY_PASS \
+              --out "HyperLyrics Enhanced-release-v${V_NAME}-${V_CODE}.apk" \
+              release-aligned.apk
+          fi
+
+      - name: 上传 Canary 构建产物 Upload Canary Artifact
+        if: github.event_name != 'pull_request' && steps.gate.outputs.skip == 'false' && steps.gate.outputs.channel == 'canary'
+        uses: actions/upload-artifact@v7
+        with:
+          name: canary-debug-v${{ steps.gate.outputs.full_name }}-${{ steps.gate.outputs.code }}
+          path: HyperLyrics Enhanced-debug-v${{ steps.gate.outputs.full_name }}-${{ steps.gate.outputs.code }}.apk
+          if-no-files-found: error
 
       - name: 生成发布说明 Generate Release Body
-        if: github.event_name != 'pull_request' && steps.gate.outputs.skip == 'false'
+        if: github.event_name != 'pull_request' && steps.gate.outputs.skip == 'false' && (steps.gate.outputs.channel == 'stable' || steps.gate.outputs.channel == 'beta')
         id: release_body
         run: |
-          PREV_TAG="${{ steps.gate.outputs.prev_tag }}"
+          set -euo pipefail
+
+          PREV_TAG="${{ steps.gate.outputs.prev_stable_tag }}"
+          CHANNEL="${{ steps.gate.outputs.channel }}"
           BODY_DELIMITER="release_body_$(git rev-parse HEAD)"
           echo "body<<$BODY_DELIMITER" >> "$GITHUB_OUTPUT"
-          .github/scripts/generate-release-body.sh "$PREV_TAG" >> "$GITHUB_OUTPUT"
+          .github/scripts/generate-release-body.sh "$PREV_TAG" HEAD "$CHANNEL" >> "$GITHUB_OUTPUT"
           echo "$BODY_DELIMITER" >> "$GITHUB_OUTPUT"
 
-      - name: 创建发布 Create Release
-        if: github.event_name != 'pull_request' && steps.gate.outputs.skip == 'false'
+      - name: 创建正式版发布 Create Stable Release
+        if: github.event_name != 'pull_request' && steps.gate.outputs.skip == 'false' && steps.gate.outputs.channel == 'stable'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.gate.outputs.name }}
-          name: v${{ steps.gate.outputs.name }}
+          tag_name: v${{ steps.gate.outputs.full_name }}
+          name: v${{ steps.gate.outputs.full_name }}
           body: ${{ steps.release_body.outputs.body }}
           draft: false
           prerelease: false
           generate_release_notes: false
           files: |
-            HyperLyrics Enhanced-debug-v${{ steps.gate.outputs.name }}-${{ steps.gate.outputs.code }}.apk
-            HyperLyrics Enhanced-release-v${{ steps.gate.outputs.name }}-${{ steps.gate.outputs.code }}.apk
+            HyperLyrics Enhanced-debug-v${{ steps.gate.outputs.full_name }}-${{ steps.gate.outputs.code }}.apk
+            HyperLyrics Enhanced-release-v${{ steps.gate.outputs.full_name }}-${{ steps.gate.outputs.code }}.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 创建 Beta Pre-release
+        if: github.event_name != 'pull_request' && steps.gate.outputs.skip == 'false' && steps.gate.outputs.channel == 'beta'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.gate.outputs.full_name }}
+          name: v${{ steps.gate.outputs.full_name }}
+          body: ${{ steps.release_body.outputs.body }}
+          draft: false
+          prerelease: true
+          generate_release_notes: false
+          files: HyperLyrics Enhanced-debug-v${{ steps.gate.outputs.full_name }}-${{ steps.gate.outputs.code }}.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 同步 LSPosed 仓库资料 Sync LSPosed Metadata
-        if: github.event_name != 'pull_request' && steps.gate.outputs.skip == 'false'
+        if: github.event_name != 'pull_request' && steps.gate.outputs.skip == 'false' && steps.gate.outputs.channel == 'stable'
         env:
           GH_TOKEN: ${{ secrets.LSP_REPO_TOKEN }}
           LSP_REPO: Xposed-Modules-Repo/com.juren233.hyperlyricsenhanced
@@ -187,7 +235,7 @@ jobs:
           fi
 
       - name: 发布到 LSPosed 仓库 Publish LSPosed Release
-        if: github.event_name != 'pull_request' && steps.gate.outputs.skip == 'false'
+        if: github.event_name != 'pull_request' && steps.gate.outputs.skip == 'false' && steps.gate.outputs.channel == 'stable'
         env:
           GH_TOKEN: ${{ secrets.LSP_REPO_TOKEN }}
           LSP_REPO: Xposed-Modules-Repo/com.juren233.hyperlyricsenhanced
@@ -195,7 +243,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          V_NAME="${{ steps.gate.outputs.name }}"
+          V_NAME="${{ steps.gate.outputs.full_name }}"
           V_CODE="${{ steps.gate.outputs.code }}"
           TARGET_TAG="${V_CODE}-${V_NAME// /_}"
           RELEASE_APK="HyperLyrics Enhanced-release-v${V_NAME}-${V_CODE}.apk"
