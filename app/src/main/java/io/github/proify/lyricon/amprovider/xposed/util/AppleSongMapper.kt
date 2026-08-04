@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 Proify, Tomakino
+ * Copyright 2026 juren233
  * Licensed under the Apache License, Version 2.0
  * http://www.apache.org/licenses/LICENSE-2.0
  */
@@ -7,6 +7,7 @@
 package io.github.proify.lyricon.amprovider.xposed.util
 
 import com.juren233.hyperlyricsenhanced.common.lyric.LyricMetadataKeys
+import com.juren233.hyperlyricsenhanced.common.lyric.RomanizationPolicy
 import io.github.proify.lyricon.amprovider.xposed.ProviderLogger
 import io.github.proify.lyricon.amprovider.xposed.model.AppleSong
 import io.github.proify.lyricon.amprovider.xposed.model.LyricAgent
@@ -25,11 +26,23 @@ object AppleSongMapper {
             song.genre?.takeIf { it.isNotBlank() }?.let {
                 add(LyricMetadataKeys.APPLE_CATALOG_GENRE to it)
             }
+            song.pronunciationLanguages
+                .map(String::trim)
+                .filter(String::isNotEmpty)
+                .distinct()
+                .takeIf(List<String>::isNotEmpty)
+                ?.joinToString(",")
+                ?.let {
+                    add(LyricMetadataKeys.APPLE_PRONUNCIATION_LANGUAGES to it)
+                }
             song.originalTitle?.takeIf { it.isNotBlank() }?.let {
                 add(LyricMetadataKeys.APPLE_ORIGINAL_TITLE to it)
             }
             song.originalArtist?.takeIf { it.isNotBlank() }?.let {
                 add(LyricMetadataKeys.APPLE_ORIGINAL_ARTIST to it)
+            }
+            if (song.originalMetadataResolved) {
+                add(LyricMetadataKeys.APPLE_ORIGINAL_METADATA_RESOLVED to "true")
             }
         }
         return Song(
@@ -71,6 +84,10 @@ object AppleSongMapper {
                     .toMutableList()
 
                 translation = appleLine.htmlTranslationLineText
+                roma = RomanizationPolicy.sanitize(
+                    originalText = appleLine.htmlLineText,
+                    pronunciation = appleLine.htmlPronunciationLineText,
+                )
                 val metadataEntries = buildList {
                     if (appleLine.agent in groupAgentIds) {
                         add(LyricMetadataKeys.GROUP_VOCALS to "true")

@@ -10,6 +10,64 @@ import org.junit.Test
 class PlaybackManagerTest {
 
     @Test
+    fun visibleAppleLyricsPublishBeforePlaybackMetadataCatchesUp() {
+        assertEquals(
+            true,
+            PlaybackManager.shouldPublishBuiltLyrics(
+                songId = "new",
+                currentSongId = "old",
+                visibleSongId = "new",
+                playbackSongId = "new",
+                source = "apple",
+            )
+        )
+        assertEquals(
+            false,
+            PlaybackManager.shouldPublishBuiltLyrics(
+                songId = "preloaded",
+                currentSongId = "old",
+                visibleSongId = "visible",
+                playbackSongId = "old",
+                source = "apple",
+            )
+        )
+        assertEquals(
+            false,
+            PlaybackManager.shouldPublishBuiltLyrics(
+                songId = "new",
+                currentSongId = "old",
+                visibleSongId = "new",
+                playbackSongId = "new",
+                source = "module",
+            )
+        )
+    }
+
+    @Test
+    fun staleVisibleAppleLyricsCannotReplaceCurrentQueueSong() {
+        assertEquals(
+            false,
+            PlaybackManager.shouldPublishBuiltLyrics(
+                songId = "old",
+                currentSongId = "new",
+                visibleSongId = "old",
+                playbackSongId = "new",
+                source = "apple",
+            )
+        )
+        assertEquals(
+            false,
+            PlaybackManager.shouldPublishBuiltLyrics(
+                songId = "old",
+                currentSongId = "old",
+                visibleSongId = "old",
+                playbackSongId = "new",
+                source = "apple",
+            )
+        )
+    }
+
+    @Test
     fun catalogMetadataUpdatePreservesCurrentLyricsWhenResolvedSongIsPlaceholder() {
         val lyrics = listOf(
             RichLyricLine(begin = 0L, end = 1_000L, duration = 1_000L, text = "満ちてゆく")

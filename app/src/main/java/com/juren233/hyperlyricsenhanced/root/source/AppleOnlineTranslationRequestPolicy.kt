@@ -4,6 +4,22 @@ import com.juren233.hyperlyricsenhanced.common.lyric.LyricMetadataKeys
 import com.juren233.hyperlyricsenhanced.lyric.model.Song
 
 internal object AppleOnlineTranslationRequestPolicy {
+    data class OriginalMetadataLookupPlan(
+        val requestOriginalMetadata: Boolean,
+        val waitForResult: Boolean,
+    )
+
+    /**
+     * Original metadata improves search precision, but its cross-process request has no
+     * acknowledgement. Start with current metadata and rematch when a resolved alias arrives.
+     */
+    fun originalMetadataLookupPlan(
+        shouldRequestOriginalMetadata: Boolean,
+    ): OriginalMetadataLookupPlan = OriginalMetadataLookupPlan(
+        requestOriginalMetadata = shouldRequestOriginalMetadata,
+        waitForResult = false,
+    )
+
     fun originalMetadataChanged(previous: Song?, current: Song?): Boolean =
         previous != null && current != null && originalMetadataKey(previous) != originalMetadataKey(current)
 

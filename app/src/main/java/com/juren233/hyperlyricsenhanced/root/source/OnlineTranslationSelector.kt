@@ -12,7 +12,9 @@ internal object OnlineTranslationSelector {
         val source: Source,
         val onlineLineCount: Int,
         val translatedLineCount: Int,
-        val result: OnlineTranslationMatcher.Result
+        val result: OnlineTranslationMatcher.Result,
+        val romanizedLineCount: Int = 0,
+        val matchedContentCount: Int = result.matchedCount,
     )
 
     fun shouldTryAlternative(candidate: Candidate?, totalLineCount: Int): Boolean {
@@ -38,7 +40,7 @@ internal object OnlineTranslationSelector {
 
     fun coverage(candidate: Candidate, totalLineCount: Int): Double {
         if (totalLineCount <= 0) return 0.0
-        return candidate.result.matchedCount.toDouble() / totalLineCount
+        return candidate.matchedContentCount.toDouble() / totalLineCount
     }
 
     fun quality(candidate: Candidate, totalLineCount: Int): Double {

@@ -19,6 +19,7 @@ import com.juren233.hyperlyricsenhanced.ui.page.HookSettingsPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.LyricProviderPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.LyricAnimationPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.LyricSettingsPage
+import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.AppleMusicOptimizationPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.SuperIslandSettingsPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.media.MediaCardSettingsPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.aod.ClassicAodSettingsPage
@@ -50,6 +51,7 @@ fun AppNavigation(startRoute: Route) {
                 
                 entry<Route.Settings> { SettingsPage() }
                 entry<Route.HookSettings> { HookSettingsPage() }
+                entry<Route.AppleMusicOptimization> { AppleMusicOptimizationPage() }
                 entry<Route.LyricProvider> { LyricProviderPage() }
                 entry<Route.LyricAnimation> { LyricAnimationPage() }
                 entry<Route.LyricSettings> { LyricSettingsPage() }

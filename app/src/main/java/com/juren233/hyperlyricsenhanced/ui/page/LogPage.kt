@@ -59,8 +59,14 @@ import top.yukonga.miuix.kmp.icon.extended.More
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.interfaces.ExperimentalScrollBarApi
 import top.yukonga.miuix.kmp.window.WindowCascadingListPopup
+import java.io.IOException
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+
+private data class LogExportRequest(
+    val isAppLog: Boolean,
+    val level: String
+)
 
 @Composable
 fun LogPage() {
@@ -89,12 +95,14 @@ fun LogPage() {
 
     var showMorePopup by remember { mutableStateOf(false) }
     var showClearDialog by remember { mutableStateOf(false) }
+    var pendingExportRequest by remember { mutableStateOf<LogExportRequest?>(null) }
 
     val copiedMsg = stringResource(R.string.copied)
     val exportHeader = stringResource(R.string.export_header)
     val exportTimeFormat = stringResource(R.string.format_export_time)
     val exportSuccessMsg = stringResource(R.string.export_success)
     val exportFailedMsg = stringResource(R.string.format_export_failed)
+    val noLogsFoundMsg = stringResource(R.string.no_logs_found)
 
     val reloadAppLogs = remember {
         {
@@ -148,30 +156,38 @@ fun LogPage() {
     val exportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("text/plain"),
         onResult = { uri ->
+            val request = pendingExportRequest
+            pendingExportRequest = null
             if (uri == null) return@rememberLauncherForActivityResult
+            if (request == null) return@rememberLauncherForActivityResult
             coroutineScope.launch(Dispatchers.IO) {
                 try {
-                    val sb = StringBuilder()
-                    sb.appendLine(exportHeader)
-                    sb.appendLine(String.format(exportTimeFormat, LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))))
-                    sb.appendLine()
-                    val logsToExport = if (isAppTab) filteredAppLogs.toList() else filteredModuleLogs.toList()
-                    logsToExport.forEach {
-                        sb.appendLine(it.rawLog)
-                        sb.appendLine()
-                    }
-                    val output = context.contentResolver.openOutputStream(uri)
-                    if (output != null) {
-                        output.use {
-                            it.write(sb.toString().toByteArray(Charsets.UTF_8))
-                            it.flush()
-                        }
-                        withContext(Dispatchers.Main) {
-                            snackbarHostState.showSnackbar(
-                                message = exportSuccessMsg,
-                                duration = SnackbarDuration.Custom(2000L)
+                    val output = context.contentResolver.openOutputStream(uri, "wt")
+                        ?: throw IOException("Unable to open the selected file")
+                    output.bufferedWriter(Charsets.UTF_8).use { writer ->
+                        writer.appendLine(exportHeader)
+                        writer.appendLine(
+                            String.format(
+                                exportTimeFormat,
+                                LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
                             )
+                        )
+                        writer.appendLine()
+                        val exportedEntries = LogManager.exportLogs(
+                            context = context,
+                            isAppLog = request.isAppLog,
+                            selectedLevel = request.level,
+                            writer = writer
+                        )
+                        if (exportedEntries == 0) {
+                            writer.appendLine(noLogsFoundMsg)
                         }
+                    }
+                    withContext(Dispatchers.Main) {
+                        snackbarHostState.showSnackbar(
+                            message = exportSuccessMsg,
+                            duration = SnackbarDuration.Custom(2000L)
+                        )
                     }
                 } catch (e: Exception) {
                     withContext(Dispatchers.Main) {
@@ -221,6 +237,10 @@ fun LogPage() {
                     DropdownItem(
                         text = exportLabel,
                         onClick = {
+                            pendingExportRequest = LogExportRequest(
+                                isAppLog = isAppTab,
+                                level = currentSelectedLevel
+                            )
                             val dateTime = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmm"))
                             val prefix = if (isAppTab) "hyperlyricsenhanced_app" else "hyperlyricsenhanced_module"
                             exportLauncher.launch("${prefix}_logs_$dateTime.txt")

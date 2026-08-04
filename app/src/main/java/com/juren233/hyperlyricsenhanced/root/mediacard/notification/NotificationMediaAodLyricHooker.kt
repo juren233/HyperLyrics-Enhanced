@@ -23,12 +23,14 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import com.juren233.hyperlyricsenhanced.common.ClassicAodSongInfoConfig
 import com.juren233.hyperlyricsenhanced.common.RootConstants
+import com.juren233.hyperlyricsenhanced.common.lyric.CjkLyricWhitespacePolicy
 import com.juren233.hyperlyricsenhanced.common.lyric.LyricMetadataKeys
 import com.juren233.hyperlyricsenhanced.common.media.MediaMetadataHelper
 import com.juren233.hyperlyricsenhanced.lyric.view.SongPreprocessor
 import com.juren233.hyperlyricsenhanced.root.ClassicAodFocusNotificationRecovery
 import com.juren233.hyperlyricsenhanced.root.HookEntry
 import com.juren233.hyperlyricsenhanced.root.LyriconDataBridge
+import com.juren233.hyperlyricsenhanced.root.utils.DisplayDiagnosticLogger
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import io.github.libxposed.api.XposedInterface.Chain
 import io.github.libxposed.api.XposedInterface.HookHandle
@@ -291,7 +293,8 @@ internal object AodMediaLyricPolicy {
             }
             .orEmpty()
         val hasDisplayedTranslation = normalizedTranslation.isNotBlank() ||
-            normalizedBackingTranslation.isNotBlank()
+            normalizedBackingTranslation.isNotBlank() ||
+            romaFallback.isNotBlank()
         val normalizedNext = next.normalized()
             .takeIf {
                 showNext &&
@@ -473,14 +476,6 @@ object NotificationMediaAodLyricHooker {
                     val lyricChanged = LyriconDataBridge.updateEstimatedPosition(position)
                     val refreshNoLyricPreview = shouldRefreshNoLyricPreview(position)
                     if (lyricChanged || refreshNoLyricPreview) {
-                        if (lyricChanged) {
-                            HookLogger.d(
-                                TAG,
-                                "息屏歌词换行: position=$position, " +
-                                    "begin=${LyriconDataBridge.currentLyricLine?.begin}, " +
-                                    "text=${LyriconDataBridge.currentLyric.orEmpty().take(48)}"
-                            )
-                        }
                         controllerEntries.forEach { (controller, state) ->
                             if (state.fullAod) safeApply(controller, state)
                         }
@@ -708,7 +703,10 @@ object NotificationMediaAodLyricHooker {
                         }
                     }
                 }
-                "detach" -> states.remove(controller)
+                "detach" -> {
+                    states.remove(controller)
+                    DisplayDiagnosticLogger.clear("AOD_LOCK")
+                }
             }
             updatePositionPolling()
             return result
@@ -720,6 +718,7 @@ object NotificationMediaAodLyricHooker {
             val aodView = chain.thisObject ?: return chain.proceed()
             if (methodName == "onDetachedFromWindow") {
                 aodPluginStates.remove(aodView)?.let(::removeAodPluginOverlay)
+                DisplayDiagnosticLogger.clear("AOD_CLASSIC")
                 updatePositionPolling()
                 return chain.proceed()
             }
@@ -761,8 +760,25 @@ object NotificationMediaAodLyricHooker {
 
     @SuppressLint("UseKtx")
     private fun applyState(controller: Any, state: ControllerState) {
-        val api = resolveApi(controller.javaClass.classLoader) ?: return
-        val holder = state.holder ?: api.getHolder(controller) ?: return
+        val diagnosticKey = "AOD_LOCK/${System.identityHashCode(controller)}"
+        val api = resolveApi(controller.javaClass.classLoader) ?: run {
+            DisplayDiagnosticLogger.log(
+                "AOD_LOCK",
+                "skipped",
+                "hook_unavailable",
+                dedupeKey = diagnosticKey,
+            )
+            return
+        }
+        val holder = state.holder ?: api.getHolder(controller) ?: run {
+            DisplayDiagnosticLogger.log(
+                "AOD_LOCK",
+                "skipped",
+                "holder_unavailable",
+                dedupeKey = diagnosticKey,
+            )
+            return
+        }
         state.holder = holder
         state.playing = resolvePlaying(
             api,
@@ -788,17 +804,39 @@ object NotificationMediaAodLyricHooker {
         )
         val packageMatches = lyricPackage.isNullOrBlank() ||
             mediaPackage.isNullOrBlank() || lyricPackage == mediaPackage
+        val hasLyric = content.main.isNotBlank() || content.next.isNotBlank()
+        val enabled = isEnabled()
         val show = AodMediaLyricPolicy.shouldShow(
-            enabled = isEnabled(),
+            enabled = enabled,
             fullAod = state.aodActive,
             playing = state.playing,
-            hasLyric = content.main.isNotBlank() || content.next.isNotBlank(),
+            hasLyric = hasLyric,
             packageMatches = packageMatches,
             pauseStyle = textStyle.pauseStyle,
         )
         updatePositionPolling()
 
         if (!show) {
+            val reason = when {
+                !enabled -> "feature_disabled"
+                !state.aodActive && interactive -> "screen_interactive"
+                !state.aodActive -> "player_hidden"
+                !state.playing &&
+                    textStyle.pauseStyle != RootConstants.AOD_PAUSE_STYLE_KEEP_LYRICS ->
+                    "pause_policy"
+                !hasLyric -> "no_lyrics"
+                !packageMatches -> "package_mismatch"
+                else -> "policy_rejected"
+            }
+            DisplayDiagnosticLogger.log(
+                channel = "AOD_LOCK",
+                result = "hidden",
+                reason = reason,
+                extra = "interactive=$interactive, playerShown=${player.isShown}, " +
+                    "fullAod=${state.fullAod}, aodActive=${state.aodActive}, " +
+                    "mediaPackage=${mediaPackage.orEmpty()}, overlay=${state.overlay != null}",
+                dedupeKey = diagnosticKey,
+            )
             restoreActions(state)
             state.overlay?.let { overlay ->
                 overlay.root.visibility = View.GONE
@@ -819,6 +857,13 @@ object NotificationMediaAodLyricHooker {
             state.overlay = it
         }
         if (overlay == null) {
+            DisplayDiagnosticLogger.log(
+                channel = "AOD_LOCK",
+                result = "skipped",
+                reason = "overlay_unavailable",
+                extra = "actions=${actions.size}",
+                dedupeKey = diagnosticKey,
+            )
             restoreActions(state)
             return
         }
@@ -880,6 +925,15 @@ object NotificationMediaAodLyricHooker {
         )
         overlay.root.visibility = View.VISIBLE
         overlay.root.bringToFront()
+        DisplayDiagnosticLogger.log(
+            channel = "AOD_LOCK",
+            result = "shown",
+            reason = "overlay_visible",
+            extra = "interactive=$interactive, playerShown=${player.isShown}, " +
+                "fullAod=${state.fullAod}, mediaPackage=${mediaPackage.orEmpty()}, " +
+                "contentChanged=$contentChanged, styleChanged=$styleChanged",
+            dedupeKey = diagnosticKey,
+        )
         overlay.root.post {
             updateLockScreenCardHeight(
                 overlay,
@@ -907,8 +961,25 @@ object NotificationMediaAodLyricHooker {
     }
 
     private fun applyAodPluginState(aodView: Any, state: AodPluginState) {
-        val api = resolveAodPluginApi(aodView.javaClass.classLoader) ?: return
-        val view = aodView as? View ?: return
+        val diagnosticKey = "AOD_CLASSIC/${System.identityHashCode(aodView)}"
+        val api = resolveAodPluginApi(aodView.javaClass.classLoader) ?: run {
+            DisplayDiagnosticLogger.log(
+                "AOD_CLASSIC",
+                "skipped",
+                "hook_unavailable",
+                dedupeKey = diagnosticKey,
+            )
+            return
+        }
+        val view = aodView as? View ?: run {
+            DisplayDiagnosticLogger.log(
+                "AOD_CLASSIC",
+                "skipped",
+                "view_unavailable",
+                dedupeKey = diagnosticKey,
+            )
+            return
+        }
         state.attached = view.isAttachedToWindow
         state.playing = LyriconDataBridge.currentPlaybackState ?: state.playing
         synchronizeLyricPosition()
@@ -928,29 +999,56 @@ object NotificationMediaAodLyricHooker {
                     controllerState.aodActive
             }
         }
-        val show = isEnabled() &&
+        val enabled = isEnabled()
+        val viewShown = view.isShown
+        val aodShown = api.isAodShown(aodView)
+        val pauseAllowed = state.playing ||
+            textStyle.pauseStyle == RootConstants.AOD_PAUSE_STYLE_KEEP_LYRICS
+        val hasContent = content.main.isNotBlank() ||
+            content.next.isNotBlank() || songInfo.text.isNotBlank()
+        val show = enabled &&
             state.attached &&
-            view.isShown &&
-            api.isAodShown(aodView) &&
-            (
-                state.playing ||
-                    textStyle.pauseStyle == RootConstants.AOD_PAUSE_STYLE_KEEP_LYRICS
-                ) &&
+            viewShown &&
+            aodShown &&
+            pauseAllowed &&
             !fullAodActive &&
-            (
-                content.main.isNotBlank() ||
-                    content.next.isNotBlank() ||
-                    songInfo.text.isNotBlank()
-                )
+            hasContent
 
         if (!show) {
+            val reason = when {
+                !enabled -> "feature_disabled"
+                !state.attached -> "view_detached"
+                !viewShown -> "view_hidden"
+                !aodShown -> "aod_panel_hidden"
+                !pauseAllowed -> "pause_policy"
+                fullAodActive -> "lockscreen_aod_active"
+                !hasContent -> "no_lyrics_or_song_info"
+                else -> "policy_rejected"
+            }
+            DisplayDiagnosticLogger.log(
+                channel = "AOD_CLASSIC",
+                result = "hidden",
+                reason = reason,
+                extra = "attached=${state.attached}, viewShown=$viewShown, " +
+                    "aodShown=$aodShown, fullAodActive=$fullAodActive, " +
+                    "overlay=${state.overlay != null}",
+                dedupeKey = diagnosticKey,
+            )
             state.overlay?.root?.visibility = View.GONE
             return
         }
 
         val overlay = state.overlay ?: createAodPluginOverlay(api, aodView)?.also {
             state.overlay = it
-        } ?: return
+        } ?: run {
+            DisplayDiagnosticLogger.log(
+                channel = "AOD_CLASSIC",
+                result = "skipped",
+                reason = "overlay_unavailable",
+                dedupeKey = diagnosticKey,
+            )
+            return
+        }
         val contentChanged = overlay.main.text.toString() != content.main ||
             overlay.translation.text.toString() != content.translation ||
             overlay.backing.text.toString() != content.backing ||
@@ -994,6 +1092,15 @@ object NotificationMediaAodLyricHooker {
         overlay.root.visibility = View.VISIBLE
         overlay.root.bringToFront()
         positionAodPluginOverlay(overlay)
+        DisplayDiagnosticLogger.log(
+            channel = "AOD_CLASSIC",
+            result = "shown",
+            reason = "overlay_visible",
+            extra = "attached=${state.attached}, viewShown=$viewShown, aodShown=$aodShown, " +
+                "contentChanged=$contentChanged, styleChanged=$styleChanged, " +
+                "songInfo=${songInfo.text.isNotBlank()}",
+            dedupeKey = diagnosticKey,
+        )
         if (contentChanged || styleChanged || alignmentChanged) {
             overlay.root.invalidate()
             overlay.parent.invalidate()
@@ -1923,9 +2030,11 @@ object NotificationMediaAodLyricHooker {
         if (hasTarget) {
             schedulePositionPoll()
         } else {
-            mainHandler.removeCallbacks(positionPollRunnable)
-            positionPollScheduled = false
-        }
+        mainHandler.removeCallbacks(positionPollRunnable)
+        positionPollScheduled = false
+        DisplayDiagnosticLogger.clear("AOD_LOCK")
+        DisplayDiagnosticLogger.clear("AOD_CLASSIC")
+    }
     }
 
     private fun schedulePositionPoll() {
@@ -1938,6 +2047,13 @@ object NotificationMediaAodLyricHooker {
         state.initialRefreshGeneration++
         val generation = state.initialRefreshGeneration
         val viewReference = WeakReference(aodView)
+        DisplayDiagnosticLogger.log(
+            channel = "AOD_CLASSIC",
+            result = "pending",
+            reason = "initial_refresh_scheduled",
+            extra = "attempts=${AOD_PLUGIN_INITIAL_REFRESH_DELAYS_MS.size}, generation=$generation",
+            dedupeKey = "AOD_CLASSIC/${System.identityHashCode(aodView)}/initial",
+        )
         AOD_PLUGIN_INITIAL_REFRESH_DELAYS_MS.forEach { delay ->
             mainHandler.postDelayed(
                 {
@@ -1993,6 +2109,19 @@ object NotificationMediaAodLyricHooker {
     }
 
     private fun currentContent(style: AodTextStyleConfig): AodLyricContent {
+        val currentLine = LyriconDataBridge.currentLyricLine
+        val removeCjkLyricSpaces = currentLine != null && prefs?.getBoolean(
+            RootConstants.KEY_HOOK_REMOVE_CJK_LYRIC_SPACES,
+            RootConstants.DEFAULT_HOOK_REMOVE_CJK_LYRIC_SPACES,
+        ) == true && currentLine.metadata?.getBoolean(
+            SongPreprocessor.KEY_TITLE_LINE
+        ) != true
+        /** 只处理 AOD 展示文本，发音 roma 不进入此处理。 */
+        fun displayText(text: String?): String? = if (removeCjkLyricSpaces) {
+            CjkLyricWhitespacePolicy.transformText(text)
+        } else {
+            text
+        }
         val suppressNoLyricPlaceholder =
             AodMediaLyricPolicy.shouldSuppressNoLyricPlaceholder(
                 isTextMode = LyriconDataBridge.isTextMode,
@@ -2051,16 +2180,16 @@ object NotificationMediaAodLyricHooker {
             null
         }
         return AodMediaLyricPolicy.assembleContent(
-            main = main,
-            translation = line?.translation,
-            backing = primaryBacking,
-            backingTranslation = primaryBackingTranslation,
+            main = displayText(main),
+            translation = displayText(line?.translation),
+            backing = displayText(primaryBacking),
+            backingTranslation = displayText(primaryBackingTranslation),
             roma = line?.roma,
-            overlappingMain = overlappingMain,
-            overlappingTranslation = overlappingTranslation,
-            overlappingBacking = overlappingBacking,
-            overlappingBackingTranslation = overlappingBackingTranslation,
-            next = nextLine?.text,
+            overlappingMain = displayText(overlappingMain),
+            overlappingTranslation = displayText(overlappingTranslation),
+            overlappingBacking = displayText(overlappingBacking),
+            overlappingBackingTranslation = displayText(overlappingBackingTranslation),
+            next = displayText(nextLine?.text),
             showNext = style.showNextLyric,
             mainAlignedRight = mainAlignedRight,
             backingAlignedRight = mainAlignedRight,

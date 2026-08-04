@@ -65,6 +65,7 @@ internal fun rememberHookConfigSaver(prefs: SharedPreferences): (String, Any) ->
 @Composable
 internal fun XposedLyricSettingPage(
     title: String,
+    subtitle: String = "",
     content: LazyListScope.() -> Unit
 ) {
     val navigator = LocalNavigator.current
@@ -79,6 +80,7 @@ internal fun XposedLyricSettingPage(
                 TopAppBar(
                     color = barColor,
                     title = title,
+                    subtitle = subtitle,
                     scrollBehavior = topAppBarScrollBehavior,
                     navigationIcon = {
                         IconButton(onClick = { navigator.pop() }) {

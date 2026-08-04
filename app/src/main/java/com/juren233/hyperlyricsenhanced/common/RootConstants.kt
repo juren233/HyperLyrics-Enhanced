@@ -4,6 +4,8 @@ object RootConstants {
     const val CLASSIC_AOD_FOCUS_REFRESH_AUTHORITY =
         "com.juren233.hyperlyricsenhanced.classic_aod_focus_refresh"
     const val CLASSIC_AOD_FOCUS_REFRESH_METHOD = "refresh"
+    const val DEBUG_APPLE_PRONUNCIATION_DIAGNOSTIC_METHOD =
+        "debug_apple_pronunciation_diagnostic"
 
     // ================= HOOK & SUPER ISLAND KEYS =================
     const val KEY_HOOK_ENABLE_SUPER_ISLAND = "key_hook_enable_super_island"
@@ -79,6 +81,8 @@ object RootConstants {
         "key_hook_apple_music_online_fallback"
     const val KEY_HOOK_APPLE_MUSIC_FALLBACK_QQ_FIRST =
         "key_hook_apple_music_fallback_qq_first"
+    const val KEY_HOOK_REMOVE_CJK_LYRIC_SPACES =
+        "key_hook_remove_cjk_lyric_spaces"
 
 
     const val KEY_HOOK_ISLAND_LEFT_ALBUM = "key_hook_island_left_album"
@@ -213,6 +217,32 @@ object RootConstants {
         "key_hook_apple_music_translation_qq_first"
     const val KEY_HOOK_APPLE_MUSIC_CONTENT_UI_LANGUAGE =
         "key_hook_apple_music_content_ui_language"
+    const val KEY_HOOK_APPLE_MUSIC_OVERRIDE_ACCOUNT_LANGUAGE =
+        "key_hook_apple_music_override_account_language"
+    const val KEY_HOOK_APPLE_MUSIC_LOCALIZED_METADATA_CACHE =
+        "key_hook_apple_music_localized_metadata_cache"
+    const val KEY_HOOK_APPLE_MUSIC_RESTORE_CJK_ORIGINAL_METADATA =
+        "key_hook_apple_music_restore_cjk_original_metadata"
+    const val KEY_HOOK_APPLE_MUSIC_NOTIFICATION_OPEN_FULL_PLAYER =
+        "key_hook_apple_music_notification_open_full_player"
+    const val KEY_HOOK_APPLE_MUSIC_SIMPLIFY_TRADITIONAL_LYRICS =
+        "key_hook_apple_music_simplify_traditional_lyrics"
+    const val KEY_HOOK_APPLE_MUSIC_NATIVE_ONLINE_TRANSLATION =
+        "key_hook_apple_music_native_online_translation"
+    const val KEY_HOOK_APPLE_MUSIC_HIDE_MANDARIN_PINYIN =
+        "key_hook_apple_music_hide_mandarin_pinyin"
+    const val KEY_HOOK_APPLE_MUSIC_LYRICS_BLUR_EFFECT =
+        "key_hook_apple_music_lyrics_blur_effect"
+    const val KEY_HOOK_APPLE_MUSIC_NATIVE_LYRICS_BLUR_MIN_RADIUS_DP =
+        "key_hook_apple_music_native_lyrics_blur_min_radius_dp"
+    const val KEY_HOOK_APPLE_MUSIC_NATIVE_LYRICS_BLUR_MAX_RADIUS_DP =
+        "key_hook_apple_music_native_lyrics_blur_max_radius_dp"
+    const val KEY_HOOK_APPLE_MUSIC_ADVANCED_LYRICS_BLUR_MIN_RADIUS_PX =
+        "key_hook_apple_music_advanced_lyrics_blur_min_radius_px"
+    const val KEY_HOOK_APPLE_MUSIC_ADVANCED_LYRICS_BLUR_MAX_RADIUS_PX =
+        "key_hook_apple_music_advanced_lyrics_blur_max_radius_px"
+    const val KEY_HOOK_APPLE_MUSIC_FOLLOW_SYSTEM_FONT_WEIGHT =
+        "key_hook_apple_music_follow_system_font_weight"
     const val KEY_HOOK_AI_TRANS_ENABLE = "key_hook_ai_trans_enable"
     const val KEY_HOOK_AI_TRANS_AUTO_IGNORE_CHINESE = "key_hook_ai_trans_auto_ignore_chinese"
     const val KEY_HOOK_AI_TRANS_SKIP_EXISTING_TRANSLATION = "key_hook_ai_trans_skip_existing_translation"
@@ -232,6 +262,7 @@ object RootConstants {
     const val DEFAULT_HOOK_LYRICON_PROVIDER_DELAY = 0
     const val DEFAULT_HOOK_APPLE_MUSIC_ONLINE_FALLBACK = true
     const val DEFAULT_HOOK_APPLE_MUSIC_FALLBACK_QQ_FIRST = false
+    const val DEFAULT_HOOK_REMOVE_CJK_LYRIC_SPACES = false
     const val APPLE_MUSIC_CONTENT_UI_LANGUAGE_NONE = 0
     const val APPLE_MUSIC_CONTENT_UI_LANGUAGE_ZH_HANS_CN = 1
     const val APPLE_MUSIC_CONTENT_UI_LANGUAGE_ZH_HANS_US = 2
@@ -241,6 +272,27 @@ object RootConstants {
     const val APPLE_MUSIC_CONTENT_UI_LANGUAGE_JA_JP = 6
     const val DEFAULT_HOOK_APPLE_MUSIC_CONTENT_UI_LANGUAGE =
         APPLE_MUSIC_CONTENT_UI_LANGUAGE_NONE
+    const val DEFAULT_HOOK_APPLE_MUSIC_OVERRIDE_ACCOUNT_LANGUAGE = false
+    const val DEFAULT_HOOK_APPLE_MUSIC_LOCALIZED_METADATA_CACHE = true
+    const val DEFAULT_HOOK_APPLE_MUSIC_RESTORE_CJK_ORIGINAL_METADATA = false
+    const val DEFAULT_HOOK_APPLE_MUSIC_NOTIFICATION_OPEN_FULL_PLAYER = false
+    const val DEFAULT_HOOK_APPLE_MUSIC_SIMPLIFY_TRADITIONAL_LYRICS = false
+    const val DEFAULT_HOOK_APPLE_MUSIC_NATIVE_ONLINE_TRANSLATION = false
+    const val DEFAULT_HOOK_APPLE_MUSIC_HIDE_MANDARIN_PINYIN = false
+    const val APPLE_MUSIC_LYRICS_BLUR_EFFECT_OFF = 0
+    const val APPLE_MUSIC_LYRICS_BLUR_EFFECT_NATIVE = 1
+    const val APPLE_MUSIC_LYRICS_BLUR_EFFECT_ADVANCED_MATERIAL = 2
+    const val DEFAULT_HOOK_APPLE_MUSIC_LYRICS_BLUR_EFFECT =
+        APPLE_MUSIC_LYRICS_BLUR_EFFECT_OFF
+    const val DEFAULT_HOOK_APPLE_MUSIC_NATIVE_LYRICS_BLUR_MIN_RADIUS_DP = 3f
+    const val DEFAULT_HOOK_APPLE_MUSIC_NATIVE_LYRICS_BLUR_MAX_RADIUS_DP = 6.5f
+    const val MIN_HOOK_APPLE_MUSIC_NATIVE_LYRICS_BLUR_RADIUS_DP = 0f
+    const val MAX_HOOK_APPLE_MUSIC_NATIVE_LYRICS_BLUR_RADIUS_DP = 100f
+    const val DEFAULT_HOOK_APPLE_MUSIC_ADVANCED_LYRICS_BLUR_MIN_RADIUS_PX = 13
+    const val DEFAULT_HOOK_APPLE_MUSIC_ADVANCED_LYRICS_BLUR_MAX_RADIUS_PX = 26
+    const val MIN_HOOK_APPLE_MUSIC_ADVANCED_LYRICS_BLUR_RADIUS_PX = 0
+    const val MAX_HOOK_APPLE_MUSIC_ADVANCED_LYRICS_BLUR_RADIUS_PX = 100
+    const val DEFAULT_HOOK_APPLE_MUSIC_FOLLOW_SYSTEM_FONT_WEIGHT = false
     const val MIN_HOOK_LYRICON_PROVIDER_DELAY = -5000
     const val MAX_HOOK_LYRICON_PROVIDER_DELAY = 5000
 

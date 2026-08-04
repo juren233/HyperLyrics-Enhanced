@@ -202,7 +202,7 @@ private fun LazyListScope.changelogPageSections(
                                     )
                                 }
                                 if (item.title.isNotBlank() && item.summary.isNotBlank()) {
-                                    Spacer(Modifier.height(4.dp))
+                                    Spacer(Modifier.height(12.dp))
                                 }
                                 if (item.summary.isNotBlank()) {
                                     MarkdownText(

@@ -60,6 +60,64 @@ class OnlineFallbackSongMapperTest {
     }
 
     @Test
+    fun `drops slash only translation placeholders from fallback song`() {
+        val mapped = OnlineFallbackSongMapper.map(
+            Song(name = "Song", duration = 10_000L),
+            listOf(
+                LrcLine(1_000L, "First", "// //"),
+                LrcLine(4_000L, "Second", "真实 / 译文"),
+            )
+        )
+
+        assertNull(mapped?.lyrics?.get(0)?.translation)
+        assertEquals("真实 / 译文", mapped?.lyrics?.get(1)?.translation)
+    }
+
+    @Test
+    fun `carries online pronunciation into rich lyric line`() {
+        val mapped = OnlineFallbackSongMapper.map(
+            Song(name = "Song", duration = 10_000L),
+            listOf(
+                LrcLine(
+                    startTimeMs = 1_000L,
+                    content = "君の名は",
+                    romanization = "Kimi no na wa",
+                ),
+                LrcLine(
+                    startTimeMs = 4_000L,
+                    content = "次の行",
+                    romanization = "   ",
+                ),
+            )
+        )
+
+        assertEquals("Kimi no na wa", mapped?.lyrics?.get(0)?.roma)
+        assertNull(mapped?.lyrics?.get(1)?.roma)
+    }
+
+    @Test
+    fun `drops non Roman and copied pronunciation from fallback song`() {
+        val mapped = OnlineFallbackSongMapper.map(
+            Song(name = "Song", duration = 10_000L),
+            listOf(
+                LrcLine(
+                    startTimeMs = 1_000L,
+                    content = "Getting washed",
+                    romanization = "ゲッティング ウォッシュト",
+                ),
+                LrcLine(
+                    startTimeMs = 4_000L,
+                    content = "Home",
+                    romanization = "HOME",
+                ),
+            ),
+        )
+
+        assertNull(mapped?.lyrics?.get(0)?.roma)
+        assertNull(mapped?.lyrics?.get(1)?.roma)
+    }
+
+    @Test
     fun `returns null when no usable lines exist`() {
         assertNull(
             OnlineFallbackSongMapper.map(

@@ -2,8 +2,10 @@ package com.juren233.hyperlyricsenhanced.root.source
 
 import com.juren233.hyperlyricsenhanced.lyric.LrcLine
 import com.juren233.hyperlyricsenhanced.common.lyric.LyricMetadataKeys
+import com.juren233.hyperlyricsenhanced.common.lyric.OnlineTranslationContentPolicy
 import com.juren233.hyperlyricsenhanced.lyric.model.Song
 import com.juren233.hyperlyricsenhanced.lyric.model.lyricMetadataOf
+import com.juren233.hyperlyricsenhanced.online.model.Source
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
@@ -23,11 +25,80 @@ internal object OnlineTranslationMatcher {
         val lineCandidateIndices: Map<Int, List<Int>> = emptyMap()
     )
 
+    /**
+     * Composes independently selected translation and pronunciation sources.
+     *
+     * A user-selected source stays authoritative even when it contributes no
+     * content. Missing fields are filled from the other source and finally from
+     * the already-published song, while the metadata continues to identify the
+     * source selected by the user.
+     */
+    fun composeSelectedSources(
+        baseSong: Song,
+        candidates: Map<Source, Result>,
+        defaultTranslationSource: Source?,
+        defaultPronunciationSource: Source?,
+        forcedTranslationSource: Source?,
+        forcedPronunciationSource: Source?,
+        currentPublishedSong: Song?,
+    ): Result? {
+        val publishedResult = currentPublishedSong?.let(::contentResult)
+        val publishedTranslationSource = currentPublishedSong
+            ?.onlineContentSource(LyricMetadataKeys.ONLINE_TRANSLATION_SOURCE)
+        val publishedPronunciationSource = currentPublishedSong
+            ?.onlineContentSource(LyricMetadataKeys.ONLINE_PRONUNCIATION_SOURCE)
+        val translationSource = forcedTranslationSource
+            ?: publishedTranslationSource
+            ?: defaultTranslationSource
+        val pronunciationSource = forcedPronunciationSource
+            ?: publishedPronunciationSource
+            ?: defaultPronunciationSource
+        if (translationSource == null && pronunciationSource == null) return null
+
+        val translation = composeSourceContent(
+            baseSong = baseSong,
+            selectedSource = translationSource,
+            publishedSource = publishedTranslationSource,
+            candidates = candidates,
+            publishedResult = publishedResult,
+        )
+        val pronunciation = composeSourceContent(
+            baseSong = baseSong,
+            selectedSource = pronunciationSource,
+            publishedSource = publishedPronunciationSource,
+            candidates = candidates,
+            publishedResult = publishedResult,
+        )
+        val composed = composeContent(
+            baseSong = baseSong,
+            translation = translation,
+            pronunciation = pronunciation,
+        ) ?: Result(
+            song = baseSong,
+            matchedCount = 0,
+            averageMatchScore = 0.0,
+        )
+        return composed.copy(
+            song = composed.song.withOnlineContentSources(
+                translationSource = translationSource,
+                pronunciationSource = pronunciationSource,
+            )
+        )
+    }
+
     fun apply(song: Song, onlineLines: List<LrcLine>): Result {
         val candidates = onlineLines
             .asSequence()
             .sortedBy(LrcLine::startTimeMs)
-            .mapIndexed { index, line -> Candidate(index, line, normalizedVariants(line.content)) }
+            .mapIndexed { index, line ->
+                Candidate(
+                    originalIndex = index,
+                    line = line.copy(
+                        translation = OnlineTranslationContentPolicy.sanitize(line.translation)
+                    ),
+                    normalizedVariants = normalizedVariants(line.content),
+                )
+            }
             .filter { it.normalizedVariants.isNotEmpty() }
             .toList()
         if (candidates.isEmpty()) return Result(song, 0, 0.0)
@@ -42,7 +113,12 @@ internal object OnlineTranslationMatcher {
         val lineCandidateIndices = mutableMapOf<Int, List<Int>>()
 
         while (nativeIndex < nativeLyrics.size) {
-            if (!nativeLyrics[nativeIndex].translation.isNullOrBlank()) {
+            if (
+                OnlineTranslationContentPolicy.isMeaningful(
+                    nativeLyrics[nativeIndex].translation
+                ) &&
+                !nativeLyrics[nativeIndex].roma.isNullOrBlank()
+            ) {
                 nativeIndex++
                 continue
             }
@@ -58,10 +134,25 @@ internal object OnlineTranslationMatcher {
                 plan.candidateIndex + plan.candidateSpan
             )
             val translations = distributeTranslations(nativeGroup, candidateGroup)
-            translations.forEachIndexed { offset, parts ->
-                if (parts == null || parts.main.isBlank()) return@forEachIndexed
+            val romanizations = distributeRomanizations(nativeGroup, candidateGroup)
+            nativeGroup.indices.forEach { offset ->
                 val targetIndex = nativeIndex + offset
-                matchedLyrics[targetIndex] = applyTranslation(matchedLyrics[targetIndex], parts)
+                val targetLine = matchedLyrics[targetIndex]
+                val translation = translations.getOrNull(offset)
+                    ?.takeIf {
+                        !OnlineTranslationContentPolicy.isMeaningful(targetLine.translation) &&
+                            OnlineTranslationContentPolicy.isMeaningful(it.main)
+                    }
+                val romanization = romanizations.getOrNull(offset)
+                    ?.takeIf { targetLine.roma.isNullOrBlank() && it.isNotBlank() }
+                if (translation == null && romanization == null) return@forEach
+
+                val translatedLine = translation
+                    ?.let { applyTranslation(targetLine, it) }
+                    ?: targetLine
+                matchedLyrics[targetIndex] = translatedLine.copy(
+                    roma = romanization ?: translatedLine.roma
+                )
                 matchedCount++
                 matchScoreSum += plan.score
                 lineMatchScores[targetIndex] = plan.score
@@ -96,24 +187,33 @@ internal object OnlineTranslationMatcher {
         val candidateIndices = primary.lineCandidateIndices.toMutableMap()
         val mergedLines = primaryLines.mapIndexed { index, primaryLine ->
             val supplementalLine = supplementalLines[index]
-            val needsMainTranslation = primaryLine.translation.isNullOrBlank() &&
-                !supplementalLine.translation.isNullOrBlank()
-            val needsBackgroundTranslation = primaryLine.metadata
-                ?.getString(LyricMetadataKeys.BACKGROUND_VOCALS_TRANSLATION)
-                .isNullOrBlank() && !supplementalLine.metadata
-                ?.getString(LyricMetadataKeys.BACKGROUND_VOCALS_TRANSLATION)
-                .isNullOrBlank()
-            if (!needsMainTranslation && !needsBackgroundTranslation) {
+            val supplementalTranslation = OnlineTranslationContentPolicy.sanitize(
+                supplementalLine.translation
+            )
+            val needsMainTranslation =
+                !OnlineTranslationContentPolicy.isMeaningful(primaryLine.translation) &&
+                    supplementalTranslation != null
+            val needsBackgroundTranslation =
+                !OnlineTranslationContentPolicy.isMeaningful(
+                    primaryLine.metadata
+                        ?.getString(LyricMetadataKeys.BACKGROUND_VOCALS_TRANSLATION)
+                ) && OnlineTranslationContentPolicy.isMeaningful(
+                    supplementalLine.metadata
+                        ?.getString(LyricMetadataKeys.BACKGROUND_VOCALS_TRANSLATION)
+                )
+            val needsRomanization = primaryLine.roma.isNullOrBlank() &&
+                !supplementalLine.roma.isNullOrBlank()
+            if (!needsMainTranslation && !needsBackgroundTranslation && !needsRomanization) {
                 primaryLine
             } else {
-                if (needsMainTranslation) {
+                if (needsMainTranslation || needsBackgroundTranslation || needsRomanization) {
                     addedCount++
                     supplemental.lineMatchScores[index]?.let { scores[index] = it }
                     supplemental.lineCandidateIndices[index]?.let { candidateIndices[index] = it }
                 }
                 primaryLine.copy(
                     translation = if (needsMainTranslation) {
-                        supplementalLine.translation
+                        supplementalTranslation
                     } else {
                         primaryLine.translation
                     },
@@ -121,6 +221,11 @@ internal object OnlineTranslationMatcher {
                         supplementalLine.translationWords
                     } else {
                         primaryLine.translationWords
+                    },
+                    roma = if (needsRomanization) {
+                        supplementalLine.roma
+                    } else {
+                        primaryLine.roma
                     },
                     metadata = mergeBackgroundTranslationMetadata(primaryLine, supplementalLine)
                 )
@@ -136,6 +241,165 @@ internal object OnlineTranslationMatcher {
         )
     }
 
+    fun composeContent(
+        baseSong: Song,
+        translation: Result?,
+        pronunciation: Result?,
+    ): Result? {
+        val baseLines = baseSong.lyrics ?: return null
+        val translationLines = translation?.song?.lyrics
+        val pronunciationLines = pronunciation?.song?.lyrics
+        if (translationLines != null && translationLines.size != baseLines.size) return null
+        if (pronunciationLines != null && pronunciationLines.size != baseLines.size) return null
+
+        var matchedCount = 0
+        val scores = mutableMapOf<Int, Double>()
+        val candidateIndices = mutableMapOf<Int, List<Int>>()
+        val mergedLines = baseLines.mapIndexed { index, baseLine ->
+            val translatedLine = translationLines?.get(index)
+            val pronouncedLine = pronunciationLines?.get(index)
+            val translatedContent = OnlineTranslationContentPolicy.sanitize(
+                translatedLine?.translation
+            )
+            val useTranslation =
+                !OnlineTranslationContentPolicy.isMeaningful(baseLine.translation) &&
+                    translatedContent != null
+            val useBackgroundTranslation =
+                !OnlineTranslationContentPolicy.isMeaningful(
+                    baseLine.metadata
+                        ?.getString(LyricMetadataKeys.BACKGROUND_VOCALS_TRANSLATION)
+                ) && OnlineTranslationContentPolicy.isMeaningful(
+                    translatedLine?.metadata
+                        ?.getString(LyricMetadataKeys.BACKGROUND_VOCALS_TRANSLATION)
+                )
+            val usePronunciation = baseLine.roma.isNullOrBlank() &&
+                !pronouncedLine?.roma.isNullOrBlank()
+            if (useTranslation || useBackgroundTranslation || usePronunciation) {
+                matchedCount++
+                val scoreSource = when {
+                    useTranslation || useBackgroundTranslation -> translation
+                    else -> pronunciation
+                }
+                scoreSource?.lineMatchScores?.get(index)?.let { scores[index] = it }
+                scoreSource?.lineCandidateIndices?.get(index)?.let {
+                    candidateIndices[index] = it
+                }
+            }
+            baseLine.copy(
+                translation = if (useTranslation) translatedContent else baseLine.translation,
+                translationWords = if (useTranslation) {
+                    translatedLine?.translationWords
+                } else {
+                    baseLine.translationWords
+                },
+                roma = if (usePronunciation) pronouncedLine.roma else baseLine.roma,
+                metadata = if (useBackgroundTranslation && translatedLine != null) {
+                    mergeBackgroundTranslationMetadata(baseLine, translatedLine)
+                } else {
+                    baseLine.metadata
+                },
+            )
+        }
+        if (matchedCount == 0) return null
+        return Result(
+            song = baseSong.copy(lyrics = mergedLines),
+            matchedCount = matchedCount,
+            averageMatchScore = if (scores.isEmpty()) 0.0 else scores.values.average(),
+            lineMatchScores = scores,
+            lineCandidateIndices = candidateIndices,
+        )
+    }
+
+    fun contributesTranslation(baseSong: Song, result: Result?): Boolean =
+        baseSong.lyrics.orEmpty().indices.any { index ->
+            val baseLine = baseSong.lyrics?.getOrNull(index) ?: return@any false
+            val resultLine = result?.song?.lyrics?.getOrNull(index) ?: return@any false
+            (!OnlineTranslationContentPolicy.isMeaningful(baseLine.translation) &&
+                OnlineTranslationContentPolicy.isMeaningful(resultLine.translation)) ||
+                (!OnlineTranslationContentPolicy.isMeaningful(
+                    baseLine.metadata
+                        ?.getString(LyricMetadataKeys.BACKGROUND_VOCALS_TRANSLATION)
+                ) && OnlineTranslationContentPolicy.isMeaningful(
+                    resultLine.metadata
+                        ?.getString(LyricMetadataKeys.BACKGROUND_VOCALS_TRANSLATION)
+                ))
+        }
+
+    fun contributesPronunciation(baseSong: Song, result: Result?): Boolean =
+        baseSong.lyrics.orEmpty().indices.any { index ->
+            val baseLine = baseSong.lyrics?.getOrNull(index) ?: return@any false
+            val resultLine = result?.song?.lyrics?.getOrNull(index) ?: return@any false
+            baseLine.roma.isNullOrBlank() && !resultLine.roma.isNullOrBlank()
+        }
+
+    private fun composeSourceContent(
+        baseSong: Song,
+        selectedSource: Source?,
+        publishedSource: Source?,
+        candidates: Map<Source, Result>,
+        publishedResult: Result?,
+    ): Result? {
+        selectedSource ?: return null
+        val selectedCandidate = candidates[selectedSource]
+        val publishedIsSelected = publishedSource == selectedSource
+        var result = selectedCandidate
+            ?: publishedResult?.takeIf { publishedIsSelected }
+            ?: contentResult(baseSong)
+        candidates.entries
+            .firstOrNull { it.key != selectedSource }
+            ?.value
+            ?.let { result = fillMissing(result, it) }
+        if (publishedResult != null && (selectedCandidate != null || !publishedIsSelected)) {
+            result = fillMissing(result, publishedResult)
+        }
+        return result
+    }
+
+    private fun contentResult(song: Song): Result {
+        val contentLines = song.lyrics.orEmpty().count { line ->
+            OnlineTranslationContentPolicy.isMeaningful(line.translation) ||
+                !line.roma.isNullOrBlank() ||
+                OnlineTranslationContentPolicy.isMeaningful(
+                    line.metadata
+                        ?.getString(LyricMetadataKeys.BACKGROUND_VOCALS_TRANSLATION)
+                )
+        }
+        return Result(
+            song = song,
+            matchedCount = contentLines,
+            averageMatchScore = 0.0,
+        )
+    }
+
+    private fun Song.onlineContentSource(key: String): Source? =
+        metadata
+            ?.getString(key)
+            ?.let { runCatching { Source.valueOf(it) }.getOrNull() }
+
+    private fun Song.withOnlineContentSources(
+        translationSource: Source?,
+        pronunciationSource: Source?,
+    ): Song {
+        val entries = metadata?.entries
+            ?.filterNot {
+                it.key == LyricMetadataKeys.ONLINE_TRANSLATION_SOURCE ||
+                    it.key == LyricMetadataKeys.ONLINE_PRONUNCIATION_SOURCE
+            }
+            ?.map { it.key to it.value }
+            .orEmpty()
+            .toMutableList()
+        translationSource?.let {
+            entries += LyricMetadataKeys.ONLINE_TRANSLATION_SOURCE to it.name
+        }
+        pronunciationSource?.let {
+            entries += LyricMetadataKeys.ONLINE_PRONUNCIATION_SOURCE to it.name
+        }
+        return copy(
+            metadata = entries.takeIf { it.isNotEmpty() }
+                ?.let { lyricMetadataOf(*it.toTypedArray()) }
+        )
+    }
+
     private fun mergeBackgroundTranslationMetadata(
         primary: com.juren233.hyperlyricsenhanced.lyric.model.RichLyricLine,
         supplemental: com.juren233.hyperlyricsenhanced.lyric.model.RichLyricLine
@@ -145,12 +409,17 @@ internal object OnlineTranslationMatcher {
         .toMutableList()
         .apply {
             val hasBackgroundTranslation = any {
-                it.first == LyricMetadataKeys.BACKGROUND_VOCALS_TRANSLATION
+                it.first == LyricMetadataKeys.BACKGROUND_VOCALS_TRANSLATION &&
+                    OnlineTranslationContentPolicy.isMeaningful(it.second)
+            }
+            removeAll {
+                it.first == LyricMetadataKeys.BACKGROUND_VOCALS_TRANSLATION &&
+                    !OnlineTranslationContentPolicy.isMeaningful(it.second)
             }
             if (!hasBackgroundTranslation) {
                 supplemental.metadata
                     ?.getString(LyricMetadataKeys.BACKGROUND_VOCALS_TRANSLATION)
-                    ?.takeIf(String::isNotBlank)
+                    ?.let(OnlineTranslationContentPolicy::sanitize)
                     ?.let {
                         add(LyricMetadataKeys.BACKGROUND_VOCALS_TRANSLATION to it)
                     }
@@ -184,6 +453,17 @@ internal object OnlineTranslationMatcher {
                 if (nativeVariants.isEmpty()) continue
                 for (candidateSpan in 1..maxCandidateSpan) {
                     if (nativeSpan > 1 && candidateSpan > 1) continue
+                    if (
+                        nativeSpan == 1 &&
+                        candidateSpan == 1 &&
+                        shouldPreferExpandedNativePronunciationGroup(
+                            nativeLyrics = nativeLyrics,
+                            nativeIndex = nativeIndex,
+                            candidate = candidates[candidateIndex],
+                        )
+                    ) {
+                        continue
+                    }
                     val candidateVariants = combinedVariants(
                         candidates.subList(candidateIndex, candidateIndex + candidateSpan)
                             .map(Candidate::normalizedVariants)
@@ -207,14 +487,19 @@ internal object OnlineTranslationMatcher {
                         candidateIndex + candidateSpan
                     )
                     if (nativeSpan > 1 && candidateSpan == 1 &&
-                        !candidateCoversEveryNativeLine(candidateGroup.single(), nativeGroup)
+                        !candidateCoversEveryNativeLine(candidateGroup.single(), nativeGroup) &&
+                        !candidateMatchesCombinedNativeGroup(candidateGroup.single(), nativeGroup)
                     ) {
                         continue
                     }
-                    if (distributeTranslations(nativeGroup, candidateGroup).none {
-                            it?.main?.isNotBlank() == true
-                        }
-                    ) {
+                    val hasTranslation = distributeTranslations(nativeGroup, candidateGroup).any {
+                        OnlineTranslationContentPolicy.isMeaningful(it?.main)
+                    }
+                    val hasRomanization = distributeRomanizations(
+                        nativeGroup,
+                        candidateGroup
+                    ).any { !it.isNullOrBlank() }
+                    if (!hasTranslation && !hasRomanization) {
                         continue
                     }
                     if (bestPlan == null || score > bestPlan.score) {
@@ -245,7 +530,8 @@ internal object OnlineTranslationMatcher {
         if (nativeGroup.size == 1) {
             val nativeLine = nativeGroup.single()
             val parts = candidateGroup.mapNotNull { candidate ->
-                candidate.line.translation?.trim()?.takeIf(String::isNotEmpty)?.let { translation ->
+                OnlineTranslationContentPolicy.sanitize(candidate.line.translation)
+                    ?.let { translation ->
                     splitBackingTranslation(
                         nativeText = nativeLine.text,
                         nativeSecondary = nativeLine.secondary,
@@ -272,7 +558,8 @@ internal object OnlineTranslationMatcher {
 
         if (nativeGroup.size == candidateGroup.size) {
             return nativeGroup.zip(candidateGroup).map { (nativeLine, candidate) ->
-                candidate.line.translation?.trim()?.takeIf(String::isNotEmpty)?.let { translation ->
+                OnlineTranslationContentPolicy.sanitize(candidate.line.translation)
+                    ?.let { translation ->
                     splitBackingTranslation(
                         nativeText = nativeLine.text,
                         nativeSecondary = nativeLine.secondary,
@@ -283,18 +570,150 @@ internal object OnlineTranslationMatcher {
             }
         }
 
-        val combinedTranslation = candidateGroup.mapNotNull { it.line.translation?.trim() }
-            .filter(String::isNotEmpty)
+        val combinedTranslation = candidateGroup.mapNotNull {
+            OnlineTranslationContentPolicy.sanitize(it.line.translation)
+        }
             .joinToString(" ")
         return splitTextByNativeWeights(combinedTranslation, nativeGroup)
             .map { it?.let { text -> TranslationParts(text, null) } }
+    }
+
+    private fun distributeRomanizations(
+        nativeGroup: List<com.juren233.hyperlyricsenhanced.lyric.model.RichLyricLine>,
+        candidateGroup: List<Candidate>
+    ): List<String?> {
+        if (nativeGroup.size == 1) {
+            val combined = candidateGroup.mapNotNull { candidate ->
+                candidate.line.romanization
+                    ?.trim()
+                    ?.takeIf(String::isNotEmpty)
+                    ?.let(::mainTextWithoutBracketedSegments)
+                    ?.takeIf(String::isNotEmpty)
+            }.joinToString(" ")
+            return listOf(combined.takeIf(String::isNotEmpty))
+        }
+
+        if (candidateGroup.size == 1) {
+            return splitCandidateRomanization(nativeGroup, candidateGroup.single())
+        }
+
+        if (nativeGroup.size == candidateGroup.size) {
+            return candidateGroup.map { candidate ->
+                candidate.line.romanization
+                    ?.trim()
+                    ?.takeIf(String::isNotEmpty)
+                    ?.let(::mainTextWithoutBracketedSegments)
+                    ?.takeIf(String::isNotEmpty)
+            }
+        }
+
+        return List(nativeGroup.size) { null }
+    }
+
+    private fun splitCandidateRomanization(
+        nativeGroup: List<com.juren233.hyperlyricsenhanced.lyric.model.RichLyricLine>,
+        candidate: Candidate
+    ): List<String?> {
+        val romanization = candidate.line.romanization
+            ?.trim()
+            ?.takeIf(String::isNotEmpty)
+            ?: return List(nativeGroup.size) { null }
+        val sourceParts = extractBracketedSegments(candidate.line.content)
+        val pronunciationParts = extractBracketedSegments(romanization)
+        val sourceComponents = listOf(sourceParts.first) + sourceParts.second
+        val pronunciationComponents =
+            listOf(pronunciationParts.first) + pronunciationParts.second
+        if (
+            sourceComponents.size == nativeGroup.size &&
+            pronunciationComponents.size == nativeGroup.size &&
+            sourceComponents.all(String::isNotBlank) &&
+            pronunciationComponents.all(String::isNotBlank) &&
+            nativeComponentsMatch(nativeGroup, sourceComponents)
+        ) {
+            return pronunciationComponents.map { it.trim().takeIf(String::isNotEmpty) }
+        }
+
+        val mainRomanization = mainTextWithoutBracketedSegments(romanization)
+            .trim()
+        val tokens = mainRomanization
+            .split(Regex("\\s+"))
+            .filter(String::isNotBlank)
+        val sourceUnitCount = cjkPronunciationUnitCount(
+            mainTextWithoutBracketedSegments(candidate.line.content)
+        ) ?: return List(nativeGroup.size) { null }
+        val nativeUnitCounts = nativeGroup.map { nativeLine ->
+            cjkPronunciationUnitCount(
+                mainTextWithoutBracketedSegments(nativeLine.text.orEmpty())
+            ) ?: return List(nativeGroup.size) { null }
+        }
+        if (
+            tokens.size != sourceUnitCount ||
+            nativeUnitCounts.sum() != sourceUnitCount
+        ) {
+            return List(nativeGroup.size) { null }
+        }
+        var tokenIndex = 0
+        return nativeUnitCounts.map { unitCount ->
+            tokens.subList(tokenIndex, tokenIndex + unitCount)
+                .joinToString(" ")
+                .also { tokenIndex += unitCount }
+                .takeIf(String::isNotEmpty)
+        }
+    }
+
+    private fun shouldPreferExpandedNativePronunciationGroup(
+        nativeLyrics: List<com.juren233.hyperlyricsenhanced.lyric.model.RichLyricLine>,
+        nativeIndex: Int,
+        candidate: Candidate,
+    ): Boolean {
+        if (candidate.line.romanization.isNullOrBlank()) return false
+        val maxNativeSpan = min(MAX_GROUP_SPAN, nativeLyrics.size - nativeIndex)
+        if (maxNativeSpan < 2) return false
+        for (nativeSpan in 2..maxNativeSpan) {
+            val nativeGroup = nativeLyrics.subList(nativeIndex, nativeIndex + nativeSpan)
+            if (candidateMatchesCombinedNativeGroup(candidate, nativeGroup)) return true
+        }
+        return false
+    }
+
+    private fun candidateMatchesCombinedNativeGroup(
+        candidate: Candidate,
+        nativeGroup: List<com.juren233.hyperlyricsenhanced.lyric.model.RichLyricLine>,
+    ): Boolean {
+        val combinedNativeVariants = combinedVariants(
+            nativeGroup.map { normalizedVariants(it.text.orEmpty()) }
+        )
+        return combinedNativeVariants.any { nativeText ->
+            candidate.normalizedVariants.any { candidateText ->
+                candidateText == nativeText || similarity(nativeText, candidateText) >= 0.98
+            }
+        }
+    }
+
+    private fun cjkPronunciationUnitCount(text: String): Int? {
+        var count = 0
+        var index = 0
+        while (index < text.length) {
+            val codePoint = text.codePointAt(index)
+            if (Character.isLetterOrDigit(codePoint)) {
+                when (Character.UnicodeScript.of(codePoint)) {
+                    Character.UnicodeScript.HAN,
+                    Character.UnicodeScript.HIRAGANA,
+                    Character.UnicodeScript.KATAKANA,
+                    Character.UnicodeScript.HANGUL -> count++
+                    else -> return null
+                }
+            }
+            index += Character.charCount(codePoint)
+        }
+        return count.takeIf { it > 0 }
     }
 
     private fun splitCandidateTranslation(
         nativeGroup: List<com.juren233.hyperlyricsenhanced.lyric.model.RichLyricLine>,
         candidate: Candidate
     ): List<TranslationParts?> {
-        val translation = candidate.line.translation?.trim()?.takeIf(String::isNotEmpty)
+        val translation = OnlineTranslationContentPolicy.sanitize(candidate.line.translation)
             ?: return List(nativeGroup.size) { null }
         val sourceParts = extractBracketedSegments(candidate.line.content)
         val translationParts = extractBracketedSegments(translation)
@@ -303,21 +722,24 @@ internal object OnlineTranslationMatcher {
         if (sourceComponents.size == nativeGroup.size &&
             translatedComponents.size == nativeGroup.size &&
             sourceComponents.all(String::isNotBlank) &&
-            translatedComponents.all(String::isNotBlank)
+            translatedComponents.all(OnlineTranslationContentPolicy::isMeaningful) &&
+            nativeComponentsMatch(nativeGroup, sourceComponents)
         ) {
-            val componentMatches = nativeGroup.zip(sourceComponents).all { (nativeLine, sourceText) ->
-                normalizedVariants(nativeLine.text.orEmpty()).maxOfOrNull { nativeText ->
-                    normalizedVariants(sourceText).maxOfOrNull { sourceVariant ->
-                        similarity(nativeText, sourceVariant)
-                    } ?: 0.0
-                }?.let { it >= MIN_TEXT_SIMILARITY } == true
-            }
-            if (componentMatches) {
-                return translatedComponents.map { TranslationParts(it.trim(), null) }
-            }
+            return translatedComponents.map { TranslationParts(it.trim(), null) }
         }
         return splitTextByNativeWeights(translation, nativeGroup)
             .map { it?.let { text -> TranslationParts(text, null) } }
+    }
+
+    private fun nativeComponentsMatch(
+        nativeGroup: List<com.juren233.hyperlyricsenhanced.lyric.model.RichLyricLine>,
+        sourceComponents: List<String>
+    ): Boolean = nativeGroup.zip(sourceComponents).all { (nativeLine, sourceText) ->
+        normalizedVariants(nativeLine.text.orEmpty()).maxOfOrNull { nativeText ->
+            normalizedVariants(sourceText).maxOfOrNull { sourceVariant ->
+                similarity(nativeText, sourceVariant)
+            } ?: 0.0
+        }?.let { it >= MIN_TEXT_SIMILARITY } == true
     }
 
     private fun splitTextByNativeWeights(
@@ -468,6 +890,11 @@ internal object OnlineTranslationMatcher {
             }
         }
     }
+
+    private fun mainTextWithoutBracketedSegments(text: String): String =
+        extractBracketedSegments(text).first.ifBlank {
+            removeBracketedSegments(text).replace(Regex("\\s+"), " ").trim()
+        }
 
     private fun extractBracketedSegments(text: String): Pair<String, List<String>> {
         val main = StringBuilder(text.length)

@@ -23,4 +23,26 @@ class CoverColorHelperTest {
 
         assertNotEquals(first, second)
     }
+
+    @Test
+    fun `stable lyric identity keeps the same key when media title is a lyric line`() {
+        val first = CoverColorHelper.buildMediaKey(
+            packageName = "com.salt.music",
+            title = "First lyric line",
+            artist = "imase - NIGHT DANCER",
+            album = "NIGHT DANCER",
+            stableTitle = "NIGHT DANCER",
+            stableArtist = "imase"
+        )
+        val second = CoverColorHelper.buildMediaKey(
+            packageName = "com.salt.music",
+            title = "Second lyric line",
+            artist = "imase - NIGHT DANCER",
+            album = "NIGHT DANCER",
+            stableTitle = "NIGHT DANCER",
+            stableArtist = "imase"
+        )
+
+        assertEquals(first, second)
+    }
 }

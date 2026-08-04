@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 Proify, Tomakino
+ * Copyright 2026 juren233
  * Licensed under the Apache License, Version 2.0
  * http://www.apache.org/licenses/LICENSE-2.0
  */
@@ -12,6 +12,7 @@ import java.lang.reflect.Constructor
 import java.lang.reflect.Field
 import java.lang.reflect.Method
 import java.lang.reflect.Modifier
+import java.util.concurrent.ConcurrentHashMap
 
 internal object ProviderLogger {
     private const val TAG = "AppleMusicProvider"
@@ -26,20 +27,27 @@ internal object ProviderLogger {
         }
     }
 
-    fun info(message: String) = HookLogger.i(TAG, message)
+    fun info(message: String) {
+        if (BuildConfig.DEBUG) HookLogger.i(TAG, message)
+    }
 
     fun error(message: String, throwable: Throwable? = null) =
         HookLogger.e(TAG, message, throwable)
 }
 
 internal object AppleReflection {
+    private val methodsByClass =
+        ConcurrentHashMap<Class<*>, Map<String, List<Method>>>()
+    private val fieldsByClass =
+        ConcurrentHashMap<Class<*>, Map<String, Field>>()
+
     fun findMethod(
         clazz: Class<*>,
         name: String,
         parameterCount: Int? = null,
         parameterTypes: List<Class<*>>? = null
     ): Method {
-        val method = allMethods(clazz).firstOrNull { candidate ->
+        val method = methodsNamed(clazz, name).firstOrNull { candidate ->
             candidate.name == name &&
                 (parameterCount == null || candidate.parameterCount == parameterCount) &&
                 (parameterTypes == null || candidate.parameterTypes.contentEquals(parameterTypes.toTypedArray()))
@@ -51,17 +59,16 @@ internal object AppleReflection {
     }
 
     fun call(instance: Any, name: String, vararg args: Any?): Any? {
-        val method = allMethods(instance.javaClass).firstOrNull { candidate ->
-            candidate.name == name && parametersMatch(candidate.parameterTypes, args)
+        val method = methodsNamed(instance.javaClass, name).firstOrNull { candidate ->
+            parametersMatch(candidate.parameterTypes, args)
         } ?: throw NoSuchMethodException("${instance.javaClass.name}#$name/${args.size}")
         method.isAccessible = true
         return method.invoke(instance, *args)
     }
 
     fun callStatic(clazz: Class<*>, name: String, vararg args: Any?): Any? {
-        val method = allMethods(clazz).firstOrNull { candidate ->
+        val method = methodsNamed(clazz, name).firstOrNull { candidate ->
             Modifier.isStatic(candidate.modifiers) &&
-                candidate.name == name &&
                 parametersMatch(candidate.parameterTypes, args)
         } ?: throw NoSuchMethodException("${clazz.name}#$name/${args.size}")
         method.isAccessible = true
@@ -96,20 +103,33 @@ internal object AppleReflection {
     }
 
     private fun findField(clazz: Class<*>, name: String): Field {
-        var current: Class<*>? = clazz
-        while (current != null) {
-            current.declaredFields.firstOrNull { it.name == name }?.let { return it }
-            current = current.superclass
-        }
-        throw NoSuchFieldException("${clazz.name}#$name")
+        return fieldsByClass.computeIfAbsent(clazz, ::indexFields)[name]
+            ?: throw NoSuchFieldException("${clazz.name}#$name")
     }
 
-    private fun allMethods(clazz: Class<*>): Sequence<Method> = sequence {
+    private fun methodsNamed(clazz: Class<*>, name: String): List<Method> =
+        methodsByClass.computeIfAbsent(clazz, ::indexMethods)[name].orEmpty()
+
+    private fun indexMethods(clazz: Class<*>): Map<String, List<Method>> {
+        val methods = LinkedHashMap<String, MutableList<Method>>()
         var current: Class<*>? = clazz
         while (current != null) {
-            yieldAll(current.declaredMethods.asSequence())
+            current.declaredMethods.forEach { method ->
+                methods.getOrPut(method.name) { ArrayList() }.add(method)
+            }
             current = current.superclass
         }
+        return methods
+    }
+
+    private fun indexFields(clazz: Class<*>): Map<String, Field> {
+        val fields = LinkedHashMap<String, Field>()
+        var current: Class<*>? = clazz
+        while (current != null) {
+            current.declaredFields.forEach { field -> fields.putIfAbsent(field.name, field) }
+            current = current.superclass
+        }
+        return fields
     }
 
     private fun parametersMatch(types: Array<Class<*>>, args: Array<out Any?>): Boolean {

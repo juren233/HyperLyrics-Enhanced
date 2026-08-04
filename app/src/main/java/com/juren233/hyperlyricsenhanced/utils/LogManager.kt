@@ -12,9 +12,12 @@ import kotlinx.coroutines.withContext
 import java.io.BufferedReader
 import java.io.File
 import java.io.InputStreamReader
+import java.io.RandomAccessFile
+import java.io.Writer
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.PriorityQueue
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import java.util.regex.Pattern
 import kotlin.concurrent.read
@@ -23,6 +26,11 @@ import kotlin.concurrent.write
 object LogManager : HyperLogger {
     private const val LOG_FILE_NAME = "app_logs.log"
     private const val MAX_LOG_SIZE = 2 * 1024 * 1024L // 2MB
+    private const val MAX_DISPLAY_ENTRY_CHARS = 128 * 1024
+    private const val MAX_DISPLAY_TOTAL_CHARS = 4 * 1024 * 1024
+    private const val MAX_DISPLAY_ENTRIES = 2_000
+    private const val MAX_XPOSED_SOURCE_BYTES = 16 * 1024 * 1024L
+    private const val TRUNCATION_MARKER = "\n... [truncated]"
 
     // 日志等级：0=一般(I+W+E), 1=调试(D+I+W+E)
     private const val LEVEL_NORMAL = 0
@@ -32,6 +40,39 @@ object LogManager : HyperLogger {
     private val dateFormat = SimpleDateFormat("MM-dd HH:mm:ss.SSS", Locale.getDefault())
     private var logFile: File? = null
     private var appContext: Context? = null
+
+    private class BoundedLogBuffer {
+        private data class RetainedEntry(
+            val entry: LogEntry,
+            val retentionKey: String,
+            val sequence: Long
+        )
+
+        private val entries = PriorityQueue<RetainedEntry>(
+            compareBy<RetainedEntry> { it.retentionKey }.thenBy { it.sequence }
+        )
+        private var retainedChars = 0
+        private var nextSequence = 0L
+
+        fun add(entry: LogEntry, retentionKey: String = entry.timestamp) {
+            val entryChars = entry.message.length + entry.rawLog.length
+            entries.add(RetainedEntry(entry, retentionKey, nextSequence++))
+            retainedChars += entryChars
+            while (entries.size > MAX_DISPLAY_ENTRIES || retainedChars > MAX_DISPLAY_TOTAL_CHARS) {
+                val removed = entries.remove().entry
+                retainedChars -= removed.message.length + removed.rawLog.length
+            }
+        }
+
+        fun toList(): List<LogEntry> = entries.map { it.entry }
+    }
+
+    private data class XposedLogFiles(
+        val directory: String,
+        val files: List<String>
+    )
+
+    private class LogSourceException(message: String) : Exception(message)
 
     fun init(context: Context) {
         appContext = context.applicationContext
@@ -102,11 +143,14 @@ object LogManager : HyperLogger {
 
     private fun trimLogFile(file: File) {
         try {
-            val lines = file.readLines()
-            val keepCount = lines.size / 2
-            if (keepCount > 0) {
-                file.writeText(lines.subList(lines.size - keepCount, lines.size).joinToString("\n") + "\n")
+            val tailBytes = RandomAccessFile(file, "r").use { input ->
+                val start = (input.length() - MAX_LOG_SIZE / 2).coerceAtLeast(0)
+                input.seek(start)
+                if (start > 0) input.readLine()
+                val remaining = (input.length() - input.filePointer).toInt()
+                ByteArray(remaining).also(input::readFully)
             }
+            file.outputStream().use { it.write(tailBytes) }
         } catch (_: Exception) {
         }
     }
@@ -117,7 +161,7 @@ object LogManager : HyperLogger {
         val file = logFile ?: return@withContext emptyList()
         if (!file.exists()) return@withContext emptyList()
 
-        val entries = mutableListOf<LogEntry>()
+        val entries = BoundedLogBuffer()
         val regex = Regex("""^(\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}) ([DIWEC])/(\S+): (.+)$""")
 
         lock.read {
@@ -131,9 +175,9 @@ object LogManager : HyperLogger {
                                 timestamp = time,
                                 level = level,
                                 tag = tag,
-                                message = msg,
+                                message = truncate(msg, MAX_DISPLAY_ENTRY_CHARS),
                                 source = "HyperLyrics Enhanced",
-                                rawLog = line
+                                rawLog = truncate(line, MAX_DISPLAY_ENTRY_CHARS)
                             )
                         )
                     }
@@ -141,7 +185,7 @@ object LogManager : HyperLogger {
             } catch (_: Exception) {
             }
         }
-        entries.reversed().mapIndexed { index, entry ->
+        entries.toList().sortedByDescending { it.timestamp }.mapIndexed { index, entry ->
             entry.copy(id = "app_log_${index}_${entry.timestamp}")
         }
     }
@@ -150,40 +194,89 @@ object LogManager : HyperLogger {
         return readXposedLogs(context)
     }
 
-    private suspend fun readXposedLogs(context: Context): List<LogEntry> = withContext(Dispatchers.IO) {
-        val entries = mutableListOf<LogEntry>()
+    suspend fun exportLogs(
+        context: Context,
+        isAppLog: Boolean,
+        selectedLevel: String,
+        writer: Writer
+    ): Int = withContext(Dispatchers.IO) {
+        if (isAppLog) {
+            exportAppLogs(selectedLevel, writer)
+        } else {
+            exportXposedLogs(context, selectedLevel, writer)
+        }
+    }
+
+    private fun exportAppLogs(selectedLevel: String, writer: Writer): Int {
+        val file = logFile ?: return 0
+        if (!file.exists()) return 0
+        return lock.read {
+            file.bufferedReader(Charsets.UTF_8).use { reader ->
+                LogExportStream.copyAppLogs(reader, selectedLevel, writer)
+            }
+        }
+    }
+
+    private fun exportXposedLogs(context: Context, selectedLevel: String, writer: Writer): Int {
+        val source = findXposedLogFiles(context)
+        val process = Runtime.getRuntime().exec(
+            arrayOf("su", "-c", buildXposedSourceCommand(source.files))
+        )
         try {
-            val logDir = "/data/adb/lspd/log"
-            val checkProcess = Runtime.getRuntime().exec(
-                arrayOf("su", "-c", "ls -d $logDir 2>/dev/null || echo '__NONE__'")
-            )
-            val foundDir = BufferedReader(InputStreamReader(checkProcess.inputStream))
-                .readLines().firstOrNull { it.isNotBlank() && it != "__NONE__" }
-            checkProcess.waitFor()
-
-            if (foundDir == null) {
-                val msg = context.getString(R.string.lsposed_not_found)
-                entries.add(LogEntry("NOW", "W", context.getString(R.string.tag_logger), msg, rawLog = msg))
-                return@withContext entries
+            val exportedEntries = BufferedReader(InputStreamReader(process.inputStream)).use { reader ->
+                LogExportStream.copyXposedLogs(
+                    reader = reader,
+                    selectedLevel = selectedLevel,
+                    cacheDir = context.cacheDir,
+                    writer = writer
+                )
             }
-
-            val dirsArg = foundDir
-            val listProcess = Runtime.getRuntime().exec(
-                arrayOf("su", "-c", "find $dirsArg -name '*.log' ! -name 'kmsg*' -type f 2>/dev/null")
-            )
-            val logFiles = BufferedReader(InputStreamReader(listProcess.inputStream))
-                .readLines().filter { it.isNotBlank() }
-            listProcess.waitFor()
-
-            if (logFiles.isEmpty()) {
-                val msg = context.getString(R.string.format_log_files_not_found, dirsArg)
-                entries.add(LogEntry("NOW", "W", context.getString(R.string.tag_logger), msg, rawLog = msg))
-                return@withContext entries
+            val exitCode = process.waitFor()
+            if (exitCode != 0) {
+                throw IllegalStateException("LSPosed log process exited with code $exitCode")
             }
+            return exportedEntries
+        } catch (e: Exception) {
+            if (process.isAlive) {
+                process.destroyForcibly()
+                runCatching { process.waitFor() }
+            }
+            throw e
+        }
+    }
 
-            val catCmd = logFiles.joinToString(" ") { "'$it'" }
+    private fun findXposedLogFiles(context: Context): XposedLogFiles {
+        val logDir = "/data/adb/lspd/log"
+        val checkProcess = Runtime.getRuntime().exec(
+            arrayOf("su", "-c", "ls -d $logDir 2>/dev/null || echo '__NONE__'")
+        )
+        val foundDir = BufferedReader(InputStreamReader(checkProcess.inputStream))
+            .readLines().firstOrNull { it.isNotBlank() && it != "__NONE__" }
+        checkProcess.waitFor()
+        if (foundDir == null) throw LogSourceException(context.getString(R.string.lsposed_not_found))
+
+        val listProcess = Runtime.getRuntime().exec(
+            arrayOf("su", "-c", "find $foundDir -name 'modules*.log' -type f 2>/dev/null")
+        )
+        val logFiles = BufferedReader(InputStreamReader(listProcess.inputStream))
+            .readLines().filter { it.isNotBlank() }.sorted()
+        listProcess.waitFor()
+        if (logFiles.isEmpty()) {
+            throw LogSourceException(context.getString(R.string.format_log_files_not_found, foundDir))
+        }
+        return XposedLogFiles(foundDir, logFiles)
+    }
+
+    private suspend fun readXposedLogs(context: Context): List<LogEntry> = withContext(Dispatchers.IO) {
+        val entries = BoundedLogBuffer()
+        var matchedEntryCount = 0
+        try {
+            val source = findXposedLogFiles(context)
+            val dirsArg = source.directory
+            val logFiles = source.files
+
             val process = Runtime.getRuntime().exec(
-                arrayOf("su", "-c", "cat $catCmd 2>/dev/null")
+                arrayOf("su", "-c", buildXposedSourceCommand(logFiles))
             )
 
             val timeRegex = Pattern.compile("^(?:\\[\\s*)?(\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3})")
@@ -192,10 +285,34 @@ object LogManager : HyperLogger {
 
             BufferedReader(InputStreamReader(process.inputStream)).use { reader ->
                 val currentBlock = java.lang.StringBuilder()
+                var currentBlockMatches = false
+                var currentBlockTruncated = false
+
+                fun appendToCurrentBlock(line: String) {
+                    if (line.contains("hyperlyricsenhanced", ignoreCase = true)) {
+                        currentBlockMatches = true
+                    }
+                    val separatorChars = if (currentBlock.isNotEmpty()) 1 else 0
+                    val remaining = MAX_DISPLAY_ENTRY_CHARS - currentBlock.length - separatorChars
+                    if (remaining <= 0) {
+                        currentBlockTruncated = true
+                        return
+                    }
+                    if (separatorChars == 1) currentBlock.append('\n')
+                    if (line.length <= remaining) {
+                        currentBlock.append(line)
+                    } else {
+                        currentBlock.append(line, 0, remaining)
+                        currentBlockTruncated = true
+                    }
+                }
 
                 fun processCurrentBlock() {
-                    val blockStr = currentBlock.toString()
-                    if (!blockStr.contains("hyperlyricsenhanced", ignoreCase = true)) return
+                    if (!currentBlockMatches) return
+                    val blockStr = buildString(currentBlock.length + TRUNCATION_MARKER.length) {
+                        append(currentBlock)
+                        if (currentBlockTruncated) append(TRUNCATION_MARKER)
+                    }
 
                     val firstLine = blockStr.lineSequence().firstOrNull() ?: ""
 
@@ -224,7 +341,18 @@ object LogManager : HyperLogger {
                     val remainingLines = if (blockStr.contains('\n')) blockStr.substringAfter('\n') else ""
                     val message = if (remainingLines.isNotBlank()) "$headerMsg\n$remainingLines" else headerMsg
 
-                    entries.add(LogEntry(time, level, context.getString(R.string.tag_lsposed), message.trim(), source = source, rawLog = blockStr))
+                    entries.add(
+                        LogEntry(
+                            time,
+                            level,
+                            context.getString(R.string.tag_lsposed),
+                            truncate(message.trim(), MAX_DISPLAY_ENTRY_CHARS),
+                            source = source,
+                            rawLog = blockStr
+                        ),
+                        retentionKey = rawTime
+                    )
+                    matchedEntryCount++
                 }
 
                 reader.lineSequence().forEach { line ->
@@ -232,10 +360,11 @@ object LogManager : HyperLogger {
                         if (currentBlock.isNotEmpty()) {
                             processCurrentBlock()
                             currentBlock.clear()
+                            currentBlockMatches = false
+                            currentBlockTruncated = false
                         }
                     }
-                    if (currentBlock.isNotEmpty()) currentBlock.append("\n")
-                    currentBlock.append(line)
+                    appendToCurrentBlock(line)
                 }
                 if (currentBlock.isNotEmpty()) {
                     processCurrentBlock()
@@ -243,10 +372,13 @@ object LogManager : HyperLogger {
             }
             process.waitFor()
 
-            if (entries.isEmpty()) {
+            if (matchedEntryCount == 0) {
                 val msg = context.getString(R.string.format_logs_scanned_no_match, logFiles.size, dirsArg)
                 entries.add(LogEntry("NOW", "I", context.getString(R.string.tag_logger), msg, rawLog = msg))
             }
+        } catch (e: LogSourceException) {
+            val msg = e.message.orEmpty()
+            entries.add(LogEntry("NOW", "W", context.getString(R.string.tag_logger), msg, rawLog = msg))
         } catch (e: Exception) {
             val msg = if (e.message?.contains("Permission denied") == true ||
                           e.message?.contains("su:") == true ||
@@ -257,9 +389,22 @@ object LogManager : HyperLogger {
             }
             entries.add(LogEntry("NOW", "E", context.getString(R.string.tag_logger), msg, rawLog = msg))
         }
-        val sortedList = entries.sortedByDescending { it.timestamp }
+        val sortedList = entries.toList().sortedByDescending { it.timestamp }
         sortedList.mapIndexed { index, entry ->
             entry.copy(id = "log_${index}_${entry.timestamp}")
         }
     }
+
+    private fun truncate(value: String, maxChars: Int): String {
+        if (value.length <= maxChars) return value
+        val contentChars = (maxChars - TRUNCATION_MARKER.length).coerceAtLeast(0)
+        return value.take(contentChars) + TRUNCATION_MARKER
+    }
+
+    internal fun buildXposedSourceCommand(files: List<String>): String {
+        val orderedFiles = files.sorted().joinToString(" ", transform = ::shellQuote)
+        return "cat $orderedFiles 2>/dev/null | tail -c $MAX_XPOSED_SOURCE_BYTES"
+    }
+
+    private fun shellQuote(value: String): String = "'${value.replace("'", "'\\''")}'"
 }

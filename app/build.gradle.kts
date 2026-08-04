@@ -36,8 +36,8 @@ android {
         applicationId = "com.juren233.hyperlyricsenhanced"
         minSdk = 33
         targetSdk = 37
-        versionCode = 120001
-        versionName = "7.2.0"
+        versionCode = 130290
+        versionName = "7.3.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -58,6 +58,9 @@ android {
     }
 
     buildTypes {
+        debug {
+            releaseSigning?.let { signingConfig = it }
+        }
         release {
             releaseSigning?.let { signingConfig = it }
             isMinifyEnabled = true

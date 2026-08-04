@@ -37,10 +37,28 @@ class OnlineTranslationSelectorTest {
         )
     }
 
+    @Test
+    fun `tries alternative when translation is complete but pronunciation is missing`() {
+        val translationOnly = candidate(
+            source = Source.NE,
+            matchedCount = 48,
+            averageMatchScore = 0.98,
+            matchedContentCount = 48,
+        )
+
+        assertTrue(
+            OnlineTranslationSelector.shouldTryAlternative(
+                translationOnly,
+                totalLineCount = 96,
+            )
+        )
+    }
+
     private fun candidate(
         source: Source,
         matchedCount: Int,
-        averageMatchScore: Double
+        averageMatchScore: Double,
+        matchedContentCount: Int = matchedCount,
     ): OnlineTranslationSelector.Candidate {
         return OnlineTranslationSelector.Candidate(
             source = source,
@@ -50,7 +68,8 @@ class OnlineTranslationSelectorTest {
                 song = Song(lyrics = listOf(RichLyricLine(text = "line"))),
                 matchedCount = matchedCount,
                 averageMatchScore = averageMatchScore
-            )
+            ),
+            matchedContentCount = matchedContentCount,
         )
     }
 }

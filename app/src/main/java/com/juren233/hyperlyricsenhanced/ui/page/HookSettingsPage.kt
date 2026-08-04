@@ -95,46 +95,21 @@ fun HookSettingsPage() {
                 ),
                 contentPadding = contentPadding,
             ) {
-                hookSettingsSections(lyricSource, onLyricSourceChange = { lyricSource = it })
+                hookSettingsSections(lyricSource)
             }
         }
     }
 }
 
-private fun LazyListScope.hookSettingsSections(
-    lyricSource: String,
-    onLyricSourceChange: (String) -> Unit
-) {
+private fun LazyListScope.hookSettingsSections(lyricSource: String) {
     item(key = "lyric_mode") {
         val context = LocalContext.current
         val prefs = remember { context.getSharedPreferences(UIConstants.PREF_NAME, Context.MODE_PRIVATE) }
         var lyricMode by remember { mutableIntStateOf(prefs.getInt(RootConstants.KEY_HOOK_LYRIC_MODE, RootConstants.DEFAULT_HOOK_LYRIC_MODE)) }
-        var appleMusicOnlineFallback by remember {
-            mutableStateOf(
-                prefs.getBoolean(
-                    RootConstants.KEY_HOOK_APPLE_MUSIC_ONLINE_FALLBACK,
-                    RootConstants.DEFAULT_HOOK_APPLE_MUSIC_ONLINE_FALLBACK
-                )
-            )
-        }
-        var appleMusicFallbackQqFirst by remember {
-            mutableStateOf(
-                prefs.getBoolean(
-                    RootConstants.KEY_HOOK_APPLE_MUSIC_FALLBACK_QQ_FIRST,
-                    RootConstants.DEFAULT_HOOK_APPLE_MUSIC_FALLBACK_QQ_FIRST
-                )
-            )
-        }
         val lyricModeOptions = listOf(
             stringResource(R.string.lyric_mode_verbatim),
             stringResource(R.string.lyric_mode_separated)
         )
-        val sourceOptions = listOf(
-            stringResource(R.string.lyric_source_lyricon),
-            stringResource(R.string.lyric_source_superlyric),
-            stringResource(R.string.lyric_source_lyricinfo)
-        )
-        val sourceIds = listOf("lyricon", "superlyric", "lyricinfo")
         Card(modifier = Modifier.padding(horizontal = 12.dp).fillMaxWidth()) {
             OverlayDropdownPreference(
                 title = stringResource(R.string.title_lyric_mode),
@@ -146,39 +121,6 @@ private fun LazyListScope.hookSettingsSections(
                     PrefsBridge.putInt(RootConstants.KEY_HOOK_LYRIC_MODE, index)
                 }
             )
-            OverlayDropdownPreference(
-                title = stringResource(R.string.title_lyric_source),
-                items = sourceOptions,
-                selectedIndex = sourceIds.indexOf(lyricSource).coerceAtLeast(0),
-                onSelectedIndexChange = { index ->
-                    val newSource = sourceIds[index]
-                    onLyricSourceChange(newSource)
-                    prefs.edit { putString(RootConstants.KEY_HOOK_LYRIC_SOURCE, newSource) }
-                    PrefsBridge.putString(RootConstants.KEY_HOOK_LYRIC_SOURCE, newSource)
-                }
-            )
-            SwitchPreference(
-                title = stringResource(R.string.title_apple_music_online_fallback),
-                summary = stringResource(R.string.summary_apple_music_online_fallback),
-                checked = appleMusicOnlineFallback,
-                onCheckedChange = {
-                    appleMusicOnlineFallback = it
-                    prefs.edit { putBoolean(RootConstants.KEY_HOOK_APPLE_MUSIC_ONLINE_FALLBACK, it) }
-                    PrefsBridge.putBoolean(RootConstants.KEY_HOOK_APPLE_MUSIC_ONLINE_FALLBACK, it)
-                }
-            )
-            AnimatedVisibility(visible = appleMusicOnlineFallback) {
-                SwitchPreference(
-                    title = stringResource(R.string.title_apple_music_fallback_qq_first),
-                    summary = stringResource(R.string.summary_apple_music_fallback_qq_first),
-                    checked = appleMusicFallbackQqFirst,
-                    onCheckedChange = {
-                        appleMusicFallbackQqFirst = it
-                        prefs.edit { putBoolean(RootConstants.KEY_HOOK_APPLE_MUSIC_FALLBACK_QQ_FIRST, it) }
-                        PrefsBridge.putBoolean(RootConstants.KEY_HOOK_APPLE_MUSIC_FALLBACK_QQ_FIRST, it)
-                    }
-                )
-            }
         }
     }
     item(key = "custom_config_title") {

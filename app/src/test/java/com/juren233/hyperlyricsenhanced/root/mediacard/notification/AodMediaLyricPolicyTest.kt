@@ -780,6 +780,22 @@ class AodMediaLyricPolicyTest {
     }
 
     @Test
+    fun `hides next lyric while pronunciation fallback is displayed`() {
+        val content = AodMediaLyricPolicy.assembleContent(
+            main = "Current",
+            translation = null,
+            backing = null,
+            backingTranslation = null,
+            roma = "Pronunciation",
+            next = "Next",
+            showNext = true,
+        )
+
+        assertEquals("Pronunciation", content.translation)
+        assertEquals("", content.next)
+    }
+
+    @Test
     fun `hides next lyric while backing vocal translation is displayed`() {
         val content = AodMediaLyricPolicy.assembleContent(
             main = "Current",

@@ -1,7 +1,8 @@
 package com.juren233.hyperlyricsenhanced.ui.page
 
 import android.content.Context
-
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -16,6 +17,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
@@ -33,6 +35,10 @@ import com.juren233.hyperlyricsenhanced.ui.utils.BlurredBar
 import com.juren233.hyperlyricsenhanced.ui.utils.LocaleUtils
 import com.juren233.hyperlyricsenhanced.ui.utils.pageScrollModifiers
 import com.juren233.hyperlyricsenhanced.ui.utils.rememberBlurBackdrop
+import com.juren233.hyperlyricsenhanced.utils.LogManager
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
@@ -49,6 +55,9 @@ import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.WindowDropdownPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import java.io.IOException
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 
 private fun setExcludeFromRecents(context: Context, exclude: Boolean) {
     try {
@@ -60,6 +69,8 @@ private fun setExcludeFromRecents(context: Context, exclude: Boolean) {
 @Composable
 fun SettingsPage() {
     val navigator = LocalNavigator.current
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
 
     val backdrop = rememberBlurBackdrop()
     val blurActive = backdrop != null
@@ -67,6 +78,69 @@ fun SettingsPage() {
     val topAppBarScrollBehavior = MiuixScrollBehavior()
     val snackbarHostState = remember { SnackbarHostState() }
     val backupRestoreHelper = com.juren233.hyperlyricsenhanced.utils.rememberBackupRestoreHelper(snackbarHostState)
+    val exportHeader = stringResource(R.string.export_header)
+    val exportTimeFormat = stringResource(R.string.format_export_time)
+    val appLogsTitle = stringResource(R.string.title_app_logs)
+    val moduleLogsTitle = stringResource(R.string.title_module_logs)
+    val noLogsFoundMsg = stringResource(R.string.no_logs_found)
+    val exportSuccessMsg = stringResource(R.string.export_success)
+    val exportFailedMsg = stringResource(R.string.format_export_failed)
+    val exportAllLogsLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("text/plain"),
+        onResult = { uri ->
+            if (uri == null) return@rememberLauncherForActivityResult
+            coroutineScope.launch(Dispatchers.IO) {
+                try {
+                    val output = context.contentResolver.openOutputStream(uri, "wt")
+                        ?: throw IOException("Unable to open the selected file")
+                    output.bufferedWriter(Charsets.UTF_8).use { writer ->
+                        writer.appendLine(exportHeader)
+                        writer.appendLine(
+                            String.format(
+                                exportTimeFormat,
+                                LocalDateTime.now().format(
+                                    DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+                                )
+                            )
+                        )
+                        writer.appendLine()
+
+                        writer.appendLine("========== $appLogsTitle ==========")
+                        val appEntries = LogManager.exportLogs(
+                            context = context,
+                            isAppLog = true,
+                            selectedLevel = "ALL",
+                            writer = writer,
+                        )
+                        if (appEntries == 0) writer.appendLine(noLogsFoundMsg)
+                        writer.appendLine()
+
+                        writer.appendLine("========== $moduleLogsTitle ==========")
+                        val moduleEntries = LogManager.exportLogs(
+                            context = context,
+                            isAppLog = false,
+                            selectedLevel = "ALL",
+                            writer = writer,
+                        )
+                        if (moduleEntries == 0) writer.appendLine(noLogsFoundMsg)
+                    }
+                    withContext(Dispatchers.Main) {
+                        snackbarHostState.showSnackbar(
+                            message = exportSuccessMsg,
+                            duration = top.yukonga.miuix.kmp.basic.SnackbarDuration.Custom(2000L),
+                        )
+                    }
+                } catch (e: Exception) {
+                    withContext(Dispatchers.Main) {
+                        snackbarHostState.showSnackbar(
+                            message = String.format(exportFailedMsg, e.message),
+                            duration = top.yukonga.miuix.kmp.basic.SnackbarDuration.Custom(2000L),
+                        )
+                    }
+                }
+            }
+        }
+    )
 
     Scaffold(
         snackbarHost = { SnackbarHost(state = snackbarHostState) },
@@ -101,14 +175,25 @@ fun SettingsPage() {
                 ),
                 contentPadding = contentPadding,
             ) {
-                settingsSections(backupRestoreHelper)
+                settingsSections(
+                    backupRestoreHelper = backupRestoreHelper,
+                    onExportAllLogs = {
+                        val dateTime = LocalDateTime.now().format(
+                            DateTimeFormatter.ofPattern("yyyyMMdd_HHmm")
+                        )
+                        exportAllLogsLauncher.launch(
+                            "hyperlyricsenhanced_all_logs_$dateTime.txt"
+                        )
+                    },
+                )
             }
         }
     }
 }
 
 private fun LazyListScope.settingsSections(
-    backupRestoreHelper: com.juren233.hyperlyricsenhanced.utils.BackupRestoreHelper
+    backupRestoreHelper: com.juren233.hyperlyricsenhanced.utils.BackupRestoreHelper,
+    onExportAllLogs: () -> Unit,
 ) {
     item(key = "personalization_title") {
         SmallTitle(text = stringResource(R.string.title_personalization))
@@ -190,6 +275,10 @@ private fun LazyListScope.settingsSections(
                     onClick = { 
                         navigator.navigate(Route.Log) 
                     }
+                )
+                ArrowPreference(
+                    title = stringResource(R.string.export_all_logs),
+                    onClick = onExportAllLogs,
                 )
             }
         }

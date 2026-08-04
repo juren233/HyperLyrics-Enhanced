@@ -1,5 +1,7 @@
 package com.juren233.hyperlyricsenhanced.root.source
 
+import com.juren233.hyperlyricsenhanced.common.lyric.RomanizationPolicy
+import com.juren233.hyperlyricsenhanced.common.lyric.OnlineTranslationContentPolicy
 import com.juren233.hyperlyricsenhanced.lyric.LrcLine
 import com.juren233.hyperlyricsenhanced.lyric.model.RichLyricLine
 import com.juren233.hyperlyricsenhanced.lyric.model.Song
@@ -29,7 +31,8 @@ internal object OnlineFallbackSongMapper {
                 end = end,
                 duration = end - line.startTimeMs,
                 text = line.content,
-                translation = line.translation?.trim()?.takeIf(String::isNotEmpty)
+                translation = OnlineTranslationContentPolicy.sanitize(line.translation),
+                roma = RomanizationPolicy.sanitize(line.content, line.romanization),
             )
         }
 

@@ -95,11 +95,18 @@ object HookIslandGlow {
             val context = view?.context ?: return@runCatching null
             val mediaInfo = MediaMetadataHelper.getMediaInfo(context, pkgName, HookLogger)
             val albumArt = mediaInfo.albumArt ?: return@runCatching null
+            val lyricSong = LyriconDataBridge.currentSong
+            val stableTitle = lyricSong?.name?.takeIf { it.isNotBlank() }
+                ?: LyriconDataBridge.currentSongName?.takeIf { it.isNotBlank() }
+            val stableArtist = lyricSong?.artist?.takeIf { it.isNotBlank() }
             val mediaColorKey = CoverColorHelper.updateMediaSession(
                 packageName = pkgName,
                 title = mediaInfo.title,
                 artist = mediaInfo.artist,
-                album = mediaInfo.album
+                album = mediaInfo.album,
+                stableTitle = stableTitle,
+                stableArtist = stableArtist,
+                diagnosticSource = "island_host_glow"
             )
             val useGradient = sharedPrefs.getBoolean(
                 RootConstants.KEY_HOOK_EXTRACT_COVER_TEXT_GRADIENT,

@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 Proify, Tomakino
+ * Copyright 2026 juren233
  * Licensed under the Apache License, Version 2.0
  * http://www.apache.org/licenses/LICENSE-2.0
  */
@@ -42,13 +42,17 @@ object SongRepository {
      * 保存解析好的歌曲到磁盘
      */
     fun saveSong(nativeSongObj: Any): Song? {
-        val song = AppleSongParser.parser(nativeSongObj)
+        val song = AppleLyricTextTransform.withRawReads {
+            AppleSongParser.parser(nativeSongObj)
+        }
         if (song.adamId.isNullOrBlank()) {
             return null
         }
         if (BuildConfig.DEBUG) {
             ProviderLogger.debug(
                 "SongRepository: Parsed Apple lyrics for ${song.adamId}, " +
+                    "mainWordLines=${song.lyrics.count { it.words.isNotEmpty() }}, " +
+                    "nativePronunciationLines=${song.lyrics.count { !it.htmlPronunciationLineText.isNullOrBlank() }}, " +
                     "backgroundTextLines=${song.lyrics.count { !it.htmlBackgroundVocalsLineText.isNullOrBlank() }}, " +
                     "backgroundWordLines=${song.lyrics.count { it.backgroundWords.isNotEmpty() }}, " +
                     "translatedBackgroundLines=${song.lyrics.count { !it.htmlTranslatedBackgroundVocalsLineText.isNullOrBlank() }}"
@@ -66,11 +70,14 @@ object SongRepository {
         genre = metadata.genre
         originalTitle = metadata.originalTitle
         originalArtist = metadata.originalArtist
+        originalMetadataResolved = metadata.originalMetadataResolved
     }
 
     private fun MediaMetadataCache.Metadata.toLyricMetadata() = lyricMetadataOf(
         LyricMetadataKeys.APPLE_CATALOG_GENRE to genre,
         LyricMetadataKeys.APPLE_ORIGINAL_TITLE to originalTitle,
-        LyricMetadataKeys.APPLE_ORIGINAL_ARTIST to originalArtist
+        LyricMetadataKeys.APPLE_ORIGINAL_ARTIST to originalArtist,
+        LyricMetadataKeys.APPLE_ORIGINAL_METADATA_RESOLVED to
+            originalMetadataResolved.toString()
     )
 }

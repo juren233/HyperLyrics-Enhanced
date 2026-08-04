@@ -58,7 +58,8 @@ internal object LrcParserUtils {
 
     fun lyricsMerge(
         originalLines: List<LyricsLine>,
-        transLines: List<LyricsLine>?
+        transLines: List<LyricsLine>?,
+        wordSeparator: String = "",
     ): List<LyricsLine>? {
         if (transLines.isNullOrEmpty()) return null
 
@@ -79,7 +80,10 @@ internal object LrcParserUtils {
                 )
             val matchedText = matchIndex?.let { index ->
                 used[index] = true
-                sortedTransLines[index].words.joinToString("") { it.text }.trim()
+                sortedTransLines[index].words
+                    .map { it.text.trim() }
+                    .filter(String::isNotEmpty)
+                    .joinToString(wordSeparator)
             }.orEmpty()
             LyricsLine(
                 original.start,
@@ -114,13 +118,28 @@ object QrcParser {
             }
         }).sortedBy { it.start }
 
-        val translatedLinesRaw = qrcData.translated?.takeIf { it.isNotEmpty() }?.let { LrcParserUtils.parseLrc(it) }
-        val romanizationLinesRaw = qrcData.romanization?.takeIf { it.isNotEmpty() }?.let { LrcParserUtils.parseLrc(it) }
+        val translatedLinesRaw = parseAuxiliaryLyrics(qrcData.translated)
+        val romanizationLinesRaw = parseAuxiliaryLyrics(qrcData.romanization)
 
         val translatedLinesAligned = LrcParserUtils.lyricsMerge(originalLines, translatedLinesRaw)
-        val romanizationLinesAligned = LrcParserUtils.lyricsMerge(originalLines, romanizationLinesRaw)
+        val romanizationLinesAligned = LrcParserUtils.lyricsMerge(
+            originalLines,
+            romanizationLinesRaw,
+            wordSeparator = " ",
+        )
 
         return LyricsResult(tags, originalLines, translatedLinesAligned, romanizationLinesAligned)
+    }
+
+    /**
+     * QQ returns translation/romanization in either QRC XML or plain LRC.
+     * Trying QRC first is necessary because QRC timestamps such as [730,1817]
+     * are intentionally not accepted by the LRC parser.
+     */
+    private fun parseAuxiliaryLyrics(rawLyrics: String?): List<LyricsLine>? {
+        val lyrics = rawLyrics?.takeIf { it.isNotEmpty() } ?: return null
+        return parseQrc(lyrics).takeIf { it.isNotEmpty() }
+            ?: LrcParserUtils.parseLrc(lyrics)
     }
 
     /**
@@ -208,7 +227,11 @@ object YrcParser {
         val romanizationLinesRaw = romalrc?.takeIf { it.isNotEmpty() }?.let { LrcParserUtils.parseLrc(it) }
 
         val translatedLinesAligned = LrcParserUtils.lyricsMerge(originalLines, translatedLinesRaw)
-        val romanizationLinesAligned = LrcParserUtils.lyricsMerge(originalLines, romanizationLinesRaw)
+        val romanizationLinesAligned = LrcParserUtils.lyricsMerge(
+            originalLines,
+            romanizationLinesRaw,
+            wordSeparator = " ",
+        )
 
         return LyricsResult(
             tags = emptyMap(),

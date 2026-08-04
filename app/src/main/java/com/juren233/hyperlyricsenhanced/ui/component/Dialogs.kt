@@ -68,6 +68,149 @@ fun NumberInputDialog(
 }
 
 @Composable
+fun NumberRangeInputDialog(
+    show: Boolean,
+    title: String,
+    minLabel: String,
+    maxLabel: String,
+    initialMinValue: Int,
+    initialMaxValue: Int,
+    allowedMin: Int,
+    allowedMax: Int,
+    onDismiss: () -> Unit,
+    onConfirm: (Int, Int) -> Unit,
+) {
+    if (!show) return
+    var minInputValue by remember { mutableStateOf(initialMinValue.toString()) }
+    var maxInputValue by remember { mutableStateOf(initialMaxValue.toString()) }
+
+    WindowDialog(title = title, show = true, onDismissRequest = onDismiss) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            TextField(
+                value = minInputValue,
+                onValueChange = { newValue ->
+                    if (newValue.all(Char::isDigit)) minInputValue = newValue
+                },
+                label = minLabel,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.fillMaxWidth(),
+                maxLines = 1,
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            TextField(
+                value = maxInputValue,
+                onValueChange = { newValue ->
+                    if (newValue.all(Char::isDigit)) maxInputValue = newValue
+                },
+                label = maxLabel,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.fillMaxWidth(),
+                maxLines = 1,
+            )
+            Spacer(modifier = Modifier.height(24.dp))
+            Row(
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                TextButton(
+                    text = stringResource(id = R.string.cancel),
+                    onClick = onDismiss,
+                    modifier = Modifier.weight(1f),
+                )
+                Spacer(Modifier.width(20.dp))
+                TextButton(
+                    text = stringResource(id = R.string.confirm),
+                    onClick = {
+                        val enteredMin = minInputValue.toIntOrNull() ?: return@TextButton
+                        val enteredMax = maxInputValue.toIntOrNull() ?: return@TextButton
+                        val clampedMin = enteredMin.coerceIn(allowedMin, allowedMax)
+                        val clampedMax = enteredMax.coerceIn(allowedMin, allowedMax)
+                        onConfirm(
+                            minOf(clampedMin, clampedMax),
+                            maxOf(clampedMin, clampedMax),
+                        )
+                        onDismiss()
+                    },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.textButtonColorsPrimary(),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun FloatRangeInputDialog(
+    show: Boolean,
+    title: String,
+    minLabel: String,
+    maxLabel: String,
+    initialMinValue: Float,
+    initialMaxValue: Float,
+    allowedMin: Float,
+    allowedMax: Float,
+    onDismiss: () -> Unit,
+    onConfirm: (Float, Float) -> Unit,
+) {
+    if (!show) return
+    var minInputValue by remember { mutableStateOf(initialMinValue.toString()) }
+    var maxInputValue by remember { mutableStateOf(initialMaxValue.toString()) }
+    val acceptsDecimal = { value: String ->
+        value.count { it == '.' } <= 1 && value.all { it.isDigit() || it == '.' }
+    }
+
+    WindowDialog(title = title, show = true, onDismissRequest = onDismiss) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            TextField(
+                value = minInputValue,
+                onValueChange = { if (acceptsDecimal(it)) minInputValue = it },
+                label = minLabel,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                modifier = Modifier.fillMaxWidth(),
+                maxLines = 1,
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            TextField(
+                value = maxInputValue,
+                onValueChange = { if (acceptsDecimal(it)) maxInputValue = it },
+                label = maxLabel,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                modifier = Modifier.fillMaxWidth(),
+                maxLines = 1,
+            )
+            Spacer(modifier = Modifier.height(24.dp))
+            Row(
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                TextButton(
+                    text = stringResource(id = R.string.cancel),
+                    onClick = onDismiss,
+                    modifier = Modifier.weight(1f),
+                )
+                Spacer(Modifier.width(20.dp))
+                TextButton(
+                    text = stringResource(id = R.string.confirm),
+                    onClick = {
+                        val enteredMin = minInputValue.toFloatOrNull() ?: return@TextButton
+                        val enteredMax = maxInputValue.toFloatOrNull() ?: return@TextButton
+                        val clampedMin = enteredMin.coerceIn(allowedMin, allowedMax)
+                        val clampedMax = enteredMax.coerceIn(allowedMin, allowedMax)
+                        onConfirm(
+                            minOf(clampedMin, clampedMax),
+                            maxOf(clampedMin, clampedMax),
+                        )
+                        onDismiss()
+                    },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.textButtonColorsPrimary(),
+                )
+            }
+        }
+    }
+}
+
+@Composable
 fun TextInputDialog(
     show: Boolean,
     title: String,

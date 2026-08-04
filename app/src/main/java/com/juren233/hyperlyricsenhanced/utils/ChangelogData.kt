@@ -100,41 +100,76 @@ object ChangelogData {
         return compareVersionParts(parsed, currentParts) <= 0
     }
 
-    internal fun normalizeReleaseMarkdown(markdown: String): String = markdown
-        .replace(DETAILS_OPEN_REGEX, "")
-        .replace(DETAILS_SUMMARY_REGEX) { match ->
-            "\n### ${match.groupValues[1].trim()}\n"
-        }
-        .replace(DETAILS_CLOSE_REGEX, "")
-        .replace(EXCESS_BLANK_LINES_REGEX, "\n\n")
-        .trim()
+    internal fun normalizeReleaseMarkdown(markdown: String): String {
+        val normalized = markdown
+            .replace(DETAILS_OPEN_REGEX, "")
+            .replace(DETAILS_SUMMARY_REGEX) { match ->
+                "\n### ${match.groupValues[1].trim()}\n"
+            }
+            .replace(DETAILS_CLOSE_REGEX, "")
+
+        return removeDownloadSections(normalized)
+            .replace(EXCESS_BLANK_LINES_REGEX, "\n\n")
+            .trim()
+    }
 
     internal fun normalizeReleaseContent(markdown: String): NormalizedReleaseContent {
         val normalized = normalizeReleaseMarkdown(markdown)
         val lines = normalized.lines()
-        val markerIndex = lines.indexOfFirst { line ->
-            LATEST_COMMIT_HEADING_REGEX.matches(line.trim())
+        val firstContentIndex = lines.indexOfFirst(::isTitleCandidate)
+            .takeIf { it >= 0 }
+            ?: return NormalizedReleaseContent("", "")
+        val titleSearchStart = if (
+            LATEST_COMMIT_HEADING_REGEX.matches(lines[firstContentIndex].trim())
+        ) {
+            firstContentIndex + 1
+        } else {
+            firstContentIndex
         }
-        if (markerIndex < 0) return NormalizedReleaseContent("", normalized)
-
-        val titleIndex = (markerIndex + 1 until lines.size).firstOrNull { index ->
-            val line = lines[index].trim()
-            line.isNotEmpty() && !THEMATIC_BREAK_REGEX.matches(line)
-        }
-        if (titleIndex == null) {
-            val summary = (lines.take(markerIndex) + lines.drop(markerIndex + 1))
-                .joinToString("\n")
-                .replace(EXCESS_BLANK_LINES_REGEX, "\n\n")
-                .trim()
-            return NormalizedReleaseContent("", summary)
-        }
+        val titleIndex = (titleSearchStart until lines.size)
+            .firstOrNull { index -> isTitleCandidate(lines[index]) }
+            ?: return NormalizedReleaseContent("", "")
 
         val title = lines[titleIndex].trim().replace(HEADING_PREFIX_REGEX, "").trim()
-        val summary = (lines.take(markerIndex) + lines.drop(titleIndex + 1))
+        val summary = lines.drop(titleIndex + 1)
             .joinToString("\n")
             .replace(EXCESS_BLANK_LINES_REGEX, "\n\n")
             .trim()
         return NormalizedReleaseContent(title, summary)
+    }
+
+    private fun removeDownloadSections(markdown: String): String {
+        val retainedLines = mutableListOf<String>()
+        var hiddenHeadingLevel: Int? = null
+
+        markdown.lines().forEach { line ->
+            val heading = MARKDOWN_HEADING_REGEX.matchEntire(line.trim())
+            val headingLevel = heading?.groupValues?.get(1)?.length
+            val currentHiddenHeadingLevel = hiddenHeadingLevel
+
+            if (
+                currentHiddenHeadingLevel != null &&
+                headingLevel != null &&
+                headingLevel <= currentHiddenHeadingLevel
+            ) {
+                hiddenHeadingLevel = null
+            }
+            if (hiddenHeadingLevel != null) return@forEach
+
+            val headingText = heading?.groupValues?.get(2)?.trim()
+            if (headingLevel != null && DOWNLOAD_HEADING_REGEX.matches(headingText.orEmpty())) {
+                hiddenHeadingLevel = headingLevel
+            } else {
+                retainedLines += line
+            }
+        }
+
+        return retainedLines.joinToString("\n")
+    }
+
+    private fun isTitleCandidate(line: String): Boolean {
+        val trimmed = line.trim()
+        return trimmed.isNotEmpty() && !THEMATIC_BREAK_REGEX.matches(trimmed)
     }
 
     private fun parseReleaseVersion(tagName: String): List<Int>? {
@@ -168,6 +203,11 @@ object ChangelogData {
     private val EXCESS_BLANK_LINES_REGEX = Regex("\\n[\\t ]*\\n(?:[\\t ]*\\n)+")
     private val LATEST_COMMIT_HEADING_REGEX = Regex(
         "^#{1,6}\\s*(?:最新提交|latest\\s+commit)\\s*$",
+        RegexOption.IGNORE_CASE
+    )
+    private val MARKDOWN_HEADING_REGEX = Regex("^(#{1,6})\\s+(.+?)\\s*#*\\s*$")
+    private val DOWNLOAD_HEADING_REGEX = Regex(
+        "^(?:下载说明|下载须知|download(?:\\s+(?:instructions?|notes?))?)\\s*[:：]?$",
         RegexOption.IGNORE_CASE
     )
     private val THEMATIC_BREAK_REGEX = Regex("^(?:-{3,}|_{3,}|\\*{3,})$")

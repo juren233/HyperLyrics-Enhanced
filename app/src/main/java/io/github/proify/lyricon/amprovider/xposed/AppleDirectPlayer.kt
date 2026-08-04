@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 Proify, Tomakino
+ * Copyright 2026 juren233
  * Licensed under the Apache License, Version 2.0
  * http://www.apache.org/licenses/LICENSE-2.0
  */
@@ -14,8 +14,11 @@ import android.media.session.PlaybackState
 import android.os.Build
 import android.os.IBinder
 import android.os.Process
+import android.util.Log
 import androidx.core.content.ContextCompat
+import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.IAppleMusicLyricBridge
+import com.juren233.hyperlyricsenhanced.IAppleMusicTranslationReceiver
 import io.github.proify.extensions.deflate
 import io.github.proify.extensions.json
 import io.github.proify.lyricon.lyric.model.Song
@@ -27,15 +30,26 @@ internal object AppleDirectBridgeContract {
         "com.juren233.hyperlyricsenhanced.applemusic.REQUEST_DIRECT_BRIDGE"
     const val ACTION_REGISTER =
         "com.juren233.hyperlyricsenhanced.applemusic.REGISTER_DIRECT_BRIDGE"
+    const val ACTION_RESOLVE_ORIGINAL_METADATA =
+        "com.juren233.hyperlyricsenhanced.applemusic.RESOLVE_ORIGINAL_METADATA"
     const val EXTRA_BINDER = "bridge"
+    const val EXTRA_MEDIA_ID = "media_id"
     const val SYSTEM_UI_PACKAGE = "com.android.systemui"
     const val APPLE_MUSIC_PACKAGE = "com.apple.android.music"
 }
 
 /** Sends Apple Music data straight to HyperLyrics Enhanced in SystemUI when Central is absent. */
-internal class AppleDirectPlayer(private val context: Context) : RemotePlayer {
+internal class AppleDirectPlayer(
+    private val context: Context,
+    private val onOriginalMetadataRequested: (String) -> Unit,
+    private val onOnlineTranslationReceived: (ByteArray) -> Unit,
+    private val onOnlineTranslationCleared: (String?) -> Unit,
+    private val onOnlineTranslationSourceSwitchResult:
+        (Long, String?, String?, String?, String?, Boolean) -> Unit,
+) : RemotePlayer {
     companion object {
         private const val MAX_DIRECT_PAYLOAD_BYTES = 768 * 1024
+        private const val PRONUNCIATION_DIAGNOSTIC_TAG = "ApplePronunciationDiag"
     }
 
     @Volatile
@@ -44,9 +58,40 @@ internal class AppleDirectPlayer(private val context: Context) : RemotePlayer {
     private var latestSongPayload: ByteArray? = null
     private var registered = false
 
+    private val translationReceiver = object : IAppleMusicTranslationReceiver.Stub() {
+        override fun onOnlineTranslationResult(compressedSong: ByteArray) {
+            pronunciationDiagnostic(
+                "stage=bridge_payload_callback, bytes=${compressedSong.size}"
+            )
+            this@AppleDirectPlayer.onOnlineTranslationReceived(compressedSong)
+        }
+
+        override fun onOnlineTranslationCleared(songId: String?) {
+            pronunciationDiagnostic("stage=bridge_payload_cleared, id=$songId")
+            this@AppleDirectPlayer.onOnlineTranslationCleared(songId)
+        }
+
+        override fun onOnlineTranslationSourceSwitchResult(
+            requestId: Long,
+            songId: String?,
+            contentType: String?,
+            requestedSource: String?,
+            actualSource: String?,
+            successful: Boolean,
+        ) {
+            this@AppleDirectPlayer.onOnlineTranslationSourceSwitchResult(
+                requestId,
+                songId,
+                contentType,
+                requestedSource,
+                actualSource,
+                successful,
+            )
+        }
+    }
+
     private val registrationReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            if (intent.action != AppleDirectBridgeContract.ACTION_REGISTER) return
             if (Build.VERSION.SDK_INT >= 34 &&
                 sentFromUid >= 0 &&
                 sentFromUid != Process.SYSTEM_UID
@@ -56,8 +101,24 @@ internal class AppleDirectPlayer(private val context: Context) : RemotePlayer {
                 )
                 return
             }
-            val binder = intent.extras?.getBinder(AppleDirectBridgeContract.EXTRA_BINDER) ?: return
-            connect(binder)
+            when (intent.action) {
+                AppleDirectBridgeContract.ACTION_REGISTER -> {
+                    val binder = intent.extras
+                        ?.getBinder(AppleDirectBridgeContract.EXTRA_BINDER)
+                        ?: return
+                    pronunciationDiagnostic(
+                        "stage=bridge_registration_received, " +
+                            "alive=${binder.isBinderAlive}, uid=$sentFromUid"
+                    )
+                    connect(binder)
+                }
+                AppleDirectBridgeContract.ACTION_RESOLVE_ORIGINAL_METADATA -> {
+                    val mediaId = intent.getStringExtra(AppleDirectBridgeContract.EXTRA_MEDIA_ID)
+                        ?.takeIf { it.all(Char::isDigit) }
+                        ?: return
+                    onOriginalMetadataRequested(mediaId)
+                }
+            }
         }
     }
 
@@ -66,14 +127,19 @@ internal class AppleDirectPlayer(private val context: Context) : RemotePlayer {
         ContextCompat.registerReceiver(
             context,
             registrationReceiver,
-            IntentFilter(AppleDirectBridgeContract.ACTION_REGISTER),
+            IntentFilter().apply {
+                addAction(AppleDirectBridgeContract.ACTION_REGISTER)
+                addAction(AppleDirectBridgeContract.ACTION_RESOLVE_ORIGINAL_METADATA)
+            },
             ContextCompat.RECEIVER_EXPORTED
         )
         registered = true
+        pronunciationDiagnostic("stage=direct_player_started")
         requestBridge()
     }
 
     private fun requestBridge() {
+        pronunciationDiagnostic("stage=bridge_requested")
         context.sendBroadcast(
             Intent(AppleDirectBridgeContract.ACTION_REQUEST)
                 .setPackage(AppleDirectBridgeContract.SYSTEM_UI_PACKAGE)
@@ -88,6 +154,11 @@ internal class AppleDirectPlayer(private val context: Context) : RemotePlayer {
                 requestBridge()
             }, 0)
         }
+        val receiverRegistered = send { it.registerTranslationReceiver(translationReceiver) }
+        pronunciationDiagnostic(
+            "stage=bridge_connected, alive=${binder.isBinderAlive}, " +
+                "receiverRegistered=$receiverRegistered"
+        )
         ProviderLogger.diagnostic("HyperLyrics Enhanced Apple Music 直连已建立")
         latestSongPayload?.let { payload ->
             val replayed = send { target -> target.onSongChanged(payload) }
@@ -129,6 +200,15 @@ internal class AppleDirectPlayer(private val context: Context) : RemotePlayer {
     override fun setDisplayRoma(displayRoma: Boolean): Boolean =
         send { it.onDisplayRomaChanged(displayRoma) }
 
+    fun requestOnlineLyricContentSource(
+        requestId: Long,
+        songId: String,
+        contentType: String,
+        source: String,
+    ): Boolean = send {
+        it.requestOnlineLyricContentSource(requestId, songId, contentType, source)
+    }
+
     override fun setPlaybackState(state: PlaybackState?): Boolean =
         setPlaybackState(state?.state == PlaybackState.STATE_PLAYING)
 
@@ -141,6 +221,10 @@ internal class AppleDirectPlayer(private val context: Context) : RemotePlayer {
             bridge = null
             requestBridge()
         }.getOrDefault(false)
+    }
+
+    private fun pronunciationDiagnostic(message: String) {
+        if (BuildConfig.DEBUG) Log.i(PRONUNCIATION_DIAGNOSTIC_TAG, message)
     }
 }
 

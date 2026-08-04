@@ -3,7 +3,9 @@
 import android.content.Context
 import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.utils.LogManager
+import java.io.ByteArrayInputStream
 import java.io.InputStream
+import java.util.zip.ZipFile
 
 /**
  * 极轻量级繁简转换工具（仅支持 繁体 -> 简体）
@@ -16,6 +18,20 @@ object ChineseUtils {
     private val phraseMap = HashMap<String, String>()
     private val charMap = HashMap<Char, Char>()
     private var maxPhraseLength = 1
+    @Volatile
+    private var moduleApkPath: String? = null
+
+    fun setModuleApkPath(path: String?) {
+        if (path.isNullOrBlank()) return
+        synchronized(this) {
+            if (moduleApkPath == path && (phraseMap.isNotEmpty() || charMap.isNotEmpty())) return
+            moduleApkPath = path
+            phraseMap.clear()
+            charMap.clear()
+            maxPhraseLength = 1
+            initialized = false
+        }
+    }
 
     private fun ensureLoaded(context: Context) {
         if (initialized) return
@@ -60,12 +76,20 @@ object ChineseUtils {
     }
 
     private fun openDictionary(context: Context, path: String): InputStream {
-        return runCatching { context.assets.open(path) }.getOrElse {
-            context.createPackageContext(
-                BuildConfig.APPLICATION_ID,
-                Context.CONTEXT_IGNORE_SECURITY
-            ).assets.open(path)
+        runCatching { context.assets.open(path) }.getOrNull()?.let { return it }
+        moduleApkPath?.let { apkPath ->
+            runCatching {
+                ZipFile(apkPath).use { apk ->
+                    val entry = apk.getEntry("assets/$path")
+                        ?: error("Module asset not found: $path")
+                    ByteArrayInputStream(apk.getInputStream(entry).use(InputStream::readBytes))
+                }
+            }.getOrNull()?.let { return it }
         }
+        return context.createPackageContext(
+            BuildConfig.APPLICATION_ID,
+            Context.CONTEXT_IGNORE_SECURITY
+        ).assets.open(path)
     }
 
     /**

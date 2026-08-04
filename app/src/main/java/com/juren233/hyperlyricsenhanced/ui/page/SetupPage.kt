@@ -397,6 +397,7 @@ fun LyricSourceSelectionPage(selectedSource: String, onSourceSelected: (String) 
             Card(modifier = Modifier.fillMaxWidth()) {
                 OverlayDropdownPreference(
                     title = stringResource(R.string.title_lyric_source),
+                    summary = stringResource(R.string.summary_lyric_source_apple_music_builtin),
                     items = sourceOptions,
                     selectedIndex = sourceIds.indexOf(selectedSource).coerceAtLeast(0),
                     onSelectedIndexChange = { index ->

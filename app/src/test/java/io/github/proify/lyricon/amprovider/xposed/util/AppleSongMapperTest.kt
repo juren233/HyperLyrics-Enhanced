@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 Proify, Tomakino
+ * Copyright 2026 juren233
  * Licensed under the Apache License, Version 2.0
  * http://www.apache.org/licenses/LICENSE-2.0
  */
@@ -13,6 +13,7 @@ import io.github.proify.lyricon.amprovider.xposed.model.LyricLine
 import io.github.proify.lyricon.amprovider.xposed.model.LyricWord
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -101,6 +102,55 @@ class AppleSongMapperTest {
         assertEquals(
             "伴唱翻译",
             mappedLine.metadata?.getString(LyricMetadataKeys.BACKGROUND_VOCALS_TRANSLATION)
+        )
+    }
+
+    @Test
+    fun `carries Apple pronunciation into romanization`() {
+        val mappedLine = AppleSongMapper.map(
+            AppleSong(
+                lyrics = mutableListOf(
+                    LyricLine(
+                        htmlLineText = "君の名は",
+                        htmlPronunciationLineText = "Kimi no na wa",
+                    )
+                )
+            )
+        ).lyrics.orEmpty().single()
+
+        assertEquals("Kimi no na wa", mappedLine.roma)
+    }
+
+    @Test
+    fun `drops Apple pronunciation assigned to a Latin lyric line`() {
+        val mappedLine = AppleSongMapper.map(
+            AppleSong(
+                lyrics = mutableListOf(
+                    LyricLine(
+                        htmlLineText = "Where did you go?",
+                        htmlPronunciationLineText = "yi zei yei yv guong zong",
+                    )
+                )
+            )
+        ).lyrics.orEmpty().single()
+
+        assertNull(mappedLine.roma)
+    }
+
+    @Test
+    fun `carries Apple pronunciation language for downstream visibility filtering`() {
+        val mappedSong = AppleSongMapper.map(
+            AppleSong(
+                pronunciationLanguages = mutableListOf(
+                    "zh-Latn-pinyin",
+                    "zh-Latn-pinyin",
+                ),
+            )
+        )
+
+        assertEquals(
+            "zh-Latn-pinyin",
+            mappedSong.metadata?.getString(LyricMetadataKeys.APPLE_PRONUNCIATION_LANGUAGES),
         )
     }
 

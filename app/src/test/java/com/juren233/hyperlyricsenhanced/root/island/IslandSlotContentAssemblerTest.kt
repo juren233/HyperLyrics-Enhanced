@@ -5,10 +5,50 @@ import com.juren233.hyperlyricsenhanced.lyric.model.LyricWord
 import com.juren233.hyperlyricsenhanced.lyric.model.RichLyricLine
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class IslandSlotContentAssemblerTest {
+
+    @Test
+    fun `artwork is kept when lyric and media titles differ only by spacing or suffix`() {
+        assertFalse(
+            IslandSlotContentAssembler.shouldRejectArtworkForTitleMismatch(
+                lyricTitle = "Michi Teyu Ku (Overflowing)",
+                mediaTitle = "Michi Teyu Ku"
+            )
+        )
+        assertFalse(
+            IslandSlotContentAssembler.shouldRejectArtworkForTitleMismatch(
+                lyricTitle = "満ちてゆく",
+                mediaTitle = "満ちて ゆく"
+            )
+        )
+    }
+
+    @Test
+    fun `artwork rejection identifies a real lyric media title mismatch`() {
+        assertTrue(
+            IslandSlotContentAssembler.shouldRejectArtworkForTitleMismatch(
+                lyricTitle = "Completely Different Song",
+                mediaTitle = "Current Media Song"
+            )
+        )
+    }
+
+    @Test
+    fun `artwork is kept when media title is a lyric line with matching artist`() {
+        assertFalse(
+            IslandSlotContentAssembler.shouldRejectArtworkForTitleMismatch(
+                lyricTitle = "NIGHT DANCER",
+                mediaTitle = "響めき煌めきと君も 但身边有着那声响 光芒 还有你",
+                lyricArtist = "imase",
+                mediaArtist = "imase - NIGHT DANCER",
+                mediaAlbum = "NIGHT DANCER"
+            )
+        )
+    }
 
     @Test
     fun `equal content in different line instances is not a transition`() {
@@ -52,6 +92,78 @@ class IslandSlotContentAssemblerTest {
                 attached = true
             )
         )
+    }
+
+    @Test
+    fun `stable lyric title prevents notification lyric title from refreshing song info`() {
+        val beforeCorrection = IslandSlotContentAssembler.buildMetadataLine(
+            mode = 5,
+            songName = IslandSlotContentAssembler.resolveMetadataSongName(
+                lyricSongName = "NIGHT DANCER",
+                currentSongName = "The current lyric line",
+                mediaTitle = "The current lyric line"
+            ),
+            artistName = "imase",
+            albumName = "NIGHT DANCER"
+        )
+        val afterCorrection = IslandSlotContentAssembler.buildMetadataLine(
+            mode = 5,
+            songName = IslandSlotContentAssembler.resolveMetadataSongName(
+                lyricSongName = "NIGHT DANCER",
+                currentSongName = "NIGHT DANCER",
+                mediaTitle = "NIGHT DANCER"
+            ),
+            artistName = "imase",
+            albumName = "NIGHT DANCER"
+        )
+
+        assertFalse(
+            IslandSlotContentAssembler.hasLineContentChanged(beforeCorrection, afterCorrection)
+        )
+    }
+
+    @Test
+    fun `real song title change still refreshes song info`() {
+        val current = IslandSlotContentAssembler.buildMetadataLine(
+            mode = 5,
+            songName = "Current song",
+            artistName = "Artist",
+            albumName = "Album"
+        )
+        val next = IslandSlotContentAssembler.buildMetadataLine(
+            mode = 5,
+            songName = "Next song",
+            artistName = "Artist",
+            albumName = "Album"
+        )
+
+        assertTrue(IslandSlotContentAssembler.hasLineContentChanged(current, next))
+    }
+
+    @Test
+    fun `volatile notification title does not change final style cache identity`() {
+        val stableMediaKey = "player\u001FNIGHT DANCER\u001Fimase\u001FNIGHT DANCER"
+        val before = IslandSlotContentAssembler.buildStyleCacheSignature(
+            styleSignature = "configured-style",
+            mode = 5,
+            mediaColorKey = stableMediaKey,
+            artworkContentKey = 42
+        )
+        val afterNotificationLyric = IslandSlotContentAssembler.buildStyleCacheSignature(
+            styleSignature = "configured-style",
+            mode = 5,
+            mediaColorKey = stableMediaKey,
+            artworkContentKey = 42
+        )
+        val nextSong = IslandSlotContentAssembler.buildStyleCacheSignature(
+            styleSignature = "configured-style",
+            mode = 5,
+            mediaColorKey = "player\u001FNext song\u001Fimase\u001FNext album",
+            artworkContentKey = 84
+        )
+
+        assertEquals(before, afterNotificationLyric)
+        assertNotEquals(before, nextSong)
     }
 
     @Test

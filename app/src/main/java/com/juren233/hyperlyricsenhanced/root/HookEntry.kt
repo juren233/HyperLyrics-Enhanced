@@ -27,6 +27,7 @@ import com.juren233.hyperlyricsenhanced.root.aitrans.AITranslator
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.common.UIConstants
+import com.juren233.hyperlyricsenhanced.online.utils.ChineseUtils
 import io.github.libxposed.api.XposedInterface.Chain
 import io.github.libxposed.api.XposedInterface.Hooker
 import io.github.libxposed.api.XposedModule
@@ -133,6 +134,11 @@ class HookEntry : XposedModule() {
         super.onModuleLoaded(param)
         instance = this
         HookLogger.module = this
+        runCatching {
+            ChineseUtils.setModuleApkPath(moduleApplicationInfo.sourceDir)
+        }.onFailure {
+            HookLogger.e("HookEntry", "繁简转换字典路径初始化失败", it)
+        }
         HookLogger.i("HookEntry", "模块加载完成，当前应用版本${com.juren233.hyperlyricsenhanced.BuildConfig.VERSION_NAME}-${com.juren233.hyperlyricsenhanced.BuildConfig.VERSION_CODE}")
     }
 
@@ -320,7 +326,11 @@ class HookEntry : XposedModule() {
                     key == RootConstants.KEY_HOOK_APPLE_MUSIC_ONLINE_FALLBACK ||
                     key == RootConstants.KEY_HOOK_APPLE_MUSIC_FALLBACK_QQ_FIRST ||
                     key == RootConstants.KEY_HOOK_APPLE_MUSIC_MATCH_ONLINE_TRANSLATION ||
-                    key == RootConstants.KEY_HOOK_APPLE_MUSIC_TRANSLATION_QQ_FIRST
+                    key == RootConstants.KEY_HOOK_APPLE_MUSIC_TRANSLATION_QQ_FIRST ||
+                    key == RootConstants.KEY_HOOK_APPLE_MUSIC_RESTORE_CJK_ORIGINAL_METADATA ||
+                    key == RootConstants.KEY_HOOK_APPLE_MUSIC_SIMPLIFY_TRADITIONAL_LYRICS ||
+                    key == RootConstants.KEY_HOOK_APPLE_MUSIC_NATIVE_ONLINE_TRANSLATION ||
+                    key == RootConstants.KEY_HOOK_APPLE_MUSIC_HIDE_MANDARIN_PINYIN
                 ) {
                     lyriconSource.onPreferenceChanged(key)
                 }
@@ -346,7 +356,8 @@ class HookEntry : XposedModule() {
                         }
                     }
                     RootConstants.KEY_HOOK_ENABLE_SUPER_ISLAND,
-                    RootConstants.KEY_HOOK_ENABLE_AOD_LYRICS -> {
+                    RootConstants.KEY_HOOK_ENABLE_AOD_LYRICS,
+                    RootConstants.KEY_HOOK_APPLE_MUSIC_NATIVE_ONLINE_TRANSLATION -> {
                         android.os.Handler(android.os.Looper.getMainLooper()).post {
                             ClassicAodFocusNotificationRecovery.ensureListenerCanRecover(app, prefs)
                             updateFeatureRuntime()
@@ -382,10 +393,12 @@ class HookEntry : XposedModule() {
                     RootConstants.KEY_HOOK_CLASSIC_AOD_SONG_INFO_TEXT_SIZE,
                     RootConstants.KEY_HOOK_CLASSIC_AOD_SONG_INFO_SHOW_ICON,
                     RootConstants.KEY_HOOK_CLASSIC_AOD_NEXT_SONG_PREVIEW,
-                    RootConstants.KEY_HOOK_CLASSIC_AOD_NEXT_SONG_PREVIEW_POSITION -> {
+                    RootConstants.KEY_HOOK_CLASSIC_AOD_NEXT_SONG_PREVIEW_POSITION,
+                    RootConstants.KEY_HOOK_REMOVE_CJK_LYRIC_SPACES -> {
                         android.os.Handler(android.os.Looper.getMainLooper()).post {
                             ClassicAodFocusNotificationRecovery.ensureListenerCanRecover(app, prefs)
                             NotificationMediaAodLyricHooker.refresh()
+                            BaseIslandRenderer.refreshActiveIsland()
                         }
                     }
                     RootConstants.KEY_HOOK_ISLAND_ALBUM_COVER_STYLE,

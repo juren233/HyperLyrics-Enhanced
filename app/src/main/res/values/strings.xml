@@ -5,7 +5,7 @@
     <string name="module_update_available_notice">当前模块有新版本，建议去GitHub仓库下载更新</string>
     <string name="module_update_available_version">有新版本：%1$s</string>
     <string name="apple_music_provider_description">内置 Apple Music 逐字歌词提供器</string>
-    <string name="app_description">在 HyperOS3 媒体超级岛上体验歌词，以带来更好的体验</string>
+    <string name="app_description">在 HyperOS3 媒体超级岛与米系AOD上体验歌词，更有 Apple Music 专属体验优化</string>
     <string name="label_lyric_listener_service">获取媒体信息权限</string>
     <string name="label_lyric_enable_service">HyperLyrics Enhanced 媒体信息监听</string>
     <string name="provider_release_home">https://github.com/proify/LyricProvider/releases</string>
@@ -26,6 +26,7 @@
     <string name="confirm">确认</string>
     <string name="toast_no_root">应用未获取root权限</string>
     <string name="title_basic_features">基础功能</string>
+    <string name="title_lyric_settings">歌词设置</string>
     <string name="title_super_island_lyrics">超级岛歌词</string>
     <string name="summary_super_island_lyrics">仅支持已安装LSPosed v2.0的HyperOS 3设备</string>
     <string name="title_miui_systemui_enhancement">小米系统界面增强</string>
@@ -44,8 +45,31 @@
     <string name="title_remove_focus_whitelist">移除焦点通知白名单</string>
     <string name="summary_remove_focus_whitelist">不要和其他模块的相同功能冲突使用</string>
     <string name="title_remove_island_whitelist">移除下拉小窗白名单</string>
+    <string name="title_apple_music_optimization">Apple Music体验优化功能</string>
+    <string name="title_apple_music_optimization_page">Apple Music体验优化</string>
+    <string name="summary_apple_music_optimization_page">可能存在未知bug/性能缺陷/版本不适配等问题</string>
+    <string name="title_apple_music_app_content">App内容</string>
     <string name="title_apple_music_content_ui_language">将Apple Music改成其他地区</string>
     <string name="summary_apple_music_content_ui_language">可能影响加载速度，仅用于内容UI语言切换，无法播放/使用账号所在地区没有的歌曲/服务，此类歌曲/服务只能浏览</string>
+    <string name="title_apple_music_override_account_language">歌曲信息替换至设定地区语言</string>
+    <string name="title_apple_music_localized_metadata_cache">创建检索库以提升替换体验</string>
+    <string name="summary_apple_music_localized_metadata_cache">极少量空间占用换取高效率性能，当关闭时冷启动后需重新抓取歌曲信息，推荐开启</string>
+    <string name="title_apple_music_app_features">App功能</string>
+    <string name="title_apple_music_app_display">App显示</string>
+    <string name="title_apple_music_notification_open_full_player">点击媒体通知直接跳转播放页</string>
+    <string name="title_apple_music_simplify_traditional_lyrics">将繁体歌词转成简体</string>
+    <string name="title_apple_music_native_online_translation">补全歌词翻译与发音</string>
+    <string name="summary_apple_music_native_online_translation">优先使用Apple源，三方在线源兜底</string>
+    <string name="title_apple_music_hide_mandarin_pinyin">不显示国语歌拼音</string>
+    <string name="title_apple_music_lyrics_blur_effect">歌词模糊效果</string>
+    <string name="option_apple_music_lyrics_blur_effect_off">不开启</string>
+    <string name="option_apple_music_lyrics_blur_effect_native">原生模糊</string>
+    <string name="option_apple_music_lyrics_blur_effect_advanced_material">高级材质</string>
+    <string name="title_apple_music_lyrics_blur_custom_values">模糊值自定义</string>
+    <string name="label_apple_music_lyrics_blur_min_value">最小值（%1$s），默认 %2$s（范围 %3$s-%4$s）</string>
+    <string name="label_apple_music_lyrics_blur_max_value">最大值（%1$s），默认 %2$s（范围 %3$s-%4$s）</string>
+    <string name="title_apple_music_follow_system_font_weight">跟随系统字体粗细</string>
+    <string name="title_apple_music_restore_cjk_original_metadata">替换中日韩歌曲信息为原地区原名</string>
     <string name="option_apple_music_content_ui_language_none">不开启</string>
     <string name="option_apple_music_content_ui_language_zh_hans_cn">简体中文（中国）</string>
     <string name="option_apple_music_content_ui_language_zh_hans_us">简体中文（美国）</string>
@@ -119,19 +143,25 @@
     <string name="title_restore">恢复</string>
     <string name="title_debug_info">调试信息</string>
     <string name="title_view_logs">查看日志</string>
+    <string name="export_all_logs">导出全部日志</string>
 
     <!-- ———————————————————————— HookSettingsPage ———————————————————————— -->
     <string name="lyric_mode_verbatim">逐字歌词</string>
     <string name="lyric_mode_separated">分离歌词</string>
     <string name="title_lyric_mode">歌词模式</string>
     <string name="title_lyric_source">歌词源</string>
+    <string name="summary_lyric_source_apple_music_builtin">Apple Music已内置在Lyricon源，无需额外模块即可使用</string>
     <string name="lyric_source_lyricon">Lyricon</string>
     <string name="lyric_source_superlyric">SuperLyric</string>
     <string name="lyric_source_lyricinfo">LyricInfo</string>
+    <string name="title_lyric_acquisition_sources">获取来源</string>
+    <string name="title_lyric_display_group">显示</string>
     <string name="title_apple_music_online_fallback">Apple Music 无歌词时使用在线歌词兜底</string>
     <string name="summary_apple_music_online_fallback">优先等待 Apple Music 原生歌词，超时无歌词后转用三方逐行歌词，小概率出现歌词错误等意外情况</string>
     <string name="title_apple_music_fallback_qq_first">优先 QQ 音乐兜底</string>
     <string name="summary_apple_music_fallback_qq_first">关闭时优先从网易云音乐获取歌词</string>
+    <string name="title_remove_cjk_lyric_spaces">移除中日韩歌词中的空格</string>
+    <string name="summary_remove_cjk_lyric_spaces">仅在超级岛、实时动态通知以及AOD中生效</string>
     <string name="title_custom_config">自定义配置</string>
     <string name="title_super_island">超级岛</string>
     <string name="subtitle_super_island">暂停或切换音乐后生效</string>
@@ -483,7 +513,7 @@
 
     <!-- Super Island Help -->
     <string name="summary_help_supported_devices">仅支持已安装 LSPosed v2.0+ 的 HyperOS 3 设备</string>
-    <string name="summary_help_prerequisites">① 在 LSPosed 中启用 HyperLyrics Enhanced，并勾选推荐作用域 App\n② 打开主页的“小米超级岛歌词”开关，并选择合适的歌词源\n③ 根据歌词源需要，重启系统界面或重启手机</string>
+    <string name="summary_help_prerequisites">① 在 LSPosed 中启用 HyperLyrics Enhanced，并勾选推荐作用域 App\n② 在主页“歌词设置”中选择合适的歌词源，并按需打开“小米系统界面增强”\n③ 根据歌词源需要，重启系统界面或重启手机</string>
     <string name="title_help_lyric_sources">歌词源</string>
     <string name="summary_help_source_lyricon">Apple Music 用户：Provider 已内置，只需在 LSPosed 中为 HyperLyrics Enhanced 勾选推荐作用域 App，即可开箱即用，无需安装 Lyricon、Lyricon Central 或独立 LyricProvider。\n\n其余音乐 App 尚未测试，仍需按教程补充安装 Lyricon Central 和对应的 LyricProvider。设置中的“Lyricon”仅为内部歌词管线名称。完成配置后请重启系统界面和音乐 App。</string>
     <string name="summary_help_source_superlyric">重启手机</string>

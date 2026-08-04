@@ -84,4 +84,75 @@ class ChangelogDataTest {
         )
         assertFalse(content.summary.contains("最新提交"))
     }
+
+    @Test
+    fun `first release line is enlarged and download instructions are hidden`() {
+        val content = ChangelogData.normalizeReleaseContent(
+            """
+                feat: 新增双 AOD 歌词与更新检测
+
+                新增功能：
+
+                - 新增模块版本后台检测。
+
+                <details>
+                <summary>自上次 Release 以来的提交记录</summary>
+
+                - ci: 自动同步 LSPosed 发布
+
+                </details>
+
+                ## 下载说明
+
+                日常使用请选择 **Release** 包。
+            """.trimIndent()
+        )
+
+        assertEquals("feat: 新增双 AOD 歌词与更新检测", content.title)
+        assertEquals(
+            """
+                新增功能：
+
+                - 新增模块版本后台检测。
+
+                ### 自上次 Release 以来的提交记录
+
+                - ci: 自动同步 LSPosed 发布
+            """.trimIndent(),
+            content.summary
+        )
+        assertFalse(content.summary.contains("下载说明"))
+        assertFalse(content.summary.contains("日常使用请选择"))
+    }
+
+    @Test
+    fun `download section ends at the next sibling heading`() {
+        val content = ChangelogData.normalizeReleaseContent(
+            """
+                feat: 保留后续章节
+
+                正文
+
+                ## 下载说明
+
+                需要隐藏
+
+                ## 致谢
+
+                需要保留
+            """.trimIndent()
+        )
+
+        assertEquals("feat: 保留后续章节", content.title)
+        assertEquals(
+            """
+                正文
+
+                ## 致谢
+
+                需要保留
+            """.trimIndent(),
+            content.summary
+        )
+    }
 }

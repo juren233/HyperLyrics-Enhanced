@@ -2,17 +2,18 @@ package com.juren233.hyperlyricsenhanced.root
 
 import android.os.SystemClock
 import com.juren233.hyperlyricsenhanced.common.lyric.LyricMetadataKeys
-import com.juren233.hyperlyricsenhanced.lyric.source.StateResetter
-import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import com.juren233.hyperlyricsenhanced.lyric.model.RichLyricLine
 import com.juren233.hyperlyricsenhanced.lyric.model.Song
 import com.juren233.hyperlyricsenhanced.lyric.model.extensions.TimingNavigator
 import com.juren233.hyperlyricsenhanced.lyric.model.interfaces.IRichLyricLine
+import com.juren233.hyperlyricsenhanced.lyric.model.lyricMetadataOf
+import com.juren233.hyperlyricsenhanced.lyric.source.StateResetter
 import com.juren233.hyperlyricsenhanced.lyric.view.InterludeTracker
 import com.juren233.hyperlyricsenhanced.lyric.view.SongPreprocessor
 import com.juren233.hyperlyricsenhanced.lyric.view.TimedLine
 import com.juren233.hyperlyricsenhanced.lyric.view.TitleSlot
-import com.juren233.hyperlyricsenhanced.lyric.model.lyricMetadataOf
+import com.juren233.hyperlyricsenhanced.root.utils.DisplayDiagnosticLogger
+import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 
 object LyriconDataBridge : StateResetter {
 
@@ -65,6 +66,11 @@ object LyriconDataBridge : StateResetter {
     fun updateLyricPackage(packageName: String?) {
         activePackageName = packageName
         currentLyricPackageName = packageName
+        DisplayDiagnosticLogger.log(
+            channel = "BRIDGE",
+            result = if (packageName.isNullOrBlank()) "skipped" else "accepted",
+            reason = if (packageName.isNullOrBlank()) "package_missing" else "package_updated",
+        )
     }
 
     private var timingNavigator: TimingNavigator<TimedLine> = TimingNavigator(emptyArray())
@@ -104,6 +110,15 @@ object LyriconDataBridge : StateResetter {
             unmergedTimingNavigator = TimingNavigator(emptyArray())
             interludeTracker = InterludeTracker()
         }
+        DisplayDiagnosticLogger.log(
+            channel = "BRIDGE",
+            result = if (song == null) "cleared" else "accepted",
+            reason = if (song == null) "song_cleared" else if (song.lyrics.isNullOrEmpty()) {
+                "song_without_lyrics"
+            } else {
+                "song_updated"
+            },
+        )
     }
 
     fun applyTranslation(translatedSong: Song) {
@@ -131,6 +146,11 @@ object LyriconDataBridge : StateResetter {
     fun updatePlaybackState(isPlaying: Boolean) {
         currentPlaybackState = isPlaying
         playbackPositionEstimator.setPlaying(isPlaying, monotonicTimeMs())
+        DisplayDiagnosticLogger.log(
+            channel = "BRIDGE",
+            result = "accepted",
+            reason = "playback_state_updated",
+        )
     }
 
     private fun monotonicTimeMs(): Long = try {
@@ -142,10 +162,19 @@ object LyriconDataBridge : StateResetter {
 
     private fun applyPosition(position: Long): Boolean {
         currentPosition = position
-        if (isTextMode) return false
-        val song = currentSong ?: return false
+        if (isTextMode) {
+            DisplayDiagnosticLogger.log("BRIDGE", "skipped", "text_mode")
+            return false
+        }
+        val song = currentSong ?: run {
+            DisplayDiagnosticLogger.log("BRIDGE", "skipped", "no_song")
+            return false
+        }
         val lyrics = song.lyrics
-        if (lyrics.isNullOrEmpty()) return false
+        if (lyrics.isNullOrEmpty()) {
+            DisplayDiagnosticLogger.log("BRIDGE", "skipped", "no_lyrics")
+            return false
+        }
 
         val foundLine = timingNavigator.lineAtOrPrevious(position)
         currentUnmergedLyricLine = unmergedTimingNavigator.lineAtOrPrevious(position)
@@ -183,6 +212,13 @@ object LyriconDataBridge : StateResetter {
         val changed = displayLine !== previousLine || newText != currentLyric
 
         currentLyric = newText
+        if (changed) {
+            DisplayDiagnosticLogger.log(
+                channel = "BRIDGE",
+                result = if (displayLine == null) "skipped" else "accepted",
+                reason = if (displayLine == null) "no_line_for_position" else "line_changed",
+            )
+        }
         return changed
     }
 
@@ -213,13 +249,34 @@ object LyriconDataBridge : StateResetter {
         val preparedLine = findPreparedLine(line)
         val expectedLine = timingNavigator.findPreviousEntry(currentPosition)
         val callbackLine = preparedLine ?: line
-        if (expectedLine != null && callbackLine.begin < expectedLine.begin) return
-        if (preparedLine != null && currentPosition >= preparedLine.end) return
+        if (expectedLine != null && callbackLine.begin < expectedLine.begin) {
+            DisplayDiagnosticLogger.log(
+                "BRIDGE",
+                "skipped",
+                "stale_callback_line",
+                extra = "callbackBegin=${callbackLine.begin}, expectedBegin=${expectedLine.begin}",
+            )
+            return
+        }
+        if (preparedLine != null && currentPosition >= preparedLine.end) {
+            DisplayDiagnosticLogger.log(
+                "BRIDGE",
+                "skipped",
+                "expired_callback_line",
+                extra = "callbackEnd=${preparedLine.end}",
+            )
+            return
+        }
 
         currentLyricLine = preparedLine ?: line
         currentUnmergedLyricLine = line
         currentNextLyricLine = preparedLine?.next
         currentLyric = currentLyricLine?.text
+        DisplayDiagnosticLogger.log(
+            channel = "BRIDGE",
+            result = "accepted",
+            reason = if (preparedLine == null) "callback_line_unmatched" else "callback_line_matched",
+        )
     }
 
     override fun clearState() {
@@ -241,6 +298,7 @@ object LyriconDataBridge : StateResetter {
         unmergedTimingNavigator = TimingNavigator(emptyArray())
         interludeTracker = InterludeTracker()
         playbackPositionEstimator.reset()
+        DisplayDiagnosticLogger.clear("BRIDGE")
 
         versionCounter.incrementAndGet()
     }

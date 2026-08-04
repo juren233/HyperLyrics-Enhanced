@@ -1,5 +1,5 @@
 ﻿/*
- * Copyright 2026 Proify, Tomakino
+ * Copyright 2026 Proify, Tomakino, juren233
  * Licensed under the Apache License, Version 2.0
  * http://www.apache.org/licenses/LICENSE-2.0
  */
@@ -252,4 +252,3 @@ internal class WordSyncRenderer(private val view: LyricLineView) : LineRenderer 
         }
     }
 }
-

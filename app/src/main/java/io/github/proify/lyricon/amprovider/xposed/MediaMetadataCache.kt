@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 Proify, Tomakino
+ * Copyright 2026 juren233
  * Licensed under the Apache License, Version 2.0
  * http://www.apache.org/licenses/LICENSE-2.0
  */
@@ -19,8 +19,11 @@ object MediaMetadataCache {
     fun put(metadata: Metadata) {
         val current = metadataCache[metadata.id]
         metadataCache[metadata.id] = metadata.copy(
+            genre = mergeGenres(current?.genre, listOfNotNull(metadata.genre)),
             originalTitle = metadata.originalTitle ?: current?.originalTitle,
-            originalArtist = metadata.originalArtist ?: current?.originalArtist
+            originalArtist = metadata.originalArtist ?: current?.originalArtist,
+            originalMetadataResolved = metadata.originalMetadataResolved ||
+                current?.originalMetadataResolved == true,
         )
     }
 
@@ -28,12 +31,52 @@ object MediaMetadataCache {
     fun getMetadataById(mediaId: String): Metadata? = metadataCache[mediaId]
 
     @Synchronized
-    fun updateOriginalMetadata(mediaId: String, title: String?, artist: String?): Metadata? {
+    fun updateOriginalMetadata(
+        mediaId: String,
+        title: String?,
+        artist: String?,
+        resolved: Boolean = true,
+    ): Metadata? {
         val current = metadataCache[mediaId] ?: return null
-        val updated = current.copy(originalTitle = title, originalArtist = artist)
+        val updated = current.copy(
+            originalTitle = title,
+            originalArtist = artist,
+            originalMetadataResolved = resolved,
+        )
         metadataCache[mediaId] = updated
         return updated
     }
+
+    @Synchronized
+    fun updateDisplayMetadata(mediaId: String, title: String?, artist: String?): Metadata? {
+        val current = metadataCache[mediaId] ?: return null
+        val updated = current.copy(
+            title = title?.takeIf(String::isNotBlank) ?: current.title,
+            artist = artist?.takeIf(String::isNotBlank) ?: current.artist,
+        )
+        metadataCache[mediaId] = updated
+        return updated
+    }
+
+    @Synchronized
+    fun updateCatalogGenres(mediaId: String, genres: Collection<String>): Metadata? {
+        val current = metadataCache[mediaId] ?: return null
+        val mergedGenre = mergeGenres(current.genre, genres) ?: return current
+        if (mergedGenre == current.genre) return current
+        val updated = current.copy(genre = mergedGenre)
+        metadataCache[mediaId] = updated
+        return updated
+    }
+
+    private fun mergeGenres(current: String?, genres: Collection<String>): String? =
+        sequenceOf(current)
+            .plus(genres.asSequence())
+            .filterNotNull()
+            .map(String::trim)
+            .filter(String::isNotEmpty)
+            .distinct()
+            .joinToString(", ")
+            .takeIf(String::isNotEmpty)
 
     @Serializable
     data class Metadata(
@@ -43,6 +86,7 @@ object MediaMetadataCache {
         val genre: String?,
         val originalTitle: String? = null,
         val originalArtist: String? = null,
+        val originalMetadataResolved: Boolean = false,
         val duration: Long,
         val queueId: Long
     )

@@ -3,7 +3,8 @@ package com.juren233.hyperlyricsenhanced.lyric
 data class LrcLine(
     val startTimeMs: Long,
     val content: String,
-    val translation: String? = null
+    val translation: String? = null,
+    val romanization: String? = null,
 )
 
 data class LyricSearchParams(

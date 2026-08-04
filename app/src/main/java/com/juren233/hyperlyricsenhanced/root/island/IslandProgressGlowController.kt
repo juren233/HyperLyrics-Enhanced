@@ -6,7 +6,9 @@ import android.view.View
 import android.view.ViewGroup
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.common.media.MediaMetadataHelper
+import com.juren233.hyperlyricsenhanced.root.LyriconDataBridge
 import com.juren233.hyperlyricsenhanced.root.SystemUiEnhancementGate
+import com.juren233.hyperlyricsenhanced.root.utils.CoverColorDiagnostics
 import com.juren233.hyperlyricsenhanced.root.utils.CoverColorHelper
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import java.lang.ref.WeakReference
@@ -110,6 +112,22 @@ internal object IslandProgressGlowController {
             colors.progressEnd,
             colors.track,
             progressStyle
+        )
+        CoverColorDiagnostics.logEdgeProgress(
+            rootView = rootView,
+            packageName = packageName,
+            coverEnabled = colors.coverEnabled,
+            coverGradient = colors.coverGradient,
+            mediaKey = colors.mediaKey,
+            artworkState = colors.artworkState,
+            paletteSource = colors.paletteSource,
+            fallbackReason = colors.fallbackReason,
+            requestedKey = colors.requestedKey,
+            resolvedKey = colors.resolvedKey,
+            artworkSignature = colors.artworkSignature,
+            progressStart = colors.progressStart,
+            progressEnd = colors.progressEnd,
+            track = colors.track
         )
         logStage(
             rootView,
@@ -234,43 +252,71 @@ internal object IslandProgressGlowController {
         packageName: String,
         mediaInfo: MediaMetadataHelper.MediaInfo?
     ): ProgressColors {
-        if (!prefs.getBoolean(
-                RootConstants.KEY_HOOK_ISLAND_GLOW_EXTRACT_COLOR,
-                RootConstants.DEFAULT_HOOK_ISLAND_GLOW_EXTRACT_COLOR
-            )
-        ) {
-            return ProgressColors(
-                DEFAULT_PROGRESS_COLOR,
-                DEFAULT_PROGRESS_COLOR,
-                DEFAULT_TRACK_COLOR
-            )
-        }
-
+        val coverEnabled = prefs.getBoolean(
+            RootConstants.KEY_HOOK_ISLAND_GLOW_EXTRACT_COLOR,
+            RootConstants.DEFAULT_HOOK_ISLAND_GLOW_EXTRACT_COLOR
+        )
         val useGradient = prefs.getBoolean(
             RootConstants.KEY_HOOK_ISLAND_PROGRESS_GRADIENT,
             RootConstants.DEFAULT_HOOK_ISLAND_PROGRESS_GRADIENT
         )
+        if (!coverEnabled) {
+            return ProgressColors(
+                progressStart = DEFAULT_PROGRESS_COLOR,
+                progressEnd = DEFAULT_PROGRESS_COLOR,
+                track = DEFAULT_TRACK_COLOR,
+                coverEnabled = false,
+                coverGradient = useGradient,
+                mediaKey = CoverColorHelper.currentMediaKey(),
+                artworkState = if (mediaInfo?.albumArt != null) "present" else "missing",
+                fallbackReason = "SETTING_DISABLED"
+            )
+        }
+
+        val lyricSong = LyriconDataBridge.currentSong
+        val stableTitle = lyricSong?.name?.takeIf { it.isNotBlank() }
+            ?: LyriconDataBridge.currentSongName?.takeIf { it.isNotBlank() }
+        val stableArtist = lyricSong?.artist?.takeIf { it.isNotBlank() }
         val mediaColorKey = mediaInfo?.let {
             CoverColorHelper.updateMediaSession(
                 packageName = packageName,
                 title = it.title,
                 artist = it.artist,
-                album = it.album
+                album = it.album,
+                stableTitle = stableTitle,
+                stableArtist = stableArtist,
+                diagnosticSource = "island_edge_progress"
             )
         } ?: CoverColorHelper.currentMediaKey()
-        val palette = mediaInfo?.albumArt?.let {
-            CoverColorHelper.extractColors(it, useGradient, mediaColorKey)
-        } ?: CoverColorHelper.getCachedColors(useGradient, mediaColorKey)
-            ?: return ProgressColors(
-                DEFAULT_PROGRESS_COLOR,
-                DEFAULT_PROGRESS_COLOR,
-                DEFAULT_TRACK_COLOR
-            )
+        val resolvedPalette = CoverColorHelper.resolveColors(
+            bitmap = mediaInfo?.albumArt,
+            useGradient = useGradient,
+            songKey = mediaColorKey
+        ) ?: return ProgressColors(
+            progressStart = DEFAULT_PROGRESS_COLOR,
+            progressEnd = DEFAULT_PROGRESS_COLOR,
+            track = DEFAULT_TRACK_COLOR,
+            coverEnabled = true,
+            coverGradient = useGradient,
+            mediaKey = mediaColorKey,
+            artworkState = if (mediaInfo?.albumArt != null) "present" else "missing",
+            fallbackReason = "NO_ARTWORK_OR_CACHE"
+        )
+        val palette = resolvedPalette.colors
         val highlight = palette.second.firstOrNull()
             ?: return ProgressColors(
-                DEFAULT_PROGRESS_COLOR,
-                DEFAULT_PROGRESS_COLOR,
-                DEFAULT_TRACK_COLOR
+                progressStart = DEFAULT_PROGRESS_COLOR,
+                progressEnd = DEFAULT_PROGRESS_COLOR,
+                track = DEFAULT_TRACK_COLOR,
+                coverEnabled = true,
+                coverGradient = useGradient,
+                mediaKey = mediaColorKey,
+                artworkState = if (mediaInfo?.albumArt != null) "present" else "missing",
+                paletteSource = resolvedPalette.source,
+                requestedKey = resolvedPalette.requestedKey,
+                resolvedKey = resolvedPalette.resolvedKey,
+                artworkSignature = resolvedPalette.artworkSignature,
+                fallbackReason = "EMPTY_DARK_PALETTE"
             )
         val highlightEnd = if (useGradient) {
             palette.second.getOrNull(1) ?: highlight
@@ -281,7 +327,15 @@ internal object IslandProgressGlowController {
         return ProgressColors(
             progressStart = highlight,
             progressEnd = highlightEnd,
-            track = withAlpha(highlightBackground, COVER_TRACK_ALPHA)
+            track = withAlpha(highlightBackground, COVER_TRACK_ALPHA),
+            coverEnabled = true,
+            coverGradient = useGradient,
+            mediaKey = mediaColorKey,
+            artworkState = if (mediaInfo?.albumArt != null) "present" else "missing",
+            paletteSource = resolvedPalette.source,
+            requestedKey = resolvedPalette.requestedKey,
+            resolvedKey = resolvedPalette.resolvedKey,
+            artworkSignature = resolvedPalette.artworkSignature
         )
     }
 
@@ -311,7 +365,16 @@ internal object IslandProgressGlowController {
     private data class ProgressColors(
         val progressStart: Int,
         val progressEnd: Int,
-        val track: Int
+        val track: Int,
+        val coverEnabled: Boolean,
+        val coverGradient: Boolean,
+        val mediaKey: String?,
+        val artworkState: String,
+        val paletteSource: CoverColorHelper.PaletteSource? = null,
+        val requestedKey: String? = null,
+        val resolvedKey: String? = null,
+        val artworkSignature: Int? = null,
+        val fallbackReason: String? = null
     )
 
     private data class TimedPlaybackProgress(

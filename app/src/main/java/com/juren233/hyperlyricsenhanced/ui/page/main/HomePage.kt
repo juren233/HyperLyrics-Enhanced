@@ -36,14 +36,13 @@ fun HomePage(
     onDynamicIslandConfigClick: () -> Unit,
     onLockScreenAodConfigClick: () -> Unit,
     onClassicAodConfigClick: () -> Unit,
+    onLyricSettingsClick: () -> Unit,
     onRestartClick: () -> Unit,
     removeFocusWhitelist: Boolean,
     onRemoveFocusWhitelistToggle: (Boolean) -> Unit,
     removeIslandWhitelist: Boolean,
     onRemoveIslandWhitelistToggle: (Boolean) -> Unit,
-    appleMusicContentUiLanguage: Int,
-    appleMusicContentUiLanguageOptions: List<String>,
-    onAppleMusicContentUiLanguageChange: (Int) -> Unit,
+    onAppleMusicOptimizationClick: () -> Unit,
     onAppSettingsClick: () -> Unit,
 ) {
     val backdrop = rememberBlurBackdrop()
@@ -94,14 +93,13 @@ fun HomePage(
                     onDynamicIslandConfigClick = onDynamicIslandConfigClick,
                     onLockScreenAodConfigClick = onLockScreenAodConfigClick,
                     onClassicAodConfigClick = onClassicAodConfigClick,
+                    onLyricSettingsClick = onLyricSettingsClick,
                     onRestartClick = onRestartClick,
                     removeFocusWhitelist = removeFocusWhitelist,
                     onRemoveFocusWhitelistToggle = onRemoveFocusWhitelistToggle,
                     removeIslandWhitelist = removeIslandWhitelist,
                     onRemoveIslandWhitelistToggle = onRemoveIslandWhitelistToggle,
-                    appleMusicContentUiLanguage = appleMusicContentUiLanguage,
-                    appleMusicContentUiLanguageOptions = appleMusicContentUiLanguageOptions,
-                    onAppleMusicContentUiLanguageChange = onAppleMusicContentUiLanguageChange,
+                    onAppleMusicOptimizationClick = onAppleMusicOptimizationClick,
                     onAppSettingsClick = onAppSettingsClick,
                 )
             }

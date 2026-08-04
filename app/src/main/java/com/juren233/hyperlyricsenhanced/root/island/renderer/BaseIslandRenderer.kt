@@ -17,8 +17,9 @@ import com.juren233.hyperlyricsenhanced.root.island.IslandProgressGlowController
 import com.juren233.hyperlyricsenhanced.root.island.IslandSlotContentAssembler
 import com.juren233.hyperlyricsenhanced.root.island.IslandSlotRuntimeConfig
 import com.juren233.hyperlyricsenhanced.root.island.IslandViewRegistry
-import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import com.juren233.hyperlyricsenhanced.root.island.NextSongPreviewPolicy
+import com.juren233.hyperlyricsenhanced.root.utils.DisplayDiagnosticLogger
+import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import java.util.WeakHashMap
 
 object BaseIslandRenderer : IslandRenderer {
@@ -64,51 +65,113 @@ object BaseIslandRenderer : IslandRenderer {
     }
 
     private fun performRefreshActiveIsland() {
-        val prefs = HookEntry.instance?.prefs ?: return
+        val prefs = HookEntry.instance?.prefs ?: run {
+            DisplayDiagnosticLogger.log("ISLAND", "skipped", "preferences_unavailable")
+            return
+        }
         if (!prefs.getBoolean(RootConstants.KEY_HOOK_ENABLE_SUPER_ISLAND, RootConstants.DEFAULT_HOOK_ENABLE_SUPER_ISLAND)) {
             clearAllViews()
+            DisplayDiagnosticLogger.log("ISLAND", "hidden", "feature_disabled")
             return
         }
         if (!shouldRenderInjectedIsland()) {
             clearActiveViewsForPause()
+            DisplayDiagnosticLogger.log("ISLAND", "hidden", "pause_policy")
             return
         }
 
-        val lyricPkg = LyriconDataBridge.currentLyricPackageName?.takeIf { it.isNotEmpty() } ?: return
+        val lyricPkg = LyriconDataBridge.currentLyricPackageName?.takeIf { it.isNotEmpty() } ?: run {
+            DisplayDiagnosticLogger.log("ISLAND", "skipped", "package_missing")
+            return
+        }
 
         IslandSlotContentAssembler.invalidate()
         synchronized(nextSongPreviewActive) { nextSongPreviewActive.clear() }
         synchronized(nextSongPreviewFailures) { nextSongPreviewFailures.clear() }
 
         val activeViews = IslandViewRegistry.snapshotAttached(lyricPkg)
+        if (activeViews.isEmpty()) {
+            DisplayDiagnosticLogger.log("ISLAND", "skipped", "no_attached_view")
+            return
+        }
         val config = IslandSlotRuntimeConfig.from(prefs)
         activeViews.forEach { (cv, _) ->
             cv.post {
-                if (IslandLyricTextInjector.injectSlots(cv)) {
+                val injectionChanged = IslandLyricTextInjector.injectSlots(cv)
+                if (injectionChanged) {
                     IslandHostFacade.triggerSystemRelayout(cv)
                 } else {
                     IslandHostFacade.applyHostSettings(cv, prefs)
                 }
                 updateContentForView(cv, lyricPkg, prefs, config)
+                val injected = IslandLyricTextInjector.hasInjectedLyricText(cv)
+                DisplayDiagnosticLogger.log(
+                    channel = "ISLAND",
+                    result = if (injected) "shown" else "skipped",
+                    reason = if (injected) "injected_view_visible" else "injection_unavailable",
+                    extra = "targetViews=${activeViews.size}, injectionChanged=$injectionChanged, " +
+                        "playbackActive=$playbackActive",
+                    dedupeKey = "ISLAND/refresh",
+                )
             }
         }
 
         HookLogger.d("BaseIslandRenderer", "已刷新活动媒体岛: 数量=${activeViews.size}")
+        DisplayDiagnosticLogger.log(
+            channel = "ISLAND",
+            result = "pending",
+            reason = "refresh_scheduled",
+            extra = "targetViews=${activeViews.size}, playbackActive=$playbackActive",
+            dedupeKey = "ISLAND/refresh",
+        )
     }
 
     override fun updateLyricLine() {
-        if ((HookEntry.instance?.prefs?.getBoolean(RootConstants.KEY_HOOK_ENABLE_SUPER_ISLAND, RootConstants.DEFAULT_HOOK_ENABLE_SUPER_ISLAND)) != true) return
-        if (!shouldRenderInjectedIsland()) return
+        if ((HookEntry.instance?.prefs?.getBoolean(RootConstants.KEY_HOOK_ENABLE_SUPER_ISLAND, RootConstants.DEFAULT_HOOK_ENABLE_SUPER_ISLAND)) != true) {
+            DisplayDiagnosticLogger.log("ISLAND", "skipped", "feature_disabled")
+            return
+        }
+        if (!shouldRenderInjectedIsland()) {
+            DisplayDiagnosticLogger.log("ISLAND", "skipped", "pause_policy")
+            return
+        }
         val lyricPkg = LyriconDataBridge.currentLyricPackageName
-        if (lyricPkg.isNullOrEmpty()) return
+        if (lyricPkg.isNullOrEmpty()) {
+            DisplayDiagnosticLogger.log("ISLAND", "skipped", "package_missing")
+            return
+        }
 
-        val prefs = HookEntry.instance?.prefs ?: return
+        val prefs = HookEntry.instance?.prefs ?: run {
+            DisplayDiagnosticLogger.log("ISLAND", "skipped", "preferences_unavailable")
+            return
+        }
         val config = IslandSlotRuntimeConfig.from(prefs)
 
-        IslandViewRegistry.snapshotAttached(lyricPkg)
-            .forEach { (cv, _) ->
+        val activeViews = IslandViewRegistry.snapshotAttached(lyricPkg)
+        if (activeViews.isEmpty()) {
+            DisplayDiagnosticLogger.log("ISLAND", "skipped", "no_attached_view")
+            return
+        }
+        activeViews.forEach { (cv, _) ->
                 cv.post {
+                    if (!IslandLyricTextInjector.hasInjectedLyricText(cv)) {
+                        DisplayDiagnosticLogger.log(
+                            channel = "ISLAND",
+                            result = "skipped",
+                            reason = "injected_view_missing",
+                            extra = "targetViews=${activeViews.size}",
+                            dedupeKey = "ISLAND/line",
+                        )
+                        return@post
+                    }
                     updateLyricContentForView(cv, prefs, config)
+                    DisplayDiagnosticLogger.log(
+                        channel = "ISLAND",
+                        result = "shown",
+                        reason = "lyric_line_updated",
+                        extra = "targetViews=${activeViews.size}, playbackActive=$playbackActive",
+                        dedupeKey = "ISLAND/line",
+                    )
                 }
             }
     }
@@ -169,6 +232,16 @@ object BaseIslandRenderer : IslandRenderer {
         val behavior = prefs.getInt(
             RootConstants.KEY_HOOK_ISLAND_BEHAVIOR_AFTER_PAUSE,
             RootConstants.DEFAULT_HOOK_ISLAND_BEHAVIOR_AFTER_PAUSE
+        )
+        DisplayDiagnosticLogger.log(
+            channel = "ISLAND",
+            result = if (isPlaying || behavior != 0) "shown" else "hidden",
+            reason = if (isPlaying) "playback_resumed" else if (behavior == 0) {
+                "pause_policy_restore_native"
+            } else {
+                "pause_policy_keep_lyrics"
+            },
+            extra = "pauseBehavior=$behavior",
         )
 
         if (isPlaying) {

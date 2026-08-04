@@ -24,7 +24,11 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.overscroll
+import androidx.compose.foundation.rememberOverscrollEffect
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.withoutEventHandling
+import androidx.compose.foundation.withoutVisualEffect
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -39,6 +43,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -52,6 +57,8 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.edit
@@ -71,6 +78,9 @@ import com.juren233.hyperlyricsenhanced.ui.navigation.LocalNavigator
 import com.juren233.hyperlyricsenhanced.ui.navigation.Route
 import com.juren233.hyperlyricsenhanced.ui.utils.rememberBlurBackdrop
 import com.juren233.hyperlyricsenhanced.ui.page.main.AboutPage
+import com.juren233.hyperlyricsenhanced.ui.page.main.AboutHeroView
+import com.juren233.hyperlyricsenhanced.ui.page.main.AboutHeroVisualState
+import com.juren233.hyperlyricsenhanced.ui.page.main.AboutDebugLog
 import com.juren233.hyperlyricsenhanced.ui.page.main.HomePage
 import com.juren233.hyperlyricsenhanced.ui.page.main.rememberMainPagerState
 import kotlinx.coroutines.launch
@@ -118,6 +128,14 @@ fun MainPage() {
     // --- pager ---
     val pagerState = rememberPagerState(pageCount = { 2 })
     val mainPagerState = rememberMainPagerState(pagerState)
+    val pagerOverscrollEffect = rememberOverscrollEffect()
+    val pagerOverscrollEvents = remember(pagerOverscrollEffect) {
+        pagerOverscrollEffect?.withoutVisualEffect()
+    }
+    val sharedOverscrollVisual = remember(pagerOverscrollEffect) {
+        pagerOverscrollEffect?.withoutEventHandling()
+    }
+    var aboutHeroVisualState by remember { mutableStateOf(AboutHeroVisualState()) }
     LaunchedEffect(mainPagerState.pagerState.currentPage) {
         mainPagerState.syncPage()
     }
@@ -150,14 +168,6 @@ fun MainPage() {
     var removeIslandWhitelist by remember {
         mutableStateOf(prefs.getBoolean(RootConstants.KEY_HOOK_REMOVE_ISLAND_WHITELIST, RootConstants.DEFAULT_HOOK_REMOVE_ISLAND_WHITELIST))
     }
-    var appleMusicContentUiLanguage by remember {
-        mutableStateOf(
-            prefs.getInt(
-                RootConstants.KEY_HOOK_APPLE_MUSIC_CONTENT_UI_LANGUAGE,
-                RootConstants.DEFAULT_HOOK_APPLE_MUSIC_CONTENT_UI_LANGUAGE
-            )
-        )
-    }
 
     // --- dialogs ---
     var showRestartDialog by remember { mutableStateOf(false) }
@@ -188,11 +198,6 @@ fun MainPage() {
                     enableDynamicIsland = p.getBoolean(RootConstants.KEY_HOOK_ENABLE_DYNAMIC_ISLAND, RootConstants.DEFAULT_HOOK_ENABLE_DYNAMIC_ISLAND)
                 RootConstants.KEY_HOOK_ENABLE_AOD_LYRICS ->
                     enableAodLyrics = p.getBoolean(RootConstants.KEY_HOOK_ENABLE_AOD_LYRICS, RootConstants.DEFAULT_HOOK_ENABLE_AOD_LYRICS)
-                RootConstants.KEY_HOOK_APPLE_MUSIC_CONTENT_UI_LANGUAGE ->
-                    appleMusicContentUiLanguage = p.getInt(
-                        RootConstants.KEY_HOOK_APPLE_MUSIC_CONTENT_UI_LANGUAGE,
-                        RootConstants.DEFAULT_HOOK_APPLE_MUSIC_CONTENT_UI_LANGUAGE
-                    )
             }
         }
     }
@@ -326,27 +331,6 @@ fun MainPage() {
         }
     } }
 
-    val appleMusicContentUiLanguageOptions = listOf(
-        stringResource(R.string.option_apple_music_content_ui_language_none),
-        stringResource(R.string.option_apple_music_content_ui_language_zh_hans_cn),
-        stringResource(R.string.option_apple_music_content_ui_language_zh_hans_us),
-        stringResource(R.string.option_apple_music_content_ui_language_zh_hant_hk),
-        stringResource(R.string.option_apple_music_content_ui_language_zh_hant_tw),
-        stringResource(R.string.option_apple_music_content_ui_language_ko_kr),
-        stringResource(R.string.option_apple_music_content_ui_language_ja_jp),
-    )
-    val onAppleMusicContentUiLanguageChange: (Int) -> Unit = remember {
-        { selected ->
-            val value = selected.coerceIn(
-                RootConstants.APPLE_MUSIC_CONTENT_UI_LANGUAGE_NONE,
-                RootConstants.APPLE_MUSIC_CONTENT_UI_LANGUAGE_JA_JP
-            )
-            appleMusicContentUiLanguage = value
-            prefs.edit { putInt(RootConstants.KEY_HOOK_APPLE_MUSIC_CONTENT_UI_LANGUAGE, value) }
-            PrefsBridge.putInt(RootConstants.KEY_HOOK_APPLE_MUSIC_CONTENT_UI_LANGUAGE, value)
-        }
-    }
-
     val confirmPermissionSheet: () -> Unit = remember { {
         val hasPostNotification = ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
         val hasListenerPermission = NotificationManagerCompat.getEnabledListenerPackages(context).contains(context.packageName)
@@ -396,6 +380,15 @@ fun MainPage() {
         }
     }
     val aboutDeviceModel = remember { getSystemProperty("ro.product.marketname") ?: Build.MODEL }
+    val aboutDeviceName = remember(aboutDeviceModel) {
+        listOfNotNull(
+            runCatching {
+                Settings.Global.getString(context.contentResolver, "device_name")
+            }.getOrNull(),
+            getSystemProperty("persist.private.device_name"),
+            getSystemProperty("persist.sys.device_name"),
+        ).firstOrNull { it.isNotBlank() } ?: aboutDeviceModel
+    }
     val aboutOsVersion = remember { getSystemProperty("ro.build.version.incremental") ?: Build.DISPLAY }
     val aboutAndroidVersion = Build.VERSION.RELEASE
 
@@ -413,6 +406,30 @@ fun MainPage() {
     val outerBackdrop = rememberBlurBackdrop()
     val outerBlurActive = outerBackdrop != null
     val outerBarColor = if (outerBlurActive) Color.Transparent else MiuixTheme.colorScheme.surface
+    val appName = stringResource(R.string.app_name)
+    val darkMode = isSystemInDarkTheme()
+    val aboutPageOffsetFraction =
+        (pagerState.currentPage - 1 + pagerState.currentPageOffsetFraction).coerceIn(-1f, 1f)
+    val aboutPageInvolved = aboutPageOffsetFraction > -0.999f ||
+        pagerState.currentPage == 1 ||
+        pagerState.settledPage == 1 ||
+        pagerState.targetPage == 1
+    val aboutHeroEntryAlpha = if (pagerState.settledPage == 0 && aboutPageOffsetFraction < 0f) {
+        (1f + aboutPageOffsetFraction).coerceIn(0f, 1f)
+    } else {
+        1f
+    }
+    SideEffect {
+        AboutDebugLog.pager(
+            active = aboutPageInvolved,
+            offsetFraction = aboutPageOffsetFraction,
+            currentPage = pagerState.currentPage,
+            settledPage = pagerState.settledPage,
+            targetPage = pagerState.targetPage,
+            involved = aboutPageInvolved,
+            entryAlpha = aboutHeroEntryAlpha,
+        )
+    }
 
     // --- dialogs at outer level ---
     SimpleDialog(
@@ -562,12 +579,32 @@ fun MainPage() {
             }
         }
     ) { innerPadding ->
-        Box(modifier = if (outerBackdrop != null) Modifier.layerBackdrop(outerBackdrop) else Modifier) {
+        Box(
+            modifier = (if (outerBackdrop != null) Modifier.layerBackdrop(outerBackdrop) else Modifier)
+                .clipToBounds()
+                .overscroll(sharedOverscrollVisual),
+        ) {
+            AndroidView(
+                factory = { context -> AboutHeroView(context) },
+                update = { view ->
+                    view.bind(appName, darkMode)
+                    view.updateVisualState(
+                        active = aboutPageInvolved,
+                        backgroundAlpha = aboutHeroVisualState.backgroundAlpha,
+                        logoAlpha = aboutHeroVisualState.logoAlpha * aboutHeroEntryAlpha,
+                        logoScale = aboutHeroVisualState.logoScale,
+                        scrollOffsetPx = aboutHeroVisualState.scrollOffsetPx,
+                        pageOffsetFraction = aboutPageOffsetFraction,
+                    )
+                },
+                modifier = Modifier.fillMaxSize(),
+            )
             HorizontalPager(
                 state = pagerState,
                 modifier = Modifier.imePadding(),
                 beyondViewportPageCount = 1,
                 verticalAlignment = Alignment.Top,
+                overscrollEffect = pagerOverscrollEvents,
             ) { page ->
                 if (page == 0) {
                     HomePage(
@@ -584,14 +621,13 @@ fun MainPage() {
                         onDynamicIslandConfigClick = { navigator.navigate(Route.DynamicIslandNotification) },
                         onLockScreenAodConfigClick = { navigator.navigate(Route.LockScreenAodSettings) },
                         onClassicAodConfigClick = { navigator.navigate(Route.ClassicAodSettings) },
+                        onLyricSettingsClick = { navigator.navigate(Route.LyricSettings) },
                         onRestartClick = { showRestartDialog = true },
                         removeFocusWhitelist = removeFocusWhitelist,
                         onRemoveFocusWhitelistToggle = toggleRemoveFocusWhitelist,
                         removeIslandWhitelist = removeIslandWhitelist,
                         onRemoveIslandWhitelistToggle = toggleRemoveIslandWhitelist,
-                        appleMusicContentUiLanguage = appleMusicContentUiLanguage,
-                        appleMusicContentUiLanguageOptions = appleMusicContentUiLanguageOptions,
-                        onAppleMusicContentUiLanguageChange = onAppleMusicContentUiLanguageChange,
+                        onAppleMusicOptimizationClick = { navigator.navigate(Route.AppleMusicOptimization) },
                         onAppSettingsClick = { navigator.navigate(Route.Settings) },
                     )
                 } else {
@@ -599,6 +635,7 @@ fun MainPage() {
                         outerPadding = innerPadding,
                         aboutAppVersion = aboutAppVersion,
                         availableUpdateVersion = availableUpdate?.displayVersion,
+                        aboutDeviceName = aboutDeviceName,
                         aboutDeviceModel = aboutDeviceModel,
                         aboutOsVersion = aboutOsVersion,
                         aboutAndroidVersion = aboutAndroidVersion,
@@ -606,6 +643,11 @@ fun MainPage() {
                         onLicensesClick = { navigator.navigate(Route.Licenses) },
                         onChangelogClick = { navigator.navigate(Route.Changelog) },
                         onContributorsClick = { navigator.navigate(Route.Contributors) },
+                        onHeroStateChanged = { state ->
+                            if (aboutHeroVisualState != state) {
+                                aboutHeroVisualState = state
+                            }
+                        },
                     )
                 }
             }
@@ -686,6 +728,7 @@ fun MainPage() {
     }
 }
 
+/** 读取只读系统属性，获取失败时交由上层选择回退值。 */
 private fun getSystemProperty(key: String): String? {
     return try {
         val process = Runtime.getRuntime().exec("getprop $key")

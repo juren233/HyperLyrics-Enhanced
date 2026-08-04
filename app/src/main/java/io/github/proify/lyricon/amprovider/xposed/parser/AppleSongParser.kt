@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 Proify, Tomakino
+ * Copyright 2026 juren233
  * Licensed under the Apache License, Version 2.0
  * http://www.apache.org/licenses/LICENSE-2.0
  */
@@ -20,6 +20,11 @@ object AppleSongParser {
         }
 
         duration = callMethod(songNative, "getDuration") as? Int ?: 0
+
+        runCatching {
+            callMethod(songNative, "getPronunciationLanguages")
+                ?.let(StringVectorParser::parserStringVectorNative)
+        }.getOrNull()?.let { pronunciationLanguages = it }
 
         // language = get(o, "getLanguage") as? String
         // lyricsId = get(o, "getLyricsId") as? String

@@ -4,7 +4,9 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.text.TextPaint
 import android.view.View
+import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.common.RootConstants
+import com.juren233.hyperlyricsenhanced.common.lyric.CjkLyricWhitespacePolicy
 import com.juren233.hyperlyricsenhanced.common.lyric.LyricMetadataKeys
 import com.juren233.hyperlyricsenhanced.common.lyric.RichLyricLineSplitter
 import com.juren233.hyperlyricsenhanced.common.media.MediaMetadataHelper
@@ -17,13 +19,15 @@ import com.juren233.hyperlyricsenhanced.lyric.view.METADATA_NEXT_LINE_PREVIEW_AL
 import com.juren233.hyperlyricsenhanced.lyric.view.METADATA_NEXT_LINE_PREVIEW_CENTERED
 import com.juren233.hyperlyricsenhanced.lyric.view.RichLyricLineView
 import com.juren233.hyperlyricsenhanced.lyric.view.SpaceGateRichLyricLineView
+import com.juren233.hyperlyricsenhanced.lyric.view.LyricViewStyle
 import com.juren233.hyperlyricsenhanced.lyric.view.isTitleLine
 import com.juren233.hyperlyricsenhanced.lyric.view.yoyo.YoYoPresets
 import com.juren233.hyperlyricsenhanced.lyric.view.yoyo.animateEntrance
 import com.juren233.hyperlyricsenhanced.lyric.view.yoyo.animateUpdate
 import com.juren233.hyperlyricsenhanced.root.LyriconDataBridge
-import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import com.juren233.hyperlyricsenhanced.root.utils.CoverColorHelper
+import com.juren233.hyperlyricsenhanced.root.utils.CoverColorDiagnostics
+import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import com.juren233.hyperlyricsenhanced.root.utils.LyricStyleHelper
 import com.juren233.hyperlyricsenhanced.root.utils.TranslationHelper
 import java.util.WeakHashMap
@@ -31,6 +35,8 @@ import java.util.WeakHashMap
 internal object IslandSlotContentAssembler {
     private val lastContentSignatures = WeakHashMap<View, String>()
     private val lastStyleSignatures = WeakHashMap<View, String>()
+    // Keep the applied value across global invalidations so equal refreshes do not rebind style.
+    private val lastAppliedStyles = WeakHashMap<View, LyricViewStyle>()
     // Keep this across global refreshes so delayed fallback lyrics can detect the prior placeholder state.
     private val lastLyricAvailability = WeakHashMap<View, LyricAvailability>()
 
@@ -52,6 +58,7 @@ internal object IslandSlotContentAssembler {
         }
         synchronized(lastContentSignatures) { lastContentSignatures.remove(view) }
         synchronized(lastStyleSignatures) { lastStyleSignatures.remove(view) }
+        synchronized(lastAppliedStyles) { lastAppliedStyles.remove(view) }
         synchronized(lastLyricAvailability) { lastLyricAvailability.remove(view) }
     }
 
@@ -70,47 +77,150 @@ internal object IslandSlotContentAssembler {
         val lyricArtist = lyricSong?.artist?.takeIf { it.isNotBlank() }
         val mediaColorKey = CoverColorHelper.updateMediaSession(
             packageName = LyriconDataBridge.currentLyricPackageName.orEmpty(),
-            title = lyricTitle ?: mediaInfo.title,
-            artist = lyricArtist ?: mediaInfo.artist,
-            album = mediaInfo.album
+            title = mediaInfo.title,
+            artist = mediaInfo.artist,
+            album = mediaInfo.album,
+            stableTitle = lyricTitle,
+            stableArtist = lyricArtist,
+            diagnosticSource = "island_text"
         )
+        val artworkRejectedForTitleMismatch = mediaInfo.albumArt != null &&
+            shouldRejectArtworkForTitleMismatch(
+                lyricTitle = lyricTitle,
+                mediaTitle = mediaInfo.title,
+                lyricArtist = lyricArtist,
+                mediaArtist = mediaInfo.artist,
+                mediaAlbum = mediaInfo.album
+            )
         val albumBitmap = mediaInfo.albumArt.takeUnless {
-            lyricTitle != null &&
-                mediaInfo.title.isNotBlank() &&
-                !normalizeMediaText(lyricTitle).contains(normalizeMediaText(mediaInfo.title)) &&
-                !normalizeMediaText(mediaInfo.title).contains(normalizeMediaText(lyricTitle))
+            artworkRejectedForTitleMismatch
         }
-        val signature = listOf(
-            config.styleSignature,
-            mode,
-            mediaColorKey,
-            mediaInfo.title,
-            mediaInfo.artist,
-            mediaInfo.album,
-            albumBitmap?.let(CoverColorHelper::artworkContentKey) ?: 0
-        ).joinToString("|")
+        val artworkContentKey = albumBitmap?.let(CoverColorHelper::artworkContentKey) ?: 0
+        val signature = buildStyleCacheSignature(
+            styleSignature = config.styleSignature,
+            mode = mode,
+            mediaColorKey = mediaColorKey,
+            artworkContentKey = artworkContentKey
+        )
 
-        if (!force && lastStyleSignatures[view] == signature) return
-        val style = LyricStyleHelper.buildStyle(
+        val previousSignature = lastStyleSignatures[view]
+        val diagnosticInput = if (BuildConfig.DEBUG) {
+            CoverColorDiagnostics.StyleInput(
+                force = force,
+                mode = mode,
+                songVersion = LyriconDataBridge.versionCounter.get(),
+                lyricSongId = lyricSong?.id,
+                lyricTitle = lyricTitle,
+                lyricArtist = lyricArtist,
+                packageName = LyriconDataBridge.currentLyricPackageName.orEmpty(),
+                mediaTitle = mediaInfo.title,
+                mediaArtist = mediaInfo.artist,
+                mediaAlbum = mediaInfo.album,
+                mediaKey = mediaColorKey,
+                artworkState = when {
+                    mediaInfo.albumArt == null -> "missing"
+                    artworkRejectedForTitleMismatch -> "rejected_title_mismatch"
+                    else -> "accepted"
+                },
+                artworkDescription = mediaInfo.albumArt?.let { artwork ->
+                    "size=${artwork.width}x${artwork.height},generation=${artwork.generationId}," +
+                        "identity=${System.identityHashCode(artwork).toUInt().toString(16)}," +
+                        "acceptedContent=${artworkContentKey.toUInt().toString(16)}," +
+                        "recycled=${artwork.isRecycled}"
+                } ?: "none",
+                signature = signature,
+                previousSignature = previousSignature
+            )
+        } else {
+            null
+        }
+
+        if (!force && previousSignature == signature) {
+            diagnosticInput?.let { CoverColorDiagnostics.logStyleUnchanged(view, it) }
+            return
+        }
+        val buildResult = LyricStyleHelper.buildStyleWithDiagnostics(
             prefs = prefs,
             res = view.resources,
             mode = mode,
             albumBitmap = albumBitmap,
             mediaColorKey = mediaColorKey
         )
-        when (view) {
-            is RichLyricLineView -> {
-                view.setStyle(style)
-            }
-            is SpaceGateRichLyricLineView -> {
-                view.setStyle(style)
+        val style = buildResult.style
+        val styleChanged = synchronized(lastAppliedStyles) {
+            lastAppliedStyles[view] != style
+        }
+        if (styleChanged) {
+            when (view) {
+                is RichLyricLineView -> {
+                    view.setStyle(style)
+                }
+                is SpaceGateRichLyricLineView -> {
+                    view.setStyle(style)
+                }
             }
         }
+        synchronized(lastAppliedStyles) { lastAppliedStyles[view] = style }
         lastStyleSignatures[view] = signature
+        diagnosticInput?.let { input ->
+            if (styleChanged) {
+                CoverColorDiagnostics.logStyleApplied(view, input, buildResult.colorResolution)
+            } else {
+                CoverColorDiagnostics.logStyleUnchanged(view, input)
+            }
+        }
     }
+
+    internal fun buildStyleCacheSignature(
+        styleSignature: String,
+        mode: Int,
+        mediaColorKey: String,
+        artworkContentKey: Int
+    ): String = listOf(
+        styleSignature,
+        mode,
+        mediaColorKey,
+        artworkContentKey
+    ).joinToString("|")
 
     private fun normalizeMediaText(value: String): String {
         return value.trim().lowercase().filterNot(Char::isWhitespace)
+    }
+
+    internal fun shouldRejectArtworkForTitleMismatch(
+        lyricTitle: String?,
+        mediaTitle: String,
+        lyricArtist: String? = null,
+        mediaArtist: String = "",
+        mediaAlbum: String = ""
+    ): Boolean {
+        if (lyricTitle.isNullOrBlank() || mediaTitle.isBlank()) return false
+        val normalizedLyricTitle = normalizeMediaText(lyricTitle)
+        val normalizedMediaTitle = normalizeMediaText(mediaTitle)
+        if (normalizedLyricTitle.contains(normalizedMediaTitle) ||
+            normalizedMediaTitle.contains(normalizedLyricTitle)
+        ) {
+            return false
+        }
+
+        // Some players publish the current lyric sentence as MediaSession.title. The
+        // stable artist/album metadata still identifies the same track in that case.
+        val normalizedLyricArtist = lyricArtist?.let(::normalizeMediaText).orEmpty()
+        val normalizedMediaArtist = normalizeMediaText(mediaArtist)
+        if (normalizedLyricArtist.isNotEmpty() && normalizedMediaArtist.isNotEmpty() &&
+            (normalizedMediaArtist.contains(normalizedLyricArtist) ||
+                normalizedLyricArtist.contains(normalizedMediaArtist))
+        ) {
+            return false
+        }
+        val normalizedMediaAlbum = normalizeMediaText(mediaAlbum)
+        if (normalizedMediaAlbum.isNotEmpty() &&
+            (normalizedMediaAlbum.contains(normalizedLyricTitle) ||
+                normalizedLyricTitle.contains(normalizedMediaAlbum))
+        ) {
+            return false
+        }
+        return true
     }
 
     fun applySlotContent(
@@ -351,7 +461,7 @@ internal object IslandSlotContentAssembler {
         config: IslandSlotRuntimeConfig,
         isLeft: Boolean
     ): IRichLyricLine? {
-        val rawLine = processedRawLine(prefs, config)
+        val rawLine = displayLyricLine(prefs, processedRawLine(prefs, config))
         if (!config.isSplitMode || rawLine == null) return rawLine
         if (rawLine.text.isNullOrEmpty()) return rawLine
 
@@ -411,11 +521,14 @@ internal object IslandSlotContentAssembler {
         playbackActive: Boolean,
         suppressAnimation: Boolean
     ): Boolean {
-        val targetLine = lineOverride ?: buildSlotLyricLine(
-            view = view,
-            prefs = prefs,
-            config = config,
-            isLeft = view.tag == IslandProbeUtils.LEFT_TEST_VIEW_TAG
+        val targetLine = displayLyricLine(
+            prefs,
+            lineOverride ?: buildSlotLyricLine(
+                view = view,
+                prefs = prefs,
+                config = config,
+                isLeft = view.tag == IslandProbeUtils.LEFT_TEST_VIEW_TAG
+            )
         )
         val centerCurrentLine = shouldCenterLine(config, targetLine)
         val isNextLinePreview = targetLine?.metadata?.getBoolean(
@@ -483,7 +596,11 @@ internal object IslandSlotContentAssembler {
         mediaInfo: MediaMetadataHelper.MediaInfo,
         suppressAnimation: Boolean
     ): Boolean {
-        val songName = LyriconDataBridge.currentSongName?.takeIf { it.isNotEmpty() } ?: mediaInfo.title
+        val songName = resolveMetadataSongName(
+            lyricSongName = LyriconDataBridge.currentSong?.name,
+            currentSongName = LyriconDataBridge.currentSongName,
+            mediaTitle = mediaInfo.title
+        )
         val artistName = mediaInfo.artist
         val albumName = mediaInfo.album
 
@@ -499,22 +616,7 @@ internal object IslandSlotContentAssembler {
             config.metadataMarqueeLoopDelay,
             config.metadataMarqueeInfinite
         ).joinToString("|")
-        val singleModeText = when (mode) {
-            1 -> songName
-            2 -> artistName
-            3 -> albumName
-            4 -> "$songName - $artistName"
-            else -> ""
-        }
-        val newLine = when (mode) {
-            1, 2, 3, 4 -> RichLyricLine(text = singleModeText, words = emptyList())
-            5 -> RichLyricLine(text = songName, words = emptyList(), secondary = artistName, secondaryWords = emptyList())
-            6 -> {
-                val secondary = if (albumName.isEmpty()) artistName else "$artistName - $albumName"
-                RichLyricLine(text = songName, words = emptyList(), secondary = secondary, secondaryWords = emptyList())
-            }
-            else -> null
-        }
+        val newLine = buildMetadataLine(mode, songName, artistName, albumName)
         val contentChanged = hasViewLineContentChanged(view, newLine)
         if (!force && lastContentSignatures[view] == signature && !contentChanged) return false
 
@@ -522,17 +624,59 @@ internal object IslandSlotContentAssembler {
             applyLineCentering(target, config.centerLyric)
             when (target) {
                 is RichLyricLineView -> {
-                    target.line = newLine
+                    if (contentChanged) target.line = newLine
                     applyMetadataMarquee(target, config)
                 }
                 is SpaceGateRichLyricLineView -> {
-                    target.line = newLine
+                    if (contentChanged) target.line = newLine
                     applyMetadataMarquee(target, config)
                 }
             }
         }
         lastContentSignatures[view] = signature
         return true
+    }
+
+    internal fun resolveMetadataSongName(
+        lyricSongName: String?,
+        currentSongName: String?,
+        mediaTitle: String
+    ): String = lyricSongName?.takeIf { it.isNotBlank() }
+        ?: currentSongName?.takeIf { it.isNotBlank() }
+        ?: mediaTitle
+
+    internal fun buildMetadataLine(
+        mode: Int,
+        songName: String,
+        artistName: String,
+        albumName: String
+    ): IRichLyricLine? {
+        val singleModeText = when (mode) {
+            1 -> songName
+            2 -> artistName
+            3 -> albumName
+            4 -> "$songName - $artistName"
+            else -> ""
+        }
+        return when (mode) {
+            1, 2, 3, 4 -> RichLyricLine(text = singleModeText, words = emptyList())
+            5 -> RichLyricLine(
+                text = songName,
+                words = emptyList(),
+                secondary = artistName,
+                secondaryWords = emptyList()
+            )
+            6 -> {
+                val secondary = if (albumName.isEmpty()) artistName else "$artistName - $albumName"
+                RichLyricLine(
+                    text = songName,
+                    words = emptyList(),
+                    secondary = secondary,
+                    secondaryWords = emptyList()
+                )
+            }
+            else -> null
+        }
     }
 
     private fun applyContentUpdate(
@@ -646,6 +790,27 @@ internal object IslandSlotContentAssembler {
     private fun currentMediaInfo(context: Context): MediaMetadataHelper.MediaInfo {
         val targetPkg = LyriconDataBridge.currentLyricPackageName ?: ""
         return MediaMetadataHelper.getMediaInfo(context, targetPkg, HookLogger)
+    }
+
+    /**
+     * 按偏好生成超级岛/实时动态通知的最终歌词副本，不反写歌词源状态。
+     */
+    private fun displayLyricLine(
+        prefs: SharedPreferences,
+        line: IRichLyricLine?
+    ): IRichLyricLine? {
+        line ?: return null
+        if (line.isTitleLine() || (
+                LyriconDataBridge.currentLyricLine == null &&
+                    line.text == LyriconDataBridge.currentSongName
+                )) {
+            return line
+        }
+        val removeSpaces = prefs.getBoolean(
+            RootConstants.KEY_HOOK_REMOVE_CJK_LYRIC_SPACES,
+            RootConstants.DEFAULT_HOOK_REMOVE_CJK_LYRIC_SPACES,
+        )
+        return if (removeSpaces) CjkLyricWhitespacePolicy.transformLine(line) else line
     }
 
     private fun lineContentSignature(line: IRichLyricLine?): Int {

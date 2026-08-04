@@ -5,6 +5,23 @@ import com.juren233.hyperlyricsenhanced.common.color.ColorExtractor
 
 object CoverColorHelper {
 
+    internal enum class PaletteSource {
+        ARTWORK_ACTIVE_CACHE,
+        ARTWORK_KEYED_CACHE,
+        ARTWORK_SIGNATURE_CACHE,
+        ARTWORK_EXTRACTED,
+        KEYED_CACHE,
+        ACTIVE_CACHE
+    }
+
+    internal data class ResolvedPalette(
+        val colors: Pair<IntArray, IntArray>,
+        val source: PaletteSource,
+        val requestedKey: String,
+        val resolvedKey: String?,
+        val artworkSignature: Int?
+    )
+
     private data class ArtworkSignature(
         val width: Int,
         val height: Int,
@@ -28,18 +45,56 @@ object CoverColorHelper {
         packageName: String,
         title: String,
         artist: String,
-        album: String
+        album: String,
+        stableTitle: String? = null,
+        stableArtist: String? = null,
+        diagnosticSource: String = "unspecified"
     ): String {
-        val mediaKey = listOf(packageName, title, artist, album)
-            .joinToString("\u001F") { it.trim() }
+        val mediaKey = buildMediaKey(
+            packageName = packageName,
+            title = title,
+            artist = artist,
+            album = album,
+            stableTitle = stableTitle,
+            stableArtist = stableArtist
+        )
         if (activeMediaKey != mediaKey) {
+            val previousMediaKey = activeMediaKey
+            val previousCachedKey = cachedKey
+            val hadActivePalette = cachedLightColors != null && cachedDarkColors != null
             activeMediaKey = mediaKey
             cachedKey = null
             cachedArtworkSignature = null
             cachedLightColors = null
             cachedDarkColors = null
+            CoverColorDiagnostics.logMediaKeyChange(
+                source = diagnosticSource,
+                previousMediaKey = previousMediaKey,
+                mediaKey = mediaKey,
+                previousCachedKey = previousCachedKey,
+                hadActivePalette = hadActivePalette,
+                keyedCacheSize = keyedCache.size
+            )
         }
         return mediaKey
+    }
+
+    /**
+     * Build the cache identity from track metadata, preferring the source-owned identity
+     * when MediaSession temporarily publishes the current lyric line as its title.
+     */
+    internal fun buildMediaKey(
+        packageName: String,
+        title: String,
+        artist: String,
+        album: String,
+        stableTitle: String? = null,
+        stableArtist: String? = null
+    ): String {
+        val keyTitle = stableTitle?.trim()?.takeIf { it.isNotEmpty() } ?: title
+        val keyArtist = stableArtist?.trim()?.takeIf { it.isNotEmpty() } ?: artist
+        return listOf(packageName, keyTitle, keyArtist, album)
+            .joinToString("\u001F") { it.trim() }
     }
 
     fun currentMediaKey(): String? = activeMediaKey
@@ -47,6 +102,43 @@ object CoverColorHelper {
     fun artworkContentKey(bitmap: Bitmap): Int = bitmap.artworkSignature().hashCode()
 
     fun extractColors(bitmap: Bitmap, useGradient: Boolean, songKey: String? = null): Pair<IntArray, IntArray> {
+        return resolveArtworkColors(bitmap, useGradient, songKey).colors
+    }
+
+    internal fun resolveColors(
+        bitmap: Bitmap?,
+        useGradient: Boolean,
+        songKey: String? = null
+    ): ResolvedPalette? {
+        if (bitmap != null) return resolveArtworkColors(bitmap, useGradient, songKey)
+
+        val key = buildKey(useGradient, songKey)
+        keyedCache[key]?.let { entry ->
+            return ResolvedPalette(
+                colors = entry.colors,
+                source = PaletteSource.KEYED_CACHE,
+                requestedKey = key,
+                resolvedKey = key,
+                artworkSignature = entry.artworkSignature.hashCode()
+            )
+        }
+
+        val light = cachedLightColors ?: return null
+        val dark = cachedDarkColors ?: return null
+        return ResolvedPalette(
+            colors = Pair(light, dark),
+            source = PaletteSource.ACTIVE_CACHE,
+            requestedKey = key,
+            resolvedKey = cachedKey,
+            artworkSignature = cachedArtworkSignature?.hashCode()
+        )
+    }
+
+    private fun resolveArtworkColors(
+        bitmap: Bitmap,
+        useGradient: Boolean,
+        songKey: String?
+    ): ResolvedPalette {
         val key = buildKey(useGradient, songKey)
         val artworkSignature = bitmap.artworkSignature()
 
@@ -55,32 +147,50 @@ object CoverColorHelper {
             cachedLightColors != null &&
             cachedDarkColors != null
         ) {
-            return Pair(cachedLightColors!!, cachedDarkColors!!)
+            return ResolvedPalette(
+                colors = Pair(cachedLightColors!!, cachedDarkColors!!),
+                source = PaletteSource.ARTWORK_ACTIVE_CACHE,
+                requestedKey = key,
+                resolvedKey = cachedKey,
+                artworkSignature = artworkSignature.hashCode()
+            )
         }
         keyedCache[key]
             ?.takeIf { it.artworkSignature == artworkSignature }
-            ?.colors
-            ?.let { colors ->
+            ?.let { entry ->
                 cachedKey = key
                 cachedArtworkSignature = artworkSignature
-                cachedLightColors = colors.first
-                cachedDarkColors = colors.second
-                return colors
+                cachedLightColors = entry.colors.first
+                cachedDarkColors = entry.colors.second
+                return ResolvedPalette(
+                    colors = entry.colors,
+                    source = PaletteSource.ARTWORK_KEYED_CACHE,
+                    requestedKey = key,
+                    resolvedKey = key,
+                    artworkSignature = artworkSignature.hashCode()
+                )
             }
 
         // MediaSession and Lyricon can identify the same artwork with slightly different
         // metadata keys. Reuse the artwork result before running the randomized extractor again.
-        keyedCache.values
-            .firstOrNull { it.useGradient == useGradient && it.artworkSignature == artworkSignature }
-            ?.colors
-            ?.let { colors ->
+        keyedCache.entries
+            .firstOrNull { (_, entry) ->
+                entry.useGradient == useGradient && entry.artworkSignature == artworkSignature
+            }
+            ?.let { (_, entry) ->
                 cachedKey = key
                 cachedArtworkSignature = artworkSignature
-                cachedLightColors = colors.first
-                cachedDarkColors = colors.second
-                keyedCache[key] = CacheEntry(useGradient, artworkSignature, colors)
+                cachedLightColors = entry.colors.first
+                cachedDarkColors = entry.colors.second
+                keyedCache[key] = CacheEntry(useGradient, artworkSignature, entry.colors)
                 trimCache()
-                return colors
+                return ResolvedPalette(
+                    colors = entry.colors,
+                    source = PaletteSource.ARTWORK_SIGNATURE_CACHE,
+                    requestedKey = key,
+                    resolvedKey = key,
+                    artworkSignature = artworkSignature.hashCode()
+                )
             }
 
         val result = ColorExtractor.extractThemePalette(bitmap, if (useGradient) 4 else 1)
@@ -94,7 +204,13 @@ object CoverColorHelper {
         val pair = Pair(lightColors, darkColors)
         keyedCache[key] = CacheEntry(useGradient, artworkSignature, pair)
         trimCache()
-        return pair
+        return ResolvedPalette(
+            colors = pair,
+            source = PaletteSource.ARTWORK_EXTRACTED,
+            requestedKey = key,
+            resolvedKey = key,
+            artworkSignature = artworkSignature.hashCode()
+        )
     }
 
     fun getCachedColors(): Pair<IntArray, IntArray>? {

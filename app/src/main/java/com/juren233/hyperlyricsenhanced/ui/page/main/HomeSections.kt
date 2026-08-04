@@ -14,7 +14,6 @@ import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
-import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 
 fun LazyListScope.homePageSections(
     availableUpdateVersion: String?,
@@ -29,14 +28,13 @@ fun LazyListScope.homePageSections(
     onDynamicIslandConfigClick: () -> Unit,
     onLockScreenAodConfigClick: () -> Unit,
     onClassicAodConfigClick: () -> Unit,
+    onLyricSettingsClick: () -> Unit,
     onRestartClick: () -> Unit,
     removeFocusWhitelist: Boolean,
     onRemoveFocusWhitelistToggle: (Boolean) -> Unit,
     removeIslandWhitelist: Boolean,
     onRemoveIslandWhitelistToggle: (Boolean) -> Unit,
-    appleMusicContentUiLanguage: Int,
-    appleMusicContentUiLanguageOptions: List<String>,
-    onAppleMusicContentUiLanguageChange: (Int) -> Unit,
+    onAppleMusicOptimizationClick: () -> Unit,
     onAppSettingsClick: () -> Unit,
 ) {
     item(key = "enhanced_version_notice") {
@@ -53,6 +51,15 @@ fun LazyListScope.homePageSections(
     }
 
     item(key = "basic_features_content_super_island") {
+        Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
+            ArrowPreference(
+                title = stringResource(R.string.title_lyric_settings),
+                onClick = onLyricSettingsClick,
+            )
+        }
+    }
+
+    item(key = "basic_features_content_system_ui") {
         Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
             Column {
                 SwitchPreference(
@@ -151,14 +158,16 @@ fun LazyListScope.homePageSections(
                     checked = removeIslandWhitelist,
                     onCheckedChange = onRemoveIslandWhitelistToggle,
                 )
-                OverlayDropdownPreference(
-                    title = stringResource(R.string.title_apple_music_content_ui_language),
-                    summary = stringResource(R.string.summary_apple_music_content_ui_language),
-                    items = appleMusicContentUiLanguageOptions,
-                    selectedIndex = appleMusicContentUiLanguage.coerceIn(0, appleMusicContentUiLanguageOptions.lastIndex),
-                    onSelectedIndexChange = onAppleMusicContentUiLanguageChange,
-                )
             }
+        }
+    }
+
+    item(key = "apple_music_optimization") {
+        Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
+            ArrowPreference(
+                title = stringResource(R.string.title_apple_music_optimization),
+                onClick = onAppleMusicOptimizationClick,
+            )
         }
     }
 

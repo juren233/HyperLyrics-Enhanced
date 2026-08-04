@@ -1,6 +1,8 @@
 package com.juren233.hyperlyricsenhanced.online
 
 import android.content.Context
+import com.juren233.hyperlyricsenhanced.common.lyric.RomanizationPolicy
+import com.juren233.hyperlyricsenhanced.common.lyric.OnlineTranslationContentPolicy
 import com.juren233.hyperlyricsenhanced.lyric.LrcLine
 import com.juren233.hyperlyricsenhanced.online.model.LyricsResult
 import com.juren233.hyperlyricsenhanced.online.model.SearchSource
@@ -24,6 +26,7 @@ object OnlineLyricTargeter {
         durationMs: Long,
         originalTitle: String? = null,
         originalArtist: String? = null,
+        preferOriginalMetadata: Boolean = false,
         preferredSource: Source? = null,
         requireTranslation: Boolean = false,
         fallbackToOtherSources: Boolean = true
@@ -37,34 +40,42 @@ object OnlineLyricTargeter {
             fallbackToOtherSources = fallbackToOtherSources
         ).mapNotNull(sourcesByType::get)
 
-        searchSources(
-            context = context,
-            sources = sources,
-            title = title,
-            artist = artist,
-            durationMs = durationMs,
-            requireTranslation = requireTranslation,
-            metadataLabel = "当前元数据"
-        )?.let { return it }
-
-        if (!shouldRetryWithOriginalMetadata(title, artist, originalTitle, originalArtist)) {
-            return null
-        }
         val resolvedTitle = originalTitle?.takeIf { it.isNotBlank() } ?: title
         val resolvedArtist = originalArtist?.takeIf { it.isNotBlank() } ?: artist
-        LogManager.d(
-            "OnlineTargeter",
-            "使用 Apple 内部原名重试: $resolvedTitle / $resolvedArtist"
+        val hasDistinctOriginalMetadata = shouldRetryWithOriginalMetadata(
+            title,
+            artist,
+            originalTitle,
+            originalArtist,
         )
-        return searchSources(
-            context = context,
-            sources = sources,
-            title = resolvedTitle,
-            artist = resolvedArtist,
-            durationMs = durationMs,
-            requireTranslation = requireTranslation,
-            metadataLabel = "Apple 内部原名"
-        )
+        val searches = resolveMetadataSearchOrder(
+            preferOriginalMetadata = preferOriginalMetadata,
+            hasDistinctOriginalMetadata = hasDistinctOriginalMetadata,
+        ).map { useOriginalMetadata ->
+            if (useOriginalMetadata) {
+                SearchMetadata(resolvedTitle, resolvedArtist, "Apple 内部原名")
+            } else {
+                SearchMetadata(title, artist, "当前元数据")
+            }
+        }
+        searches.forEachIndexed { index, metadata ->
+            if (index > 0 && metadata.label == "Apple 内部原名") {
+                LogManager.d(
+                    "OnlineTargeter",
+                    "使用 Apple 内部原名重试: ${metadata.title} / ${metadata.artist}"
+                )
+            }
+            searchSources(
+                context = context,
+                sources = sources,
+                title = metadata.title,
+                artist = metadata.artist,
+                durationMs = durationMs,
+                requireTranslation = requireTranslation,
+                metadataLabel = metadata.label,
+            )?.let { return it }
+        }
+        return null
     }
 
     private suspend fun searchSources(
@@ -112,7 +123,14 @@ object OnlineLyricTargeter {
             var bestSong: SongSearchResult? = null
 
             for (song in results) {
-                val score = calculateScore(context, song, cleanLocalTitle, localArtists, localFeatures, durationMs)
+                val score = calculateScore(
+                    context,
+                    song,
+                    cleanLocalTitle,
+                    localArtists,
+                    localFeatures,
+                    durationMs,
+                )
                 if (score > localBestScore) {
                     localBestScore = score
                     bestSong = song
@@ -120,7 +138,11 @@ object OnlineLyricTargeter {
             }
 
             if (localBestScore > bestScore) bestScore = localBestScore
-            LogManager.d("OnlineTargeter", "评分: \"${bestSong?.title}\" - \"${bestSong?.artist}\", 得分=$localBestScore, 阈值=$PASS_SCORE, 通过=${localBestScore >= PASS_SCORE}")
+            LogManager.d(
+                "OnlineTargeter",
+                "评分: \"${bestSong?.title}\" - \"${bestSong?.artist}\", " +
+                    "得分=$localBestScore, 阈值=$PASS_SCORE, 通过=${localBestScore >= PASS_SCORE}"
+            )
 
             if (localBestScore >= PASS_SCORE && bestSong != null) {
                 val lyricsResult = withTimeoutOrNull(TIMEOUT_MS) {
@@ -137,7 +159,10 @@ object OnlineLyricTargeter {
                 if (lyricsResult != null && (lyricsResult.original.isNotEmpty() || !lyricsResult.translated.isNullOrEmpty())) {
                     val list = toLrcLines(lyricsResult)
                     if (list.isNotEmpty()) {
-                        if (requireTranslation && list.none { !it.translation.isNullOrBlank() }) {
+                        if (requireTranslation && list.none {
+                                OnlineTranslationContentPolicy.isMeaningful(it.translation)
+                            }
+                        ) {
                             LogManager.d(
                                 "OnlineTargeter",
                                 "当前源无可用翻译，继续尝试后续源: " +
@@ -175,6 +200,15 @@ object OnlineLyricTargeter {
             !resolvedArtist.equals(artist.trim(), ignoreCase = true)
     }
 
+    internal fun resolveMetadataSearchOrder(
+        preferOriginalMetadata: Boolean,
+        hasDistinctOriginalMetadata: Boolean,
+    ): List<Boolean> = when {
+        !hasDistinctOriginalMetadata -> listOf(false)
+        preferOriginalMetadata -> listOf(true, false)
+        else -> listOf(false, true)
+    }
+
     internal fun resolveSourceOrder(
         pkgName: String,
         preferredSource: Source?,
@@ -198,13 +232,25 @@ object OnlineLyricTargeter {
         val translationsByStart = lyricsResult.translated.orEmpty().associate { line ->
             line.start to line.words.joinToString("") { it.text }.trim()
         }
+        val romanizationsByStart = lyricsResult.romanization.orEmpty().associate { line ->
+            line.start to line.words
+                .map { it.text.trim() }
+                .filter(String::isNotEmpty)
+                .joinToString(" ")
+        }
         return lyricsResult.original.mapNotNull { line ->
             val content = line.words.joinToString("") { it.text }.trim()
             if (content.isEmpty()) return@mapNotNull null
             LrcLine(
                 startTimeMs = line.start,
                 content = content,
-                translation = translationsByStart[line.start]?.takeIf(String::isNotEmpty)
+                translation = OnlineTranslationContentPolicy.sanitize(
+                    translationsByStart[line.start]
+                ),
+                romanization = RomanizationPolicy.sanitize(
+                    originalText = content,
+                    pronunciation = romanizationsByStart[line.start],
+                ),
             )
         }
     }
@@ -266,4 +312,11 @@ object OnlineLyricTargeter {
 
     private fun splitArtists(value: String): List<String> =
         value.split("&", ",", "，", "、", "/", "／")
+
+    private data class SearchMetadata(
+        val title: String,
+        val artist: String,
+        val label: String,
+    )
+
 }

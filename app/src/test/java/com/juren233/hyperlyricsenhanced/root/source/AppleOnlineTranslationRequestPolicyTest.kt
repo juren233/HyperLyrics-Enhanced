@@ -10,6 +10,16 @@ import org.junit.Test
 
 class AppleOnlineTranslationRequestPolicyTest {
     @Test
+    fun `original metadata request does not block current metadata lookup`() {
+        val plan = AppleOnlineTranslationRequestPolicy.originalMetadataLookupPlan(
+            shouldRequestOriginalMetadata = true
+        )
+
+        assertTrue(plan.requestOriginalMetadata)
+        assertFalse(plan.waitForResult)
+    }
+
+    @Test
     fun `original metadata arrival creates a new translation attempt`() {
         val localized = song()
         val resolved = song(

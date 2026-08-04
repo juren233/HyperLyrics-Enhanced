@@ -19,6 +19,32 @@ import com.juren233.hyperlyricsenhanced.lyric.view.WordMotion
  */
 object LyricStyleHelper {
 
+    internal enum class FallbackReason {
+        SETTING_DISABLED,
+        NO_ARTWORK_OR_CACHE
+    }
+
+    internal data class ColorResolution(
+        val useCoverColor: Boolean,
+        val useCoverGradient: Boolean,
+        val paletteSource: CoverColorHelper.PaletteSource?,
+        val requestedKey: String?,
+        val resolvedKey: String?,
+        val artworkSignature: Int?,
+        val fallbackReason: FallbackReason?,
+        val primaryColors: IntArray,
+        val backgroundColors: IntArray,
+        val highlightColors: IntArray
+    ) {
+        val usesDefaultColors: Boolean
+            get() = fallbackReason != null
+    }
+
+    internal data class StyleBuildResult(
+        val style: LyricViewStyle,
+        val colorResolution: ColorResolution
+    )
+
     /**
      * 构建歌词样式对象
      */
@@ -28,7 +54,21 @@ object LyricStyleHelper {
         mode: Int,
         albumBitmap: Bitmap? = null,
         mediaColorKey: String? = CoverColorHelper.currentMediaKey()
-    ): LyricViewStyle {
+    ): LyricViewStyle = buildStyleWithDiagnostics(
+        prefs = prefs,
+        res = res,
+        mode = mode,
+        albumBitmap = albumBitmap,
+        mediaColorKey = mediaColorKey
+    ).style
+
+    internal fun buildStyleWithDiagnostics(
+        prefs: SharedPreferences,
+        res: Resources,
+        mode: Int,
+        albumBitmap: Bitmap? = null,
+        mediaColorKey: String? = CoverColorHelper.currentMediaKey()
+    ): StyleBuildResult {
         val fontSize = prefs.getInt(RootConstants.KEY_HOOK_TEXT_SIZE, RootConstants.DEFAULT_HOOK_TEXT_SIZE)
         val tf = FontHelper.loadTypeface(prefs)
 
@@ -79,36 +119,37 @@ object LyricStyleHelper {
         val primaryColors: IntArray
         val bgColors: IntArray
         val hlColors: IntArray
+        val resolvedPalette: CoverColorHelper.ResolvedPalette?
+        val fallbackReason: FallbackReason?
 
         if (useCoverColor) {
-            if (albumBitmap != null) {
-                val (_, darkColors) = CoverColorHelper.extractColors(albumBitmap, useCoverGradient, mediaColorKey)
+            resolvedPalette = CoverColorHelper.resolveColors(
+                bitmap = albumBitmap,
+                useGradient = useCoverGradient,
+                songKey = mediaColorKey
+            )
+            if (resolvedPalette != null) {
+                val darkColors = resolvedPalette.colors.second
                 val translucentDarkColors = darkColors.map { Color.argb(191, Color.red(it), Color.green(it), Color.blue(it)) }.toIntArray()
                 primaryColors = darkColors   // 无逐字/标题 -> 封面颜色
                 bgColors = translucentDarkColors // 未唱到 -> 封面颜色(75%透明度)
                 hlColors = darkColors        // 已唱到 -> 封面颜色
+                fallbackReason = null
             } else {
-                val cached = CoverColorHelper.getCachedColors(useCoverGradient, mediaColorKey)
-                    ?: CoverColorHelper.getCachedColors()
-                if (cached != null) {
-                    val darkColors = cached.second
-                    val translucentDarkColors = darkColors.map { Color.argb(191, Color.red(it), Color.green(it), Color.blue(it)) }.toIntArray()
-                    primaryColors = darkColors
-                    bgColors = translucentDarkColors
-                    hlColors = darkColors
-                } else {
-                    primaryColors = intArrayOf(Color.WHITE)
-                    bgColors = intArrayOf(Color.argb(128, 255, 255, 255))
-                    hlColors = intArrayOf(Color.WHITE)
-                }
+                primaryColors = intArrayOf(Color.WHITE)
+                bgColors = intArrayOf(Color.argb(128, 255, 255, 255))
+                hlColors = intArrayOf(Color.WHITE)
+                fallbackReason = FallbackReason.NO_ARTWORK_OR_CACHE
             }
         } else {
+            resolvedPalette = null
             primaryColors = intArrayOf(Color.WHITE)
             bgColors = intArrayOf(Color.argb(128, 255, 255, 255))
             hlColors = intArrayOf(Color.WHITE)
+            fallbackReason = FallbackReason.SETTING_DISABLED
         }
 
-        return LyricViewStyle(
+        val style = LyricViewStyle(
             primary = TextLook(
                 color = primaryColors,
                 size = primarySizePx,
@@ -144,6 +185,20 @@ object LyricStyleHelper {
             placeholder = TitleSlot.NONE,
             centerIfPossible = prefs.getBoolean(RootConstants.KEY_HOOK_CENTER_LYRIC, RootConstants.DEFAULT_HOOK_CENTER_LYRIC),
         )
+        return StyleBuildResult(
+            style = style,
+            colorResolution = ColorResolution(
+                useCoverColor = useCoverColor,
+                useCoverGradient = useCoverGradient,
+                paletteSource = resolvedPalette?.source,
+                requestedKey = resolvedPalette?.requestedKey,
+                resolvedKey = resolvedPalette?.resolvedKey,
+                artworkSignature = resolvedPalette?.artworkSignature,
+                fallbackReason = fallbackReason,
+                primaryColors = primaryColors,
+                backgroundColors = bgColors,
+                highlightColors = hlColors
+            )
+        )
     }
 }
-

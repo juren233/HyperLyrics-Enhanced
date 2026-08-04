@@ -4,11 +4,262 @@ import com.juren233.hyperlyricsenhanced.lyric.LrcLine
 import com.juren233.hyperlyricsenhanced.common.lyric.LyricMetadataKeys
 import com.juren233.hyperlyricsenhanced.lyric.model.RichLyricLine
 import com.juren233.hyperlyricsenhanced.lyric.model.Song
+import com.juren233.hyperlyricsenhanced.lyric.model.lyricMetadataOf
+import com.juren233.hyperlyricsenhanced.online.model.Source
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
 class OnlineTranslationMatcherTest {
+
+    @Test
+    fun `forced source without a candidate remains selected and uses the other source`() {
+        val base = Song(
+            lyrics = listOf(RichLyricLine(text = "君の名は"))
+        )
+        val qq = OnlineTranslationMatcher.Result(
+            song = base.copy(
+                lyrics = listOf(RichLyricLine(text = "君の名は", translation = "你的名字"))
+            ),
+            matchedCount = 1,
+            averageMatchScore = 0.9,
+        )
+
+        val result = OnlineTranslationMatcher.composeSelectedSources(
+            baseSong = base,
+            candidates = mapOf(Source.QM to qq),
+            defaultTranslationSource = Source.QM,
+            defaultPronunciationSource = null,
+            forcedTranslationSource = Source.NE,
+            forcedPronunciationSource = null,
+            currentPublishedSong = null,
+        )
+
+        assertEquals("你的名字", result?.song?.lyrics?.single()?.translation)
+        assertEquals(
+            "NE",
+            result?.song?.metadata
+                ?.getString(LyricMetadataKeys.ONLINE_TRANSLATION_SOURCE),
+        )
+    }
+
+    @Test
+    fun `forced source without a candidate reuses current content and changes its label`() {
+        val base = Song(
+            lyrics = listOf(RichLyricLine(text = "君の名は"))
+        )
+        val published = base.copy(
+            lyrics = listOf(RichLyricLine(text = "君の名は", translation = "现有译文")),
+            metadata = lyricMetadataOf(
+                LyricMetadataKeys.ONLINE_TRANSLATION_SOURCE to "QM",
+            ),
+        )
+
+        val result = OnlineTranslationMatcher.composeSelectedSources(
+            baseSong = base,
+            candidates = emptyMap(),
+            defaultTranslationSource = null,
+            defaultPronunciationSource = null,
+            forcedTranslationSource = Source.NE,
+            forcedPronunciationSource = null,
+            currentPublishedSong = published,
+        )
+
+        assertEquals("现有译文", result?.song?.lyrics?.single()?.translation)
+        assertEquals(
+            "NE",
+            result?.song?.metadata
+                ?.getString(LyricMetadataKeys.ONLINE_TRANSLATION_SOURCE),
+        )
+    }
+
+    @Test
+    fun `forced primary source keeps its matched lines and only fills missing lines`() {
+        val base = Song(
+            lyrics = listOf(
+                RichLyricLine(text = "First"),
+                RichLyricLine(text = "Second"),
+            )
+        )
+        val netease = OnlineTranslationMatcher.Result(
+            song = base.copy(
+                lyrics = listOf(
+                    RichLyricLine(text = "First", translation = "网易首行"),
+                    RichLyricLine(text = "Second"),
+                )
+            ),
+            matchedCount = 1,
+            averageMatchScore = 0.9,
+        )
+        val qq = OnlineTranslationMatcher.Result(
+            song = base.copy(
+                lyrics = listOf(
+                    RichLyricLine(text = "First", translation = "QQ首行"),
+                    RichLyricLine(text = "Second", translation = "QQ补全"),
+                )
+            ),
+            matchedCount = 2,
+            averageMatchScore = 0.9,
+        )
+
+        val result = OnlineTranslationMatcher.composeSelectedSources(
+            baseSong = base,
+            candidates = mapOf(Source.NE to netease, Source.QM to qq),
+            defaultTranslationSource = Source.QM,
+            defaultPronunciationSource = null,
+            forcedTranslationSource = Source.NE,
+            forcedPronunciationSource = null,
+            currentPublishedSong = null,
+        )
+
+        assertEquals(
+            listOf("网易首行", "QQ补全"),
+            result?.song?.lyrics?.map { it.translation },
+        )
+    }
+
+    @Test
+    fun `translation and pronunciation sources can be forced independently`() {
+        val base = Song(
+            lyrics = listOf(RichLyricLine(text = "君の名は"))
+        )
+        val netease = OnlineTranslationMatcher.Result(
+            song = base.copy(
+                lyrics = listOf(
+                    RichLyricLine(
+                        text = "君の名は",
+                        translation = "网易翻译",
+                        roma = "Netease pronunciation",
+                    )
+                )
+            ),
+            matchedCount = 1,
+            averageMatchScore = 0.9,
+        )
+        val qq = OnlineTranslationMatcher.Result(
+            song = base.copy(
+                lyrics = listOf(
+                    RichLyricLine(
+                        text = "君の名は",
+                        translation = "QQ翻译",
+                        roma = "QQ pronunciation",
+                    )
+                )
+            ),
+            matchedCount = 1,
+            averageMatchScore = 0.9,
+        )
+
+        val result = OnlineTranslationMatcher.composeSelectedSources(
+            baseSong = base,
+            candidates = mapOf(Source.NE to netease, Source.QM to qq),
+            defaultTranslationSource = Source.QM,
+            defaultPronunciationSource = Source.NE,
+            forcedTranslationSource = Source.NE,
+            forcedPronunciationSource = Source.QM,
+            currentPublishedSong = null,
+        )
+
+        assertEquals("网易翻译", result?.song?.lyrics?.single()?.translation)
+        assertEquals("QQ pronunciation", result?.song?.lyrics?.single()?.roma)
+        assertEquals(
+            "NE",
+            result?.song?.metadata
+                ?.getString(LyricMetadataKeys.ONLINE_TRANSLATION_SOURCE),
+        )
+        assertEquals(
+            "QM",
+            result?.song?.metadata
+                ?.getString(LyricMetadataKeys.ONLINE_PRONUNCIATION_SOURCE),
+        )
+    }
+
+    @Test
+    fun `composes translation and pronunciation from independent sources`() {
+        val base = Song(
+            lyrics = listOf(RichLyricLine(begin = 1_000, end = 2_000, text = "君の名は"))
+        )
+        val qq = OnlineTranslationMatcher.apply(
+            base,
+            listOf(LrcLine(1_000, "君の名は", translation = "你的名字")),
+        )
+        val netease = OnlineTranslationMatcher.apply(
+            base,
+            listOf(LrcLine(1_000, "君の名は", romanization = "Kimi no na wa")),
+        )
+
+        val result = OnlineTranslationMatcher.composeContent(base, qq, netease)
+
+        assertEquals("你的名字", result?.song?.lyrics?.single()?.translation)
+        assertEquals("Kimi no na wa", result?.song?.lyrics?.single()?.roma)
+        assertEquals(true, OnlineTranslationMatcher.contributesTranslation(base, qq))
+        assertEquals(false, OnlineTranslationMatcher.contributesPronunciation(base, qq))
+        assertEquals(true, OnlineTranslationMatcher.contributesPronunciation(base, netease))
+    }
+
+    @Test
+    fun `fills pronunciation without replacing Apple translation`() {
+        val song = Song(
+            name = "Song",
+            lyrics = listOf(
+                RichLyricLine(
+                    begin = 1_000L,
+                    end = 3_000L,
+                    text = "君の名は",
+                    translation = "你的名字",
+                )
+            )
+        )
+
+        val result = OnlineTranslationMatcher.apply(
+            song,
+            listOf(
+                LrcLine(
+                    startTimeMs = 1_100L,
+                    content = "君の名は",
+                    translation = "第三方翻译",
+                    romanization = "Kimi no na wa",
+                )
+            )
+        )
+
+        val line = result.song.lyrics.orEmpty().single()
+        assertEquals(1, result.matchedCount)
+        assertEquals("你的名字", line.translation)
+        assertEquals("Kimi no na wa", line.roma)
+    }
+
+    @Test
+    fun `fills translation without replacing Apple pronunciation`() {
+        val song = Song(
+            name = "Song",
+            lyrics = listOf(
+                RichLyricLine(
+                    begin = 1_000L,
+                    end = 3_000L,
+                    text = "君の名は",
+                    roma = "Apple pronunciation",
+                )
+            )
+        )
+
+        val result = OnlineTranslationMatcher.apply(
+            song,
+            listOf(
+                LrcLine(
+                    startTimeMs = 1_100L,
+                    content = "君の名は",
+                    translation = "你的名字",
+                    romanization = "Third-party pronunciation",
+                )
+            )
+        )
+
+        val line = result.song.lyrics.orEmpty().single()
+        assertEquals(1, result.matchedCount)
+        assertEquals("你的名字", line.translation)
+        assertEquals("Apple pronunciation", line.roma)
+    }
 
     @Test
     fun `matches normalized lyrics while preserving apple timing and layout`() {
@@ -266,6 +517,70 @@ class OnlineTranslationMatcherTest {
     }
 
     @Test
+    fun `splits one combined Cantonese pronunciation only at Apple line boundaries`() {
+        val song = Song(
+            name = "金童子",
+            lyrics = listOf(
+                RichLyricLine(
+                    begin = 5_000L,
+                    end = 7_000L,
+                    text = "不必抛出你",
+                ),
+                RichLyricLine(
+                    begin = 7_000L,
+                    end = 9_000L,
+                    text = "钓我的饵",
+                ),
+            ),
+        )
+
+        val result = OnlineTranslationMatcher.apply(
+            song,
+            listOf(
+                LrcLine(
+                    startTimeMs = 5_000L,
+                    content = "不必抛出你钓我的饵",
+                    romanization = "ba bi pou cu nei diu o di nei",
+                )
+            ),
+        )
+
+        assertEquals(2, result.matchedCount)
+        assertEquals(
+            listOf(
+                "ba bi pou cu nei",
+                "diu o di nei",
+            ),
+            result.song.lyrics?.map { it.roma },
+        )
+    }
+
+    @Test
+    fun `does not attach a combined pronunciation when token count cannot follow Apple lines`() {
+        val song = Song(
+            name = "金童子",
+            lyrics = listOf(
+                RichLyricLine(begin = 5_000L, end = 7_000L, text = "不必抛出你"),
+                RichLyricLine(begin = 7_000L, end = 9_000L, text = "钓我的饵"),
+            ),
+        )
+
+        val result = OnlineTranslationMatcher.apply(
+            song,
+            listOf(
+                LrcLine(
+                    startTimeMs = 5_000L,
+                    content = "不必抛出你钓我的饵",
+                    romanization = "ba bi pou cu nei diu o nei",
+                )
+            ),
+        )
+
+        assertEquals(0, result.matchedCount)
+        assertEquals(listOf(null, null), result.song.lyrics?.map { it.roma })
+    }
+
+    @Test
     fun `does not split an unstructured translation at arbitrary characters`() {
         val song = Song(
             name = "Song",
@@ -387,6 +702,43 @@ class OnlineTranslationMatcherTest {
     }
 
     @Test
+    fun `fills missing pronunciation from supplemental source`() {
+        val primary = OnlineTranslationMatcher.Result(
+            song = Song(
+                lyrics = listOf(
+                    RichLyricLine(
+                        text = "君の名は",
+                        translation = "你的名字",
+                    )
+                )
+            ),
+            matchedCount = 1,
+            averageMatchScore = 0.95,
+            lineMatchScores = mapOf(0 to 0.95),
+        )
+        val supplemental = OnlineTranslationMatcher.Result(
+            song = Song(
+                lyrics = listOf(
+                    RichLyricLine(
+                        text = "君の名は",
+                        translation = "备用翻译",
+                        roma = "Kimi no na wa",
+                    )
+                )
+            ),
+            matchedCount = 1,
+            averageMatchScore = 0.9,
+            lineMatchScores = mapOf(0 to 0.9),
+        )
+
+        val result = OnlineTranslationMatcher.fillMissing(primary, supplemental)
+        val line = result.song.lyrics.orEmpty().single()
+
+        assertEquals("你的名字", line.translation)
+        assertEquals("Kimi no na wa", line.roma)
+    }
+
+    @Test
     fun `maps online parenthetical vocal to a separate apple line`() {
         val song = Song(
             name = "Song",
@@ -463,5 +815,50 @@ class OnlineTranslationMatcherTest {
         assertEquals(0, result.matchedCount)
         assertEquals("Existing", result.song.lyrics?.get(0)?.translation)
         assertNull(result.song.lyrics?.get(1)?.translation)
+    }
+
+    @Test
+    fun `does not match slash only translation placeholder as content`() {
+        val song = Song(
+            name = "Song",
+            lyrics = listOf(
+                RichLyricLine(begin = 1_000L, end = 2_000L, text = "Listen")
+            )
+        )
+
+        val result = OnlineTranslationMatcher.apply(
+            song,
+            listOf(LrcLine(1_000L, "Listen", "// //"))
+        )
+
+        assertEquals(0, result.matchedCount)
+        assertNull(result.song.lyrics?.single()?.translation)
+        assertEquals(false, OnlineTranslationMatcher.contributesTranslation(song, result))
+    }
+
+    @Test
+    fun `keeps pronunciation while dropping slash only translation placeholder`() {
+        val song = Song(
+            name = "Song",
+            lyrics = listOf(
+                RichLyricLine(begin = 1_000L, end = 2_000L, text = "君の名は")
+            )
+        )
+
+        val result = OnlineTranslationMatcher.apply(
+            song,
+            listOf(
+                LrcLine(
+                    startTimeMs = 1_000L,
+                    content = "君の名は",
+                    translation = "///",
+                    romanization = "Kimi no na wa",
+                )
+            )
+        )
+
+        assertEquals(1, result.matchedCount)
+        assertNull(result.song.lyrics?.single()?.translation)
+        assertEquals("Kimi no na wa", result.song.lyrics?.single()?.roma)
     }
 }
