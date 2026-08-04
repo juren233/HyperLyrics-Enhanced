@@ -60,11 +60,14 @@ import com.juren233.hyperlyricsenhanced.common.lyric.AppleSystemFontWeightPolicy
 import com.juren233.hyperlyricsenhanced.common.lyric.RomanizationPolicy
 import com.juren233.hyperlyricsenhanced.lyric.model.Song as LocalSong
 import io.github.libxposed.api.XposedInterface.Chain
-import io.github.libxposed.api.XposedInterface.Hooker
 import io.github.libxposed.api.XposedModule
 import io.github.proify.extensions.android.ScreenStateMonitor
 import io.github.proify.extensions.inflate
 import io.github.proify.extensions.json
+import io.github.proify.lyricon.amprovider.xposed.hooks.FunctionalAppleMusicHookModule
+import io.github.proify.lyricon.amprovider.xposed.internal.ThreadLocalReentryGuard
+import io.github.proify.lyricon.amprovider.xposed.internal.ThreadLocalStack
+import io.github.proify.lyricon.amprovider.xposed.internal.WeakIdentityMap
 import io.github.proify.lyricon.provider.LyriconFactory
 import io.github.proify.lyricon.provider.ProviderConstants
 import io.github.proify.lyricon.provider.ProviderLogo
@@ -82,7 +85,6 @@ import java.lang.reflect.Executable
 import java.lang.reflect.Field
 import java.lang.reflect.Method
 import java.lang.reflect.Modifier
-import java.lang.ref.ReferenceQueue
 import java.lang.ref.WeakReference
 import java.io.File
 import java.security.MessageDigest
@@ -133,10 +135,17 @@ object AppleMusicProvider {
     private const val APPLE_LYRICS_BEFORE_FIRST_LINE_RECHECK_MAX_MS = 250L
     private const val APPLE_LYRICS_HYPER_OS_SELF_BLUR_TYPE = 0
     private val initialized = AtomicBoolean(false)
-    private lateinit var application: Application
-    private lateinit var classLoader: ClassLoader
-    private lateinit var hookResolver: AppleMusicHookResolver
-    private lateinit var module: XposedModule
+    private lateinit var runtime: AppleMusicProviderRuntime
+    private val application: Application
+        get() = runtime.application
+    private val classLoader: ClassLoader
+        get() = runtime.classLoader
+    private val hookResolver: AppleMusicHookResolver
+        get() = runtime.hookResolver
+    private val module: XposedModule
+        get() = runtime.module
+    private val hookRegistrar
+        get() = runtime.hookRegistrar
 
     private var isPlaying = false
     @Volatile
@@ -557,7 +566,8 @@ object AppleMusicProvider {
     private var dataBindingSubtitleVariableId: Int? = null
     @Volatile
     private var dataBindingBaseClass: Class<*>? = null
-    private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
+    private val mainHandler: Handler
+        get() = runtime.mainHandler
     @Volatile
     private var currentPlaybackMetadataRefresh: PlaybackMetadataRefresh? = null
     @Volatile
@@ -583,20 +593,24 @@ object AppleMusicProvider {
         ConcurrentHashMap<String, ConcurrentLinkedQueue<String>>()
     private val metadataTraceSequence = AtomicLong(0L)
 
+    @Synchronized
     fun install(module: XposedModule, classLoader: ClassLoader) {
-        this.module = module
-        this.classLoader = classLoader
+        if (::runtime.isInitialized) {
+            ProviderLogger.info("Apple Music 内置歌词提供器生命周期 Hook 已存在")
+            return
+        }
+        runtime = AppleMusicProviderRuntime(module, classLoader)
         val onCreate = Application::class.java.getDeclaredMethod("onCreate")
-        installHook(onCreate, after = { chain, _ ->
-            (chain.thisObject as? Application)?.let(::onAppCreate)
-        })
+        hookRegistrar.withModule("provider-lifecycle") {
+            hookRegistrar.install(onCreate, after = { chain, _ ->
+                (chain.thisObject as? Application)?.let(::onAppCreate)
+            })
+        }
         ProviderLogger.info("Apple Music 内置歌词提供器生命周期 Hook 已安装")
     }
 
     private fun onAppCreate(app: Application) {
         if (!initialized.compareAndSet(false, true)) return
-        application = app
-        classLoader = app.classLoader
         val appleMusicVersion = runCatching {
             val packageInfo = app.packageManager.getPackageInfo(APPLE_MUSIC_PACKAGE, 0)
             AppleMusicVersion(
@@ -606,7 +620,8 @@ object AppleMusicProvider {
         }.getOrElse {
             AppleMusicVersion(versionName = null, versionCode = null)
         }
-        hookResolver = AppleMusicHookResolver(appleMusicVersion, classLoader)
+        val hookResolver = AppleMusicHookResolver(appleMusicVersion, app.classLoader)
+        runtime.attach(app, hookResolver)
         ProviderLogger.info(
             "Apple Music Hook 版本档案已加载: app=${appleMusicVersion.displayName}, " +
                 "profile=${hookResolver.profile?.id ?: "compatibility-fallback"}"
@@ -791,53 +806,60 @@ object AppleMusicProvider {
     }
 
     private fun startHooks() {
-        hookMetadataSurfaceLifecycle()
-        hookTranslationPreference()
-        hookMediaApiLocalization()
-        hookContentHttpLocalization()
-        hookExoMediaPlayer()
-        hookMediaMetadataChange()
-        hookContentItemMetadata()
-        hookInAppLibraryEntities()
-        hookCollectionPageMetadataRefresh()
-        hookArtistProfileTopSongs()
-        hookArtistProfileMetadata()
-        hookRecentlySearchedMetadata()
-        hookInAppArtworkContinuity()
-        hookInAppListenNowArtworkContinuity()
-        hookInAppLibraryEpoxyRefresh()
-        hookInAppLibraryComposeRefresh()
-        if (BuildConfig.DEBUG) {
-            hookDebugListenNowArtworkLifecycle()
-            hookVisibleMetadataDiagnostics()
-        }
-        hookInAppDataBindingRefresh()
-        hookInAppListenNowMetadataBinding()
-        hookRecyclerViewCentralBinding()
-        hookInAppMetadata()
-        hookInAppPlaybackItemConversion()
-        hookInAppActionSheetMetadata()
-        hookMediaSessionMetadata()
-        hookMediaSessionQueue()
-        hookPlaybackNotificationMetadata()
-        hookAppleOfficialPronunciationLanguageMatching()
-        hookAppleLyricsPreferredLanguages()
-        hookApplePronunciationWordRendering()
-        hookLyricBuildMethod()
-        hookAppleNativeLyricsPresentation()
-        hookAppleSystemFontWeight()
-        hookAppleLyricsBlurEffect()
-        if (BuildConfig.DEBUG) {
-            hookAppleLyricsUiDiagnostics()
-            hookAppleLyricsBindingDiagnostics()
-        }
-        hookAppleLyricsSourceMenu()
-        if (BuildConfig.DEBUG) {
-            hookLyricsNetworkRequest()
-            hookLyricsCookies()
-            hookFinalLyricsHttp()
-        }
+        hookModules().asSequence()
+            .filter { hookModule -> !hookModule.debugOnly || BuildConfig.DEBUG }
+            .forEach { hookModule ->
+                hookRegistrar.withModule(hookModule.id, hookModule::installHooks)
+            }
     }
+
+    internal fun hookModuleIdsForBuild(debug: Boolean): List<String> =
+        hookModules()
+            .filter { hookModule -> !hookModule.debugOnly || debug }
+            .map { hookModule -> hookModule.id }
+
+    private fun hookModules() = listOf(
+        FunctionalAppleMusicHookModule("hookMetadataSurfaceLifecycle", installer = ::hookMetadataSurfaceLifecycle),
+        FunctionalAppleMusicHookModule("hookTranslationPreference", installer = ::hookTranslationPreference),
+        FunctionalAppleMusicHookModule("hookMediaApiLocalization", installer = ::hookMediaApiLocalization),
+        FunctionalAppleMusicHookModule("hookContentHttpLocalization", installer = ::hookContentHttpLocalization),
+        FunctionalAppleMusicHookModule("hookExoMediaPlayer", installer = ::hookExoMediaPlayer),
+        FunctionalAppleMusicHookModule("hookMediaMetadataChange", installer = ::hookMediaMetadataChange),
+        FunctionalAppleMusicHookModule("hookContentItemMetadata", installer = ::hookContentItemMetadata),
+        FunctionalAppleMusicHookModule("hookInAppLibraryEntities", installer = ::hookInAppLibraryEntities),
+        FunctionalAppleMusicHookModule("hookCollectionPageMetadataRefresh", installer = ::hookCollectionPageMetadataRefresh),
+        FunctionalAppleMusicHookModule("hookArtistProfileTopSongs", installer = ::hookArtistProfileTopSongs),
+        FunctionalAppleMusicHookModule("hookArtistProfileMetadata", installer = ::hookArtistProfileMetadata),
+        FunctionalAppleMusicHookModule("hookRecentlySearchedMetadata", installer = ::hookRecentlySearchedMetadata),
+        FunctionalAppleMusicHookModule("hookInAppArtworkContinuity", installer = ::hookInAppArtworkContinuity),
+        FunctionalAppleMusicHookModule("hookInAppListenNowArtworkContinuity", installer = ::hookInAppListenNowArtworkContinuity),
+        FunctionalAppleMusicHookModule("hookInAppLibraryEpoxyRefresh", installer = ::hookInAppLibraryEpoxyRefresh),
+        FunctionalAppleMusicHookModule("hookInAppLibraryComposeRefresh", installer = ::hookInAppLibraryComposeRefresh),
+        FunctionalAppleMusicHookModule("hookDebugListenNowArtworkLifecycle", debugOnly = true, installer = ::hookDebugListenNowArtworkLifecycle),
+        FunctionalAppleMusicHookModule("hookVisibleMetadataDiagnostics", debugOnly = true, installer = ::hookVisibleMetadataDiagnostics),
+        FunctionalAppleMusicHookModule("hookInAppDataBindingRefresh", installer = ::hookInAppDataBindingRefresh),
+        FunctionalAppleMusicHookModule("hookInAppListenNowMetadataBinding", installer = ::hookInAppListenNowMetadataBinding),
+        FunctionalAppleMusicHookModule("hookRecyclerViewCentralBinding", installer = ::hookRecyclerViewCentralBinding),
+        FunctionalAppleMusicHookModule("hookInAppMetadata", installer = ::hookInAppMetadata),
+        FunctionalAppleMusicHookModule("hookInAppPlaybackItemConversion", installer = ::hookInAppPlaybackItemConversion),
+        FunctionalAppleMusicHookModule("hookInAppActionSheetMetadata", installer = ::hookInAppActionSheetMetadata),
+        FunctionalAppleMusicHookModule("hookMediaSessionMetadata", installer = ::hookMediaSessionMetadata),
+        FunctionalAppleMusicHookModule("hookMediaSessionQueue", installer = ::hookMediaSessionQueue),
+        FunctionalAppleMusicHookModule("hookPlaybackNotificationMetadata", installer = ::hookPlaybackNotificationMetadata),
+        FunctionalAppleMusicHookModule("hookAppleOfficialPronunciationLanguageMatching", installer = ::hookAppleOfficialPronunciationLanguageMatching),
+        FunctionalAppleMusicHookModule("hookAppleLyricsPreferredLanguages", installer = ::hookAppleLyricsPreferredLanguages),
+        FunctionalAppleMusicHookModule("hookApplePronunciationWordRendering", installer = ::hookApplePronunciationWordRendering),
+        FunctionalAppleMusicHookModule("hookLyricBuildMethod", installer = ::hookLyricBuildMethod),
+        FunctionalAppleMusicHookModule("hookAppleNativeLyricsPresentation", installer = ::hookAppleNativeLyricsPresentation),
+        FunctionalAppleMusicHookModule("hookAppleSystemFontWeight", installer = ::hookAppleSystemFontWeight),
+        FunctionalAppleMusicHookModule("hookAppleLyricsBlurEffect", installer = ::hookAppleLyricsBlurEffect),
+        FunctionalAppleMusicHookModule("hookAppleLyricsUiDiagnostics", debugOnly = true, installer = ::hookAppleLyricsUiDiagnostics),
+        FunctionalAppleMusicHookModule("hookAppleLyricsBindingDiagnostics", debugOnly = true, installer = ::hookAppleLyricsBindingDiagnostics),
+        FunctionalAppleMusicHookModule("hookAppleLyricsSourceMenu", installer = ::hookAppleLyricsSourceMenu),
+        FunctionalAppleMusicHookModule("hookLyricsNetworkRequest", debugOnly = true, installer = ::hookLyricsNetworkRequest),
+        FunctionalAppleMusicHookModule("hookLyricsCookies", debugOnly = true, installer = ::hookLyricsCookies),
+        FunctionalAppleMusicHookModule("hookFinalLyricsHttp", debugOnly = true, installer = ::hookFinalLyricsHttp),
+    )
 
     private fun hookMetadataSurfaceLifecycle() {
         val activityInstalled = runCatching {
@@ -845,10 +867,10 @@ object AppleMusicProvider {
                 .apply { isAccessible = true }
             val activityPause = Activity::class.java.getDeclaredMethod("onPause")
                 .apply { isAccessible = true }
-            installHook(activityResume, after = { chain, _ ->
+            hookRegistrar.install(activityResume, after = { chain, _ ->
                 chain.thisObject?.let(::onMetadataSurfaceResumed)
             })
-            installHook(activityPause, before = { chain ->
+            hookRegistrar.install(activityPause, before = { chain ->
                 chain.thisObject?.let(::onMetadataSurfacePaused)
             })
         }.onFailure {
@@ -866,10 +888,10 @@ object AppleMusicProvider {
                 "onPause",
                 parameterCount = 0,
             )
-            installHook(fragmentResume, after = { chain, _ ->
+            hookRegistrar.install(fragmentResume, after = { chain, _ ->
                 chain.thisObject?.let(::onMetadataSurfaceResumed)
             })
-            installHook(fragmentPause, before = { chain ->
+            hookRegistrar.install(fragmentPause, before = { chain ->
                 chain.thisObject?.let(::onMetadataSurfacePaused)
             })
         }.onFailure {
@@ -1030,7 +1052,7 @@ object AppleMusicProvider {
                 AppleMusicHookPoint.MEDIA_API_LOCALIZATION
             )
             val method = resolved.method
-            installHook(method, after = { _, result ->
+            hookRegistrar.install(method, after = { _, result ->
                 @Suppress("UNCHECKED_CAST")
                 val params = result as? MutableMap<Any?, Any?> ?: return@installHook
                 val prefs = contentUiLanguagePrefs ?: return@installHook
@@ -1085,7 +1107,7 @@ object AppleMusicProvider {
                 "a",
                 parameterCount = 1
             )
-            installHook(
+            hookRegistrar.install(
                 method,
                 before = { chain ->
                     val prefs = contentUiLanguagePrefs ?: return@installHook
@@ -1475,7 +1497,7 @@ object AppleMusicProvider {
             "setLyricsTranslationSelected",
             parameterCount = 1
         )
-        installHook(translationMethod, after = { chain, _ ->
+        hookRegistrar.install(translationMethod, after = { chain, _ ->
             (chain.args.firstOrNull() as? Boolean)?.let {
                 PreferencesMonitor.notifyTranslationSelectedChanged(it)
             }
@@ -1485,7 +1507,7 @@ object AppleMusicProvider {
             "setLyricsPronunciationSelected",
             parameterCount = 1
         )
-        installHook(pronunciationMethod, after = { chain, _ ->
+        hookRegistrar.install(pronunciationMethod, after = { chain, _ ->
             (chain.args.firstOrNull() as? Boolean)?.let {
                 PreferencesMonitor.notifyPronunciationSelectedChanged(it)
             }
@@ -1497,7 +1519,7 @@ object AppleMusicProvider {
             val resolved = hookResolver.resolveMethod(
                 AppleMusicHookPoint.LYRICS_SOURCE_MENU_CLICK_LISTENER
             )
-            installHook(resolved.method, after = { chain, _ ->
+            hookRegistrar.install(resolved.method, after = { chain, _ ->
                 addOnlineSourceMenuItems(
                     clickListener = chain.thisObject,
                     anchor = chain.args.firstOrNull() as? View,
@@ -2259,7 +2281,7 @@ object AppleMusicProvider {
             "onMetadataUpdated",
             parameterCount = 2
         )
-        installHook(metadataMethod, after = { chain, _ ->
+        hookRegistrar.install(metadataMethod, after = { chain, _ ->
             val mediaPlayer = chain.args.firstOrNull()
             if (!isActivePlaybackCallback(mediaPlayer, activePlaybackPlayer)) {
                 ProviderLogger.debug(
@@ -2301,7 +2323,7 @@ object AppleMusicProvider {
             "onPlaybackIndexChanged",
             parameterCount = 3
         )
-        installHook(indexMethod, after = { chain, _ ->
+        hookRegistrar.install(indexMethod, after = { chain, _ ->
             refreshCurrentQueueItemIfActive(
                 chain.args.firstOrNull(),
                 "onPlaybackIndexChanged"
@@ -2316,7 +2338,7 @@ object AppleMusicProvider {
                 "setMetadata",
                 MediaMetadata::class.java,
             ).also { it.isAccessible = true }
-            installArgumentRewriteHook(method) { chain ->
+            hookRegistrar.installArgumentRewrite(method) { chain ->
                 val metadata = chain.args.firstOrNull() as? MediaMetadata
                     ?: return@installArgumentRewriteHook null
                 val session = chain.thisObject as? MediaSession
@@ -2379,7 +2401,7 @@ object AppleMusicProvider {
                 "setQueue",
                 List::class.java,
             ).also { it.isAccessible = true }
-            installArgumentRewriteHook(method) { chain ->
+            hookRegistrar.installArgumentRewrite(method) { chain ->
                 if (frameworkMediaQueueRefreshInProgress.get()) {
                     return@installArgumentRewriteHook null
                 }
@@ -2419,7 +2441,7 @@ object AppleMusicProvider {
                     methodName,
                     CharSequence::class.java,
                 ).also { it.isAccessible = true }
-                installArgumentRewriteHook(method) { chain ->
+                hookRegistrar.installArgumentRewrite(method) { chain ->
                     val value = chain.args.firstOrNull() as? CharSequence
                         ?: return@installArgumentRewriteHook null
                     val rewritten = rewritePlaybackNotificationText(value, title)
@@ -2428,7 +2450,7 @@ object AppleMusicProvider {
             }
             val buildMethod = Notification.Builder::class.java.getDeclaredMethod("build")
                 .also { it.isAccessible = true }
-            installResultOverrideHook(buildMethod) { _, original ->
+            hookRegistrar.installResultOverride(buildMethod) { _, original ->
                 (original as? Notification)?.let(::rewriteMediaNotificationContentIntent)
                 original
             }
@@ -2695,7 +2717,7 @@ object AppleMusicProvider {
             )
             baseContentItemClass.declaredConstructors.forEach { constructor ->
                 constructor.isAccessible = true
-                installHook(constructor, after = { chain, _ ->
+                hookRegistrar.install(constructor, after = { chain, _ ->
                     chain.thisObject?.javaClass?.let(::ensureContentItemMetadataHooks)
                 })
             }
@@ -2734,7 +2756,7 @@ object AppleMusicProvider {
             val albumConstructor = libraryAlbumClass
                 .getDeclaredConstructor(modelAlbumClass)
                 .apply { isAccessible = true }
-            installHook(
+            hookRegistrar.install(
                 albumConstructor,
                 before = { chain -> primeInAppLibrarySource(chain.args.firstOrNull()) },
                 after = { chain, _ ->
@@ -2753,7 +2775,7 @@ object AppleMusicProvider {
             val songConstructor = mediaApiSongClass
                 .getDeclaredConstructor(modelSongClass)
                 .apply { isAccessible = true }
-            installHook(
+            hookRegistrar.install(
                 songConstructor,
                 before = { chain -> primeInAppLibrarySource(chain.args.firstOrNull()) },
                 after = { chain, _ ->
@@ -2773,7 +2795,7 @@ object AppleMusicProvider {
             val librarySongConstructor = librarySongClass
                 .getDeclaredConstructor(mediaApiSongClass)
                 .apply { isAccessible = true }
-            installHook(librarySongConstructor, after = { chain, _ ->
+            hookRegistrar.install(librarySongConstructor, after = { chain, _ ->
                 val entity = chain.thisObject ?: return@installHook
                 val source = chain.args.firstOrNull() ?: return@installHook
                 val mediaId = inAppMediaApiSongIds[source]
@@ -2813,7 +2835,7 @@ object AppleMusicProvider {
                     .filterNot(explicitlyHookedConstructors::contains)
                     .forEach { constructor ->
                         constructor.isAccessible = true
-                        installHook(constructor, after = { chain, _ ->
+                        hookRegistrar.install(constructor, after = { chain, _ ->
                             val entity = chain.thisObject ?: return@installHook
                             val attributes = mediaApiEntityAttributes(entity)
                                 ?: return@installHook
@@ -2891,7 +2913,7 @@ object AppleMusicProvider {
                 ?.apply { isAccessible = true }
                 ?: error("Direct album header constructor not found")
 
-            installHook(
+            hookRegistrar.install(
                 buildMethod,
                 before = { chain ->
                     val controller = chain.thisObject ?: return@installHook
@@ -2926,7 +2948,7 @@ object AppleMusicProvider {
                     )
                 },
             )
-            installScopedHook(
+            hookRegistrar.installScoped(
                 executable = headerBuildMethod,
                 enter = { chain ->
                     val album = chain.args.firstOrNull() ?: return@installScopedHook false
@@ -2945,13 +2967,13 @@ object AppleMusicProvider {
                 },
                 exit = { activeAlbumHeaderBuildCaptures.pop() },
             )
-            installHook(directHeaderConstructor, after = { chain, _ ->
+            hookRegistrar.install(directHeaderConstructor, after = { chain, _ ->
                 val mediaId = activeAlbumHeaderBuildCaptures.current?.mediaId
                     ?: return@installHook
                 val model = chain.thisObject ?: return@installHook
                 inAppAlbumHeaderModelIds[model] = mediaId
             })
-            installHook(trackBuildMethod, before = { chain ->
+            hookRegistrar.install(trackBuildMethod, before = { chain ->
                 val controller = chain.thisObject ?: return@installHook
                 val tracks = chain.args.getOrNull(1) as? Array<*> ?: return@installHook
                 val trackMediaIds = registerCollectionPageSongEntities(
@@ -2987,7 +3009,7 @@ object AppleMusicProvider {
             }?.apply { isAccessible = true }
                 ?: error("PlaylistPageController.buildItemModel not found")
 
-            installHook(
+            hookRegistrar.install(
                 buildItemMethod,
                 before = { chain ->
                     val controller = chain.thisObject ?: return@installHook
@@ -3037,7 +3059,7 @@ object AppleMusicProvider {
                 AppleMusicHookPoint.EPOXY_FINAL_BIND
             )
             val bindMethod = resolvedBind.method
-            installHook(bindMethod, after = { chain, _ ->
+            hookRegistrar.install(bindMethod, after = { chain, _ ->
                 val model = chain.args.firstOrNull() ?: return@installHook
                 when (metadataPageFinalBindingKind(
                     albumHeader = inAppAlbumHeaderModelIds[model] != null,
@@ -3553,7 +3575,7 @@ object AppleMusicProvider {
             parameterTypes = listOf(recyclerClass),
         )
         if (metadataPageLifecycleHookedMethods.add(attachedMethod)) {
-            installHook(attachedMethod, after = { chain, _ ->
+            hookRegistrar.install(attachedMethod, after = { chain, _ ->
                 val owner = chain.thisObject ?: return@installHook
                 if (metadataPageControllerClasses.none { it.isInstance(owner) }) {
                     return@installHook
@@ -3564,7 +3586,7 @@ object AppleMusicProvider {
             })
         }
         if (metadataPageLifecycleHookedMethods.add(detachedMethod)) {
-            installHook(detachedMethod, before = { chain ->
+            hookRegistrar.install(detachedMethod, before = { chain ->
                 val owner = chain.thisObject ?: return@installHook
                 if (metadataPageControllerClasses.any { it.isInstance(owner) }) {
                     onMetadataPageDetached(owner)
@@ -3864,7 +3886,7 @@ object AppleMusicProvider {
             if (method.returnType != String::class.java ||
                 !inAppMediaApiAttributeHookedMethods.add(method)
             ) return@forEach
-            installResultOverrideHook(method) { chain, original ->
+            hookRegistrar.installResultOverride(method) { chain, original ->
                 val target = chain.thisObject ?: return@installResultOverrideHook original
                 val binding = inAppMediaApiAttributeBindings[target]
                     ?: return@installResultOverrideHook original
@@ -4086,7 +4108,7 @@ object AppleMusicProvider {
             }?.apply { isAccessible = true }
                 ?: error("SwipingChartListA2 model bind method not found")
 
-            installHook(
+            hookRegistrar.install(
                 buildMethod,
                 before = { chain ->
                     val controller = chain.thisObject ?: return@installHook
@@ -4143,7 +4165,7 @@ object AppleMusicProvider {
                     }
                 },
             )
-            installHook(
+            hookRegistrar.install(
                 modelBindMethod,
                 before = { chain ->
                     val model = chain.thisObject ?: return@installHook
@@ -4230,7 +4252,7 @@ object AppleMusicProvider {
             }?.apply { isAccessible = true }
                 ?: error("Artist header model bind method not found")
 
-            installHook(
+            hookRegistrar.install(
                 buildMethod,
                 before = { chain ->
                     val controller = chain.thisObject ?: return@installHook
@@ -4324,7 +4346,7 @@ object AppleMusicProvider {
                     }
                 },
             )
-            installHook(
+            hookRegistrar.install(
                 headerBindMethod,
                 before = { chain ->
                     val model = chain.thisObject ?: return@installHook
@@ -4403,7 +4425,7 @@ object AppleMusicProvider {
             }?.apply { isAccessible = true }
                 ?: error("RecentlySearchedEpoxyController.onModelBound not found")
 
-            installHook(setDataMethod, before = { chain ->
+            hookRegistrar.install(setDataMethod, before = { chain ->
                 val controller = chain.thisObject ?: return@installHook
                 val entities = chain.args.firstOrNull() as? Iterable<*>
                     ?: return@installHook
@@ -4417,7 +4439,7 @@ object AppleMusicProvider {
                     )
                 }
             })
-            installHook(onModelBoundMethod, after = { chain, _ ->
+            hookRegistrar.install(onModelBoundMethod, after = { chain, _ ->
                 val controller = chain.thisObject ?: return@installHook
                 val model = chain.args.getOrNull(1) ?: return@installHook
                 val entity = collectionPageRowEntity(model, mediaEntityClass)
@@ -4610,7 +4632,7 @@ object AppleMusicProvider {
                 ),
             )
 
-            installScopedHook(
+            hookRegistrar.installScoped(
                 executable = libraryPinMethod,
                 enter = { chain ->
                     val entity = chain.args.firstOrNull() ?: return@installScopedHook false
@@ -4622,7 +4644,7 @@ object AppleMusicProvider {
                 after = { _, _ -> Unit },
                 exit = { debugLibraryArtworkComposeCaptures.pop() },
             )
-            installHook(asyncImagePainterFactoryMethod, after = { chain, result ->
+            hookRegistrar.install(asyncImagePainterFactoryMethod, after = { chain, result ->
                 val capture = debugLibraryArtworkComposeCaptures.current
                     ?: return@installHook
                 val painter = result?.takeIf(painterClass::isInstance)
@@ -4645,7 +4667,7 @@ object AppleMusicProvider {
                         candidate.parameterCount == 0 &&
                         candidate.returnType == Void.TYPE
                 }.apply { isAccessible = true }
-                installHook(method, after = { chain, _ ->
+                hookRegistrar.install(method, after = { chain, _ ->
                     chain.thisObject?.let { painter ->
                         recordDebugLibraryArtworkPainterLifecycle(painter, lifecycle)
                     }
@@ -4656,7 +4678,7 @@ object AppleMusicProvider {
                     method.returnType == Void.TYPE &&
                     method.parameterTypes.contentEquals(arrayOf(painterStateClass))
             }.apply { isAccessible = true }
-            installHook(stateUpdateMethod, after = { chain, _ ->
+            hookRegistrar.install(stateUpdateMethod, after = { chain, _ ->
                 chain.thisObject?.let { painter ->
                     recordDebugLibraryArtworkPainterState(
                         painter = painter,
@@ -4907,7 +4929,7 @@ object AppleMusicProvider {
             val liveDataGetValue = AppleReflection.findMethod(liveDataClass, "getValue", 0)
             val liveDataSetValue = AppleReflection.findMethod(liveDataClass, "setValue", 1)
 
-            installHook(
+            hookRegistrar.install(
                 builderMethod,
                 before = { chain ->
                     chain.args.getOrNull(3)
@@ -5012,7 +5034,7 @@ object AppleMusicProvider {
                 },
             )
 
-            installConditionalVoidSkipHook(resolverSubmitMethod) { chain ->
+            hookRegistrar.installConditionalVoidSkip(resolverSubmitMethod) { chain ->
                 val delegate = chain.args.firstOrNull()
                     ?.takeIf(delegateClass::isInstance)
                     ?: return@installConditionalVoidSkipHook false
@@ -5200,7 +5222,7 @@ object AppleMusicProvider {
                 AppleMusicHookPoint.LISTEN_NOW_MEDIA_ENTITY
             ).clazz
             val onModelBoundMethod = resolvedOnModelBound.method
-            installHook(onModelBoundMethod, before = { chain ->
+            hookRegistrar.install(onModelBoundMethod, before = { chain ->
                 listenNowDataBindingArgument(chain.args.getOrNull(1))?.let { binding ->
                     beginInAppListenNowDataBindingBind(binding)
                 }
@@ -5615,7 +5637,7 @@ object AppleMusicProvider {
                 customImageViewClass.getDeclaredMethod("setBitmap", Bitmap::class.java),
             ).onEach { it.isAccessible = true }
 
-            installHook(
+            hookRegistrar.install(
                 onModelBoundMethod,
                 before = { chain ->
                     val listener = chain.thisObject ?: return@installHook
@@ -5713,7 +5735,7 @@ object AppleMusicProvider {
                 },
             )
 
-            installHook(
+            hookRegistrar.install(
                 resolverSubmitMethod,
                 before = { chain ->
                     val delegate = chain.args.firstOrNull()
@@ -5754,7 +5776,7 @@ object AppleMusicProvider {
             )
 
             delegateArtworkMethods.forEach { method ->
-                installHook(
+                hookRegistrar.install(
                     method,
                     before = { chain ->
                         val delegate = chain.thisObject ?: return@installHook
@@ -5797,7 +5819,7 @@ object AppleMusicProvider {
             }
 
             liveDataMutationMethods.forEach { method ->
-                installHook(
+                hookRegistrar.install(
                     method,
                     before = { chain ->
                         val liveData = chain.thisObject ?: return@installHook
@@ -5840,7 +5862,7 @@ object AppleMusicProvider {
             }
 
             customImageMutationMethods.forEach { method ->
-                installHook(
+                hookRegistrar.install(
                     method,
                     before = { chain ->
                         val imageView = chain.thisObject ?: return@installHook
@@ -6073,13 +6095,13 @@ object AppleMusicProvider {
             }
             artworkResultMethods.forEach { method ->
                 method.isAccessible = true
-                installHook(method, after = { chain, _ ->
+                hookRegistrar.install(method, after = { chain, _ ->
                     chain.thisObject?.let { delegate ->
                         cacheInAppArtworkContinuity(delegate, accessors)
                     }
                 })
             }
-            installHook(notifyInitialMethod, before = { chain ->
+            hookRegistrar.install(notifyInitialMethod, before = { chain ->
                 val delegate = chain.thisObject ?: return@installHook
                 val key = inAppArtworkContinuityKey(delegate, accessors)
                     ?: return@installHook
@@ -6263,7 +6285,7 @@ object AppleMusicProvider {
             }
             buildMethods.forEach { method ->
                 method.isAccessible = true
-                installHook(
+                hookRegistrar.install(
                     method,
                     before = {
                         if (BuildConfig.DEBUG) {
@@ -6396,7 +6418,7 @@ object AppleMusicProvider {
                 ?.apply { isAccessible = true }
                 ?.get(null)
                 ?: error("Compose NeverEqualPolicy singleton unavailable")
-            installHook(
+            hookRegistrar.install(
                 libraryContentMethod,
                 before = { chain ->
                     val fragment = chain.thisObject ?: return@installHook
@@ -6428,7 +6450,7 @@ object AppleMusicProvider {
                     )
                 },
             )
-            installHook(observeAsStateMethod, after = { chain, result ->
+            hookRegistrar.install(observeAsStateMethod, after = { chain, result ->
                 val capture = activeInAppLibraryComposeCapture.get()
                     ?: return@installHook
                 if (chain.args.firstOrNull() !== capture.liveData) return@installHook
@@ -6660,7 +6682,7 @@ object AppleMusicProvider {
                 View::class.java,
                 Int::class.javaPrimitiveType!!,
             ).apply { isAccessible = true }
-            installHook(bindingConstructor, after = { chain, _ ->
+            hookRegistrar.install(bindingConstructor, after = { chain, _ ->
                 chain.thisObject?.let { binding ->
                     captureInAppDataBinding(
                         binding = binding,
@@ -6668,7 +6690,7 @@ object AppleMusicProvider {
                     )
                 }
             })
-            installHook(registrationMethod, after = { chain, _ ->
+            hookRegistrar.install(registrationMethod, after = { chain, _ ->
                 val binding = chain.thisObject ?: return@installHook
                 captureInAppDataBinding(binding)
                 val contentItem = chain.args.getOrNull(1) ?: return@installHook
@@ -6676,7 +6698,7 @@ object AppleMusicProvider {
                 val mediaId = contentItemMediaId(contentItem) ?: return@installHook
                 registerInAppDataBinding(mediaId, binding)
             })
-            installHook(executePendingBindingsMethod, after = { chain, _ ->
+            hookRegistrar.install(executePendingBindingsMethod, after = { chain, _ ->
                 val binding = chain.thisObject ?: return@installHook
                 val mediaId = inAppDataBindingMediaIds[binding] ?: return@installHook
                 val root = inAppDataBindingRootViews[binding]?.get()
@@ -6835,7 +6857,7 @@ object AppleMusicProvider {
                 }
                 ?.apply { isAccessible = true }
                 ?: error("RecyclerView central bind method unavailable")
-            installHook(bindMethod, after = { chain, result ->
+            hookRegistrar.install(bindMethod, after = { chain, result ->
                 val capture = activeRecyclerBindCaptures.pop()
                 if (result != true || capture == null || !capture.captureMetadata) {
                     return@installHook
@@ -7327,7 +7349,7 @@ object AppleMusicProvider {
                 "onWindowFocusChanged",
                 Boolean::class.javaPrimitiveType,
             ).apply { isAccessible = true }
-            installHook(onResume, after = { chain, _ ->
+            hookRegistrar.install(onResume, after = { chain, _ ->
                 val activity = chain.thisObject as? Activity ?: return@installHook
                 debugForegroundActivities[activity] = true
                 mainHandler.postDelayed(
@@ -7335,11 +7357,11 @@ object AppleMusicProvider {
                     250L,
                 )
             })
-            installHook(onPause, before = { chain ->
+            hookRegistrar.install(onPause, before = { chain ->
                 val activity = chain.thisObject as? Activity ?: return@installHook
                 debugForegroundActivities.remove(activity)
             })
-            installHook(onWindowFocusChanged, after = { chain, _ ->
+            hookRegistrar.install(onWindowFocusChanged, after = { chain, _ ->
                 val hasFocus = chain.args.firstOrNull() as? Boolean ?: false
                 if (!hasFocus) return@installHook
                 val activity = chain.thisObject as? Activity ?: return@installHook
@@ -7599,7 +7621,7 @@ object AppleMusicProvider {
                 "onMediaMetadataChanged",
                 parameterCount = 1,
             )
-            installHook(method, before = { chain ->
+            hookRegistrar.install(method, before = { chain ->
                 val dispatcher = chain.thisObject ?: return@installHook
                 val metadata = chain.args.firstOrNull() ?: return@installHook
                 val identityBefore = activePlaybackMediaIdentity()
@@ -7643,7 +7665,7 @@ object AppleMusicProvider {
                 "a",
                 parameterCount = 1,
             )
-            installResultOverrideHook(containerMethod) { chain, original ->
+            hookRegistrar.installResultOverride(containerMethod) { chain, original ->
                 val containerItem = original ?: return@installResultOverrideHook original
                 val metadata = chain.args.firstOrNull()
                     ?: return@installResultOverrideHook original
@@ -7679,7 +7701,7 @@ object AppleMusicProvider {
                 "b",
                 parameterCount = 1,
             )
-            installResultOverrideHook(playbackItemMethod) { chain, original ->
+            hookRegistrar.installResultOverride(playbackItemMethod) { chain, original ->
                 val playbackItem = original ?: return@installResultOverrideHook original
                 val metadata = chain.args.firstOrNull()
                     ?: return@installResultOverrideHook original
@@ -7722,7 +7744,7 @@ object AppleMusicProvider {
                 }
                 ?.apply { isAccessible = true }
                 ?: error("Action sheet CollectionItemView field unavailable")
-            installHook(bindMethod, after = { chain, _ ->
+            hookRegistrar.install(bindMethod, after = { chain, _ ->
                 val binding = chain.thisObject ?: return@installHook
                 val item = runCatching { itemField.get(binding) }.getOrNull()
                     ?: return@installHook
@@ -7977,7 +7999,7 @@ object AppleMusicProvider {
                 "onMediaMetadataChanged",
                 parameterCount = 1,
             )
-            installHook(method, before = { chain ->
+            hookRegistrar.install(method, before = { chain ->
                 val listener = chain.thisObject ?: return@installHook
                 val metadata = chain.args.firstOrNull() ?: return@installHook
                 val identityBefore = activePlaybackMediaIdentity()
@@ -8023,7 +8045,7 @@ object AppleMusicProvider {
                 "updateQueue",
                 parameterCount = 5,
             )
-            installHook(queueMethod, before = { chain ->
+            hookRegistrar.install(queueMethod, before = { chain ->
                 chain.thisObject ?: return@installHook
                 val items = chain.args.firstOrNull() as? Iterable<*> ?: return@installHook
                 val mediaIds = registerInAppQueueEntries(items, preBind = true)
@@ -8042,7 +8064,7 @@ object AppleMusicProvider {
                 "updateHistory",
                 parameterCount = 1,
             )
-            installHook(historyMethod, before = { chain ->
+            hookRegistrar.install(historyMethod, before = { chain ->
                 chain.thisObject ?: return@installHook
                 val items = chain.args.firstOrNull() as? Iterable<*> ?: return@installHook
                 val mediaIds = registerInAppQueueEntries(
@@ -8075,7 +8097,7 @@ object AppleMusicProvider {
                 "B",
                 parameterCount = 1,
             )
-            installHook(submitMethod, before = { chain ->
+            hookRegistrar.install(submitMethod, before = { chain ->
                 val adapterObject = chain.thisObject ?: return@installHook
                 (adapterObject as? RecyclerView.Adapter<*>)?.let(::registerInAppQueueAdapter)
                 val items = chain.args.firstOrNull() as? Iterable<*> ?: return@installHook
@@ -8104,7 +8126,7 @@ object AppleMusicProvider {
                 "p",
                 parameterCount = 2,
             )
-            installHook(bindMethod, before = { chain ->
+            hookRegistrar.install(bindMethod, before = { chain ->
                 val adapter = chain.thisObject ?: return@installHook
                 (adapter as? RecyclerView.Adapter<*>)?.let(::registerInAppQueueAdapter)
                 val position = chain.args.getOrNull(1) as? Int ?: return@installHook
@@ -12115,7 +12137,7 @@ object AppleMusicProvider {
             if (method.returnType != String::class.java || !playbackMetadataHookedMethods.add(method)) {
                 return@forEach
             }
-            installResultOverrideHook(method) { chain, original ->
+            hookRegistrar.installResultOverride(method) { chain, original ->
                 if (internalContentItemGetterGuard.isActive) {
                     return@installResultOverrideHook original
                 }
@@ -12574,7 +12596,7 @@ object AppleMusicProvider {
         if (method.returnType != String::class.java || !lyricDisplayTextHookedMethods.add(method)) {
             return
         }
-        installResultOverrideHook(method) { chain, original ->
+        hookRegistrar.installResultOverride(method) { chain, original ->
             val originalText = original as? String
             if (AppleLyricTextTransform.isRawReadActive()) {
                 return@installResultOverrideHook AppleLyricTextTransform.transform(originalText)
@@ -12692,7 +12714,7 @@ object AppleMusicProvider {
                 renderMethods.forEach { method ->
                     if (!applePronunciationRenderHookedMethods.add(method)) return@forEach
                     method.isAccessible = true
-                    installScopedHook(
+                    hookRegistrar.installScoped(
                         executable = method,
                         enter = enter@{ chain ->
                             val vector = chain.args.firstOrNull() ?: return@enter false
@@ -12757,7 +12779,7 @@ object AppleMusicProvider {
         }.getOrNull() ?: return
         if (!nativeOnlineTranslationHookedMethods.add(method)) return
 
-        installResultOverrideHook(method) { chain, original ->
+        hookRegistrar.installResultOverride(method) { chain, original ->
             if (AppleLyricTextTransform.isRawReadActive()) {
                 return@installResultOverrideHook original
             }
@@ -13121,7 +13143,7 @@ object AppleMusicProvider {
             // Apple Music 6.5.0 的歌词页会先用系统语言调用 setTranslation/hasTranslation，
             // 但官方对象可能只提供带地区的标签（例如 zh-Hans-CN）。把这两个调用统一
             // 映射到对象真实存在的官方标签，避免译文已加载却被 G2 可见性检查隐藏。
-            installArgumentRewriteHook(method) { chain ->
+            hookRegistrar.installArgumentRewrite(method) { chain ->
                 if (appleOfficialTranslationProbeGuard.isActive) {
                     return@installArgumentRewriteHook null
                 }
@@ -13142,7 +13164,7 @@ object AppleMusicProvider {
                 }
             }
 
-            installResultOverrideHook(method) { chain, original ->
+            hookRegistrar.installResultOverride(method) { chain, original ->
                 if (appleOfficialTranslationProbeGuard.isActive) {
                     return@installResultOverrideHook original
                 }
@@ -13167,7 +13189,7 @@ object AppleMusicProvider {
                 !nativeOnlineTranslationHookedMethods.add(method)
             ) return@forEach
 
-            installResultOverrideHook(method) { chain, original ->
+            hookRegistrar.installResultOverride(method) { chain, original ->
                 val songId = nativeSongId(chain.thisObject)
                 val requestedLanguage = chain.args.firstOrNull() as? String
                 if (
@@ -13227,7 +13249,7 @@ object AppleMusicProvider {
             "matchToSystemLyricsScript",
             parameterCount = 1,
         )
-        installResultOverrideHook(method) { chain, original ->
+        hookRegistrar.installResultOverride(method) { chain, original ->
             val appleLanguages = nativeVectorStrings(chain.args.firstOrNull())
             if (
                 shouldHideMandarinPronunciation(
@@ -13264,7 +13286,7 @@ object AppleMusicProvider {
             val translationIndex = stringArrayIndexes.first()
             val pronunciationIndex = stringArrayIndexes.last()
             constructor.isAccessible = true
-            installArgumentRewriteHook(constructor) { chain ->
+            hookRegistrar.installArgumentRewrite(constructor) { chain ->
                 val originalTranslationLanguages =
                     chain.args.getOrNull(translationIndex) as? Array<*>
                 val expandedTranslationLanguages = expandAppleLyricsTranslationLanguages(
@@ -14930,7 +14952,7 @@ object AppleMusicProvider {
             classLoader.loadClass("com.apple.android.music.player.viewmodel.PlayerLyricsViewModel")
         val loadMethod = AppleReflection.findMethod(viewModelClass, "loadLyrics", parameterCount = 1)
         appleLyricsLoadMethod = loadMethod
-        installHook(loadMethod, before = { chain ->
+        hookRegistrar.install(loadMethod, before = { chain ->
             val item = chain.args.firstOrNull() ?: return@installHook
             val source = if (lyricRequester.ownsViewModel(chain.thisObject)) "module" else "apple"
             if (source == "apple") {
@@ -14959,7 +14981,7 @@ object AppleMusicProvider {
             "buildTimeRangeToLyricsMap",
             parameterCount = 1
         )
-        installHook(
+        hookRegistrar.install(
             buildMethod,
             before = { chain ->
                 val pointer = chain.args.firstOrNull() ?: return@installHook
@@ -15037,7 +15059,7 @@ object AppleMusicProvider {
             classLoader.loadClass("com.apple.android.music.player.fragment.PlayerLyricsViewFragment")
         val method = AppleReflection.findMethod(fragmentClass, "R2", parameterCount = 1)
         appleLyricsPresentationMethod = method
-        installHook(
+        hookRegistrar.install(
             method,
             before = { chain ->
                 val fragment = chain.thisObject ?: return@installHook
@@ -15101,7 +15123,7 @@ object AppleMusicProvider {
                 "getFont",
                 Int::class.javaPrimitiveType,
             ).apply { isAccessible = true }
-            installResultOverrideHook(getFont) { chain, original ->
+            hookRegistrar.installResultOverride(getFont) { chain, original ->
                 val resources = chain.thisObject as? Resources
                     ?: return@installResultOverrideHook original
                 val resourceId = (chain.args.firstOrNull() as? Number)?.toInt()
@@ -15122,7 +15144,7 @@ object AppleMusicProvider {
                 Int::class.javaPrimitiveType,
                 Boolean::class.javaPrimitiveType,
             ).apply { isAccessible = true }
-            installResultOverrideHook(createWithWeight) { chain, originalResult ->
+            hookRegistrar.installResultOverride(createWithWeight) { chain, originalResult ->
                 if (
                     appleSystemFontApplyGuard.isActive ||
                     !isFollowSystemFontWeightEnabled()
@@ -15161,7 +15183,7 @@ object AppleMusicProvider {
                 "setTypeface",
                 Typeface::class.java,
             ).apply { isAccessible = true }
-            installArgumentRewriteHook(setTypeface) { chain ->
+            hookRegistrar.installArgumentRewrite(setTypeface) { chain ->
                 if (appleSystemFontApplyGuard.isActive) {
                     return@installArgumentRewriteHook null
                 }
@@ -15213,7 +15235,7 @@ object AppleMusicProvider {
                 Typeface::class.java,
                 Int::class.javaPrimitiveType,
             ).apply { isAccessible = true }
-            installArgumentRewriteHook(styledTypeface) { chain ->
+            hookRegistrar.installArgumentRewrite(styledTypeface) { chain ->
                 if (appleSystemFontApplyGuard.isActive) {
                     return@installArgumentRewriteHook null
                 }
@@ -15275,7 +15297,7 @@ object AppleMusicProvider {
                 CharSequence::class.java,
                 TextView.BufferType::class.java,
             ).apply { isAccessible = true }
-            installHook(setText, after = { chain, _ ->
+            hookRegistrar.install(setText, after = { chain, _ ->
                 val view = chain.thisObject as? TextView ?: return@installHook
                 val text = chain.args.firstOrNull() as? CharSequence
                 applyAppleSystemFontForTextView(
@@ -15296,7 +15318,7 @@ object AppleMusicProvider {
                 TextView.BufferType::class.java,
             )?.apply { isAccessible = true }
                 ?: error("CustomTextView.setText(CharSequence,BufferType) unavailable")
-            installHook(customSetText, after = { chain, _ ->
+            hookRegistrar.install(customSetText, after = { chain, _ ->
                 val view = chain.thisObject as? TextView ?: return@installHook
                 val text = chain.args.firstOrNull() as? CharSequence
                 applyAppleSystemFontForTextView(
@@ -15324,7 +15346,7 @@ object AppleMusicProvider {
                     method.returnType == Void.TYPE
             }?.apply { isAccessible = true }
                 ?: error("CustomTextView Future resolver f() unavailable")
-            installScopedHook(
+            hookRegistrar.installScoped(
                 executable = resolveFuture,
                 enter = { chain ->
                     val view = chain.thisObject as? TextView ?: return@installScopedHook false
@@ -15348,7 +15370,7 @@ object AppleMusicProvider {
             val getTextMetricsParams = TextView::class.java.getDeclaredMethod(
                 "getTextMetricsParams"
             ).apply { isAccessible = true }
-            installHook(getTextMetricsParams, before = { chain ->
+            hookRegistrar.install(getTextMetricsParams, before = { chain ->
                 val measurementText = appleSystemFontLyricsMeasurementTexts.current
                     ?: return@installHook
                 val view = chain.thisObject as? TextView ?: return@installHook
@@ -15385,7 +15407,7 @@ object AppleMusicProvider {
                     "onDraw",
                     Canvas::class.java,
                 ).apply { isAccessible = true }
-                installHook(onDraw, before = { chain ->
+                hookRegistrar.install(onDraw, before = { chain ->
                     val view = chain.thisObject as? TextView ?: return@installHook
                     logAppleSystemFontDrawState(view)
                 })
@@ -15400,7 +15422,7 @@ object AppleMusicProvider {
                     Canvas::class.java,
                 )?.apply { isAccessible = true }
                     ?: error("CustomTextView.onDraw unavailable")
-                installHook(onDraw, before = { chain ->
+                hookRegistrar.install(onDraw, before = { chain ->
                     val view = chain.thisObject as? TextView ?: return@installHook
                     logAppleSystemFontDrawState(view)
                 })
@@ -15443,7 +15465,7 @@ object AppleMusicProvider {
                     method.parameterTypes.size == 4 &&
                     method.parameterTypes.firstOrNull() == android.content.Context::class.java
             }.apply { isAccessible = true }
-            installResultOverrideHook(typefaceFactoryMethod) { _, original ->
+            hookRegistrar.installResultOverride(typefaceFactoryMethod) { _, original ->
                 (original as? Typeface)?.let(appleSystemFontManagedTypefaces::add)
                 original
             }
@@ -15470,7 +15492,7 @@ object AppleMusicProvider {
                     val paintIndex = constructor.parameterTypes.indexOfFirst(
                         TextPaint::class.java::isAssignableFrom,
                     )
-                    installArgumentRewriteHook(constructor) { chain ->
+                    hookRegistrar.installArgumentRewrite(constructor) { chain ->
                         if (appleSystemFontApplyGuard.isActive) {
                             return@installArgumentRewriteHook null
                         }
@@ -15525,7 +15547,7 @@ object AppleMusicProvider {
                         return@forEach
                     }
                     method.isAccessible = true
-                    installScopedHook(
+                    hookRegistrar.installScoped(
                         executable = method,
                         enter = enter@{ chain ->
                             val measurementText = nativeRawWordVectorText(
@@ -15562,7 +15584,7 @@ object AppleMusicProvider {
                 "measureText",
                 String::class.java,
             ).apply { isAccessible = true }
-            installHook(measureText, after = { chain, result ->
+            hookRegistrar.install(measureText, after = { chain, result ->
                 if (appleSystemFontLyricsMeasureDiagnosticGuard.isActive) {
                     return@installHook
                 }
@@ -15658,7 +15680,7 @@ object AppleMusicProvider {
             val getAnimatedFraction = ValueAnimator::class.java.getDeclaredMethod(
                 "getAnimatedFraction",
             ).apply { isAccessible = true }
-            installHook(getAnimatedFraction, after = { chain, result ->
+            hookRegistrar.install(getAnimatedFraction, after = { chain, result ->
                 if (!isFollowSystemFontWeightEnabled()) return@installHook
                 val animator = chain.thisObject as? ValueAnimator ?: return@installHook
                 val fraction = (result as? Number)?.toFloat() ?: return@installHook
@@ -15699,7 +15721,7 @@ object AppleMusicProvider {
                 field.type == layoutClass
             }.apply { isAccessible = true }
 
-            installHook(updateMask, after = { chain, _ ->
+            hookRegistrar.install(updateMask, after = { chain, _ ->
                 if (!isFollowSystemFontWeightEnabled()) return@installHook
                 val mask = chain.thisObject ?: return@installHook
                 val inputFraction = (chain.args.getOrNull(2) as? Number)?.toFloat()
@@ -16609,7 +16631,7 @@ object AppleMusicProvider {
                         name,
                         parameterCount = parameterCount,
                     )
-                    installHook(method, after = { chain, _ ->
+                    hookRegistrar.install(method, after = { chain, _ ->
                         if (name == "setAdapter") {
                             (chain.thisObject as? View)?.let(
                                 appleLyricsRecyclerViewClassifications::remove
@@ -16640,7 +16662,7 @@ object AppleMusicProvider {
                     "onScrolled",
                     parameterCount = 2,
                 )
-                installHook(method, after = { chain, _ ->
+                hookRegistrar.install(method, after = { chain, _ ->
                     chain.thisObject
                         ?.takeIf(::isAppleLyricsRecyclerView)
                         ?.let { recyclerView ->
@@ -16663,7 +16685,7 @@ object AppleMusicProvider {
                 val method = findAppleLyricsScrollToPositionWithOffsetMethod(
                     linearLayoutManagerClass
                 ) ?: error("scrollToPositionWithOffset method not found")
-                installHook(method, after = { chain, _ ->
+                hookRegistrar.install(method, after = { chain, _ ->
                     val targetPosition = (chain.args.firstOrNull() as? Number)?.toInt()
                         ?: return@installHook
                     onAppleLyricsProgrammaticRecenterRequested(
@@ -16685,7 +16707,7 @@ object AppleMusicProvider {
                         name,
                         parameterCount = 1,
                     )
-                    installHook(method, after = { chain, _ ->
+                    hookRegistrar.install(method, after = { chain, _ ->
                         val scrollState = (chain.args.firstOrNull() as? Number)?.toInt()
                             ?: return@installHook
                         chain.thisObject
@@ -16710,7 +16732,7 @@ object AppleMusicProvider {
                         "T",
                         parameterCount = 3,
                     )
-                    installHook(method, after = { chain, _ ->
+                    hookRegistrar.install(method, after = { chain, _ ->
                         onAppleLyricsActiveLinesUpdated(chain.thisObject)
                     })
                     installedHooks += "$adapterClassName.T"
@@ -16752,7 +16774,7 @@ object AppleMusicProvider {
             bindMethods.forEach { method ->
                 if (!appleLyricsAdapterBindingDiagnosticMethods.add(method)) return@forEach
                 method.isAccessible = true
-                installScopedHook(
+                hookRegistrar.installScoped(
                     executable = method,
                     enter = { chain ->
                         val adapter = chain.thisObject ?: return@installScopedHook false
@@ -16881,7 +16903,7 @@ object AppleMusicProvider {
                 "onCreateView",
                 parameterCount = 3,
             )
-            installHook(
+            hookRegistrar.install(
                 onCreateView,
                 before = { chain ->
                     chain.thisObject?.let { fragment ->
@@ -16910,7 +16932,7 @@ object AppleMusicProvider {
                 "onResume",
                 parameterCount = 0,
             )
-            installHook(onResume, after = { chain, _ ->
+            hookRegistrar.install(onResume, after = { chain, _ ->
                 chain.thisObject?.let { fragment ->
                     logAppleLyricsUiState(fragment, "onResume_after")
                 }
@@ -16921,7 +16943,7 @@ object AppleMusicProvider {
                 "onDestroyView",
                 parameterCount = 0,
             )
-            installHook(onDestroyView, before = { chain ->
+            hookRegistrar.install(onDestroyView, before = { chain ->
                 chain.thisObject?.let { fragment ->
                     logAppleLyricsUiState(fragment, "onDestroyView_before")
                 }
@@ -16933,7 +16955,7 @@ object AppleMusicProvider {
                 "setAdapter",
                 parameterCount = 1,
             )
-            installHook(setAdapter, after = { chain, _ ->
+            hookRegistrar.install(setAdapter, after = { chain, _ ->
                 chain.thisObject
                     ?.takeIf(::isAppleRecyclerViewInstance)
                     ?.let { recyclerView ->
@@ -16945,7 +16967,7 @@ object AppleMusicProvider {
                 "onAttachedToWindow",
                 parameterCount = 0,
             )
-            installHook(onRecyclerAttached, after = { chain, _ ->
+            hookRegistrar.install(onRecyclerAttached, after = { chain, _ ->
                 chain.thisObject
                     ?.takeIf(::isAppleRecyclerViewInstance)
                     ?.let { recyclerView ->
@@ -16962,7 +16984,7 @@ object AppleMusicProvider {
         val exoPlayerClass =
             classLoader.loadClass("com.apple.android.music.playback.player.ExoMediaPlayer")
         exoPlayerClass.declaredConstructors.forEach { constructor ->
-            installHook(constructor, after = { chain, _ ->
+            hookRegistrar.install(constructor, after = { chain, _ ->
                 capturePlaybackPositionSource(
                     mediaPlayer = chain.thisObject,
                     source = "ExoMediaPlayer.<init>",
@@ -16977,7 +16999,7 @@ object AppleMusicProvider {
             "seekToPosition",
             parameterCount = 1
         )
-        installHook(seekMethod, after = { chain, _ ->
+        hookRegistrar.install(seekMethod, after = { chain, _ ->
             val position = chain.args.firstOrNull() as? Long ?: 0L
             if (BuildConfig.DEBUG) {
                 lastExplicitSeekAtMs = SystemClock.elapsedRealtime()
@@ -16999,7 +17021,7 @@ object AppleMusicProvider {
             "onPlaybackStateChanged",
             parameterCount = 3
         )
-        installHook(stateMethod, after = { chain, _ ->
+        hookRegistrar.install(stateMethod, after = { chain, _ ->
             val activeMediaPlayer = chain.args.firstOrNull()
             val playbackState = PlaybackState.of(chain.args.getOrNull(2) as? Int ?: -1)
             ProviderLogger.diagnostic(
@@ -17056,7 +17078,7 @@ object AppleMusicProvider {
 
     private fun hookExoPlaybackLifecycle(exoPlayerClass: Class<*>) {
         val playMethod = AppleReflection.findMethod(exoPlayerClass, "play", parameterCount = 0)
-        installHook(playMethod, after = { chain, _ ->
+        hookRegistrar.install(playMethod, after = { chain, _ ->
             activatePlaybackPlayer(
                 mediaPlayer = chain.thisObject,
                 source = "ExoMediaPlayer.play"
@@ -17067,7 +17089,7 @@ object AppleMusicProvider {
 
         listOf("pause", "stop", "release").forEach { methodName ->
             val method = AppleReflection.findMethod(exoPlayerClass, methodName, parameterCount = 0)
-            installHook(method, after = { chain, _ ->
+            hookRegistrar.install(method, after = { chain, _ ->
                 if (playbackPositionSource?.player === chain.thisObject) {
                     stopSyncAction()
                     if (methodName == "release") {
@@ -17242,7 +17264,7 @@ object AppleMusicProvider {
                 classLoader.loadClass("t8.N0"),
                 "z"
             )
-            installHook(method, before = { chain ->
+            hookRegistrar.install(method, before = { chain ->
                 @Suppress("UNCHECKED_CAST")
                 val query = chain.args.getOrNull(5) as? MutableMap<String, String>
                     ?: return@installHook
@@ -17270,7 +17292,7 @@ object AppleMusicProvider {
                 "d",
                 parameterCount = 1
             )
-            installHook(method, after = { chain, result ->
+            hookRegistrar.install(method, after = { chain, result ->
                 val url = chain.args.firstOrNull()?.toString().orEmpty()
                 if (!url.contains("/syllable-lyrics")) return@installHook
                 val cookies = (result as? Iterable<*>)?.mapNotNull { cookie ->
@@ -17291,7 +17313,7 @@ object AppleMusicProvider {
                 "a",
                 parameterCount = 1
             )
-            installHook(
+            hookRegistrar.install(
                 method,
                 before = { chain ->
                     val interceptor = chain.args.firstOrNull() ?: return@installHook
@@ -17352,574 +17374,7 @@ object AppleMusicProvider {
         }
     }
 
-    private fun installHook(
-        executable: Executable,
-        before: ((Chain) -> Unit)? = null,
-        after: ((Chain, Any?) -> Unit)? = null
-    ) {
-        runCatching { module.deoptimize(executable) }
-        module.hook(executable).intercept(CallbackHook(before, after))
-    }
-
-    private fun installScopedHook(
-        executable: Executable,
-        enter: (Chain) -> Boolean,
-        after: (Chain, Any?) -> Unit,
-        exit: () -> Unit,
-    ) {
-        runCatching { module.deoptimize(executable) }
-        module.hook(executable).intercept(ScopedCallbackHook(enter, after, exit))
-    }
-
-    private fun installConditionalVoidSkipHook(
-        executable: Executable,
-        shouldSkip: (Chain) -> Boolean,
-    ) {
-        require(executable is Method && executable.returnType == Void.TYPE) {
-            "Conditional skip hooks require a void method: $executable"
-        }
-        runCatching { module.deoptimize(executable) }
-        module.hook(executable).intercept(ConditionalVoidSkipHook(shouldSkip))
-    }
-
-    private fun installResultOverrideHook(
-        executable: Executable,
-        override: (Chain, Any?) -> Any?,
-    ) {
-        runCatching { module.deoptimize(executable) }
-        module.hook(executable).intercept(ResultOverrideHook(override))
-    }
-
-    private fun installArgumentRewriteHook(
-        executable: Executable,
-        rewrite: (Chain) -> Array<Any?>?,
-    ) {
-        runCatching { module.deoptimize(executable) }
-        module.hook(executable).intercept(ArgumentRewriteHook(rewrite))
-    }
-
-    private class CallbackHook(
-        private val before: ((Chain) -> Unit)?,
-        private val after: ((Chain, Any?) -> Unit)?
-    ) : Hooker {
-        override fun intercept(chain: Chain): Any? {
-            runCatching { before?.invoke(chain) }
-                .onFailure { ProviderLogger.error("Apple Music Hook 前置回调失败", it) }
-            val result = chain.proceed()
-            runCatching { after?.invoke(chain, result) }
-                .onFailure { ProviderLogger.error("Apple Music Hook 后置回调失败", it) }
-            return result
-        }
-    }
-
-    private class ScopedCallbackHook(
-        private val enter: (Chain) -> Boolean,
-        private val after: (Chain, Any?) -> Unit,
-        private val exit: () -> Unit,
-    ) : Hooker {
-        override fun intercept(chain: Chain): Any? {
-            val entered = runCatching { enter(chain) }
-                .onFailure { ProviderLogger.error("Apple Music Hook 作用域进入失败", it) }
-                .getOrDefault(false)
-            return try {
-                val result = chain.proceed()
-                if (entered) {
-                    runCatching { after(chain, result) }
-                        .onFailure { ProviderLogger.error("Apple Music Hook 作用域回调失败", it) }
-                }
-                result
-            } finally {
-                if (entered) {
-                    runCatching(exit)
-                        .onFailure { ProviderLogger.error("Apple Music Hook 作用域清理失败", it) }
-                }
-            }
-        }
-    }
-
-    private class ConditionalVoidSkipHook(
-        private val shouldSkip: (Chain) -> Boolean,
-    ) : Hooker {
-        override fun intercept(chain: Chain): Any? {
-            val skip = runCatching { shouldSkip(chain) }
-                .onFailure {
-                    ProviderLogger.error("Apple Music Hook 条件跳过判断失败，继续原始调用", it)
-                }
-                .getOrDefault(false)
-            return if (skip) null else chain.proceed()
-        }
-    }
-
-    private class ResultOverrideHook(
-        private val override: (Chain, Any?) -> Any?,
-    ) : Hooker {
-        override fun intercept(chain: Chain): Any? {
-            val original = chain.proceed()
-            return runCatching { override(chain, original) }
-                .onFailure { ProviderLogger.error("Apple Music Hook 结果覆盖失败", it) }
-                .getOrDefault(original)
-        }
-    }
-
-    private class ArgumentRewriteHook(
-        private val rewrite: (Chain) -> Array<Any?>?,
-    ) : Hooker {
-        override fun intercept(chain: Chain): Any? {
-            val rewritten = runCatching { rewrite(chain) }
-                .onFailure { ProviderLogger.error("Apple Music Hook 参数改写失败", it) }
-                .getOrNull()
-            return if (rewritten == null) {
-                chain.proceed()
-            } else {
-                chain.proceed(rewritten)
-            }
-        }
-    }
 }
-
-private data class AppleSystemFontTextViewState(
-    val originalTypeface: Typeface,
-    val requestedWeight: Int,
-    val italic: Boolean,
-    val originalStyle: Int,
-)
-
-private data class AppleSystemFontTemplateFieldPath(
-    val bindingField: Field,
-    val textField: Field,
-) {
-    fun get(adapter: Any): TextView? = runCatching {
-        val binding = bindingField.get(adapter) ?: return@runCatching null
-        textField.get(binding) as? TextView
-    }.getOrNull()
-}
-
-private data class AppleSystemFontLayoutInput(
-    val text: CharSequence,
-    val paint: TextPaint,
-)
-
-private data class AppleSystemFontRequest(
-    val original: Typeface,
-    val semanticWeight: Int,
-    val italic: Boolean,
-)
-
-private data class AppleSystemFontVariationMethods(
-    val axisConstructor: Constructor<*>,
-    val createFromTypefaceWithVariation: Method,
-    val isVariationInstance: Method,
-)
-
-internal class AppleSystemFontVariationCache<K : Any, V : Any>(
-    private val maxEntries: Int,
-) {
-    private val values = LinkedHashMap<IdentityVariationKey<K>, V>()
-
-    init {
-        require(maxEntries > 0)
-    }
-
-    @Synchronized
-    fun getOrCreate(
-        original: K,
-        effectiveWeight: Int,
-        italic: Boolean,
-        create: () -> V?,
-    ): V? {
-        val key = IdentityVariationKey(original, effectiveWeight, italic)
-        values[key]?.let { return it }
-        val created = create() ?: return null
-        if (values.size >= maxEntries) {
-            val iterator = values.entries.iterator()
-            if (iterator.hasNext()) {
-                iterator.next()
-                iterator.remove()
-            }
-        }
-        values[key] = created
-        return created
-    }
-
-    @Synchronized
-    fun clear() {
-        values.clear()
-    }
-
-    private class IdentityVariationKey<K : Any>(
-        private val original: K,
-        private val effectiveWeight: Int,
-        private val italic: Boolean,
-    ) {
-        override fun equals(other: Any?): Boolean =
-            other is IdentityVariationKey<*> &&
-                original === other.original &&
-                effectiveWeight == other.effectiveWeight &&
-                italic == other.italic
-
-        override fun hashCode(): Int =
-            31 * (31 * System.identityHashCode(original) + effectiveWeight) + italic.hashCode()
-    }
-}
-
-private data class AppleSystemFontReplacementSignature(
-    val effectiveSfProWeight: Int,
-    val semanticWeight: Int,
-    val usesCjkFallback: Boolean,
-    val italic: Boolean,
-)
-
-private data class AppleLyricsGradientAnimatorSample(
-    val animatorIdentity: Int,
-    val animatedFraction: Float,
-    val currentPlayTimeMs: Long,
-    val durationMs: Long,
-    val capturedAtUptimeMs: Long,
-)
-
-private data class HyperOsFontWeightMethods(
-    val loadFontSettingMethod: Method,
-    val fontScaleField: Field,
-    val getWeightIdxMethod: Method,
-    val getScaleWghtMethod: Method,
-    val miuiFontType: Any,
-    val miuiFontPath: String,
-    val typefaceFontFamiliesField: Field,
-)
-
-private data class PlaybackMetadataRefresh(
-    val mediaId: String,
-    val refresh: () -> Unit,
-)
-
-private data class ActivePlaybackMediaIdentity(
-    val mediaId: String?,
-    val source: String,
-    val candidates: String,
-)
-
-private data class AccountMetadata(
-    val title: String?,
-    val artist: String?,
-)
-
-internal data class AppliedMetadataAlias(
-    val mediaId: String,
-    val title: String,
-    val artist: String,
-    val album: String,
-    val language: String,
-) {
-    constructor(mediaId: String, alias: AppleInternalCatalogResolver.Alias) : this(
-        mediaId = mediaId,
-        title = alias.title,
-        artist = alias.artist,
-        album = alias.album,
-        language = alias.language,
-    )
-}
-
-private data class PendingDataBindingRefresh(
-    val mediaId: String,
-    val alias: AppliedMetadataAlias,
-    val bindGeneration: Long,
-)
-
-private data class PendingVisibleDataBindingResolution(
-    val mediaId: String,
-    val bindGeneration: Long,
-    val originalResolutionMode: InAppOriginalResolutionMode,
-)
-
-internal data class InAppLibraryControllerRefreshDispatch(
-    val delayMillis: Long,
-)
-
-internal class InAppLibraryControllerRefreshState {
-    private val pendingMediaIds = linkedSetOf<String>()
-    var scheduled: Boolean = false
-        private set
-    private var lastBuildUptimeMillis: Long? = null
-
-    fun enqueue(
-        mediaId: String,
-        strategy: InAppLibraryControllerBuildStrategy,
-        nowUptimeMillis: Long,
-        albumDebounceMillis: Long,
-        playlistIntervalMillis: Long,
-    ): InAppLibraryControllerRefreshDispatch? {
-        pendingMediaIds.add(mediaId)
-        if (scheduled) return null
-        scheduled = true
-        return InAppLibraryControllerRefreshDispatch(
-            delayMillis = inAppLibraryControllerRefreshDelayMillis(
-                strategy = strategy,
-                lastBuildUptimeMillis = lastBuildUptimeMillis,
-                nowUptimeMillis = nowUptimeMillis,
-                albumDebounceMillis = albumDebounceMillis,
-                playlistIntervalMillis = playlistIntervalMillis,
-            )
-        )
-    }
-
-    fun takePendingMediaIds(): List<String> = pendingMediaIds.toList().also {
-        pendingMediaIds.clear()
-    }
-
-    fun recordBuildAttempt(nowUptimeMillis: Long) {
-        lastBuildUptimeMillis = nowUptimeMillis
-    }
-
-    fun finishDrain(
-        strategy: InAppLibraryControllerBuildStrategy,
-        nowUptimeMillis: Long,
-        albumDebounceMillis: Long,
-        playlistIntervalMillis: Long,
-    ): InAppLibraryControllerRefreshDispatch? {
-        if (pendingMediaIds.isEmpty()) {
-            scheduled = false
-            return null
-        }
-        return InAppLibraryControllerRefreshDispatch(
-            delayMillis = inAppLibraryControllerRefreshDelayMillis(
-                strategy = strategy,
-                lastBuildUptimeMillis = lastBuildUptimeMillis,
-                nowUptimeMillis = nowUptimeMillis,
-                albumDebounceMillis = albumDebounceMillis,
-                playlistIntervalMillis = playlistIntervalMillis,
-            )
-        )
-    }
-}
-
-private data class CollectionPageBoundResolutionState(
-    val requestedMediaIds: MutableSet<String> = linkedSetOf(),
-)
-
-private data class InAppPlaylistRowRef(
-    val root: WeakReference<View>,
-    val title: WeakReference<TextView>?,
-    val subtitle: WeakReference<TextView>?,
-    val entity: WeakReference<Any>,
-    val originalSubtitle: String?,
-    val originalArtist: String?,
-)
-
-private class InAppListenNowModelBuildState(
-    val entity: WeakReference<Any>,
-    val liveData: WeakReference<Any>,
-    val builderKey: InAppListenNowArtworkContinuityKey?,
-    initialCatalogId: String?,
-    val builtAlias: AppliedMetadataAlias?,
-) {
-    @Volatile
-    var catalogId: String? = initialCatalogId
-        private set
-
-    @Volatile
-    var boundBinding: InAppListenNowBoundBinding? = null
-
-    @Synchronized
-    fun assignCatalogId(candidate: String): Boolean {
-        if (catalogId != null) return false
-        catalogId = candidate
-        return true
-    }
-}
-
-private data class InAppListenNowBoundBinding(
-    val binding: WeakReference<Any>,
-    val bindGeneration: Long,
-)
-
-private data class DebugLibraryArtworkComposeCapture(
-    val mediaKey: String,
-    val mediaId: String,
-    val title: String?,
-    val persistentId: Long,
-    val contentType: Int,
-)
-
-private data class DebugLibraryArtworkPainterTrace(
-    val mediaKey: String,
-    val mediaId: String,
-    val title: String?,
-    val persistentId: Long,
-    val contentType: Int,
-    val requestIdentity: Int?,
-    val requestDataDescription: String,
-    val requestDataClass: String,
-    val requestDataHash: Int?,
-    val memoryCacheKey: String,
-    val placeholderSignature: String,
-    val placeholderIdentity: String,
-    val errorSignature: String,
-    val errorIdentity: String,
-) {
-    fun hasSameSemanticRequest(other: DebugLibraryArtworkPainterTrace): Boolean =
-        mediaKey == other.mediaKey &&
-            requestDataClass == other.requestDataClass &&
-            requestDataHash == other.requestDataHash &&
-            memoryCacheKey == other.memoryCacheKey &&
-            placeholderSignature == other.placeholderSignature &&
-            errorSignature == other.errorSignature
-}
-
-private data class DebugLibraryArtworkPainterState(
-    val lifecycle: String? = null,
-    val imageStateFingerprint: String? = null,
-)
-
-private data class DebugListenNowArtworkTrace(
-    val mediaKey: String,
-    val mediaId: String,
-    val title: String?,
-    val persistentId: Long,
-    val contentType: Int,
-    val liveData: WeakReference<Any>,
-    val model: WeakReference<Any>,
-    val root: WeakReference<View>?,
-    val imageViews: List<WeakReference<ImageView>>,
-)
-
-private data class DebugLibraryArtworkAccessors(
-    val requestClass: Class<*>,
-    val requestData: Field,
-    val requestMemoryCacheKey: Field,
-    val requestPlaceholder: Field,
-    val requestError: Field,
-    val painterState: Field,
-    val painterDrawPainter: Field,
-    val statePainter: Method,
-    val stateKinds: Map<Class<*>, String>,
-)
-
-private data class InAppArtworkContinuityAccessors(
-    val getId: Method,
-    val getPersistentId: Method,
-    val getContentType: Method,
-    val getArtworkToken: Method,
-    val getAllArtworkTokens: Method,
-    val getImageUrl: Method,
-    val getImageUrls: Method,
-    val setImageUrl: Method,
-    val setImageUrls: Method,
-    val imageUrlsLiveData: Field,
-)
-
-private data class InAppArtworkContinuityKey(
-    val id: String,
-    val persistentId: Long,
-    val contentType: Int,
-    val artworkToken: String,
-    val artworkTokens: String,
-)
-
-internal data class InAppListenNowArtworkContinuityKey(
-    val id: String,
-    val persistentId: Long,
-    val contentType: Int,
-    val artworkIdentity: String,
-)
-
-private data class InAppListenNowArtworkIdentity(
-    val id: String,
-    val persistentId: Long,
-    val contentType: Int,
-    val allArtworkTokenCount: Int,
-    val allArtworkIdentity: String,
-    val fetchableArtworkToken: String,
-    val artworkToken: String,
-    val selectedArtworkIdentity: String,
-    val key: InAppListenNowArtworkContinuityKey?,
-)
-
-private data class InAppListenNowArtworkCacheProbe(
-    val exact: InAppArtworkContinuityEntry?,
-    val cacheSize: Int,
-    val sameBaseArtworkHashes: List<Int>,
-)
-
-private data class InAppListenNowSeededArtwork(
-    val key: InAppListenNowArtworkContinuityKey,
-    val urls: List<String>,
-)
-
-private data class InAppArtworkContinuityEntry(
-    val urls: List<String>,
-    val capturedAtUptimeMillis: Long,
-)
-
-private data class AlbumPageBuildData(
-    val album: Any,
-    val selectedItemIds: Any?,
-    val mediaId: String?,
-    val trackMediaIds: Set<String> = emptySet(),
-)
-
-private data class ArtistPageBuildData(
-    val artist: Any,
-    val isAddMusicMode: Boolean,
-    val selectedItemIds: Any?,
-)
-
-private data class AlbumHeaderBuildCapture(
-    val mediaId: String,
-)
-
-private data class PendingMetadataLookup(
-    val requestKey: String,
-    val lookup: AppleInternalCatalogResolver.LocalizedLookup,
-)
-
-private data class MetadataSurfaceSignature(
-    val coordinatorRevision: Long,
-    val visibleMediaIds: Set<String>,
-    val activePageMediaIds: Set<String>,
-)
-
-private data class FrameworkMediaSessionRefresh(
-    val mediaId: String,
-    val session: WeakReference<MediaSession>,
-    val metadata: MediaMetadata,
-)
-
-private data class FrameworkMediaQueueRefresh(
-    val session: WeakReference<MediaSession>,
-    val queue: List<MediaSession.QueueItem>,
-    val mediaIds: Set<String>,
-)
-
-private data class InAppMetadataRef(
-    val metadata: WeakReference<Any>,
-    val originalTitle: Any?,
-    val originalArtist: Any?,
-)
-
-private data class InAppPlaybackItemRef(
-    val playbackItem: WeakReference<Any>,
-    val originalTitle: Any?,
-    val originalArtist: Any?,
-    val originalCollectionName: String?,
-    val contract: InAppPlaybackItemContract,
-)
-
-internal enum class InAppPlaybackItemContract {
-    STANDARD,
-    HISTORY,
-}
-
-internal enum class InAppPlaybackItemField {
-    TITLE,
-    ARTIST,
-    ALBUM,
-}
-
-internal data class InAppPlaybackItemAccess(
-    val readMember: String,
-    val readViaMethod: Boolean,
-    val setter: String,
-)
 
 internal fun inAppPlaybackItemAccess(
     contract: InAppPlaybackItemContract,
@@ -17977,50 +17432,6 @@ internal fun selectTrustworthyMediaId(
         .singleOrNull()
 }
 
-internal class ThreadLocalReentryGuard {
-    private val depth = ThreadLocal<Int>()
-
-    val isActive: Boolean
-        get() = (depth.get() ?: 0) > 0
-
-    fun <T> run(block: () -> T): T {
-        val previousDepth = depth.get() ?: 0
-        depth.set(previousDepth + 1)
-        return try {
-            block()
-        } finally {
-            if (previousDepth == 0) {
-                depth.remove()
-            } else {
-                depth.set(previousDepth)
-            }
-        }
-    }
-}
-
-internal class ThreadLocalStack<T : Any> {
-    private val stacks = ThreadLocal<ArrayDeque<T>>()
-
-    val current: T?
-        get() = stacks.get()?.lastOrNull()
-
-    fun push(value: T) {
-        val stack = stacks.get() ?: ArrayDeque<T>().also(stacks::set)
-        stack.addLast(value)
-    }
-
-    fun pop(): T? {
-        val stack = stacks.get() ?: return null
-        if (stack.isEmpty()) {
-            stacks.remove()
-            return null
-        }
-        val value = stack.removeLast()
-        if (stack.isEmpty()) stacks.remove()
-        return value
-    }
-}
-
 internal fun normalizedRecyclerBindingMediaIds(mediaIds: Collection<String>): Set<String> =
     mediaIds.asSequence()
         .map(String::trim)
@@ -18064,11 +17475,6 @@ internal fun shouldScheduleDataBindingAliasRefresh(
     requestedAlias: AppliedMetadataAlias?,
 ): Boolean = requestedAlias == null ||
     (appliedAlias != requestedAlias && pendingAlias != requestedAlias)
-
-internal enum class DataBindingRefreshStrategy {
-    VARIABLES_ONLY,
-    FULL_INVALIDATE,
-}
 
 internal fun dataBindingRefreshStrategy(
     expectedTitle: String?,
@@ -18238,89 +17644,6 @@ internal fun artistProfileSubtitleWithArtist(
     return subtitle
 }
 
-private data class InAppLibraryEntityRef(
-    val entity: WeakReference<Any>,
-    val kind: InAppLibraryEntityKind,
-    val originalName: String?,
-    val originalArtist: String?,
-    val originalAlbum: String?,
-)
-
-private data class InAppMediaApiAttributeBinding(
-    val mediaId: String,
-    val kind: InAppLibraryEntityKind,
-)
-
-private class WeakIdentityMap<K : Any, V> {
-    private val queue = ReferenceQueue<K>()
-    private val values = HashMap<IdentityWeakReference<K>, V>()
-
-    operator fun get(key: K): V? = synchronized(values) {
-        removeCollectedKeys()
-        values[IdentityWeakReference(key)]
-    }
-
-    operator fun set(key: K, value: V) {
-        synchronized(values) {
-            removeCollectedKeys()
-            values[IdentityWeakReference(key, queue)] = value
-        }
-    }
-
-    fun remove(key: K) {
-        synchronized(values) {
-            removeCollectedKeys()
-            values.remove(IdentityWeakReference(key))
-        }
-    }
-
-    fun clear() {
-        synchronized(values) {
-            values.clear()
-            while (queue.poll() != null) Unit
-        }
-    }
-
-    private fun removeCollectedKeys() {
-        while (true) {
-            @Suppress("UNCHECKED_CAST")
-            val reference = queue.poll() as? IdentityWeakReference<K> ?: return
-            values.remove(reference)
-        }
-    }
-}
-
-private class IdentityWeakReference<T : Any>(
-    referent: T,
-    queue: ReferenceQueue<T>? = null,
-) : WeakReference<T>(referent, queue) {
-    private val identityHashCode = System.identityHashCode(referent)
-
-    override fun hashCode(): Int = identityHashCode
-
-    override fun equals(other: Any?): Boolean {
-        if (this === other) return true
-        if (other !is IdentityWeakReference<*>) return false
-        val referent = get() ?: return false
-        return referent === other.get()
-    }
-}
-
-internal enum class MetadataPageFinalBindingKind {
-    ALBUM_HEADER,
-    ALBUM_ROW,
-    PLAYLIST_ROW,
-    ARTIST_TOP_SONG,
-    ARTIST_HEADER,
-}
-
-internal enum class InAppLibraryControllerBuildStrategy {
-    ALBUM_SET_DATA,
-    ARTIST_SET_DATA,
-    PLAYLIST_FORCE_MODEL_BUILD,
-    GENERIC_REQUEST_MODEL_BUILD,
-}
-
 internal fun inAppLibraryControllerBuildStrategy(
     hasAlbumBuildData: Boolean,
     hasArtistBuildData: Boolean,
@@ -18470,12 +17793,6 @@ internal fun metadataPageFinalBindingKind(
     else -> null
 }
 
-internal enum class InAppLibraryEntityKind {
-    ALBUM,
-    SONG,
-    ARTIST,
-}
-
 internal fun localizedEntityTypeForInAppLibraryKind(
     kind: InAppLibraryEntityKind,
 ): AppleInternalCatalogResolver.LocalizedEntityType = when (kind) {
@@ -18514,104 +17831,6 @@ internal fun inAppLibraryEntityKindForClassNames(
     }
 }
 
-private data class InAppLibraryComposeCapture(
-    val fragment: Any,
-    val liveData: Any,
-    val mediaIds: MutableSet<String> = linkedSetOf(),
-)
-
-private data class RecyclerBindCapture(
-    val adapter: WeakReference<Any>?,
-    val position: Int,
-    val root: WeakReference<View>?,
-    val captureMetadata: Boolean,
-    val mediaIds: MutableSet<String> = linkedSetOf(),
-)
-
-private data class ArtistTopSongModelSnapshot(
-    val mediaId: String,
-    val originalTitle: String?,
-    val originalSubtitle: String?,
-    val originalArtist: String?,
-)
-
-private data class InAppRecyclerItemRef(
-    val adapter: WeakReference<Any>,
-    val root: WeakReference<View>,
-    val position: Int,
-)
-
-private data class DataBindingAliasValues(
-    val title: String?,
-    val subtitle: String?,
-)
-
-private data class DataBindingVariableApplyResult(
-    val titleApplied: Boolean,
-    val subtitleApplied: Boolean,
-)
-
-internal enum class VisibleTextField {
-    TITLE,
-    ARTIST,
-    ALBUM,
-}
-
-private data class InAppContainerItemRef(
-    val containerItem: WeakReference<Any>,
-    val kind: InAppContainerKind,
-    val originalTitle: String?,
-)
-
-private data class InAppContainerNavigationRef(
-    val containerItem: WeakReference<Any>,
-    val kind: InAppContainerKind,
-    val mediaId: String,
-)
-
-private data class InAppActionSheetBinding(
-    val mediaId: String,
-    val field: VisibleTextField,
-)
-
-private enum class InAppContainerKind {
-    ARTIST,
-    ALBUM,
-}
-
-private data class InAppNowPlayingRefresh(
-    val mediaId: String,
-    val listener: WeakReference<Any>,
-    val method: Method,
-    val metadata: WeakReference<Any>,
-)
-
-private data class InAppMetadataDispatcherRefresh(
-    val mediaId: String,
-    val dispatcher: WeakReference<Any>,
-    val method: Method,
-    val metadata: WeakReference<Any>,
-)
-
-private data class InAppQueueRefresh(
-    val mediaIds: Set<String>,
-)
-
-private data class InAppQueueEntryLookup(
-    val entry: Any?,
-    val source: String,
-)
-
-private data class ApplePronunciationContext(
-    val songId: String?,
-    val pronunciationLanguages: List<String>,
-)
-
-internal enum class AppleNativeSupplementTrack {
-    PRONUNCIATION,
-    TRANSLATION,
-}
-
 internal fun appleNativeSupplementTracks(
     pronunciationSelected: Boolean,
     translationSelected: Boolean,
@@ -18619,24 +17838,6 @@ internal fun appleNativeSupplementTracks(
     if (translationSelected) add(AppleNativeSupplementTrack.TRANSLATION)
     if (pronunciationSelected) add(AppleNativeSupplementTrack.PRONUNCIATION)
 }
-
-private data class AppleLyricsHyperOsMethods(
-    val setSelfBlur: Method?,
-    val setSelfBlurType: Method?,
-)
-
-private data class AppleLyricsBlurRuntimeState(
-    var adapterRef: WeakReference<Any>? = null,
-    var recyclerHeight: Int = 0,
-    var settledAnchorTopY: Float? = null,
-    var suspendedForScroll: Boolean = false,
-    var pendingProgrammaticRecenterPosition: Int? = null,
-    var lastActivePositions: Set<Int> = emptySet(),
-    var pendingOutgoingPositions: Set<Int> = emptySet(),
-    var outgoingZoneTopByPosition: Map<Int, Float> = emptyMap(),
-    var pendingApplyBlur: Runnable? = null,
-    var lastDiagnosticSignature: String? = null,
-)
 
 internal fun shouldCompleteAppleLyricsProgrammaticRecenter(
     suspendedForScroll: Boolean,
@@ -18670,104 +17871,6 @@ internal fun shouldDeferAppleLyricsOutgoingBlur(
     isPendingOutgoing &&
         (rowBottomY == null || currentZoneTopY == null || rowBottomY > currentZoneTopY)
 
-private data class ApplePronunciationRenderPlan(
-    val pronunciation: String,
-)
-
-private data class AppleDebugWordTiming(
-    val wordId: Int,
-    val begin: Int,
-    val end: Int,
-    val text: String,
-)
-
-private data class ApplePronunciationWordRenderContext(
-    val displayTextByWord: Map<ApplePronunciationWordKey, String>,
-) {
-    /** 仅当当前对象属于本次发音渲染计划时返回覆盖文本。 */
-    fun displayText(word: Any?): String? {
-        val key = applePronunciationWordKey(word) ?: return null
-        return displayTextByWord[key]
-    }
-
-}
-
-private data class AppleLyricsBindingDiagnosticContext(
-    val songId: String?,
-    val adapterClass: String,
-    val adapterIdentity: Int,
-    val methodName: String,
-    val holder: Any?,
-    val position: Int?,
-    val translationEnabled: Boolean?,
-    val pronunciationEnabled: Boolean?,
-)
-
-private data class ApplePronunciationWordKey(
-    val wordId: Int,
-    val begin: Int,
-    val end: Int,
-)
-
-/** JavaCPP 可能重复创建 wrapper，因此使用 native word 的稳定字段匹配渲染文本。 */
-private fun applePronunciationWordKey(word: Any?): ApplePronunciationWordKey? {
-    word ?: return null
-    return runCatching {
-        ApplePronunciationWordKey(
-            wordId = (AppleReflection.call(word, "getWordId") as Number).toInt(),
-            begin = (AppleReflection.call(word, "getBegin") as Number).toInt(),
-            end = (AppleReflection.call(word, "getEnd") as Number).toInt(),
-        )
-    }.getOrNull()
-}
-
-private data class ActiveOnlineSourceMenu(
-    val popup: WeakReference<PopupWindow>,
-    val menu: WeakReference<LinearLayout>,
-    val anchor: WeakReference<View>,
-    val songId: String,
-    val nativeMinimumWidth: Int,
-)
-
-private data class PendingOnlineSourceSwitch(
-    val requestId: Long,
-    val songId: String,
-    val contentType: String,
-    val previousSource: String,
-    val targetSource: String,
-)
-
-private data class FailedOnlineSourceSwitch(
-    val requestId: Long,
-    val songId: String,
-    val contentType: String,
-    val displayedSource: String,
-)
-
-private data class ConfirmedOnlineSourceSelection(
-    val songId: String,
-    val contentType: String,
-    val source: String,
-)
-
-internal enum class OnlineSourceMenuStatus {
-    STABLE,
-    SWITCHING,
-    FAILED,
-}
-
-internal data class OnlineSourceMenuPresentation(
-    val source: String,
-    val status: OnlineSourceMenuStatus,
-)
-
-internal data class PlaybackPositionSource(
-    val player: Any,
-    val getCurrentPosition: Method
-) {
-    fun readPosition(): Long? = getCurrentPosition.invoke(player) as? Long
-}
-
 internal fun resolvePlaybackPositionSource(mediaPlayer: Any?): PlaybackPositionSource? {
     mediaPlayer ?: return null
     val method = runCatching {
@@ -18790,21 +17893,6 @@ internal fun shouldNotifyInAppModelChange(
     hasBoundConsumer: Boolean = false,
 ): Boolean = mediaId == activeMediaId || hasBoundConsumer
 
-internal data class CatalogMetadataResolutionPlan(
-    val resolveConfiguredRegion: Boolean,
-    val resolveOriginalRegion: Boolean,
-)
-
-internal enum class InAppOriginalResolutionMode {
-    AFTER_LOCALIZED,
-    ORIGINAL_FIRST,
-}
-
-internal data class DeferredMetadataResolution(
-    val priority: AppleInternalCatalogResolver.RequestPriority,
-    val originalResolutionMode: InAppOriginalResolutionMode,
-)
-
 internal fun mergeDeferredMetadataResolution(
     previous: DeferredMetadataResolution?,
     incoming: DeferredMetadataResolution,
@@ -18826,12 +17914,6 @@ internal fun mergeDeferredMetadataResolution(
         },
     )
 }
-
-internal data class InAppOriginalResolutionPlan(
-    val beforeLocalized: List<String>,
-    val afterLocalized: List<String>,
-    val resolveLocalizedImmediately: Boolean,
-)
 
 internal fun shouldExposeOriginalMetadataOverride(
     mediaId: String,
@@ -18904,13 +17986,6 @@ internal fun selectAppleLyricsTranslationLanguage(
         }?.first
         ?: available.firstOrNull { (_, parts) -> parts.language == system.language }?.first
 }
-
-private data class AppleLyricsLanguageParts(
-    val normalized: String,
-    val language: String,
-    val script: String?,
-    val region: String?,
-)
 
 private fun normalizedAppleLyricsLanguageTag(language: String): String =
     language.trim().replace('_', '-').lowercase()

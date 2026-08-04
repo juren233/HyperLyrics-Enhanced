@@ -41,7 +41,7 @@ android {
         minSdk = 33
         targetSdk = 37
         versionCode = 140002
-        versionName = ciVersionName ?: "7.4.0-beta"
+        versionName = ciVersionName ?: "7.4.0-canary"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -111,6 +111,7 @@ dependencies {
 
     // libxposed API
     compileOnly(libs.libxposed.api)
+    testImplementation(libs.libxposed.api)
     implementation(libs.libxposed.service)
 
     // SuperLyric API

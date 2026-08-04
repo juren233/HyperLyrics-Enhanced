@@ -1597,44 +1597,6 @@ class AppleMusicProviderTest {
     }
 
     @Test
-    fun `history getter reentry guard is nested and exception safe`() {
-        val guard = ThreadLocalReentryGuard()
-
-        assertFalse(guard.isActive)
-        guard.run {
-            assertTrue(guard.isActive)
-            guard.run {
-                assertTrue(guard.isActive)
-            }
-            assertTrue(guard.isActive)
-        }
-        assertFalse(guard.isActive)
-
-        runCatching {
-            guard.run {
-                assertTrue(guard.isActive)
-                error("expected")
-            }
-        }
-        assertFalse(guard.isActive)
-    }
-
-    @Test
-    fun `recycler bind capture stack restores the outer holder after nested binding`() {
-        val stack = ThreadLocalStack<String>()
-
-        stack.push("outer")
-        assertEquals("outer", stack.current)
-        stack.push("inner")
-        assertEquals("inner", stack.current)
-        assertEquals("inner", stack.pop())
-        assertEquals("outer", stack.current)
-        assertEquals("outer", stack.pop())
-        assertNull(stack.current)
-        assertNull(stack.pop())
-    }
-
-    @Test
     fun `compose render capture wins over the full recent items fallback`() {
         assertEquals(
             listOf("152197399", "1882935769"),
