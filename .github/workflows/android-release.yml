@@ -38,14 +38,10 @@ jobs:
 
           current_name="$(sed -nE 's/^[[:space:]]*versionName[[:space:]]*=.*"([^"]+)".*/\1/p' app/build.gradle.kts | head -n1)"
           current_code="$(sed -nE 's/^[[:space:]]*versionCode[[:space:]]*=*[[:space:]]*([0-9]+).*/\1/p' app/build.gradle.kts | head -n1)"
-          commit_message="$(git log -1 --pretty=%B)"
 
           if [[ "$EVENT_NAME" == "pull_request" || "$EVENT_NAME" == "workflow_dispatch" ]]; then
             echo "skip=false" >> "$GITHUB_OUTPUT"
             echo "${EVENT_NAME} trigger, proceeding with resolved version"
-          elif [[ "$EVENT_NAME" == "push" && "$commit_message" == *"[skip ci]"* ]]; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "automation restore commit detected, skipping build"
           elif [[ "$current_name" =~ -(beta|canary)$ ]]; then
             echo "skip=false" >> "$GITHUB_OUTPUT"
             echo "${BASH_REMATCH[1]} channel commit detected, proceeding"
