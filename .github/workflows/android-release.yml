@@ -36,21 +36,29 @@ jobs:
             echo "$line" >> "$GITHUB_OUTPUT"
           done < <(bash .github/scripts/resolve-version.sh)
 
+          current_name="$(sed -nE 's/^[[:space:]]*versionName[[:space:]]*=.*"([^"]+)".*/\1/p' app/build.gradle.kts | head -n1)"
+          current_code="$(sed -nE 's/^[[:space:]]*versionCode[[:space:]]*=*[[:space:]]*([0-9]+).*/\1/p' app/build.gradle.kts | head -n1)"
+          commit_message="$(git log -1 --pretty=%B)"
+
           if [[ "$EVENT_NAME" == "pull_request" || "$EVENT_NAME" == "workflow_dispatch" ]]; then
             echo "skip=false" >> "$GITHUB_OUTPUT"
             echo "${EVENT_NAME} trigger, proceeding with resolved version"
+          elif [[ "$EVENT_NAME" == "push" && "$commit_message" == *"[skip ci]"* ]]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "automation restore commit detected, skipping build"
+          elif [[ "$current_name" =~ -(beta|canary)$ ]]; then
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "${BASH_REMATCH[1]} channel commit detected, proceeding"
           elif git rev-parse HEAD^ >/dev/null 2>&1; then
             previous_name="$(git show HEAD^:app/build.gradle.kts 2>/dev/null | sed -nE 's/^[[:space:]]*versionName[[:space:]]*=.*"([^"]+)".*/\1/p' | head -n1 || true)"
             previous_code="$(git show HEAD^:app/build.gradle.kts 2>/dev/null | sed -nE 's/^[[:space:]]*versionCode[[:space:]]*=*[[:space:]]*([0-9]+).*/\1/p' | head -n1 || true)"
-            current_name="$(sed -nE 's/^[[:space:]]*versionName[[:space:]]*=.*"([^"]+)".*/\1/p' app/build.gradle.kts | head -n1)"
-            current_code="$(sed -nE 's/^[[:space:]]*versionCode[[:space:]]*=*[[:space:]]*([0-9]+).*/\1/p' app/build.gradle.kts | head -n1)"
 
             if [[ "$current_name" != "$previous_name" || "$current_code" != "$previous_code" ]]; then
               echo "skip=false" >> "$GITHUB_OUTPUT"
               echo "version changed (Name: $previous_name -> $current_name, Code: $previous_code -> $current_code), proceeding"
             else
               echo "skip=true" >> "$GITHUB_OUTPUT"
-              echo "version unchanged (Name: $current_name, Code: $current_code), skipping build"
+              echo "stable version unchanged (Name: $current_name, Code: $current_code), skipping build"
             fi
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
