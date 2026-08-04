@@ -77,6 +77,8 @@ class LyriconSource : LyricSource {
     private var activeCentralPlayerPackageName: String? = null
     private var activeProviderDelayMs: Int = RootConstants.DEFAULT_HOOK_LYRICON_PROVIDER_DELAY
     private var prefs: android.content.SharedPreferences? = null
+    private var onCentralConnected: (() -> Unit)? = null
+    private var onCentralConnectTimeout: (() -> Unit)? = null
     private var directBridge: AppleMusicDirectBridge? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private val fallbackScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -171,9 +173,16 @@ class LyriconSource : LyricSource {
         HookLogger.i(TAG, "数据源已停止")
     }
 
-    fun initialize(app: Application, prefs: android.content.SharedPreferences?) {
+    fun initialize(
+        app: Application,
+        prefs: android.content.SharedPreferences?,
+        onCentralConnected: (() -> Unit)? = null,
+        onCentralConnectTimeout: (() -> Unit)? = null,
+    ) {
         this.app = app
         this.prefs = prefs
+        this.onCentralConnected = onCentralConnected
+        this.onCentralConnectTimeout = onCentralConnectTimeout
 
         LyriconDataBridge.onAiTranslationComplete = {
             BaseIslandRenderer.refreshActiveIsland()
@@ -1442,10 +1451,12 @@ class LyriconSource : LyricSource {
     private val connectionListener = object : ConnectionListener {
         override fun onConnected(subscriber: LyriconSubscriber) {
                 HookLogger.i(TAG, "订阅连接已建立")
+                mainHandler.post { onCentralConnected?.invoke() }
         }
 
         override fun onReconnected(subscriber: LyriconSubscriber) {
                 HookLogger.i(TAG, "订阅连接已恢复")
+                mainHandler.post { onCentralConnected?.invoke() }
         }
 
         override fun onDisconnected(subscriber: LyriconSubscriber) {
@@ -1460,6 +1471,10 @@ class LyriconSource : LyricSource {
                 activeCentralPlayerPackageName = null
                 activeProviderPackageName = null
                 HookLogger.w(TAG, "订阅连接超时")
+                mainHandler.post {
+                    onCentralConnectTimeout?.invoke()
+                    subscriber.register()
+                }
         }
     }
 

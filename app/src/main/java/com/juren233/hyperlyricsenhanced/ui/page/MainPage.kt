@@ -360,11 +360,13 @@ fun MainPage() {
             val lastSeen = (prefs.all[UIConstants.KEY_LAST_SEEN_VERSION] as? Number)
                 ?.toLong()
                 ?: 0L
-            if (currentVersion != lastSeen) {
-                val matched = MigrationData.notes.filter { it.versionCode.toLong() == currentVersion }
-                if (matched.isNotEmpty()) {
-                    migrationNotes = matched
-                }
+            val matched = MigrationData.notesForUpgrade(
+                lastSeenVersionCode = lastSeen,
+                currentVersionCode = currentVersion,
+                currentVersionName = pInfo.versionName.orEmpty(),
+            )
+            if (matched.isNotEmpty()) {
+                migrationNotes = matched
             }
         } catch (_: Exception) {}
     }

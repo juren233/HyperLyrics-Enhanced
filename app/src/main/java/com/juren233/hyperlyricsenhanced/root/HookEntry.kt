@@ -19,6 +19,7 @@ import com.juren233.hyperlyricsenhanced.root.mediacard.notification.Notification
 import com.juren233.hyperlyricsenhanced.root.mediacard.island.IslandExpandedMediaAmbientFlowHooker
 import com.juren233.hyperlyricsenhanced.root.mediacard.notification.background.MediaBackgroundRendererPool
 import com.juren233.hyperlyricsenhanced.root.island.renderer.BaseIslandRenderer
+import com.juren233.hyperlyricsenhanced.root.lyricon.central.EmbeddedLyriconCentralController
 import com.juren233.hyperlyricsenhanced.root.source.LyriconSource
 import com.juren233.hyperlyricsenhanced.root.source.LyricInfoSource
 import com.juren233.hyperlyricsenhanced.root.source.RootLyricSink
@@ -297,7 +298,15 @@ class HookEntry : XposedModule() {
             val renderer = BaseIslandRenderer
             val sink = RootLyricSink(renderer, prefs)
 
-            lyriconSource.initialize(app, prefs)
+            EmbeddedLyriconCentralController.prepare(app)
+            lyriconSource.initialize(
+                app = app,
+                prefs = prefs,
+                onCentralConnected = EmbeddedLyriconCentralController::onCentralConnected,
+                onCentralConnectTimeout = {
+                    EmbeddedLyriconCentralController.onSubscriberConnectTimeout(app)
+                },
+            )
             superLyricSource.initialize(app)
             lyricInfoSource = LyricInfoSource(app)
 

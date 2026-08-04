@@ -71,8 +71,7 @@ jobs:
         if: steps.gate.outputs.skip != 'true'
         uses: android-actions/setup-android@v4
         with:
-          api-level: 34
-          build-tools: '34.0.0'
+          packages: platform-tools platforms;android-34 build-tools;34.0.0
 
       - name: 配置 Gradle Setup Gradle
         if: steps.gate.outputs.skip != 'true'
@@ -208,7 +207,7 @@ jobs:
 
       - name: 创建正式版发布 Create Stable Release
         if: github.event_name != 'pull_request' && steps.gate.outputs.skip == 'false' && steps.gate.outputs.channel == 'stable'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ steps.gate.outputs.full_name }}
           name: v${{ steps.gate.outputs.full_name }}
@@ -224,7 +223,7 @@ jobs:
 
       - name: 创建 Beta Pre-release
         if: github.event_name != 'pull_request' && steps.gate.outputs.skip == 'false' && steps.gate.outputs.channel == 'beta'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ steps.gate.outputs.full_name }}
           name: v${{ steps.gate.outputs.full_name }}

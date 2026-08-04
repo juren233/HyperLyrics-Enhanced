@@ -29,3 +29,4 @@ CLAUDE.md
 app/src/main/java/com/juren233/hyperlyricsenhanced/ui/utils/ContributorsProvider.kt
 app/src/main/res/drawable/contributor_*.png
 DEBUGGING_MISTAKES.md
+.trae/

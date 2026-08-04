@@ -155,12 +155,6 @@ private fun LazyListScope.superIslandHelpSections() {
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     TagComponent(
-                        text = stringResource(R.string.tag_download_lyricon),
-                        onClick = {
-                            context.startActivity(Intent(Intent.ACTION_VIEW, "https://github.com/tomakino/lyricon/releases/tag/core".toUri()))
-                        }
-                    )
-                    TagComponent(
                         text = stringResource(R.string.tag_download_providers),
                         onClick = {
                             context.startActivity(Intent(Intent.ACTION_VIEW, "https://github.com/proify/LyricProvider/releases".toUri()))

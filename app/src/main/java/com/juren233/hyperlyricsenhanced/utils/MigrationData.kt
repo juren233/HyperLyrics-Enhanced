@@ -8,13 +8,36 @@ data class MigrationItem(
 
 data class MigrationNote(
     val versionCode: Int,
+    val scope: MigrationScope,
     val items: List<MigrationItem>
 )
+
+sealed interface MigrationScope {
+    /** Applies from the note's build threshold through every patch in this major/minor line. */
+    data class MinorVersion(
+        val major: Int,
+        val minor: Int,
+    ) : MigrationScope
+
+    /** Preserves the original exact-build behavior for historical notices only. */
+    data object LegacyExactBuild : MigrationScope
+}
 
 object MigrationData {
     val notes = listOf(
         MigrationNote(
+            versionCode = 140000,
+            scope = MigrationScope.MinorVersion(major = 7, minor = 4),
+            items = listOf(
+                MigrationItem(
+                    text = "Lyricon Central 已内置到 HyperLyrics Enhanced",
+                    summary = "其他音乐 App 现在只需安装对应 LyricProvider；无需再单独安装词幕服务。更新后请重启系统界面和音乐 App。"
+                )
+            )
+        ),
+        MigrationNote(
             versionCode = 100001,
+            scope = MigrationScope.LegacyExactBuild,
             items = listOf(
                 MigrationItem(
                     text = "更新后请重启系统界面和音乐 App"
@@ -23,6 +46,7 @@ object MigrationData {
         ),
         MigrationNote(
             versionCode = 1934,
+            scope = MigrationScope.LegacyExactBuild,
             items = listOf(
                 MigrationItem(
                     text = "本次更新请重启系统界面",
@@ -32,6 +56,7 @@ object MigrationData {
         ),
         MigrationNote(
             versionCode = 1933,
+            scope = MigrationScope.LegacyExactBuild,
             items = listOf(
                 MigrationItem(
                     text = "再一次温馨提示，HyperLyrics Enhanced v6.0 往后需要额外安装 lyricon central 才可继续使用 lyricon 歌词源",
@@ -42,6 +67,7 @@ object MigrationData {
         ),
         MigrationNote(
             versionCode = 1932,
+            scope = MigrationScope.LegacyExactBuild,
             items = listOf(
                 MigrationItem(
                     text = "本次更新和xposed模块功能无关，但是使用无 root 模式的请注意",
@@ -51,6 +77,7 @@ object MigrationData {
         ),
         MigrationNote(
             versionCode = 1931,
+            scope = MigrationScope.LegacyExactBuild,
             items = listOf(
                 MigrationItem(
                     text = "HyperLyrics Enhanced v6.0 往后，需要Lyricon central才可继续使用Lyricon 歌词源",
@@ -60,4 +87,47 @@ object MigrationData {
             )
         )
     )
+
+    /**
+     * Returns the newest migration-note group crossed since the user last confirmed a notice.
+     *
+     * A minor-version notice uses [MigrationNote.versionCode] as its minimum build and stays
+     * applicable throughout that major/minor release line. Moving to the next minor version is
+     * the exclusive upper bound. Only the newest applicable group is returned so superseded
+     * historical notices are not shown together with current guidance.
+     */
+    internal fun notesForUpgrade(
+        lastSeenVersionCode: Long,
+        currentVersionCode: Long,
+        currentVersionName: String,
+    ): List<MigrationNote> {
+        if (currentVersionCode <= lastSeenVersionCode) return emptyList()
+
+        val currentMinorVersion = parseMinorVersion(currentVersionName)
+        val applicableNotes = notes.filter { note ->
+            val noteVersionCode = note.versionCode.toLong()
+            noteVersionCode > lastSeenVersionCode && when (val scope = note.scope) {
+                is MigrationScope.MinorVersion ->
+                    noteVersionCode <= currentVersionCode && scope == currentMinorVersion
+                MigrationScope.LegacyExactBuild -> noteVersionCode == currentVersionCode
+            }
+        }
+        val newestApplicableVersion = applicableNotes
+            .maxOfOrNull { it.versionCode }
+            ?: return emptyList()
+
+        return applicableNotes.filter { it.versionCode == newestApplicableVersion }
+    }
+
+    private fun parseMinorVersion(versionName: String): MigrationScope.MinorVersion? {
+        val parts = versionName.trim()
+            .removePrefix("v")
+            .substringBefore('-')
+            .substringBefore('+')
+            .split('.')
+        if (parts.size < 2) return null
+        val major = parts[0].toIntOrNull() ?: return null
+        val minor = parts[1].toIntOrNull() ?: return null
+        return MigrationScope.MinorVersion(major = major, minor = minor)
+    }
 }

@@ -420,14 +420,6 @@ fun LyricSourceSelectionPage(selectedSource: String, onSourceSelected: (String) 
                                 summary = stringResource(R.string.setup_other_players_summary)
                             )
                             ArrowPreference(
-                                title = stringResource(R.string.setup_download_lyric_core),
-                                summary = stringResource(R.string.setup_download_lyric_core_summary),
-                                onClick = {
-                                    context.startActivity(Intent(Intent.ACTION_VIEW,
-                                        "https://github.com/tomakino/lyricon/releases/tag/core".toUri()))
-                                }
-                            )
-                            ArrowPreference(
                                 title = stringResource(R.string.setup_download_provider),
                                 summary = stringResource(R.string.setup_download_provider_summary),
                                 onClick = {
