@@ -160,6 +160,35 @@ jobs:
           path: HyperLyrics Enhanced-debug-v${{ steps.gate.outputs.full_name }}-${{ steps.gate.outputs.code }}.apk
           if-no-files-found: error
 
+      - name: 创建 Canary 标签 Create Canary Tag
+        if: github.event_name != 'pull_request' && steps.gate.outputs.skip == 'false' && steps.gate.outputs.channel == 'canary'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FULL_TAG: ${{ steps.gate.outputs.full_tag }}
+          FULL_NAME: ${{ steps.gate.outputs.full_name }}
+          COMMIT_SHA: ${{ github.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if git show-ref --verify --quiet "refs/tags/$FULL_TAG"; then
+            existing_sha="$(git rev-list -n1 "$FULL_TAG")"
+            if [[ "$existing_sha" != "$COMMIT_SHA" ]]; then
+              echo "Tag $FULL_TAG already exists at $existing_sha, expected $COMMIT_SHA" >&2
+              exit 1
+            fi
+            echo "Tag $FULL_TAG already points to $COMMIT_SHA; keeping it."
+            exit 0
+          fi
+
+          git tag -a "$FULL_TAG" "$COMMIT_SHA" \
+            -m "Canary ${FULL_NAME}" \
+            -m "对应 GitHub Actions：${RUN_URL}"
+          git push origin "$FULL_TAG"
+
       - name: 生成发布说明 Generate Release Body
         if: github.event_name != 'pull_request' && steps.gate.outputs.skip == 'false' && (steps.gate.outputs.channel == 'stable' || steps.gate.outputs.channel == 'beta')
         id: release_body
