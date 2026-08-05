@@ -33,6 +33,9 @@ internal class AppleMusicProviderRuntime(
             "AppleMusicProviderRuntime has no Hook resolver"
         }
 
+    val isAttached: Boolean
+        get() = attachedApplication != null && attachedHookResolver != null
+
     val mainHandler: Handler by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         Handler(Looper.getMainLooper())
     }

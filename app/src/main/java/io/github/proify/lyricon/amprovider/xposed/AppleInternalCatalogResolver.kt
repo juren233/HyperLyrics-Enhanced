@@ -17,6 +17,7 @@ import java.util.concurrent.atomic.AtomicLong
 internal class AppleInternalCatalogResolver(
     context: Context,
     private val classLoader: ClassLoader,
+    private val hookResolver: AppleMusicHookResolver,
     private val mainHandler: Handler
 ) {
     private val persistentLocalizedCache = AppleLocalizedMetadataCache(context, mainHandler)
@@ -1800,10 +1801,12 @@ internal class AppleInternalCatalogResolver(
     }
 
     private fun createCatalogAccess(): CatalogAccess {
-        val holderClass = classLoader.loadClass(MEDIA_API_REPOSITORY_HOLDER)
+        val holderClass = hookResolver.resolveClass(
+            AppleMusicHookPoint.MEDIA_API_REPOSITORY_HOLDER_CLASS,
+        ).clazz
         val companionField = holderClass.declaredFields.firstOrNull { field ->
             Modifier.isStatic(field.modifiers) &&
-                field.type.name == "$MEDIA_API_REPOSITORY_HOLDER\$Companion"
+                field.type.name == "${holderClass.name}\$Companion"
         } ?: error("MediaApiRepositoryHolder companion unavailable")
         companionField.isAccessible = true
         val companion = requireNotNull(companionField.get(null))
@@ -2154,8 +2157,6 @@ internal class AppleInternalCatalogResolver(
     }
 
     companion object {
-        private const val MEDIA_API_REPOSITORY_HOLDER =
-            "com.apple.android.music.mediaapi.repository.MediaApiRepositoryHolder"
         private const val STOREFRONT_FIELD_NAME = "s"
         private const val CURRENT_LANGUAGE = "current"
         private const val CACHE_SIZE = 64

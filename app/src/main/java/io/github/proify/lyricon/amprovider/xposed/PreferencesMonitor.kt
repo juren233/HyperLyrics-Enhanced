@@ -13,11 +13,13 @@ import android.content.Context
 object PreferencesMonitor {
 
     private lateinit var context: Context
+    private lateinit var hookResolver: AppleMusicHookResolver
     var listener: Listener? = null
 
-    fun initialize(context: Context) {
+    internal fun initialize(context: Context, hookResolver: AppleMusicHookResolver) {
         if (::context.isInitialized) return
         this.context = context.applicationContext
+        this.hookResolver = hookResolver
 
     }
 
@@ -32,7 +34,9 @@ object PreferencesMonitor {
     fun isTranslationSelected(): Boolean =
         runCatching {
             AppleReflection.callStatic(
-                context.classLoader.loadClass("com.apple.android.music.utils.AppSharedPreferences"),
+                hookResolver.resolveClass(
+                    AppleMusicHookPoint.APPLE_SHARED_PREFERENCES_CLASS,
+                ).clazz,
                 "isLyricsTranslationSelected"
             ) as? Boolean
         }.getOrNull() ?: true
@@ -40,7 +44,9 @@ object PreferencesMonitor {
     fun isPronunciationSelected(): Boolean =
         runCatching {
             AppleReflection.callStatic(
-                context.classLoader.loadClass("com.apple.android.music.utils.AppSharedPreferences"),
+                hookResolver.resolveClass(
+                    AppleMusicHookPoint.APPLE_SHARED_PREFERENCES_CLASS,
+                ).clazz,
                 "isLyricsPronunciationSelected"
             ) as? Boolean
         }.getOrNull() ?: false

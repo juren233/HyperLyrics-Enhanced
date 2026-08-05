@@ -8,8 +8,8 @@ package io.github.proify.lyricon.amprovider.xposed
 
 import android.app.Application
 
-class LyricRequester(
-    private val classLoader: ClassLoader,
+class LyricRequester internal constructor(
+    private val hookResolver: AppleMusicHookResolver,
     private val application: Application
 ) {
     private var playerLyricsViewModel: Any? = null
@@ -28,14 +28,17 @@ class LyricRequester(
         }
         try {
             val song =
-                AppleReflection.newInstance(classLoader.loadClass("com.apple.android.music.model.Song"))
+                AppleReflection.newInstance(
+                    hookResolver.resolveClass(AppleMusicHookPoint.APPLE_SONG_MODEL_CLASS).clazz,
+                )
             AppleReflection.call(song, "setId", mediaId)
             AppleReflection.call(song, "setQueueId", queueId)
             AppleReflection.call(song, "setHasLyrics", true)
 
             if (playerLyricsViewModel == null) {
-                playerLyricsViewModel = classLoader
-                    .loadClass("com.apple.android.music.player.viewmodel.PlayerLyricsViewModel")
+                playerLyricsViewModel = hookResolver
+                    .resolveClass(AppleMusicHookPoint.PLAYER_LYRICS_VIEW_MODEL_CLASS)
+                    .clazz
                     .getConstructor(Application::class.java)
                     .newInstance(application)
             }

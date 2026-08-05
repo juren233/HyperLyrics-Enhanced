@@ -24,7 +24,14 @@ internal class AppleHookRegistrar(
     private val module: XposedModule,
 ) {
     private val activeModuleId = ThreadLocal<String?>()
-    private val firstCallbackModuleIds = ConcurrentHashMap.newKeySet<String>()
+    private val callbackTracer = AppleHookCallbackTracer(
+        withModule = { moduleId, block -> withModule(moduleId, block) },
+        onFirstCallback = { moduleId, executable ->
+            ProviderLogger.diagnostic(
+                "Apple Music Hook 首次回调: module=$moduleId, target=$executable"
+            )
+        },
+    )
 
     fun <T> withModule(moduleId: String, block: () -> T): T {
         val previous = activeModuleId.get()
@@ -36,20 +43,20 @@ internal class AppleHookRegistrar(
         }
     }
 
-    fun install(
+    fun installHook(
         executable: Executable,
         before: ((Chain) -> Unit)? = null,
         after: ((Chain, Any?) -> Unit)? = null,
     ) = installHooker(executable, CallbackHook(before, after))
 
-    fun installScoped(
+    fun installScopedHook(
         executable: Executable,
         enter: (Chain) -> Boolean,
         after: (Chain, Any?) -> Unit,
         exit: () -> Unit,
     ) = installHooker(executable, ScopedCallbackHook(enter, after, exit))
 
-    fun installConditionalVoidSkip(
+    fun installConditionalVoidSkipHook(
         executable: Executable,
         shouldSkip: (Chain) -> Boolean,
     ) {
@@ -59,12 +66,12 @@ internal class AppleHookRegistrar(
         installHooker(executable, ConditionalVoidSkipHook(shouldSkip))
     }
 
-    fun installResultOverride(
+    fun installResultOverrideHook(
         executable: Executable,
         override: (Chain, Any?) -> Any?,
     ) = installHooker(executable, ResultOverrideHook(override))
 
-    fun installArgumentRewrite(
+    fun installArgumentRewriteHook(
         executable: Executable,
         rewrite: (Chain) -> Array<Any?>?,
     ) = installHooker(executable, ArgumentRewriteHook(rewrite))
@@ -73,20 +80,25 @@ internal class AppleHookRegistrar(
         runCatching { module.deoptimize(executable) }
         val moduleId = activeModuleId.get() ?: "unscoped"
         module.hook(executable).intercept(
-            if (BuildConfig.DEBUG) tracingHook(moduleId, executable, hooker) else hooker
+            if (BuildConfig.DEBUG) callbackTracer.wrap(moduleId, executable, hooker) else hooker
         )
     }
+}
 
-    private fun tracingHook(
+internal class AppleHookCallbackTracer(
+    private val withModule: (String, () -> Any?) -> Any?,
+    private val onFirstCallback: (String, Executable) -> Unit,
+) {
+    private val firstCallbackModuleIds = ConcurrentHashMap.newKeySet<String>()
+
+    fun wrap(
         moduleId: String,
         executable: Executable,
         delegate: Hooker,
     ): Hooker = object : Hooker {
         override fun intercept(chain: Chain): Any? = withModule(moduleId) {
             if (firstCallbackModuleIds.add(moduleId)) {
-                ProviderLogger.diagnostic(
-                    "Apple Music Hook 首次回调: module=$moduleId, target=$executable"
-                )
+                onFirstCallback(moduleId, executable)
             }
             delegate.intercept(chain)
         }
