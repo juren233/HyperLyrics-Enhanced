@@ -8,7 +8,7 @@
     <string name="app_description">在 HyperOS3 媒体超级岛与米系AOD上体验歌词，更有 Apple Music 专属体验优化</string>
     <string name="label_lyric_listener_service">获取媒体信息权限</string>
     <string name="label_lyric_enable_service">HyperLyrics Enhanced 媒体信息监听</string>
-    <string name="provider_release_home">https://github.com/proify/LyricProvider/releases</string>
+    <string name="provider_release_home">https://github.com/juren233/HLE-Providers</string>
 
     <string name="add">添加</string>
     <string name="github">GitHub</string>
@@ -200,6 +200,26 @@
     <string name="title_lyrics">音乐信息</string>
     <string name="title_lyric_anim">歌词切换动画</string>
     <string name="title_lyric_provider">歌词提供者 (Lyricon)</string>
+    <string name="title_builtin_provider">内置 Provider</string>
+    <string name="summary_builtin_apple_provider">随 HyperLyrics Enhanced 提供，始终优先且不可卸载</string>
+    <string name="title_official_provider_plugins">官方 Provider 插件</string>
+    <string name="title_legacy_provider_modules">传统独立 Provider（兼容模式）</string>
+    <string name="provider_status_builtin">内置</string>
+    <string name="provider_catalog_loading">正在加载官方插件目录</string>
+    <string name="provider_catalog_load_failed">官方插件目录加载失败</string>
+    <string name="provider_status_processing">处理中…</string>
+    <string name="provider_status_update_available">可更新至 %1$s</string>
+    <string name="provider_status_installed_enabled">已安装并启用（版本代码 %1$d）</string>
+    <string name="provider_status_installed_disabled">已安装但未启用（版本代码 %1$d）</string>
+    <string name="provider_status_available">可下载 %1$s</string>
+    <string name="provider_status_migrating">正在迁移，暂未发布</string>
+    <string name="provider_action_download">下载</string>
+    <string name="provider_action_update">更新</string>
+    <string name="provider_install_success">Provider 已安装；请在 LSPosed 勾选音乐软件，然后重启音乐软件与系统界面</string>
+    <string name="provider_install_failed">Provider 安装失败：%1$s</string>
+    <string name="provider_restart_required">设置已保存；重启音乐软件与系统界面后生效</string>
+    <string name="title_no_legacy_provider">未发现传统独立 Provider</string>
+    <string name="summary_no_legacy_provider">这是正常状态；官方插件未下载、未启用或加载失败时，仍可安装传统 Provider 模块作为兼容回退</string>
     <string name="title_lyric_delay">歌词延迟</string>
     <string name="summary_lyric_delay">正数延后显示，负数提前显示</string>
     <string name="title_lyric_whitelist">歌词白名单</string>

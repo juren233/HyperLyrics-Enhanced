@@ -152,7 +152,20 @@ internal class ActivePlayerCoordinator : PlayerListener {
                 activeIsPlaying = recorderPlaying
                 shouldBroadcastOriginal = true
             } else {
-                val canSwitch = currentInfo == null || (!activeIsPlaying && recorderPlaying)
+                val samePlayer = currentInfo?.playerPackageName == recorderInfo.playerPackageName
+                val priorityComparison = if (currentInfo == null || !samePlayer) {
+                    0
+                } else {
+                    ProviderSourcePriorityResolver.resolve(recorderInfo).rank.compareTo(
+                        ProviderSourcePriorityResolver.resolve(currentInfo).rank
+                    )
+                }
+                val canSwitch = when {
+                    currentInfo == null -> true
+                    samePlayer && priorityComparison > 0 -> true
+                    samePlayer && priorityComparison < 0 -> false
+                    else -> !activeIsPlaying && recorderPlaying
+                }
                 if (canSwitch) {
                     activeRecorder = recorder
                     activeIsPlaying = recorderPlaying

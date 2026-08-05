@@ -29,6 +29,7 @@ import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.common.UIConstants
 import com.juren233.hyperlyricsenhanced.online.utils.ChineseUtils
+import com.juren233.hyperlyricsenhanced.provider.OfficialProviderRuntime
 import io.github.libxposed.api.XposedInterface.Chain
 import io.github.libxposed.api.XposedInterface.Hooker
 import io.github.libxposed.api.XposedModule
@@ -287,6 +288,12 @@ class HookEntry : XposedModule() {
             }.onFailure {
                 HookLogger.e("HookEntry", "Apple Music 内置歌词提供器注入失败", it)
             }
+        } else {
+            OfficialProviderRuntime.installIfAvailable(
+                module = this,
+                targetClassLoader = param.defaultClassLoader,
+                packageName = packageName,
+            )
         }
     }
 

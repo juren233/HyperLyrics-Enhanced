@@ -78,7 +78,7 @@ HyperLyrics Enhanced 是一个为小米 HyperOS 设备打造的 Android 模块�
    - miui.systemui.plugin
    - com.apple.android.music
 3. 打开应用主页的“超级岛歌词”，在“歌词设置”中选择歌词模式和歌词来源。
-4. Apple Music 用户可以直接使用内置 Provider；其他播放器仍可能需要 Lyricon Central （词幕服务） 与对应 LyricProvider。
+4. Apple Music 用户可以直接使用内置 Provider；其他播放器可以在应用内 Provider 页面按需下载官方 Pack。Pack 通过 GitHub 目录签名、Pack 签名和内置目标包名校验后加载，不需要额外安装独立模块；已有独立 LyricProvider 模块仍保留兼容性。
 5. 根据提示重启 SystemUI 和音乐 App。
 
 ### 通知歌词模式

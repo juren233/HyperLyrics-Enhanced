@@ -47,9 +47,13 @@ import androidx.core.net.toUri
 import com.juren233.hyperlyricsenhanced.R
 import com.juren233.hyperlyricsenhanced.common.PrefsBridge
 import com.juren233.hyperlyricsenhanced.common.RootConstants
+import com.juren233.hyperlyricsenhanced.provider.OfficialProviderItem
+import com.juren233.hyperlyricsenhanced.provider.OfficialProviderRepository
+import com.juren233.hyperlyricsenhanced.provider.OfficialProviderUiState
 import com.juren233.hyperlyricsenhanced.ui.navigation.LocalNavigator
 
 import com.juren233.hyperlyricsenhanced.ui.component.ProComponent
+import com.juren233.hyperlyricsenhanced.ui.component.SuperSwitchPreference
 import com.juren233.hyperlyricsenhanced.ui.component.TagComponent
 import com.juren233.hyperlyricsenhanced.utils.LyricProviderManager
 import com.juren233.hyperlyricsenhanced.utils.ModuleCategory
@@ -59,6 +63,7 @@ import com.juren233.hyperlyricsenhanced.ui.utils.BlurredBar
 import com.juren233.hyperlyricsenhanced.ui.utils.pageScrollModifiers
 import com.juren233.hyperlyricsenhanced.ui.utils.rememberBlurBackdrop
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 import top.yukonga.miuix.kmp.basic.Card
@@ -69,6 +74,9 @@ import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.PullToRefresh
 import top.yukonga.miuix.kmp.basic.Scaffold
+import top.yukonga.miuix.kmp.basic.SnackbarDuration
+import top.yukonga.miuix.kmp.basic.SnackbarHost
+import top.yukonga.miuix.kmp.basic.SnackbarHostState
 import top.yukonga.miuix.kmp.basic.Slider
 import top.yukonga.miuix.kmp.basic.SliderDefaults
 import top.yukonga.miuix.kmp.basic.SmallTitle
@@ -94,10 +102,16 @@ fun LyricProviderPage() {
     val coroutineScope = rememberCoroutineScope()
     val providerUiStateFlow = remember { MutableStateFlow(ProviderUiState()) }
     val providerUiState = providerUiStateFlow.collectAsState()
+    val officialUiStateFlow = remember { MutableStateFlow(OfficialProviderUiState()) }
+    val officialUiState = officialUiStateFlow.collectAsState()
     val pullToRefreshState = rememberPullToRefreshState()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val installSuccessMessage = stringResource(R.string.provider_install_success)
+    val restartRequiredMessage = stringResource(R.string.provider_restart_required)
 
     LaunchedEffect(Unit) {
         LyricProviderManager.loadProviders(context, providerUiStateFlow)
+        refreshOfficialProviders(officialUiStateFlow)
     }
 
     val othersCategoryName = stringResource(id = R.string.category_others)
@@ -106,8 +120,58 @@ fun LyricProviderPage() {
     }
 
     val expandedStates = remember { mutableStateMapOf<String, Boolean>() }
+    val installOfficialProvider: (OfficialProviderItem) -> Unit = { item ->
+        if (item.catalog.id !in officialUiStateFlow.value.busyPluginIds) {
+            officialUiStateFlow.update {
+                it.copy(busyPluginIds = it.busyPluginIds + item.catalog.id)
+            }
+            coroutineScope.launch {
+                runCatching {
+                    OfficialProviderRepository.downloadAndInstall(context, item)
+                    refreshOfficialProviders(officialUiStateFlow)
+                }.onSuccess {
+                    snackbarHostState.showSnackbar(
+                        message = installSuccessMessage,
+                        duration = SnackbarDuration.Custom(2500L),
+                    )
+                }.onFailure { error ->
+                    officialUiStateFlow.update {
+                        it.copy(
+                            busyPluginIds = it.busyPluginIds - item.catalog.id,
+                            error = error.message,
+                        )
+                    }
+                    snackbarHostState.showSnackbar(
+                        message = context.getString(
+                            R.string.provider_install_failed,
+                            error.message ?: context.getString(R.string.unknown),
+                        ),
+                        duration = SnackbarDuration.Custom(3500L),
+                    )
+                }
+            }
+        }
+    }
+    val setOfficialProviderEnabled: (OfficialProviderItem, Boolean) -> Unit =
+        { item, enabled ->
+            OfficialProviderRepository.setEnabled(item.catalog.id, enabled)
+            officialUiStateFlow.update { state ->
+                state.copy(
+                    items = state.items.map {
+                        if (it.catalog.id == item.catalog.id) it.copy(enabled = enabled) else it
+                    },
+                )
+            }
+            coroutineScope.launch {
+                snackbarHostState.showSnackbar(
+                    message = restartRequiredMessage,
+                    duration = SnackbarDuration.Custom(2500L),
+                )
+            }
+        }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(state = snackbarHostState) },
         topBar = {
             BlurredBar(backdrop, blurActive) {
                 TopAppBar(
@@ -130,8 +194,13 @@ fun LyricProviderPage() {
     ) { innerPadding ->
         Box(modifier = if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier) {
             PullToRefresh(
-                isRefreshing = providerUiState.value.isLoading,
-                onRefresh = { coroutineScope.launch { LyricProviderManager.loadProviders(context, providerUiStateFlow) } },
+                isRefreshing = providerUiState.value.isLoading || officialUiState.value.isLoading,
+                onRefresh = {
+                    coroutineScope.launch {
+                        LyricProviderManager.loadProviders(context, providerUiStateFlow)
+                        refreshOfficialProviders(officialUiStateFlow)
+                    }
+                },
                 pullToRefreshState = pullToRefreshState,
                 topAppBarScrollBehavior = topAppBarScrollBehavior,
                 contentPadding = PaddingValues(top = innerPadding.calculateTopPadding()),
@@ -154,9 +223,12 @@ fun LyricProviderPage() {
                     contentPadding = contentPadding,
                 ) {
                     providerSections(
+                        officialUiState = officialUiState.value,
                         uiState = providerUiState.value,
                         groupedModules = groupedModules,
-                        expandedStates = expandedStates
+                        expandedStates = expandedStates,
+                        onInstallOfficial = installOfficialProvider,
+                        onOfficialEnabledChange = setOfficialProviderEnabled,
                     )
                 }
             }
@@ -165,16 +237,158 @@ fun LyricProviderPage() {
 }
 
 private fun LazyListScope.providerSections(
+    officialUiState: OfficialProviderUiState,
     uiState: ProviderUiState,
     groupedModules: List<ModuleCategory>,
-    expandedStates: MutableMap<String, Boolean>
+    expandedStates: MutableMap<String, Boolean>,
+    onInstallOfficial: (OfficialProviderItem) -> Unit,
+    onOfficialEnabledChange: (OfficialProviderItem, Boolean) -> Unit,
 ) {
+    item(key = "builtin_header") {
+        SmallTitle(
+            text = stringResource(R.string.title_builtin_provider),
+            insideMargin = PaddingValues(start = 10.dp, end = 10.dp, top = 12.dp, bottom = 4.dp),
+        )
+    }
+    item(key = "builtin_apple_music") {
+        Card(
+            modifier = Modifier
+                .padding(horizontal = 12.dp)
+                .padding(bottom = 12.dp)
+                .fillMaxWidth(),
+        ) {
+            ProComponent(
+                title = "Apple Music",
+                summary = stringResource(R.string.summary_builtin_apple_provider),
+                endActions = {
+                    Text(
+                        text = stringResource(R.string.provider_status_builtin),
+                        color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                        fontSize = 14.sp,
+                    )
+                },
+                showIndication = false,
+            )
+        }
+    }
+
+    item(key = "official_header") {
+        SmallTitle(
+            text = stringResource(R.string.title_official_provider_plugins),
+            insideMargin = PaddingValues(start = 10.dp, end = 10.dp, top = 12.dp, bottom = 4.dp),
+        )
+    }
+    if (officialUiState.items.isEmpty()) {
+        item(key = "official_empty") {
+            Card(
+                modifier = Modifier
+                    .padding(horizontal = 12.dp)
+                    .padding(bottom = 12.dp)
+                    .fillMaxWidth(),
+            ) {
+                ProComponent(
+                    title = stringResource(
+                        if (officialUiState.isLoading) {
+                            R.string.provider_catalog_loading
+                        } else {
+                            R.string.provider_catalog_load_failed
+                        }
+                    ),
+                    summary = officialUiState.error,
+                    showIndication = false,
+                )
+            }
+        }
+    } else {
+        items(
+            officialUiState.items.size,
+            key = { "official_${officialUiState.items[it].catalog.id}" },
+        ) { index ->
+            val item = officialUiState.items[index]
+            val busy = item.catalog.id in officialUiState.busyPluginIds
+            val versionText = item.catalog.versionName ?: stringResource(R.string.unknown)
+            val status = when {
+                busy -> stringResource(R.string.provider_status_processing)
+                item.updateAvailable -> stringResource(R.string.provider_status_update_available, versionText)
+                item.installed && item.enabled ->
+                    stringResource(R.string.provider_status_installed_enabled, item.installedVersionCode)
+                item.installed ->
+                    stringResource(R.string.provider_status_installed_disabled, item.installedVersionCode)
+                item.catalog.available ->
+                    stringResource(R.string.provider_status_available, versionText)
+                else -> stringResource(R.string.provider_status_migrating)
+            }
+            val summary = buildString {
+                append(status)
+                append("\n")
+                append(item.catalog.targetPackages.joinToString())
+            }
+            Card(
+                modifier = Modifier
+                    .padding(horizontal = 12.dp)
+                    .padding(bottom = 12.dp)
+                    .fillMaxWidth(),
+            ) {
+                if (item.installed) {
+                    SuperSwitchPreference(
+                        checked = item.enabled,
+                        onCheckedChange = { onOfficialEnabledChange(item, it) },
+                        title = item.catalog.displayName,
+                        summary = summary,
+                        onClick = if (item.updateAvailable && !busy) {
+                            { onInstallOfficial(item) }
+                        } else {
+                            null
+                        },
+                        endActions = {
+                            if (item.updateAvailable) {
+                                Text(
+                                    text = stringResource(R.string.provider_action_update),
+                                    color = MiuixTheme.colorScheme.primary,
+                                    fontSize = 14.sp,
+                                )
+                            }
+                        },
+                        enabled = !busy,
+                    )
+                } else {
+                    ProComponent(
+                        title = item.catalog.displayName,
+                        summary = summary,
+                        onClick = if (item.catalog.available && !busy) {
+                            { onInstallOfficial(item) }
+                        } else {
+                            null
+                        },
+                        endActions = {
+                            if (item.catalog.available) {
+                                Text(
+                                    text = stringResource(R.string.provider_action_download),
+                                    color = MiuixTheme.colorScheme.primary,
+                                    fontSize = 14.sp,
+                                )
+                            }
+                        },
+                        enabled = !busy && item.catalog.available,
+                    )
+                }
+            }
+        }
+    }
+
+    item(key = "legacy_header") {
+        SmallTitle(
+            text = stringResource(R.string.title_legacy_provider_modules),
+            insideMargin = PaddingValues(start = 10.dp, end = 10.dp, top = 12.dp, bottom = 4.dp),
+        )
+    }
     if (!uiState.isLoading && uiState.modules.isEmpty()) {
-        item(key = "no_provider") {
+        item(key = "no_legacy_provider") {
             Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
                 ProComponent(
-                    title = stringResource(id = R.string.title_no_provider),
-                    summary = stringResource(id = R.string.summary_no_provider)
+                    title = stringResource(id = R.string.title_no_legacy_provider),
+                    summary = stringResource(id = R.string.summary_no_legacy_provider),
+                    showIndication = false,
                 )
             }
         }
@@ -294,6 +508,32 @@ private fun LazyListScope.providerSections(
 
                 }
             }
+        }
+    }
+}
+
+private suspend fun refreshOfficialProviders(
+    stateFlow: MutableStateFlow<OfficialProviderUiState>,
+) {
+    stateFlow.update { it.copy(isLoading = true, error = null) }
+    runCatching {
+        OfficialProviderRepository.loadItems()
+    }.onSuccess { items ->
+        stateFlow.update {
+            it.copy(
+                items = items,
+                isLoading = false,
+                busyPluginIds = emptySet(),
+                error = null,
+            )
+        }
+    }.onFailure { error ->
+        stateFlow.update {
+            it.copy(
+                isLoading = false,
+                busyPluginIds = emptySet(),
+                error = error.message,
+            )
         }
     }
 }
