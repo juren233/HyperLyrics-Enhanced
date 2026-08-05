@@ -1,7 +1,6 @@
 package com.juren233.hyperlyricsenhanced.ui.page
 
 import android.content.Context
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -55,9 +54,6 @@ fun HookSettingsPage() {
     val barColor = if (blurActive) Color.Transparent else MiuixTheme.colorScheme.surface
     val topAppBarScrollBehavior = MiuixScrollBehavior()
     val prefs = remember { context.getSharedPreferences(UIConstants.PREF_NAME, Context.MODE_PRIVATE) }
-    var lyricSource by remember {
-        mutableStateOf(prefs.getString(RootConstants.KEY_HOOK_LYRIC_SOURCE, RootConstants.DEFAULT_HOOK_LYRIC_SOURCE) ?: "lyricon")
-    }
     Scaffold(
         topBar = {
             BlurredBar(backdrop, blurActive) {
@@ -95,13 +91,13 @@ fun HookSettingsPage() {
                 ),
                 contentPadding = contentPadding,
             ) {
-                hookSettingsSections(lyricSource)
+                hookSettingsSections()
             }
         }
     }
 }
 
-private fun LazyListScope.hookSettingsSections(lyricSource: String) {
+private fun LazyListScope.hookSettingsSections() {
     item(key = "lyric_mode") {
         val context = LocalContext.current
         val prefs = remember { context.getSharedPreferences(UIConstants.PREF_NAME, Context.MODE_PRIVATE) }
@@ -136,9 +132,6 @@ private fun LazyListScope.hookSettingsSections(lyricSource: String) {
                 ArrowPreference(title = stringResource(R.string.title_verbatim_lyric), onClick = { navigator.navigate(Route.VerbatimLyric) })
                 ArrowPreference(title = stringResource(R.string.title_translation), onClick = { navigator.navigate(Route.LyricTranslation) })
                 ArrowPreference(title = stringResource(R.string.title_lyric_anim), onClick = { navigator.navigate(Route.LyricAnimation) })
-                AnimatedVisibility(visible = lyricSource == "lyricon") {
-                    ArrowPreference(title = stringResource(R.string.title_lyric_provider), onClick = { navigator.navigate(Route.LyricProvider) })
-                }
             }
         }
     }

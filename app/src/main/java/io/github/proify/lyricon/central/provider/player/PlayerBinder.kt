@@ -10,6 +10,7 @@ import android.media.session.PlaybackState
 import android.os.SharedMemory
 import android.os.SystemClock
 import android.util.Log
+import com.juren233.hyperlyricsenhanced.BuildConfig
 import io.github.proify.lyricon.central.inflate
 import io.github.proify.lyricon.central.json
 import io.github.proify.lyricon.central.util.ScreenStateMonitor
@@ -50,6 +51,8 @@ internal class PlayerBinder(
 
     @Volatile
     private var lastPlaybackState: PlaybackState? = null
+    private val providerInfo = info
+    private var lastPositionDiagnosticAtMs = 0L
 
     init {
         ScreenStateMonitor.addListener(this)
@@ -138,7 +141,15 @@ internal class PlayerBinder(
             return
         }
 
-        Log.d(TAG, "setPlaybackState2: $state")
+        if (BuildConfig.DEBUG) {
+            Log.i(
+                TAG,
+                "Timing state2 anchor: provider=${providerInfo.providerPackageName}, " +
+                    "player=${providerInfo.playerPackageName}, process=${providerInfo.processName}, " +
+                    "state=${state.state}, position=${state.position}, " +
+                    "updatedAt=${state.lastPositionUpdateTime}, speed=${state.playbackSpeed}"
+            )
+        }
 
         if (state.state == PlaybackState.STATE_BUFFERING) return
 
@@ -186,23 +197,45 @@ internal class PlayerBinder(
     override fun getPositionMemory(): SharedMemory? = positionMemory.sharedMemory
 
     private fun computeCurrentPosition(): Long {
-        if (!isState2Enabled.get()) return positionMemory.readPosition()
-
-        val state = lastPlaybackState ?: return 0L
-        val basePosition = state.position.coerceAtLeast(0L)
-        if (state.state != PlaybackState.STATE_PLAYING) return basePosition
-
-        val lastUpdate = state.lastPositionUpdateTime
-        if (lastUpdate <= 0L) return basePosition
-
-        val delta = (SystemClock.elapsedRealtime() - lastUpdate).coerceAtLeast(0L)
-        val advanced = if (state.playbackSpeed == 1.0f) {
-            basePosition + delta
+        val state2Enabled = isState2Enabled.get()
+        val position = if (!state2Enabled) {
+            positionMemory.readPosition()
         } else {
-            basePosition + (delta * state.playbackSpeed).toLong()
+            val state = lastPlaybackState
+            if (state == null) {
+                0L
+            } else {
+                val basePosition = state.position.coerceAtLeast(0L)
+                val lastUpdate = state.lastPositionUpdateTime
+                if (state.state != PlaybackState.STATE_PLAYING || lastUpdate <= 0L) {
+                    basePosition
+                } else {
+                    val delta = (SystemClock.elapsedRealtime() - lastUpdate).coerceAtLeast(0L)
+                    if (state.playbackSpeed == 1.0f) {
+                        basePosition + delta
+                    } else {
+                        basePosition + (delta * state.playbackSpeed).toLong()
+                    }
+                }
+            }
         }
+        val safePosition = position.coerceAtLeast(0L)
+        logPositionDiagnostic(safePosition, state2Enabled)
+        return safePosition
+    }
 
-        return advanced.coerceAtLeast(0L)
+    private fun logPositionDiagnostic(position: Long, state2Enabled: Boolean) {
+        if (!BuildConfig.DEBUG) return
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastPositionDiagnosticAtMs < POSITION_DIAGNOSTIC_INTERVAL_MS) return
+        lastPositionDiagnosticAtMs = now
+        Log.i(
+            TAG,
+            "Timing central read: provider=${providerInfo.providerPackageName}, " +
+                "player=${providerInfo.playerPackageName}, process=${providerInfo.processName}, " +
+                "source=${if (state2Enabled) "playback_state" else "shared_memory"}, " +
+                "position=$position, playing=${recorder.isPlaying}"
+        )
     }
 
     private fun startPositionUpdate() {
@@ -231,5 +264,6 @@ internal class PlayerBinder(
     private companion object {
         private const val TAG = "PlayerBinder"
         private const val MIN_INTERVAL_MS = 16L
+        private const val POSITION_DIAGNOSTIC_INTERVAL_MS = 5_000L
     }
 }

@@ -50,6 +50,7 @@ class LyriconSource : LyricSource {
     companion object {
         private const val TAG = "LyriconSource"
         private const val APPLE_MUSIC_PACKAGE = "com.apple.android.music"
+        private const val BUILT_IN_PROVIDER_PACKAGE = "com.juren233.hyperlyricsenhanced"
         private const val APPLE_LYRICS_GRACE_MS = 5_000L
         private const val APPLE_MEDIA_MONITOR_INTERVAL_MS = 1_000L
         private const val SAME_TRACK_DURATION_TOLERANCE_MS = 2_000L
@@ -107,6 +108,10 @@ class LyriconSource : LyricSource {
     private var appleSongGeneration = 0
     @Volatile
     private var appleMediaPositionReference: AppleCentralPositionPolicy.MediaReference? = null
+    @Volatile
+    private var appleDirectPositionReference: AppleCentralPositionPolicy.DirectReference? = null
+    @Volatile
+    private var currentDirectAppleSongId: String? = null
     private var lastObservedMediaKey: String? = null
     private var lastMediaPlaybackState: Boolean? = null
     private var lastTimingDiagnosticAtMs = 0L
@@ -166,6 +171,8 @@ class LyriconSource : LyricSource {
             currentPublishedAppleSong = null
             currentPublishedAppleOnlineTranslationMatched = false
             appleMediaPositionReference = null
+            appleDirectPositionReference = null
+            currentDirectAppleSongId = null
             subscriber = null
             sink?.onStop()
             sink = null
@@ -399,6 +406,7 @@ class LyriconSource : LyricSource {
         if (!sameTrack) {
             appleSongGeneration += 1
             appleMediaPositionReference = null
+            appleDirectPositionReference = null
             lastAdjustedPosition = 0L
             originalMetadataRequestKey = null
             temporaryTranslationSource = null
@@ -1299,6 +1307,9 @@ class LyriconSource : LyricSource {
             ?: 0L,
         currentSongGeneration = appleSongGeneration,
         mediaReference = appleMediaPositionReference,
+        directReference = appleDirectPositionReference.takeIf {
+            !hasActiveCentralPlayer() || isBuiltInAppleCentralProviderActive()
+        },
         providerDelayMs = activeProviderDelayMs,
         nowMs = SystemClock.elapsedRealtime(),
         explicitSeek = explicitSeek,
@@ -1603,12 +1614,14 @@ class LyriconSource : LyricSource {
     }
 
     internal fun onDirectSongChanged(song: LyriconSong?) {
+        val localSong = song?.toLocalSong()
+        currentDirectAppleSongId = localSong?.id
+        appleDirectPositionReference = null
         if (hasActiveCentralPlayer()) return
-        val providerPackage = "com.juren233.hyperlyricsenhanced"
+        val providerPackage = BUILT_IN_PROVIDER_PACKAGE
         activeProviderPackageName = providerPackage
         activeProviderDelayMs = readProviderDelay(providerPackage)
         LyriconDataBridge.updateLyricPackage(APPLE_MUSIC_PACKAGE)
-        val localSong = song?.toLocalSong()
         handleAppleSong(localSong)
     }
 
@@ -1619,20 +1632,41 @@ class LyriconSource : LyricSource {
     }
 
     internal fun onDirectPositionChanged(position: Long) {
-        if (hasActiveCentralPlayer() || fallbackSongActive) return
+        if (fallbackSongActive) return
+        if (hasActiveCentralPlayer() && !centralAppleProviderActive) return
+        if (centralAppleProviderActive && !isBuiltInAppleCentralProviderActive()) return
+        if (centralAppleProviderActive && !directSongMatchesCurrentAppleSong()) return
         val adjustedPosition = (position - activeProviderDelayMs).coerceAtLeast(0L)
+        appleDirectPositionReference = AppleCentralPositionPolicy.DirectReference(
+            songGeneration = appleSongGeneration,
+            position = adjustedPosition,
+            observedAtMs = SystemClock.elapsedRealtime(),
+        )
         val resolution = resolveApplePosition(adjustedPosition, explicitSeek = false)
         lastAdjustedPosition = AppleCentralPositionPolicy.restorablePosition(
             previousPosition = lastAdjustedPosition,
             resolution = resolution,
         )
-        logAppleTimingDiagnostic("direct", position, adjustedPosition, resolution = resolution)
+        logAppleTimingDiagnostic(
+            if (centralAppleProviderActive) "direct_primary" else "direct",
+            position,
+            adjustedPosition,
+            resolution = resolution,
+        )
         resolution.position?.let { sink?.onPositionChanged(it) }
     }
 
     internal fun onDirectSeekTo(position: Long) {
-        if (hasActiveCentralPlayer() || fallbackSongActive) return
+        if (fallbackSongActive) return
+        if (hasActiveCentralPlayer() && !centralAppleProviderActive) return
+        if (centralAppleProviderActive && !isBuiltInAppleCentralProviderActive()) return
+        if (centralAppleProviderActive && !directSongMatchesCurrentAppleSong()) return
         val adjustedPosition = (position - activeProviderDelayMs).coerceAtLeast(0L)
+        appleDirectPositionReference = AppleCentralPositionPolicy.DirectReference(
+            songGeneration = appleSongGeneration,
+            position = adjustedPosition,
+            observedAtMs = SystemClock.elapsedRealtime(),
+        )
         val resolution = resolveApplePosition(adjustedPosition, explicitSeek = true)
         lastAdjustedPosition = AppleCentralPositionPolicy.restorablePosition(
             previousPosition = lastAdjustedPosition,
@@ -1647,6 +1681,15 @@ class LyriconSource : LyricSource {
         )
         resolution.position?.let { sink?.onSeekTo(it) }
     }
+
+    private fun directSongMatchesCurrentAppleSong(): Boolean {
+        val directSongId = currentDirectAppleSongId ?: return false
+        val currentSongId = currentAppleSong?.id ?: return false
+        return directSongId == currentSongId
+    }
+
+    private fun isBuiltInAppleCentralProviderActive(): Boolean =
+        centralAppleProviderActive && activeProviderPackageName == BUILT_IN_PROVIDER_PACKAGE
 
     private fun logAppleTimingDiagnostic(
         path: String,
@@ -1677,7 +1720,8 @@ class LyriconSource : LyricSource {
             "[debug] Timing receive: path=$path, rawPosition=$rawPosition, " +
                 "adjustedPosition=$adjustedPosition, " +
                 "resolvedPosition=${resolution?.position ?: adjustedPosition}, " +
-                "mediaPosition=${resolution?.mediaPosition}, decision=${resolution?.reason}, " +
+                "mediaPosition=${resolution?.mediaPosition}, " +
+                "directPosition=${resolution?.directPosition}, decision=${resolution?.reason}, " +
                 "positionDelta=${(adjustedPosition - lastTimingDiagnosticPosition).takeIf {
                     lastTimingDiagnosticPosition >= 0L
                 }}, delayMs=$activeProviderDelayMs, currentSongId=${currentAppleSong?.id}, " +

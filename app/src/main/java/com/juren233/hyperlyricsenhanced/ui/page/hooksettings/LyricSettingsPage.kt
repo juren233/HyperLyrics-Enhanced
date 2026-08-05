@@ -17,6 +17,8 @@ import androidx.compose.ui.unit.dp
 import com.juren233.hyperlyricsenhanced.R
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.ui.component.TextInputDialog
+import com.juren233.hyperlyricsenhanced.ui.navigation.LocalNavigator
+import com.juren233.hyperlyricsenhanced.ui.navigation.Route
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.common.XposedLyricSettingPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.common.rememberHookConfigSaver
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.common.rememberHookPrefs
@@ -30,6 +32,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
 fun LyricSettingsPage() {
+    val navigator = LocalNavigator.current
     val prefs = rememberHookPrefs()
     val saveConfig = rememberHookConfigSaver(prefs)
 
@@ -235,6 +238,12 @@ fun LyricSettingsPage() {
                         saveConfig(RootConstants.KEY_HOOK_LYRIC_SOURCE, lyricSource)
                     },
                 )
+                AnimatedVisibility(visible = lyricSource == "lyricon") {
+                    ArrowPreference(
+                        title = stringResource(R.string.title_lyric_provider),
+                        onClick = { navigator.navigate(Route.LyricProvider) },
+                    )
+                }
                 SwitchPreference(
                     title = stringResource(R.string.title_apple_music_online_fallback),
                     summary = stringResource(R.string.summary_apple_music_online_fallback),

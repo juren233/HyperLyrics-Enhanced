@@ -23,6 +23,62 @@ class AppleCentralPositionPolicyTest {
     }
 
     @Test
+    fun `fresh direct progress is preferred when central shared memory stays zero`() {
+        val resolution = resolve(
+            centralPosition = 0L,
+            mediaPosition = null,
+            directPosition = 35_000L,
+        )
+
+        assertEquals(35_000L, resolution.position)
+        assertEquals(35_000L, resolution.directPosition)
+        assertEquals(
+            AppleCentralPositionPolicy.Reason.DIRECT_PREFERRED,
+            resolution.reason,
+        )
+    }
+
+    @Test
+    fun `stale direct progress cannot override central progress`() {
+        val resolution = AppleCentralPositionPolicy.resolve(
+            centralPosition = 30_000L,
+            currentSongDuration = 191_950L,
+            currentSongGeneration = 1,
+            mediaReference = null,
+            directReference = AppleCentralPositionPolicy.DirectReference(
+                songGeneration = 1,
+                position = 80_000L,
+                observedAtMs = nowMs - 2_001L,
+            ),
+            providerDelayMs = 0,
+            nowMs = nowMs,
+            explicitSeek = false,
+        )
+
+        assertEquals(30_000L, resolution.position)
+        assertEquals(
+            AppleCentralPositionPolicy.Reason.CENTRAL_ACCEPTED,
+            resolution.reason,
+        )
+    }
+
+    @Test
+    fun `explicit central seek wins while direct callback catches up`() {
+        val resolution = resolve(
+            centralPosition = 120_000L,
+            mediaPosition = null,
+            directPosition = 20_000L,
+            explicitSeek = true,
+        )
+
+        assertEquals(120_000L, resolution.position)
+        assertEquals(
+            AppleCentralPositionPolicy.Reason.EXPLICIT_SEEK_ACCEPTED,
+            resolution.reason,
+        )
+    }
+
+    @Test
     fun `old-song position beyond current duration is rejected without media reference`() {
         val resolution = resolve(
             centralPosition = 261_771L,
@@ -134,6 +190,7 @@ class AppleCentralPositionPolicyTest {
     private fun resolve(
         centralPosition: Long,
         mediaPosition: Long?,
+        directPosition: Long? = null,
         duration: Long = 191_950L,
         explicitSeek: Boolean = false,
     ): AppleCentralPositionPolicy.Resolution = AppleCentralPositionPolicy.resolve(
@@ -141,6 +198,13 @@ class AppleCentralPositionPolicyTest {
         currentSongDuration = duration,
         currentSongGeneration = 1,
         mediaReference = mediaPosition?.let(::mediaReference),
+        directReference = directPosition?.let {
+            AppleCentralPositionPolicy.DirectReference(
+                songGeneration = 1,
+                position = it,
+                observedAtMs = nowMs,
+            )
+        },
         providerDelayMs = 0,
         nowMs = nowMs,
         explicitSeek = explicitSeek,

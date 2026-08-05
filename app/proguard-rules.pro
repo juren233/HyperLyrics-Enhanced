@@ -28,3 +28,6 @@
 # --- SuperLyric API ---
 -keep class com.hchen.superlyricapi.* { *; }
 -dontwarn android.os.ServiceManager
+
+# Provider Pack Ed25519 verifier (Bouncy Castle lightweight primitives)
+-keep class org.bouncycastle.crypto.** { *; }

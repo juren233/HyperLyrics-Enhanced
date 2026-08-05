@@ -6,15 +6,16 @@
 
 package com.juren233.hyperlyricsenhanced.provider
 
+import android.util.Log
 import com.juren233.hyperlyricsenhanced.BuildConfig
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import org.bouncycastle.crypto.params.Ed25519PublicKeyParameters
+import org.bouncycastle.crypto.signers.Ed25519Signer
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
-import java.security.KeyFactory
 import java.security.MessageDigest
-import java.security.Signature
-import java.security.spec.X509EncodedKeySpec
+import java.security.spec.InvalidKeySpecException
 import java.util.Base64
 import java.util.zip.ZipInputStream
 
@@ -39,6 +40,7 @@ data class VerifiedProviderPack(
 )
 
 object ProviderPackVerifier {
+    private const val TAG = "HLEProvider/Verifier"
     private const val MANIFEST_ENTRY = "manifest.json"
     private const val DEX_ENTRY = "classes.dex"
     private const val SIGNATURE_ENTRY = "signature.ed25519"
@@ -159,16 +161,48 @@ object ProviderPackVerifier {
     fun verifyDetachedSignature(
         payload: ByteArray,
         signatureBytes: ByteArray,
-    ): Boolean = runCatching {
-        val publicKey = KeyFactory.getInstance("Ed25519").generatePublic(
-            X509EncodedKeySpec(Base64.getDecoder().decode(PUBLIC_KEY_DER_BASE64)),
-        )
-        Signature.getInstance("Ed25519").run {
-            initVerify(publicKey)
-            update(payload)
-            verify(signatureBytes)
+    ): Boolean {
+        val result = runCatching {
+            val publicKey = decodeEd25519PublicKey()
+            val verifier = Ed25519Signer()
+            verifier.init(false, Ed25519PublicKeyParameters(publicKey, 0))
+            verifier.update(payload, 0, payload.size)
+            verifier.verifySignature(signatureBytes)
         }
-    }.getOrDefault(false)
+        if (BuildConfig.DEBUG && result.isFailure) {
+            runCatching {
+                Log.e(
+                    TAG,
+                    "Ed25519 verification failed before result " +
+                        "payloadSha256=${sha256(payload)} signatureBytes=${signatureBytes.size}",
+                    result.exceptionOrNull(),
+                )
+            }
+        }
+        if (BuildConfig.DEBUG && result.isSuccess) {
+            runCatching {
+                Log.d(
+                    TAG,
+                    "verify implementation=BouncyCastle-Ed25519Signer result=${result.getOrNull()} " +
+                        "payloadSha256=${sha256(payload)} signatureBytes=${signatureBytes.size}",
+                )
+            }
+        }
+        return result.getOrDefault(false)
+    }
+
+    private fun decodeEd25519PublicKey(): ByteArray {
+        val der = Base64.getDecoder().decode(PUBLIC_KEY_DER_BASE64)
+        require(der.size == 44) { "Ed25519 公钥 DER 长度无效" }
+        val prefix = byteArrayOf(
+            0x30, 0x2a, 0x30, 0x05, 0x06, 0x03,
+            0x2b, 0x65, 0x70, 0x03, 0x21, 0x00,
+        )
+        require(der.copyOfRange(0, prefix.size).contentEquals(prefix)) {
+            InvalidKeySpecException("Ed25519 公钥不是预期的 X.509 SubjectPublicKeyInfo")
+        }
+        return der.copyOfRange(prefix.size, der.size)
+    }
 
     private fun sha256(bytes: ByteArray): String =
         MessageDigest.getInstance("SHA-256")

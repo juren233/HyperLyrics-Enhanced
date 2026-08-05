@@ -6,6 +6,7 @@
 
 package io.github.proify.lyricon.amprovider.xposed.hooks
 
+import android.media.session.PlaybackState as AndroidPlaybackState
 import android.os.SystemClock
 import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.common.RootConstants
@@ -54,6 +55,7 @@ internal class ApplePlaybackHooks(
     private var lastTimingStateSignature: String? = null
     private var lastExplicitSeekAtMs = 0L
     private var lastExplicitSeekPosition = -1L
+    private var lastPlaybackAnchorAtMs = 0L
     private lateinit var exoTarget: AppleMusicHookTarget
     private val playbackTarget by lazy {
         runtime.hookResolver.resolveClass(
@@ -167,13 +169,14 @@ internal class ApplePlaybackHooks(
     private fun startSyncAction() {
         if (playing) return
         playing = true
-        remotePlayer?.setPlaybackState(true)
+        currentPositionMs()?.let { publishPlaybackAnchor(it, playing = true, force = true) }
         resumeCoroutineTask()
     }
 
     private fun stopSyncAction() {
         playing = false
-        remotePlayer?.setPlaybackState(false)
+        currentPositionMs()?.let { publishPlaybackAnchor(it, playing = false, force = true) }
+            ?: remotePlayer?.setPlaybackState(false)
         pauseCoroutineTask()
     }
 
@@ -185,6 +188,7 @@ internal class ApplePlaybackHooks(
                     playbackPositionSource?.readPosition()?.let { position ->
                         logPositionSyncState(position)
                         remotePlayer?.setPosition(position)
+                        publishPlaybackAnchor(position, playing = true, force = false)
                     }
                 }.onFailure {
                     ProviderLogger.error("读取 Apple Music 当前播放进度失败", it)
@@ -275,6 +279,7 @@ internal class ApplePlaybackHooks(
             lastTimingSamplePosition = -1L
             lastTimingSampleAtMs = 0L
             lastTimingStateSignature = null
+            lastPlaybackAnchorAtMs = 0L
             ProviderLogger.info(
                 "播放进度源已绑定：source=$source, class=${mediaPlayer.javaClass.name}, " +
                     "instance=${System.identityHashCode(mediaPlayer)}"
@@ -364,6 +369,29 @@ internal class ApplePlaybackHooks(
         lastTimingSamplePosition = position
     }
 
+    private fun publishPlaybackAnchor(position: Long, playing: Boolean, force: Boolean) {
+        val now = SystemClock.elapsedRealtime()
+        if (!force && now - lastPlaybackAnchorAtMs < PLAYBACK_ANCHOR_INTERVAL_MS) return
+
+        lastPlaybackAnchorAtMs = now
+        val state = AndroidPlaybackState.Builder()
+            .setState(
+                if (playing) AndroidPlaybackState.STATE_PLAYING
+                else AndroidPlaybackState.STATE_PAUSED,
+                position.coerceAtLeast(0L),
+                if (playing) 1.0f else 0.0f,
+                now,
+            )
+            .build()
+        val success = remotePlayer?.setPlaybackState(state) == true
+        if (BuildConfig.DEBUG) {
+            ProviderLogger.diagnostic(
+                "Timing playback anchor: position=$position, playing=$playing, " +
+                    "force=$force, success=$success"
+            )
+        }
+    }
+
     private fun pauseCoroutineTask() {
         progressJob?.cancel()
         progressJob = null
@@ -383,4 +411,8 @@ internal class ApplePlaybackHooks(
 
     private fun playbackMember(member: AppleMusicRuntimeMember): String =
         playbackTarget.runtimeMemberName(member)
+
+    private companion object {
+        private const val PLAYBACK_ANCHOR_INTERVAL_MS = 5_000L
+    }
 }

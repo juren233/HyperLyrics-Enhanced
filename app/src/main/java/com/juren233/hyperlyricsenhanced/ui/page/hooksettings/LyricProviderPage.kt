@@ -245,10 +245,7 @@ private fun LazyListScope.providerSections(
     onOfficialEnabledChange: (OfficialProviderItem, Boolean) -> Unit,
 ) {
     item(key = "builtin_header") {
-        SmallTitle(
-            text = stringResource(R.string.title_builtin_provider),
-            insideMargin = PaddingValues(start = 10.dp, end = 10.dp, top = 12.dp, bottom = 4.dp),
-        )
+        SmallTitle(text = stringResource(R.string.title_builtin_provider))
     }
     item(key = "builtin_apple_music") {
         Card(
@@ -273,10 +270,7 @@ private fun LazyListScope.providerSections(
     }
 
     item(key = "official_header") {
-        SmallTitle(
-            text = stringResource(R.string.title_official_provider_plugins),
-            insideMargin = PaddingValues(start = 10.dp, end = 10.dp, top = 12.dp, bottom = 4.dp),
-        )
+        SmallTitle(text = stringResource(R.string.title_official_provider_plugins))
     }
     if (officialUiState.items.isEmpty()) {
         item(key = "official_empty") {
@@ -377,10 +371,7 @@ private fun LazyListScope.providerSections(
     }
 
     item(key = "legacy_header") {
-        SmallTitle(
-            text = stringResource(R.string.title_legacy_provider_modules),
-            insideMargin = PaddingValues(start = 10.dp, end = 10.dp, top = 12.dp, bottom = 4.dp),
-        )
+        SmallTitle(text = stringResource(R.string.title_legacy_provider_modules))
     }
     if (!uiState.isLoading && uiState.modules.isEmpty()) {
         item(key = "no_legacy_provider") {
@@ -396,7 +387,7 @@ private fun LazyListScope.providerSections(
         groupedModules.forEach { category ->
             if (category.name.isNotBlank()) {
                 item(key = "header_${category.name}") {
-                    SmallTitle(text = category.name, insideMargin = PaddingValues(start = 10.dp, end = 10.dp, top = 12.dp, bottom = 4.dp))
+                    SmallTitle(text = category.name)
                 }
             }
             items(category.items.size, key = { "provider_${category.items[it].packageInfo.packageName}" }) { index ->

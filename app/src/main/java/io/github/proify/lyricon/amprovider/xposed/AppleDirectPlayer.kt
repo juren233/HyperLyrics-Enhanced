@@ -14,6 +14,7 @@ import android.media.session.PlaybackState
 import android.os.Build
 import android.os.IBinder
 import android.os.Process
+import android.os.SystemClock
 import android.util.Log
 import androidx.core.content.ContextCompat
 import com.juren233.hyperlyricsenhanced.BuildConfig
@@ -232,6 +233,9 @@ internal class CompositeRemotePlayer(
     private val central: RemotePlayer,
     private val direct: RemotePlayer
 ) : RemotePlayer {
+    private var lastPositionDiagnosticAtMs = 0L
+    private var lastPositionDiagnosticState: String? = null
+
     override val isActive: Boolean
         get() = central.isActive || direct.isActive
 
@@ -242,7 +246,28 @@ internal class CompositeRemotePlayer(
 
     override fun seekTo(position: Long): Boolean = both { it.seekTo(position) }
 
-    override fun setPosition(position: Long): Boolean = both { it.setPosition(position) }
+    override fun setPosition(position: Long): Boolean {
+        val centralActive = central.isActive
+        val directActive = direct.isActive
+        val centralResult = runCatching { central.setPosition(position) }.getOrDefault(false)
+        val directResult = runCatching { direct.setPosition(position) }.getOrDefault(false)
+        if (BuildConfig.DEBUG) {
+            val now = SystemClock.elapsedRealtime()
+            val state = "$centralActive|$centralResult|$directActive|$directResult"
+            if (state != lastPositionDiagnosticState ||
+                now - lastPositionDiagnosticAtMs >= POSITION_DIAGNOSTIC_INTERVAL_MS
+            ) {
+                ProviderLogger.diagnostic(
+                    "Timing position fanout: position=$position, centralActive=$centralActive, " +
+                        "centralResult=$centralResult, directActive=$directActive, " +
+                        "directResult=$directResult"
+                )
+                lastPositionDiagnosticAtMs = now
+                lastPositionDiagnosticState = state
+            }
+        }
+        return centralResult || directResult
+    }
 
     override fun setPositionUpdateInterval(interval: Int): Boolean =
         both { it.setPositionUpdateInterval(interval) }
@@ -255,12 +280,26 @@ internal class CompositeRemotePlayer(
     override fun setDisplayRoma(displayRoma: Boolean): Boolean =
         both { it.setDisplayRoma(displayRoma) }
 
-    override fun setPlaybackState(state: PlaybackState?): Boolean =
-        both { it.setPlaybackState(state) }
+    override fun setPlaybackState(state: PlaybackState?): Boolean {
+        val centralResult = runCatching { central.setPlaybackState(state) }.getOrDefault(false)
+        val directResult = runCatching { direct.setPlaybackState(state) }.getOrDefault(false)
+        if (BuildConfig.DEBUG) {
+            ProviderLogger.diagnostic(
+                "Timing playback anchor fanout: state=${state?.state}, " +
+                    "position=${state?.position}, centralResult=$centralResult, " +
+                    "directResult=$directResult"
+            )
+        }
+        return centralResult || directResult
+    }
 
     private inline fun both(action: (RemotePlayer) -> Boolean): Boolean {
         val centralResult = runCatching { action(central) }.getOrDefault(false)
         val directResult = runCatching { action(direct) }.getOrDefault(false)
         return centralResult || directResult
+    }
+
+    private companion object {
+        private const val POSITION_DIAGNOSTIC_INTERVAL_MS = 5_000L
     }
 }

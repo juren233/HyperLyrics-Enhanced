@@ -7,15 +7,27 @@
 package com.juren233.hyperlyricsenhanced.provider
 
 import java.io.ByteArrayOutputStream
+import java.util.Base64
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ProviderPackVerifierTest {
     private val json = Json
+
+    @Test
+    fun acceptsEd25519SignatureWithTheRepositoryPublicKey() {
+        val payload = "provider-verifier-test".toByteArray(Charsets.UTF_8)
+        val signature = Base64.getDecoder().decode(
+            "xmmdDnDBTwALsFLqQvtd4ZPUCkqzSmf0nHYb0U7788BRqCV55jjNFlTYABJvtcSmPAghJmGZP50nGVq2OPshCg==",
+        )
+
+        assertTrue(ProviderPackVerifier.verifyDetachedSignature(payload, signature))
+    }
 
     @Test
     fun rejectsPackWithAnUnexpectedFile() {
