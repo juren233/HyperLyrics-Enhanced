@@ -22,6 +22,9 @@ internal class AppleInternalCatalogResolver(
 ) {
     private val persistentLocalizedCache = AppleLocalizedMetadataCache(context, mainHandler)
     private val persistentOriginalCache = AppleOriginalMetadataCache(context, mainHandler)
+    private val resolvedCatalogHolder by lazy {
+        hookResolver.resolveClass(AppleMusicHookPoint.MEDIA_API_REPOSITORY_HOLDER_CLASS)
+    }
     private val cache = object : LinkedHashMap<String, Alias>(32, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Alias>?): Boolean =
             size > CACHE_SIZE
@@ -1801,23 +1804,37 @@ internal class AppleInternalCatalogResolver(
     }
 
     private fun createCatalogAccess(): CatalogAccess {
-        val holderClass = hookResolver.resolveClass(
-            AppleMusicHookPoint.MEDIA_API_REPOSITORY_HOLDER_CLASS,
-        ).clazz
+        val resolvedHolder = resolvedCatalogHolder
+        val holderClass = resolvedHolder.clazz
         val companionField = holderClass.declaredFields.firstOrNull { field ->
             Modifier.isStatic(field.modifiers) &&
                 field.type.name == "${holderClass.name}\$Companion"
         } ?: error("MediaApiRepositoryHolder companion unavailable")
         companionField.isAccessible = true
         val companion = requireNotNull(companionField.get(null))
-        val mediaApi = AppleReflection.call(companion, "getMediaApi")
+        val mediaApi = AppleReflection.call(
+            companion,
+            resolvedHolder.target.runtimeMemberName(
+                AppleMusicRuntimeMember.MEDIA_API_HOLDER_GET_MEDIA_API_METHOD
+            ),
+        )
             ?: error("Apple MediaApi without HTTP cache unavailable")
-        val storefrontField = findField(mediaApi, STOREFRONT_FIELD_NAME).also { field ->
+        val storefrontField = findField(
+            mediaApi,
+            resolvedHolder.target.runtimeMemberName(
+                AppleMusicRuntimeMember.MEDIA_API_STOREFRONT_FIELD
+            ),
+        ).also { field ->
             if (field.type != String::class.java) {
                 error("Apple MediaApi storefront field has unexpected type")
             }
         }
-        val directQueryMethod = findDirectCatalogQueryMethod(mediaApi.javaClass)
+        val directQueryMethod = findDirectCatalogQueryMethod(
+            clazz = mediaApi.javaClass,
+            methodName = resolvedHolder.target.runtimeMemberName(
+                AppleMusicRuntimeMember.MEDIA_API_DIRECT_QUERY_METHOD
+            ),
+        )
         val continuationType = directQueryMethod.parameterTypes[2]
         val coroutineContextType = continuationType.methods.firstOrNull { method ->
             method.name == "getContext" && method.parameterCount == 0
@@ -1832,11 +1849,11 @@ internal class AppleInternalCatalogResolver(
         ).also(::captureAccountStorefront)
     }
 
-    private fun findDirectCatalogQueryMethod(clazz: Class<*>): Method {
+    private fun findDirectCatalogQueryMethod(clazz: Class<*>, methodName: String): Method {
         var current: Class<*>? = clazz
         while (current != null) {
             current.declaredMethods.firstOrNull { method ->
-                method.name == "B" &&
+                method.name == methodName &&
                     method.parameterTypes.let { types ->
                         types.size == 3 &&
                             types[0] == String::class.java &&
@@ -1849,7 +1866,7 @@ internal class AppleInternalCatalogResolver(
             }
             current = current.superclass
         }
-        throw NoSuchMethodException("${clazz.name}#B(String,Map,Continuation)")
+        throw NoSuchMethodException("${clazz.name}#$methodName(String,Map,Continuation)")
     }
 
     private fun createEmptyCoroutineContext(contextType: Class<*>): Any =
@@ -1910,7 +1927,9 @@ internal class AppleInternalCatalogResolver(
 
     private fun catalogResponseDiagnostic(response: Any?): String {
         if (response == null) return "value=null"
-        val data = runCatching { AppleReflection.call(response, "getData") }
+        val data = runCatching {
+            AppleReflection.call(response, catalogMember(AppleMusicRuntimeMember.CATALOG_RESPONSE_DATA_METHOD))
+        }
             .getOrElse { error ->
                 return "valueClass=${response.javaClass.name}, " +
                     "dataError=${error.javaClass.name}:${error.message}"
@@ -1941,7 +1960,12 @@ internal class AppleInternalCatalogResolver(
         language: String,
         entityType: LocalizedEntityType,
     ): List<CatalogSong> =
-        collectionValues(AppleReflection.call(response, "getData")).mapNotNull { entity ->
+        collectionValues(
+            AppleReflection.call(
+                response,
+                catalogMember(AppleMusicRuntimeMember.CATALOG_RESPONSE_DATA_METHOD),
+            )
+        ).mapNotNull { entity ->
             parseCatalogEntity(entity, language, entityType)
         }
 
@@ -1950,26 +1974,41 @@ internal class AppleInternalCatalogResolver(
         language: String,
         entityType: LocalizedEntityType,
     ): CatalogSong? {
-        val id = (AppleReflection.call(entity, "getId") as? String)
+        val id = (AppleReflection.call(
+            entity,
+            catalogMember(AppleMusicRuntimeMember.CATALOG_ENTITY_ID_METHOD),
+        ) as? String)
             ?.trim()
             ?.takeIf(String::isNotEmpty)
-        val attributes = AppleReflection.call(entity, "getAttributes") ?: return null
+        val attributes = AppleReflection.call(
+            entity,
+            catalogMember(AppleMusicRuntimeMember.CATALOG_ENTITY_ATTRIBUTES_METHOD),
+        ) ?: return null
         val rawAttributes = AppleMediaApiAttributeSnapshots.get(attributes)
         val title = if (rawAttributes != null) {
             rawAttributes.name?.trim().orEmpty()
         } else {
-            (AppleReflection.call(attributes, "getName") as? String)?.trim().orEmpty()
+            (AppleReflection.call(
+                attributes,
+                catalogMember(AppleMusicRuntimeMember.CATALOG_ATTRIBUTES_NAME_METHOD),
+            ) as? String)?.trim().orEmpty()
         }
         val attributeArtist = if (rawAttributes != null) {
             rawAttributes.artistName?.trim().orEmpty()
         } else runCatching {
-            (AppleReflection.call(attributes, "getArtistName") as? String)?.trim().orEmpty()
+            (AppleReflection.call(
+                attributes,
+                catalogMember(AppleMusicRuntimeMember.CATALOG_ATTRIBUTES_ARTIST_NAME_METHOD),
+            ) as? String)?.trim().orEmpty()
         }.getOrDefault("")
         val album = when (entityType) {
             LocalizedEntityType.SONG -> if (rawAttributes != null) {
                 rawAttributes.albumName?.trim().orEmpty()
             } else runCatching {
-                (AppleReflection.call(attributes, "getAlbumName") as? String)?.trim().orEmpty()
+                (AppleReflection.call(
+                    attributes,
+                    catalogMember(AppleMusicRuntimeMember.CATALOG_ATTRIBUTES_ALBUM_NAME_METHOD),
+                ) as? String)?.trim().orEmpty()
             }.getOrDefault("")
             LocalizedEntityType.ALBUM -> title
             LocalizedEntityType.ARTIST -> ""
@@ -1978,29 +2017,48 @@ internal class AppleInternalCatalogResolver(
             emptyList()
         } else runCatching {
             @Suppress("UNCHECKED_CAST")
-            val relationships = AppleReflection.call(entity, "getRelationships")
+            val relationships = AppleReflection.call(
+                entity,
+                catalogMember(AppleMusicRuntimeMember.CATALOG_ENTITY_RELATIONSHIPS_METHOD),
+            )
                 as? Map<String, Any?>
             val artistRelationship = relationships?.get("artists")
                 ?: relationships?.get("artist")
             val artistEntities = collectionValues(
                 artistRelationship?.let {
-                    AppleReflection.call(it, "getEntities")
-                        ?: AppleReflection.call(it, "getData")
+                    AppleReflection.call(
+                        it,
+                        catalogMember(
+                            AppleMusicRuntimeMember.CATALOG_RELATIONSHIP_ENTITIES_METHOD
+                        ),
+                    ) ?: AppleReflection.call(
+                        it,
+                        catalogMember(AppleMusicRuntimeMember.CATALOG_RELATIONSHIP_DATA_METHOD),
+                    )
                 }
             )
             artistEntities.mapNotNull { artistEntity ->
-                val artistAttributes = AppleReflection.call(artistEntity, "getAttributes")
+                val artistAttributes = AppleReflection.call(
+                    artistEntity,
+                    catalogMember(AppleMusicRuntimeMember.CATALOG_ENTITY_ATTRIBUTES_METHOD),
+                )
                 val rawArtistAttributes = artistAttributes?.let(
                     AppleMediaApiAttributeSnapshots::get
                 )
                 val artistName = if (rawArtistAttributes != null) {
                     rawArtistAttributes.name
                 } else artistAttributes?.let {
-                    AppleReflection.call(it, "getName") as? String
+                    AppleReflection.call(
+                        it,
+                        catalogMember(AppleMusicRuntimeMember.CATALOG_ATTRIBUTES_NAME_METHOD),
+                    ) as? String
                 }
                     ?.trim()
                     ?.takeIf(String::isNotEmpty)
-                val artistId = (AppleReflection.call(artistEntity, "getId") as? String)
+                val artistId = (AppleReflection.call(
+                    artistEntity,
+                    catalogMember(AppleMusicRuntimeMember.CATALOG_ENTITY_ID_METHOD),
+                ) as? String)
                     ?.trim()
                     ?.takeIf { it.isNotEmpty() && it.all(Char::isDigit) }
                 if (artistName == null && artistId == null) null
@@ -2025,7 +2083,10 @@ internal class AppleInternalCatalogResolver(
         }
         val isrc = if (entityType == LocalizedEntityType.SONG) {
             runCatching {
-                (AppleReflection.call(attributes, "getIsrc") as? String)
+                (AppleReflection.call(
+                    attributes,
+                    catalogMember(AppleMusicRuntimeMember.CATALOG_ATTRIBUTES_ISRC_METHOD),
+                ) as? String)
                     ?.trim()
                     ?.takeIf(String::isNotEmpty)
             }.getOrNull()
@@ -2034,13 +2095,25 @@ internal class AppleInternalCatalogResolver(
         }
         val genres = if (entityType != LocalizedEntityType.ARTIST) {
             runCatching {
-                collectionValues(AppleReflection.call(attributes, "getGenreNames"))
+                collectionValues(
+                    AppleReflection.call(
+                        attributes,
+                        catalogMember(
+                            AppleMusicRuntimeMember.CATALOG_ATTRIBUTES_GENRE_NAMES_METHOD
+                        ),
+                    )
+                )
                     .mapNotNull { value ->
                         value.toString().trim().takeIf(String::isNotEmpty)
                     }
             }.getOrDefault(emptyList()).ifEmpty {
                 runCatching {
-                    (AppleReflection.call(attributes, "getGenreName") as? String)
+                    (AppleReflection.call(
+                        attributes,
+                        catalogMember(
+                            AppleMusicRuntimeMember.CATALOG_ATTRIBUTES_GENRE_NAME_METHOD
+                        ),
+                    ) as? String)
                         ?.trim()
                         ?.takeIf(String::isNotEmpty)
                         ?.let(::listOf)
@@ -2066,6 +2139,9 @@ internal class AppleInternalCatalogResolver(
         is Map<*, *> -> value.values.filterNotNull()
         else -> emptyList()
     }
+
+    private fun catalogMember(member: AppleMusicRuntimeMember): String =
+        resolvedCatalogHolder.target.runtimeMemberName(member)
 
     private data class CatalogAccess(
         val mediaApi: Any,
@@ -2157,7 +2233,6 @@ internal class AppleInternalCatalogResolver(
     }
 
     companion object {
-        private const val STOREFRONT_FIELD_NAME = "s"
         private const val CURRENT_LANGUAGE = "current"
         private const val CACHE_SIZE = 64
         private const val LOCALIZED_CACHE_SIZE = 4_096

@@ -19,7 +19,7 @@ internal interface AppleActionSheetMetadataHost {
 
     fun markMetadataVisible(mediaIds: Collection<String>)
 
-    fun rawContentItemValue(contentItem: Any, fieldName: String): Any?
+    fun rawContentItemValue(contentItem: Any, runtimeMember: AppleMusicRuntimeMember): Any?
 
     fun recordArtistAssociation(mediaId: String, item: Any, rawTitle: String?)
 
@@ -51,6 +51,7 @@ internal class AppleActionSheetMetadataHooks(
     private val host: AppleActionSheetMetadataHost,
 ) {
     private var collectionItemViewClass: Class<*>? = null
+    private var collectionItemContract: AppleActionSheetCollectionItemContract? = null
     private val bindingRefs =
         ConcurrentHashMap<String, ConcurrentLinkedQueue<WeakReference<Any>>>()
     private val bindings =
@@ -64,9 +65,25 @@ internal class AppleActionSheetMetadataHooks(
             val resolvedBinding = runtime.hookResolver.resolveMethod(
                 AppleMusicHookPoint.IN_APP_ACTION_SHEET_BINDING
             )
-            collectionItemViewClass = runtime.hookResolver.resolveClass(
+            val resolvedItem = runtime.hookResolver.resolveClass(
                 AppleMusicHookPoint.LISTEN_NOW_COLLECTION_ITEM_VIEW,
-            ).clazz
+            )
+            collectionItemViewClass = resolvedItem.clazz
+            val itemContract = AppleActionSheetCollectionItemContract(
+                getContentType = resolvedItem.target.runtimeMemberName(
+                    AppleMusicRuntimeMember.COLLECTION_ITEM_GET_CONTENT_TYPE_METHOD
+                ),
+                getTitle = resolvedItem.target.runtimeMemberName(
+                    AppleMusicRuntimeMember.COLLECTION_ITEM_GET_TITLE_METHOD
+                ),
+                setTitle = resolvedItem.target.runtimeMemberName(
+                    AppleMusicRuntimeMember.COLLECTION_ITEM_SET_TITLE_METHOD
+                ),
+                notifyChange = resolvedItem.target.runtimeMemberName(
+                    AppleMusicRuntimeMember.COLLECTION_ITEM_NOTIFY_CHANGE_METHOD
+                ),
+            )
+            collectionItemContract = itemContract
             val bindingClass = resolvedBinding.method.declaringClass
             val bindMethod = resolvedBinding.method
             val itemField = generateSequence(bindingClass) { current -> current.superclass }
@@ -82,15 +99,18 @@ internal class AppleActionSheetMetadataHooks(
                 val item = runCatching { itemField.get(binding) }.getOrNull()
                     ?: return@installHook
                 val contentType = runCatching {
-                    AppleReflection.call(item, "getContentType") as? Int
+                    AppleReflection.call(item, itemContract.getContentType) as? Int
                 }.getOrNull() ?: return@installHook
                 val field = fieldForContentType(contentType) ?: return@installHook
                 val identity = host.activePlaybackIdentity()
                 val mediaId = identity.mediaId ?: return@installHook
                 host.markMetadataVisible(listOf(mediaId))
                 val rawTitle = runCatching {
-                    AppleReflection.call(item, "getTitle") as? String
-                }.getOrNull() ?: host.rawContentItemValue(item, "name") as? String
+                    AppleReflection.call(item, itemContract.getTitle) as? String
+                }.getOrNull() ?: host.rawContentItemValue(
+                    item,
+                    AppleMusicRuntimeMember.CONTENT_ITEM_TITLE_FIELD,
+                ) as? String
                 if (!itemMatchesMedia(mediaId, field, rawTitle)) {
                     host.logMetadataIdentity(
                         event = "action_sheet_bind_skip",
@@ -191,20 +211,21 @@ internal class AppleActionSheetMetadataHooks(
         alias: AppleInternalCatalogResolver.Alias,
     ) {
         if (bindings[binding] != association) return
+        val itemContract = collectionItemContract ?: return
         val item = collectionItem(binding) ?: return
         val contentType = runCatching {
-            AppleReflection.call(item, "getContentType") as? Int
+            AppleReflection.call(item, itemContract.getContentType) as? Int
         }.getOrNull() ?: return
         if (fieldForContentType(contentType) != association.field) return
         val value = host.localizedText(association.field, alias)
             .takeIf(String::isNotBlank) ?: return
         val originalTitle = runCatching {
-            AppleReflection.call(item, "getTitle") as? String
+            AppleReflection.call(item, itemContract.getTitle) as? String
         }.getOrNull()
         val titleViews = titleTextViews(binding, originalTitle)
         runCatching {
-            AppleReflection.call(item, "setTitle", value)
-            AppleReflection.call(item, "notifyChange")
+            AppleReflection.call(item, itemContract.setTitle, value)
+            AppleReflection.call(item, itemContract.notifyChange)
         }
         val before = titleViews.map { view -> view.text?.toString().orEmpty() }
         titleViews.forEach { view -> if (view.text?.toString() != value) view.text = value }
@@ -272,4 +293,11 @@ internal class AppleActionSheetMetadataHooks(
         collectionItemViewClass?.let { itemClass ->
             itemClass.isAssignableFrom(field.type)
         } == true
+
+    private data class AppleActionSheetCollectionItemContract(
+        val getContentType: String,
+        val getTitle: String,
+        val setTitle: String,
+        val notifyChange: String,
+    )
 }

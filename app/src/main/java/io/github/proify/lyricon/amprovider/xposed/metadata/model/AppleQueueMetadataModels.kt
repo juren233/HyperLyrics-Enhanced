@@ -49,9 +49,9 @@ internal enum class InAppPlaybackItemField {
 }
 
 internal data class InAppPlaybackItemAccess(
-    val readMember: String,
+    val readMember: AppleMusicRuntimeMember,
     val readViaMethod: Boolean,
-    val setter: String,
+    val setter: AppleMusicRuntimeMember,
 )
 
 internal data class InAppNowPlayingRefresh(

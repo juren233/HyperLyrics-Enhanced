@@ -151,7 +151,6 @@ internal class AppleMedia3MetadataCoordinator(
         metadataTarget.runtimeMemberName(runtimeMember)
 
     private companion object {
-        const val MEDIA3_METADATA_ID_KEY =
-            "com.apple.android.music.playback.metadata.METADATA_KEY_MEDIA_ID"
+        const val MEDIA3_METADATA_ID_KEY = Constants.APPLE_MEDIA3_METADATA_ID_KEY
     }
 }

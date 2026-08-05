@@ -18,7 +18,10 @@ internal interface AppleArtistSurfaceHost {
 
     fun mediaApiEntityCatalogId(entity: Any, knownAttributes: Any? = null): String?
 
-    fun mediaApiAttribute(attributes: Any, getter: String): String?
+    fun mediaApiAttribute(
+        attributes: Any,
+        attribute: AppleMediaApiTextAttribute,
+    ): String?
 
     fun registerLibraryEntity(
         mediaId: String,
@@ -278,7 +281,7 @@ internal class AppleArtistSurfaceHooks(
                             "Apple Music 元数据链路: seq=${host.nextMetadataTraceSequence()}, " +
                                 "event=artist_profile_build, contentId=$mediaId, " +
                                 "entity=${entity.javaClass.name}@${System.identityHashCode(entity)}, " +
-                                "attributeName=${host.mediaApiAttribute(attributes, "getName")}, " +
+                                "attributeName=${host.mediaApiAttribute(attributes, AppleMediaApiTextAttribute.NAME)}, " +
                                 "artistIds=${metadataStore.associatedArtistIds(mediaId)}, " +
                                 "effective=${host.effectiveAlias(mediaId)?.let {
                                     "${it.title}/${it.artist}/${it.album}"
@@ -687,11 +690,6 @@ internal fun shouldInvalidateArtistHeaderAppliedAlias(
     val rendered = renderedTexts.map(String::trim).filter(String::isNotEmpty)
     return rendered.isNotEmpty() && expected !in rendered
 }
-
-internal fun isArtistProfileControllerClassNames(classNames: Iterable<String>): Boolean =
-    classNames.any { className ->
-        className == "com.apple.android.music.profiles.ArtistEpoxyController"
-    }
 
 internal fun artistProfileTopSongMediaId(
     relationshipKey: Any?,

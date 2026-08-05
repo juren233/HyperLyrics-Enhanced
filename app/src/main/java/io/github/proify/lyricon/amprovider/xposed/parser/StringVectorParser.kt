@@ -8,12 +8,18 @@
 
 package io.github.proify.lyricon.amprovider.xposed.parser
 
+import io.github.proify.lyricon.amprovider.xposed.AppleMusicRuntimeMember
+
 object StringVectorParser {
 
-    fun parserStringVectorNative(any: Any): MutableList<String> {
-        val size = callMethod(any, "size") as Long
+    internal fun parserStringVectorNative(
+        any: Any,
+        access: AppleLyricsParserAccess,
+    ): MutableList<String> {
+        val size = access.call(any, AppleMusicRuntimeMember.LYRICS_NATIVE_VECTOR_SIZE_METHOD)
+            as Long
         return (0 until size.toInt()).map { i ->
-            callMethod(any, "get", i) as String
+            access.call(any, AppleMusicRuntimeMember.LYRICS_NATIVE_VECTOR_GET_METHOD, i) as String
         }.toMutableList()
     }
 }

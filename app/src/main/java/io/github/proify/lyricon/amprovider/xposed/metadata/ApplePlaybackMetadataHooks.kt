@@ -32,7 +32,7 @@ internal class ApplePlaybackMetadataHooks(
             val callbackPlayer = mediaPlayer ?: return@installHook
             val changedItem = chain.args.getOrNull(1)
             val currentItem = runCatching {
-                AppleReflection.call(callbackPlayer, "getCurrentItem")
+                metadataCoordinator.currentQueueItem(callbackPlayer)
             }.getOrNull()
             val publishAsCurrent = metadataCoordinator.isCurrentQueueItem(
                 changedItem,

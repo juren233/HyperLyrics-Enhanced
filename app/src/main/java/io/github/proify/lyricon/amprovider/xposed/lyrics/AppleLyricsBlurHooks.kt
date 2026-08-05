@@ -148,6 +148,30 @@ internal class AppleLyricsBlurHooks(
     private val appleLyricsRecyclerAdapterClassNames by lazy {
         hookResolver.configuredClassNames(AppleMusicHookPoint.LYRICS_RECYCLER_ADAPTER).toSet()
     }
+    private val lyricsRecyclerAdapterTargets by lazy {
+        hookResolver.resolveClasses(AppleMusicHookPoint.LYRICS_RECYCLER_ADAPTER)
+    }
+    private val lyricsUiTarget by lazy {
+        hookResolver.resolveClass(AppleMusicHookPoint.LYRICS_UI_ON_CREATE_VIEW).target
+    }
+    private val lyricsNativeTarget by lazy {
+        hookResolver.resolveClass(AppleMusicHookPoint.LYRICS_VIEW_MODEL_LOAD).target
+    }
+
+    internal fun lyricsAdapterMember(
+        adapter: Any,
+        member: AppleMusicRuntimeMember,
+    ): String = lyricsRecyclerAdapterTargets
+        .firstOrNull { resolved -> resolved.clazz.isAssignableFrom(adapter.javaClass) }
+        ?.target
+        ?.runtimeMemberName(member)
+        ?: error("Apple Music lyrics adapter target unavailable: ${adapter.javaClass.name}")
+
+    private fun lyricsUiMember(member: AppleMusicRuntimeMember): String =
+        lyricsUiTarget.runtimeMemberName(member)
+
+    private fun lyricsNativeMember(member: AppleMusicRuntimeMember): String =
+        lyricsNativeTarget.runtimeMemberName(member)
     private val appleLyricsChildAdapterPositionMethods =
         ConcurrentHashMap<Class<*>, Method>()
     private val appleLyricsHyperOsMethods = Collections.synchronizedMap(
@@ -750,21 +774,47 @@ internal class AppleLyricsBlurHooks(
         }.getOrNull() ?: APPLE_LYRICS_SCROLL_STATE_IDLE
 
     private fun appleLyricsActiveAdapterPositions(adapter: Any): Set<Int> =
-        ((runCatching { AppleReflection.call(adapter, "B") }.getOrNull() as? Iterable<*>)
+        ((runCatching {
+            AppleReflection.call(
+                adapter,
+                lyricsAdapterMember(
+                    adapter,
+                    AppleMusicRuntimeMember.LYRICS_ADAPTER_ACTIVE_POSITIONS_METHOD,
+                ),
+            )
+        }.getOrNull() as? Iterable<*>)
             ?.mapNotNull { (it as? Number)?.toInt()?.takeIf { position -> position >= 0 } }
             ?.toSet())
             .orEmpty()
 
     private fun appleLyricsFirstLineBeginMs(adapter: Any): Long? = runCatching {
-        val lyrics = AppleReflection.call(adapter, "C") ?: return@runCatching null
-        val lineCount = (AppleReflection.call(lyrics, "b") as? Number)?.toInt()
+        val lyrics = AppleReflection.call(
+            adapter,
+            lyricsAdapterMember(adapter, AppleMusicRuntimeMember.LYRICS_ADAPTER_LYRICS_METHOD),
+        ) ?: return@runCatching null
+        val lineCount = (
+            AppleReflection.call(
+                lyrics,
+                lyricsAdapterMember(adapter, AppleMusicRuntimeMember.LYRICS_ADAPTER_LINE_COUNT_METHOD),
+            ) as? Number
+            )?.toInt()
             ?: return@runCatching null
         if (lineCount <= 0) return@runCatching null
-        val firstLinePointer = AppleReflection.call(lyrics, "a", 0)
+        val firstLinePointer = AppleReflection.call(
+            lyrics,
+            lyricsAdapterMember(adapter, AppleMusicRuntimeMember.LYRICS_ADAPTER_LINE_AT_METHOD),
+            0,
+        )
             ?: return@runCatching null
-        val firstLine = AppleReflection.call(firstLinePointer, "get")
+        val firstLine = AppleReflection.call(
+            firstLinePointer,
+            lyricsNativeMember(AppleMusicRuntimeMember.LYRICS_NATIVE_POINTER_GET_METHOD),
+        )
             ?: return@runCatching null
-        (AppleReflection.call(firstLine, "getBegin") as? Number)?.toLong()
+        (AppleReflection.call(
+            firstLine,
+            lyricsNativeMember(AppleMusicRuntimeMember.LYRICS_NATIVE_BEGIN_METHOD),
+        ) as? Number)?.toLong()
     }.getOrNull()
 
     private fun appleLyricsCurrentPlaybackPositionMs(): Long? = playbackHooks().currentPositionMs()
@@ -808,7 +858,14 @@ internal class AppleLyricsBlurHooks(
         runCatching {
             (AppleReflection.call(adapter, "getItemViewType", position) as? Number)?.toInt()
         }.getOrNull() ?: runCatching {
-            (AppleReflection.call(adapter, "k", position) as? Number)?.toInt()
+            (AppleReflection.call(
+                adapter,
+                lyricsAdapterMember(
+                    adapter,
+                    AppleMusicRuntimeMember.LYRICS_ADAPTER_ITEM_VIEW_TYPE_METHOD,
+                ),
+                position,
+            ) as? Number)?.toInt()
         }.getOrNull()
 
     private fun appleLyricsIsInstrumentalIndicator(view: View): Boolean {
@@ -1059,12 +1116,21 @@ internal class AppleLyricsBlurHooks(
 
     fun resolveAppleLyricsRecyclerView(fragment: Any): Any? {
         runCatching {
-            AppleReflection.call(fragment, "getRecyclerView")
+            AppleReflection.call(
+                fragment,
+                lyricsUiMember(AppleMusicRuntimeMember.LYRICS_UI_RECYCLER_VIEW_METHOD),
+            )
         }.getOrNull()?.takeIf(::isAppleRecyclerViewInstance)?.let { return it }
 
         runCatching {
-            val binding = AppleReflection.field(fragment, "i0") ?: return@runCatching null
-            AppleReflection.field(binding, "a0")
+            val binding = AppleReflection.field(
+                fragment,
+                lyricsUiMember(AppleMusicRuntimeMember.LYRICS_UI_BINDING_FIELD),
+            ) ?: return@runCatching null
+            AppleReflection.field(
+                binding,
+                lyricsUiMember(AppleMusicRuntimeMember.LYRICS_UI_BINDING_RECYCLER_FIELD),
+            )
         }.getOrNull()?.takeIf(::isAppleRecyclerViewInstance)?.let { recyclerView ->
             ProviderLogger.debug(
                 "Apple Music 歌词 RecyclerView 已解析: source=PlayerLyricsViewFragment.i0.a0"
@@ -1124,14 +1190,26 @@ internal class AppleLyricsBlurHooks(
         runCatching {
             AppleReflection.call(adapter, "getItemCount") as? Number
         }.recoverCatching {
-            AppleReflection.call(adapter, "i") as? Number
+            AppleReflection.call(
+                adapter,
+                lyricsAdapterMember(
+                    adapter,
+                    AppleMusicRuntimeMember.LYRICS_ADAPTER_ITEM_COUNT_METHOD,
+                ),
+            ) as? Number
         }.getOrNull()?.toInt()?.coerceAtLeast(0) ?: 0
 
     fun appleRecyclerNotifyDataSetChanged(adapter: Any) {
         runCatching {
             AppleReflection.call(adapter, "notifyDataSetChanged")
         }.recoverCatching {
-            AppleReflection.call(adapter, "l")
+            AppleReflection.call(
+                adapter,
+                lyricsAdapterMember(
+                    adapter,
+                    AppleMusicRuntimeMember.LYRICS_ADAPTER_NOTIFY_DATA_CHANGED_METHOD,
+                ),
+            )
         }.getOrThrow()
     }
 

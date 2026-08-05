@@ -16,9 +16,11 @@ import android.media.MediaMetadata
 import android.media.session.MediaSession
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import io.github.proify.lyricon.amprovider.xposed.AppleInternalCatalogResolver
+import io.github.proify.lyricon.amprovider.xposed.AppleMusicHookPoint
 import io.github.proify.lyricon.amprovider.xposed.AppleMetadataOverrideStore
 import io.github.proify.lyricon.amprovider.xposed.AppleMusicProviderRuntime
 import io.github.proify.lyricon.amprovider.xposed.ActivePlaybackMediaIdentity
+import io.github.proify.lyricon.amprovider.xposed.Constants
 import io.github.proify.lyricon.amprovider.xposed.FrameworkMediaQueueRefresh
 import io.github.proify.lyricon.amprovider.xposed.FrameworkMediaSessionRefresh
 import io.github.proify.lyricon.amprovider.xposed.ProviderLogger
@@ -44,6 +46,11 @@ internal class AppleFrameworkMetadataHooks(
     @Volatile
     private var currentMediaQueueRefresh: FrameworkMediaQueueRefresh? = null
     private val mediaQueueRefreshInProgress = AtomicBoolean(false)
+    private val mainContentActivityClassName by lazy {
+        runtime.hookResolver.configuredClassNames(
+            AppleMusicHookPoint.APPLE_MAIN_CONTENT_ACTIVITY
+        ).single()
+    }
 
     fun installMediaSessionMetadata() {
         runCatching {
@@ -234,8 +241,8 @@ internal class AppleFrameworkMetadataHooks(
         if (!shouldOpenFullPlayerFromNotification(notification.category, hasMediaSession)) return
         val intent = Intent().apply {
             component = ComponentName(
-                APPLE_MUSIC_PACKAGE,
-                APPLE_MUSIC_MAIN_CONTENT_ACTIVITY,
+                Constants.APPLE_MUSIC_PACKAGE_NAME,
+                mainContentActivityClassName,
             )
             putExtra(APPLE_MUSIC_SHOW_FULL_PLAYER_EXTRA, true)
             addFlags(
@@ -337,7 +344,7 @@ internal class AppleFrameworkMetadataHooks(
             description.mediaId,
             extras?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID),
             extras?.getString(
-                "com.apple.android.music.playback.metadata.METADATA_KEY_MEDIA_ID"
+                Constants.APPLE_MEDIA3_METADATA_ID_KEY
             ),
         )
         candidates.firstOrNull { candidate ->
@@ -417,9 +424,6 @@ internal class AppleFrameworkMetadataHooks(
     }
 
     private companion object {
-        const val APPLE_MUSIC_PACKAGE = "com.apple.android.music"
-        const val APPLE_MUSIC_MAIN_CONTENT_ACTIVITY =
-            "com.apple.android.music.common.MainContentActivity"
         const val APPLE_MUSIC_SHOW_FULL_PLAYER_EXTRA =
             "com.apple.android.music.intent.showfullplayer"
         const val MEDIA_NOTIFICATION_REQUEST_CODE = 0x484C

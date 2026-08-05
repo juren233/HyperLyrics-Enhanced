@@ -27,13 +27,31 @@ class LyricRequester internal constructor(
             return
         }
         try {
-            val song =
-                AppleReflection.newInstance(
-                    hookResolver.resolveClass(AppleMusicHookPoint.APPLE_SONG_MODEL_CLASS).clazz,
-                )
-            AppleReflection.call(song, "setId", mediaId)
-            AppleReflection.call(song, "setQueueId", queueId)
-            AppleReflection.call(song, "setHasLyrics", true)
+            val resolvedSong = hookResolver.resolveClass(
+                AppleMusicHookPoint.APPLE_SONG_MODEL_CLASS
+            )
+            val song = AppleReflection.newInstance(resolvedSong.clazz)
+            AppleReflection.call(
+                song,
+                resolvedSong.target.runtimeMemberName(
+                    AppleMusicRuntimeMember.APPLE_SONG_SET_ID_METHOD
+                ),
+                mediaId,
+            )
+            AppleReflection.call(
+                song,
+                resolvedSong.target.runtimeMemberName(
+                    AppleMusicRuntimeMember.APPLE_SONG_SET_QUEUE_ID_METHOD
+                ),
+                queueId,
+            )
+            AppleReflection.call(
+                song,
+                resolvedSong.target.runtimeMemberName(
+                    AppleMusicRuntimeMember.APPLE_SONG_SET_HAS_LYRICS_METHOD
+                ),
+                true,
+            )
 
             if (playerLyricsViewModel == null) {
                 playerLyricsViewModel = hookResolver
@@ -43,7 +61,10 @@ class LyricRequester internal constructor(
                     .newInstance(application)
             }
 
-            AppleReflection.call(requireNotNull(playerLyricsViewModel), "loadLyrics", song)
+            hookResolver.resolveMethod(AppleMusicHookPoint.LYRICS_VIEW_MODEL_LOAD).method.invoke(
+                requireNotNull(playerLyricsViewModel),
+                song,
+            )
             ProviderLogger.debug("LyricRequester: Triggered download for $mediaId, queueId=$queueId")
 
         } catch (e: Exception) {

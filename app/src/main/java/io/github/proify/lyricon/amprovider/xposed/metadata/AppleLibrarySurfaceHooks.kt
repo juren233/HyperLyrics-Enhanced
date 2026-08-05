@@ -114,6 +114,11 @@ internal class AppleLibrarySurfaceHooks(
         ConcurrentHashMap.newKeySet<java.lang.reflect.Executable>()
     private val mediaApiSongIds =
         Collections.synchronizedMap(WeakHashMap<Any, String>())
+    private val catalogTarget by lazy {
+        runtime.hookResolver.resolveClass(
+            AppleMusicHookPoint.MEDIA_API_REPOSITORY_HOLDER_CLASS
+        ).target
+    }
 
     private val activeComposeCapture = ThreadLocal<InAppLibraryComposeCapture?>()
     private val debugLibraryModelRefreshMediaId = ThreadLocal<String?>()
@@ -273,9 +278,9 @@ internal class AppleLibrarySurfaceHooks(
         entityAttributes[entity] = attributes
         val snapshot = AppleMediaApiAttributeSnapshots.remember(
             attributes = attributes,
-            name = mediaApiAttribute(attributes, "getName"),
-            artistName = mediaApiAttribute(attributes, "getArtistName"),
-            albumName = mediaApiAttribute(attributes, "getAlbumName"),
+            name = mediaApiAttribute(attributes, AppleMediaApiTextAttribute.NAME),
+            artistName = mediaApiAttribute(attributes, AppleMediaApiTextAttribute.ARTIST_NAME),
+            albumName = mediaApiAttribute(attributes, AppleMediaApiTextAttribute.ALBUM_NAME),
         )
         registerMediaApiAttributes(mediaId, attributes, kind)
         metadataStore.rememberEntityType(mediaId, localizedEntityTypeForInAppLibraryKind(kind))
@@ -350,11 +355,12 @@ internal class AppleLibrarySurfaceHooks(
             entity = entity,
             kind = kind,
             attributes = attributes,
-            originalName = snapshot?.name ?: mediaApiAttribute(attributes, "getName"),
+            originalName = snapshot?.name
+                ?: mediaApiAttribute(attributes, AppleMediaApiTextAttribute.NAME),
             originalArtist = snapshot?.artistName
-                ?: mediaApiAttribute(attributes, "getArtistName"),
+                ?: mediaApiAttribute(attributes, AppleMediaApiTextAttribute.ARTIST_NAME),
             originalAlbum = snapshot?.albumName
-                ?: mediaApiAttribute(attributes, "getAlbumName"),
+                ?: mediaApiAttribute(attributes, AppleMediaApiTextAttribute.ALBUM_NAME),
         )
         entityEnrichedIds[entity] = mediaId
     }
@@ -400,16 +406,22 @@ internal class AppleLibrarySurfaceHooks(
         }
         var changed = false
         name.takeIf(String::isNotBlank)?.let { value ->
-            runCatching { AppleReflection.call(attributes, "setName", value) }
+            runCatching {
+                setMediaApiAttribute(attributes, AppleMediaApiTextAttribute.NAME, value)
+            }
                 .onSuccess { changed = true }
         }
         alias.artist.takeIf(String::isNotBlank)?.let { value ->
-            runCatching { AppleReflection.call(attributes, "setArtistName", value) }
+            runCatching {
+                setMediaApiAttribute(attributes, AppleMediaApiTextAttribute.ARTIST_NAME, value)
+            }
                 .onSuccess { changed = true }
         }
         if (kind == InAppLibraryEntityKind.SONG) {
             alias.album.takeIf(String::isNotBlank)?.let { value ->
-                runCatching { AppleReflection.call(attributes, "setAlbumName", value) }
+                runCatching {
+                    setMediaApiAttribute(attributes, AppleMediaApiTextAttribute.ALBUM_NAME, value)
+                }
                     .onSuccess { changed = true }
             }
         }
@@ -425,13 +437,27 @@ internal class AppleLibrarySurfaceHooks(
                 } else {
                     val attributes = host.mediaApiEntityAttributes(entity) ?: return@forEach
                     ref.originalName?.let { value ->
-                        runCatching { AppleReflection.call(attributes, "setName", value) }
+                        runCatching {
+                            setMediaApiAttribute(attributes, AppleMediaApiTextAttribute.NAME, value)
+                        }
                     }
                     ref.originalArtist?.let { value ->
-                        runCatching { AppleReflection.call(attributes, "setArtistName", value) }
+                        runCatching {
+                            setMediaApiAttribute(
+                                attributes,
+                                AppleMediaApiTextAttribute.ARTIST_NAME,
+                                value,
+                            )
+                        }
                     }
                     ref.originalAlbum?.let { value ->
-                        runCatching { AppleReflection.call(attributes, "setAlbumName", value) }
+                        runCatching {
+                            setMediaApiAttribute(
+                                attributes,
+                                AppleMediaApiTextAttribute.ALBUM_NAME,
+                                value,
+                            )
+                        }
                     }
                 }
             }
@@ -445,7 +471,8 @@ internal class AppleLibrarySurfaceHooks(
         kind: InAppLibraryEntityKind,
     ) {
         mediaApiAttributeBindings[attributes] = InAppMediaApiAttributeBinding(mediaId, kind)
-        listOf("getName", "getArtistName", "getAlbumName").forEach { getter ->
+        AppleMediaApiTextAttribute.entries.forEach { attribute ->
+            val getter = catalogMember(attribute.getterRuntimeMember)
             val method = runCatching {
                 AppleReflection.findMethod(attributes.javaClass, getter, parameterCount = 0)
             }.getOrNull() ?: return@forEach
@@ -460,7 +487,7 @@ internal class AppleLibrarySurfaceHooks(
                 recordComposeMediaId(binding.mediaId)
                 host.recordCurrentRecyclerMediaId(binding.mediaId)
                 host.effectiveAlias(binding.mediaId)?.let { alias ->
-                    mediaApiAttributeOverride(binding.kind, getter, alias)
+                    mediaApiAttributeOverride(binding.kind, attribute, alias)
                 } ?: original
             }
             ProviderLogger.info(
@@ -472,23 +499,43 @@ internal class AppleLibrarySurfaceHooks(
 
     private fun mediaApiAttributeOverride(
         kind: InAppLibraryEntityKind,
-        getter: String,
+        attribute: AppleMediaApiTextAttribute,
         alias: AppleInternalCatalogResolver.Alias,
-    ): String? = when (getter) {
-        "getName" -> when (kind) {
+    ): String? = when (attribute) {
+        AppleMediaApiTextAttribute.NAME -> when (kind) {
             InAppLibraryEntityKind.ALBUM -> alias.album.ifBlank { alias.title }
             InAppLibraryEntityKind.SONG -> alias.title
             InAppLibraryEntityKind.ARTIST -> alias.artist.ifBlank { alias.title }
         }
-        "getArtistName" -> alias.artist
-        "getAlbumName" -> if (kind == InAppLibraryEntityKind.SONG) alias.album else null
-        else -> null
+        AppleMediaApiTextAttribute.ARTIST_NAME -> alias.artist
+        AppleMediaApiTextAttribute.ALBUM_NAME ->
+            if (kind == InAppLibraryEntityKind.SONG) alias.album else null
     }.takeIf { !it.isNullOrBlank() }
 
-    private fun mediaApiAttribute(attributes: Any, getter: String): String? =
-        runCatching { AppleReflection.call(attributes, getter)?.toString() }
-            .getOrNull()
-            ?.takeIf(String::isNotBlank)
+    private fun mediaApiAttribute(
+        attributes: Any,
+        attribute: AppleMediaApiTextAttribute,
+    ): String? = runCatching {
+        AppleReflection.call(
+            attributes,
+            catalogMember(attribute.getterRuntimeMember),
+        )?.toString()
+    }.getOrNull()?.takeIf(String::isNotBlank)
+
+    private fun setMediaApiAttribute(
+        attributes: Any,
+        attribute: AppleMediaApiTextAttribute,
+        value: String,
+    ) {
+        AppleReflection.call(
+            attributes,
+            catalogMember(attribute.setterRuntimeMember),
+            value,
+        )
+    }
+
+    private fun catalogMember(member: AppleMusicRuntimeMember): String =
+        catalogTarget.runtimeMemberName(member)
 
     private fun libraryEntityKind(value: String): InAppLibraryEntityKind = when (value) {
         "album" -> InAppLibraryEntityKind.ALBUM

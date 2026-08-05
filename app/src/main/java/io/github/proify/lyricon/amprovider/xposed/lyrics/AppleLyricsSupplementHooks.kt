@@ -182,6 +182,12 @@ internal class AppleLyricsSupplementHooks(
     @Volatile
     private var currentAppleLyricsSongId: String? = null
     private lateinit var lyricsRuntimeTarget: AppleMusicHookTarget
+    private val lyricsUiTarget by lazy {
+        hookResolver.resolveClass(AppleMusicHookPoint.LYRICS_UI_ON_CREATE_VIEW).target
+    }
+    private val lyricsSongTarget by lazy {
+        hookResolver.resolveClass(AppleMusicHookPoint.APPLE_SONG_MODEL_CLASS).target
+    }
     private val systemFontHooks by lazy {
         AppleSystemFontHooks(
             runtime = runtime,
@@ -217,6 +223,23 @@ internal class AppleLyricsSupplementHooks(
 
     private fun lyricsRuntimeMember(member: AppleMusicRuntimeMember): String =
         lyricsRuntimeTarget.runtimeMemberName(member)
+
+    private fun lyricsUiMember(member: AppleMusicRuntimeMember): String =
+        lyricsUiTarget.runtimeMemberName(member)
+
+    private fun lyricsSongMember(member: AppleMusicRuntimeMember): String =
+        lyricsSongTarget.runtimeMemberName(member)
+
+    private fun lyricsNativeCall(
+        instance: Any?,
+        member: AppleMusicRuntimeMember,
+        vararg args: Any?,
+    ): Any? = instance?.let {
+        AppleReflection.call(it, lyricsRuntimeMember(member), *args)
+    }
+
+    private fun lyricsUiField(instance: Any?, member: AppleMusicRuntimeMember): Any? =
+        instance?.let { AppleReflection.field(it, lyricsUiMember(member)) }
 
     fun isSimplifyTraditionalLyricsEnabled(): Boolean =
         contentUiLanguagePrefs?.getBoolean(
@@ -260,7 +283,12 @@ internal class AppleLyricsSupplementHooks(
         return when (contentType) {
             "translation" -> lines.any { line ->
                 AppleNativeOnlineTranslationStore.sanitizeContent(
-                    nativeRawLineText(line, "getHtmlTranslationLineText")
+                    nativeRawLineText(
+                        line,
+                        lyricsRuntimeMember(
+                            AppleMusicRuntimeMember.LYRICS_NATIVE_TRANSLATION_TEXT_METHOD
+                        ),
+                    )
                 ) == null && onlineTranslationForNativeLine(line) != null
             }
             "pronunciation" -> {
@@ -271,7 +299,9 @@ internal class AppleLyricsSupplementHooks(
                         originalText = originalText,
                         pronunciation = nativeRawLineText(
                             line,
-                            "getHtmlPronunciationLineText",
+                            lyricsRuntimeMember(
+                                AppleMusicRuntimeMember.LYRICS_NATIVE_PRONUNCIATION_TEXT_METHOD
+                            ),
                         ),
                     )
                     officialPronunciation == null &&
@@ -284,16 +314,22 @@ internal class AppleLyricsSupplementHooks(
 
     private fun currentAppleLyricsNativeSong(songId: String): Any? {
         val pointer = appleLyricsSongPointerRef?.get() ?: return null
-        val songNative = runCatching { AppleReflection.call(pointer, "get") }.getOrNull()
+        val songNative = runCatching {
+            lyricsNativeCall(pointer, AppleMusicRuntimeMember.LYRICS_NATIVE_POINTER_GET_METHOD)
+        }.getOrNull()
             ?: return null
         return songNative.takeIf { nativeSongId(it) == songId }
     }
 
     private fun currentAppleLyricsNativeLines(songNative: Any): List<Any> {
-        val sections = runCatching { AppleReflection.call(songNative, "getSections") }
+        val sections = runCatching {
+            lyricsNativeCall(songNative, AppleMusicRuntimeMember.LYRICS_NATIVE_SONG_SECTIONS_METHOD)
+        }
             .getOrNull() ?: return emptyList()
         return nativeVectorItems(sections, limit = 8).flatMap { section ->
-            val lines = runCatching { AppleReflection.call(section, "getLines") }.getOrNull()
+            val lines = runCatching {
+                lyricsNativeCall(section, AppleMusicRuntimeMember.LYRICS_NATIVE_SECTION_LINES_METHOD)
+            }.getOrNull()
             nativeVectorItems(lines, limit = 128)
         }
     }
@@ -395,7 +431,7 @@ internal class AppleLyricsSupplementHooks(
             val fragment = appleLyricsFragmentRef?.get() ?: return@post
             val pointer = appleLyricsSongPointerRef?.get() ?: return@post
             val songNative = runCatching {
-                AppleReflection.call(pointer, "get")
+                lyricsNativeCall(pointer, AppleMusicRuntimeMember.LYRICS_NATIVE_POINTER_GET_METHOD)
             }.getOrNull() ?: return@post
             val currentSongId = nativeSongId(songNative)
             if (!expectedSongId.isNullOrBlank() && expectedSongId != currentSongId) {
@@ -546,11 +582,11 @@ internal class AppleLyricsSupplementHooks(
         rememberApplePronunciationLanguages(songNative, pronunciationLanguages)
         ensureAppleNativeOnlineTranslationHooks(songNative)
         val sections = runCatching {
-            AppleReflection.call(songNative, "getSections")
+            lyricsNativeCall(songNative, AppleMusicRuntimeMember.LYRICS_NATIVE_SONG_SECTIONS_METHOD)
         }.getOrNull() ?: return
         val lines = nativeVectorItems(sections, limit = 8).flatMap { section ->
             val lineVector = runCatching {
-                AppleReflection.call(section, "getLines")
+                lyricsNativeCall(section, AppleMusicRuntimeMember.LYRICS_NATIVE_SECTION_LINES_METHOD)
             }.getOrNull()
             nativeVectorItems(lineVector, limit = 16)
         }
@@ -583,13 +619,22 @@ internal class AppleLyricsSupplementHooks(
 
         val words = lines.flatMap { line ->
             buildList {
-                runCatching { AppleReflection.call(line, "getWords") }
+                runCatching {
+                    lyricsNativeCall(line, AppleMusicRuntimeMember.LYRICS_NATIVE_WORDS_METHOD)
+                }
                     .getOrNull()
                     ?.let { addAll(nativeVectorItems(it, limit = 8)) }
                 val backgroundWords = runCatching {
-                    AppleReflection.call(line, "getBackgroundWords", false)
+                    lyricsNativeCall(
+                        line,
+                        AppleMusicRuntimeMember.LYRICS_NATIVE_BACKGROUND_WORDS_METHOD,
+                        false,
+                    )
                 }.recoverCatching {
-                    AppleReflection.call(line, "getBackgroundWords")
+                    lyricsNativeCall(
+                        line,
+                        AppleMusicRuntimeMember.LYRICS_NATIVE_BACKGROUND_WORDS_METHOD,
+                    )
                 }.getOrNull()
                 backgroundWords?.let { addAll(nativeVectorItems(it, limit = 8)) }
             }
@@ -864,7 +909,12 @@ internal class AppleLyricsSupplementHooks(
                             "mainBegins=${nativeRenderableWordBegins(mainWords)}, " +
                             "officialBegins=${nativeRenderableWordBegins(original)}",
                         dedupeKey = "official_word_timing_fallback:$methodName:" +
-                            runCatching { AppleReflection.call(line, "getBegin") }
+                            runCatching {
+                                lyricsNativeCall(
+                                    line,
+                                    AppleMusicRuntimeMember.LYRICS_NATIVE_BEGIN_METHOD,
+                                )
+                            }
                                 .getOrNull(),
                     )
                     officialPronunciation
@@ -925,7 +975,10 @@ internal class AppleLyricsSupplementHooks(
 
         val languages = runCatching {
             nativeVectorItems(
-                AppleReflection.call(songNative, "getPronunciationLanguages"),
+                lyricsNativeCall(
+                    songNative,
+                    AppleMusicRuntimeMember.LYRICS_NATIVE_SONG_PRONUNCIATION_LANGUAGES_METHOD,
+                ),
                 limit = 16,
             ).map(Any::toString).filter(String::isNotBlank)
         }.getOrDefault(emptyList())
@@ -933,7 +986,10 @@ internal class AppleLyricsSupplementHooks(
             lines.count { line ->
                 runCatching {
                     AppleNativeOnlineTranslationStore.sanitizeContent(
-                        AppleReflection.call(line, "getHtmlPronunciationLineText") as? String
+                        lyricsNativeCall(
+                            line,
+                            AppleMusicRuntimeMember.LYRICS_NATIVE_PRONUNCIATION_TEXT_METHOD,
+                        ) as? String
                     ) != null
                 }.getOrDefault(false)
             }
@@ -941,12 +997,21 @@ internal class AppleLyricsSupplementHooks(
         val nativeWordLines = AppleLyricTextTransform.withRawReads {
             lines.count { line ->
                 runCatching {
-                    nativeVectorSize(AppleReflection.call(line, "getPronunciationWords")) > 0
+                    nativeVectorSize(
+                        lyricsNativeCall(
+                            line,
+                            AppleMusicRuntimeMember.LYRICS_NATIVE_PRONUNCIATION_WORDS_METHOD,
+                        )
+                    ) > 0
                 }.getOrDefault(false)
             }
         }
         val mainWordLines = lines.count { line ->
-            runCatching { nativeVectorSize(AppleReflection.call(line, "getWords")) > 0 }
+            runCatching {
+                nativeVectorSize(
+                    lyricsNativeCall(line, AppleMusicRuntimeMember.LYRICS_NATIVE_WORDS_METHOD)
+                ) > 0
+            }
                 .getOrDefault(false)
         }
         val onlineTextLines = lines.count { onlinePronunciationForNativeLine(it) != null }
@@ -1012,7 +1077,9 @@ internal class AppleLyricsSupplementHooks(
     ) {
         val context = diagnostics.currentBindingContext() ?: return
         val begin = line?.let {
-            runCatching { AppleReflection.call(it, "getBegin") as? Number }
+            runCatching {
+                lyricsNativeCall(it, AppleMusicRuntimeMember.LYRICS_NATIVE_BEGIN_METHOD) as? Number
+            }
                 .getOrNull()
                 ?.toLong()
         }
@@ -1045,7 +1112,9 @@ internal class AppleLyricsSupplementHooks(
     ) {
         val context = diagnostics.currentBindingContext() ?: return
         val begin = line?.let {
-            runCatching { AppleReflection.call(it, "getBegin") as? Number }
+            runCatching {
+                lyricsNativeCall(it, AppleMusicRuntimeMember.LYRICS_NATIVE_BEGIN_METHOD) as? Number
+            }
                 .getOrNull()
                 ?.toLong()
         }
@@ -1077,7 +1146,9 @@ internal class AppleLyricsSupplementHooks(
     ): String {
         if (!BuildConfig.DEBUG || line == null) return "unavailable"
         val mainWords = AppleLyricTextTransform.withRawReads {
-            runCatching { AppleReflection.call(line, "getWords") }.getOrNull()
+            runCatching {
+                lyricsNativeCall(line, AppleMusicRuntimeMember.LYRICS_NATIVE_WORDS_METHOD)
+            }.getOrNull()
         }
         val main = debugAppleWordTimings(mainWords)
         val pronunciation = debugAppleWordTimings(pronunciationWords)
@@ -1097,13 +1168,29 @@ internal class AppleLyricsSupplementHooks(
         AppleLyricTextTransform.withRawReads {
             nativeVectorItems(vector, limit = 32).mapNotNull { word ->
                 runCatching {
-                    val begin = (AppleReflection.call(word, "getBegin") as Number).toInt()
-                    val duration = (AppleReflection.call(word, "getDuration") as Number).toInt()
+                    val begin = (
+                        lyricsNativeCall(word, AppleMusicRuntimeMember.LYRICS_NATIVE_BEGIN_METHOD)
+                            as Number
+                        ).toInt()
+                    val duration = (
+                        lyricsNativeCall(word, AppleMusicRuntimeMember.LYRICS_NATIVE_DURATION_METHOD)
+                            as Number
+                        ).toInt()
                     AppleDebugWordTiming(
-                        wordId = (AppleReflection.call(word, "getWordId") as Number).toInt(),
+                        wordId = (
+                            lyricsNativeCall(
+                                word,
+                                AppleMusicRuntimeMember.LYRICS_NATIVE_WORD_ID_METHOD,
+                            ) as Number
+                            ).toInt(),
                         begin = begin,
                         end = begin + duration,
-                        text = (AppleReflection.call(word, "getHtmlLineText") as? String)
+                        text = (
+                            lyricsNativeCall(
+                                word,
+                                AppleMusicRuntimeMember.LYRICS_NATIVE_LINE_TEXT_METHOD,
+                            ) as? String
+                            )
                             .orEmpty()
                             .replace(Regex("\\s+"), " ")
                             .trim()
@@ -1141,12 +1228,16 @@ internal class AppleLyricsSupplementHooks(
         pronunciation: String?,
     ): String {
         val begin = line?.let {
-            runCatching { AppleReflection.call(it, "getBegin") as? Number }
+            runCatching {
+                lyricsNativeCall(it, AppleMusicRuntimeMember.LYRICS_NATIVE_BEGIN_METHOD) as? Number
+            }
                 .getOrNull()
                 ?.toLong()
         }
         val end = line?.let {
-            runCatching { AppleReflection.call(it, "getEnd") as? Number }
+            runCatching {
+                lyricsNativeCall(it, AppleMusicRuntimeMember.LYRICS_NATIVE_END_METHOD) as? Number
+            }
                 .getOrNull()
                 ?.toLong()
         }
@@ -1279,7 +1370,10 @@ internal class AppleLyricsSupplementHooks(
         songNative ?: return null
         val availableLanguages = nativeVectorStrings(
             runCatching {
-                AppleReflection.call(songNative, "getTranslationLanguages")
+                lyricsNativeCall(
+                    songNative,
+                    AppleMusicRuntimeMember.LYRICS_NATIVE_SONG_TRANSLATION_LANGUAGES_METHOD,
+                )
             }.getOrNull()
         )
         return selectAppleLyricsTranslationLanguage(
@@ -1370,7 +1464,10 @@ internal class AppleLyricsSupplementHooks(
 
     private fun currentSystemLyricsLanguage(): String? = runCatching {
         appleLyricsViewModelRef?.get()?.let {
-            AppleReflection.call(it, "getCurrentSystemLyricsLanguage") as? String
+                lyricsNativeCall(
+                    it,
+                    AppleMusicRuntimeMember.LYRICS_VIEW_MODEL_CURRENT_LANGUAGE_METHOD,
+                ) as? String
         }
     }.getOrNull()?.takeIf(String::isNotBlank)
 
@@ -1413,7 +1510,10 @@ internal class AppleLyricsSupplementHooks(
     private fun applyAppleNativePronunciationSelection(songNative: Any) {
         val officialLanguages = nativeVectorStrings(
             runCatching {
-                AppleReflection.call(songNative, "getPronunciationLanguages")
+                lyricsNativeCall(
+                    songNative,
+                    AppleMusicRuntimeMember.LYRICS_NATIVE_SONG_PRONUNCIATION_LANGUAGES_METHOD,
+                )
             }.getOrNull()
         ).filter(RomanizationPolicy::isLatinLanguageTag)
         val songId = nativeSongId(songNative)
@@ -1435,7 +1535,11 @@ internal class AppleLyricsSupplementHooks(
             ?: thirdPartyPronunciationFallbackLanguage()
             ?: return
         val selected = runCatching {
-            AppleReflection.call(songNative, "setPronunciation", language) as? Boolean
+            lyricsNativeCall(
+                songNative,
+                AppleMusicRuntimeMember.LYRICS_NATIVE_SET_PRONUNCIATION_METHOD,
+                language,
+            ) as? Boolean
         }.onFailure {
             ProviderLogger.error("Apple 歌词发音轨道选择失败：language=$language", it)
         }.getOrNull()
@@ -1455,7 +1559,10 @@ internal class AppleLyricsSupplementHooks(
         val systemLanguage = currentSystemLyricsLanguage() ?: return
         val officialLanguages = nativeVectorStrings(
             runCatching {
-                AppleReflection.call(songNative, "getTranslationLanguages")
+                lyricsNativeCall(
+                    songNative,
+                    AppleMusicRuntimeMember.LYRICS_NATIVE_SONG_TRANSLATION_LANGUAGES_METHOD,
+                )
             }.getOrNull()
         )
         val officialLanguage = selectAppleLyricsTranslationLanguage(
@@ -1465,7 +1572,11 @@ internal class AppleLyricsSupplementHooks(
         val language = officialLanguage ?: systemLanguage
         val selected = runCatching {
             appleOfficialTranslationProbeGuard.run {
-                AppleReflection.call(songNative, "setTranslation", language) as? Boolean
+            lyricsNativeCall(
+                songNative,
+                AppleMusicRuntimeMember.LYRICS_NATIVE_SET_TRANSLATION_METHOD,
+                language,
+            ) as? Boolean
             }
         }.onFailure {
             ProviderLogger.error("Apple 歌词翻译轨道选择失败：language=$language", it)
@@ -1570,19 +1681,30 @@ internal class AppleLyricsSupplementHooks(
         expectedRevision: Long? = null,
     ) {
         if (!BuildConfig.DEBUG) return
-        val bindingRead = runCatching { AppleReflection.field(fragment, "i0") }
+        val bindingRead = runCatching {
+            lyricsUiField(fragment, AppleMusicRuntimeMember.LYRICS_UI_BINDING_FIELD)
+        }
         val binding = bindingRead.getOrNull()
         val bindingRecyclerRead = binding?.let { currentBinding ->
-            runCatching { AppleReflection.field(currentBinding, "a0") }
+            runCatching {
+                lyricsUiField(
+                    currentBinding,
+                    AppleMusicRuntimeMember.LYRICS_UI_BINDING_RECYCLER_FIELD,
+                )
+            }
         }
         val bindingRecycler = bindingRecyclerRead
             ?.getOrNull()
             ?.takeIf(::isAppleRecyclerViewInstance)
-        val fragmentAdapterRead = runCatching { AppleReflection.field(fragment, "k0") }
+        val fragmentAdapterRead = runCatching {
+            lyricsUiField(fragment, AppleMusicRuntimeMember.LYRICS_UI_ADAPTER_FIELD)
+        }
         val fragmentAdapter = fragmentAdapterRead.getOrNull()
         val lyricsPointer = appleLyricsSongPointerRef?.get()
         val lyricsNative = lyricsPointer?.let { pointer ->
-            runCatching { AppleReflection.call(pointer, "get") }.getOrNull()
+            runCatching {
+                lyricsNativeCall(pointer, AppleMusicRuntimeMember.LYRICS_NATIVE_POINTER_GET_METHOD)
+            }.getOrNull()
         }
         val fragmentRoot = runCatching {
             AppleReflection.call(fragment, "getView") as? View
@@ -1641,42 +1763,73 @@ internal class AppleLyricsSupplementHooks(
         }
     }
 
-    private fun debugAppleBooleanField(instance: Any?, name: String): Boolean? =
+    private fun debugAppleBooleanField(
+        instance: Any?,
+        member: AppleMusicRuntimeMember,
+    ): Boolean? =
         instance?.let { value ->
-            runCatching { AppleReflection.field(value, name) as? Boolean }.getOrNull()
+            runCatching {
+                AppleReflection.field(value, blurHooks.lyricsAdapterMember(value, member)) as? Boolean
+            }.getOrNull()
         }
 
     private fun debugAppleLyricsAdapterState(adapter: Any?): String {
         if (adapter == null) return "null"
         val itemCount = runCatching {
-            (AppleReflection.call(adapter, "i") as? Number)?.toInt()
+            (AppleReflection.call(
+                adapter,
+                blurHooks.lyricsAdapterMember(
+                    adapter,
+                    AppleMusicRuntimeMember.LYRICS_ADAPTER_ITEM_COUNT_METHOD,
+                ),
+            ) as? Number)?.toInt()
         }.recoverCatching {
             (AppleReflection.call(adapter, "getItemCount") as? Number)?.toInt()
         }.getOrNull()
         return "${adapter.javaClass.name}@${System.identityHashCode(adapter)}" +
-            "[translation=${debugAppleBooleanField(adapter, "d")}," +
-            "pronunciation=${debugAppleBooleanField(adapter, "e")}," +
+            "[translation=${debugAppleBooleanField(
+                adapter,
+                AppleMusicRuntimeMember.LYRICS_ADAPTER_TRANSLATION_SELECTED_FIELD,
+            )}," +
+            "pronunciation=${debugAppleBooleanField(
+                adapter,
+                AppleMusicRuntimeMember.LYRICS_ADAPTER_PRONUNCIATION_SELECTED_FIELD,
+            )}," +
             "itemCount=$itemCount]"
     }
 
     private fun debugAppleLyricsViewModelState(fragment: Any): String {
-        val viewModel = runCatching { AppleReflection.field(fragment, "j1") }.getOrNull()
+        val viewModel = runCatching {
+            lyricsUiField(fragment, AppleMusicRuntimeMember.LYRICS_UI_VIEW_MODEL_FIELD)
+        }.getOrNull()
             ?: return "null"
-        fun liveValue(getter: String): Any? = runCatching {
-            val liveData = AppleReflection.call(viewModel, getter) ?: return@runCatching null
+        fun liveValue(member: AppleMusicRuntimeMember): Any? = runCatching {
+            val liveData = AppleReflection.call(viewModel, lyricsUiMember(member))
+                ?: return@runCatching null
             AppleReflection.call(liveData, "getValue")
         }.getOrNull()
         return "${viewModel.javaClass.name}@${System.identityHashCode(viewModel)}" +
-            "[pronunciationSelected=${liveValue("getPronunciationSelectedLiveResult")}," +
-            "pronunciationAvailable=${liveValue("getPronunciationAvailableLiveResult")}," +
-            "translationSelected=${liveValue("getTranslationSelectedLiveResult")}," +
-            "translationAvailable=${liveValue("getTranslationAvailableLiveResult")}]"
+            "[pronunciationSelected=${liveValue(
+                AppleMusicRuntimeMember.LYRICS_VIEW_MODEL_PRONUNCIATION_SELECTED_GETTER
+            )}," +
+            "pronunciationAvailable=${liveValue(
+                AppleMusicRuntimeMember.LYRICS_VIEW_MODEL_PRONUNCIATION_AVAILABLE_GETTER
+            )}," +
+            "translationSelected=${liveValue(
+                AppleMusicRuntimeMember.LYRICS_VIEW_MODEL_TRANSLATION_SELECTED_GETTER
+            )}," +
+            "translationAvailable=${liveValue(
+                AppleMusicRuntimeMember.LYRICS_VIEW_MODEL_TRANSLATION_AVAILABLE_GETTER
+            )}]"
     }
 
     private fun debugAppleNativePointer(value: Any?): String {
         if (value == null) return "null"
         val address = runCatching {
-            (AppleReflection.call(value, "address") as? Number)?.toLong()
+            (lyricsNativeCall(
+                value,
+                AppleMusicRuntimeMember.LYRICS_NATIVE_POINTER_ADDRESS_METHOD,
+            ) as? Number)?.toLong()
         }.getOrNull()
         return "${value.javaClass.name}@${System.identityHashCode(value)}[address=$address]"
     }
@@ -1684,10 +1837,14 @@ internal class AppleLyricsSupplementHooks(
     private fun debugApplePronunciationSongState(songNative: Any?): String {
         songNative ?: return "null"
         val languages = nativePronunciationLanguages(songNative)
-        val sections = runCatching { AppleReflection.call(songNative, "getSections") }
+        val sections = runCatching {
+            lyricsNativeCall(songNative, AppleMusicRuntimeMember.LYRICS_NATIVE_SONG_SECTIONS_METHOD)
+        }
             .getOrNull()
         val lines = nativeVectorItems(sections, limit = 8).flatMap { section ->
-            val lineVector = runCatching { AppleReflection.call(section, "getLines") }
+            val lineVector = runCatching {
+                lyricsNativeCall(section, AppleMusicRuntimeMember.LYRICS_NATIVE_SECTION_LINES_METHOD)
+            }
                 .getOrNull()
             nativeVectorItems(lineVector, limit = 64)
         }
@@ -1695,7 +1852,10 @@ internal class AppleLyricsSupplementHooks(
             lines.count { line ->
                 runCatching {
                     AppleNativeOnlineTranslationStore.sanitizeContent(
-                        AppleReflection.call(line, "getHtmlPronunciationLineText") as? String
+                        lyricsNativeCall(
+                            line,
+                            AppleMusicRuntimeMember.LYRICS_NATIVE_PRONUNCIATION_TEXT_METHOD,
+                        ) as? String
                     ) != null
                 }.getOrDefault(false)
             }
@@ -1703,7 +1863,12 @@ internal class AppleLyricsSupplementHooks(
         val wordLines = AppleLyricTextTransform.withRawReads {
             lines.count { line ->
                 runCatching {
-                    nativeVectorSize(AppleReflection.call(line, "getPronunciationWords")) > 0
+                    nativeVectorSize(
+                        lyricsNativeCall(
+                            line,
+                            AppleMusicRuntimeMember.LYRICS_NATIVE_PRONUNCIATION_WORDS_METHOD,
+                        )
+                    ) > 0
                 }.getOrDefault(false)
             }
         }
@@ -1785,12 +1950,17 @@ internal class AppleLyricsSupplementHooks(
 
     private fun onlineTranslationForNativeLine(line: Any?): String? {
         if (line == null || !isNativeOnlineTranslationEnabled()) return null
-        val begin = (AppleReflection.call(line, "getBegin") as? Number)?.toLong()
+        val begin = (
+            lyricsNativeCall(line, AppleMusicRuntimeMember.LYRICS_NATIVE_BEGIN_METHOD) as? Number
+            )?.toLong()
             ?: return null
-        val end = (AppleReflection.call(line, "getEnd") as? Number)?.toLong()
+        val end = (
+            lyricsNativeCall(line, AppleMusicRuntimeMember.LYRICS_NATIVE_END_METHOD) as? Number
+            )?.toLong()
             ?: return null
         val text = AppleLyricTextTransform.withRawReads {
-            AppleReflection.call(line, "getHtmlLineText") as? String
+            lyricsNativeCall(line, AppleMusicRuntimeMember.LYRICS_NATIVE_LINE_TEXT_METHOD)
+                as? String
         }
         return nativeOnlineTranslationStore.translation(
             songId = currentAppleLyricsSongId,
@@ -1803,12 +1973,17 @@ internal class AppleLyricsSupplementHooks(
     private fun onlinePronunciationForNativeLine(line: Any?): String? {
         if (line == null || !isNativeOnlineTranslationEnabled()) return null
         if (shouldHideMandarinPronunciation()) return null
-        val begin = (AppleReflection.call(line, "getBegin") as? Number)?.toLong()
+        val begin = (
+            lyricsNativeCall(line, AppleMusicRuntimeMember.LYRICS_NATIVE_BEGIN_METHOD) as? Number
+            )?.toLong()
             ?: return null
-        val end = (AppleReflection.call(line, "getEnd") as? Number)?.toLong()
+        val end = (
+            lyricsNativeCall(line, AppleMusicRuntimeMember.LYRICS_NATIVE_END_METHOD) as? Number
+            )?.toLong()
             ?: return null
         val text = AppleLyricTextTransform.withRawReads {
-            AppleReflection.call(line, "getHtmlLineText") as? String
+            lyricsNativeCall(line, AppleMusicRuntimeMember.LYRICS_NATIVE_LINE_TEXT_METHOD)
+                as? String
         }
         return RomanizationPolicy.sanitize(
             originalText = text,
@@ -1823,12 +1998,18 @@ internal class AppleLyricsSupplementHooks(
 
     private fun nativeOriginalLineText(line: Any?): String? {
         if (line == null) return null
-        return nativeRawLineText(line, "getHtmlLineText")
+        return nativeRawLineText(
+            line,
+            lyricsRuntimeMember(AppleMusicRuntimeMember.LYRICS_NATIVE_LINE_TEXT_METHOD),
+        )
     }
 
     private fun nativeOriginalBackgroundLineText(line: Any?): String? {
         if (line == null) return null
-        return nativeRawLineText(line, "getHtmlBackgroundVocalsLineText")
+        return nativeRawLineText(
+            line,
+            lyricsRuntimeMember(AppleMusicRuntimeMember.LYRICS_NATIVE_BACKGROUND_TEXT_METHOD),
+        )
     }
 
     private fun nativeRawLineText(line: Any, getter: String): String? =
@@ -1841,7 +2022,8 @@ internal class AppleLyricsSupplementHooks(
             nativeVectorItems(vector, limit = 256)
                 .joinToString(separator = "") { word ->
                     runCatching {
-                        AppleReflection.call(word, "getHtmlLineText") as? String
+                        lyricsNativeCall(word, AppleMusicRuntimeMember.LYRICS_NATIVE_LINE_TEXT_METHOD)
+                            as? String
                     }.getOrNull().orEmpty()
                 }
                 .trim()
@@ -1852,13 +2034,20 @@ internal class AppleLyricsSupplementHooks(
         AppleLyricTextTransform.withRawReads {
             nativeVectorItems(vector, limit = 256).mapNotNull { word ->
                 val isWhitespace = runCatching {
-                    AppleReflection.call(word, "isWhitespace") as? Boolean
+                    lyricsNativeCall(
+                        word,
+                        AppleMusicRuntimeMember.LYRICS_NATIVE_WHITESPACE_METHOD,
+                    ) as? Boolean
                 }.getOrNull() == true
                 val text = runCatching {
-                    AppleReflection.call(word, "getHtmlLineText") as? String
+                    lyricsNativeCall(word, AppleMusicRuntimeMember.LYRICS_NATIVE_LINE_TEXT_METHOD)
+                        as? String
                 }.getOrNull()?.trim().orEmpty()
                 val begin = runCatching {
-                    (AppleReflection.call(word, "getBegin") as? Number)?.toInt()
+                    (lyricsNativeCall(
+                        word,
+                        AppleMusicRuntimeMember.LYRICS_NATIVE_BEGIN_METHOD,
+                    ) as? Number)?.toInt()
                 }.getOrNull()
                 begin?.takeIf { !isWhitespace && text.isNotEmpty() && it >= 0 }
             }
@@ -1916,13 +2105,17 @@ internal class AppleLyricsSupplementHooks(
         val words = nativeVectorItems(vector, limit = 256)
         val contentWords = words.filterNot { word ->
             runCatching {
-                AppleReflection.call(word, "isWhitespace") as? Boolean
+                lyricsNativeCall(
+                    word,
+                    AppleMusicRuntimeMember.LYRICS_NATIVE_WHITESPACE_METHOD,
+                ) as? Boolean
             }.getOrNull() == true
         }
         val mainWordTexts = AppleLyricTextTransform.withRawReads {
             contentWords.map { word ->
                 runCatching {
-                    AppleReflection.call(word, "getHtmlLineText") as? String
+                    lyricsNativeCall(word, AppleMusicRuntimeMember.LYRICS_NATIVE_LINE_TEXT_METHOD)
+                        as? String
                 }.getOrNull().orEmpty()
             }
         }
@@ -1942,10 +2135,10 @@ internal class AppleLyricsSupplementHooks(
         val lastVisibleSegment = segments.indexOfLast(String::isNotEmpty)
         val displayTextByWord = LinkedHashMap<ApplePronunciationWordKey, String>(words.size)
         words.forEach { word ->
-            applePronunciationWordKey(word)?.let { key -> displayTextByWord[key] = "" }
+            lyricsWordKey(word)?.let { key -> displayTextByWord[key] = "" }
         }
         contentWords.forEachIndexed { index, word ->
-            val key = applePronunciationWordKey(word) ?: return@forEachIndexed
+            val key = lyricsWordKey(word) ?: return@forEachIndexed
             val segment = segments[index]
             displayTextByWord[key] = when {
                 segment.isEmpty() -> ""
@@ -1953,8 +2146,20 @@ internal class AppleLyricsSupplementHooks(
                 else -> segment
             }
         }
-        return ApplePronunciationWordRenderContext(displayTextByWord)
+        return ApplePronunciationWordRenderContext(
+            displayTextByWord = displayTextByWord,
+            wordIdMethod = lyricsRuntimeMember(AppleMusicRuntimeMember.LYRICS_NATIVE_WORD_ID_METHOD),
+            beginMethod = lyricsRuntimeMember(AppleMusicRuntimeMember.LYRICS_NATIVE_BEGIN_METHOD),
+            endMethod = lyricsRuntimeMember(AppleMusicRuntimeMember.LYRICS_NATIVE_END_METHOD),
+        )
     }
+
+    private fun lyricsWordKey(word: Any?): ApplePronunciationWordKey? = applePronunciationWordKey(
+        word = word,
+        wordIdMethod = lyricsRuntimeMember(AppleMusicRuntimeMember.LYRICS_NATIVE_WORD_ID_METHOD),
+        beginMethod = lyricsRuntimeMember(AppleMusicRuntimeMember.LYRICS_NATIVE_BEGIN_METHOD),
+        endMethod = lyricsRuntimeMember(AppleMusicRuntimeMember.LYRICS_NATIVE_END_METHOD),
+    )
 
     private fun hasValidOfficialRomanization(songNative: Any?): Boolean {
         if (songNative == null) return false
@@ -1966,15 +2171,22 @@ internal class AppleLyricsSupplementHooks(
                 pronunciationLanguages = pronunciationLanguages,
             )
         ) return false
-        val sections = runCatching { AppleReflection.call(songNative, "getSections") }
+        val sections = runCatching {
+            lyricsNativeCall(songNative, AppleMusicRuntimeMember.LYRICS_NATIVE_SONG_SECTIONS_METHOD)
+        }
             .getOrNull() ?: return false
         return nativeVectorItems(sections, limit = 8).any { section ->
-            val lines = runCatching { AppleReflection.call(section, "getLines") }
+            val lines = runCatching {
+                lyricsNativeCall(section, AppleMusicRuntimeMember.LYRICS_NATIVE_SECTION_LINES_METHOD)
+            }
                 .getOrNull()
             nativeVectorItems(lines, limit = 64).any { line ->
                 val pronunciation = AppleLyricTextTransform.withRawReads {
                     runCatching {
-                        AppleReflection.call(line, "getHtmlPronunciationLineText") as? String
+                        lyricsNativeCall(
+                            line,
+                            AppleMusicRuntimeMember.LYRICS_NATIVE_PRONUNCIATION_TEXT_METHOD,
+                        ) as? String
                     }.getOrNull()
                 }
                 RomanizationPolicy.sanitize(
@@ -1987,7 +2199,7 @@ internal class AppleLyricsSupplementHooks(
 
     private fun nativeSongId(songNative: Any?): String? = songNative?.let { song ->
         runCatching {
-            AppleReflection.call(song, "getAdamId")?.toString()
+            lyricsNativeCall(song, AppleMusicRuntimeMember.LYRICS_SONG_ADAM_ID_METHOD)?.toString()
         }.getOrNull()?.takeIf(String::isNotBlank)
     }
 
@@ -1995,7 +2207,10 @@ internal class AppleLyricsSupplementHooks(
         nativeVectorStrings(
             songNative?.let { song ->
                 runCatching {
-                    AppleReflection.call(song, "getPronunciationLanguages")
+                    lyricsNativeCall(
+                        song,
+                        AppleMusicRuntimeMember.LYRICS_NATIVE_SONG_PRONUNCIATION_LANGUAGES_METHOD,
+                    )
                 }.getOrNull()
             }
         )
@@ -2020,12 +2235,20 @@ internal class AppleLyricsSupplementHooks(
         return buildList {
             repeat(minOf(size, limit)) { index ->
                 val pointer = runCatching {
-                    AppleReflection.call(vector, "get", index.toLong())
+                    lyricsNativeCall(
+                        vector,
+                        AppleMusicRuntimeMember.LYRICS_NATIVE_VECTOR_GET_METHOD,
+                        index.toLong(),
+                    )
                 }.recoverCatching {
-                    AppleReflection.call(vector, "get", index)
+                    lyricsNativeCall(
+                        vector,
+                        AppleMusicRuntimeMember.LYRICS_NATIVE_VECTOR_GET_METHOD,
+                        index,
+                    )
                 }.getOrNull() ?: return@repeat
                 val value = runCatching {
-                    AppleReflection.call(pointer, "get")
+                    lyricsNativeCall(pointer, AppleMusicRuntimeMember.LYRICS_NATIVE_POINTER_GET_METHOD)
                 }.getOrNull() ?: pointer
                 add(value)
             }
@@ -2038,9 +2261,17 @@ internal class AppleLyricsSupplementHooks(
         return buildList {
             repeat(size) { index ->
                 val value = runCatching {
-                    AppleReflection.call(vector, "get", index.toLong()) as? String
+                    lyricsNativeCall(
+                        vector,
+                        AppleMusicRuntimeMember.LYRICS_NATIVE_VECTOR_GET_METHOD,
+                        index.toLong(),
+                    ) as? String
                 }.recoverCatching {
-                    AppleReflection.call(vector, "get", index) as? String
+                    lyricsNativeCall(
+                        vector,
+                        AppleMusicRuntimeMember.LYRICS_NATIVE_VECTOR_GET_METHOD,
+                        index,
+                    ) as? String
                 }.getOrNull()?.takeIf(String::isNotBlank)
                 if (value != null) add(value)
             }
@@ -2049,7 +2280,10 @@ internal class AppleLyricsSupplementHooks(
 
     private fun nativeVectorSize(vector: Any?): Int = vector?.let {
         runCatching {
-            (AppleReflection.call(it, "size") as? Number)?.toInt()
+            (lyricsNativeCall(
+                it,
+                AppleMusicRuntimeMember.LYRICS_NATIVE_VECTOR_SIZE_METHOD,
+            ) as? Number)?.toInt()
         }.getOrNull()?.coerceAtLeast(0)
     } ?: 0
 
@@ -2064,14 +2298,24 @@ internal class AppleLyricsSupplementHooks(
                 chain.thisObject?.let { appleLyricsViewModelRef = WeakReference(it) }
                 appleLyricsItemRef = WeakReference(item)
             }
-            val id = runCatching { AppleReflection.call(item, "getId") }.getOrNull()
+            val id = runCatching {
+                AppleReflection.call(item, lyricsSongMember(AppleMusicRuntimeMember.LYRICS_SONG_ID_METHOD))
+            }.getOrNull()
             id?.toString()?.let { requestId ->
                 recordLyricsRequestSource(requestId, source)
             }
-            val queueId = runCatching { AppleReflection.call(item, "getQueueId") }.getOrNull()
+            val queueId = runCatching {
+                AppleReflection.call(
+                    item,
+                    lyricsSongMember(AppleMusicRuntimeMember.LYRICS_SONG_QUEUE_ID_METHOD),
+                )
+            }.getOrNull()
             val language = runCatching {
                 chain.thisObject?.let {
-                    AppleReflection.call(it, "getCurrentSystemLyricsLanguage")
+                    lyricsNativeCall(
+                        it,
+                        AppleMusicRuntimeMember.LYRICS_VIEW_MODEL_CURRENT_LANGUAGE_METHOD,
+                    )
                 }
             }.getOrNull()
             ProviderLogger.debug(
@@ -2086,7 +2330,10 @@ internal class AppleLyricsSupplementHooks(
             buildMethod,
             before = { chain ->
                 val pointer = chain.args.firstOrNull() ?: return@installHook
-                val songNative = AppleReflection.call(pointer, "get") ?: return@installHook
+                val songNative = lyricsNativeCall(
+                    pointer,
+                    AppleMusicRuntimeMember.LYRICS_NATIVE_POINTER_GET_METHOD,
+                ) ?: return@installHook
                 ensureAppleLyricTextHooks(songNative)
                 applyAppleNativeSupplementSelection(songNative)
                 logApplePronunciationModelState(
@@ -2098,7 +2345,10 @@ internal class AppleLyricsSupplementHooks(
             },
             after = { chain, _ ->
                 val pointer = chain.args.firstOrNull() ?: return@installHook
-                val songNative = AppleReflection.call(pointer, "get") ?: return@installHook
+                val songNative = lyricsNativeCall(
+                    pointer,
+                    AppleMusicRuntimeMember.LYRICS_NATIVE_POINTER_GET_METHOD,
+                ) ?: return@installHook
 
                 val source = if (lyricRequester().ownsViewModel(chain.thisObject)) "module" else "apple"
                 val songId = nativeSongId(songNative)
@@ -2168,7 +2418,7 @@ internal class AppleLyricsSupplementHooks(
                 appleLyricsFragmentRef = WeakReference(fragment)
                 appleLyricsSongPointerRef = WeakReference(pointer)
                 val songNative = runCatching {
-                    AppleReflection.call(pointer, "get")
+                    lyricsNativeCall(pointer, AppleMusicRuntimeMember.LYRICS_NATIVE_POINTER_GET_METHOD)
                 }.getOrNull() ?: return@installHook
                 val songId = nativeSongId(songNative)
                 if (currentAppleLyricsSongId != songId) {
@@ -2186,7 +2436,7 @@ internal class AppleLyricsSupplementHooks(
                 val fragment = chain.thisObject ?: return@installHook
                 val pointer = chain.args.firstOrNull() ?: return@installHook
                 val songNative = runCatching {
-                    AppleReflection.call(pointer, "get")
+                    lyricsNativeCall(pointer, AppleMusicRuntimeMember.LYRICS_NATIVE_POINTER_GET_METHOD)
                 }.getOrNull() ?: return@installHook
                 val songId = nativeSongId(songNative) ?: return@installHook
                 if (currentAppleLyricsSongId != songId) {

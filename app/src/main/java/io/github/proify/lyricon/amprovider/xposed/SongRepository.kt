@@ -9,6 +9,7 @@ package io.github.proify.lyricon.amprovider.xposed
 import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.common.lyric.LyricMetadataKeys
 import io.github.proify.lyricon.amprovider.xposed.parser.AppleSongParser
+import io.github.proify.lyricon.amprovider.xposed.parser.AppleLyricsParserAccess
 import io.github.proify.lyricon.amprovider.xposed.model.AppleSong
 import io.github.proify.lyricon.amprovider.xposed.util.toSong
 import io.github.proify.lyricon.lyric.model.Song
@@ -41,9 +42,9 @@ object SongRepository {
     /**
      * 保存解析好的歌曲到磁盘
      */
-    fun saveSong(nativeSongObj: Any): Song? {
+    internal fun saveSong(nativeSongObj: Any, parserAccess: AppleLyricsParserAccess): Song? {
         val song = AppleLyricTextTransform.withRawReads {
-            AppleSongParser.parser(nativeSongObj)
+            AppleSongParser.parser(nativeSongObj, parserAccess)
         }
         if (song.adamId.isNullOrBlank()) {
             return null

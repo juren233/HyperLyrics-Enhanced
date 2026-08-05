@@ -13,36 +13,53 @@ internal fun inAppPlaybackItemAccess(
     field: InAppPlaybackItemField,
 ): InAppPlaybackItemAccess? = when (contract) {
     InAppPlaybackItemContract.STANDARD -> when (field) {
-        InAppPlaybackItemField.TITLE ->
-            InAppPlaybackItemAccess("name", readViaMethod = false, setter = "setTitle")
+        InAppPlaybackItemField.TITLE -> InAppPlaybackItemAccess(
+            AppleMusicRuntimeMember.CONTENT_ITEM_TITLE_FIELD,
+            readViaMethod = false,
+            setter = AppleMusicRuntimeMember.CONTENT_ITEM_SET_TITLE_METHOD,
+        )
         InAppPlaybackItemField.ARTIST ->
             InAppPlaybackItemAccess(
-                "artistName",
+                AppleMusicRuntimeMember.CONTENT_ITEM_ARTIST_FIELD,
                 readViaMethod = false,
-                setter = "setArtistName",
+                setter = AppleMusicRuntimeMember.CONTENT_ITEM_SET_ARTIST_METHOD,
             )
         InAppPlaybackItemField.ALBUM ->
             InAppPlaybackItemAccess(
-                "collectionName",
+                AppleMusicRuntimeMember.CONTENT_ITEM_COLLECTION_FIELD,
                 readViaMethod = false,
-                setter = "setCollectionName",
+                setter = AppleMusicRuntimeMember.CONTENT_ITEM_SET_COLLECTION_METHOD,
             )
     }
     InAppPlaybackItemContract.HISTORY -> when (field) {
-        InAppPlaybackItemField.TITLE ->
-            InAppPlaybackItemAccess("getTitle", readViaMethod = true, setter = "setTitle")
+        InAppPlaybackItemField.TITLE -> InAppPlaybackItemAccess(
+            AppleMusicRuntimeMember.CONTENT_ITEM_TITLE_GETTER,
+            readViaMethod = true,
+            setter = AppleMusicRuntimeMember.CONTENT_ITEM_SET_TITLE_METHOD,
+        )
         InAppPlaybackItemField.ARTIST ->
             InAppPlaybackItemAccess(
-                "getSubTitle",
+                AppleMusicRuntimeMember.CONTENT_ITEM_SUBTITLE_GETTER,
                 readViaMethod = true,
-                setter = "setSubTitle",
+                setter = AppleMusicRuntimeMember.CONTENT_ITEM_SET_SUBTITLE_METHOD,
             )
         InAppPlaybackItemField.ALBUM -> null
     }
 }
 
-internal fun isInAppHistoryQueueEntryClassName(className: String): Boolean =
-    className == "Z8.d"
+internal enum class AppleContentItemGetter {
+    TITLE,
+    NOW_PLAYING_TITLE,
+    ARTIST,
+    NOW_PLAYING_SUBTITLE,
+    SUBTITLE,
+    COLLECTION,
+}
+
+internal fun isInAppHistoryQueueEntryClassName(
+    className: String,
+    historyEntryClassName: String,
+): Boolean = className == historyEntryClassName
 
 internal fun shouldApplyInAppPlaybackItemAlias(
     expectedMediaId: String,
@@ -162,39 +179,36 @@ internal fun localizedEntityTypeForInAppLibraryKind(
     InAppLibraryEntityKind.ARTIST -> AppleInternalCatalogResolver.LocalizedEntityType.ARTIST
 }
 
-/**
- * 只按 Apple Media API 的明确实体类型分类最近搜索项。
- *
- * 不根据标题、歌手字段或当前播放内容猜测类型，避免把歌曲（尤其是合唱、
- * 多 artistID、feat. 或多人署名）误当成单一歌手实体。
- */
-internal fun inAppLibraryEntityKindForClassNames(
-    classNames: Iterable<String>,
-): InAppLibraryEntityKind? {
-    val names = classNames.toSet()
-    return when {
-        names.any {
-            it == "com.apple.android.music.mediaapi.models.Artist" ||
-                it == "com.apple.android.music.mediaapi.models.LibraryArtist"
-        } -> InAppLibraryEntityKind.ARTIST
+/** Classifies only entities whose concrete runtime classes carry a profiled library kind. */
+internal fun inAppLibraryEntityKindForProfileClasses(
+    entity: Any,
+    resolvedClasses: Iterable<ResolvedAppleMusicHookClass>,
+): InAppLibraryEntityKind? = inAppLibraryEntityKindForProfileKinds(
+    resolvedClasses.asSequence()
+        .filter { resolved -> resolved.clazz.isAssignableFrom(entity.javaClass) }
+        .map { resolved ->
+            resolved.target.runtimeMemberNameOrNull(AppleMusicRuntimeMember.LIBRARY_ENTITY_KIND)
+        }
+        .toList(),
+)
 
-        names.any {
-            it == "com.apple.android.music.mediaapi.models.Album" ||
-                it == "com.apple.android.music.mediaapi.models.LibraryAlbum"
-        } -> InAppLibraryEntityKind.ALBUM
-
-        names.any {
-            it == "com.apple.android.music.mediaapi.models.Song" ||
-                it == "com.apple.android.music.mediaapi.models.LibrarySong"
-        } -> InAppLibraryEntityKind.SONG
-
+internal fun inAppLibraryEntityKindForProfileKinds(
+    profileKinds: Iterable<String?>,
+): InAppLibraryEntityKind? = profileKinds.mapNotNull { kind ->
+    when (kind) {
+        "artist" -> InAppLibraryEntityKind.ARTIST
+        "album" -> InAppLibraryEntityKind.ALBUM
+        "song" -> InAppLibraryEntityKind.SONG
         else -> null
     }
-}
+}.distinct().singleOrNull()
 
-internal fun mediaApiAttributeArtistIds(attributes: Any?): List<String> {
+internal fun mediaApiAttributeArtistIds(
+    attributes: Any?,
+    getterNames: Iterable<String>,
+): List<String> {
     attributes ?: return emptyList()
-    return listOf("getArtistId", "getArtistAdamId", "getArtistStoreId")
+    return getterNames
         .mapNotNull { getter ->
             runCatching { AppleReflection.call(attributes, getter) }
                 .getOrNull()
@@ -432,80 +446,77 @@ internal fun localizedVisibleText(
 
 internal fun visibleTextFieldForMediaApiAttribute(
     kind: InAppLibraryEntityKind,
-    getter: String,
+    getter: AppleMediaApiTextAttribute,
 ): VisibleTextField? = when (getter) {
-    "getName" -> when (kind) {
+    AppleMediaApiTextAttribute.NAME -> when (kind) {
         InAppLibraryEntityKind.SONG -> VisibleTextField.TITLE
         InAppLibraryEntityKind.ALBUM -> VisibleTextField.ALBUM
         InAppLibraryEntityKind.ARTIST -> VisibleTextField.ARTIST
     }
-    "getArtistName" -> VisibleTextField.ARTIST
-    "getAlbumName" -> VisibleTextField.ALBUM
-    else -> null
+    AppleMediaApiTextAttribute.ARTIST_NAME -> VisibleTextField.ARTIST
+    AppleMediaApiTextAttribute.ALBUM_NAME -> VisibleTextField.ALBUM
 }
 
 internal fun contentItemMetadataOverride(
     entityType: AppleInternalCatalogResolver.LocalizedEntityType,
-    getter: String,
+    getter: AppleContentItemGetter,
     alias: AppleInternalCatalogResolver.Alias,
     original: String?,
 ): String? = when (getter) {
-    "getTitle" -> when (entityType) {
+    AppleContentItemGetter.TITLE -> when (entityType) {
         AppleInternalCatalogResolver.LocalizedEntityType.SONG -> alias.title
         AppleInternalCatalogResolver.LocalizedEntityType.ALBUM ->
             alias.album.ifBlank { alias.title }
         AppleInternalCatalogResolver.LocalizedEntityType.ARTIST ->
             alias.artist.ifBlank { alias.title }
     }
-    "getNowPlayingTitle" ->
+    AppleContentItemGetter.NOW_PLAYING_TITLE ->
         alias.title.takeIf {
             entityType == AppleInternalCatalogResolver.LocalizedEntityType.SONG
         }
-    "getArtistName" -> alias.artist
-    "getNowPlayingSubtitle" ->
+    AppleContentItemGetter.ARTIST -> alias.artist
+    AppleContentItemGetter.NOW_PLAYING_SUBTITLE ->
         alias.artist.takeIf {
             entityType == AppleInternalCatalogResolver.LocalizedEntityType.SONG
         }
-    "getSubTitle" ->
+    AppleContentItemGetter.SUBTITLE ->
         alias.artist.takeIf {
             entityType == AppleInternalCatalogResolver.LocalizedEntityType.SONG ||
                 entityType == AppleInternalCatalogResolver.LocalizedEntityType.ALBUM
         }
-    "getCollectionName" ->
+    AppleContentItemGetter.COLLECTION ->
         alias.album.takeIf {
             entityType == AppleInternalCatalogResolver.LocalizedEntityType.SONG
         }
-    else -> null
 }?.takeIf { it.isNotBlank() } ?: original
 
 internal fun visibleTextFieldForContentItemGetter(
     entityType: AppleInternalCatalogResolver.LocalizedEntityType,
-    getter: String,
+    getter: AppleContentItemGetter,
 ): VisibleTextField? = when (getter) {
-    "getTitle" -> when (entityType) {
+    AppleContentItemGetter.TITLE -> when (entityType) {
         AppleInternalCatalogResolver.LocalizedEntityType.SONG -> VisibleTextField.TITLE
         AppleInternalCatalogResolver.LocalizedEntityType.ALBUM -> VisibleTextField.ALBUM
         AppleInternalCatalogResolver.LocalizedEntityType.ARTIST -> VisibleTextField.ARTIST
     }
-    "getNowPlayingTitle" ->
+    AppleContentItemGetter.NOW_PLAYING_TITLE ->
         VisibleTextField.TITLE.takeIf {
             entityType == AppleInternalCatalogResolver.LocalizedEntityType.SONG
         }
-    "getArtistName" -> VisibleTextField.ARTIST
-    "getNowPlayingSubtitle" ->
+    AppleContentItemGetter.ARTIST -> VisibleTextField.ARTIST
+    AppleContentItemGetter.NOW_PLAYING_SUBTITLE ->
         VisibleTextField.ARTIST.takeIf {
             entityType == AppleInternalCatalogResolver.LocalizedEntityType.SONG
         }
-    "getSubTitle" ->
+    AppleContentItemGetter.SUBTITLE ->
         VisibleTextField.ARTIST.takeIf {
             entityType == AppleInternalCatalogResolver.LocalizedEntityType.SONG ||
                 entityType == AppleInternalCatalogResolver.LocalizedEntityType.ALBUM
         }
-    "getCollectionName" ->
+    AppleContentItemGetter.COLLECTION ->
         VisibleTextField.ALBUM.takeIf {
             entityType == AppleInternalCatalogResolver.LocalizedEntityType.SONG
         }
-    else -> null
 }
 
 internal fun preferredVisibleEntityType(

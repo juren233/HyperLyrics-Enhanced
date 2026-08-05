@@ -244,6 +244,14 @@ internal class AppleListenNowHooks(
         WeakIdentityMap<Any, DebugListenNowArtworkTrace>()
     private val debugListenNowLatestArtworkTraces =
         ConcurrentHashMap<String, DebugListenNowArtworkTrace>()
+    private val collectionItemRuntimeTarget by lazy {
+        runtime.hookResolver.resolveClass(
+            AppleMusicHookPoint.LISTEN_NOW_COLLECTION_ITEM_VIEW
+        ).target
+    }
+    private val libraryEntityRuntimeClasses by lazy {
+        runtime.hookResolver.resolveClasses(AppleMusicHookPoint.LIBRARY_ENTITY_CLASSES)
+    }
 
     fun installArtworkContinuityHooks() {
         runCatching {
@@ -437,10 +445,9 @@ internal class AppleListenNowHooks(
         entity: Any,
         resolvedCatalogId: String? = null,
     ) {
-        val kind = inAppLibraryEntityKindForClassNames(
-            generateSequence(entity.javaClass as Class<*>?) { it.superclass }
-                .map(Class<*>::getName)
-                .toList()
+        val kind = inAppLibraryEntityKindForProfileClasses(
+            entity = entity,
+            resolvedClasses = libraryEntityRuntimeClasses,
         ) ?: return
         val attributes = host.mediaApiEntityAttributes(entity) ?: return
         val mediaId = resolvedCatalogId
@@ -835,19 +842,40 @@ internal class AppleListenNowHooks(
     fun inAppListenNowArtworkIdentity(
         item: Any,
     ): InAppListenNowArtworkIdentity {
-        val id = runCatching { AppleReflection.call(item, "getId")?.toString() }
+        val target = collectionItemRuntimeTarget
+        val id = runCatching {
+            AppleReflection.call(
+                item,
+                target.runtimeMemberName(AppleMusicRuntimeMember.COLLECTION_ITEM_GET_ID_METHOD),
+            )?.toString()
+        }
             .getOrNull()
             ?.trim()
             .orEmpty()
         val persistentId = runCatching {
-            (AppleReflection.call(item, "getPersistentId") as? Number)?.toLong()
+            (AppleReflection.call(
+                item,
+                target.runtimeMemberName(
+                    AppleMusicRuntimeMember.COLLECTION_ITEM_GET_PERSISTENT_ID_METHOD
+                ),
+            ) as? Number)?.toLong()
         }.getOrNull() ?: 0L
         val contentType = runCatching {
-            (AppleReflection.call(item, "getContentType") as? Number)?.toInt()
+            (AppleReflection.call(
+                item,
+                target.runtimeMemberName(
+                    AppleMusicRuntimeMember.COLLECTION_ITEM_GET_CONTENT_TYPE_METHOD
+                ),
+            ) as? Number)?.toInt()
         }.getOrNull() ?: -1
         val artworkTokenEntries = runCatching {
             @Suppress("UNCHECKED_CAST")
-            (AppleReflection.call(item, "getAllArtworkTokens") as? Map<Any?, Any?>)
+            (AppleReflection.call(
+                item,
+                target.runtimeMemberName(
+                    AppleMusicRuntimeMember.ARTWORK_GET_ALL_ARTWORK_TOKENS_METHOD
+                ),
+            ) as? Map<Any?, Any?>)
                 .orEmpty()
                 .entries
                 .mapNotNull { (variant, token) ->
@@ -858,10 +886,20 @@ internal class AppleListenNowHooks(
         }.getOrDefault(emptyList())
         val artworkTokens = artworkTokenEntries.joinToString("|")
         val fetchableArtworkToken = runCatching {
-            AppleReflection.call(item, "getFetchableArtworkToken")?.toString()
+            AppleReflection.call(
+                item,
+                target.runtimeMemberName(
+                    AppleMusicRuntimeMember.ARTWORK_GET_FETCHABLE_ARTWORK_TOKEN_METHOD
+                ),
+            )?.toString()
         }.getOrNull()?.trim().orEmpty()
         val artworkToken = runCatching {
-            AppleReflection.call(item, "getArtworkToken")?.toString()
+            AppleReflection.call(
+                item,
+                target.runtimeMemberName(
+                    AppleMusicRuntimeMember.ARTWORK_GET_ARTWORK_TOKEN_METHOD
+                ),
+            )?.toString()
         }.getOrNull()?.trim().orEmpty()
         val singularArtworkToken = fetchableArtworkToken.ifEmpty { artworkToken }
         val artworkIdentity = artworkTokens.ifEmpty { singularArtworkToken }
@@ -937,15 +975,18 @@ internal class AppleListenNowHooks(
             val modelClass = runtime.hookResolver.resolveClass(
                 AppleMusicHookPoint.LISTEN_NOW_MODEL
             ).clazz
-            val delegateClass = runtime.hookResolver.resolveClass(
+            val resolvedDelegate = runtime.hookResolver.resolveClass(
                 AppleMusicHookPoint.LISTEN_NOW_DELEGATING_ITEM
-            ).clazz
-            val customImageViewClass = runtime.hookResolver.resolveClass(
+            )
+            val delegateClass = resolvedDelegate.clazz
+            val resolvedCustomImageView = runtime.hookResolver.resolveClass(
                 AppleMusicHookPoint.LISTEN_NOW_CUSTOM_IMAGE_VIEW
-            ).clazz
-            val mediaEntityClass = runtime.hookResolver.resolveClass(
+            )
+            val customImageViewClass = resolvedCustomImageView.clazz
+            val resolvedMediaEntity = runtime.hookResolver.resolveClass(
                 AppleMusicHookPoint.LISTEN_NOW_MEDIA_ENTITY
-            ).clazz
+            )
+            val mediaEntityClass = resolvedMediaEntity.clazz
             val liveDataClass = runtime.classLoader.loadClass("androidx.lifecycle.MutableLiveData")
 
             val onModelBoundMethod = resolvedOnModelBound.method
@@ -954,17 +995,33 @@ internal class AppleListenNowHooks(
                 .flatMap { it.declaredFields.asSequence() }
                 .single { field -> liveDataClass.isAssignableFrom(field.type) }
                 .apply { isAccessible = true }
-            val delegateGetImageUrl = AppleReflection.findMethod(delegateClass, "getImageUrl", 0)
-            val delegateGetImageUrls = AppleReflection.findMethod(delegateClass, "getImageUrls", 0)
+            val delegateGetImageUrl = AppleReflection.findMethod(
+                delegateClass,
+                resolvedDelegate.target.runtimeMemberName(
+                    AppleMusicRuntimeMember.ARTWORK_GET_IMAGE_URL_METHOD
+                ),
+                0,
+            )
+            val delegateGetImageUrls = AppleReflection.findMethod(
+                delegateClass,
+                resolvedDelegate.target.runtimeMemberName(
+                    AppleMusicRuntimeMember.ARTWORK_GET_IMAGE_URLS_METHOD
+                ),
+                0,
+            )
             val liveDataGetValue = AppleReflection.findMethod(liveDataClass, "getValue", 0)
             val liveDataMutationMethods = listOf(
                 AppleReflection.findMethod(liveDataClass, "postValue", 1),
                 AppleReflection.findMethod(liveDataClass, "setValue", 1),
             )
             val delegateArtworkMethods = delegateClass.declaredMethods.filter { method ->
-                (method.name == "setImageUrl" &&
+                (method.name == resolvedDelegate.target.runtimeMemberName(
+                    AppleMusicRuntimeMember.ARTWORK_SET_IMAGE_URL_METHOD
+                ) &&
                     method.parameterTypes.firstOrNull() == String::class.java) ||
-                    (method.name == "setImageUrls" &&
+                    (method.name == resolvedDelegate.target.runtimeMemberName(
+                        AppleMusicRuntimeMember.ARTWORK_SET_IMAGE_URLS_METHOD
+                    ) &&
                         method.parameterTypes.contentEquals(arrayOf(Array<String>::class.java)))
             }.onEach { it.isAccessible = true }
             check(delegateArtworkMethods.isNotEmpty()) {
@@ -975,7 +1032,12 @@ internal class AppleListenNowHooks(
                     "setImageDrawable",
                     Drawable::class.java,
                 ),
-                customImageViewClass.getDeclaredMethod("setBitmap", Bitmap::class.java),
+                customImageViewClass.getDeclaredMethod(
+                    resolvedCustomImageView.target.runtimeMemberName(
+                        AppleMusicRuntimeMember.CUSTOM_IMAGE_SET_BITMAP_METHOD
+                    ),
+                    Bitmap::class.java,
+                ),
             ).onEach { it.isAccessible = true }
 
             runtime.hookRegistrar.installHook(
@@ -988,7 +1050,12 @@ internal class AppleListenNowHooks(
                     val entity = fieldValueByType(listener, mediaEntityClass)
                         ?: return@installHook
                     val persistentIdValue = runCatching {
-                        AppleReflection.call(entity, "getPersistentId")
+                        AppleReflection.call(
+                            entity,
+                            resolvedMediaEntity.target.runtimeMemberName(
+                                AppleMusicRuntimeMember.COLLECTION_ITEM_GET_PERSISTENT_ID_METHOD
+                            ),
+                        )
                     }.getOrNull() ?: return@installHook
                     val persistentId = (persistentIdValue as? Number)?.toLong()
                         ?: return@installHook
@@ -1000,13 +1067,28 @@ internal class AppleListenNowHooks(
                     }.getOrNull()
                     val imageViews = debugListenNowImageViews(root)
                     val mediaId = runCatching {
-                        AppleReflection.call(entity, "getId")?.toString()
+                        AppleReflection.call(
+                            entity,
+                            resolvedMediaEntity.target.runtimeMemberName(
+                                AppleMusicRuntimeMember.COLLECTION_ITEM_GET_ID_METHOD
+                            ),
+                        )?.toString()
                     }.getOrNull()?.trim().orEmpty()
                     val title = runCatching {
-                        AppleReflection.call(entity, "getTitle")?.toString()
+                        AppleReflection.call(
+                            entity,
+                            resolvedMediaEntity.target.runtimeMemberName(
+                                AppleMusicRuntimeMember.COLLECTION_ITEM_GET_TITLE_METHOD
+                            ),
+                        )?.toString()
                     }.getOrNull()?.replace('\n', ' ')?.take(96)
                     val contentType = runCatching {
-                        (AppleReflection.call(entity, "getContentType") as? Number)?.toInt()
+                        (AppleReflection.call(
+                            entity,
+                            resolvedMediaEntity.target.runtimeMemberName(
+                                AppleMusicRuntimeMember.COLLECTION_ITEM_GET_CONTENT_TYPE_METHOD
+                            ),
+                        ) as? Number)?.toInt()
                     }.getOrNull() ?: -1
                     val mediaKey = "$mediaId:$persistentId:$contentType"
                     val trace = DebugListenNowArtworkTrace(

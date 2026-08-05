@@ -22,10 +22,18 @@ internal data class ApplePronunciationRenderPlan(
 
 internal data class ApplePronunciationWordRenderContext(
     val displayTextByWord: Map<ApplePronunciationWordKey, String>,
+    val wordIdMethod: String,
+    val beginMethod: String,
+    val endMethod: String,
 ) {
     /** 仅当当前对象属于本次发音渲染计划时返回覆盖文本。 */
     fun displayText(word: Any?): String? {
-        val key = applePronunciationWordKey(word) ?: return null
+        val key = applePronunciationWordKey(
+            word = word,
+            wordIdMethod = wordIdMethod,
+            beginMethod = beginMethod,
+            endMethod = endMethod,
+        ) ?: return null
         return displayTextByWord[key]
     }
 }
@@ -37,13 +45,18 @@ internal data class ApplePronunciationWordKey(
 )
 
 /** JavaCPP 可能重复创建 wrapper，因此使用 native word 的稳定字段匹配渲染文本。 */
-internal fun applePronunciationWordKey(word: Any?): ApplePronunciationWordKey? {
+internal fun applePronunciationWordKey(
+    word: Any?,
+    wordIdMethod: String,
+    beginMethod: String,
+    endMethod: String,
+): ApplePronunciationWordKey? {
     word ?: return null
     return runCatching {
         ApplePronunciationWordKey(
-            wordId = (AppleReflection.call(word, "getWordId") as Number).toInt(),
-            begin = (AppleReflection.call(word, "getBegin") as Number).toInt(),
-            end = (AppleReflection.call(word, "getEnd") as Number).toInt(),
+            wordId = (AppleReflection.call(word, wordIdMethod) as Number).toInt(),
+            begin = (AppleReflection.call(word, beginMethod) as Number).toInt(),
+            end = (AppleReflection.call(word, endMethod) as Number).toInt(),
         )
     }.getOrNull()
 }

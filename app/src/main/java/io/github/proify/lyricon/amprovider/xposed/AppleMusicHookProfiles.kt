@@ -60,7 +60,9 @@ internal enum class AppleMusicHookPoint {
     IN_APP_QUEUE_ADAPTER_BIND,
     CONTENT_ITEM_METADATA_CLASSES,
     RECENTLY_SEARCHED_CONTROLLER,
+    RECENTLY_SEARCHED_MODEL_BOUND,
     RECENTLY_SEARCHED_MEDIA_ENTITY,
+    APPLE_MAIN_CONTENT_ACTIVITY,
     APPLE_SHARED_PREFERENCES_CLASS,
     APPLE_SONG_MODEL_CLASS,
     APPLE_PLAYER_UTIL_CLASS,
@@ -103,6 +105,18 @@ internal enum class AppleMusicRuntimeMember {
     EXO_STOP_METHOD,
     EXO_RELEASE_METHOD,
     EXO_CURRENT_POSITION_METHOD,
+    PLAYBACK_PLAYER_CURRENT_ITEM_METHOD,
+    PLAYBACK_QUEUE_ITEM_ITEM_METHOD,
+    PLAYBACK_QUEUE_ITEM_ID_METHOD,
+    PLAYBACK_MEDIA_ITEM_TITLE_METHOD,
+    PLAYBACK_MEDIA_ITEM_ARTIST_NAME_METHOD,
+    PLAYBACK_MEDIA_ITEM_GENRE_NAME_METHOD,
+    PLAYBACK_MEDIA_ITEM_DURATION_METHOD,
+    PLAYBACK_MEDIA_ITEM_SUBSCRIPTION_STORE_ID_METHOD,
+    PLAYBACK_MEDIA_ITEM_PERSISTENT_ID_METHOD,
+    APPLE_SONG_SET_ID_METHOD,
+    APPLE_SONG_SET_QUEUE_ID_METHOD,
+    APPLE_SONG_SET_HAS_LYRICS_METHOD,
     CONTENT_HTTP_RESPONSE_REQUEST_FIELD,
     CONTENT_HTTP_RESPONSE_HEADERS_FIELD,
     CONTENT_HTTP_HEADERS_VALUES_FIELD,
@@ -124,6 +138,46 @@ internal enum class AppleMusicRuntimeMember {
     LYRICS_NATIVE_HAS_TRANSLATION_METHOD,
     LYRICS_NATIVE_SET_PRONUNCIATION_METHOD,
     LYRICS_NATIVE_HAS_PRONUNCIATION_METHOD,
+    LYRICS_NATIVE_POINTER_GET_METHOD,
+    LYRICS_NATIVE_VECTOR_GET_METHOD,
+    LYRICS_NATIVE_VECTOR_SIZE_METHOD,
+    LYRICS_NATIVE_POINTER_ADDRESS_METHOD,
+    LYRICS_NATIVE_SONG_SECTIONS_METHOD,
+    LYRICS_NATIVE_SECTION_LINES_METHOD,
+    LYRICS_NATIVE_BEGIN_METHOD,
+    LYRICS_NATIVE_END_METHOD,
+    LYRICS_NATIVE_DURATION_METHOD,
+    LYRICS_NATIVE_WORD_ID_METHOD,
+    LYRICS_NATIVE_WHITESPACE_METHOD,
+    LYRICS_NATIVE_SONG_PRONUNCIATION_LANGUAGES_METHOD,
+    LYRICS_NATIVE_SONG_TRANSLATION_LANGUAGES_METHOD,
+    LYRICS_NATIVE_SONG_AGENTS_METHOD,
+    LYRICS_NATIVE_AGENT_METHOD,
+    LYRICS_NATIVE_AGENT_NAME_TYPES_METHOD,
+    LYRICS_NATIVE_AGENT_TYPE_METHOD,
+    LYRICS_NATIVE_AGENT_ID_METHOD,
+    LYRICS_SONG_ADAM_ID_METHOD,
+    LYRICS_SONG_ID_METHOD,
+    LYRICS_SONG_QUEUE_ID_METHOD,
+    LYRICS_VIEW_MODEL_CURRENT_LANGUAGE_METHOD,
+    LYRICS_UI_RECYCLER_VIEW_METHOD,
+    LYRICS_UI_BINDING_FIELD,
+    LYRICS_UI_BINDING_RECYCLER_FIELD,
+    LYRICS_UI_ADAPTER_FIELD,
+    LYRICS_UI_VIEW_MODEL_FIELD,
+    LYRICS_ADAPTER_ACTIVE_POSITIONS_METHOD,
+    LYRICS_ADAPTER_LYRICS_METHOD,
+    LYRICS_ADAPTER_LINE_COUNT_METHOD,
+    LYRICS_ADAPTER_LINE_AT_METHOD,
+    LYRICS_ADAPTER_ITEM_VIEW_TYPE_METHOD,
+    LYRICS_ADAPTER_ITEM_COUNT_METHOD,
+    LYRICS_ADAPTER_NOTIFY_DATA_CHANGED_METHOD,
+    LYRICS_ADAPTER_TRANSLATION_SELECTED_FIELD,
+    LYRICS_ADAPTER_PRONUNCIATION_SELECTED_FIELD,
+    LYRICS_VIEW_MODEL_PRONUNCIATION_SELECTED_GETTER,
+    LYRICS_VIEW_MODEL_PRONUNCIATION_AVAILABLE_GETTER,
+    LYRICS_VIEW_MODEL_TRANSLATION_SELECTED_GETTER,
+    LYRICS_VIEW_MODEL_TRANSLATION_AVAILABLE_GETTER,
     LYRICS_WORD_VECTOR_CLASS_NAME,
     LYRICS_GRADIENT_LAYOUT_CLASS_NAME,
     LYRICS_GRADIENT_MASK_START_CHILD_FIELD,
@@ -135,6 +189,7 @@ internal enum class AppleMusicRuntimeMember {
     QUEUE_ENTRY_ITEM_FIELD,
     QUEUE_ITEM_METADATA_FIELD,
     QUEUE_ITEM_ID_FIELD,
+    QUEUE_HISTORY_ENTRY_CLASS_NAME,
     MEDIA3_METADATA_BUNDLE_FIELD,
     MEDIA3_METADATA_TITLE_FIELD,
     MEDIA3_METADATA_ARTIST_FIELD,
@@ -175,6 +230,79 @@ internal enum class AppleMusicRuntimeMember {
     ARTIST_TOP_SONG_SUBTITLE_FIELD,
     ARTIST_TOP_SONG_CAPTION_FIELD,
     ARTIST_HEADER_TITLE_FIELD,
+    COLLECTION_ITEM_GET_ID_METHOD,
+    COLLECTION_ITEM_GET_PERSISTENT_ID_METHOD,
+    COLLECTION_ITEM_GET_CONTENT_TYPE_METHOD,
+    COLLECTION_ITEM_GET_TITLE_METHOD,
+    COLLECTION_ITEM_SET_TITLE_METHOD,
+    COLLECTION_ITEM_NOTIFY_CHANGE_METHOD,
+    ARTWORK_GET_ARTWORK_TOKEN_METHOD,
+    ARTWORK_GET_ALL_ARTWORK_TOKENS_METHOD,
+    ARTWORK_GET_FETCHABLE_ARTWORK_TOKEN_METHOD,
+    ARTWORK_GET_IMAGE_URL_METHOD,
+    ARTWORK_GET_IMAGE_URLS_METHOD,
+    ARTWORK_SET_IMAGE_URL_METHOD,
+    ARTWORK_SET_IMAGE_URLS_METHOD,
+    ARTWORK_NOTIFY_INITIAL_IMAGE_URL_METHOD,
+    CUSTOM_IMAGE_SET_BITMAP_METHOD,
+    CONTENT_ITEM_TITLE_GETTER,
+    CONTENT_ITEM_NOW_PLAYING_TITLE_GETTER,
+    CONTENT_ITEM_ARTIST_GETTER,
+    CONTENT_ITEM_NOW_PLAYING_SUBTITLE_GETTER,
+    CONTENT_ITEM_SUBTITLE_GETTER,
+    CONTENT_ITEM_COLLECTION_GETTER,
+    CONTENT_ITEM_SUBSCRIPTION_STORE_ID_GETTER,
+    CONTENT_ITEM_ID_GETTER,
+    CONTENT_ITEM_PERSISTENT_ID_GETTER,
+    CONTENT_ITEM_ASSET_ADAM_ID_GETTER,
+    CONTENT_ITEM_REPORTING_ADAM_ID_GETTER,
+    CONTENT_ITEM_FORMER_IDS_GETTER,
+    CONTENT_ITEM_ARTIST_ID_GETTER,
+    CONTENT_ITEM_ARTIST_ADAM_ID_GETTER,
+    CONTENT_ITEM_ARTIST_STORE_ID_GETTER,
+    CONTENT_ITEM_ARTIST_SUBSCRIPTION_STORE_ID_GETTER,
+    CONTENT_ITEM_TITLE_FIELD,
+    CONTENT_ITEM_ARTIST_FIELD,
+    CONTENT_ITEM_COLLECTION_FIELD,
+    CONTENT_ITEM_SET_TITLE_METHOD,
+    CONTENT_ITEM_SET_ARTIST_METHOD,
+    CONTENT_ITEM_SET_COLLECTION_METHOD,
+    CONTENT_ITEM_SET_SUBTITLE_METHOD,
+    CONTENT_ITEM_NOTIFY_CHANGE_METHOD,
+    MEDIA_API_HOLDER_GET_MEDIA_API_METHOD,
+    MEDIA_API_STOREFRONT_FIELD,
+    MEDIA_API_DIRECT_QUERY_METHOD,
+    CATALOG_RESPONSE_DATA_METHOD,
+    CATALOG_ENTITY_ID_METHOD,
+    CATALOG_ENTITY_SUBSCRIPTION_STORE_ID_METHOD,
+    CATALOG_ENTITY_ASSET_ADAM_ID_METHOD,
+    CATALOG_ENTITY_REPORTING_ADAM_ID_METHOD,
+    CATALOG_ENTITY_FORMER_IDS_METHOD,
+    CATALOG_ENTITY_ATTRIBUTES_METHOD,
+    CATALOG_ATTRIBUTES_PLAY_PARAMS_METHOD,
+    CATALOG_PLAY_PARAMS_CATALOG_ID_METHOD,
+    CATALOG_ATTRIBUTES_NAME_METHOD,
+    CATALOG_ATTRIBUTES_ARTIST_NAME_METHOD,
+    CATALOG_ATTRIBUTES_ALBUM_NAME_METHOD,
+    CATALOG_ATTRIBUTES_ARTIST_ID_METHOD,
+    CATALOG_ATTRIBUTES_ARTIST_ADAM_ID_METHOD,
+    CATALOG_ATTRIBUTES_ARTIST_STORE_ID_METHOD,
+    CATALOG_ATTRIBUTES_ARTIST_SUBSCRIPTION_STORE_ID_METHOD,
+    CATALOG_ATTRIBUTES_SET_NAME_METHOD,
+    CATALOG_ATTRIBUTES_SET_ARTIST_NAME_METHOD,
+    CATALOG_ATTRIBUTES_SET_ALBUM_NAME_METHOD,
+    CATALOG_ENTITY_RELATIONSHIPS_METHOD,
+    CATALOG_RELATIONSHIP_ENTITIES_METHOD,
+    CATALOG_RELATIONSHIP_DATA_METHOD,
+    CATALOG_ATTRIBUTES_ISRC_METHOD,
+    CATALOG_ATTRIBUTES_GENRE_NAMES_METHOD,
+    CATALOG_ATTRIBUTES_GENRE_NAME_METHOD,
+    CUSTOM_TEXT_VIEW_SET_TYPEFACE_METHOD,
+    CUSTOM_TEXT_VIEW_SET_TEXT_METHOD,
+    CUSTOM_TEXT_VIEW_ON_DRAW_METHOD,
+    CUSTOM_TEXT_VIEW_FUTURE_RESOLVE_METHOD,
+    IN_APP_CONTAINER_SET_TITLE_METHOD,
+    IN_APP_CONTAINER_NOTIFY_CHANGE_METHOD,
 }
 
 internal data class AppleMusicHookTarget(
@@ -280,8 +408,8 @@ internal object AppleMusicHookProfiles {
                 AppleMusicHookTarget("com.apple.android.music.player.z"),
             ),
             AppleMusicHookPoint.LYRICS_RECYCLER_ADAPTER to listOf(
-                AppleMusicHookTarget("com.apple.android.music.player.R0"),
-                AppleMusicHookTarget("com.apple.android.music.player.z"),
+                lyricsRecyclerAdapterTarget("com.apple.android.music.player.R0"),
+                lyricsRecyclerAdapterTarget("com.apple.android.music.player.z"),
             ),
             AppleMusicHookPoint.COMPOSE_TEXT_LAYOUT to listOf(
                 AppleMusicHookTarget("z1.l"),
@@ -362,8 +490,8 @@ internal object AppleMusicHookProfiles {
                 AppleMusicHookTarget("com.apple.android.music.player.A"),
             ),
             AppleMusicHookPoint.LYRICS_RECYCLER_ADAPTER to listOf(
-                AppleMusicHookTarget("com.apple.android.music.player.A"),
-                AppleMusicHookTarget("com.apple.android.music.player.U0"),
+                lyricsRecyclerAdapterTarget("com.apple.android.music.player.A"),
+                lyricsRecyclerAdapterTarget("com.apple.android.music.player.U0"),
             ),
             AppleMusicHookPoint.COMPOSE_TEXT_LAYOUT to listOf(
                 AppleMusicHookTarget("z1.k"),
@@ -435,20 +563,71 @@ internal object AppleMusicHookProfiles {
             ),
             AppleMusicHookPoint.LISTEN_NOW_DELEGATING_ITEM to listOf(
                 AppleMusicHookTarget(
-                    "com.apple.android.music.model.extensions." +
-                        "DelegatingCollectionItemView"
+                    className = "com.apple.android.music.model.extensions." +
+                        "DelegatingCollectionItemView",
+                    runtimeMemberNames = mapOf(
+                        AppleMusicRuntimeMember.COLLECTION_ITEM_GET_ID_METHOD to "getId",
+                        AppleMusicRuntimeMember.COLLECTION_ITEM_GET_PERSISTENT_ID_METHOD to
+                            "getPersistentId",
+                        AppleMusicRuntimeMember.COLLECTION_ITEM_GET_CONTENT_TYPE_METHOD to
+                            "getContentType",
+                        AppleMusicRuntimeMember.ARTWORK_GET_ARTWORK_TOKEN_METHOD to
+                            "getArtworkToken",
+                        AppleMusicRuntimeMember.ARTWORK_GET_ALL_ARTWORK_TOKENS_METHOD to
+                            "getAllArtworkTokens",
+                        AppleMusicRuntimeMember.ARTWORK_GET_FETCHABLE_ARTWORK_TOKEN_METHOD to
+                            "getFetchableArtworkToken",
+                        AppleMusicRuntimeMember.ARTWORK_GET_IMAGE_URL_METHOD to "getImageUrl",
+                        AppleMusicRuntimeMember.ARTWORK_GET_IMAGE_URLS_METHOD to "getImageUrls",
+                        AppleMusicRuntimeMember.ARTWORK_SET_IMAGE_URL_METHOD to "setImageUrl",
+                        AppleMusicRuntimeMember.ARTWORK_SET_IMAGE_URLS_METHOD to "setImageUrls",
+                        AppleMusicRuntimeMember.ARTWORK_NOTIFY_INITIAL_IMAGE_URL_METHOD to
+                            "notifyInitialImageUrl",
+                    ),
                 ),
             ),
             AppleMusicHookPoint.LISTEN_NOW_CUSTOM_IMAGE_VIEW to listOf(
-                AppleMusicHookTarget("com.apple.android.music.common.CustomImageView"),
+                AppleMusicHookTarget(
+                    className = "com.apple.android.music.common.CustomImageView",
+                    runtimeMemberNames = mapOf(
+                        AppleMusicRuntimeMember.CUSTOM_IMAGE_SET_BITMAP_METHOD to "setBitmap",
+                    ),
+                ),
             ),
             AppleMusicHookPoint.LISTEN_NOW_MEDIA_ENTITY to listOf(
                 AppleMusicHookTarget(
-                    "com.apple.android.music.mediaapi.models.MediaEntity"
+                    className = "com.apple.android.music.mediaapi.models.MediaEntity",
+                    runtimeMemberNames = mapOf(
+                        AppleMusicRuntimeMember.COLLECTION_ITEM_GET_ID_METHOD to "getId",
+                        AppleMusicRuntimeMember.COLLECTION_ITEM_GET_PERSISTENT_ID_METHOD to
+                            "getPersistentId",
+                        AppleMusicRuntimeMember.COLLECTION_ITEM_GET_CONTENT_TYPE_METHOD to
+                            "getContentType",
+                        AppleMusicRuntimeMember.COLLECTION_ITEM_GET_TITLE_METHOD to "getTitle",
+                    ),
                 ),
             ),
             AppleMusicHookPoint.LISTEN_NOW_COLLECTION_ITEM_VIEW to listOf(
-                AppleMusicHookTarget("com.apple.android.music.model.CollectionItemView"),
+                AppleMusicHookTarget(
+                    className = "com.apple.android.music.model.CollectionItemView",
+                    runtimeMemberNames = mapOf(
+                        AppleMusicRuntimeMember.COLLECTION_ITEM_GET_ID_METHOD to "getId",
+                        AppleMusicRuntimeMember.COLLECTION_ITEM_GET_PERSISTENT_ID_METHOD to
+                            "getPersistentId",
+                        AppleMusicRuntimeMember.COLLECTION_ITEM_GET_CONTENT_TYPE_METHOD to
+                            "getContentType",
+                        AppleMusicRuntimeMember.COLLECTION_ITEM_GET_TITLE_METHOD to "getTitle",
+                        AppleMusicRuntimeMember.COLLECTION_ITEM_SET_TITLE_METHOD to "setTitle",
+                        AppleMusicRuntimeMember.COLLECTION_ITEM_NOTIFY_CHANGE_METHOD to
+                            "notifyChange",
+                        AppleMusicRuntimeMember.ARTWORK_GET_ARTWORK_TOKEN_METHOD to
+                            "getArtworkToken",
+                        AppleMusicRuntimeMember.ARTWORK_GET_ALL_ARTWORK_TOKENS_METHOD to
+                            "getAllArtworkTokens",
+                        AppleMusicRuntimeMember.ARTWORK_GET_FETCHABLE_ARTWORK_TOKEN_METHOD to
+                            "getFetchableArtworkToken",
+                    ),
+                ),
             ),
         ) + stableMetadataSurfaceHookTargets() +
             stableLibrarySurfaceHookTargets() + stableLyricsHookTargets(),
@@ -489,6 +668,9 @@ internal object AppleMusicHookProfiles {
                 "com.apple.android.music.player.queuefa.NewPlayerQueueViewModel",
                 "updateHistory",
                 1,
+                runtimeMemberNames = mapOf(
+                    AppleMusicRuntimeMember.QUEUE_HISTORY_ENTRY_CLASS_NAME to "Z8.d",
+                ),
             ),
         ),
         AppleMusicHookPoint.IN_APP_QUEUE_ADAPTER_SUBMIT to listOf(
@@ -513,8 +695,45 @@ internal object AppleMusicHookProfiles {
         ),
         AppleMusicHookPoint.CONTENT_ITEM_METADATA_CLASSES to listOf(
             AppleMusicHookTarget(
-                "com.apple.android.music.model.BaseContentItem",
-                runtimeMemberNames = mapOf(AppleMusicRuntimeMember.CONTENT_ITEM_ROLE to "base"),
+                className = "com.apple.android.music.model.BaseContentItem",
+                runtimeMemberNames = mapOf(
+                    AppleMusicRuntimeMember.CONTENT_ITEM_ROLE to "base",
+                    AppleMusicRuntimeMember.CONTENT_ITEM_TITLE_GETTER to "getTitle",
+                    AppleMusicRuntimeMember.CONTENT_ITEM_NOW_PLAYING_TITLE_GETTER to
+                        "getNowPlayingTitle",
+                    AppleMusicRuntimeMember.CONTENT_ITEM_ARTIST_GETTER to "getArtistName",
+                    AppleMusicRuntimeMember.CONTENT_ITEM_NOW_PLAYING_SUBTITLE_GETTER to
+                        "getNowPlayingSubtitle",
+                    AppleMusicRuntimeMember.CONTENT_ITEM_SUBTITLE_GETTER to "getSubTitle",
+                    AppleMusicRuntimeMember.CONTENT_ITEM_COLLECTION_GETTER to
+                        "getCollectionName",
+                    AppleMusicRuntimeMember.CONTENT_ITEM_SUBSCRIPTION_STORE_ID_GETTER to
+                        "getSubscriptionStoreId",
+                    AppleMusicRuntimeMember.CONTENT_ITEM_ID_GETTER to "getId",
+                    AppleMusicRuntimeMember.CONTENT_ITEM_PERSISTENT_ID_GETTER to
+                        "getPersistentId",
+                    AppleMusicRuntimeMember.CONTENT_ITEM_ASSET_ADAM_ID_GETTER to
+                        "getAssetAdamId",
+                    AppleMusicRuntimeMember.CONTENT_ITEM_REPORTING_ADAM_ID_GETTER to
+                        "getReportingAdamId",
+                    AppleMusicRuntimeMember.CONTENT_ITEM_FORMER_IDS_GETTER to "getFormerIds",
+                    AppleMusicRuntimeMember.CONTENT_ITEM_ARTIST_ID_GETTER to "getArtistId",
+                    AppleMusicRuntimeMember.CONTENT_ITEM_ARTIST_ADAM_ID_GETTER to
+                        "getArtistAdamId",
+                    AppleMusicRuntimeMember.CONTENT_ITEM_ARTIST_STORE_ID_GETTER to
+                        "getArtistStoreId",
+                    AppleMusicRuntimeMember.CONTENT_ITEM_ARTIST_SUBSCRIPTION_STORE_ID_GETTER to
+                        "getArtistSubscriptionStoreId",
+                    AppleMusicRuntimeMember.CONTENT_ITEM_TITLE_FIELD to "name",
+                    AppleMusicRuntimeMember.CONTENT_ITEM_ARTIST_FIELD to "artistName",
+                    AppleMusicRuntimeMember.CONTENT_ITEM_COLLECTION_FIELD to "collectionName",
+                    AppleMusicRuntimeMember.CONTENT_ITEM_SET_TITLE_METHOD to "setTitle",
+                    AppleMusicRuntimeMember.CONTENT_ITEM_SET_ARTIST_METHOD to "setArtistName",
+                    AppleMusicRuntimeMember.CONTENT_ITEM_SET_COLLECTION_METHOD to
+                        "setCollectionName",
+                    AppleMusicRuntimeMember.CONTENT_ITEM_SET_SUBTITLE_METHOD to "setSubTitle",
+                    AppleMusicRuntimeMember.CONTENT_ITEM_NOTIFY_CHANGE_METHOD to "notifyChange",
+                ),
             ),
             AppleMusicHookTarget("com.apple.android.music.model.BasePlaybackItem"),
             AppleMusicHookTarget("com.apple.android.music.model.Song"),
@@ -530,14 +749,34 @@ internal object AppleMusicHookProfiles {
                 parameterTypeNames = listOf("java.util.List"),
             ),
         ),
+        AppleMusicHookPoint.RECENTLY_SEARCHED_MODEL_BOUND to listOf(
+            AppleMusicHookTarget(
+                className = "com.apple.android.music.search2.RecentlySearchedEpoxyController",
+                methodName = "onModelBound",
+                parameterCount = 4,
+                includeSynthetic = true,
+            ),
+        ),
         AppleMusicHookPoint.RECENTLY_SEARCHED_MEDIA_ENTITY to listOf(
             AppleMusicHookTarget("com.apple.android.music.mediaapi.models.MediaEntity"),
+        ),
+        AppleMusicHookPoint.APPLE_MAIN_CONTENT_ACTIVITY to listOf(
+            AppleMusicHookTarget("com.apple.android.music.common.MainContentActivity"),
         ),
         AppleMusicHookPoint.APPLE_SHARED_PREFERENCES_CLASS to listOf(
             AppleMusicHookTarget("com.apple.android.music.utils.AppSharedPreferences"),
         ),
         AppleMusicHookPoint.APPLE_SONG_MODEL_CLASS to listOf(
-            AppleMusicHookTarget("com.apple.android.music.model.Song"),
+            AppleMusicHookTarget(
+                className = "com.apple.android.music.model.Song",
+                runtimeMemberNames = mapOf(
+                    AppleMusicRuntimeMember.APPLE_SONG_SET_ID_METHOD to "setId",
+                    AppleMusicRuntimeMember.APPLE_SONG_SET_QUEUE_ID_METHOD to "setQueueId",
+                    AppleMusicRuntimeMember.APPLE_SONG_SET_HAS_LYRICS_METHOD to "setHasLyrics",
+                    AppleMusicRuntimeMember.LYRICS_SONG_ID_METHOD to "getId",
+                    AppleMusicRuntimeMember.LYRICS_SONG_QUEUE_ID_METHOD to "getQueueId",
+                ),
+            ),
         ),
         AppleMusicHookPoint.APPLE_PLAYER_UTIL_CLASS to listOf(
             AppleMusicHookTarget("com.apple.android.music.player.O"),
@@ -548,14 +787,76 @@ internal object AppleMusicHookProfiles {
             ),
         ),
         AppleMusicHookPoint.IN_APP_CONTAINER_ARTIST_CLASS to listOf(
-            AppleMusicHookTarget("com.apple.android.music.model.Artist"),
+            AppleMusicHookTarget(
+                className = "com.apple.android.music.model.Artist",
+                runtimeMemberNames = mapOf(
+                    AppleMusicRuntimeMember.IN_APP_CONTAINER_SET_TITLE_METHOD to "setTitle",
+                    AppleMusicRuntimeMember.IN_APP_CONTAINER_NOTIFY_CHANGE_METHOD to
+                        "notifyChange",
+                ),
+            ),
         ),
         AppleMusicHookPoint.IN_APP_CONTAINER_ALBUM_CLASS to listOf(
-            AppleMusicHookTarget("com.apple.android.music.model.Album"),
+            AppleMusicHookTarget(
+                className = "com.apple.android.music.model.Album",
+                runtimeMemberNames = mapOf(
+                    AppleMusicRuntimeMember.IN_APP_CONTAINER_SET_TITLE_METHOD to "setTitle",
+                    AppleMusicRuntimeMember.IN_APP_CONTAINER_NOTIFY_CHANGE_METHOD to
+                        "notifyChange",
+                ),
+            ),
         ),
         AppleMusicHookPoint.MEDIA_API_REPOSITORY_HOLDER_CLASS to listOf(
             AppleMusicHookTarget(
-                "com.apple.android.music.mediaapi.repository.MediaApiRepositoryHolder",
+                className =
+                    "com.apple.android.music.mediaapi.repository.MediaApiRepositoryHolder",
+                runtimeMemberNames = mapOf(
+                    AppleMusicRuntimeMember.MEDIA_API_HOLDER_GET_MEDIA_API_METHOD to
+                        "getMediaApi",
+                    AppleMusicRuntimeMember.MEDIA_API_STOREFRONT_FIELD to "s",
+                    AppleMusicRuntimeMember.MEDIA_API_DIRECT_QUERY_METHOD to "B",
+                    AppleMusicRuntimeMember.CATALOG_RESPONSE_DATA_METHOD to "getData",
+                    AppleMusicRuntimeMember.CATALOG_ENTITY_ID_METHOD to "getId",
+                    AppleMusicRuntimeMember.CATALOG_ENTITY_SUBSCRIPTION_STORE_ID_METHOD to
+                        "getSubscriptionStoreId",
+                    AppleMusicRuntimeMember.CATALOG_ENTITY_ASSET_ADAM_ID_METHOD to
+                        "getAssetAdamId",
+                    AppleMusicRuntimeMember.CATALOG_ENTITY_REPORTING_ADAM_ID_METHOD to
+                        "getReportingAdamId",
+                    AppleMusicRuntimeMember.CATALOG_ENTITY_FORMER_IDS_METHOD to "getFormerIds",
+                    AppleMusicRuntimeMember.CATALOG_ENTITY_ATTRIBUTES_METHOD to "getAttributes",
+                    AppleMusicRuntimeMember.CATALOG_ATTRIBUTES_PLAY_PARAMS_METHOD to
+                        "getPlayParams",
+                    AppleMusicRuntimeMember.CATALOG_PLAY_PARAMS_CATALOG_ID_METHOD to
+                        "getCatalogId",
+                    AppleMusicRuntimeMember.CATALOG_ATTRIBUTES_NAME_METHOD to "getName",
+                    AppleMusicRuntimeMember.CATALOG_ATTRIBUTES_ARTIST_NAME_METHOD to
+                        "getArtistName",
+                    AppleMusicRuntimeMember.CATALOG_ATTRIBUTES_ALBUM_NAME_METHOD to
+                        "getAlbumName",
+                    AppleMusicRuntimeMember.CATALOG_ATTRIBUTES_ARTIST_ID_METHOD to "getArtistId",
+                    AppleMusicRuntimeMember.CATALOG_ATTRIBUTES_ARTIST_ADAM_ID_METHOD to
+                        "getArtistAdamId",
+                    AppleMusicRuntimeMember.CATALOG_ATTRIBUTES_ARTIST_STORE_ID_METHOD to
+                        "getArtistStoreId",
+                    AppleMusicRuntimeMember.CATALOG_ATTRIBUTES_ARTIST_SUBSCRIPTION_STORE_ID_METHOD to
+                        "getArtistSubscriptionStoreId",
+                    AppleMusicRuntimeMember.CATALOG_ATTRIBUTES_SET_NAME_METHOD to "setName",
+                    AppleMusicRuntimeMember.CATALOG_ATTRIBUTES_SET_ARTIST_NAME_METHOD to
+                        "setArtistName",
+                    AppleMusicRuntimeMember.CATALOG_ATTRIBUTES_SET_ALBUM_NAME_METHOD to
+                        "setAlbumName",
+                    AppleMusicRuntimeMember.CATALOG_ENTITY_RELATIONSHIPS_METHOD to
+                        "getRelationships",
+                    AppleMusicRuntimeMember.CATALOG_RELATIONSHIP_ENTITIES_METHOD to
+                        "getEntities",
+                    AppleMusicRuntimeMember.CATALOG_RELATIONSHIP_DATA_METHOD to "getData",
+                    AppleMusicRuntimeMember.CATALOG_ATTRIBUTES_ISRC_METHOD to "getIsrc",
+                    AppleMusicRuntimeMember.CATALOG_ATTRIBUTES_GENRE_NAMES_METHOD to
+                        "getGenreNames",
+                    AppleMusicRuntimeMember.CATALOG_ATTRIBUTES_GENRE_NAME_METHOD to
+                        "getGenreName",
+                ),
             ),
         ),
     )
@@ -848,6 +1149,19 @@ internal object AppleMusicHookProfiles {
             "com.apple.android.music.playback.controller.LocalMediaPlayerController",
         methodName = "onPlaybackStateChanged",
         parameterCount = 3,
+        runtimeMemberNames = mapOf(
+            AppleMusicRuntimeMember.PLAYBACK_PLAYER_CURRENT_ITEM_METHOD to "getCurrentItem",
+            AppleMusicRuntimeMember.PLAYBACK_QUEUE_ITEM_ITEM_METHOD to "getItem",
+            AppleMusicRuntimeMember.PLAYBACK_QUEUE_ITEM_ID_METHOD to "getPlaybackQueueId",
+            AppleMusicRuntimeMember.PLAYBACK_MEDIA_ITEM_TITLE_METHOD to "getTitle",
+            AppleMusicRuntimeMember.PLAYBACK_MEDIA_ITEM_ARTIST_NAME_METHOD to "getArtistName",
+            AppleMusicRuntimeMember.PLAYBACK_MEDIA_ITEM_GENRE_NAME_METHOD to "getGenreName",
+            AppleMusicRuntimeMember.PLAYBACK_MEDIA_ITEM_DURATION_METHOD to "getDuration",
+            AppleMusicRuntimeMember.PLAYBACK_MEDIA_ITEM_SUBSCRIPTION_STORE_ID_METHOD to
+                "getSubscriptionStoreId",
+            AppleMusicRuntimeMember.PLAYBACK_MEDIA_ITEM_PERSISTENT_ID_METHOD to
+                "getPersistentId",
+        ),
     )
 
     /** Preserves the pre-refactor name/count-only lookup without tightening its signature. */
@@ -883,6 +1197,21 @@ internal object AppleMusicHookProfiles {
         runtimeMemberNames = mapOf(
             AppleMusicRuntimeMember.LYRICS_COOKIE_NAME_FIELD to "a",
             AppleMusicRuntimeMember.LYRICS_COOKIE_VALUE_FIELD to "b",
+        ),
+    )
+
+    private fun lyricsRecyclerAdapterTarget(className: String) = AppleMusicHookTarget(
+        className = className,
+        runtimeMemberNames = mapOf(
+            AppleMusicRuntimeMember.LYRICS_ADAPTER_ACTIVE_POSITIONS_METHOD to "B",
+            AppleMusicRuntimeMember.LYRICS_ADAPTER_LYRICS_METHOD to "C",
+            AppleMusicRuntimeMember.LYRICS_ADAPTER_LINE_COUNT_METHOD to "b",
+            AppleMusicRuntimeMember.LYRICS_ADAPTER_LINE_AT_METHOD to "a",
+            AppleMusicRuntimeMember.LYRICS_ADAPTER_ITEM_VIEW_TYPE_METHOD to "k",
+            AppleMusicRuntimeMember.LYRICS_ADAPTER_ITEM_COUNT_METHOD to "i",
+            AppleMusicRuntimeMember.LYRICS_ADAPTER_NOTIFY_DATA_CHANGED_METHOD to "l",
+            AppleMusicRuntimeMember.LYRICS_ADAPTER_TRANSLATION_SELECTED_FIELD to "d",
+            AppleMusicRuntimeMember.LYRICS_ADAPTER_PRONUNCIATION_SELECTED_FIELD to "e",
         ),
     )
 
@@ -947,6 +1276,31 @@ internal object AppleMusicHookProfiles {
                             "setPronunciation",
                         AppleMusicRuntimeMember.LYRICS_NATIVE_HAS_PRONUNCIATION_METHOD to
                             "hasPronunciation",
+                        AppleMusicRuntimeMember.LYRICS_NATIVE_POINTER_GET_METHOD to "get",
+                        AppleMusicRuntimeMember.LYRICS_NATIVE_VECTOR_GET_METHOD to "get",
+                        AppleMusicRuntimeMember.LYRICS_NATIVE_VECTOR_SIZE_METHOD to "size",
+                        AppleMusicRuntimeMember.LYRICS_NATIVE_POINTER_ADDRESS_METHOD to "address",
+                        AppleMusicRuntimeMember.LYRICS_NATIVE_SONG_SECTIONS_METHOD to
+                            "getSections",
+                        AppleMusicRuntimeMember.LYRICS_NATIVE_SECTION_LINES_METHOD to "getLines",
+                        AppleMusicRuntimeMember.LYRICS_NATIVE_BEGIN_METHOD to "getBegin",
+                        AppleMusicRuntimeMember.LYRICS_NATIVE_END_METHOD to "getEnd",
+                        AppleMusicRuntimeMember.LYRICS_NATIVE_DURATION_METHOD to "getDuration",
+                        AppleMusicRuntimeMember.LYRICS_NATIVE_WORD_ID_METHOD to "getWordId",
+                        AppleMusicRuntimeMember.LYRICS_NATIVE_WHITESPACE_METHOD to "isWhitespace",
+                        AppleMusicRuntimeMember.LYRICS_NATIVE_SONG_PRONUNCIATION_LANGUAGES_METHOD to
+                            "getPronunciationLanguages",
+                        AppleMusicRuntimeMember.LYRICS_NATIVE_SONG_TRANSLATION_LANGUAGES_METHOD to
+                            "getTranslationLanguages",
+                        AppleMusicRuntimeMember.LYRICS_NATIVE_SONG_AGENTS_METHOD to "getAgents",
+                        AppleMusicRuntimeMember.LYRICS_NATIVE_AGENT_METHOD to "getAgent",
+                        AppleMusicRuntimeMember.LYRICS_NATIVE_AGENT_NAME_TYPES_METHOD to
+                            "getNameTypes_",
+                        AppleMusicRuntimeMember.LYRICS_NATIVE_AGENT_TYPE_METHOD to "getType_",
+                        AppleMusicRuntimeMember.LYRICS_NATIVE_AGENT_ID_METHOD to "getId",
+                        AppleMusicRuntimeMember.LYRICS_SONG_ADAM_ID_METHOD to "getAdamId",
+                        AppleMusicRuntimeMember.LYRICS_VIEW_MODEL_CURRENT_LANGUAGE_METHOD to
+                            "getCurrentSystemLyricsLanguage",
                         AppleMusicRuntimeMember.LYRICS_WORD_VECTOR_CLASS_NAME to
                             "com.apple.android.music.ttml.javanative.model.LyricsWordVector",
                     ),
@@ -971,6 +1325,22 @@ internal object AppleMusicHookProfiles {
                     "com.apple.android.music.player.fragment.PlayerLyricsViewFragment",
                     "onCreateView",
                     3,
+                    runtimeMemberNames = mapOf(
+                        AppleMusicRuntimeMember.LYRICS_UI_RECYCLER_VIEW_METHOD to
+                            "getRecyclerView",
+                        AppleMusicRuntimeMember.LYRICS_UI_BINDING_FIELD to "i0",
+                        AppleMusicRuntimeMember.LYRICS_UI_BINDING_RECYCLER_FIELD to "a0",
+                        AppleMusicRuntimeMember.LYRICS_UI_ADAPTER_FIELD to "k0",
+                        AppleMusicRuntimeMember.LYRICS_UI_VIEW_MODEL_FIELD to "j1",
+                        AppleMusicRuntimeMember.LYRICS_VIEW_MODEL_PRONUNCIATION_SELECTED_GETTER to
+                            "getPronunciationSelectedLiveResult",
+                        AppleMusicRuntimeMember.LYRICS_VIEW_MODEL_PRONUNCIATION_AVAILABLE_GETTER to
+                            "getPronunciationAvailableLiveResult",
+                        AppleMusicRuntimeMember.LYRICS_VIEW_MODEL_TRANSLATION_SELECTED_GETTER to
+                            "getTranslationSelectedLiveResult",
+                        AppleMusicRuntimeMember.LYRICS_VIEW_MODEL_TRANSLATION_AVAILABLE_GETTER to
+                            "getTranslationAvailableLiveResult",
+                    ),
                 ),
             ),
             AppleMusicHookPoint.LYRICS_UI_ON_RESUME to listOf(
@@ -993,7 +1363,16 @@ internal object AppleMusicHookProfiles {
                 ),
             ),
             AppleMusicHookPoint.APPLE_CUSTOM_TEXT_VIEW to listOf(
-                AppleMusicHookTarget("com.apple.android.music.common.views.CustomTextView"),
+                AppleMusicHookTarget(
+                    className = "com.apple.android.music.common.views.CustomTextView",
+                    runtimeMemberNames = mapOf(
+                        AppleMusicRuntimeMember.CUSTOM_TEXT_VIEW_SET_TYPEFACE_METHOD to
+                            "setTypeface",
+                        AppleMusicRuntimeMember.CUSTOM_TEXT_VIEW_SET_TEXT_METHOD to "setText",
+                        AppleMusicRuntimeMember.CUSTOM_TEXT_VIEW_ON_DRAW_METHOD to "onDraw",
+                        AppleMusicRuntimeMember.CUSTOM_TEXT_VIEW_FUTURE_RESOLVE_METHOD to "f",
+                    ),
+                ),
             ),
             AppleMusicHookPoint.LYRICS_GRADIENT_MASK_UPDATE to listOf(
                 AppleMusicHookTarget(
@@ -1219,7 +1598,11 @@ internal class AppleMusicHookResolver(
                     method.parameterCount == 1 &&
                     List::class.java.isAssignableFrom(method.parameterTypes[0])
 
+            AppleMusicHookPoint.RECENTLY_SEARCHED_MODEL_BOUND ->
+                !method.isBridge && method.parameterCount == 4
+
             AppleMusicHookPoint.APPLE_SHARED_PREFERENCES_CLASS,
+            AppleMusicHookPoint.APPLE_MAIN_CONTENT_ACTIVITY,
             AppleMusicHookPoint.APPLE_SONG_MODEL_CLASS,
             AppleMusicHookPoint.APPLE_PLAYER_UTIL_CLASS,
             AppleMusicHookPoint.PLAYER_LYRICS_VIEW_MODEL_CLASS,

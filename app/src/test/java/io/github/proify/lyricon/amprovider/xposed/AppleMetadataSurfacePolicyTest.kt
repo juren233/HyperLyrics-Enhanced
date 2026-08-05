@@ -53,8 +53,15 @@ class AppleMetadataSurfacePolicyTest {
 
     @Test
     fun `treats Apple queue history collection items as songs`() {
-        assertTrue(isInAppHistoryQueueEntryClassName("Z8.d"))
-        assertFalse(isInAppHistoryQueueEntryClassName("Z8.c"))
+        val historyTarget = AppleMusicHookProfiles.exactTargets(
+            AppleMusicVersion("6.5.1", 1583L),
+            AppleMusicHookPoint.IN_APP_HISTORY_UPDATE,
+        ).single()
+        val historyEntryClassName = historyTarget.runtimeMemberName(
+            AppleMusicRuntimeMember.QUEUE_HISTORY_ENTRY_CLASS_NAME,
+        )
+        assertTrue(isInAppHistoryQueueEntryClassName(historyEntryClassName, historyEntryClassName))
+        assertFalse(isInAppHistoryQueueEntryClassName("Z8.c", historyEntryClassName))
         assertEquals(
             AppleInternalCatalogResolver.LocalizedEntityType.SONG,
             AppleMetadataResolutionEngine.localizedEntityTypeForQueueItem(
@@ -74,9 +81,9 @@ class AppleMetadataSurfacePolicyTest {
     fun `maps history title and artist to CollectionItemView accessors`() {
         assertEquals(
             InAppPlaybackItemAccess(
-                readMember = "getTitle",
+                readMember = AppleMusicRuntimeMember.CONTENT_ITEM_TITLE_GETTER,
                 readViaMethod = true,
-                setter = "setTitle",
+                setter = AppleMusicRuntimeMember.CONTENT_ITEM_SET_TITLE_METHOD,
             ),
             inAppPlaybackItemAccess(
                 InAppPlaybackItemContract.HISTORY,
@@ -85,9 +92,9 @@ class AppleMetadataSurfacePolicyTest {
         )
         assertEquals(
             InAppPlaybackItemAccess(
-                readMember = "getSubTitle",
+                readMember = AppleMusicRuntimeMember.CONTENT_ITEM_SUBTITLE_GETTER,
                 readViaMethod = true,
-                setter = "setSubTitle",
+                setter = AppleMusicRuntimeMember.CONTENT_ITEM_SET_SUBTITLE_METHOD,
             ),
             inAppPlaybackItemAccess(
                 InAppPlaybackItemContract.HISTORY,

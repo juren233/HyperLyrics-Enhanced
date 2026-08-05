@@ -26,7 +26,10 @@ internal interface AppleCollectionSurfaceHost {
 
     fun mediaApiEntityCatalogId(entity: Any, knownAttributes: Any? = null): String?
 
-    fun mediaApiAttribute(attributes: Any, getter: String): String?
+    fun mediaApiAttribute(
+        attributes: Any,
+        attribute: AppleMediaApiTextAttribute,
+    ): String?
 
     fun registerLibraryEntity(
         mediaId: String,
@@ -578,7 +581,9 @@ internal class AppleCollectionSurfaceHooks(
             playlistRowTarget.runtimeMemberName(
                 AppleMusicRuntimeMember.COLLECTION_PLAYLIST_TITLE_FIELD
             ),
-        ) ?: attributes?.let { host.mediaApiAttribute(it, "getName") }
+        ) ?: attributes?.let {
+            host.mediaApiAttribute(it, AppleMediaApiTextAttribute.NAME)
+        }
         val modelSubtitle = reflectiveStringField(
             model,
             playlistRowTarget.runtimeMemberName(
@@ -586,7 +591,9 @@ internal class AppleCollectionSurfaceHooks(
             ),
         )
         val accountArtist = metadataStore.accountMetadata(mediaId)?.artist
-            ?: attributes?.let { host.mediaApiAttribute(it, "getArtistName") }
+            ?: attributes?.let {
+                host.mediaApiAttribute(it, AppleMediaApiTextAttribute.ARTIST_NAME)
+            }
         val textViews = descendantTextViews(root)
         val titleView = findRenderedTextView(textViews, modelTitle)
         val subtitleView = findRenderedTextView(textViews, modelSubtitle, titleView)
@@ -711,8 +718,12 @@ internal class AppleCollectionSurfaceHooks(
             )
             if (BuildConfig.DEBUG) {
                 val attributes = host.mediaApiEntityAttributes(entity)
-                val entityName = attributes?.let { host.mediaApiAttribute(it, "getName") }
-                val entityArtist = attributes?.let { host.mediaApiAttribute(it, "getArtistName") }
+                val entityName = attributes?.let {
+                    host.mediaApiAttribute(it, AppleMediaApiTextAttribute.NAME)
+                }
+                val entityArtist = attributes?.let {
+                    host.mediaApiAttribute(it, AppleMediaApiTextAttribute.ARTIST_NAME)
+                }
                 ProviderLogger.info(
                     "Apple Music 元数据链路: event=collection_page_row_bound, " +
                         "contentId=$mediaId, pageType=$pageType, controllers=${controllers.size}, " +

@@ -8,6 +8,24 @@ package io.github.proify.lyricon.amprovider.xposed
 
 import com.juren233.hyperlyricsenhanced.BuildConfig
 
+internal enum class AppleMediaApiTextAttribute(
+    val getterRuntimeMember: AppleMusicRuntimeMember,
+    val setterRuntimeMember: AppleMusicRuntimeMember,
+) {
+    NAME(
+        AppleMusicRuntimeMember.CATALOG_ATTRIBUTES_NAME_METHOD,
+        AppleMusicRuntimeMember.CATALOG_ATTRIBUTES_SET_NAME_METHOD,
+    ),
+    ARTIST_NAME(
+        AppleMusicRuntimeMember.CATALOG_ATTRIBUTES_ARTIST_NAME_METHOD,
+        AppleMusicRuntimeMember.CATALOG_ATTRIBUTES_SET_ARTIST_NAME_METHOD,
+    ),
+    ALBUM_NAME(
+        AppleMusicRuntimeMember.CATALOG_ATTRIBUTES_ALBUM_NAME_METHOD,
+        AppleMusicRuntimeMember.CATALOG_ATTRIBUTES_SET_ALBUM_NAME_METHOD,
+    ),
+}
+
 internal interface AppleMediaApiMetadataHost {
     fun contentItemMediaId(contentItem: Any): String?
 
@@ -70,6 +88,15 @@ internal class AppleMediaApiMetadataCoordinator(
     private val artistSurfaceHooks: AppleArtistSurfaceHooks,
     private val host: AppleMediaApiMetadataHost,
 ) {
+    private val libraryEntityRuntimeClasses by lazy {
+        runtime.hookResolver.resolveClasses(AppleMusicHookPoint.LIBRARY_ENTITY_CLASSES)
+    }
+    private val catalogTarget by lazy {
+        runtime.hookResolver.resolveClass(
+            AppleMusicHookPoint.MEDIA_API_REPOSITORY_HOLDER_CLASS
+        ).target
+    }
+
     fun entityCatalogId(entity: Any, knownAttributes: Any? = null): String? =
         entityLookupIds(entity, knownAttributes).firstOrNull()
 
@@ -86,27 +113,57 @@ internal class AppleMediaApiMetadataCoordinator(
 
         val attributes = knownAttributes ?: entityAttributes(entity)
         val playParams = attributes?.let {
-            runCatching { AppleReflection.call(it, "getPlayParams") }.getOrNull()
+            runCatching {
+                AppleReflection.call(
+                    it,
+                    catalogMember(AppleMusicRuntimeMember.CATALOG_ATTRIBUTES_PLAY_PARAMS_METHOD),
+                )
+            }.getOrNull()
         }
         addValue(playParams?.let {
-            runCatching { AppleReflection.call(it, "getCatalogId") }.getOrNull()
+            runCatching {
+                AppleReflection.call(
+                    it,
+                    catalogMember(AppleMusicRuntimeMember.CATALOG_PLAY_PARAMS_CATALOG_ID_METHOD),
+                )
+            }.getOrNull()
         })
         listOf(
-            "getId",
-            "getSubscriptionStoreId",
-            "getAssetAdamId",
-            "getReportingAdamId",
-        ).forEach { methodName ->
-            addValue(runCatching { AppleReflection.call(entity, methodName) }.getOrNull())
+            AppleMusicRuntimeMember.CATALOG_ENTITY_ID_METHOD,
+            AppleMusicRuntimeMember.CATALOG_ENTITY_SUBSCRIPTION_STORE_ID_METHOD,
+            AppleMusicRuntimeMember.CATALOG_ENTITY_ASSET_ADAM_ID_METHOD,
+            AppleMusicRuntimeMember.CATALOG_ENTITY_REPORTING_ADAM_ID_METHOD,
+        ).forEach { runtimeMember ->
+            addValue(
+                runCatching { AppleReflection.call(entity, catalogMember(runtimeMember)) }
+                    .getOrNull()
+            )
         }
-        addValue(runCatching { AppleReflection.call(entity, "getFormerIds") }.getOrNull())
+        addValue(
+            runCatching {
+                AppleReflection.call(
+                    entity,
+                    catalogMember(AppleMusicRuntimeMember.CATALOG_ENTITY_FORMER_IDS_METHOD),
+                )
+            }.getOrNull()
+        )
     }
 
     fun entityAttributes(entity: Any): Any? =
-        runCatching { AppleReflection.call(entity, "getAttributes") }.getOrNull()
+        runCatching {
+            AppleReflection.call(
+                entity,
+                catalogMember(AppleMusicRuntimeMember.CATALOG_ENTITY_ATTRIBUTES_METHOD),
+            )
+        }.getOrNull()
 
-    fun attribute(attributes: Any, getter: String): String? =
-        runCatching { AppleReflection.call(attributes, getter) as? String }.getOrNull()
+    fun attribute(attributes: Any, attribute: AppleMediaApiTextAttribute): String? =
+        runCatching {
+            AppleReflection.call(
+                attributes,
+                catalogMember(attribute.getterRuntimeMember),
+            ) as? String
+        }.getOrNull()
 
     fun primeLibrarySource(source: Any?) {
         source ?: return
@@ -162,7 +219,15 @@ internal class AppleMediaApiMetadataCoordinator(
         originalArtist: String?,
         originalAlbum: String?,
     ) {
-        val attributeArtistIds = mediaApiAttributeArtistIds(attributes)
+        val attributeArtistIds = mediaApiAttributeArtistIds(
+            attributes = attributes,
+            getterNames = listOf(
+                AppleMusicRuntimeMember.CATALOG_ATTRIBUTES_ARTIST_ID_METHOD,
+                AppleMusicRuntimeMember.CATALOG_ATTRIBUTES_ARTIST_ADAM_ID_METHOD,
+                AppleMusicRuntimeMember.CATALOG_ATTRIBUTES_ARTIST_STORE_ID_METHOD,
+                AppleMusicRuntimeMember.CATALOG_ATTRIBUTES_ARTIST_SUBSCRIPTION_STORE_ID_METHOD,
+            ).map(::catalogMember),
+        )
         val mediaApiArtistKeys = artistAssociationKeys(entity) +
             attributeArtistIds.map { artistId -> "id:$artistId" }
         val catalogArtistIds = libraryAssociatedArtistIds(
@@ -265,17 +330,14 @@ internal class AppleMediaApiMetadataCoordinator(
             val setData = runtime.hookResolver.resolveMethod(
                 AppleMusicHookPoint.RECENTLY_SEARCHED_CONTROLLER,
             )
-            val controllerClass = setData.method.declaringClass
+            val onModelBound = runtime.hookResolver.resolveMethod(
+                AppleMusicHookPoint.RECENTLY_SEARCHED_MODEL_BOUND,
+            )
             val mediaEntityClass = runtime.hookResolver.resolveClass(
                 AppleMusicHookPoint.RECENTLY_SEARCHED_MEDIA_ENTITY,
             ).clazz
             val setDataMethod = setData.method
-            val onModelBoundMethod = controllerClass.declaredMethods.singleOrNull { method ->
-                method.name == "onModelBound" &&
-                    !method.isBridge &&
-                    method.parameterTypes.size == 4
-            }?.apply { isAccessible = true }
-                ?: error("RecentlySearchedEpoxyController.onModelBound not found")
+            val onModelBoundMethod = onModelBound.method
 
             runtime.hookRegistrar.installHook(setDataMethod, before = { chain ->
                 val controller = chain.thisObject ?: return@installHook
@@ -308,10 +370,9 @@ internal class AppleMediaApiMetadataCoordinator(
         entity: Any,
         visible: Boolean,
     ) {
-        val kind = inAppLibraryEntityKindForClassNames(
-            generateSequence(entity.javaClass as Class<*>?) { it.superclass }
-                .map(Class<*>::getName)
-                .toList()
+        val kind = inAppLibraryEntityKindForProfileClasses(
+            entity = entity,
+            resolvedClasses = libraryEntityRuntimeClasses,
         ) ?: return
         val attributes = entityAttributes(entity) ?: return
         val mediaId = entityCatalogId(entity, attributes) ?: return
@@ -387,13 +448,21 @@ internal class AppleMediaApiMetadataCoordinator(
 
     private fun artistAssociationKeys(entity: Any): Set<String> = buildSet {
         val relationships = runCatching {
-            AppleReflection.call(entity, "getRelationships") as? Map<*, *>
+            AppleReflection.call(
+                entity,
+                catalogMember(AppleMusicRuntimeMember.CATALOG_ENTITY_RELATIONSHIPS_METHOD),
+            ) as? Map<*, *>
         }.getOrNull() ?: return@buildSet
         val relationship = relationships["artists"] ?: relationships["artist"]
             ?: return@buildSet
         val rawArtists = runCatching {
-            AppleReflection.call(relationship, "getEntities")
-                ?: AppleReflection.call(relationship, "getData")
+            AppleReflection.call(
+                relationship,
+                catalogMember(AppleMusicRuntimeMember.CATALOG_RELATIONSHIP_ENTITIES_METHOD),
+            ) ?: AppleReflection.call(
+                relationship,
+                catalogMember(AppleMusicRuntimeMember.CATALOG_RELATIONSHIP_DATA_METHOD),
+            )
         }.getOrNull() ?: return@buildSet
         val artists: Iterable<*> = when (rawArtists) {
             is Iterable<*> -> rawArtists
@@ -405,7 +474,9 @@ internal class AppleMediaApiMetadataCoordinator(
             artistEntity ?: return@forEach
             entityCatalogId(artistEntity)?.let { artistId -> add("id:$artistId") }
             entityAttributes(artistEntity)
-                ?.let { artistAttributes -> attribute(artistAttributes, "getName") }
+                ?.let { artistAttributes ->
+                    attribute(artistAttributes, AppleMediaApiTextAttribute.NAME)
+                }
                 ?.takeIf(String::isNotBlank)
                 ?.let { artistName ->
                     add("name:${AppleInternalCatalogResolver.normalizedArtistNameKey(artistName)}")
@@ -414,7 +485,12 @@ internal class AppleMediaApiMetadataCoordinator(
     }
 
     private fun genreNames(attributes: Any): List<String> {
-        val values = runCatching { AppleReflection.call(attributes, "getGenreNames") }
+        val values = runCatching {
+            AppleReflection.call(
+                attributes,
+                catalogMember(AppleMusicRuntimeMember.CATALOG_ATTRIBUTES_GENRE_NAMES_METHOD),
+            )
+        }
             .getOrNull()
         val genres = when (values) {
             is Iterable<*> -> values
@@ -425,7 +501,12 @@ internal class AppleMediaApiMetadataCoordinator(
         }
         if (genres.isNotEmpty()) return genres
         return listOfNotNull(
-            runCatching { AppleReflection.call(attributes, "getGenreName") as? String }
+            runCatching {
+                AppleReflection.call(
+                    attributes,
+                    catalogMember(AppleMusicRuntimeMember.CATALOG_ATTRIBUTES_GENRE_NAME_METHOD),
+                ) as? String
+            }
                 .getOrNull()
                 ?.trim()
                 ?.takeIf(String::isNotEmpty)
@@ -437,4 +518,7 @@ internal class AppleMediaApiMetadataCoordinator(
             metadataStore.trackAssociatedMediaId("id:$artistId", mediaId)
         }
     }
+
+    private fun catalogMember(member: AppleMusicRuntimeMember): String =
+        catalogTarget.runtimeMemberName(member)
 }

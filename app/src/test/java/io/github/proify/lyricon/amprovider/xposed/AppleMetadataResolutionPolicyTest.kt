@@ -247,19 +247,31 @@ class AppleMetadataResolutionPolicyTest {
 
     @Test
     fun `reads direct artist ids from library attributes before relationship fallback`() {
+        val catalogTarget = AppleMusicHookProfiles.exactTargets(
+            AppleMusicVersion("6.5.1", 1583L),
+            AppleMusicHookPoint.MEDIA_API_REPOSITORY_HOLDER_CLASS,
+        ).single()
+        val artistIdGetters = listOf(
+            AppleMusicRuntimeMember.CATALOG_ATTRIBUTES_ARTIST_ID_METHOD,
+            AppleMusicRuntimeMember.CATALOG_ATTRIBUTES_ARTIST_ADAM_ID_METHOD,
+            AppleMusicRuntimeMember.CATALOG_ATTRIBUTES_ARTIST_STORE_ID_METHOD,
+            AppleMusicRuntimeMember.CATALOG_ATTRIBUTES_ARTIST_SUBSCRIPTION_STORE_ID_METHOD,
+        ).map(catalogTarget::runtimeMemberName)
         assertEquals(
             listOf("16789930"),
             mediaApiAttributeArtistIds(
                 FakeLibraryAttributes(
                     artistId = "16789930",
                     artistStoreId = "0",
-                )
+                ),
+                artistIdGetters,
             ),
         )
         assertEquals(
             emptyList<String>(),
             mediaApiAttributeArtistIds(
-                FakeLibraryAttributes(artistId = "", artistStoreId = "0")
+                FakeLibraryAttributes(artistId = "", artistStoreId = "0"),
+                artistIdGetters,
             ),
         )
     }
@@ -335,28 +347,28 @@ class AppleMetadataResolutionPolicyTest {
             VisibleTextField.TITLE,
             visibleTextFieldForMediaApiAttribute(
                 InAppLibraryEntityKind.SONG,
-                "getName",
+                AppleMediaApiTextAttribute.NAME,
             ),
         )
         assertEquals(
             VisibleTextField.ALBUM,
             visibleTextFieldForMediaApiAttribute(
                 InAppLibraryEntityKind.ALBUM,
-                "getName",
+                AppleMediaApiTextAttribute.NAME,
             ),
         )
         assertEquals(
             VisibleTextField.ARTIST,
             visibleTextFieldForMediaApiAttribute(
                 InAppLibraryEntityKind.ARTIST,
-                "getName",
+                AppleMediaApiTextAttribute.NAME,
             ),
         )
         assertEquals(
             VisibleTextField.ARTIST,
             visibleTextFieldForMediaApiAttribute(
                 InAppLibraryEntityKind.SONG,
-                "getArtistName",
+                AppleMediaApiTextAttribute.ARTIST_NAME,
             ),
         )
     }
@@ -406,18 +418,22 @@ class AppleMetadataResolutionPolicyTest {
 
         assertEquals(
             "喜欢寂寞",
-            contentItemMetadataOverride(song, "getTitle", alias, "raw"),
+            contentItemMetadataOverride(song, AppleContentItemGetter.TITLE, alias, "raw"),
         )
         assertEquals(
             "喜欢寂寞",
             contentItemMetadataOverride(
                 song,
-                "getNowPlayingTitle",
+                AppleContentItemGetter.NOW_PLAYING_TITLE,
                 alias,
                 "raw",
             ),
         )
-        listOf("getArtistName", "getNowPlayingSubtitle", "getSubTitle").forEach { getter ->
+        listOf(
+            AppleContentItemGetter.ARTIST,
+            AppleContentItemGetter.NOW_PLAYING_SUBTITLE,
+            AppleContentItemGetter.SUBTITLE,
+        ).forEach { getter ->
             assertEquals(
                 "苏打绿",
                 contentItemMetadataOverride(song, getter, alias, "raw"),
@@ -427,7 +443,7 @@ class AppleMetadataResolutionPolicyTest {
             "你在烦恼什么",
             contentItemMetadataOverride(
                 song,
-                "getCollectionName",
+                AppleContentItemGetter.COLLECTION,
                 alias,
                 "raw",
             ),
@@ -436,14 +452,14 @@ class AppleMetadataResolutionPolicyTest {
             VisibleTextField.ARTIST,
             visibleTextFieldForContentItemGetter(
                 song,
-                "getNowPlayingSubtitle",
+                AppleContentItemGetter.NOW_PLAYING_SUBTITLE,
             ),
         )
         assertEquals(
             VisibleTextField.ALBUM,
             visibleTextFieldForContentItemGetter(
                 song,
-                "getCollectionName",
+                AppleContentItemGetter.COLLECTION,
             ),
         )
     }
@@ -461,7 +477,7 @@ class AppleMetadataResolutionPolicyTest {
             "陶喆同名专辑",
             contentItemMetadataOverride(
                 AppleInternalCatalogResolver.LocalizedEntityType.ALBUM,
-                "getTitle",
+                AppleContentItemGetter.TITLE,
                 alias,
                 "raw",
             ),
@@ -470,7 +486,7 @@ class AppleMetadataResolutionPolicyTest {
             "陶喆",
             contentItemMetadataOverride(
                 AppleInternalCatalogResolver.LocalizedEntityType.ALBUM,
-                "getSubTitle",
+                AppleContentItemGetter.SUBTITLE,
                 alias,
                 "raw",
             ),
@@ -479,7 +495,7 @@ class AppleMetadataResolutionPolicyTest {
             "陶喆",
             contentItemMetadataOverride(
                 AppleInternalCatalogResolver.LocalizedEntityType.ARTIST,
-                "getTitle",
+                AppleContentItemGetter.TITLE,
                 alias,
                 "raw",
             ),

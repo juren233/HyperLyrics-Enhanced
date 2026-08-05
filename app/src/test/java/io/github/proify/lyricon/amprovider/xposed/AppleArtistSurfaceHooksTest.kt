@@ -15,19 +15,19 @@ import org.junit.Test
 class AppleArtistSurfaceHooksTest {
 
     @Test
-    fun `artist profile controller is recognized behind the epoxy adapter`() {
-        assertTrue(
-            isArtistProfileControllerClassNames(
-                listOf(
-                    "com.apple.android.music.profiles.ArtistEpoxyController",
-                    "com.apple.android.music.profiles.BaseProfileEpoxyController",
-                )
-            )
+    fun `artist profile controller identity is owned by the hook profile`() {
+        val targets = AppleMusicHookProfiles.exactTargets(
+            AppleMusicVersion("6.5.1", 1583L),
+            AppleMusicHookPoint.ARTIST_SURFACE_CLASSES,
         )
-        assertFalse(
-            isArtistProfileControllerClassNames(
-                listOf("com.airbnb.epoxy.s", "com.airbnb.epoxy.f")
-            )
+
+        val controller = targets.single { target ->
+            target.runtimeMemberNameOrNull(AppleMusicRuntimeMember.ARTIST_RUNTIME_ROLE) ==
+                "artist_controller"
+        }
+        assertEquals(
+            "com.apple.android.music.profiles.ArtistEpoxyController",
+            controller.className,
         )
     }
 

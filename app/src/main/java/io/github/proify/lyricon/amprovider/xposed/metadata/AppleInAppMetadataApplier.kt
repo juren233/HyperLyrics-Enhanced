@@ -31,6 +31,19 @@ internal class AppleInAppMetadataApplier(
     private val metadataTarget = runtime.hookResolver.resolveMethod(
         AppleMusicHookPoint.IN_APP_QUEUE_ADAPTER_SUBMIT,
     ).target
+    private val contentItemTarget by lazy {
+        runtime.hookResolver.resolveClasses(AppleMusicHookPoint.CONTENT_ITEM_METADATA_CLASSES)
+            .first { resolved ->
+                resolved.target.runtimeMemberNameOrNull(AppleMusicRuntimeMember.CONTENT_ITEM_ROLE) ==
+                    "base"
+            }
+    }
+    private val artistContainerTarget by lazy {
+        runtime.hookResolver.resolveClass(AppleMusicHookPoint.IN_APP_CONTAINER_ARTIST_CLASS).target
+    }
+    private val albumContainerTarget by lazy {
+        runtime.hookResolver.resolveClass(AppleMusicHookPoint.IN_APP_CONTAINER_ALBUM_CLASS).target
+    }
 
     fun clearCallbackState() {
         callbackAppliedAliases.clear()
@@ -159,8 +172,18 @@ internal class AppleInAppMetadataApplier(
     ): DataBindingAliasValues {
         val entityType = metadataStore.entityType(mediaId)
             ?: AppleInternalCatalogResolver.LocalizedEntityType.SONG
-        val title = contentItemMetadataOverride(entityType, "getTitle", alias, null)
-        val defaultSubtitle = contentItemMetadataOverride(entityType, "getSubTitle", alias, null)
+        val title = contentItemMetadataOverride(
+            entityType,
+            AppleContentItemGetter.TITLE,
+            alias,
+            null,
+        )
+        val defaultSubtitle = contentItemMetadataOverride(
+            entityType,
+            AppleContentItemGetter.SUBTITLE,
+            alias,
+            null,
+        )
         val subtitle = artistSurfaceHooks.subtitleForBinding(
             binding = binding,
             defaultSubtitle = defaultSubtitle,
@@ -188,11 +211,24 @@ internal class AppleInAppMetadataApplier(
             InAppContainerKind.ALBUM -> alias.album
         }.takeIf(String::isNotBlank) ?: return
         val changed = runCatching {
-            AppleReflection.call(containerItem, "setTitle", title)
+            AppleReflection.call(
+                containerItem,
+                containerTarget(kind).runtimeMemberName(
+                    AppleMusicRuntimeMember.IN_APP_CONTAINER_SET_TITLE_METHOD,
+                ),
+                title,
+            )
             true
         }.getOrDefault(false)
         if (changed && notifyChange) {
-            runCatching { AppleReflection.call(containerItem, "notifyChange") }
+            runCatching {
+                AppleReflection.call(
+                    containerItem,
+                    containerTarget(kind).runtimeMemberName(
+                        AppleMusicRuntimeMember.IN_APP_CONTAINER_NOTIFY_CHANGE_METHOD,
+                    ),
+                )
+            }
                 .onFailure {
                     ProviderLogger.error(
                         "Apple Music App 容器跳转项变更通知失败: " +
@@ -212,9 +248,9 @@ internal class AppleInAppMetadataApplier(
         val contract = registry.playbackItemContract(playbackItem)
         var changed = false
         listOf(
-            Triple(InAppPlaybackItemField.TITLE, "getTitle", alias.title),
-            Triple(InAppPlaybackItemField.ARTIST, "getArtistName", alias.artist),
-            Triple(InAppPlaybackItemField.ALBUM, "getCollectionName", alias.album),
+            Triple(InAppPlaybackItemField.TITLE, AppleContentItemGetter.TITLE, alias.title),
+            Triple(InAppPlaybackItemField.ARTIST, AppleContentItemGetter.ARTIST, alias.artist),
+            Triple(InAppPlaybackItemField.ALBUM, AppleContentItemGetter.COLLECTION, alias.album),
         ).forEach { (field, getter, _) ->
             contentItemMetadataOverride(entityType, getter, alias, null)
                 ?.takeIf(String::isNotBlank)
@@ -281,8 +317,21 @@ internal class AppleInAppMetadataApplier(
         }
         registry.allLiveContainerItemRefs().forEach { ref ->
             ref.containerItem.get()?.let { containerItem ->
-                AppleReflection.call(containerItem, "setTitle", ref.originalTitle)
-                runCatching { AppleReflection.call(containerItem, "notifyChange") }
+                runCatching {
+                    AppleReflection.call(
+                        containerItem,
+                        containerTarget(ref.kind).runtimeMemberName(
+                            AppleMusicRuntimeMember.IN_APP_CONTAINER_SET_TITLE_METHOD,
+                        ),
+                        ref.originalTitle,
+                    )
+                    AppleReflection.call(
+                        containerItem,
+                        containerTarget(ref.kind).runtimeMemberName(
+                            AppleMusicRuntimeMember.IN_APP_CONTAINER_NOTIFY_CHANGE_METHOD,
+                        ),
+                    )
+                }
                     .onFailure {
                         ProviderLogger.error(
                             "Apple Music App 容器跳转项恢复通知失败: " +
@@ -371,11 +420,19 @@ internal class AppleInAppMetadataApplier(
         val value = if (access.readViaMethod) {
             runCatching {
                 contentItemMetadataHooks.withOriginalGetters {
-                    AppleReflection.call(playbackItem, access.readMember)
+                    AppleReflection.call(
+                        playbackItem,
+                        contentItemTarget.target.runtimeMemberName(access.readMember),
+                    )
                 }
             }.getOrNull()
         } else {
-            runCatching { AppleReflection.field(playbackItem, access.readMember) }.getOrNull()
+            runCatching {
+                AppleReflection.field(
+                    playbackItem,
+                    contentItemTarget.target.runtimeMemberName(access.readMember),
+                )
+            }.getOrNull()
         }
         return value?.toString()
     }
@@ -387,11 +444,24 @@ internal class AppleInAppMetadataApplier(
         contract: InAppPlaybackItemContract,
     ): Boolean {
         val setter = inAppPlaybackItemAccess(contract, field)?.setter ?: return false
-        return runCatching { AppleReflection.call(playbackItem, setter, value) }.isSuccess
+        return runCatching {
+            AppleReflection.call(
+                playbackItem,
+                contentItemTarget.target.runtimeMemberName(setter),
+                value,
+            )
+        }.isSuccess
     }
 
     private fun notifyPlaybackItemChanged(playbackItem: Any, operation: String) {
-        runCatching { AppleReflection.call(playbackItem, "notifyChange") }
+        runCatching {
+            AppleReflection.call(
+                playbackItem,
+                contentItemTarget.target.runtimeMemberName(
+                    AppleMusicRuntimeMember.CONTENT_ITEM_NOTIFY_CHANGE_METHOD,
+                ),
+            )
+        }
             .onFailure {
                 ProviderLogger.error(
                     "Apple Music App PlaybackItem $operation 通知失败: " +
@@ -416,4 +486,9 @@ internal class AppleInAppMetadataApplier(
 
     private fun member(runtimeMember: AppleMusicRuntimeMember): String =
         metadataTarget.runtimeMemberName(runtimeMember)
+
+    private fun containerTarget(kind: InAppContainerKind): AppleMusicHookTarget = when (kind) {
+        InAppContainerKind.ARTIST -> artistContainerTarget
+        InAppContainerKind.ALBUM -> albumContainerTarget
+    }
 }

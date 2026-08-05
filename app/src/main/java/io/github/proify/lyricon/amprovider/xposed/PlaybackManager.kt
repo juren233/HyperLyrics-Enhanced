@@ -10,19 +10,26 @@ import android.util.Log
 import com.juren233.hyperlyricsenhanced.BuildConfig
 import io.github.proify.lyricon.lyric.model.Song
 import io.github.proify.lyricon.provider.RemotePlayer
+import io.github.proify.lyricon.amprovider.xposed.parser.AppleLyricsParserAccess
 import kotlin.system.measureTimeMillis
 
 object PlaybackManager {
     private var player: RemotePlayer? = null
     private var lyricRequester: LyricRequester? = null
+    private var lyricsParserAccess: AppleLyricsParserAccess? = null
 
     // 状态追踪
     private var currentSongId: String? = null
     private var lastDisplayDiagnosticSignature: String? = null
 
-    fun init(remotePlayer: RemotePlayer, requester: LyricRequester) {
+    internal fun init(
+        remotePlayer: RemotePlayer,
+        requester: LyricRequester,
+        hookResolver: AppleMusicHookResolver,
+    ) {
         this.player = remotePlayer
         this.lyricRequester = requester
+        this.lyricsParserAccess = AppleLyricsParserAccess.from(hookResolver)
     }
 
     /**
@@ -93,7 +100,13 @@ object PlaybackManager {
         visibleSongId: String? = null,
         playbackSongId: String? = null,
     ) {
-        val song = SongRepository.saveSong(nativeSongObj)
+        val parserAccess = lyricsParserAccess
+        if (parserAccess == null) {
+            ProviderLogger.error("PlaybackManager: Lyrics parser runtime profile is unavailable")
+            logDisplayDiagnostic(null, "skipped", "lyrics_parser_profile_missing", "source=$source")
+            return
+        }
+        val song = SongRepository.saveSong(nativeSongObj, parserAccess)
         if (song == null) {
             ProviderLogger.debug("PlaybackManager: Failed to save song.")
             logDisplayDiagnostic(null, "skipped", "lyrics_parse_failed", "source=$source")

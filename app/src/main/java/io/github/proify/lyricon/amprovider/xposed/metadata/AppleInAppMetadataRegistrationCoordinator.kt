@@ -28,6 +28,13 @@ internal class AppleInAppMetadataRegistrationCoordinator(
     private val albumContainerClassName = runtime.hookResolver.resolveClass(
         AppleMusicHookPoint.IN_APP_CONTAINER_ALBUM_CLASS,
     ).target.className
+    private val contentItemTarget by lazy {
+        runtime.hookResolver.resolveClasses(AppleMusicHookPoint.CONTENT_ITEM_METADATA_CLASSES)
+            .first { resolved ->
+                resolved.target.runtimeMemberNameOrNull(AppleMusicRuntimeMember.CONTENT_ITEM_ROLE) ==
+                    "base"
+            }
+    }
 
     fun registerMetadata(
         mediaId: String,
@@ -137,7 +144,10 @@ internal class AppleInAppMetadataRegistrationCoordinator(
             mediaId = mediaId,
             containerItem = containerItem,
             kind = kind,
-            originalTitle = rawContentItemValue(containerItem, "name") as? String,
+            originalTitle = rawContentItemValue(
+                containerItem,
+                AppleMusicRuntimeMember.CONTENT_ITEM_TITLE_FIELD,
+            ) as? String,
         )
         ProviderLogger.info(
             "Apple Music 播放页跳转项捕获: id=$mediaId, kind=$kind, " +
@@ -165,8 +175,15 @@ internal class AppleInAppMetadataRegistrationCoordinator(
     fun containerNavigationBinding(containerItem: Any): InAppContainerNavigationRef? =
         registry.containerNavigationBinding(containerItem)
 
-    fun rawContentItemValue(contentItem: Any, fieldName: String): Any? =
-        runCatching { AppleReflection.field(contentItem, fieldName) }.getOrNull()
+    fun rawContentItemValue(
+        contentItem: Any,
+        runtimeMember: AppleMusicRuntimeMember,
+    ): Any? = runCatching {
+        AppleReflection.field(
+            contentItem,
+            contentItemTarget.target.runtimeMemberName(runtimeMember),
+        )
+    }.getOrNull()
 
     fun playbackItemContract(playbackItem: Any): InAppPlaybackItemContract =
         registry.playbackItemContract(playbackItem)
@@ -180,7 +197,10 @@ internal class AppleInAppMetadataRegistrationCoordinator(
         val value = if (access.readViaMethod) {
             runCatching {
                 contentItemMetadataHooks.withOriginalGetters {
-                    AppleReflection.call(playbackItem, access.readMember)
+                    AppleReflection.call(
+                        playbackItem,
+                        contentItemTarget.target.runtimeMemberName(access.readMember),
+                    )
                 }
             }.getOrNull()
         } else {
@@ -196,16 +216,39 @@ internal class AppleInAppMetadataRegistrationCoordinator(
             }?.let(::add)
         }
         addString(mediaId)
-        listOf("getSubscriptionStoreId", "getId").forEach { methodName ->
-            addString(runCatching { AppleReflection.call(contentItem, methodName) }.getOrNull())
+        listOf(
+            AppleMusicRuntimeMember.CONTENT_ITEM_SUBSCRIPTION_STORE_ID_GETTER,
+            AppleMusicRuntimeMember.CONTENT_ITEM_ID_GETTER,
+        ).forEach { runtimeMember ->
+            addString(
+                runCatching {
+                    AppleReflection.call(
+                        contentItem,
+                        contentItemTarget.target.runtimeMemberName(runtimeMember),
+                    )
+                }.getOrNull()
+            )
         }
-        listOf("getAssetAdamId", "getReportingAdamId").forEach { methodName ->
-            val value = runCatching { AppleReflection.call(contentItem, methodName) as? Long }
+        listOf(
+            AppleMusicRuntimeMember.CONTENT_ITEM_ASSET_ADAM_ID_GETTER,
+            AppleMusicRuntimeMember.CONTENT_ITEM_REPORTING_ADAM_ID_GETTER,
+        ).forEach { runtimeMember ->
+            val value = runCatching {
+                AppleReflection.call(
+                    contentItem,
+                    contentItemTarget.target.runtimeMemberName(runtimeMember),
+                ) as? Long
+            }
                 .getOrNull()
             value?.takeIf { it > 0L }?.let(::addString)
         }
         val formerIds = runCatching {
-            AppleReflection.call(contentItem, "getFormerIds") as? Array<*>
+            AppleReflection.call(
+                contentItem,
+                contentItemTarget.target.runtimeMemberName(
+                    AppleMusicRuntimeMember.CONTENT_ITEM_FORMER_IDS_GETTER,
+                ),
+            ) as? Array<*>
         }.getOrNull().orEmpty()
         formerIds.forEach(::addString)
     }
@@ -215,12 +258,17 @@ internal class AppleInAppMetadataRegistrationCoordinator(
             add("name:${AppleInternalCatalogResolver.normalizedArtistNameKey(artist)}")
         }
         listOf(
-            "getArtistId",
-            "getArtistAdamId",
-            "getArtistStoreId",
-            "getArtistSubscriptionStoreId",
-        ).forEach { methodName ->
-            val value = runCatching { AppleReflection.call(contentItem, methodName) }.getOrNull()
+            AppleMusicRuntimeMember.CONTENT_ITEM_ARTIST_ID_GETTER,
+            AppleMusicRuntimeMember.CONTENT_ITEM_ARTIST_ADAM_ID_GETTER,
+            AppleMusicRuntimeMember.CONTENT_ITEM_ARTIST_STORE_ID_GETTER,
+            AppleMusicRuntimeMember.CONTENT_ITEM_ARTIST_SUBSCRIPTION_STORE_ID_GETTER,
+        ).forEach { runtimeMember ->
+            val value = runCatching {
+                AppleReflection.call(
+                    contentItem,
+                    contentItemTarget.target.runtimeMemberName(runtimeMember),
+                )
+            }.getOrNull()
             value?.toString()?.trim()?.takeIf { id ->
                 id.isNotEmpty() && id.all(Char::isDigit)
             }?.let { add("id:$it") }

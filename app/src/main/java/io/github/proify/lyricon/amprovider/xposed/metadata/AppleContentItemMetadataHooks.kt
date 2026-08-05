@@ -49,7 +49,7 @@ internal interface AppleContentItemMetadataHost {
 
     fun metadataOverride(
         entityType: AppleInternalCatalogResolver.LocalizedEntityType,
-        getter: String,
+        getter: AppleContentItemGetter,
         alias: AppleInternalCatalogResolver.Alias,
         original: String?,
     ): String?
@@ -63,16 +63,20 @@ internal class AppleContentItemMetadataHooks(
     private val hookedMethods = ConcurrentHashMap.newKeySet<Executable>()
     private val mediaIds = WeakIdentityMap<Any, String>()
     private val getterGuard = ThreadLocalReentryGuard()
+    private val baseContentItemRuntimeTarget by lazy {
+        runtime.hookResolver.resolveClasses(AppleMusicHookPoint.CONTENT_ITEM_METADATA_CLASSES)
+            .first { resolved ->
+                resolved.target.runtimeMemberNameOrNull(AppleMusicRuntimeMember.CONTENT_ITEM_ROLE) ==
+                    "base"
+            }
+    }
 
     fun installHooks() {
         runCatching {
             val resolvedClasses = runtime.hookResolver.resolveClasses(
                 AppleMusicHookPoint.CONTENT_ITEM_METADATA_CLASSES,
             )
-            val baseContentItemClass = resolvedClasses.firstOrNull { resolved ->
-                resolved.target.runtimeMemberNameOrNull(AppleMusicRuntimeMember.CONTENT_ITEM_ROLE) ==
-                    "base"
-            }?.clazz ?: error("BaseContentItem profile target not found")
+            val baseContentItemClass = baseContentItemRuntimeTarget.clazz
             baseContentItemClass.declaredConstructors.forEach { constructor ->
                 constructor.isAccessible = true
                 runtime.hookRegistrar.installHook(constructor, after = { chain, _ ->
@@ -90,13 +94,17 @@ internal class AppleContentItemMetadataHooks(
 
     fun ensureHooks(contentItemClass: Class<*>) {
         listOf(
-            "getTitle",
-            "getNowPlayingTitle",
-            "getArtistName",
-            "getNowPlayingSubtitle",
-            "getSubTitle",
-            "getCollectionName",
-        ).forEach { methodName ->
+            AppleContentItemGetter.TITLE to AppleMusicRuntimeMember.CONTENT_ITEM_TITLE_GETTER,
+            AppleContentItemGetter.NOW_PLAYING_TITLE to
+                AppleMusicRuntimeMember.CONTENT_ITEM_NOW_PLAYING_TITLE_GETTER,
+            AppleContentItemGetter.ARTIST to AppleMusicRuntimeMember.CONTENT_ITEM_ARTIST_GETTER,
+            AppleContentItemGetter.NOW_PLAYING_SUBTITLE to
+                AppleMusicRuntimeMember.CONTENT_ITEM_NOW_PLAYING_SUBTITLE_GETTER,
+            AppleContentItemGetter.SUBTITLE to AppleMusicRuntimeMember.CONTENT_ITEM_SUBTITLE_GETTER,
+            AppleContentItemGetter.COLLECTION to
+                AppleMusicRuntimeMember.CONTENT_ITEM_COLLECTION_GETTER,
+        ).forEach { (getter, runtimeMember) ->
+            val methodName = baseContentItemRuntimeTarget.target.runtimeMemberName(runtimeMember)
             val method = runCatching {
                 AppleReflection.findMethod(contentItemClass, methodName, parameterCount = 0)
             }.getOrNull() ?: return@forEach
@@ -114,7 +122,7 @@ internal class AppleContentItemMetadataHooks(
                     val containerKind = containerBinding.kind
                     val alias = host.effectiveAlias(mediaId)
                     host.registerContainerItem(mediaId, contentItem, containerKind)
-                    if (methodName != "getTitle" || alias == null) {
+                    if (getter != AppleContentItemGetter.TITLE || alias == null) {
                         return@installResultOverrideHook original
                     }
                     return@installResultOverrideHook when (containerKind) {
@@ -154,7 +162,7 @@ internal class AppleContentItemMetadataHooks(
                 } else {
                     host.metadataOverride(
                         entityType = entityType,
-                        getter = methodName,
+                        getter = getter,
                         alias = alias,
                         original = original as? String,
                     ) ?: original
@@ -174,13 +182,28 @@ internal class AppleContentItemMetadataHooks(
             }
         }
         val subscriptionStoreId = runCatching {
-            AppleReflection.call(contentItem, "getSubscriptionStoreId") as? String
+            AppleReflection.call(
+                contentItem,
+                baseContentItemRuntimeTarget.target.runtimeMemberName(
+                    AppleMusicRuntimeMember.CONTENT_ITEM_SUBSCRIPTION_STORE_ID_GETTER
+                ),
+            ) as? String
         }.getOrNull()
         val id = runCatching {
-            AppleReflection.call(contentItem, "getId") as? String
+            AppleReflection.call(
+                contentItem,
+                baseContentItemRuntimeTarget.target.runtimeMemberName(
+                    AppleMusicRuntimeMember.CONTENT_ITEM_ID_GETTER
+                ),
+            ) as? String
         }.getOrNull()
         val persistentId = runCatching {
-            AppleReflection.call(contentItem, "getPersistentId") as? Long
+            AppleReflection.call(
+                contentItem,
+                baseContentItemRuntimeTarget.target.runtimeMemberName(
+                    AppleMusicRuntimeMember.CONTENT_ITEM_PERSISTENT_ID_GETTER
+                ),
+            ) as? Long
         }.getOrNull()?.takeIf { it > 0L }?.toString()
         val resolvedMediaId = sequenceOf(subscriptionStoreId, id, persistentId)
             .filterNotNull()

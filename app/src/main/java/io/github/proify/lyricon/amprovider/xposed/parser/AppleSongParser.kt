@@ -6,49 +6,50 @@
 
 package io.github.proify.lyricon.amprovider.xposed.parser
 
+import io.github.proify.lyricon.amprovider.xposed.AppleMusicRuntimeMember
 import io.github.proify.lyricon.amprovider.xposed.MediaMetadataCache
 import io.github.proify.lyricon.amprovider.xposed.model.AppleSong
 import io.github.proify.lyricon.amprovider.xposed.parser.LyricsSectionParser.mergeLyrics
 
 object AppleSongParser {
 
-    fun parser(songNative: Any): AppleSong = AppleSong().apply {
-        adamId = callMethod(songNative, "getAdamId").toString()
+    internal fun parser(songNative: Any, access: AppleLyricsParserAccess): AppleSong =
+        AppleSong().apply {
+            adamId = access.call(songNative, AppleMusicRuntimeMember.LYRICS_SONG_ADAM_ID_METHOD)
+                .toString()
 
-        callMethod(songNative, "getAgents")?.let {
-            agents = LyricsAgentParser.parserAgentVector(it)
+            access.call(songNative, AppleMusicRuntimeMember.LYRICS_NATIVE_SONG_AGENTS_METHOD)?.let {
+                agents = LyricsAgentParser.parserAgentVector(it, access)
+            }
+
+            duration = access.call(
+                songNative,
+                AppleMusicRuntimeMember.LYRICS_NATIVE_DURATION_METHOD,
+            ) as? Int ?: 0
+
+            runCatching {
+                access.call(
+                    songNative,
+                    AppleMusicRuntimeMember.LYRICS_NATIVE_SONG_PRONUNCIATION_LANGUAGES_METHOD,
+                )?.let { StringVectorParser.parserStringVectorNative(it, access) }
+            }.getOrNull()?.let { pronunciationLanguages = it }
+
+            val sections = access.call(
+                songNative,
+                AppleMusicRuntimeMember.LYRICS_NATIVE_SONG_SECTIONS_METHOD,
+            )
+            if (sections != null) {
+                lyrics = LyricsSectionParser.parserSectionVector(sections, access).mergeLyrics()
+            }
+            adamId?.let {
+                MediaMetadataCache.getMetadataById(it)
+                    ?.let { metadata ->
+                        name = metadata.title
+                        artist = metadata.artist
+                        genre = metadata.genre
+                        originalTitle = metadata.originalTitle
+                        originalArtist = metadata.originalArtist
+                    }
+            }
         }
-
-        duration = callMethod(songNative, "getDuration") as? Int ?: 0
-
-        runCatching {
-            callMethod(songNative, "getPronunciationLanguages")
-                ?.let(StringVectorParser::parserStringVectorNative)
-        }.getOrNull()?.let { pronunciationLanguages = it }
-
-        // language = get(o, "getLanguage") as? String
-        // lyricsId = get(o, "getLyricsId") as? String
-        // queueId = get(o, "getQueueId") as? Long ?: 0L
-
-        val sections = callMethod(songNative, "getSections")
-        if (sections != null) {
-            lyrics = LyricsSectionParser.parserSectionVector(sections).mergeLyrics()
-        }
-
-        // timing = get(o, "getTiming") as? Long ?: 0L
-        // timingName = get(o, "getAvailableTiming")?.name()
-        // translation = get(o, "getTranslation") as? String
-        // translationLanguages = StringVectorParser.parserStringVectorNative(get(o, "getTranslationLanguages"))
-
-        adamId?.let {
-            MediaMetadataCache.getMetadataById(it)
-                ?.let { metadata ->
-                    name = metadata.title
-                    artist = metadata.artist
-                    genre = metadata.genre
-                    originalTitle = metadata.originalTitle
-                    originalArtist = metadata.originalArtist
-                }
-        }
-    }
 }

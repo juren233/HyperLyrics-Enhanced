@@ -6,14 +6,21 @@
 
 package io.github.proify.lyricon.amprovider.xposed.parser
 
+import io.github.proify.lyricon.amprovider.xposed.AppleMusicRuntimeMember
 import io.github.proify.lyricon.amprovider.xposed.model.LyricTiming
 
 object LyricsTimingParser {
 
-    fun parser(timing: LyricTiming, any: Any) {
-        timing.agent = callMethod(any, "getAgent") as? String
-        timing.begin = callMethod(any, "getBegin") as? Int ?: 0
-        timing.end = callMethod(any, "getEnd") as? Int ?: 0
-        timing.duration = callMethod(any, "getDuration") as? Int ?: 0
+    internal fun parser(timing: LyricTiming, any: Any, access: AppleLyricsParserAccess) {
+        timing.agent = access.call(
+            any,
+            AppleMusicRuntimeMember.LYRICS_NATIVE_AGENT_METHOD,
+        ) as? String
+        timing.begin = access.call(any, AppleMusicRuntimeMember.LYRICS_NATIVE_BEGIN_METHOD)
+            as? Int ?: 0
+        timing.end = access.call(any, AppleMusicRuntimeMember.LYRICS_NATIVE_END_METHOD)
+            as? Int ?: 0
+        timing.duration = access.call(any, AppleMusicRuntimeMember.LYRICS_NATIVE_DURATION_METHOD)
+            as? Int ?: 0
     }
 }

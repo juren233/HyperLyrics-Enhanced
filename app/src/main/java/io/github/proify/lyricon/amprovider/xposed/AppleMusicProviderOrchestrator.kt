@@ -203,6 +203,7 @@ internal object AppleMusicProviderOrchestrator {
                 mainHandler = Handler(Looper.getMainLooper())
             )
             playbackMetadataCoordinator = ApplePlaybackMetadataCoordinator(
+                hookResolver = runtime.hookResolver,
                 catalogResolver = internalCatalogResolver,
                 metadataStore = metadataOverrideStore,
                 host = object : ApplePlaybackMetadataCoordinatorHost {
@@ -936,8 +937,10 @@ internal object AppleMusicProviderOrchestrator {
                         knownAttributes,
                     )
 
-                    override fun mediaApiAttribute(attributes: Any, getter: String): String? =
-                        mediaApiMetadataCoordinator.attribute(attributes, getter)
+                    override fun mediaApiAttribute(
+                        attributes: Any,
+                        attribute: AppleMediaApiTextAttribute,
+                    ): String? = mediaApiMetadataCoordinator.attribute(attributes, attribute)
 
                     override fun registerLibraryEntity(
                         mediaId: String,
@@ -1057,8 +1060,10 @@ internal object AppleMusicProviderOrchestrator {
                         knownAttributes,
                     )
 
-                    override fun mediaApiAttribute(attributes: Any, getter: String): String? =
-                        mediaApiMetadataCoordinator.attribute(attributes, getter)
+                    override fun mediaApiAttribute(
+                        attributes: Any,
+                        attribute: AppleMediaApiTextAttribute,
+                    ): String? = mediaApiMetadataCoordinator.attribute(attributes, attribute)
 
                     override fun registerLibraryEntity(
                         mediaId: String,
@@ -1222,10 +1227,10 @@ internal object AppleMusicProviderOrchestrator {
 
                     override fun rawContentItemValue(
                         contentItem: Any,
-                        fieldName: String,
+                        runtimeMember: AppleMusicRuntimeMember,
                     ): Any? = this@AppleMusicProviderOrchestrator.rawContentItemValue(
                         contentItem,
-                        fieldName,
+                        runtimeMember,
                     )
 
                     override fun recordArtistAssociation(
@@ -1480,7 +1485,7 @@ internal object AppleMusicProviderOrchestrator {
 
                     override fun metadataOverride(
                         entityType: AppleInternalCatalogResolver.LocalizedEntityType,
-                        getter: String,
+                        getter: AppleContentItemGetter,
                         alias: AppleInternalCatalogResolver.Alias,
                         original: String?,
                     ): String? = contentItemMetadataOverride(
@@ -1921,7 +1926,7 @@ internal object AppleMusicProviderOrchestrator {
         val activePlayer = helper?.player?.let { CompositeRemotePlayer(it, directPlayer) }
             ?: directPlayer
         lyricRequester = LyricRequester(hookResolver, application)
-        PlaybackManager.init(activePlayer, lyricRequester)
+        PlaybackManager.init(activePlayer, lyricRequester, hookResolver)
         playbackHooks.attachRemotePlayer(activePlayer)
         playbackHooks.setDisplayTranslation(PreferencesMonitor.isTranslationSelected())
     }
@@ -2225,8 +2230,10 @@ internal object AppleMusicProviderOrchestrator {
     ): InAppContainerNavigationRef? =
         metadataRegistrationCoordinator.containerNavigationBinding(containerItem)
 
-    private fun rawContentItemValue(contentItem: Any, fieldName: String): Any? =
-        metadataRegistrationCoordinator.rawContentItemValue(contentItem, fieldName)
+    private fun rawContentItemValue(
+        contentItem: Any,
+        runtimeMember: AppleMusicRuntimeMember,
+    ): Any? = metadataRegistrationCoordinator.rawContentItemValue(contentItem, runtimeMember)
 
     private fun inAppPlaybackItemContract(playbackItem: Any): InAppPlaybackItemContract =
         metadataRegistrationCoordinator.playbackItemContract(playbackItem)

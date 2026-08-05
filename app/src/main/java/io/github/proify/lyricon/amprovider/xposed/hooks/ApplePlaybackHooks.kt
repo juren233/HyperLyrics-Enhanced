@@ -55,6 +55,11 @@ internal class ApplePlaybackHooks(
     private var lastExplicitSeekAtMs = 0L
     private var lastExplicitSeekPosition = -1L
     private lateinit var exoTarget: AppleMusicHookTarget
+    private val playbackTarget by lazy {
+        runtime.hookResolver.resolveClass(
+            AppleMusicHookPoint.LOCAL_MEDIA_PLAYER_CONTROLLER_STATE
+        ).target
+    }
 
     fun attachRemotePlayer(player: RemotePlayer) {
         remotePlayer = player
@@ -323,11 +328,23 @@ internal class ApplePlaybackHooks(
 
         if (shouldTrace) {
             val queueItem = runCatching {
-                source?.player?.let { AppleReflection.call(it, "getCurrentItem") }
+                source?.player?.let {
+                    AppleReflection.call(
+                        it,
+                        playbackMember(
+                            AppleMusicRuntimeMember.PLAYBACK_PLAYER_CURRENT_ITEM_METHOD
+                        ),
+                    )
+                }
             }.getOrNull()
             val queueMediaId = queueItem?.let(queueItemMediaId)
             val queueId = queueItem?.let {
-                runCatching { AppleReflection.call(it, "getPlaybackQueueId") as? Long }
+                runCatching {
+                    AppleReflection.call(
+                        it,
+                        playbackMember(AppleMusicRuntimeMember.PLAYBACK_QUEUE_ITEM_ID_METHOD),
+                    ) as? Long
+                }
                     .getOrNull()
             }
             ProviderLogger.diagnostic(
@@ -363,4 +380,7 @@ internal class ApplePlaybackHooks(
 
     private fun member(member: AppleMusicRuntimeMember): String =
         exoTarget.runtimeMemberName(member)
+
+    private fun playbackMember(member: AppleMusicRuntimeMember): String =
+        playbackTarget.runtimeMemberName(member)
 }

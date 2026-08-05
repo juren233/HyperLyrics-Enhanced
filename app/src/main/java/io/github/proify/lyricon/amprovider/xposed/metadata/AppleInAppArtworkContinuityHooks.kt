@@ -46,50 +46,93 @@ internal class AppleInAppArtworkContinuityHooks(
                 AppleMusicHookPoint.LISTEN_NOW_DELEGATING_ITEM
             )
             val delegateClass = resolvedDelegate.clazz
+            val delegateTarget = resolvedDelegate.target
             val liveDataClass = runtime.classLoader.loadClass("androidx.lifecycle.MutableLiveData")
             val imageUrlsLiveDataField = generateSequence(delegateClass) { it.superclass }
                 .flatMap { it.declaredFields.asSequence() }
                 .single { field -> liveDataClass.isAssignableFrom(field.type) }
                 .apply { isAccessible = true }
             val accessors = InAppArtworkContinuityAccessors(
-                getId = AppleReflection.findMethod(delegateClass, "getId", 0),
-                getPersistentId = AppleReflection.findMethod(
+                getId = AppleReflection.findMethod(
                     delegateClass,
-                    "getPersistentId",
+                    delegateTarget.runtimeMemberName(
+                        AppleMusicRuntimeMember.COLLECTION_ITEM_GET_ID_METHOD
+                    ),
                     0,
                 ),
-                getContentType = AppleReflection.findMethod(delegateClass, "getContentType", 0),
+                getPersistentId = AppleReflection.findMethod(
+                    delegateClass,
+                    delegateTarget.runtimeMemberName(
+                        AppleMusicRuntimeMember.COLLECTION_ITEM_GET_PERSISTENT_ID_METHOD
+                    ),
+                    0,
+                ),
+                getContentType = AppleReflection.findMethod(
+                    delegateClass,
+                    delegateTarget.runtimeMemberName(
+                        AppleMusicRuntimeMember.COLLECTION_ITEM_GET_CONTENT_TYPE_METHOD
+                    ),
+                    0,
+                ),
                 getArtworkToken = AppleReflection.findMethod(
                     delegateClass,
-                    "getArtworkToken",
+                    delegateTarget.runtimeMemberName(
+                        AppleMusicRuntimeMember.ARTWORK_GET_ARTWORK_TOKEN_METHOD
+                    ),
                     0,
                 ),
                 getAllArtworkTokens = AppleReflection.findMethod(
                     delegateClass,
-                    "getAllArtworkTokens",
+                    delegateTarget.runtimeMemberName(
+                        AppleMusicRuntimeMember.ARTWORK_GET_ALL_ARTWORK_TOKENS_METHOD
+                    ),
                     0,
                 ),
-                getImageUrl = AppleReflection.findMethod(delegateClass, "getImageUrl", 0),
-                getImageUrls = AppleReflection.findMethod(delegateClass, "getImageUrls", 0),
+                getImageUrl = AppleReflection.findMethod(
+                    delegateClass,
+                    delegateTarget.runtimeMemberName(
+                        AppleMusicRuntimeMember.ARTWORK_GET_IMAGE_URL_METHOD
+                    ),
+                    0,
+                ),
+                getImageUrls = AppleReflection.findMethod(
+                    delegateClass,
+                    delegateTarget.runtimeMemberName(
+                        AppleMusicRuntimeMember.ARTWORK_GET_IMAGE_URLS_METHOD
+                    ),
+                    0,
+                ),
                 setImageUrl = delegateClass.declaredMethods.single { method ->
-                    method.name == "setImageUrl" &&
+                    method.name == delegateTarget.runtimeMemberName(
+                        AppleMusicRuntimeMember.ARTWORK_SET_IMAGE_URL_METHOD
+                    ) &&
                         method.parameterTypes.contentEquals(arrayOf(String::class.java))
                 }.apply { isAccessible = true },
                 setImageUrls = delegateClass.declaredMethods.single { method ->
-                    method.name == "setImageUrls" &&
+                    method.name == delegateTarget.runtimeMemberName(
+                        AppleMusicRuntimeMember.ARTWORK_SET_IMAGE_URLS_METHOD
+                    ) &&
                         method.parameterTypes.contentEquals(arrayOf(Array<String>::class.java))
                 }.apply { isAccessible = true },
                 imageUrlsLiveData = imageUrlsLiveDataField,
             )
             val notifyInitialMethod = AppleReflection.findMethod(
                 delegateClass,
-                "notifyInitialImageUrl",
+                delegateTarget.runtimeMemberName(
+                    AppleMusicRuntimeMember.ARTWORK_NOTIFY_INITIAL_IMAGE_URL_METHOD
+                ),
                 0,
             )
+            val setImageUrlMethodName = delegateTarget.runtimeMemberName(
+                AppleMusicRuntimeMember.ARTWORK_SET_IMAGE_URL_METHOD
+            )
+            val setImageUrlsMethodName = delegateTarget.runtimeMemberName(
+                AppleMusicRuntimeMember.ARTWORK_SET_IMAGE_URLS_METHOD
+            )
             val artworkResultMethods = delegateClass.declaredMethods.filter { method ->
-                (method.name == "setImageUrl" && method.parameterTypes.firstOrNull() ==
+                (method.name == setImageUrlMethodName && method.parameterTypes.firstOrNull() ==
                     String::class.java) ||
-                    (method.name == "setImageUrls" &&
+                    (method.name == setImageUrlsMethodName &&
                         method.parameterTypes.contentEquals(arrayOf(Array<String>::class.java)))
             }
             check(artworkResultMethods.isNotEmpty()) {

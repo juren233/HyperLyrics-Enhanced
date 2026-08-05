@@ -231,9 +231,13 @@ internal class AppleSystemFontHooks(
     fun hookAppleSystemFontWeight() {
         val installedHooks = mutableListOf<String>()
         val failedHooks = mutableListOf<String>()
-        val customTextViewClass = runCatching {
-            hookResolver.resolveClass(AppleMusicHookPoint.APPLE_CUSTOM_TEXT_VIEW).clazz
+        val resolvedCustomTextView = runCatching {
+            hookResolver.resolveClass(AppleMusicHookPoint.APPLE_CUSTOM_TEXT_VIEW)
         }.getOrNull()
+        val customTextViewClass = resolvedCustomTextView?.clazz
+        fun customTextViewMember(member: AppleMusicRuntimeMember): String =
+            resolvedCustomTextView?.target?.runtimeMemberName(member)
+                ?: error("CustomTextView runtime member unavailable: $member")
 
         runCatching {
             val getFont = Resources::class.java.getDeclaredMethod(
@@ -348,7 +352,7 @@ internal class AppleSystemFontHooks(
             val styledTypefaceOwner = customTextViewClass?.superclass
                 ?: error("CustomTextView superclass unavailable")
             val styledTypeface = styledTypefaceOwner.getDeclaredMethod(
-                "setTypeface",
+                customTextViewMember(AppleMusicRuntimeMember.CUSTOM_TEXT_VIEW_SET_TYPEFACE_METHOD),
                 Typeface::class.java,
                 Int::class.javaPrimitiveType,
             ).apply { isAccessible = true }
@@ -430,7 +434,7 @@ internal class AppleSystemFontHooks(
 
         runCatching {
             val customSetText = customTextViewClass?.getDeclaredMethod(
-                "setText",
+                customTextViewMember(AppleMusicRuntimeMember.CUSTOM_TEXT_VIEW_SET_TEXT_METHOD),
                 CharSequence::class.java,
                 TextView.BufferType::class.java,
             )?.apply { isAccessible = true }
@@ -458,7 +462,9 @@ internal class AppleSystemFontHooks(
                 ?: error("CustomTextView Future field unavailable")
             // 不依赖 JADX 的 p301q.A 展示包名，只从真实 CustomTextView superclass 取 Future 解析方法。
             val resolveFuture = futureOwner.declaredMethods.firstOrNull { method ->
-                method.name == "f" &&
+                method.name == customTextViewMember(
+                    AppleMusicRuntimeMember.CUSTOM_TEXT_VIEW_FUTURE_RESOLVE_METHOD
+                ) &&
                     method.parameterCount == 0 &&
                     method.returnType == Void.TYPE
             }?.apply { isAccessible = true }
@@ -535,7 +541,7 @@ internal class AppleSystemFontHooks(
 
             runCatching {
                 val onDraw = customTextViewClass?.getDeclaredMethod(
-                    "onDraw",
+                    customTextViewMember(AppleMusicRuntimeMember.CUSTOM_TEXT_VIEW_ON_DRAW_METHOD),
                     Canvas::class.java,
                 )?.apply { isAccessible = true }
                     ?: error("CustomTextView.onDraw unavailable")

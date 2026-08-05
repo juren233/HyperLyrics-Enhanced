@@ -84,39 +84,20 @@ class AppleLibrarySurfaceHooksTest {
     fun `library entity classification keeps artists albums and songs isolated`() {
         assertEquals(
             InAppLibraryEntityKind.ARTIST,
-            inAppLibraryEntityKindForClassNames(
-                listOf(
-                    "com.apple.android.music.mediaapi.models.Artist",
-                    "com.apple.android.music.mediaapi.models.MediaEntity",
-                )
-            ),
+            inAppLibraryEntityKindForProfileKinds(listOf("artist", null)),
         )
         assertEquals(
             InAppLibraryEntityKind.ALBUM,
-            inAppLibraryEntityKindForClassNames(
-                listOf(
-                    "com.apple.android.music.mediaapi.models.LibraryAlbum",
-                    "com.apple.android.music.mediaapi.models.MediaEntity",
-                )
-            ),
+            inAppLibraryEntityKindForProfileKinds(listOf("album", null)),
         )
         assertEquals(
             InAppLibraryEntityKind.SONG,
-            inAppLibraryEntityKindForClassNames(
-                listOf(
-                    "com.apple.android.music.mediaapi.models.LibrarySong",
-                    "com.apple.android.music.mediaapi.models.MediaEntity",
-                )
-            ),
+            inAppLibraryEntityKindForProfileKinds(listOf("song", null)),
         )
         assertNull(
-            inAppLibraryEntityKindForClassNames(
-                listOf(
-                    "com.apple.android.music.mediaapi.models.MediaEntity",
-                    "com.apple.android.music.search2.SearchResult",
-                )
-            )
+            inAppLibraryEntityKindForProfileKinds(listOf(null, "unknown"))
         )
+        assertNull(inAppLibraryEntityKindForProfileKinds(listOf("artist", "song")))
     }
 
     @Test

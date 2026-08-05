@@ -100,6 +100,7 @@ internal class AppleQueueMetadataHooks(
     private val queueAdapterRefs = ConcurrentLinkedQueue<WeakReference<RecyclerView.Adapter<*>>>()
     private val debugQueueBindTraceKeys = ConcurrentHashMap.newKeySet<String>()
     private lateinit var queueAdapterTarget: AppleMusicHookTarget
+    private lateinit var historyTarget: AppleMusicHookTarget
 
     fun installHooks() {
         val global = runtime.hookResolver.resolveMethod(
@@ -117,6 +118,7 @@ internal class AppleQueueMetadataHooks(
             AppleMusicHookPoint.IN_APP_QUEUE_ADAPTER_BIND
         )
         queueAdapterTarget = adapterSubmit.target
+        historyTarget = history.target
 
         installGlobalMetadataCapture(global)
         installNowPlayingMetadata(nowPlaying)
@@ -405,7 +407,12 @@ internal class AppleQueueMetadataHooks(
     }
 
     private fun isHistoryQueueEntry(entry: Any?): Boolean =
-        entry != null && isInAppHistoryQueueEntryClassName(entry.javaClass.name)
+        entry != null && isInAppHistoryQueueEntryClassName(
+            className = entry.javaClass.name,
+            historyEntryClassName = historyTarget.runtimeMemberName(
+                AppleMusicRuntimeMember.QUEUE_HISTORY_ENTRY_CLASS_NAME,
+            ),
+        )
 
     private fun registerQueueEntry(
         entry: Any?,
@@ -647,7 +654,6 @@ internal class AppleQueueMetadataHooks(
         const val MAX_QUEUE_LOCALIZED_PREFETCH_ENTRIES = 128
         const val MAX_DEBUG_QUEUE_BIND_TRACE_KEYS = 512
         const val MAX_DEBUG_QUEUE_SUBMIT_TRACE_ENTRIES = 64
-        const val MEDIA3_METADATA_ID_KEY =
-            "com.apple.android.music.playback.metadata.METADATA_KEY_MEDIA_ID"
+        const val MEDIA3_METADATA_ID_KEY = Constants.APPLE_MEDIA3_METADATA_ID_KEY
     }
 }

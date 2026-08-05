@@ -54,10 +54,14 @@ internal interface ApplePlaybackMetadataCoordinatorHost {
  * generation, or visibility guards.
  */
 internal class ApplePlaybackMetadataCoordinator(
+    private val hookResolver: AppleMusicHookResolver,
     private val catalogResolver: AppleInternalCatalogResolver,
     private val metadataStore: AppleMetadataOverrideStore,
     private val host: ApplePlaybackMetadataCoordinatorHost,
 ) {
+    private val playbackTarget by lazy {
+        hookResolver.resolveClass(AppleMusicHookPoint.LOCAL_MEDIA_PLAYER_CONTROLLER_STATE).target
+    }
     private var currentRefresh: PlaybackMetadataRefresh? = null
     private var currentMediaId: String? = null
 
@@ -90,7 +94,7 @@ internal class ApplePlaybackMetadataCoordinator(
             return
         }
         runCatching {
-            handleQueueItem(AppleReflection.call(mediaPlayer, "getCurrentItem"), source)
+            handleQueueItem(currentQueueItem(mediaPlayer), source)
         }.onFailure {
             ProviderLogger.error("歌曲元数据刷新异常：source=$source", it)
         }
@@ -107,18 +111,38 @@ internal class ApplePlaybackMetadataCoordinator(
             return
         }
         runCatching {
-            val mediaItem = AppleReflection.call(queueItem, "getItem") ?: return@runCatching
+            val mediaItem = AppleReflection.call(
+                queueItem,
+                playbackMember(AppleMusicRuntimeMember.PLAYBACK_QUEUE_ITEM_ITEM_METHOD),
+            ) ?: return@runCatching
             val mediaId = mediaItemId(mediaItem) ?: return@runCatching
             val languageSelection = host.configuredContentUiLanguage()
             val overrideAccountLanguage = host.shouldOverrideAccountLanguage(languageSelection)
 
             val metadata = MediaMetadataCache.Metadata(
                 id = mediaId,
-                title = AppleReflection.call(mediaItem, "getTitle") as? String,
-                artist = AppleReflection.call(mediaItem, "getArtistName") as? String,
-                genre = AppleReflection.call(mediaItem, "getGenreName") as? String,
-                duration = AppleReflection.call(mediaItem, "getDuration") as? Long ?: 0L,
-                queueId = AppleReflection.call(queueItem, "getPlaybackQueueId") as? Long ?: 0L
+                title = AppleReflection.call(
+                    mediaItem,
+                    playbackMember(AppleMusicRuntimeMember.PLAYBACK_MEDIA_ITEM_TITLE_METHOD),
+                ) as? String,
+                artist = AppleReflection.call(
+                    mediaItem,
+                    playbackMember(
+                        AppleMusicRuntimeMember.PLAYBACK_MEDIA_ITEM_ARTIST_NAME_METHOD
+                    ),
+                ) as? String,
+                genre = AppleReflection.call(
+                    mediaItem,
+                    playbackMember(AppleMusicRuntimeMember.PLAYBACK_MEDIA_ITEM_GENRE_NAME_METHOD),
+                ) as? String,
+                duration = AppleReflection.call(
+                    mediaItem,
+                    playbackMember(AppleMusicRuntimeMember.PLAYBACK_MEDIA_ITEM_DURATION_METHOD),
+                ) as? Long ?: 0L,
+                queueId = AppleReflection.call(
+                    queueItem,
+                    playbackMember(AppleMusicRuntimeMember.PLAYBACK_QUEUE_ITEM_ID_METHOD),
+                ) as? Long ?: 0L
             )
             val restoreCjkOriginalMetadata = host.shouldRestoreCjkOriginalMetadata(metadata)
             if (overrideAccountLanguage || restoreCjkOriginalMetadata) {
@@ -188,8 +212,9 @@ internal class ApplePlaybackMetadataCoordinator(
     fun isCurrentQueueItem(candidate: Any?, current: Any?): Boolean {
         if (candidate == null || current == null) return false
         if (candidate === current) return true
-        val candidateQueueId = AppleReflection.call(candidate, "getPlaybackQueueId") as? Long ?: 0L
-        val currentQueueId = AppleReflection.call(current, "getPlaybackQueueId") as? Long ?: 0L
+        val queueIdMethod = playbackMember(AppleMusicRuntimeMember.PLAYBACK_QUEUE_ITEM_ID_METHOD)
+        val candidateQueueId = AppleReflection.call(candidate, queueIdMethod) as? Long ?: 0L
+        val currentQueueId = AppleReflection.call(current, queueIdMethod) as? Long ?: 0L
         if (candidateQueueId > 0L && currentQueueId > 0L) {
             return candidateQueueId == currentQueueId
         }
@@ -199,13 +224,16 @@ internal class ApplePlaybackMetadataCoordinator(
     }
 
     fun queueItemMediaId(queueItem: Any): String? {
-        val mediaItem = AppleReflection.call(queueItem, "getItem") ?: return null
+        val mediaItem = AppleReflection.call(
+            queueItem,
+            playbackMember(AppleMusicRuntimeMember.PLAYBACK_QUEUE_ITEM_ITEM_METHOD),
+        ) ?: return null
         return mediaItemId(mediaItem)
     }
 
     fun currentPlaybackQueueMediaId(): String? {
         val currentQueueItem = host.activePlayer()?.let { player ->
-            runCatching { AppleReflection.call(player, "getCurrentItem") }.getOrNull()
+            runCatching { currentQueueItem(player) }.getOrNull()
         }
         return currentQueueItem
             ?.let { queueItem -> runCatching { queueItemMediaId(queueItem) }.getOrNull() }
@@ -378,9 +406,25 @@ internal class ApplePlaybackMetadataCoordinator(
 
     private fun mediaItemId(mediaItem: Any): String? {
         val subscriptionStoreId =
-            AppleReflection.call(mediaItem, "getSubscriptionStoreId") as? String
+            AppleReflection.call(
+                mediaItem,
+                playbackMember(
+                    AppleMusicRuntimeMember.PLAYBACK_MEDIA_ITEM_SUBSCRIPTION_STORE_ID_METHOD
+                ),
+            ) as? String
         if (!subscriptionStoreId.isNullOrBlank()) return subscriptionStoreId
-        val persistentId = AppleReflection.call(mediaItem, "getPersistentId") as? Long ?: 0L
+        val persistentId = AppleReflection.call(
+            mediaItem,
+            playbackMember(AppleMusicRuntimeMember.PLAYBACK_MEDIA_ITEM_PERSISTENT_ID_METHOD),
+        ) as? Long ?: 0L
         return persistentId.takeIf { it > 0L }?.toString()
     }
+
+    fun currentQueueItem(mediaPlayer: Any): Any? = AppleReflection.call(
+        mediaPlayer,
+        playbackMember(AppleMusicRuntimeMember.PLAYBACK_PLAYER_CURRENT_ITEM_METHOD),
+    )
+
+    private fun playbackMember(member: AppleMusicRuntimeMember): String =
+        playbackTarget.runtimeMemberName(member)
 }
