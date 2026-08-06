@@ -506,9 +506,10 @@ object BaseIslandRenderer : IslandRenderer {
         }
 
         if (previewState == null) {
-            val nextSong = MediaMetadataHelper.getNextMediaInfo(cv.context, packageName, mediaInfo)
+            val nextLookup = MediaMetadataHelper.getNextMediaLookup(cv.context, packageName, mediaInfo)
+            val nextSong = nextLookup.mediaInfo
             if (nextSong.title.isBlank()) {
-                val failureSignature = "${mediaInfo.title}|$duration"
+                val failureSignature = "${mediaInfo.title}|$duration|${nextLookup.reason}"
                 val shouldLog = synchronized(nextSongPreviewFailures) {
                     if (nextSongPreviewFailures[cv] == failureSignature) {
                         false
@@ -520,7 +521,8 @@ object BaseIslandRenderer : IslandRenderer {
                 if (shouldLog) {
                     HookLogger.w(
                         "BaseIslandRenderer",
-                        "无法显示下首歌曲信息：媒体队列未解析到下一首，当前歌曲=${mediaInfo.title}"
+                        "无法显示下首歌曲信息：reason=${nextLookup.reason}, " +
+                            "当前歌曲=${mediaInfo.title}",
                     )
                 }
                 return false
@@ -537,7 +539,8 @@ object BaseIslandRenderer : IslandRenderer {
                 "BaseIslandRenderer",
                 "开始下首歌曲信息预览: style=${config.nextSongPreviewStyle}, " +
                     "target=${expectedTargetIsLeft?.let { if (it) "left" else "right" } ?: "full"}, " +
-                    "position=$position, duration=$duration, next=${nextSong.title}"
+                    "position=$position, duration=$duration, next=${nextSong.title}, " +
+                    "source=${nextLookup.source}"
             )
         }
         val activePreviewState = previewState

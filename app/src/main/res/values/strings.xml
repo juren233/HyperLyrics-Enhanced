@@ -158,7 +158,7 @@
     <string name="title_lyric_display_group">显示</string>
     <string name="title_apple_music_online_fallback">Apple Music 无歌词时使用在线歌词兜底</string>
     <string name="summary_apple_music_online_fallback">优先等待 Apple Music 原生歌词，超时无歌词后转用三方逐行歌词，小概率出现歌词错误等意外情况</string>
-    <string name="title_apple_music_fallback_qq_first">优先 QQ 音乐兜底</string>
+    <string name="title_apple_music_fallback_qq_first">优先 QQ音乐兜底</string>
     <string name="summary_apple_music_fallback_qq_first">关闭时优先从网易云音乐获取歌词</string>
     <string name="title_remove_cjk_lyric_spaces">移除中日韩歌词中的空格</string>
     <string name="summary_remove_cjk_lyric_spaces">仅在超级岛、实时动态通知以及AOD中生效</string>

@@ -52,6 +52,18 @@ object MediaMetadataHelper {
             }
     }
 
+    enum class NextMediaSource {
+        OFFICIAL_PROVIDER,
+        MEDIA_SESSION_QUEUE,
+        NONE,
+    }
+
+    data class NextMediaLookup(
+        val mediaInfo: MediaInfo = MediaInfo(),
+        val source: NextMediaSource = NextMediaSource.NONE,
+        val reason: String = "",
+    )
+
     /**
      * 获取指定包名的当前媒体信息
      */
@@ -67,21 +79,44 @@ object MediaMetadataHelper {
     }
 
     /**
-     * 从当前 MediaSession 的播放队列中读取当前项目之后的歌曲。
-     * Apple Music 将队列项目的标题、艺术家和专辑写入 QueueItem.description，
-     * 因此这里不依赖应用私有 API，也能与系统媒体岛展示保持一致。
+     * 优先读取官方 Provider 上报的下一首，再回退到当前 MediaSession 播放队列。
+     * Apple Music 将队列项目写入 QueueItem.description，因此仍走系统队列回退。
      */
     fun getNextMediaInfo(
         context: Context,
         packageName: String,
         current: MediaInfo = getMediaInfo(context, packageName)
-    ): MediaInfo {
-        if (packageName.isEmpty()) return MediaInfo()
+    ): MediaInfo = getNextMediaLookup(context, packageName, current).mediaInfo
+
+    fun getNextMediaLookup(
+        context: Context,
+        packageName: String,
+        current: MediaInfo = getMediaInfo(context, packageName)
+    ): NextMediaLookup {
+        if (packageName.isEmpty()) return NextMediaLookup(reason = "package_empty")
         return try {
-            val controller = findController(context, packageName) ?: return MediaInfo()
-            val queue = controller.queue.orEmpty()
-            if (queue.isEmpty()) return MediaInfo()
+            val controller = findController(context, packageName)
+                ?: return NextMediaLookup(reason = "controller_missing")
             val currentMediaId = controller.metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)
+            NextTrackMetadataCache.find(
+                playerPackageName = packageName,
+                currentId = currentMediaId,
+                currentTitle = current.title,
+                currentArtist = current.artist,
+            )?.let { next ->
+                return NextMediaLookup(
+                    mediaInfo = MediaInfo(
+                        title = next.title,
+                        artist = next.artist,
+                        album = next.album,
+                        duration = next.durationMs,
+                    ),
+                    source = NextMediaSource.OFFICIAL_PROVIDER,
+                    reason = "provider_cache_hit",
+                )
+            }
+            val queue = controller.queue.orEmpty()
+            if (queue.isEmpty()) return NextMediaLookup(reason = "provider_miss_queue_empty")
             val activeQueueItemId = controller.playbackState?.activeQueueItemId ?: -1L
             val queueIdIndex = if (activeQueueItemId >= 0L) {
                 queue.indexOfFirst { it.queueId == activeQueueItemId }
@@ -92,17 +127,22 @@ object MediaMetadataHelper {
                 (currentMediaId != null && item.description.mediaId == currentMediaId) ||
                     (current.title.isNotBlank() && item.description.title?.toString() == current.title)
             }
-            if (currentIndex < 0) return MediaInfo()
-            val nextItem = queue.getOrNull(currentIndex + 1) ?: return MediaInfo()
+            if (currentIndex < 0) return NextMediaLookup(reason = "queue_current_missing")
+            val nextItem = queue.getOrNull(currentIndex + 1)
+                ?: return NextMediaLookup(reason = "queue_next_missing")
             val description = nextItem.description
-            MediaInfo(
-                title = description.title?.toString().orEmpty(),
-                artist = description.subtitle?.toString().orEmpty(),
-                album = description.description?.toString().orEmpty(),
-                albumArt = description.iconBitmap
+            NextMediaLookup(
+                mediaInfo = MediaInfo(
+                    title = description.title?.toString().orEmpty(),
+                    artist = description.subtitle?.toString().orEmpty(),
+                    album = description.description?.toString().orEmpty(),
+                    albumArt = description.iconBitmap,
+                ),
+                source = NextMediaSource.MEDIA_SESSION_QUEUE,
+                reason = "queue_hit",
             )
         } catch (_: Exception) {
-            MediaInfo()
+            NextMediaLookup(reason = "lookup_exception")
         }
     }
 

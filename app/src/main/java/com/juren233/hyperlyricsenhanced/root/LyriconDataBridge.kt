@@ -56,7 +56,7 @@ object LyriconDataBridge : StateResetter {
     @Volatile
     var currentLyricPackageName: String? = null
 
-    /** 是否处于纯文本模式（椒盐音乐等通过 onSendText 推送） */
+    /** 是否处于纯文本模式（部分 Provider 通过 onSendText 推送） */
     @Volatile
     var isTextMode: Boolean = false
 

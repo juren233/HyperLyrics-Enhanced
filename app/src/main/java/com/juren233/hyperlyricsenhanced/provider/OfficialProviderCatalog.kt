@@ -18,23 +18,24 @@ object OfficialProviderCatalog {
         val displayName: String,
         val targetPackages: Set<String>,
         val secondaryProcesses: Set<String> = emptySet(),
+        val description: String? = null,
     )
 
     val definitions = listOf(
         Definition("netease", "网易云音乐", setOf("com.netease.cloudmusic", "com.hihonor.cloudmusic")),
         Definition(
             id = "qqmusic",
-            displayName = "QQ 音乐",
+            displayName = "QQ音乐",
             targetPackages = setOf("com.tencent.qqmusic"),
             secondaryProcesses = setOf("com.tencent.qqmusic:QQPlayerService"),
         ),
-        Definition("qqmusic-hd", "QQ 音乐 HD", setOf("com.tencent.qqmusicpad")),
+        Definition("qqmusic-hd", "QQ音乐HD", setOf("com.tencent.qqmusicpad")),
         Definition("kugou", "酷狗音乐", setOf("com.kugou.android", "com.kugou.android.lite")),
         Definition("kuwo", "酷我音乐", setOf("cn.kuwo.player")),
         Definition("spotify", "Spotify", setOf("com.spotify.music")),
         Definition(
             "lxmusic",
-            "LX 音乐",
+            "LX音乐",
             setOf(
                 "cn.toside.music.mobile",
                 "com.ikunshare.music.mobile",
@@ -42,7 +43,7 @@ object OfficialProviderCatalog {
             ),
         ),
         Definition("poweramp", "Poweramp", setOf("com.maxmpz.audioplayer")),
-        Definition("salt-player", "Salt Player", setOf("com.salt.music")),
+        Definition("salt-player", "椒盐音乐", setOf("com.salt.music")),
         Definition("qishui", "汽水音乐", setOf("com.luna.music")),
         Definition("musicfree", "MusicFree", setOf("fun.upup.musicfree")),
         Definition("gramophone", "Gramophone", setOf("org.akanework.gramophone")),
@@ -60,6 +61,15 @@ object OfficialProviderCatalog {
 
     fun definitionForId(id: String): Definition? =
         definitions.firstOrNull { it.id == id }
+
+    fun isOfficialProviderPair(
+        providerPackageName: String,
+        playerPackageName: String,
+    ): Boolean {
+        val pluginId = providerPackageName.removePrefix(OFFICIAL_PROVIDER_PACKAGE_PREFIX)
+        if (pluginId == providerPackageName) return false
+        return definitionForId(pluginId)?.targetPackages?.contains(playerPackageName) == true
+    }
 
     fun shouldLoadIntoProcess(packageName: String, processName: String): Boolean {
         if (!processName.contains(':')) return true

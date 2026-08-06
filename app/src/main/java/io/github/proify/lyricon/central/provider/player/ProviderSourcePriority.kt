@@ -26,21 +26,8 @@ internal object ProviderSourcePriorityResolver {
         providerPackageName == OfficialProviderCatalog.CORE_PACKAGE_NAME &&
             playerPackageName == OfficialProviderCatalog.APPLE_MUSIC_PACKAGE_NAME ->
             ProviderSourcePriority.BUILT_IN
-        isOfficialProvider(providerPackageName, playerPackageName) ->
+        OfficialProviderCatalog.isOfficialProviderPair(providerPackageName, playerPackageName) ->
             ProviderSourcePriority.OFFICIAL_PLUGIN
         else -> ProviderSourcePriority.LEGACY_APK
-    }
-
-    private fun isOfficialProvider(
-        providerPackageName: String,
-        playerPackageName: String,
-    ): Boolean {
-        val pluginId = providerPackageName.removePrefix(
-            OfficialProviderCatalog.OFFICIAL_PROVIDER_PACKAGE_PREFIX,
-        )
-        if (pluginId == providerPackageName) return false
-        return OfficialProviderCatalog.definitionForId(pluginId)
-            ?.targetPackages
-            ?.contains(playerPackageName) == true
     }
 }

@@ -11,6 +11,8 @@ import android.os.SharedMemory
 import android.os.SystemClock
 import android.util.Log
 import com.juren233.hyperlyricsenhanced.BuildConfig
+import com.juren233.hyperlyricsenhanced.common.media.NextTrackMetadataCache
+import com.juren233.hyperlyricsenhanced.provider.OfficialProviderControlProtocol
 import io.github.proify.lyricon.central.inflate
 import io.github.proify.lyricon.central.json
 import io.github.proify.lyricon.central.util.ScreenStateMonitor
@@ -176,6 +178,30 @@ internal class PlayerBinder(
 
     override fun sendText(text: String?) {
         if (closed.get()) return
+
+        if (OfficialProviderControlProtocol.isReservedFrame(text)) {
+            val frame = OfficialProviderControlProtocol.decodeNextTrack(text)
+            val result = if (frame == null) {
+                NextTrackMetadataCache.ControlResult.REJECTED_FRAME
+            } else {
+                NextTrackMetadataCache.accept(
+                    providerPackageName = providerInfo.providerPackageName,
+                    playerPackageName = providerInfo.playerPackageName,
+                    frame = frame,
+                )
+            }
+            if (BuildConfig.DEBUG) {
+                Log.i(
+                    TAG,
+                    "Next-track control: result=$result, " +
+                        "provider=${providerInfo.providerPackageName}, " +
+                        "player=${providerInfo.playerPackageName}, " +
+                        "process=${providerInfo.processName}, current=${frame?.currentId}, " +
+                        "next=${frame?.nextId}",
+                )
+            }
+            return
+        }
 
         recorder.text = text
         playerEvents.safeNotify { onSendText(recorder, text) }

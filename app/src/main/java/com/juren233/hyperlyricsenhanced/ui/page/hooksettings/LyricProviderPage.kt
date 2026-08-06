@@ -527,6 +527,40 @@ private suspend fun refreshInstalledProviderUpdates(
     }
 }
 
+internal class ProviderDelayEditorState(initialDelay: Int) {
+    var currentDelay by mutableIntStateOf(initialDelay)
+        private set
+
+    var sliderPosition by mutableFloatStateOf(initialDelay.toFloat())
+        private set
+
+    fun updateSlider(sliderValue: Float) {
+        sliderPosition = sliderValue
+        currentDelay = quantizeProviderDelay(sliderValue)
+    }
+
+    fun finishSlider(): Int {
+        val finalValue = quantizeProviderDelay(sliderPosition)
+        sliderPosition = finalValue.toFloat()
+        currentDelay = finalValue
+        return finalValue
+    }
+}
+
+internal fun quantizeProviderDelay(sliderValue: Float): Int =
+    (sliderValue / 50f).roundToInt() * 50
+
+internal fun formatProviderDelay(delay: Int): String =
+    if (delay > 0) "+$delay ms" else "$delay ms"
+
+@Composable
+private fun rememberProviderDelayEditorState(delayKey: String): ProviderDelayEditorState =
+    remember(delayKey) {
+        ProviderDelayEditorState(
+            PrefsBridge.getInt(delayKey, RootConstants.DEFAULT_HOOK_LYRICON_PROVIDER_DELAY),
+        )
+    }
+
 private fun LazyListScope.providerSections(
     officialUiState: OfficialProviderUiState,
     uiState: ProviderUiState,
@@ -600,6 +634,9 @@ private fun LazyListScope.providerSections(
             val isExpanded = expandedStates[packageName] ?: false
             val busy = item.catalog.id in officialUiState.busyPluginIds
             val installedVersionName = item.installedVersionName ?: stringResource(R.string.unknown)
+            val providerDescription = OfficialProviderCatalog
+                .definitionForId(item.catalog.id)
+                ?.description
             Card(
                 modifier = Modifier
                     .padding(horizontal = 12.dp)
@@ -634,6 +671,10 @@ private fun LazyListScope.providerSections(
                                         item.catalog.versionName ?: stringResource(R.string.unknown),
                                     ),
                                 )
+                            }
+                            providerDescription?.takeIf(String::isNotBlank)?.let { description ->
+                                append("\n")
+                                append(description)
                             }
                             append("\n")
                             append(item.catalog.targetPackages.joinToString())
@@ -740,6 +781,8 @@ private fun LegacyProviderCard(
 ) {
     val packageName = module.packageInfo.packageName
     val isExpanded = expandedStates[packageName] ?: false
+    val delayKey = RootConstants.KEY_HOOK_LYRICON_PROVIDER_DELAY_PREFIX + packageName
+    val delayState = rememberProviderDelayEditorState(delayKey)
     Card(
         modifier = Modifier
             .padding(horizontal = 12.dp)
@@ -772,12 +815,8 @@ private fun LegacyProviderCard(
                     }
                 },
                 endActions = {
-                    val delayKey = RootConstants.KEY_HOOK_LYRICON_PROVIDER_DELAY_PREFIX + packageName
-                    val initialDelay = remember(packageName) {
-                        PrefsBridge.getInt(delayKey, RootConstants.DEFAULT_HOOK_LYRICON_PROVIDER_DELAY)
-                    }
                     Text(
-                        text = if (initialDelay > 0) "+$initialDelay ms" else "$initialDelay ms",
+                        text = formatProviderDelay(delayState.currentDelay),
                         color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.5f),
                         fontSize = 14.sp,
                     )
@@ -786,7 +825,8 @@ private fun LegacyProviderCard(
             )
             AnimatedVisibility(visible = isExpanded) {
                 ProviderDelayEditor(
-                    delayKey = RootConstants.KEY_HOOK_LYRICON_PROVIDER_DELAY_PREFIX + packageName,
+                    delayKey = delayKey,
+                    state = delayState,
                     description = module.description,
                     tags = module.tags,
                     onRemove = null,
@@ -799,16 +839,17 @@ private fun LegacyProviderCard(
 @Composable
 private fun ProviderDelayEditor(
     delayKey: String,
+    state: ProviderDelayEditorState? = null,
     description: String? = null,
     tags: List<ModuleTag> = emptyList(),
     onUpdate: (() -> Unit)? = null,
     onRemove: (() -> Unit)?,
 ) {
-    val initialDelay = remember(delayKey) {
-        PrefsBridge.getInt(delayKey, RootConstants.DEFAULT_HOOK_LYRICON_PROVIDER_DELAY)
+    val editorState = if (state != null) {
+        state
+    } else {
+        rememberProviderDelayEditorState(delayKey)
     }
-    var currentDelay by remember(delayKey) { mutableIntStateOf(initialDelay) }
-    var sliderPosition by remember(delayKey) { mutableFloatStateOf(initialDelay.toFloat()) }
 
     Column(modifier = Modifier.padding(bottom = 16.dp)) {
         HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
@@ -824,31 +865,37 @@ private fun ProviderDelayEditor(
         Column(
             modifier = Modifier.padding(start = 16.dp, top = 16.dp, end = 16.dp),
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = stringResource(R.string.title_lyric_delay),
+                        color = MiuixTheme.colorScheme.onBackground,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = stringResource(R.string.summary_lyric_delay),
+                        color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                        fontSize = 12.sp,
+                    )
+                }
                 Text(
-                    text = stringResource(R.string.title_lyric_delay),
-                    color = MiuixTheme.colorScheme.onBackground,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = stringResource(R.string.summary_lyric_delay),
+                    text = formatProviderDelay(editorState.currentDelay),
                     color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                    fontSize = 12.sp,
+                    fontSize = 14.sp,
                 )
             }
             Spacer(modifier = Modifier.height(12.dp))
             Slider(
-                value = sliderPosition,
-                onValueChange = { sliderValue ->
-                    sliderPosition = sliderValue
-                    currentDelay = (sliderValue / 50f).roundToInt() * 50
-                },
+                value = editorState.sliderPosition,
+                onValueChange = editorState::updateSlider,
                 onValueChangeFinished = {
-                    val finalValue = (sliderPosition / 50f).roundToInt() * 50
-                    sliderPosition = finalValue.toFloat()
-                    currentDelay = finalValue
+                    val finalValue = editorState.finishSlider()
                     PrefsBridge.putInt(delayKey, finalValue)
                 },
                 valueRange = RootConstants.MIN_HOOK_LYRICON_PROVIDER_DELAY.toFloat()..RootConstants.MAX_HOOK_LYRICON_PROVIDER_DELAY.toFloat(),

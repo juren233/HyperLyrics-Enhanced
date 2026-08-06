@@ -135,7 +135,9 @@ object OfficialProviderRepository {
         }
 
         return OfficialProviderCatalog.definitions.map { definition ->
-            val entry = requireNotNull(entriesById[definition.id])
+            val entry = requireNotNull(entriesById[definition.id]).copy(
+                displayName = definition.displayName,
+            )
             val installedVersionCode = PrefsBridge.getInt(
                 OfficialProviderCatalog.installedVersionKey(definition.id),
                 0,
