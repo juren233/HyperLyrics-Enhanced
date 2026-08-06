@@ -17,6 +17,7 @@ import com.juren233.hyperlyricsenhanced.ui.page.SettingsPage
 import com.juren233.hyperlyricsenhanced.ui.page.PoetryPage
 import com.juren233.hyperlyricsenhanced.ui.page.HookSettingsPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.LyricProviderPage
+import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.OfficialProviderDownloadPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.LyricAnimationPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.LyricSettingsPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.AppleMusicOptimizationPage
@@ -53,6 +54,7 @@ fun AppNavigation(startRoute: Route) {
                 entry<Route.HookSettings> { HookSettingsPage() }
                 entry<Route.AppleMusicOptimization> { AppleMusicOptimizationPage() }
                 entry<Route.LyricProvider> { LyricProviderPage() }
+                entry<Route.LyricProviderDownloads> { OfficialProviderDownloadPage() }
                 entry<Route.LyricAnimation> { LyricAnimationPage() }
                 entry<Route.LyricSettings> { LyricSettingsPage() }
                 entry<Route.LyricDisplay> { LyricDisplayPage() }

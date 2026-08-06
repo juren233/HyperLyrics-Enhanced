@@ -29,6 +29,10 @@ object OfficialProviderInstaller {
             OfficialProviderCatalog.installedVersionKey(manifest.pluginId),
             manifest.versionCode,
         )
+        PrefsBridge.putString(
+            OfficialProviderCatalog.installedVersionNameKey(manifest.pluginId),
+            manifest.versionName,
+        )
         manifest.targetPackages.forEach { packageName ->
             PrefsBridge.putString(
                 OfficialProviderCatalog.activeFileKey(packageName),
@@ -58,8 +62,36 @@ object OfficialProviderInstaller {
         }
         PrefsBridge.putBoolean(OfficialProviderCatalog.enabledKey(pluginId), false)
         PrefsBridge.putInt(OfficialProviderCatalog.installedVersionKey(pluginId), 0)
+        PrefsBridge.putString(OfficialProviderCatalog.installedVersionNameKey(pluginId), null)
         definition.targetPackages.forEach { packageName ->
             PrefsBridge.putString(OfficialProviderCatalog.activeFileKey(packageName), null)
+        }
+    }
+
+    fun readInstalledManifest(
+        context: Context,
+        pluginId: String,
+        versionCode: Int,
+    ): ProviderPackManifest? {
+        requireNotNull(OfficialProviderCatalog.definitionForId(pluginId))
+        if (versionCode <= 0) return null
+        val remoteName = OfficialProviderCatalog.remoteFileName(pluginId, versionCode)
+        val packBytes = runCatching {
+            val service = RootApplication.xposedService
+            if (service != null) {
+                if (remoteName !in service.listRemoteFiles()) return@runCatching null
+                service.openRemoteFile(remoteName).use { pfd ->
+                    android.os.ParcelFileDescriptor.AutoCloseInputStream(pfd).use { it.readBytes() }
+                }
+            } else {
+                File(context.filesDir, remoteName).takeIf(File::isFile)?.readBytes()
+            }
+        }.getOrNull() ?: return null
+
+        return runCatching {
+            ProviderPackVerifier.verify(packBytes).manifest
+        }.getOrNull()?.takeIf { manifest ->
+            manifest.pluginId == pluginId && manifest.versionCode == versionCode
         }
     }
 

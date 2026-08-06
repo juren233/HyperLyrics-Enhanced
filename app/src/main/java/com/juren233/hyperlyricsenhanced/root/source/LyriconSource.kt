@@ -117,6 +117,7 @@ class LyriconSource : LyricSource {
     private var lastTimingDiagnosticAtMs = 0L
     private var lastTimingDiagnosticPosition = -1L
     private var lastTimingDiagnosticState: String? = null
+    private var lastCentralPositionDiagnosticAtMs = 0L
 
     private val appleMediaMonitor = object : Runnable {
         override fun run() {
@@ -1552,8 +1553,14 @@ class LyriconSource : LyricSource {
         }
 
         override fun onPositionChanged(position: Long) {
-            if (!hasActiveCentralPlayer()) return
-            if (centralAppleProviderActive && fallbackSongActive) return
+            if (!hasActiveCentralPlayer()) {
+                logCentralPositionDiagnostic(position, null, "dropped_no_active_player")
+                return
+            }
+            if (centralAppleProviderActive && fallbackSongActive) {
+                logCentralPositionDiagnostic(position, null, "dropped_apple_fallback_active")
+                return
+            }
             val adjustedPosition = (position - activeProviderDelayMs).coerceAtLeast(0L)
             if (centralAppleProviderActive) {
                 val resolution = resolveApplePosition(adjustedPosition, explicitSeek = false)
@@ -1567,11 +1574,17 @@ class LyriconSource : LyricSource {
                     adjustedPosition = adjustedPosition,
                     resolution = resolution,
                 )
-                val resolvedPosition = resolution.position ?: return
+                val resolvedPosition = resolution.position
+                if (resolvedPosition == null) {
+                    logCentralPositionDiagnostic(position, null, "dropped_apple_resolution")
+                    return
+                }
                 sink?.onPositionChanged(resolvedPosition)
+                logCentralPositionDiagnostic(position, resolvedPosition, "forwarded_apple")
                 return
             }
             sink?.onPositionChanged(adjustedPosition)
+            logCentralPositionDiagnostic(position, adjustedPosition, "forwarded_non_apple")
         }
 
 
@@ -1732,6 +1745,26 @@ class LyriconSource : LyricSource {
         lastTimingDiagnosticAtMs = now
         lastTimingDiagnosticPosition = adjustedPosition
         lastTimingDiagnosticState = state
+    }
+
+    private fun logCentralPositionDiagnostic(
+        rawPosition: Long,
+        forwardedPosition: Long?,
+        decision: String,
+    ) {
+        if (!BuildConfig.DEBUG) return
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastCentralPositionDiagnosticAtMs < TIMING_DIAGNOSTIC_INTERVAL_MS) return
+        lastCentralPositionDiagnosticAtMs = now
+        HookLogger.i(
+            TAG,
+            "[debug] [LyricPositionDiag] stage=subscriber_callback, decision=$decision, " +
+                "rawPosition=$rawPosition, forwardedPosition=$forwardedPosition, " +
+                "centralPlayer=$activeCentralPlayerPackageName, " +
+                "provider=$activeProviderPackageName, delayMs=$activeProviderDelayMs, " +
+                "appleCentral=$centralAppleProviderActive, fallback=$fallbackSongActive, " +
+                "sinkAvailable=${sink != null}"
+        )
     }
 
     internal fun onDirectText(text: String?) {

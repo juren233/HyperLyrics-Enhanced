@@ -64,6 +64,9 @@ object OfficialProviderCatalog {
     fun installedVersionKey(pluginId: String) =
         "key_official_provider_installed_version_$pluginId"
 
+    fun installedVersionNameKey(pluginId: String) =
+        "key_official_provider_installed_version_name_$pluginId"
+
     fun remoteFileName(pluginId: String, versionCode: Int) =
         "hle-provider-$pluginId-$versionCode.hlp"
 }

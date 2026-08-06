@@ -39,6 +39,7 @@ data class ProviderCatalogEntry(
 data class OfficialProviderItem(
     val catalog: ProviderCatalogEntry,
     val installedVersionCode: Int,
+    val installedVersionName: String?,
     val enabled: Boolean,
 ) {
     val installed: Boolean get() = installedVersionCode > 0
@@ -67,6 +68,47 @@ object OfficialProviderRepository {
         isLenient = false
     }
 
+    /**
+     * Returns the official packs that are already installed locally.
+     *
+     * This intentionally does not touch the network. The main Provider page can
+     * therefore render its installed-plugin section immediately, while the
+     * remote catalog is only needed by the download screen.
+     */
+    suspend fun loadInstalledItems(context: Context): List<OfficialProviderItem> =
+        withContext(Dispatchers.IO) {
+            OfficialProviderCatalog.definitions.mapNotNull { definition ->
+                val installedVersionCode = PrefsBridge.getInt(
+                    OfficialProviderCatalog.installedVersionKey(definition.id),
+                    0,
+                )
+                if (installedVersionCode <= 0) return@mapNotNull null
+
+                val versionNameKey = OfficialProviderCatalog.installedVersionNameKey(definition.id)
+                val installedVersionName = PrefsBridge.getString(versionNameKey)
+                    ?: OfficialProviderInstaller.readInstalledManifest(
+                        context = context,
+                        pluginId = definition.id,
+                        versionCode = installedVersionCode,
+                    )?.versionName?.also { PrefsBridge.putString(versionNameKey, it) }
+
+                OfficialProviderItem(
+                    catalog = ProviderCatalogEntry(
+                        id = definition.id,
+                        displayName = definition.displayName,
+                        targetPackages = definition.targetPackages.toList(),
+                        available = false,
+                    ),
+                    installedVersionCode = installedVersionCode,
+                    installedVersionName = installedVersionName,
+                    enabled = PrefsBridge.getBoolean(
+                        OfficialProviderCatalog.enabledKey(definition.id),
+                        false,
+                    ),
+                )
+            }
+        }
+
     suspend fun loadItems(): List<OfficialProviderItem> {
         val catalogBytes = fetch(CATALOG_URL, MAX_CATALOG_BYTES)
         val signatureText = fetch(CATALOG_SIGNATURE_URL, 4096)
@@ -94,12 +136,25 @@ object OfficialProviderRepository {
 
         return OfficialProviderCatalog.definitions.map { definition ->
             val entry = requireNotNull(entriesById[definition.id])
+            val installedVersionCode = PrefsBridge.getInt(
+                OfficialProviderCatalog.installedVersionKey(definition.id),
+                0,
+            )
+            val storedVersionName = PrefsBridge.getString(
+                OfficialProviderCatalog.installedVersionNameKey(definition.id),
+            )
+            val installedVersionName = storedVersionName
+                ?: entry.versionName?.takeIf { installedVersionCode == entry.versionCode }
+            if (storedVersionName == null && installedVersionName != null) {
+                PrefsBridge.putString(
+                    OfficialProviderCatalog.installedVersionNameKey(definition.id),
+                    installedVersionName,
+                )
+            }
             OfficialProviderItem(
                 catalog = entry,
-                installedVersionCode = PrefsBridge.getInt(
-                    OfficialProviderCatalog.installedVersionKey(definition.id),
-                    0,
-                ),
+                installedVersionCode = installedVersionCode,
+                installedVersionName = installedVersionName,
                 enabled = PrefsBridge.getBoolean(
                     OfficialProviderCatalog.enabledKey(definition.id),
                     false,

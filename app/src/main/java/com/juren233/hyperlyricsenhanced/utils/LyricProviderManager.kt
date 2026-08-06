@@ -58,7 +58,7 @@ object LyricProviderManager {
                 val packageInfos = packageManager.getInstalledPackages(PackageManager.GET_META_DATA or getSignFlag)
                 
                 val targetPackages = packageInfos.filter { packageInfo ->
-                    isValidModule(packageInfo)
+                    packageInfo.packageName != context.packageName && isValidModule(packageInfo)
                 }
 
                 if (targetPackages.isEmpty()) {

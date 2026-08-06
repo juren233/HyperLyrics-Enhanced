@@ -22,6 +22,8 @@ sealed interface Route : NavKey {
     @Serializable
     data object LyricProvider : Route
     @Serializable
+    data object LyricProviderDownloads : Route
+    @Serializable
     data object LyricAnimation : Route
     @Serializable
     data object LyricSettings : Route

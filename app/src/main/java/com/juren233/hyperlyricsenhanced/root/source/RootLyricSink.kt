@@ -37,6 +37,7 @@ class RootLyricSink(
     private var playbackActive = false
     private var lastReceivedPosition = Long.MIN_VALUE
     private var lastDispatchedPosition = Long.MIN_VALUE
+    private var lastPositionDiagnosticAtMs = 0L
     private val positionDispatchRunnable = Runnable {
         positionDispatchScheduled = false
         val latest = pendingPosition ?: return@Runnable
@@ -47,6 +48,7 @@ class RootLyricSink(
     private companion object {
         const val MIN_POSITION_DISPATCH_INTERVAL_MS = 33L
         const val APPLE_MUSIC_PACKAGE = "com.apple.android.music"
+        const val POSITION_DIAGNOSTIC_INTERVAL_MS = 5_000L
     }
 
     override fun onSongChanged(song: Any?) {
@@ -149,7 +151,11 @@ class RootLyricSink(
     }
 
     override fun onPositionChanged(position: Long) {
-        if (position == lastReceivedPosition) return
+        if (position == lastReceivedPosition) {
+            logPositionDiagnostic(position, "dropped_duplicate")
+            return
+        }
+        logPositionDiagnostic(position, "accepted")
         lastReceivedPosition = position
         val lyricChanged = LyriconDataBridge.updatePosition(position)
         LyriconDataBridge.updatePlaybackState(playbackActive)
@@ -162,6 +168,20 @@ class RootLyricSink(
         } else {
             dispatchPosition(position)
         }
+    }
+
+    private fun logPositionDiagnostic(position: Long, decision: String) {
+        if (!BuildConfig.DEBUG) return
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastPositionDiagnosticAtMs < POSITION_DIAGNOSTIC_INTERVAL_MS) return
+        lastPositionDiagnosticAtMs = now
+        HookLogger.i(
+            "RootLyricSink",
+            "[LyricPositionDiag] stage=root_sink, decision=$decision, " +
+                "position=$position, previous=$lastReceivedPosition, " +
+                "playbackActive=$playbackActive, " +
+                "player=${LyriconDataBridge.currentLyricPackageName}"
+        )
     }
 
     override fun onSeekTo(position: Long) {

@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 Proify, Tomakino
+ * Copyright 2026 Proify, Tomakino, juren233
  * Licensed under the Apache License, Version 2.0
  * http://www.apache.org/licenses/LICENSE-2.0
  */
@@ -53,6 +53,7 @@ internal class PlayerBinder(
     private var lastPlaybackState: PlaybackState? = null
     private val providerInfo = info
     private var lastPositionDiagnosticAtMs = 0L
+    private var lastPositionPublishDiagnosticAtMs = 0L
 
     init {
         ScreenStateMonitor.addListener(this)
@@ -251,6 +252,22 @@ internal class PlayerBinder(
     private fun publishPosition(position: Long) {
         recorder.position = position
         playerEvents.safeNotify { onPositionChanged(recorder, position) }
+        logPositionPublishDiagnostic(position)
+    }
+
+    private fun logPositionPublishDiagnostic(position: Long) {
+        if (!BuildConfig.DEBUG) return
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastPositionPublishDiagnosticAtMs < POSITION_DIAGNOSTIC_INTERVAL_MS) return
+        lastPositionPublishDiagnosticAtMs = now
+        Log.i(
+            TAG,
+            "[LyricPositionDiag] stage=provider_publish, " +
+                "provider=${providerInfo.providerPackageName}, " +
+                "player=${providerInfo.playerPackageName}, process=${providerInfo.processName}, " +
+                "position=$position, playing=${recorder.isPlaying}, " +
+                "state2=${isState2Enabled.get()}"
+        )
     }
 
     private inline fun PlayerListener.safeNotify(crossinline block: PlayerListener.() -> Unit) {
