@@ -29,6 +29,7 @@ import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.common.UIConstants
 import com.juren233.hyperlyricsenhanced.online.utils.ChineseUtils
+import com.juren233.hyperlyricsenhanced.provider.OfficialProviderCatalog
 import com.juren233.hyperlyricsenhanced.provider.OfficialProviderRuntime
 import io.github.libxposed.api.XposedInterface.Chain
 import io.github.libxposed.api.XposedInterface.Hooker
@@ -204,11 +205,10 @@ class HookEntry : XposedModule() {
 
     override fun onPackageLoaded(param: PackageLoadedParam) {
         val processName = runCatching { android.app.Application.getProcessName() }.getOrNull() ?: ""
-        
-        // 仅在主进程注入
-        if (processName.contains(":")) return
-        
         val packageName = param.packageName
+
+        // 普通目标仍只在主进程注入；官方 Provider 可精确声明必要的播放子进程。
+        if (!OfficialProviderCatalog.shouldLoadIntoProcess(packageName, processName)) return
         
         if (packageName == "com.android.systemui") {
             NotificationMediaAodLyricHooker.hook(this, param.defaultClassLoader)
