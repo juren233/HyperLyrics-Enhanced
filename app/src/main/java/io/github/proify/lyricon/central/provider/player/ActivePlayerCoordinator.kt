@@ -16,15 +16,20 @@ import io.github.proify.lyricon.central.provider.player.PlayerRecorder.LyricType
 import io.github.proify.lyricon.lyric.model.Song
 import io.github.proify.lyricon.provider.ProviderInfo
 import java.util.concurrent.CopyOnWriteArraySet
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.concurrent.read
 import kotlin.concurrent.write
 
-internal class ActivePlayerCoordinator : PlayerListener {
+internal class ActivePlayerCoordinator(
+    private val officialProviderPreference: (String) -> Boolean? = { null },
+    private val decisionLogger: (String) -> Unit = { message -> Log.i(TAG, message) },
+) : PlayerListener {
 
     private val debug = Constants.isDebug()
     private val lock = ReentrantReadWriteLock()
     private val listeners = CopyOnWriteArraySet<ActivePlayerListener>()
+    private val loggedSourceDecisions = ConcurrentHashMap<String, String>()
 
     @Volatile
     private var activeRecorder: PlayerRecorder? = null
@@ -63,6 +68,40 @@ internal class ActivePlayerCoordinator : PlayerListener {
         }
 
         if (shouldNotify) {
+            broadcast {
+                it.onActiveProviderChanged(null)
+                it.onPlaybackStateChanged(false)
+            }
+        }
+    }
+
+    /** Reconciles an already active source immediately after official Pack preferences change. */
+    fun onOfficialProviderPreferencesChanged(playerPackageNames: Set<String>) {
+        if (playerPackageNames.isEmpty()) return
+        loggedSourceDecisions.keys.removeAll { key ->
+            playerPackageNames.any { playerPackageName -> key.endsWith("/$playerPackageName") }
+        }
+
+        var removedInfo: ProviderInfo? = null
+        lock.write {
+            val currentInfo = activeInfo
+            if (currentInfo != null &&
+                currentInfo.playerPackageName in playerPackageNames &&
+                !isProviderAllowed(currentInfo)
+            ) {
+                removedInfo = currentInfo
+                activeRecorder = null
+                activeIsPlaying = false
+            }
+        }
+
+        removedInfo?.let { providerInfo ->
+            decisionLogger(
+                "官方 Provider 配置变更后清除不再允许的来源: " +
+                    "provider=${providerInfo.providerPackageName}, " +
+                    "player=${providerInfo.playerPackageName}, " +
+                    "officialPreferred=${officialProviderPreference(providerInfo.playerPackageName)}",
+            )
             broadcast {
                 it.onActiveProviderChanged(null)
                 it.onPlaybackStateChanged(false)
@@ -152,11 +191,25 @@ internal class ActivePlayerCoordinator : PlayerListener {
         var decision = "unknown"
         var previousInfo: ProviderInfo? = null
         var resultingInfo: ProviderInfo? = null
+        var invalidActiveCleared = false
 
         lock.write {
-            val currentInfo = activeInfo
+            var currentInfo = activeInfo
             previousInfo = currentInfo
-            if (currentInfo === recorderInfo) {
+            if (currentInfo != null && !isProviderAllowed(currentInfo)) {
+                activeRecorder = null
+                activeIsPlaying = false
+                invalidActiveCleared = true
+                currentInfo = null
+            }
+
+            if (!isProviderAllowed(recorderInfo)) {
+                decision = when (ProviderSourcePriorityResolver.resolve(recorderInfo)) {
+                    ProviderSourcePriority.OFFICIAL_PLUGIN -> "dropped_official_pack_disabled"
+                    ProviderSourcePriority.LEGACY_APK -> "dropped_legacy_official_pack_preferred"
+                    ProviderSourcePriority.BUILT_IN -> "dropped_source_not_allowed"
+                }
+            } else if (currentInfo === recorderInfo) {
                 activeIsPlaying = recorderPlaying
                 shouldBroadcastOriginal = true
                 decision = "accepted_active"
@@ -197,6 +250,12 @@ internal class ActivePlayerCoordinator : PlayerListener {
             resultingInfo = activeInfo
         }
 
+        if (decision.startsWith("dropped_official_pack_") ||
+            decision.startsWith("dropped_legacy_official_pack_")
+        ) {
+            logSourceDecisionOnce(recorderInfo, decision)
+        }
+
         diagnosticPosition?.let { position ->
             logPositionDiagnostic(
                 recorderInfo = recorderInfo,
@@ -210,6 +269,13 @@ internal class ActivePlayerCoordinator : PlayerListener {
             )
         }
 
+        if (invalidActiveCleared && !isSwitched) {
+            broadcast {
+                it.onActiveProviderChanged(null)
+                it.onPlaybackStateChanged(false)
+            }
+        }
+
         if (isSwitched) {
             broadcast { syncNewProviderState(recorder, it) }
         }
@@ -217,6 +283,25 @@ internal class ActivePlayerCoordinator : PlayerListener {
         if (shouldBroadcastOriginal) {
             broadcast(notifier)
         }
+    }
+
+    private fun isProviderAllowed(providerInfo: ProviderInfo): Boolean {
+        val preference = officialProviderPreference(providerInfo.playerPackageName) ?: return true
+        return when (ProviderSourcePriorityResolver.resolve(providerInfo)) {
+            ProviderSourcePriority.BUILT_IN -> true
+            ProviderSourcePriority.OFFICIAL_PLUGIN -> preference
+            ProviderSourcePriority.LEGACY_APK -> !preference
+        }
+    }
+
+    private fun logSourceDecisionOnce(providerInfo: ProviderInfo, decision: String) {
+        val sourceKey = "${providerInfo.providerPackageName}/${providerInfo.playerPackageName}"
+        if (loggedSourceDecisions.put(sourceKey, decision) == decision) return
+        decisionLogger(
+            "Provider 来源仲裁: decision=$decision, provider=${providerInfo.providerPackageName}, " +
+                "player=${providerInfo.playerPackageName}, " +
+                "officialPreferred=${officialProviderPreference(providerInfo.playerPackageName)}",
+        )
     }
 
     private fun logPositionDiagnostic(

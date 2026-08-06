@@ -35,7 +35,14 @@ internal class OfficialProviderHookHost(
             "callApplicationOnCreate",
             Application::class.java,
         )
-        module.hook(method).intercept(ApplicationCreatedHooker(packageName, callback))
+        module.hook(method).intercept(
+            ApplicationCreatedHooker(module, packageName, callback),
+        )
+        module.log(
+            Log.INFO,
+            tag,
+            "官方 Provider 生命周期 Hook 已安装: package=$packageName",
+        )
     }
 
     override fun hookMediaSession(
@@ -52,14 +59,21 @@ internal class OfficialProviderHookHost(
             PlaybackState::class.java,
         )
         module.hook(setPlaybackState).intercept(
-            PlaybackStateHooker(playbackStateCallback),
+            PlaybackStateHooker(module, packageName, playbackStateCallback),
         )
 
         val setMetadata = mediaSessionClass.getDeclaredMethod(
             "setMetadata",
             MediaMetadata::class.java,
         )
-        module.hook(setMetadata).intercept(MetadataHooker(metadataCallback))
+        module.hook(setMetadata).intercept(
+            MetadataHooker(module, packageName, metadataCallback),
+        )
+        module.log(
+            Log.INFO,
+            tag,
+            "官方 Provider MediaSession Hook 已安装: package=$packageName",
+        )
     }
 
     override fun hookAfterMethod(
@@ -112,38 +126,97 @@ internal class OfficialProviderHookHost(
     }
 
     private class ApplicationCreatedHooker(
+        private val module: XposedModule,
         private val expectedPackageName: String,
         private val callback: OfficialProviderApplicationCallback,
     ) : XposedInterface.Hooker {
+        private val firstCallbackRecorded = AtomicBoolean(false)
+
         override fun intercept(chain: XposedInterface.Chain): Any? {
             val result = chain.proceed()
             val application = chain.args.firstOrNull() as? Application
             if (application?.packageName == expectedPackageName) {
                 runCatching { callback.onApplicationCreated(application) }
+                    .onSuccess {
+                        if (firstCallbackRecorded.compareAndSet(false, true)) {
+                            module.log(
+                                Log.INFO,
+                                "OfficialProviderHookHost",
+                                "官方 Provider 生命周期 Hook 首次命中: " +
+                                    "package=$expectedPackageName",
+                            )
+                        }
+                    }
+                    .onFailure { error ->
+                        module.log(
+                            Log.ERROR,
+                            "OfficialProviderHookHost",
+                            "官方 Provider 生命周期回调失败: " +
+                                "package=$expectedPackageName error=${error.message}",
+                        )
+                    }
             }
             return result
         }
     }
 
     private class PlaybackStateHooker(
+        private val module: XposedModule,
+        private val packageName: String,
         private val callback: OfficialProviderPlaybackStateCallback,
     ) : XposedInterface.Hooker {
+        private val firstCallbackRecorded = AtomicBoolean(false)
+
         override fun intercept(chain: XposedInterface.Chain): Any? {
             val result = chain.proceed()
             runCatching {
                 callback.onPlaybackStateChanged(chain.args.firstOrNull() as? PlaybackState)
+            }.onSuccess {
+                if (firstCallbackRecorded.compareAndSet(false, true)) {
+                    module.log(
+                        Log.INFO,
+                        "OfficialProviderHookHost",
+                        "官方 Provider PlaybackState Hook 首次命中: package=$packageName",
+                    )
+                }
+            }.onFailure { error ->
+                module.log(
+                    Log.ERROR,
+                    "OfficialProviderHookHost",
+                    "官方 Provider PlaybackState 回调失败: " +
+                        "package=$packageName error=${error.message}",
+                )
             }
             return result
         }
     }
 
     private class MetadataHooker(
+        private val module: XposedModule,
+        private val packageName: String,
         private val callback: OfficialProviderMetadataCallback,
     ) : XposedInterface.Hooker {
+        private val firstCallbackRecorded = AtomicBoolean(false)
+
         override fun intercept(chain: XposedInterface.Chain): Any? {
             val result = chain.proceed()
             runCatching {
                 callback.onMetadataChanged(chain.args.firstOrNull() as? MediaMetadata)
+            }.onSuccess {
+                if (firstCallbackRecorded.compareAndSet(false, true)) {
+                    module.log(
+                        Log.INFO,
+                        "OfficialProviderHookHost",
+                        "官方 Provider Metadata Hook 首次命中: package=$packageName",
+                    )
+                }
+            }.onFailure { error ->
+                module.log(
+                    Log.ERROR,
+                    "OfficialProviderHookHost",
+                    "官方 Provider Metadata 回调失败: " +
+                        "package=$packageName error=${error.message}",
+                )
             }
             return result
         }

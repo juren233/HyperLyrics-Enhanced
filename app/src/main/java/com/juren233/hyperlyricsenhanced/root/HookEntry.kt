@@ -28,8 +28,10 @@ import com.juren233.hyperlyricsenhanced.root.aitrans.AITranslator
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.common.UIConstants
+import com.juren233.hyperlyricsenhanced.common.media.NextTrackMetadataCache
 import com.juren233.hyperlyricsenhanced.online.utils.ChineseUtils
 import com.juren233.hyperlyricsenhanced.provider.OfficialProviderCatalog
+import com.juren233.hyperlyricsenhanced.provider.OfficialProviderPreferencePolicy
 import com.juren233.hyperlyricsenhanced.provider.OfficialProviderRuntime
 import io.github.libxposed.api.XposedInterface.Chain
 import io.github.libxposed.api.XposedInterface.Hooker
@@ -305,7 +307,14 @@ class HookEntry : XposedModule() {
             val renderer = BaseIslandRenderer
             val sink = RootLyricSink(renderer, prefs)
 
+            OfficialProviderPreferencePolicy.configure(prefs)
+            val officialProviderPlayers = OfficialProviderCatalog.definitions
+                .flatMapTo(linkedSetOf()) { definition -> definition.targetPackages }
+            NextTrackMetadataCache.clearPlayers(officialProviderPlayers)
             EmbeddedLyriconCentralController.prepare(app)
+            EmbeddedLyriconCentralController.onOfficialProviderPreferencesChanged(
+                officialProviderPlayers,
+            )
             lyriconSource.initialize(
                 app = app,
                 prefs = prefs,
@@ -338,6 +347,19 @@ class HookEntry : XposedModule() {
             ClassicAodFocusNotificationRecovery.ensureListenerCanRecover(app, prefs)
 
             prefListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+                val affectedOfficialProviderPlayers =
+                    OfficialProviderPreferencePolicy.affectedPlayerPackages(key)
+                if (affectedOfficialProviderPlayers.isNotEmpty()) {
+                    NextTrackMetadataCache.clearPlayers(affectedOfficialProviderPlayers)
+                    EmbeddedLyriconCentralController.onOfficialProviderPreferencesChanged(
+                        affectedOfficialProviderPlayers,
+                    )
+                    HookLogger.i(
+                        "HookEntry",
+                        "官方 Provider 配置已重评估: key=$key, " +
+                            "players=${affectedOfficialProviderPlayers.sorted()}",
+                    )
+                }
                 if (key?.startsWith(RootConstants.KEY_HOOK_LYRICON_PROVIDER_DELAY_PREFIX) == true ||
                     key == RootConstants.KEY_HOOK_APPLE_MUSIC_ONLINE_FALLBACK ||
                     key == RootConstants.KEY_HOOK_APPLE_MUSIC_FALLBACK_QQ_FIRST ||

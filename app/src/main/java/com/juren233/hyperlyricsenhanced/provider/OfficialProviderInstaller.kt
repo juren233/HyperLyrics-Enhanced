@@ -39,12 +39,16 @@ object OfficialProviderInstaller {
                 remoteName,
             )
         }
+        OfficialProviderScopeManager.requestPluginScopes(manifest.pluginId)
         return manifest
     }
 
     fun setEnabled(pluginId: String, enabled: Boolean) {
         requireNotNull(OfficialProviderCatalog.definitionForId(pluginId))
         PrefsBridge.putBoolean(OfficialProviderCatalog.enabledKey(pluginId), enabled)
+        if (enabled) {
+            OfficialProviderScopeManager.requestPluginScopes(pluginId)
+        }
     }
 
     fun delete(context: Context, pluginId: String) {

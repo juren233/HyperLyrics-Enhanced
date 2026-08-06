@@ -12,6 +12,7 @@ import android.os.Handler
 import android.os.Looper
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import io.github.proify.lyricon.central.BridgeCentral
+import io.github.proify.lyricon.central.CentralRuntime
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -53,6 +54,11 @@ internal object EmbeddedLyriconCentralController {
 
     fun onSubscriberConnectTimeout(app: Application) {
         ensureStarted(app, reason = "standalone_connection_timeout")
+    }
+
+    fun onOfficialProviderPreferencesChanged(playerPackageNames: Set<String>) {
+        if (!started.get() || playerPackageNames.isEmpty()) return
+        CentralRuntime.activePlayers.onOfficialProviderPreferencesChanged(playerPackageNames)
     }
 
     private fun ensureStarted(app: Application, reason: String) {

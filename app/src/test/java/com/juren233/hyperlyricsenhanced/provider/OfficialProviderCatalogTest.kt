@@ -8,7 +8,6 @@ package com.juren233.hyperlyricsenhanced.provider
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -23,8 +22,11 @@ class OfficialProviderCatalogTest {
     }
 
     @Test
-    fun `does not require Salt Player feature switches`() {
-        assertNull(OfficialProviderCatalog.definitionForId("salt-player")?.description)
+    fun `shows exact supported Salt Player versions without feature switch instructions`() {
+        assertEquals(
+            "已适配版本：11.1.0、12.0.0、12.1.0、12.1.1",
+            OfficialProviderCatalog.definitionForId("salt-player")?.description,
+        )
     }
 
     @Test

@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import com.juren233.hyperlyricsenhanced.common.PrefsBridge
 import com.juren233.hyperlyricsenhanced.common.UIConstants
+import com.juren233.hyperlyricsenhanced.provider.OfficialProviderScopeManager
 import com.juren233.hyperlyricsenhanced.ui.utils.AppUtils
 import com.juren233.hyperlyricsenhanced.ui.utils.LocaleUtils
 import com.juren233.hyperlyricsenhanced.utils.LogManager
@@ -24,9 +25,11 @@ class RootApplication : Application() {
             override fun onServiceBind(service: XposedService) {
                 xposedService = service
                 syncAllPreferences(this@RootApplication)
+                OfficialProviderScopeManager.requestConfiguredScopes(service)
             }
             override fun onServiceDied(service: XposedService) {
                 xposedService = null
+                OfficialProviderScopeManager.onServiceDied()
             }
         })
     }
@@ -47,6 +50,7 @@ class RootApplication : Application() {
 
             remotePrefs.edit().apply {
                 when (value) {
+                    null -> remove(key)
                     is Boolean -> putBoolean(key, value)
                     is Int -> putInt(key, value)
                     is String -> putString(key, value)

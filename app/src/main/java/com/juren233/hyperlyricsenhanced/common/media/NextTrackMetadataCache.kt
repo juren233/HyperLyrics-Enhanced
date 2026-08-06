@@ -9,6 +9,7 @@ package com.juren233.hyperlyricsenhanced.common.media
 import android.os.SystemClock
 import com.juren233.hyperlyricsenhanced.provider.OfficialProviderCatalog
 import com.juren233.hyperlyricsenhanced.provider.OfficialProviderNextTrackFrame
+import com.juren233.hyperlyricsenhanced.provider.OfficialProviderPreferencePolicy
 import java.util.Locale
 
 internal data class NextTrackMetadata(
@@ -69,6 +70,12 @@ internal class NextTrackMetadataStore(
     }
 
     @Synchronized
+    fun clearPlayers(playerPackageNames: Set<String>) {
+        if (playerPackageNames.isEmpty()) return
+        entries.keys.removeAll { it.playerPackageName in playerPackageNames }
+    }
+
+    @Synchronized
     fun find(
         playerPackageName: String,
         currentId: String?,
@@ -119,7 +126,13 @@ internal object NextTrackMetadataCache {
         playerPackageName: String,
         frame: OfficialProviderNextTrackFrame,
     ): ControlResult {
-        if (!OfficialProviderCatalog.isOfficialProviderPair(providerPackageName, playerPackageName)) {
+        if (!isProviderAccepted(
+                providerPackageName = providerPackageName,
+                playerPackageName = playerPackageName,
+                officialProviderPreference =
+                    OfficialProviderPreferencePolicy.preferenceState(playerPackageName),
+            )
+        ) {
             return ControlResult.REJECTED_PROVIDER
         }
         if (frame.clear) {
@@ -158,4 +171,16 @@ internal object NextTrackMetadataCache {
         currentTitle,
         currentArtist,
     )
+
+    fun clearPlayers(playerPackageNames: Set<String>) {
+        store.clearPlayers(playerPackageNames)
+    }
+
+    internal fun isProviderAccepted(
+        providerPackageName: String,
+        playerPackageName: String,
+        officialProviderPreference: Boolean?,
+    ): Boolean =
+        OfficialProviderCatalog.isOfficialProviderPair(providerPackageName, playerPackageName) &&
+            officialProviderPreference != false
 }
