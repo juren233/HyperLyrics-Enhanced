@@ -29,7 +29,6 @@ fun LazyListScope.homePageSections(
     onLockScreenAodConfigClick: () -> Unit,
     onClassicAodConfigClick: () -> Unit,
     onLyricSettingsClick: () -> Unit,
-    onRestartClick: () -> Unit,
     removeFocusWhitelist: Boolean,
     onRemoveFocusWhitelistToggle: (Boolean) -> Unit,
     removeIslandWhitelist: Boolean,
@@ -152,10 +151,6 @@ fun LazyListScope.homePageSections(
     item(key = "special_features_content") {
         Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
             Column {
-                ArrowPreference(
-                    title = stringResource(R.string.title_restart_ui),
-                    onClick = onRestartClick,
-                )
                 SwitchPreference(
                     title = stringResource(R.string.title_remove_focus_whitelist),
                     summary = stringResource(R.string.summary_remove_focus_whitelist),

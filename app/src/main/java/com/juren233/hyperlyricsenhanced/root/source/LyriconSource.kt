@@ -830,6 +830,13 @@ class LyriconSource : LyricSource {
                         .firstOrNull {
                             OnlineTranslationMatcher.contributesPronunciation(baseSong, it.result)
                         }
+                    val selection = OnlineTranslationSelection(
+                        onlineLinesBySource = candidates.mapValues { it.value.onlineLines },
+                        defaultTranslationSource = defaultTranslationCandidate?.source,
+                        defaultPronunciationSource = defaultPronunciationCandidate?.source,
+                        forcedTranslationSource = temporaryTranslationSource,
+                        forcedPronunciationSource = temporaryPronunciationSource,
+                    )
                     val currentPublishedSong = currentPublishedAppleSong
                         ?.takeIf { isSameTrack(it, baseSong) }
                         ?.let { publishedSong ->
@@ -887,7 +894,7 @@ class LyriconSource : LyricSource {
                             "resultRomanized=${mergedResult?.song?.lyrics.orEmpty().count { !it.roma.isNullOrBlank() }}"
                     )
                     mainHandler.post {
-                        applyOnlineTranslationResult(generation, baseSong, mergedResult)
+                        applyOnlineTranslationResult(generation, baseSong, selection)
                     }
                 }
             } catch (e: CancellationException) {
@@ -974,6 +981,7 @@ class LyriconSource : LyricSource {
                 !it.romanization.isNullOrBlank()
             },
             matchedContentCount = matchedTranslationCount + matchedPronunciationCount,
+            onlineLines = filteredOnlineLines,
         )
         pronunciationDiagnostic(
             "stage=candidate_fetch_finished, generation=$generation, id=${baseSong.id}, " +
@@ -1007,7 +1015,7 @@ class LyriconSource : LyricSource {
     private fun applyOnlineTranslationResult(
         generation: Int,
         baseSong: LocalSong,
-        result: OnlineTranslationMatcher.Result?
+        selection: OnlineTranslationSelection?
     ) {
         val nativeSong = currentAppleSong
         val generationMatches = generation == onlineTranslationGeneration
@@ -1022,8 +1030,8 @@ class LyriconSource : LyricSource {
                 "accepted=$requestStillCurrent, currentGeneration=$onlineTranslationGeneration, " +
                 "generationMatches=$generationMatches, sameTrack=$sameTrack, " +
                 "nativeLyrics=$nativeLyricsAvailable, enrichmentNeeded=$enrichmentNeeded, " +
-                "matchingEnabled=$matchingEnabled, resultPresent=${result != null}, " +
-                "resultRomanized=${result?.song?.lyrics.orEmpty().count { !it.roma.isNullOrBlank() }}"
+                "matchingEnabled=$matchingEnabled, resultPresent=${selection != null}, " +
+                "candidateSources=${selection?.onlineLinesBySource?.keys?.joinToString("+").orEmpty()}"
         )
         if (!requestStillCurrent) {
             diagnostic(
@@ -1035,20 +1043,26 @@ class LyriconSource : LyricSource {
 
         onlineTranslationJob = null
         val latestNativeSong = nativeSong
-        val mergedResult = result?.let { onlineResult ->
-            OnlineTranslationMatcher.fillMissing(
-                primary = OnlineTranslationMatcher.Result(
-                    song = latestNativeSong,
-                    matchedCount = 0,
-                    averageMatchScore = 0.0,
-                ),
-                supplemental = onlineResult,
-            ).let { merged ->
-                merged.copy(
-                    song = merged.song.copy(metadata = onlineResult.song.metadata)
+        val currentPublishedSong = currentPublishedAppleSong
+            ?.takeIf { isSameTrack(it, latestNativeSong) }
+            ?.let { publishedSong ->
+                ApplePronunciationVisibilityPolicy.filterSong(
+                    song = publishedSong,
+                    hideMandarinPinyin = isHideMandarinPinyinEnabled(),
                 )
             }
-        }
+        val nativeLyricsChangedDuringRequest = baseSong.lyrics != latestNativeSong.lyrics
+        val mergedResult = (selection ?: OnlineTranslationSelection()).compose(
+            latestNativeSong = latestNativeSong,
+            currentPublishedSong = currentPublishedSong,
+        )
+        pronunciationDiagnostic(
+            "stage=result_rebased, generation=$generation, id=${baseSong.id}, " +
+                "nativeLyricsChanged=$nativeLyricsChangedDuringRequest, " +
+                "requestLines=${baseSong.lyrics.orEmpty().size}, " +
+                "latestLines=${latestNativeSong.lyrics.orEmpty().size}, " +
+                "candidateSources=${selection?.onlineLinesBySource?.keys?.joinToString("+").orEmpty()}"
+        )
         val hasPendingSourceSwitch = pendingTranslationSourceRequest
             ?.takeIf { it.songId == baseSong.id } != null ||
             pendingPronunciationSourceRequest
@@ -1075,6 +1089,12 @@ class LyriconSource : LyricSource {
             if (requestOriginalMetadata(baseSong, "translation_match_miss")) return
             completePendingOnlineSourceSwitchRequests(null)
             if (!onlineMatchedTranslationActive) {
+                if (
+                    !currentPublishedAppleOnlineTranslationMatched &&
+                    currentPublishedAppleSong != latestNativeSong
+                ) {
+                    publishAppleSong(latestNativeSong, restorePosition = true)
+                }
                 sink?.onOnlineTranslationUnavailable(nativeSong)
             }
             return

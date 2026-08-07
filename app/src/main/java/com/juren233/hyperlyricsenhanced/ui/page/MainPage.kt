@@ -15,7 +15,6 @@ import top.yukonga.miuix.kmp.basic.SnackbarHostState
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import com.juren233.hyperlyricsenhanced.ui.component.SimpleDialog
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
@@ -45,6 +44,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -82,6 +82,10 @@ import com.juren233.hyperlyricsenhanced.ui.page.main.AboutHeroView
 import com.juren233.hyperlyricsenhanced.ui.page.main.AboutHeroVisualState
 import com.juren233.hyperlyricsenhanced.ui.page.main.AboutDebugLog
 import com.juren233.hyperlyricsenhanced.ui.page.main.HomePage
+import com.juren233.hyperlyricsenhanced.ui.page.main.OneTapRefreshCatalog
+import com.juren233.hyperlyricsenhanced.ui.page.main.OneTapRefreshDialog
+import com.juren233.hyperlyricsenhanced.ui.page.main.OneTapRefreshMusicApp
+import com.juren233.hyperlyricsenhanced.ui.page.main.OneTapRefreshSelectionPolicy
 import com.juren233.hyperlyricsenhanced.ui.page.main.rememberMainPagerState
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.BasicComponent
@@ -143,7 +147,7 @@ fun MainPage() {
     // --- toast messages ---
     val msgPermissionGranted = stringResource(R.string.toast_permission_granted)
     val msgPermissionDenied = stringResource(R.string.toast_permission_denied)
-    val msgNoRoot = stringResource(R.string.toast_no_root)
+    val msgOneTapRefreshNoRoot = stringResource(R.string.toast_one_tap_refresh_no_root)
     val msgPermissionNotGranted = stringResource(R.string.toast_permission_not_granted)
     val msgOpenSettingsFailed = stringResource(R.string.toast_open_settings_failed)
     val msgXposedNotActive = stringResource(R.string.toast_xposed_module_not_active)
@@ -170,7 +174,13 @@ fun MainPage() {
     }
 
     // --- dialogs ---
-    var showRestartDialog by remember { mutableStateOf(false) }
+    var showOneTapRefreshDialog by remember { mutableStateOf(false) }
+    var oneTapRefreshHasRoot by remember { mutableStateOf<Boolean?>(null) }
+    var oneTapRefreshMusicApps by remember {
+        mutableStateOf(emptyList<OneTapRefreshMusicApp>())
+    }
+    var oneTapRefreshSelectedIds by remember { mutableStateOf(emptySet<String>()) }
+    var oneTapRefreshRootCheckSequence by remember { mutableLongStateOf(0L) }
     var showPermissionSheet by remember { mutableStateOf(false) }
 
     // --- permission launcher ---
@@ -434,23 +444,38 @@ fun MainPage() {
     }
 
     // --- dialogs at outer level ---
-    SimpleDialog(
-        show = showRestartDialog,
-        title = stringResource(R.string.dialog_restart_title),
-        summary = stringResource(R.string.dialog_restart_summary),
-        onDismiss = { showRestartDialog = false },
+    OneTapRefreshDialog(
+        show = showOneTapRefreshDialog,
+        hasRootAccess = oneTapRefreshHasRoot,
+        musicApps = oneTapRefreshMusicApps,
+        selectedIds = oneTapRefreshSelectedIds,
+        onToggle = { targetId ->
+            oneTapRefreshSelectedIds = OneTapRefreshSelectionPolicy.toggle(
+                selectedIds = oneTapRefreshSelectedIds,
+                targetId = targetId,
+                musicAppIds = oneTapRefreshMusicApps
+                    .mapTo(linkedSetOf(), OneTapRefreshMusicApp::packageName),
+            )
+        },
+        onDismiss = { showOneTapRefreshDialog = false },
         onConfirm = {
-            showRestartDialog = false
-            scope.launch {
-                val success = ShellUtils.restartSystemUI()
-                if (!success) {
-                    snackbarHostState.showSnackbar(
-                        message = msgNoRoot,
-                        duration = SnackbarDuration.Custom(2000L)
-                    )
+            val selectedPackages = OneTapRefreshSelectionPolicy.selectedPackages(
+                selectedIds = oneTapRefreshSelectedIds,
+                musicApps = oneTapRefreshMusicApps,
+            )
+            if (selectedPackages.isNotEmpty()) {
+                showOneTapRefreshDialog = false
+                scope.launch {
+                    val success = ShellUtils.killAppProcesses(selectedPackages)
+                    if (!success) {
+                        snackbarHostState.showSnackbar(
+                            message = msgOneTapRefreshNoRoot,
+                            duration = SnackbarDuration.Custom(2000L),
+                        )
+                    }
                 }
             }
-        }
+        },
     )
 
     // --- migration dialog ---
@@ -624,7 +649,21 @@ fun MainPage() {
                         onLockScreenAodConfigClick = { navigator.navigate(Route.LockScreenAodSettings) },
                         onClassicAodConfigClick = { navigator.navigate(Route.ClassicAodSettings) },
                         onLyricSettingsClick = { navigator.navigate(Route.LyricSettings) },
-                        onRestartClick = { showRestartDialog = true },
+                        onRefreshClick = {
+                            oneTapRefreshSelectedIds = emptySet()
+                            oneTapRefreshMusicApps =
+                                OneTapRefreshCatalog.installedMusicApps(context.packageManager)
+                            oneTapRefreshHasRoot = null
+                            showOneTapRefreshDialog = true
+                            val rootCheckSequence = oneTapRefreshRootCheckSequence + 1L
+                            oneTapRefreshRootCheckSequence = rootCheckSequence
+                            scope.launch {
+                                val hasRootAccess = ShellUtils.hasRootAccess()
+                                if (oneTapRefreshRootCheckSequence == rootCheckSequence) {
+                                    oneTapRefreshHasRoot = hasRootAccess
+                                }
+                            }
+                        },
                         removeFocusWhitelist = removeFocusWhitelist,
                         onRemoveFocusWhitelistToggle = toggleRemoveFocusWhitelist,
                         removeIslandWhitelist = removeIslandWhitelist,

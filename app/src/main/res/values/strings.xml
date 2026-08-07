@@ -20,11 +20,13 @@
     <string name="about">关于</string>
     <string name="toast_permission_granted">已获取通知权限</string>
     <string name="toast_permission_denied">未获取通知权限</string>
-    <string name="dialog_restart_title">是否重启系统界面？</string>
-    <string name="dialog_restart_summary">重启后也要重启音乐软件哦</string>
     <string name="cancel">取消</string>
     <string name="confirm">确认</string>
-    <string name="toast_no_root">应用未获取root权限</string>
+    <string name="title_one_tap_refresh">一键刷新</string>
+    <string name="summary_one_tap_refresh_root_required">需要root权限</string>
+    <string name="option_refresh_system_ui">系统界面</string>
+    <string name="option_refresh_all_music_apps">所有音乐App</string>
+    <string name="toast_one_tap_refresh_no_root">无root权限无法一键刷新</string>
     <string name="title_basic_features">基础功能</string>
     <string name="title_lyric_settings">歌词设置</string>
     <string name="title_super_island_lyrics">超级岛歌词</string>
@@ -41,7 +43,6 @@
     <string name="title_classic_aod">经典AOD</string>
     <string name="title_dynamic_island_config">通知型灵动岛歌词自定义配置</string>
     <string name="title_special_features">特殊功能</string>
-    <string name="title_restart_ui">重启系统界面</string>
     <string name="title_remove_focus_whitelist">移除焦点通知白名单</string>
     <string name="summary_remove_focus_whitelist">不要和其他模块的相同功能冲突使用</string>
     <string name="title_remove_island_whitelist">移除下拉小窗白名单</string>

@@ -1,5 +1,6 @@
 package com.juren233.hyperlyricsenhanced.root.source
 
+import com.juren233.hyperlyricsenhanced.lyric.LrcLine
 import com.juren233.hyperlyricsenhanced.online.model.Source
 
 internal object OnlineTranslationSelector {
@@ -15,6 +16,7 @@ internal object OnlineTranslationSelector {
         val result: OnlineTranslationMatcher.Result,
         val romanizedLineCount: Int = 0,
         val matchedContentCount: Int = result.matchedCount,
+        val onlineLines: List<LrcLine> = emptyList(),
     )
 
     fun shouldTryAlternative(candidate: Candidate?, totalLineCount: Int): Boolean {

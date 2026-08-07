@@ -19,11 +19,13 @@
     <string name="about">About</string>
     <string name="toast_permission_granted">Notification permission granted</string>
     <string name="toast_permission_denied">Notification permission denied</string>
-    <string name="dialog_restart_title">Restart System UI?</string>
-    <string name="dialog_restart_summary">Remember to restart your music app after restarting System UI</string>
     <string name="cancel">Cancel</string>
     <string name="confirm">Confirm</string>
-    <string name="toast_no_root">App does not have root access</string>
+    <string name="title_one_tap_refresh">One-tap refresh</string>
+    <string name="summary_one_tap_refresh_root_required">Root access required</string>
+    <string name="option_refresh_system_ui">System UI</string>
+    <string name="option_refresh_all_music_apps">All music apps</string>
+    <string name="toast_one_tap_refresh_no_root">One-tap refresh requires root access</string>
     <string name="title_basic_features">Basic Features</string>
     <string name="title_lyric_settings">Lyric Settings</string>
     <string name="title_super_island_lyrics">HyperIsland Lyrics</string>
@@ -40,7 +42,6 @@
     <string name="title_classic_aod">Classic AOD</string>
     <string name="title_dynamic_island_config">Notification Dynamic Island Lyrics Custom Configuration</string>
     <string name="title_special_features">Special Features</string>
-    <string name="title_restart_ui">Restart System UI</string>
     <string name="title_remove_focus_whitelist">Unlock Notification Spotlight Whitelist</string>
     <string name="summary_remove_focus_whitelist">Do not use with similar features from other modules</string>
     <string name="title_remove_island_whitelist">Unlock Mini Window Whitelist</string>

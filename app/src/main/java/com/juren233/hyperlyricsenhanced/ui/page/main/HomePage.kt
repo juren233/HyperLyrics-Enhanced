@@ -3,6 +3,7 @@ package com.juren233.hyperlyricsenhanced.ui.page.main
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
@@ -10,11 +11,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.juren233.hyperlyricsenhanced.R
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
+import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.blur.layerBackdrop
+import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.extended.Refresh
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import com.juren233.hyperlyricsenhanced.ui.utils.BlurredBar
 import com.juren233.hyperlyricsenhanced.ui.utils.pageContentPadding
@@ -37,7 +44,7 @@ fun HomePage(
     onLockScreenAodConfigClick: () -> Unit,
     onClassicAodConfigClick: () -> Unit,
     onLyricSettingsClick: () -> Unit,
-    onRestartClick: () -> Unit,
+    onRefreshClick: () -> Unit,
     removeFocusWhitelist: Boolean,
     onRemoveFocusWhitelistToggle: (Boolean) -> Unit,
     removeIslandWhitelist: Boolean,
@@ -58,6 +65,15 @@ fun HomePage(
                     color = barColor,
                     title = "HyperLyrics Enhanced",
                     scrollBehavior = topAppBarScrollBehavior,
+                    actions = {
+                        IconButton(onClick = onRefreshClick) {
+                            Icon(
+                                imageVector = MiuixIcons.Refresh,
+                                contentDescription = stringResource(R.string.title_one_tap_refresh),
+                                modifier = Modifier.size(26.dp),
+                            )
+                        }
+                    },
                 )
             }
         }
@@ -94,7 +110,6 @@ fun HomePage(
                     onLockScreenAodConfigClick = onLockScreenAodConfigClick,
                     onClassicAodConfigClick = onClassicAodConfigClick,
                     onLyricSettingsClick = onLyricSettingsClick,
-                    onRestartClick = onRestartClick,
                     removeFocusWhitelist = removeFocusWhitelist,
                     onRemoveFocusWhitelistToggle = onRemoveFocusWhitelistToggle,
                     removeIslandWhitelist = removeIslandWhitelist,
