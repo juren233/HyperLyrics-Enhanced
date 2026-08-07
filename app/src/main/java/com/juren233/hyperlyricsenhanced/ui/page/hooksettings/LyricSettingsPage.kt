@@ -44,43 +44,11 @@ fun LyricSettingsPage() {
             ) ?: RootConstants.DEFAULT_HOOK_LYRIC_SOURCE
         )
     }
-    var onlineFallback by remember {
-        mutableStateOf(
-            prefs.getBoolean(
-                RootConstants.KEY_HOOK_APPLE_MUSIC_ONLINE_FALLBACK,
-                RootConstants.DEFAULT_HOOK_APPLE_MUSIC_ONLINE_FALLBACK,
-            )
-        )
-    }
-    var fallbackQqFirst by remember {
-        mutableStateOf(
-            prefs.getBoolean(
-                RootConstants.KEY_HOOK_APPLE_MUSIC_FALLBACK_QQ_FIRST,
-                RootConstants.DEFAULT_HOOK_APPLE_MUSIC_FALLBACK_QQ_FIRST,
-            )
-        )
-    }
     var removeCjkLyricSpaces by remember {
         mutableStateOf(
             prefs.getBoolean(
                 RootConstants.KEY_HOOK_REMOVE_CJK_LYRIC_SPACES,
                 RootConstants.DEFAULT_HOOK_REMOVE_CJK_LYRIC_SPACES,
-            )
-        )
-    }
-    var onlineTranslation by remember {
-        mutableStateOf(
-            prefs.getBoolean(
-                RootConstants.KEY_HOOK_APPLE_MUSIC_MATCH_ONLINE_TRANSLATION,
-                RootConstants.DEFAULT_HOOK_APPLE_MUSIC_MATCH_ONLINE_TRANSLATION,
-            )
-        )
-    }
-    var translationQqFirst by remember {
-        mutableStateOf(
-            prefs.getBoolean(
-                RootConstants.KEY_HOOK_APPLE_MUSIC_TRANSLATION_QQ_FIRST,
-                RootConstants.DEFAULT_HOOK_APPLE_MUSIC_TRANSLATION_QQ_FIRST,
             )
         )
     }
@@ -221,7 +189,7 @@ fun LyricSettingsPage() {
         item(key = "source_title") {
             SmallTitle(text = stringResource(R.string.title_lyric_acquisition_sources))
         }
-        item(key = "lyric_source_and_fallback") {
+        item(key = "lyric_source") {
             Card(
                 modifier = Modifier
                     .padding(horizontal = 12.dp)
@@ -242,31 +210,6 @@ fun LyricSettingsPage() {
                     ArrowPreference(
                         title = stringResource(R.string.title_lyric_provider),
                         onClick = { navigator.navigate(Route.LyricProvider) },
-                    )
-                }
-                SwitchPreference(
-                    title = stringResource(R.string.title_apple_music_online_fallback),
-                    summary = stringResource(R.string.summary_apple_music_online_fallback),
-                    checked = onlineFallback,
-                    onCheckedChange = {
-                        onlineFallback = it
-                        saveConfig(RootConstants.KEY_HOOK_APPLE_MUSIC_ONLINE_FALLBACK, it)
-                    },
-                )
-                AnimatedVisibility(visible = onlineFallback) {
-                    SwitchPreference(
-                        title = stringResource(R.string.title_apple_music_fallback_qq_first),
-                        summary = stringResource(
-                            R.string.summary_apple_music_fallback_qq_first
-                        ),
-                        checked = fallbackQqFirst,
-                        onCheckedChange = {
-                            fallbackQqFirst = it
-                            saveConfig(
-                                RootConstants.KEY_HOOK_APPLE_MUSIC_FALLBACK_QQ_FIRST,
-                                it,
-                            )
-                        },
                     )
                 }
             }
@@ -305,40 +248,6 @@ fun LyricSettingsPage() {
                     .fillMaxWidth()
             ) {
                 Column {
-                    SwitchPreference(
-                        title = stringResource(
-                            R.string.title_apple_music_match_online_translation
-                        ),
-                        summary = stringResource(
-                            R.string.summary_apple_music_match_online_translation
-                        ),
-                        checked = onlineTranslation,
-                        onCheckedChange = {
-                            onlineTranslation = it
-                            saveConfig(
-                                RootConstants.KEY_HOOK_APPLE_MUSIC_MATCH_ONLINE_TRANSLATION,
-                                it,
-                            )
-                        },
-                    )
-                    AnimatedVisibility(visible = onlineTranslation) {
-                        SwitchPreference(
-                            title = stringResource(
-                                R.string.title_apple_music_translation_qq_first
-                            ),
-                            summary = stringResource(
-                                R.string.summary_apple_music_translation_qq_first
-                            ),
-                            checked = translationQqFirst,
-                            onCheckedChange = {
-                                translationQqFirst = it
-                                saveConfig(
-                                    RootConstants.KEY_HOOK_APPLE_MUSIC_TRANSLATION_QQ_FIRST,
-                                    it,
-                                )
-                            },
-                        )
-                    }
                     SwitchPreference(
                         title = stringResource(R.string.title_ai_translation),
                         checked = aiTransEnabled,

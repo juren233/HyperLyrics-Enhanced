@@ -55,6 +55,7 @@
     <string name="title_apple_music_localized_metadata_cache">创建检索库以提升替换体验</string>
     <string name="summary_apple_music_localized_metadata_cache">极少量空间占用换取高效率性能，当关闭时冷启动后需重新抓取歌曲信息，推荐开启</string>
     <string name="title_apple_music_app_features">App功能</string>
+    <string name="title_apple_music_global_lyrics">全局歌词（含超级岛、AOD）</string>
     <string name="title_apple_music_app_display">App显示</string>
     <string name="title_apple_music_notification_open_full_player">点击媒体通知直接跳转播放页</string>
     <string name="title_apple_music_simplify_traditional_lyrics">将繁体歌词转成简体</string>
@@ -435,7 +436,7 @@
     <string name="summary_not_configured">未配置</string>
     <string name="title_ai_translation">OpenAI 翻译</string>
     <string name="title_apple_music_match_online_translation">当Apple Music无歌词翻译时尝试匹配在线歌词翻译</string>
-    <string name="summary_apple_music_match_online_translation">可能会出现错位问题，优先级高于AI翻译</string>
+    <string name="summary_apple_music_match_online_translation">可能会出现错位、缺失、错误等问题，该设置优先级高于AI翻译</string>
     <string name="title_apple_music_translation_qq_first">优先使用QQ音乐的歌词翻译</string>
     <string name="summary_apple_music_translation_qq_first">关闭时优先使用网易的翻译，开启后如果网易源更好时仍然会使用网易源</string>
     <string name="title_ai_trans_basic">基础设置</string>

@@ -140,6 +140,15 @@ fun LazyListScope.homePageSections(
         )
     }
 
+    item(key = "apple_music_optimization") {
+        Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
+            ArrowPreference(
+                title = stringResource(R.string.title_apple_music_optimization),
+                onClick = onAppleMusicOptimizationClick,
+            )
+        }
+    }
+
     item(key = "special_features_content") {
         Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
             Column {
@@ -159,15 +168,6 @@ fun LazyListScope.homePageSections(
                     onCheckedChange = onRemoveIslandWhitelistToggle,
                 )
             }
-        }
-    }
-
-    item(key = "apple_music_optimization") {
-        Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
-            ArrowPreference(
-                title = stringResource(R.string.title_apple_music_optimization),
-                onClick = onAppleMusicOptimizationClick,
-            )
         }
     }
 

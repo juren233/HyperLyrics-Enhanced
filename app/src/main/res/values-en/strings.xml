@@ -54,6 +54,7 @@
     <string name="title_apple_music_localized_metadata_cache">Create a lookup library for a better replacement experience</string>
     <string name="summary_apple_music_localized_metadata_cache">Uses very little storage for efficient performance. When disabled, song information must be fetched again after a cold start. Recommended.</string>
     <string name="title_apple_music_app_features">App Features</string>
+    <string name="title_apple_music_global_lyrics">Global Lyrics (including Super Island and AOD)</string>
     <string name="title_apple_music_app_display">App Display</string>
     <string name="title_apple_music_notification_open_full_player">Open the player directly from media notifications</string>
     <string name="title_apple_music_simplify_traditional_lyrics">Convert Traditional Chinese lyrics to Simplified Chinese</string>
@@ -434,7 +435,7 @@
     <string name="summary_not_configured">Not configured</string>
     <string name="title_ai_translation">OpenAI Translation</string>
     <string name="title_apple_music_match_online_translation">Try matching online translations when Apple Music has no lyric translation</string>
-    <string name="summary_apple_music_match_online_translation">Lyrics may be misaligned; this takes priority over AI translation</string>
+    <string name="summary_apple_music_match_online_translation">May have misalignment, missing content, incorrect content, or other issues. This setting takes priority over AI translation.</string>
     <string name="title_apple_music_translation_qq_first">Prefer QQ Music lyric translations</string>
     <string name="summary_apple_music_translation_qq_first">NetEase translations are preferred when disabled; when enabled, NetEase is still used if it provides a better match</string>
     <string name="title_ai_trans_basic">Basic Settings</string>
