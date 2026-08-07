@@ -10,6 +10,7 @@ import com.juren233.hyperlyricsenhanced.common.lyric.LyricMetadataKeys
 import com.juren233.hyperlyricsenhanced.lyric.model.RichLyricLine
 import com.juren233.hyperlyricsenhanced.lyric.model.Song
 import com.juren233.hyperlyricsenhanced.lyric.view.InterludeTracker
+import com.juren233.hyperlyricsenhanced.provider.OfficialProviderCatalog
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -115,6 +116,7 @@ class LyriconDataBridgeTest {
 
     @Test
     fun `keeps simultaneous lyrics in one timeline node until both finish`() {
+        useAppleMusic()
         val main = RichLyricLine(
             begin = 1_000,
             end = 2_000,
@@ -163,6 +165,7 @@ class LyriconDataBridgeTest {
 
     @Test
     fun `uses the unmerged current lyric for island when next line display is disabled`() {
+        useAppleMusic()
         val main = RichLyricLine(begin = 1_000, end = 2_000, text = "Main")
         val overlapping = RichLyricLine(begin = 1_000, end = 2_200, text = "Overlapping")
         LyriconDataBridge.updateSong(
@@ -184,6 +187,7 @@ class LyriconDataBridgeTest {
 
     @Test
     fun `preserves the delayed word timing of an overlapping second line`() {
+        useAppleMusic()
         val main = RichLyricLine(
             begin = 1_000,
             end = 3_000,
@@ -233,6 +237,7 @@ class LyriconDataBridgeTest {
 
     @Test
     fun `keeps both overlapping lyric backing vocals and translations in group metadata`() {
+        useAppleMusic()
         val primary = RichLyricLine(
             begin = 1_000,
             end = 3_000,
@@ -309,6 +314,7 @@ class LyriconDataBridgeTest {
 
     @Test
     fun `ignores a stale overlapping callback after advancing to the next group`() {
+        useAppleMusic()
         val main = RichLyricLine(begin = 1_000, end = 2_000, text = "Main")
         val overlapping = RichLyricLine(begin = 1_200, end = 2_200, text = "Overlapping")
         val next = RichLyricLine(begin = 2_201, end = 3_000, text = "Next")
@@ -329,6 +335,7 @@ class LyriconDataBridgeTest {
 
     @Test
     fun `does not return to older long lines after a third overlapping line starts`() {
+        useAppleMusic()
         val first = RichLyricLine(begin = 1_000, end = 10_000, text = "A")
         val second = RichLyricLine(begin = 2_000, end = 5_000, text = "B")
         val third = RichLyricLine(begin = 3_000, end = 6_000, text = "C")
@@ -378,6 +385,63 @@ class LyriconDataBridgeTest {
         LyriconDataBridge.updateLyricLine(next)
         assertEquals("Next", LyriconDataBridge.currentLyricLine?.text)
         assertEquals(null, LyriconDataBridge.currentLyricLine?.secondary)
+    }
+
+    @Test
+    fun `keeps only one active line for non Apple providers`() {
+        LyriconDataBridge.updateLyricPackage("cn.kuwo.player")
+        LyriconDataBridge.updateSong(
+            Song(
+                lyrics = listOf(
+                    RichLyricLine(begin = 1_000, end = 3_000, text = "Earlier"),
+                    RichLyricLine(begin = 1_800, end = 2_800, text = "Current"),
+                    RichLyricLine(begin = 3_001, end = 4_000, text = "Next"),
+                )
+            )
+        )
+
+        LyriconDataBridge.updatePosition(2_000)
+
+        assertEquals("Current", LyriconDataBridge.currentLyricLine?.text)
+        assertEquals(null, LyriconDataBridge.currentLyricLine?.secondary)
+        assertEquals("Current", LyriconDataBridge.currentLyricLineForIsland(true)?.text)
+        assertEquals("Current", LyriconDataBridge.currentLyricLineForIsland(false)?.text)
+        assertEquals("Next", LyriconDataBridge.currentNextLyricLine?.text)
+    }
+
+    @Test
+    fun `translation refresh keeps non Apple providers on a single active line`() {
+        LyriconDataBridge.updateLyricPackage("cn.kuwo.player")
+        val translatedSong = Song(
+            lyrics = listOf(
+                RichLyricLine(
+                    begin = 1_000,
+                    end = 3_000,
+                    text = "Earlier",
+                    translation = "Earlier translated",
+                ),
+                RichLyricLine(
+                    begin = 1_800,
+                    end = 2_800,
+                    text = "Current",
+                    translation = "Current translated",
+                ),
+            )
+        )
+        LyriconDataBridge.updateSong(translatedSong)
+        LyriconDataBridge.applyTranslation(translatedSong)
+
+        LyriconDataBridge.updatePosition(2_000)
+
+        assertEquals("Current", LyriconDataBridge.currentLyricLine?.text)
+        assertEquals("Current translated", LyriconDataBridge.currentLyricLine?.translation)
+        assertEquals(null, LyriconDataBridge.currentLyricLine?.secondary)
+    }
+
+    private fun useAppleMusic() {
+        LyriconDataBridge.updateLyricPackage(
+            OfficialProviderCatalog.APPLE_MUSIC_PACKAGE_NAME
+        )
     }
 
 }

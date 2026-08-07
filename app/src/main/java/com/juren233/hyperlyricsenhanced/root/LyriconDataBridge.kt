@@ -12,6 +12,7 @@ import com.juren233.hyperlyricsenhanced.lyric.view.InterludeTracker
 import com.juren233.hyperlyricsenhanced.lyric.view.SongPreprocessor
 import com.juren233.hyperlyricsenhanced.lyric.view.TimedLine
 import com.juren233.hyperlyricsenhanced.lyric.view.TitleSlot
+import com.juren233.hyperlyricsenhanced.provider.OfficialProviderCatalog
 import com.juren233.hyperlyricsenhanced.root.utils.DisplayDiagnosticLogger
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 
@@ -97,14 +98,7 @@ object LyriconDataBridge : StateResetter {
         versionCounter.incrementAndGet()
 
         if (song != null) {
-            val lines = SongPreprocessor(TitleSlot.NAME_ARTIST).prepare(song)
-            val unmergedLines = SongPreprocessor(
-                placeholder = TitleSlot.NAME_ARTIST,
-                mergeOverlappingLyrics = false
-            ).prepare(song)
-            timingNavigator = TimingNavigator(lines.toTypedArray())
-            unmergedTimingNavigator = TimingNavigator(unmergedLines.toTypedArray())
-            interludeTracker = InterludeTracker(lines)
+            prepareSong(song)
         } else {
             timingNavigator = TimingNavigator(emptyArray())
             unmergedTimingNavigator = TimingNavigator(emptyArray())
@@ -123,11 +117,24 @@ object LyriconDataBridge : StateResetter {
 
     fun applyTranslation(translatedSong: Song) {
         currentSong = translatedSong
-        val lines = SongPreprocessor(TitleSlot.NAME_ARTIST).prepare(translatedSong)
-        val unmergedLines = SongPreprocessor(
+        prepareSong(translatedSong)
+    }
+
+    private fun prepareSong(song: Song) {
+        val mergeOverlappingLyrics =
+            currentLyricPackageName == OfficialProviderCatalog.APPLE_MUSIC_PACKAGE_NAME
+        val lines = SongPreprocessor(
             placeholder = TitleSlot.NAME_ARTIST,
-            mergeOverlappingLyrics = false
-        ).prepare(translatedSong)
+            mergeOverlappingLyrics = mergeOverlappingLyrics,
+        ).prepare(song)
+        val unmergedLines = if (mergeOverlappingLyrics) {
+            SongPreprocessor(
+                placeholder = TitleSlot.NAME_ARTIST,
+                mergeOverlappingLyrics = false,
+            ).prepare(song)
+        } else {
+            lines
+        }
         timingNavigator = TimingNavigator(lines.toTypedArray())
         unmergedTimingNavigator = TimingNavigator(unmergedLines.toTypedArray())
         interludeTracker = InterludeTracker(lines)
