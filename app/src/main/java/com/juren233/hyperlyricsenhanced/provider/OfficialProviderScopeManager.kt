@@ -29,7 +29,7 @@ object OfficialProviderScopeManager {
                 }
             }
             .flatMapTo(linkedSetOf()) { it.targetPackages }
-        requestMissingScopes(service, desiredScopes)
+        requestMissingScopes(service, installedScopes(desiredScopes))
     }
 
     fun requestPluginScopes(
@@ -38,7 +38,7 @@ object OfficialProviderScopeManager {
     ) {
         service ?: return
         val definition = requireNotNull(OfficialProviderCatalog.definitionForId(pluginId))
-        requestMissingScopes(service, definition.targetPackages)
+        requestMissingScopes(service, installedScopes(definition.targetPackages))
     }
 
     fun onServiceDied() {
@@ -49,6 +49,20 @@ object OfficialProviderScopeManager {
         desiredScopes: Set<String>,
         currentScopes: Set<String>,
     ): Set<String> = desiredScopes - currentScopes
+
+    internal fun filterInstalledScopes(
+        desiredScopes: Set<String>,
+        installedPackages: Set<String>,
+    ): Set<String> = desiredScopes.filterTo(linkedSetOf(), installedPackages::contains)
+
+    private fun installedScopes(desiredScopes: Set<String>): Set<String> {
+        val context = RootApplication.currentContext() ?: return emptySet()
+        val packageManager = context.packageManager
+        val installedPackages = desiredScopes.filterTo(linkedSetOf()) { packageName ->
+            runCatching { packageManager.getApplicationInfo(packageName, 0) }.isSuccess
+        }
+        return filterInstalledScopes(desiredScopes, installedPackages)
+    }
 
     private fun requestMissingScopes(
         service: XposedService,

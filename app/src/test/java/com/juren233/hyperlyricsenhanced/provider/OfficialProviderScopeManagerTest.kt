@@ -24,4 +24,32 @@ class OfficialProviderScopeManagerTest {
             ),
         )
     }
+
+    @Test
+    fun `requests only target packages installed on the device`() {
+        assertEquals(
+            setOf("com.netease.cloudmusic"),
+            OfficialProviderScopeManager.filterInstalledScopes(
+                desiredScopes = setOf(
+                    "com.netease.cloudmusic",
+                    "com.hihonor.cloudmusic",
+                ),
+                installedPackages = setOf(
+                    "com.netease.cloudmusic",
+                    "com.android.systemui",
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun `does not request a scope when none of its target packages is installed`() {
+        assertEquals(
+            emptySet<String>(),
+            OfficialProviderScopeManager.filterInstalledScopes(
+                desiredScopes = setOf("com.hihonor.cloudmusic"),
+                installedPackages = setOf("com.android.systemui"),
+            ),
+        )
+    }
 }

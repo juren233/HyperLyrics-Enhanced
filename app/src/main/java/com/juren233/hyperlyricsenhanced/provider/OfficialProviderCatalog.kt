@@ -47,7 +47,6 @@ object OfficialProviderCatalog {
             id = "salt-player",
             displayName = "椒盐音乐",
             targetPackages = setOf("com.salt.music"),
-            description = "已适配版本：11.1.0、12.0.0、12.1.0、12.1.1",
         ),
         Definition("qishui", "汽水音乐", setOf("com.luna.music")),
         Definition("musicfree", "MusicFree", setOf("fun.upup.musicfree")),

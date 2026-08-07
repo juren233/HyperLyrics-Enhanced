@@ -79,6 +79,9 @@ class RootApplication : Application() {
             syncAllPreferences(context)
         }
 
+        @JvmStatic
+        internal fun currentContext(): Context? = appContext
+
         private var appContext: Context? = null
     }
 }
