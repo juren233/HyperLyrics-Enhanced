@@ -488,7 +488,7 @@ class LyriconSource : LyricSource {
             )
         }
         publishSong(
-            song = song
+            song = AppleSongDisplayPolicy.copyForDisplay(song)
                 ?.let(::filterApplePronunciationForDisplay)
                 ?.let(::simplifyAppleSongForDisplay),
             restorePosition = restorePosition,
@@ -501,7 +501,13 @@ class LyriconSource : LyricSource {
         restorePosition: Boolean,
         onlineTranslationMatched: Boolean = false
     ) {
-        LyriconDataBridge.updateSong(song)
+        val preservedSameSongState = restorePosition &&
+            song != null &&
+            !song.lyrics.isNullOrEmpty() &&
+            LyriconDataBridge.replaceSameSongContent(song)
+        if (!preservedSameSongState) {
+            LyriconDataBridge.updateSong(song)
+        }
         if (onlineTranslationMatched) {
             sink?.onOnlineTranslationMatched(song)
         } else {

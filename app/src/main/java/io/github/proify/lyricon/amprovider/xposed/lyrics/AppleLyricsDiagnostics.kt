@@ -162,6 +162,12 @@ internal class AppleLyricsDiagnostics(
         hookResolver.resolveClasses(AppleMusicHookPoint.LYRICS_RECYCLER_ADAPTER)
             .forEach { resolvedClass ->
             val adapterClass = resolvedClass.clazz
+            val translationFieldName = resolvedClass.target.runtimeMemberName(
+                AppleMusicRuntimeMember.LYRICS_ADAPTER_TRANSLATION_SELECTED_FIELD,
+            )
+            val pronunciationFieldName = resolvedClass.target.runtimeMemberName(
+                AppleMusicRuntimeMember.LYRICS_ADAPTER_PRONUNCIATION_SELECTED_FIELD,
+            )
             val bindMethods = adapterClass.declaredMethods.filter { method ->
                 val parameterTypes = method.parameterTypes
                 !method.isBridge &&
@@ -189,8 +195,14 @@ internal class AppleLyricsDiagnostics(
                             methodName = "${method.name}/${method.parameterCount}",
                             holder = chain.args.firstOrNull(),
                             position = (chain.args.getOrNull(1) as? Number)?.toInt(),
-                            translationEnabled = debugAppleBooleanField(adapter, "d"),
-                            pronunciationEnabled = debugAppleBooleanField(adapter, "e"),
+                            translationEnabled = debugAppleBooleanField(
+                                adapter,
+                                translationFieldName,
+                            ),
+                            pronunciationEnabled = debugAppleBooleanField(
+                                adapter,
+                                pronunciationFieldName,
+                            ),
                         )
                         appleLyricsBindingDiagnosticContexts.push(context)
                         true
@@ -270,15 +282,20 @@ internal class AppleLyricsDiagnostics(
     private fun debugAppleLyricsHolderLayers(holder: Any?): String {
         if (!BuildConfig.DEBUG) return "disabled"
         val binding = epoxyDataBindingFromHolderCallback(holder) ?: return "binding=none"
-        return listOf("U", "V").joinToString(prefix = "[", postfix = "]") { fieldName ->
+        val viewFields = generateSequence(binding.javaClass) { it.superclass }
+            .flatMap { current -> current.declaredFields.asSequence() }
+            .filter { field -> View::class.java.isAssignableFrom(field.type) }
+            .toList()
+        return viewFields.joinToString(prefix = "[", postfix = "]") { field ->
             val view = runCatching {
-                AppleReflection.field(binding, fieldName) as? View
+                field.isAccessible = true
+                field.get(binding) as? View
             }.getOrNull()
             if (view == null) {
-                "$fieldName=none"
+                "${field.type.simpleName}=none"
             } else {
                 val childCount = (view as? ViewGroup)?.childCount ?: -1
-                "$fieldName={${debugViewDescription(view)},childCount=$childCount," +
+                "${field.type.simpleName}={${debugViewDescription(view)},childCount=$childCount," +
                     "texts=${debugTextSnapshot(view)},children=${debugAppleDirectChildren(view)}}"
             }
         }

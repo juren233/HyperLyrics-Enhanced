@@ -85,6 +85,24 @@ data class OfficialProviderMethodTarget(
     val isStatic: Boolean,
 )
 
+enum class OfficialProviderDexTypeSource {
+    DECLARING_CLASS,
+    RETURN_TYPE,
+    PARAMETER_TYPE,
+}
+
+/**
+ * Refers to a type produced by an earlier query in the same ordered batch.
+ *
+ * This keeps downstream queries attached to the resolved call graph instead of
+ * copying an obfuscated class name into every node of the Provider Pack.
+ */
+data class OfficialProviderDexTypeReference(
+    val queryCacheKey: String,
+    val source: OfficialProviderDexTypeSource,
+    val parameterIndex: Int = -1,
+)
+
 /**
  * Stable, DexKit-independent method query passed across the Provider Pack ABI.
  *
@@ -96,13 +114,54 @@ data class OfficialProviderDexMethodQuery(
     val preferredTarget: OfficialProviderMethodTarget? = null,
     val declaringClassName: String? = null,
     val declaringClassNamePrefix: String? = null,
+    val declaringClassReference: OfficialProviderDexTypeReference? = null,
     val requiredStrings: List<String> = emptyList(),
     val requiredInvokedMethodDescriptors: List<String> = emptyList(),
+    val requiredInvokedMethodNames: List<String> = emptyList(),
     val parameterTypeNames: List<String>? = null,
+    val parameterTypeReferences: Map<Int, OfficialProviderDexTypeReference> = emptyMap(),
     val returnTypeName: String? = null,
+    val returnTypeNamePrefix: String? = null,
+    val returnTypeReference: OfficialProviderDexTypeReference? = null,
     val returnTypeMatchesDeclaringClass: Boolean = false,
     val isStatic: Boolean? = null,
-)
+) {
+    /**
+     * Binary-compatible constructor used by Provider Packs built before ordered query references
+     * were added. InMemoryDexClassLoader delegates this API package to the core class loader, so
+     * removing the old JVM constructor would break already installed Packs with NoSuchMethodError.
+    */
+    @Suppress("unused")
+    @Deprecated("Binary compatibility for Provider Packs", level = DeprecationLevel.HIDDEN)
+    constructor(
+        cacheKey: String,
+        preferredTarget: OfficialProviderMethodTarget? = null,
+        declaringClassName: String? = null,
+        declaringClassNamePrefix: String? = null,
+        requiredStrings: List<String> = emptyList(),
+        requiredInvokedMethodDescriptors: List<String> = emptyList(),
+        parameterTypeNames: List<String>? = null,
+        returnTypeName: String? = null,
+        returnTypeMatchesDeclaringClass: Boolean = false,
+        isStatic: Boolean? = null,
+    ) : this(
+        cacheKey = cacheKey,
+        preferredTarget = preferredTarget,
+        declaringClassName = declaringClassName,
+        declaringClassNamePrefix = declaringClassNamePrefix,
+        declaringClassReference = null,
+        requiredStrings = requiredStrings,
+        requiredInvokedMethodDescriptors = requiredInvokedMethodDescriptors,
+        requiredInvokedMethodNames = emptyList(),
+        parameterTypeNames = parameterTypeNames,
+        parameterTypeReferences = emptyMap(),
+        returnTypeName = returnTypeName,
+        returnTypeNamePrefix = null,
+        returnTypeReference = null,
+        returnTypeMatchesDeclaringClass = returnTypeMatchesDeclaringClass,
+        isStatic = isStatic,
+    )
+}
 
 internal object OfficialProviderDexMethodQueryValidator {
     fun validate(query: OfficialProviderDexMethodQuery) {
@@ -113,17 +172,72 @@ internal object OfficialProviderDexMethodQueryValidator {
         require(query.declaringClassNamePrefix == null || query.declaringClassNamePrefix.isNotBlank()) {
             "Provider DexKit declaringClassNamePrefix 不能为空"
         }
+        require(query.declaringClassName == null || query.declaringClassReference == null) {
+            "Provider DexKit declaringClassName 与引用不能同时设置"
+        }
         require(query.requiredStrings.all(String::isNotBlank)) {
             "Provider DexKit 特征字符串不能包含空值"
         }
         require(query.requiredInvokedMethodDescriptors.all(String::isNotBlank)) {
             "Provider DexKit 调用方法描述符不能包含空值"
         }
+        require(query.requiredInvokedMethodNames.all(String::isNotBlank)) {
+            "Provider DexKit 调用方法名不能包含空值"
+        }
+        require(query.parameterTypeReferences.keys.all { it >= 0 }) {
+            "Provider DexKit 参数类型引用下标不能为负数"
+        }
+        require(
+            query.parameterTypeReferences.isEmpty() || query.parameterTypeNames != null,
+        ) {
+            "Provider DexKit 使用参数类型引用时必须提供参数列表"
+        }
+        require(
+            query.parameterTypeNames == null ||
+                query.parameterTypeReferences.keys.all { it in query.parameterTypeNames.indices },
+        ) {
+            "Provider DexKit 参数类型引用超出参数列表"
+        }
+        require(query.returnTypeName == null || query.returnTypeReference == null) {
+            "Provider DexKit returnTypeName 与引用不能同时设置"
+        }
+        require(query.returnTypeNamePrefix == null || query.returnTypeNamePrefix.isNotBlank()) {
+            "Provider DexKit returnTypeNamePrefix 不能为空"
+        }
+        require(query.returnTypeName == null || query.returnTypeNamePrefix == null) {
+            "Provider DexKit returnTypeName 与前缀不能同时设置"
+        }
+        require(query.returnTypeReference == null || query.returnTypeNamePrefix == null) {
+            "Provider DexKit 返回类型引用与前缀不能同时设置"
+        }
+        listOfNotNull(
+            query.declaringClassReference,
+            query.returnTypeReference,
+            *query.parameterTypeReferences.values.toTypedArray(),
+        ).forEach { reference ->
+            require(reference.queryCacheKey.isNotBlank()) {
+                "Provider DexKit 类型引用 queryCacheKey 不能为空"
+            }
+            require(
+                reference.source == OfficialProviderDexTypeSource.PARAMETER_TYPE ||
+                    reference.parameterIndex == -1,
+            ) {
+                "Provider DexKit 非参数类型引用不应设置 parameterIndex"
+            }
+            require(
+                reference.source != OfficialProviderDexTypeSource.PARAMETER_TYPE ||
+                    reference.parameterIndex >= 0,
+            ) {
+                "Provider DexKit 参数类型引用必须设置 parameterIndex"
+            }
+        }
         require(
             query.declaringClassName != null ||
                 query.declaringClassNamePrefix != null ||
+                query.declaringClassReference != null ||
                 query.requiredStrings.isNotEmpty() ||
-                query.requiredInvokedMethodDescriptors.isNotEmpty(),
+                query.requiredInvokedMethodDescriptors.isNotEmpty() ||
+                query.requiredInvokedMethodNames.isNotEmpty(),
         ) {
             "Provider DexKit 后备查询必须包含类名或特征字符串"
         }

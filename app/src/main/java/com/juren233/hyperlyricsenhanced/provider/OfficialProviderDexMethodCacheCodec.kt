@@ -28,13 +28,29 @@ internal object OfficialProviderDexMethodCacheCodec {
             append('\u0000')
             append(query.declaringClassNamePrefix.orEmpty())
             append('\u0000')
+            append(query.declaringClassReference.fingerprint())
+            append('\u0000')
             append(query.requiredStrings.joinToString("\u0001"))
             append('\u0000')
             append(query.requiredInvokedMethodDescriptors.joinToString("\u0001"))
             append('\u0000')
+            append(query.requiredInvokedMethodNames.joinToString("\u0001"))
+            append('\u0000')
             append(query.parameterTypeNames?.joinToString("\u0001").orEmpty())
             append('\u0000')
+            append(
+                query.parameterTypeReferences.entries
+                    .sortedBy(Map.Entry<Int, OfficialProviderDexTypeReference>::key)
+                    .joinToString("\u0001") { (index, reference) ->
+                        "$index:${reference.fingerprint()}"
+                    },
+            )
+            append('\u0000')
             append(query.returnTypeName.orEmpty())
+            append('\u0000')
+            append(query.returnTypeNamePrefix.orEmpty())
+            append('\u0000')
+            append(query.returnTypeReference.fingerprint())
             append('\u0000')
             append(query.returnTypeMatchesDeclaringClass)
             append('\u0000')
@@ -81,9 +97,15 @@ internal object OfficialProviderDexMethodCacheCodec {
             (query.parameterTypeNames == null ||
                 target.parameterTypeNames == query.parameterTypeNames) &&
             (query.returnTypeName == null || target.returnTypeName == query.returnTypeName) &&
+            (query.returnTypeNamePrefix == null ||
+                target.returnTypeName.startsWith(query.returnTypeNamePrefix)) &&
             (!query.returnTypeMatchesDeclaringClass ||
                 target.returnTypeName == target.className) &&
             (query.isStatic == null || target.isStatic == query.isStatic)
+
+    private fun OfficialProviderDexTypeReference?.fingerprint(): String = this?.let { reference ->
+        "${reference.queryCacheKey}:${reference.source}:${reference.parameterIndex}"
+    }.orEmpty()
 
     private fun String.encoded(): String = Base64.getUrlEncoder()
         .withoutPadding()

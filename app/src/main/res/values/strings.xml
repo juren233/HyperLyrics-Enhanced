@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name" translatable="false">HyperLyrics Enhanced</string>
-    <string name="enhanced_version_notice">你用的是 HyperLyrics Enhanced 版本，并非原开发者维护版本！遇到仅在 HyperLyrics Enhanced 中出现的问题，请在本项目的 Issue 中反馈，不要打扰原项目维护者！</string>
+    <string name="enhanced_version_notice">遇到仅在 HyperLyrics Enhanced 中出现的问题，请在本仓库的 Issue 中反馈，本模块仓库可在“关于”-“项目地址”跳转。反馈至错误的仓库会引起非必要的打扰且降低解决问题的效率！</string>
     <string name="module_update_available_notice">当前模块有新版本，建议去GitHub仓库下载更新</string>
     <string name="module_update_available_version">有新版本：%1$s</string>
     <string name="apple_music_provider_description">内置 Apple Music 逐字歌词提供器</string>
@@ -36,7 +36,7 @@
     <string name="title_super_island_config">小米超级岛歌词自定义配置</string>
     <string name="title_dynamic_island_lyrics">通知型灵动岛歌词</string>
     <string name="summary_dynamic_island_lyrics">利用通知实现灵动岛歌词效果，适用于无root设备</string>
-    <string name="title_aod_lyrics">息屏歌词</string>
+    <string name="title_aod_lyrics">米系息屏歌词</string>
     <string name="summary_aod_lyrics">播放时在息屏界面显示歌词</string>
     <string name="title_extra_features">额外功能</string>
     <string name="title_lock_screen_aod">锁屏AOD</string>
@@ -152,7 +152,7 @@
     <string name="lyric_mode_separated">分离歌词</string>
     <string name="title_lyric_mode">歌词模式</string>
     <string name="title_lyric_source">歌词源</string>
-    <string name="summary_lyric_source_apple_music_builtin">Apple Music已内置在Lyricon源，无需额外模块即可使用</string>
+    <string name="summary_lyric_source_apple_music_builtin">Apple Music用户可直接选用Lyricon源，无需额外模块，其余音乐App用户也推荐使用Lyricon源，内置插件更方便</string>
     <string name="lyric_source_lyricon">Lyricon</string>
     <string name="lyric_source_superlyric">SuperLyric</string>
     <string name="lyric_source_lyricinfo">LyricInfo</string>
@@ -201,7 +201,7 @@
     <string name="option_island_media_ambient_flow_disabled">禁用</string>
     <string name="title_lyrics">音乐信息</string>
     <string name="title_lyric_anim">歌词切换动画</string>
-    <string name="title_lyric_provider">歌词提供者 (Lyricon)</string>
+    <string name="title_lyric_provider">Lyricon配置</string>
     <string name="title_builtin_provider">内置 Provider</string>
     <string name="summary_builtin_apple_provider">HyperLyrics Enhanced默认内置且不可移除</string>
     <string name="title_official_provider_plugins">已添加的插件</string>

@@ -6,6 +6,8 @@
 
 package com.juren233.hyperlyricsenhanced.provider
 
+import kotlin.jvm.internal.DefaultConstructorMarker
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertThrows
 import org.junit.Test
 
@@ -46,5 +48,64 @@ class OfficialProviderDexMethodQueryValidatorTest {
                 )
             )
         }
+    }
+
+    @Test
+    fun `accepts an ordered query type reference as the anchor`() {
+        OfficialProviderDexMethodQueryValidator.validate(
+            OfficialProviderDexMethodQuery(
+                cacheKey = "next-node",
+                declaringClassReference = OfficialProviderDexTypeReference(
+                    queryCacheKey = "previous-node",
+                    source = OfficialProviderDexTypeSource.RETURN_TYPE,
+                ),
+                parameterTypeNames = emptyList(),
+            ),
+        )
+    }
+
+    @Test
+    fun `rejects invalid parameter type reference`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            OfficialProviderDexMethodQueryValidator.validate(
+                OfficialProviderDexMethodQuery(
+                    cacheKey = "invalid-parameter-reference",
+                    declaringClassName = "example.Owner",
+                    parameterTypeNames = emptyList(),
+                    parameterTypeReferences = mapOf(
+                        0 to OfficialProviderDexTypeReference(
+                            queryCacheKey = "previous-node",
+                            source = OfficialProviderDexTypeSource.RETURN_TYPE,
+                        ),
+                    ),
+                ),
+            )
+        }
+    }
+
+    @Test
+    fun `keeps the pre-reference provider pack constructors`() {
+        val oldParameters = arrayOf(
+            String::class.java,
+            OfficialProviderMethodTarget::class.java,
+            String::class.java,
+            String::class.java,
+            List::class.java,
+            List::class.java,
+            List::class.java,
+            String::class.java,
+            Boolean::class.javaPrimitiveType!!,
+            Boolean::class.javaObjectType,
+        )
+        assertNotNull(
+            OfficialProviderDexMethodQuery::class.java.getDeclaredConstructor(*oldParameters),
+        )
+        assertNotNull(
+            OfficialProviderDexMethodQuery::class.java.getDeclaredConstructor(
+                *oldParameters,
+                Int::class.javaPrimitiveType!!,
+                DefaultConstructorMarker::class.java,
+            ),
+        )
     }
 }

@@ -14,6 +14,7 @@ import com.juren233.hyperlyricsenhanced.provider.OfficialProviderCatalog
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -436,6 +437,80 @@ class LyriconDataBridgeTest {
         assertEquals("Current", LyriconDataBridge.currentLyricLine?.text)
         assertEquals("Current translated", LyriconDataBridge.currentLyricLine?.translation)
         assertEquals(null, LyriconDataBridge.currentLyricLine?.secondary)
+    }
+
+    @Test
+    fun `same song content replacement keeps visible state until position is reapplied`() {
+        useAppleMusic()
+        val originalSong = Song(
+            id = "song-1",
+            name = "Song",
+            artist = "Artist",
+            lyrics = listOf(
+                RichLyricLine(begin = 1_000, end = 2_000, text = "Current")
+            ),
+        )
+        LyriconDataBridge.updateSong(originalSong)
+        LyriconDataBridge.updatePlaybackState(true)
+        LyriconDataBridge.updatePosition(1_500)
+        val originalLine = LyriconDataBridge.currentLyricLine
+        val versionBeforeReplacement = LyriconDataBridge.versionCounter.get()
+
+        val replaced = LyriconDataBridge.replaceSameSongContent(
+            originalSong.copy(
+                lyrics = listOf(
+                    RichLyricLine(
+                        begin = 1_000,
+                        end = 2_000,
+                        text = "Current",
+                        translation = "Translation",
+                    )
+                )
+            )
+        )
+
+        assertTrue(replaced)
+        assertEquals(1_500L, LyriconDataBridge.currentPosition)
+        assertEquals(true, LyriconDataBridge.currentPlaybackState)
+        assertEquals("Current", LyriconDataBridge.currentLyric)
+        assertSame(originalLine, LyriconDataBridge.currentLyricLine)
+        assertEquals(null, LyriconDataBridge.currentLyricLine?.translation)
+        assertEquals(versionBeforeReplacement + 1, LyriconDataBridge.versionCounter.get())
+
+        assertTrue(LyriconDataBridge.updatePosition(1_500))
+        assertEquals(1_500L, LyriconDataBridge.currentPosition)
+        assertEquals("Translation", LyriconDataBridge.currentLyricLine?.translation)
+    }
+
+    @Test
+    fun `different song still uses full reset`() {
+        val firstSong = Song(
+            id = "song-1",
+            name = "First",
+            artist = "Artist",
+            lyrics = listOf(
+                RichLyricLine(begin = 0, end = 2_000, text = "First line")
+            ),
+        )
+        LyriconDataBridge.updateSong(firstSong)
+        LyriconDataBridge.updatePosition(1_000)
+
+        val secondSong = Song(
+            id = "song-2",
+            name = "Second",
+            artist = "Artist",
+            lyrics = listOf(
+                RichLyricLine(begin = 0, end = 2_000, text = "Second line")
+            ),
+        )
+        assertFalse(LyriconDataBridge.replaceSameSongContent(secondSong))
+
+        LyriconDataBridge.updateSong(secondSong)
+
+        assertEquals(0L, LyriconDataBridge.currentPosition)
+        assertEquals(null, LyriconDataBridge.currentLyric)
+        assertEquals(null, LyriconDataBridge.currentLyricLine)
+        assertEquals("Second", LyriconDataBridge.currentSongName)
     }
 
     private fun useAppleMusic() {

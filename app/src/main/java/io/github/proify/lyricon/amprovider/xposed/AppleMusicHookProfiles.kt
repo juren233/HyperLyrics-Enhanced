@@ -117,6 +117,8 @@ internal enum class AppleMusicRuntimeMember {
     APPLE_SONG_SET_ID_METHOD,
     APPLE_SONG_SET_QUEUE_ID_METHOD,
     APPLE_SONG_SET_HAS_LYRICS_METHOD,
+    APPLE_PLAYER_UTIL_CONTAINER_METHOD,
+    APPLE_PLAYER_UTIL_PLAYBACK_ITEM_METHOD,
     CONTENT_HTTP_RESPONSE_REQUEST_FIELD,
     CONTENT_HTTP_RESPONSE_HEADERS_FIELD,
     CONTENT_HTTP_HEADERS_VALUES_FIELD,
@@ -172,6 +174,7 @@ internal enum class AppleMusicRuntimeMember {
     LYRICS_ADAPTER_ITEM_VIEW_TYPE_METHOD,
     LYRICS_ADAPTER_ITEM_COUNT_METHOD,
     LYRICS_ADAPTER_NOTIFY_DATA_CHANGED_METHOD,
+    LYRICS_ADAPTER_ACTIVE_LINES_UPDATE_METHOD,
     LYRICS_ADAPTER_TRANSLATION_SELECTED_FIELD,
     LYRICS_ADAPTER_PRONUNCIATION_SELECTED_FIELD,
     LYRICS_VIEW_MODEL_PRONUNCIATION_SELECTED_GETTER,
@@ -779,7 +782,13 @@ internal object AppleMusicHookProfiles {
             ),
         ),
         AppleMusicHookPoint.APPLE_PLAYER_UTIL_CLASS to listOf(
-            AppleMusicHookTarget("com.apple.android.music.player.O"),
+            AppleMusicHookTarget(
+                className = "com.apple.android.music.player.O",
+                runtimeMemberNames = mapOf(
+                    AppleMusicRuntimeMember.APPLE_PLAYER_UTIL_CONTAINER_METHOD to "a",
+                    AppleMusicRuntimeMember.APPLE_PLAYER_UTIL_PLAYBACK_ITEM_METHOD to "b",
+                ),
+            ),
         ),
         AppleMusicHookPoint.PLAYER_LYRICS_VIEW_MODEL_CLASS to listOf(
             AppleMusicHookTarget(
@@ -1210,6 +1219,7 @@ internal object AppleMusicHookProfiles {
             AppleMusicRuntimeMember.LYRICS_ADAPTER_ITEM_VIEW_TYPE_METHOD to "k",
             AppleMusicRuntimeMember.LYRICS_ADAPTER_ITEM_COUNT_METHOD to "i",
             AppleMusicRuntimeMember.LYRICS_ADAPTER_NOTIFY_DATA_CHANGED_METHOD to "l",
+            AppleMusicRuntimeMember.LYRICS_ADAPTER_ACTIVE_LINES_UPDATE_METHOD to "T",
             AppleMusicRuntimeMember.LYRICS_ADAPTER_TRANSLATION_SELECTED_FIELD to "d",
             AppleMusicRuntimeMember.LYRICS_ADAPTER_PRONUNCIATION_SELECTED_FIELD to "e",
         ),
@@ -1471,13 +1481,28 @@ internal class AppleMusicHookResolver(
         val exactTargets = AppleMusicHookProfiles.exactTargets(version, hookPoint)
         val exactClasses = exactTargets.mapNotNull { target ->
             loadClass(target, compatibilityFallback = false)
+                ?.let { resolved -> repairAndRecordClass(hookPoint, resolved, target.className) }
         }
-        if (exactClasses.isNotEmpty()) return exactClasses
+        val resolved = LinkedHashMap<String, ResolvedAppleMusicHookClass>()
+        exactClasses.forEach { resolved.putIfAbsent(it.clazz.name, it) }
 
         val compatibilityClasses = AppleMusicHookProfiles.candidates(version, hookPoint)
-            .filterNot(exactTargets::contains)
+            .filterNot { target -> exactClasses.any { it.target.className == target.className } }
             .mapNotNull { target -> loadClass(target, compatibilityFallback = true) }
-        if (compatibilityClasses.isNotEmpty()) return compatibilityClasses
+            .map { resolved ->
+                repairAndRecordClass(hookPoint, resolved, resolved.target.className)
+            }
+        compatibilityClasses.forEach { resolved.putIfAbsent(it.clazz.name, it) }
+
+        val dexKitClasses = dexKitResolver?.resolveClasses(
+            hookPoint,
+            AppleMusicHookProfiles.candidates(version, hookPoint).filterNot { target ->
+                resolved.values.any { it.target.className == target.className }
+            },
+        ).orEmpty()
+        dexKitClasses.forEach { resolved.putIfAbsent(it.clazz.name, it) }
+        if (resolved.isNotEmpty()) return resolved.values.toList()
+
         return resolveDexKitMethod(hookPoint)?.let { resolved ->
             listOf(
                 ResolvedAppleMusicHookClass(
@@ -1499,12 +1524,19 @@ internal class AppleMusicHookResolver(
                     failures += "${target.className}:${throwable.javaClass.simpleName}"
                     return@forEach
                 }
-            return ResolvedAppleMusicHookClass(
+            return repairAndRecordClass(
+                hookPoint = hookPoint,
+                baselineClassName = target.className,
+                resolved = ResolvedAppleMusicHookClass(
                 target = target,
                 clazz = clazz,
                 compatibilityFallback = target !in exactTargets,
+                ),
             )
         }
+        dexKitResolver?.resolveClasses(hookPoint, AppleMusicHookProfiles.candidates(version, hookPoint))
+            ?.firstOrNull()
+            ?.let { return it }
         resolveDexKitMethod(hookPoint)?.let { resolved ->
             return ResolvedAppleMusicHookClass(
                 target = resolved.target,
@@ -1536,10 +1568,14 @@ internal class AppleMusicHookResolver(
                 .toList()
             if (matchingMethods.size == 1 || target.allowFirstMatch && matchingMethods.isNotEmpty()) {
                 val method = matchingMethods.first().apply { isAccessible = true }
-                return ResolvedAppleMusicHookMethod(
+                return repairAndRecordMethod(
+                    hookPoint = hookPoint,
+                    baselineClassName = target.className,
+                    resolved = ResolvedAppleMusicHookMethod(
                     target = target,
                     method = method,
                     compatibilityFallback = target !in exactTargets,
+                    ),
                 )
             }
             failures += if (matchingMethods.isEmpty()) {
@@ -1579,6 +1615,46 @@ internal class AppleMusicHookResolver(
                 )
             },
         )
+    }
+
+    private fun repairAndRecordClass(
+        hookPoint: AppleMusicHookPoint,
+        resolved: ResolvedAppleMusicHookClass,
+        baselineClassName: String,
+    ): ResolvedAppleMusicHookClass {
+        val repairedTarget = dexKitResolver?.repairRuntimeMembers(
+            hookPoint = hookPoint,
+            target = resolved.target,
+            clazz = resolved.clazz,
+            baselineClassName = baselineClassName,
+        ) ?: resolved.target
+        dexKitResolver?.recordBaseline(
+            hookPoint = hookPoint,
+            target = repairedTarget,
+            clazz = resolved.clazz,
+            baselineClassName = baselineClassName,
+        )
+        return resolved.copy(target = repairedTarget)
+    }
+
+    private fun repairAndRecordMethod(
+        hookPoint: AppleMusicHookPoint,
+        resolved: ResolvedAppleMusicHookMethod,
+        baselineClassName: String,
+    ): ResolvedAppleMusicHookMethod {
+        val repairedTarget = dexKitResolver?.repairRuntimeMembers(
+            hookPoint = hookPoint,
+            target = resolved.target,
+            clazz = resolved.method.declaringClass,
+            baselineClassName = baselineClassName,
+        ) ?: resolved.target
+        dexKitResolver?.recordMethodBaseline(
+            hookPoint = hookPoint,
+            target = repairedTarget,
+            method = resolved.method,
+            baselineClassName = baselineClassName,
+        )
+        return resolved.copy(target = repairedTarget)
     }
 
     private fun loadClass(

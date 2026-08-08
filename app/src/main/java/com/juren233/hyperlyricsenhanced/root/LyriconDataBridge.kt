@@ -115,6 +115,24 @@ object LyriconDataBridge : StateResetter {
         )
     }
 
+    fun replaceSameSongContent(song: Song): Boolean {
+        val previousSong = currentSong ?: return false
+        if (!isSameSong(previousSong, song)) return false
+
+        HookLogger.d("LyriconDataBridge", "同曲内容更新: ${song.name}")
+        isTextMode = false
+        currentSong = song
+        currentSongName = song.name
+        prepareSong(song)
+        versionCounter.incrementAndGet()
+        DisplayDiagnosticLogger.log(
+            channel = "BRIDGE",
+            result = "accepted",
+            reason = "same_song_content_replaced",
+        )
+        return true
+    }
+
     fun applyTranslation(translatedSong: Song) {
         currentSong = translatedSong
         prepareSong(translatedSong)
@@ -332,5 +350,15 @@ object LyriconDataBridge : StateResetter {
 
     private fun TimingNavigator<TimedLine>.lineAtOrPrevious(position: Long): TimedLine? =
         findPreviousEntry(position)
+
+    private fun isSameSong(first: Song, second: Song): Boolean {
+        val firstId = first.id?.takeIf { it.isNotBlank() }
+        val secondId = second.id?.takeIf { it.isNotBlank() }
+        if (firstId != null || secondId != null) {
+            return firstId != null && secondId != null && firstId == secondId
+        }
+        return first.name?.trim()?.equals(second.name?.trim(), ignoreCase = true) == true &&
+            first.artist?.trim()?.equals(second.artist?.trim(), ignoreCase = true) == true
+    }
 
 }
