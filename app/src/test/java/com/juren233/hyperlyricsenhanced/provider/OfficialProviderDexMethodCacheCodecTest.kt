@@ -1,0 +1,76 @@
+/*
+ * Copyright 2026 juren233
+ * Licensed under the Apache License, Version 2.0
+ * http://www.apache.org/licenses/LICENSE-2.0
+ */
+
+package com.juren233.hyperlyricsenhanced.provider
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class OfficialProviderDexMethodCacheCodecTest {
+    private val target = OfficialProviderMethodTarget(
+        className = "yv2.b",
+        methodName = "a",
+        parameterTypeNames = listOf("java.lang.String"),
+        returnTypeName = "com.kugou.framework.lyric.k",
+        isStatic = true,
+    )
+
+    @Test
+    fun `round trips exact binary method target`() {
+        assertEquals(target, OfficialProviderDexMethodCacheCodec.decode(
+            OfficialProviderDexMethodCacheCodec.encode(target)
+        ))
+    }
+
+    @Test
+    fun `matches only declared query constraints`() {
+        val query = OfficialProviderDexMethodQuery(
+            cacheKey = "kugou-full-lyric-loader-v1",
+            requiredStrings = listOf("file is not krc or lyc or txt file"),
+            parameterTypeNames = listOf("java.lang.String"),
+            isStatic = true,
+        )
+        assertTrue(OfficialProviderDexMethodCacheCodec.matches(target, query))
+        assertFalse(
+            OfficialProviderDexMethodCacheCodec.matches(
+                target,
+                query.copy(isStatic = false),
+            )
+        )
+    }
+
+    @Test
+    fun `cache key changes with app or query version`() {
+        val query = OfficialProviderDexMethodQuery(
+            cacheKey = "kugou-full-lyric-loader-v1",
+            requiredStrings = listOf("file is not krc or lyc or txt file"),
+        )
+        val first = OfficialProviderDexMethodCacheCodec.cacheKey(
+            packageName = "com.kugou.android",
+            processName = "com.kugou.android.support",
+            versionCode = 20759,
+            lastUpdateTime = 1,
+            query = query,
+        )
+        assertNotEquals(first, OfficialProviderDexMethodCacheCodec.cacheKey(
+            packageName = "com.kugou.android",
+            processName = "com.kugou.android.support",
+            versionCode = 20760,
+            lastUpdateTime = 2,
+            query = query,
+        ))
+        assertNotEquals(first, OfficialProviderDexMethodCacheCodec.cacheKey(
+            packageName = "com.kugou.android",
+            processName = "com.kugou.android.support",
+            versionCode = 20759,
+            lastUpdateTime = 1,
+            query = query.copy(cacheKey = "kugou-full-lyric-loader-v2"),
+        ))
+    }
+}

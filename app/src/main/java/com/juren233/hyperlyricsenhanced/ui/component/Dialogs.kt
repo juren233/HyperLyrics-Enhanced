@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -35,10 +36,12 @@ fun NumberInputDialog(
     onDismiss: () -> Unit,
     onConfirm: (Int) -> Unit
 ) {
-    if (!show) return
     var inputValue by remember { mutableStateOf(initialValue.toString()) }
+    LaunchedEffect(show, initialValue) {
+        if (show) inputValue = initialValue.toString()
+    }
 
-    WindowDialog(title = title, show = true, onDismissRequest = onDismiss) {
+    WindowDialog(title = title, show = show, onDismissRequest = onDismiss) {
         Column(modifier = Modifier.fillMaxWidth()) {
             TextField(
                 value = inputValue,
@@ -80,11 +83,16 @@ fun NumberRangeInputDialog(
     onDismiss: () -> Unit,
     onConfirm: (Int, Int) -> Unit,
 ) {
-    if (!show) return
     var minInputValue by remember { mutableStateOf(initialMinValue.toString()) }
     var maxInputValue by remember { mutableStateOf(initialMaxValue.toString()) }
+    LaunchedEffect(show, initialMinValue, initialMaxValue) {
+        if (show) {
+            minInputValue = initialMinValue.toString()
+            maxInputValue = initialMaxValue.toString()
+        }
+    }
 
-    WindowDialog(title = title, show = true, onDismissRequest = onDismiss) {
+    WindowDialog(title = title, show = show, onDismissRequest = onDismiss) {
         Column(modifier = Modifier.fillMaxWidth()) {
             TextField(
                 value = minInputValue,
@@ -152,14 +160,19 @@ fun FloatRangeInputDialog(
     onDismiss: () -> Unit,
     onConfirm: (Float, Float) -> Unit,
 ) {
-    if (!show) return
     var minInputValue by remember { mutableStateOf(initialMinValue.toString()) }
     var maxInputValue by remember { mutableStateOf(initialMaxValue.toString()) }
+    LaunchedEffect(show, initialMinValue, initialMaxValue) {
+        if (show) {
+            minInputValue = initialMinValue.toString()
+            maxInputValue = initialMaxValue.toString()
+        }
+    }
     val acceptsDecimal = { value: String ->
         value.count { it == '.' } <= 1 && value.all { it.isDigit() || it == '.' }
     }
 
-    WindowDialog(title = title, show = true, onDismissRequest = onDismiss) {
+    WindowDialog(title = title, show = show, onDismissRequest = onDismiss) {
         Column(modifier = Modifier.fillMaxWidth()) {
             TextField(
                 value = minInputValue,
@@ -221,10 +234,12 @@ fun TextInputDialog(
     onDismiss: () -> Unit,
     onConfirm: (String) -> Unit
 ) {
-    if (!show) return
     var inputValue by remember { mutableStateOf(initialValue) }
+    LaunchedEffect(show, initialValue) {
+        if (show) inputValue = initialValue
+    }
 
-    WindowDialog(title = title, show = true, onDismissRequest = onDismiss) {
+    WindowDialog(title = title, show = show, onDismissRequest = onDismiss) {
         Column(modifier = Modifier.fillMaxWidth()) {
             TextField(
                 value = inputValue,
@@ -258,8 +273,6 @@ fun SimpleDialog(
     onDismiss: () -> Unit,
     onConfirm: () -> Unit
 ) {
-    if (!show) return
-
     WindowDialog(
         title = title,
         summary = summary,
@@ -293,10 +306,12 @@ fun FloatInputDialog(
     onDismiss: () -> Unit,
     onConfirm: (Float) -> Unit
 ) {
-    if (!show) return
     var inputValue by remember { mutableStateOf(initialValue.toString()) }
+    LaunchedEffect(show, initialValue) {
+        if (show) inputValue = initialValue.toString()
+    }
 
-    WindowDialog(title = title, show = true, onDismissRequest = onDismiss) {
+    WindowDialog(title = title, show = show, onDismissRequest = onDismiss) {
         Column(modifier = Modifier.fillMaxWidth()) {
             TextField(
                 value = inputValue,
@@ -334,11 +349,16 @@ fun PaddingInputDialog(
     onDismiss: () -> Unit,
     onConfirm: (Int, Int) -> Unit
 ) {
-    if (!show) return
     var leftValue by remember { mutableStateOf(initialLeft.toString()) }
     var rightValue by remember { mutableStateOf(initialRight.toString()) }
+    LaunchedEffect(show, initialLeft, initialRight) {
+        if (show) {
+            leftValue = initialLeft.toString()
+            rightValue = initialRight.toString()
+        }
+    }
 
-    WindowDialog(title = title, show = true, onDismissRequest = onDismiss) {
+    WindowDialog(title = title, show = show, onDismissRequest = onDismiss) {
         Column(modifier = Modifier.fillMaxWidth()) {
             val filter = { text: String ->
                 if (text == "-" || text.isEmpty()) true

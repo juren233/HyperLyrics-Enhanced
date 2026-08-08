@@ -22,7 +22,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.unit.dp
 import com.juren233.hyperlyricsenhanced.R
-import com.juren233.hyperlyricsenhanced.lyric.commonMusicApps
 import com.juren233.hyperlyricsenhanced.provider.OfficialProviderCatalog
 import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
@@ -46,12 +45,9 @@ internal object OneTapRefreshCatalog {
         }
 
         addKnownApp(OfficialProviderCatalog.APPLE_MUSIC_PACKAGE_NAME, "Apple Music")
-        commonMusicApps.forEach { (packageName, displayName) ->
-            addKnownApp(packageName, displayName)
-        }
         OfficialProviderCatalog.definitions.forEach { definition ->
             definition.targetPackages.forEach { packageName ->
-                addKnownApp(packageName, definition.displayName)
+                addKnownApp(packageName, definition.displayNameForPackage(packageName))
             }
         }
     }
@@ -133,10 +129,9 @@ internal fun OneTapRefreshDialog(
     selectedIds: Set<String>,
     onToggle: (String) -> Unit,
     onDismiss: () -> Unit,
+    onDismissFinished: () -> Unit,
     onConfirm: () -> Unit,
 ) {
-    if (!show) return
-
     WindowDialog(
         title = stringResource(R.string.title_one_tap_refresh),
         summary = if (hasRootAccess == true) {
@@ -144,8 +139,9 @@ internal fun OneTapRefreshDialog(
         } else {
             stringResource(R.string.summary_one_tap_refresh_root_required)
         },
-        show = true,
+        show = show,
         onDismissRequest = onDismiss,
+        onDismissFinished = onDismissFinished,
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Column(

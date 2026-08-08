@@ -81,10 +81,28 @@ class OneTapRefreshSelectionPolicyTest {
     }
 
     @Test
-    fun `installed catalog puts Apple Music before NetEase and QQ Music`() {
+    fun `installed catalog puts scoped apps in order and excludes apps outside module scope`() {
         assertEquals(
             listOf("Apple Music", "网易云音乐", "QQ音乐"),
-            OneTapRefreshCatalog.installedMusicApps(musicAppIds).map { it.displayName },
+            OneTapRefreshCatalog.installedMusicApps(
+                musicAppIds + setOf(
+                    "com.miui.player",
+                    "com.google.android.apps.youtube.music",
+                ),
+            ).map { it.displayName },
+        )
+    }
+
+    @Test
+    fun `installed catalog distinguishes KuGou full and concept apps`() {
+        assertEquals(
+            listOf(
+                OneTapRefreshMusicApp("com.kugou.android", "酷狗音乐"),
+                OneTapRefreshMusicApp("com.kugou.android.lite", "酷狗概念版"),
+            ),
+            OneTapRefreshCatalog.installedMusicApps(
+                setOf("com.kugou.android", "com.kugou.android.lite"),
+            ),
         )
     }
 }

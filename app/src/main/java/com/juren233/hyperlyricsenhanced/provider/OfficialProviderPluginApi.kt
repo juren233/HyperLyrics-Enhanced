@@ -24,6 +24,7 @@ interface OfficialProviderPlugin {
 
 interface OfficialProviderHost {
     val packageName: String
+    val processName: String
 
     fun hookApplication(callback: OfficialProviderApplicationCallback)
 
@@ -41,6 +42,19 @@ interface OfficialProviderHost {
      */
     fun hookAfterMethod(
         target: OfficialProviderMethodTarget,
+        callback: OfficialProviderMethodCallback,
+    )
+
+    /**
+     * Resolves an obfuscation-sensitive method from the original target DEX.
+     *
+     * The host first tries a previously verified exact descriptor. DexKit is
+     * opened only when that cached descriptor cannot be hooked. A fresh result
+     * is persisted only after the exact method Hook has been installed.
+     */
+    fun hookAfterDexMethod(
+        application: Application,
+        query: OfficialProviderDexMethodQuery,
         callback: OfficialProviderMethodCallback,
     )
 }
@@ -63,6 +77,21 @@ data class OfficialProviderMethodTarget(
     val parameterTypeNames: List<String> = emptyList(),
     val returnTypeName: String,
     val isStatic: Boolean,
+)
+
+/**
+ * Stable, DexKit-independent method query passed across the Provider Pack ABI.
+ *
+ * Null constraints are intentionally left unconstrained. The host requires a
+ * unique result after applying every declared constraint.
+ */
+data class OfficialProviderDexMethodQuery(
+    val cacheKey: String,
+    val declaringClassName: String? = null,
+    val requiredStrings: List<String>,
+    val parameterTypeNames: List<String>? = null,
+    val returnTypeName: String? = null,
+    val isStatic: Boolean? = null,
 )
 
 fun interface OfficialProviderMethodCallback {

@@ -31,3 +31,15 @@
 
 # Provider Pack Ed25519 verifier (Bouncy Castle lightweight primitives)
 -keep class org.bouncycastle.crypto.** { *; }
+
+# Stable ABI used by independently compiled official Provider Packs.
+-keep interface com.juren233.hyperlyricsenhanced.provider.OfficialProviderPlugin { *; }
+-keep interface com.juren233.hyperlyricsenhanced.provider.OfficialProviderHost { *; }
+-keep interface com.juren233.hyperlyricsenhanced.provider.OfficialProviderApplicationCallback { *; }
+-keep interface com.juren233.hyperlyricsenhanced.provider.OfficialProviderPlaybackStateCallback { *; }
+-keep interface com.juren233.hyperlyricsenhanced.provider.OfficialProviderMetadataCallback { *; }
+-keep interface com.juren233.hyperlyricsenhanced.provider.OfficialProviderMethodCallback { *; }
+-keep class com.juren233.hyperlyricsenhanced.provider.OfficialProviderMethodTarget { *; }
+-keep class com.juren233.hyperlyricsenhanced.provider.OfficialProviderDexMethodQuery { *; }
+-keep class com.juren233.hyperlyricsenhanced.provider.OfficialProviderNextTrackFrame { *; }
+-keep class com.juren233.hyperlyricsenhanced.provider.OfficialProviderControlProtocol { *; }

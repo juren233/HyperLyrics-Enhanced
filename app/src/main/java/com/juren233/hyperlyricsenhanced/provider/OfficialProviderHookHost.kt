@@ -7,14 +7,19 @@
 package com.juren233.hyperlyricsenhanced.provider
 
 import android.app.Application
+import android.app.ActivityManager
 import android.app.Instrumentation
+import android.content.Context
 import android.media.MediaMetadata
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
 import android.util.Log
 import io.github.libxposed.api.XposedInterface
 import io.github.libxposed.api.XposedModule
+import org.luckypray.dexkit.DexKitBridge
+import org.luckypray.dexkit.query.FindMethod
 import java.lang.reflect.Modifier
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -27,8 +32,10 @@ internal class OfficialProviderHookHost(
     private val module: XposedModule,
     private val targetClassLoader: ClassLoader,
     override val packageName: String,
+    override val processName: String,
 ) : OfficialProviderHost {
     private val tag = "OfficialProviderHookHost"
+    private val dexHookTasks = ConcurrentHashMap.newKeySet<String>()
 
     override fun hookApplication(callback: OfficialProviderApplicationCallback) {
         val method = Instrumentation::class.java.getDeclaredMethod(
@@ -80,6 +87,145 @@ internal class OfficialProviderHookHost(
         target: OfficialProviderMethodTarget,
         callback: OfficialProviderMethodCallback,
     ) {
+        installAfterMethod(target, callback)
+    }
+
+    override fun hookAfterDexMethod(
+        application: Application,
+        query: OfficialProviderDexMethodQuery,
+        callback: OfficialProviderMethodCallback,
+    ) {
+        require(application.packageName == packageName) {
+            "Provider DexKit Application 与目标包不一致"
+        }
+        require(query.cacheKey.isNotBlank()) { "Provider DexKit cacheKey 不能为空" }
+        require(query.requiredStrings.isNotEmpty()) { "Provider DexKit 特征字符串不能为空" }
+        require(query.requiredStrings.all(String::isNotBlank)) {
+            "Provider DexKit 特征字符串不能包含空值"
+        }
+
+        val packageInfo = application.packageManager.getPackageInfo(packageName, 0)
+        val cacheKey = OfficialProviderDexMethodCacheCodec.cacheKey(
+            packageName = packageName,
+            processName = processName,
+            versionCode = packageInfo.longVersionCode,
+            lastUpdateTime = packageInfo.lastUpdateTime,
+            query = query,
+        )
+        if (!dexHookTasks.add(cacheKey)) return
+
+        Thread(
+            {
+                runCatching {
+                    installAfterDexMethod(application, cacheKey, query, callback)
+                }.onFailure { error ->
+                    module.log(
+                        Log.ERROR,
+                        tag,
+                        "官方 Provider DexKit Hook 失败: package=$packageName " +
+                            "process=$processName key=${query.cacheKey}",
+                        error,
+                    )
+                }
+            },
+            "HLE-Provider-DexKit",
+        ).apply {
+            isDaemon = true
+            start()
+        }
+    }
+
+    private fun installAfterDexMethod(
+        application: Application,
+        cacheKey: String,
+        query: OfficialProviderDexMethodQuery,
+        callback: OfficialProviderMethodCallback,
+    ) {
+        val preferences = application.getSharedPreferences(
+            DEX_METHOD_CACHE_PREFERENCES,
+            Context.MODE_PRIVATE,
+        )
+        val cachedTarget = OfficialProviderDexMethodCacheCodec.decode(
+            preferences.getString(cacheKey, null),
+        )?.takeIf { OfficialProviderDexMethodCacheCodec.matches(it, query) }
+
+        if (cachedTarget != null) {
+            val cachedHook = runCatching { installAfterMethod(cachedTarget, callback) }
+            if (cachedHook.isSuccess) {
+                module.log(
+                    Log.INFO,
+                    tag,
+                    "官方 Provider DexKit 缓存命中: package=$packageName " +
+                        "process=$processName target=${describe(cachedTarget)}",
+                )
+                return
+            }
+            preferences.edit().remove(cacheKey).apply()
+            module.log(
+                Log.WARN,
+                tag,
+                "官方 Provider DexKit 缓存失效，重新查询: package=$packageName " +
+                    "process=$processName key=${query.cacheKey}",
+                cachedHook.exceptionOrNull(),
+            )
+        } else if (preferences.contains(cacheKey)) {
+            preferences.edit().remove(cacheKey).apply()
+        }
+
+        val startNanos = System.nanoTime()
+        val threadCount = selectDexKitThreadCount(application)
+        module.log(
+            Log.INFO,
+            tag,
+            "官方 Provider DexKit 开始查询: package=$packageName process=$processName " +
+                "key=${query.cacheKey} threads=$threadCount",
+        )
+        ensureDexKitLoaded(module)
+        val target = DexKitBridge.create(application.applicationInfo.sourceDir).use { bridge ->
+            bridge.setThreadNum(threadCount)
+            bridge.setMaxConcurrentQueries(1)
+            val finder = FindMethod().apply {
+                matcher {
+                    query.declaringClassName?.let(::declaredClass)
+                    query.requiredStrings.forEach(::addEqString)
+                }
+            }
+            val matches = bridge.findMethod(finder)
+                .map { method ->
+                    OfficialProviderMethodTarget(
+                        className = method.className,
+                        methodName = method.methodName,
+                        parameterTypeNames = method.paramTypeNames,
+                        returnTypeName = method.returnTypeName,
+                        isStatic = Modifier.isStatic(method.modifiers),
+                    )
+                }
+                .distinct()
+                .filter { OfficialProviderDexMethodCacheCodec.matches(it, query) }
+            require(matches.size == 1) {
+                "Provider DexKit 查询结果必须唯一: key=${query.cacheKey} " +
+                    "count=${matches.size} targets=${matches.joinToString { describe(it) }}"
+            }
+            matches.single()
+        }
+
+        installAfterMethod(target, callback)
+        preferences.edit()
+            .putString(cacheKey, OfficialProviderDexMethodCacheCodec.encode(target))
+            .apply()
+        val elapsedMs = (System.nanoTime() - startNanos) / 1_000_000L
+        module.log(
+            Log.INFO,
+            tag,
+            "官方 Provider DexKit 查询并 Hook 成功: package=$packageName " +
+                "process=$processName elapsedMs=$elapsedMs target=${describe(target)}",
+        )
+    }
+
+    private fun installAfterMethod(
+        target: OfficialProviderMethodTarget,
+        callback: OfficialProviderMethodCallback,
+    ) {
         require(target.className.isNotBlank()) { "Provider Hook className 不能为空" }
         require(target.methodName.isNotBlank()) { "Provider Hook methodName 不能为空" }
         val targetClass = Class.forName(target.className, false, targetClassLoader)
@@ -93,19 +239,32 @@ internal class OfficialProviderHookHost(
         require(Modifier.isStatic(method.modifiers) == target.isStatic) {
             "Provider Hook static 约束不匹配"
         }
-        val descriptor = buildString {
-            append(target.className)
-            append('#')
-            append(target.methodName)
-            append('(')
-            append(target.parameterTypeNames.joinToString())
-            append(')')
-            append(':')
-            append(target.returnTypeName)
-            append(if (target.isStatic) "[static]" else "[instance]")
-        }
+        val descriptor = describe(target)
         module.hook(method).intercept(AfterMethodHooker(module, descriptor, callback))
         module.log(Log.INFO, tag, "官方 Provider 方法 Hook 已安装: target=$descriptor")
+    }
+
+    private fun selectDexKitThreadCount(application: Application): Int {
+        val availableProcessors = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
+        val availableMemory = runCatching {
+            val manager = application.getSystemService(ActivityManager::class.java)
+            val info = ActivityManager.MemoryInfo()
+            manager.getMemoryInfo(info)
+            info.availMem
+        }.getOrDefault(0L)
+        return if (availableProcessors >= 4 && availableMemory >= TWO_GIB_BYTES) 2 else 1
+    }
+
+    private fun describe(target: OfficialProviderMethodTarget): String = buildString {
+        append(target.className)
+        append('#')
+        append(target.methodName)
+        append('(')
+        append(target.parameterTypeNames.joinToString())
+        append(')')
+        append(':')
+        append(target.returnTypeName)
+        append(if (target.isStatic) "[static]" else "[instance]")
     }
 
     private fun resolveParameterType(typeName: String): Class<*> = when (typeName) {
@@ -258,5 +417,29 @@ internal class OfficialProviderHookHost(
             tag,
             "官方 Provider Hook 已安装: id=$pluginId package=$packageName",
         )
+    }
+
+    private companion object {
+        const val DEX_METHOD_CACHE_PREFERENCES =
+            "com.juren233.hyperlyricsenhanced.official_provider_dex_methods"
+        const val TWO_GIB_BYTES = 2L * 1024L * 1024L * 1024L
+        val dexKitLoaded = AtomicBoolean(false)
+        val dexKitLoadLock = Any()
+
+        fun ensureDexKitLoaded(module: XposedModule) {
+            if (dexKitLoaded.get()) return
+            synchronized(dexKitLoadLock) {
+                if (dexKitLoaded.get()) return
+                val nativeLibrary = java.io.File(
+                    module.getModuleApplicationInfo().nativeLibraryDir,
+                    "libdexkit.so",
+                )
+                require(nativeLibrary.isFile) {
+                    "DexKit native library missing: ${nativeLibrary.absolutePath}"
+                }
+                System.load(nativeLibrary.absolutePath)
+                dexKitLoaded.set(true)
+            }
+        }
     }
 }

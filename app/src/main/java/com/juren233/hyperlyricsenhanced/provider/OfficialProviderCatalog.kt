@@ -19,7 +19,11 @@ object OfficialProviderCatalog {
         val targetPackages: Set<String>,
         val secondaryProcesses: Set<String> = emptySet(),
         val description: String? = null,
-    )
+        val targetDisplayNames: Map<String, String> = emptyMap(),
+    ) {
+        fun displayNameForPackage(packageName: String): String =
+            targetDisplayNames[packageName] ?: displayName
+    }
 
     val definitions = listOf(
         Definition("netease", "网易云音乐", setOf("com.netease.cloudmusic", "com.hihonor.cloudmusic")),
@@ -30,7 +34,18 @@ object OfficialProviderCatalog {
             secondaryProcesses = setOf("com.tencent.qqmusic:QQPlayerService"),
         ),
         Definition("qqmusic-hd", "QQ音乐HD", setOf("com.tencent.qqmusicpad")),
-        Definition("kugou", "酷狗音乐", setOf("com.kugou.android", "com.kugou.android.lite")),
+        Definition(
+            id = "kugou",
+            displayName = "酷狗音乐",
+            targetPackages = setOf("com.kugou.android", "com.kugou.android.lite"),
+            secondaryProcesses = setOf(
+                "com.kugou.android.support",
+                "com.kugou.android.lite.support",
+            ),
+            targetDisplayNames = mapOf(
+                "com.kugou.android.lite" to "酷狗概念版",
+            ),
+        ),
         Definition("kuwo", "酷我音乐", setOf("cn.kuwo.player")),
         Definition("spotify", "Spotify", setOf("com.spotify.music")),
         Definition(
@@ -76,7 +91,7 @@ object OfficialProviderCatalog {
     }
 
     fun shouldLoadIntoProcess(packageName: String, processName: String): Boolean {
-        if (!processName.contains(':')) return true
+        if (processName == packageName) return true
         return processName in definitionForPackage(packageName)?.secondaryProcesses.orEmpty()
     }
 

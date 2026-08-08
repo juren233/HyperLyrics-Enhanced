@@ -48,6 +48,40 @@ class OfficialProviderCatalogTest {
     }
 
     @Test
+    fun `allows both KuGou support processes`() {
+        assertTrue(
+            OfficialProviderCatalog.shouldLoadIntoProcess(
+                packageName = "com.kugou.android",
+                processName = "com.kugou.android.support",
+            )
+        )
+        assertTrue(
+            OfficialProviderCatalog.shouldLoadIntoProcess(
+                packageName = "com.kugou.android.lite",
+                processName = "com.kugou.android.lite.support",
+            )
+        )
+    }
+
+    @Test
+    fun `distinguishes KuGou full and concept app display names`() {
+        val definition = requireNotNull(OfficialProviderCatalog.definitionForId("kugou"))
+
+        assertEquals("酷狗音乐", definition.displayNameForPackage("com.kugou.android"))
+        assertEquals("酷狗概念版", definition.displayNameForPackage("com.kugou.android.lite"))
+    }
+
+    @Test
+    fun `rejects undeclared fully qualified secondary processes`() {
+        assertFalse(
+            OfficialProviderCatalog.shouldLoadIntoProcess(
+                packageName = "com.kugou.android",
+                processName = "com.kugou.android.message",
+            )
+        )
+    }
+
+    @Test
     fun `keeps non-provider secondary processes filtered`() {
         assertFalse(
             OfficialProviderCatalog.shouldLoadIntoProcess(

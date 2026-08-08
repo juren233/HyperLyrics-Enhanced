@@ -40,13 +40,21 @@ android {
         applicationId = "com.juren233.hyperlyricsenhanced"
         minSdk = 33
         targetSdk = 37
-        versionCode = 140027
+        versionCode = 140033
         versionName = ciVersionName ?: "7.4.0-canary"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         ndk {
             abiFilters.add("arm64-v8a")
+        }
+    }
+
+    packaging {
+        jniLibs {
+            // libxposed target processes load DexKit from the module's absolute
+            // nativeLibraryDir, so the module .so must be extracted on install.
+            useLegacyPackaging = true
         }
     }
 
@@ -105,6 +113,7 @@ dependencies {
     implementation(libs.androidx.palette.ktx)
     implementation(libs.hiddenapibypass)
     implementation(libs.bouncycastle.provider)
+    implementation(libs.dexkit)
 
     // Shizuku
     implementation(libs.shizuku.api)

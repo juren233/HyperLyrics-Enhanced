@@ -295,6 +295,7 @@ class HookEntry : XposedModule() {
                 module = this,
                 targetClassLoader = param.defaultClassLoader,
                 packageName = packageName,
+                processName = processName,
             )
         }
     }

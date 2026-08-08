@@ -180,6 +180,7 @@ fun MainPage() {
         mutableStateOf(emptyList<OneTapRefreshMusicApp>())
     }
     var oneTapRefreshSelectedIds by remember { mutableStateOf(emptySet<String>()) }
+    var pendingOneTapRefreshPackages by remember { mutableStateOf(emptyList<String>()) }
     var oneTapRefreshRootCheckSequence by remember { mutableLongStateOf(0L) }
     var showPermissionSheet by remember { mutableStateOf(false) }
 
@@ -362,6 +363,7 @@ fun MainPage() {
 
     // --- migration check ---
     var migrationNotes by remember { mutableStateOf<List<com.juren233.hyperlyricsenhanced.utils.MigrationNote>>(emptyList()) }
+    var showMigrationDialog by remember { mutableStateOf(false) }
     val migrationTitle = stringResource(R.string.migration_dialog_title)
     LaunchedEffect(Unit) {
         try {
@@ -377,6 +379,7 @@ fun MainPage() {
             )
             if (matched.isNotEmpty()) {
                 migrationNotes = matched
+                showMigrationDialog = true
             }
         } catch (_: Exception) {}
     }
@@ -458,13 +461,10 @@ fun MainPage() {
             )
         },
         onDismiss = { showOneTapRefreshDialog = false },
-        onConfirm = {
-            val selectedPackages = OneTapRefreshSelectionPolicy.selectedPackages(
-                selectedIds = oneTapRefreshSelectedIds,
-                musicApps = oneTapRefreshMusicApps,
-            )
+        onDismissFinished = {
+            val selectedPackages = pendingOneTapRefreshPackages
+            pendingOneTapRefreshPackages = emptyList()
             if (selectedPackages.isNotEmpty()) {
-                showOneTapRefreshDialog = false
                 scope.launch {
                     val success = ShellUtils.killAppProcesses(selectedPackages)
                     if (!success) {
@@ -476,46 +476,55 @@ fun MainPage() {
                 }
             }
         },
+        onConfirm = {
+            val selectedPackages = OneTapRefreshSelectionPolicy.selectedPackages(
+                selectedIds = oneTapRefreshSelectedIds,
+                musicApps = oneTapRefreshMusicApps,
+            )
+            if (selectedPackages.isNotEmpty()) {
+                pendingOneTapRefreshPackages = selectedPackages
+                showOneTapRefreshDialog = false
+            }
+        },
     )
 
     // --- migration dialog ---
-    if (migrationNotes.isNotEmpty()) {
-        WindowDialog(
-            title = migrationTitle,
-            show = migrationNotes.isNotEmpty(),
-            onDismissRequest = {}
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                EnhancedVersionNotice(modifier = Modifier.fillMaxWidth())
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column {
-                        migrationNotes.flatMap { it.items }.forEach { item ->
-                            if (item.url != null) {
-                                BasicComponent(
-                                    title = item.text,
-                                    summary = item.summary,
-                                    onClick = {
-                                        context.startActivity(Intent(Intent.ACTION_VIEW, item.url.toUri()))
-                                    }
-                                )
-                            } else {
-                                BasicComponent(title = item.text, summary = item.summary)
-                            }
+    WindowDialog(
+        title = migrationTitle,
+        show = showMigrationDialog,
+        onDismissRequest = {},
+        onDismissFinished = { migrationNotes = emptyList() },
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            EnhancedVersionNotice(modifier = Modifier.fillMaxWidth())
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column {
+                    migrationNotes.flatMap { it.items }.forEach { item ->
+                        if (item.url != null) {
+                            BasicComponent(
+                                title = item.text,
+                                summary = item.summary,
+                                onClick = {
+                                    context.startActivity(Intent(Intent.ACTION_VIEW, item.url.toUri()))
+                                }
+                            )
+                        } else {
+                            BasicComponent(title = item.text, summary = item.summary)
                         }
                     }
                 }
-                TextButton(
-                    text = stringResource(R.string.confirm),
-                    colors = ButtonDefaults.textButtonColorsPrimary(),
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = {
-                        val pInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-                        val currentVersion = PackageInfoCompat.getLongVersionCode(pInfo)
-                        prefs.edit { putLong(UIConstants.KEY_LAST_SEEN_VERSION, currentVersion) }
-                        migrationNotes = emptyList()
-                    }
-                )
             }
+            TextButton(
+                text = stringResource(R.string.confirm),
+                colors = ButtonDefaults.textButtonColorsPrimary(),
+                modifier = Modifier.fillMaxWidth(),
+                onClick = {
+                    val pInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+                    val currentVersion = PackageInfoCompat.getLongVersionCode(pInfo)
+                    prefs.edit { putLong(UIConstants.KEY_LAST_SEEN_VERSION, currentVersion) }
+                    showMigrationDialog = false
+                }
+            )
         }
     }
 

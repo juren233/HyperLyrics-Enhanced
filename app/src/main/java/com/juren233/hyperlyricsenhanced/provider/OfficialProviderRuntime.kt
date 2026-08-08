@@ -23,6 +23,7 @@ object OfficialProviderRuntime {
         module: XposedModule,
         targetClassLoader: ClassLoader,
         packageName: String,
+        processName: String,
     ): Boolean {
         val definition = OfficialProviderCatalog.definitionForPackage(packageName) ?: return false
         if (packageName == OfficialProviderCatalog.APPLE_MUSIC_PACKAGE_NAME) return false
@@ -96,6 +97,7 @@ object OfficialProviderRuntime {
                 module = module,
                 targetClassLoader = targetClassLoader,
                 packageName = packageName,
+                processName = processName,
             )
             plugin.install(host)
             host.logInstalled(definition.id)

@@ -28,6 +28,7 @@ lyricon-provider = "0.1.70"
 junit = "4.13.2"
 markwon = "4.6.2"
 bouncycastle = "1.78.1"
+dexkit = "2.2.0"
 
 
 [libraries]
@@ -86,6 +87,7 @@ lyricon-provider = { group = "io.github.proify.lyricon", name = "provider", vers
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 markwon-core = { group = "io.noties.markwon", name = "core", version.ref = "markwon" }
 bouncycastle-provider = { group = "org.bouncycastle", name = "bcprov-jdk18on", version.ref = "bouncycastle" }
+dexkit = { group = "org.luckypray", name = "dexkit", version.ref = "dexkit" }
 
 # --- 动画库 (YoYo) ---
 daimajia-animations = { group = "com.daimajia.androidanimations", name = "library", version.ref = "daimajia-animations" }
