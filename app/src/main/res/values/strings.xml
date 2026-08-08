@@ -436,7 +436,7 @@
     <string name="summary_default_font">默认</string>
     <string name="summary_not_configured">未配置</string>
     <string name="title_ai_translation">OpenAI 翻译</string>
-    <string name="title_apple_music_match_online_translation">当Apple Music无歌词翻译时尝试匹配在线歌词翻译</string>
+    <string name="title_apple_music_match_online_translation">Apple Music 无歌词翻译时尝试匹配在线歌词翻译</string>
     <string name="summary_apple_music_match_online_translation">可能会出现错位、缺失、错误等问题，该设置优先级高于AI翻译</string>
     <string name="title_apple_music_translation_qq_first">优先使用QQ音乐的歌词翻译</string>
     <string name="summary_apple_music_translation_qq_first">关闭时优先使用网易的翻译，开启后如果网易源更好时仍然会使用网易源</string>

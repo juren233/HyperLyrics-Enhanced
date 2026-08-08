@@ -22,13 +22,21 @@ internal object OfficialProviderDexMethodCacheCodec {
         val fingerprint = buildString {
             append(query.cacheKey)
             append('\u0000')
+            append(query.preferredTarget?.let(::encode).orEmpty())
+            append('\u0000')
             append(query.declaringClassName.orEmpty())
             append('\u0000')
+            append(query.declaringClassNamePrefix.orEmpty())
+            append('\u0000')
             append(query.requiredStrings.joinToString("\u0001"))
+            append('\u0000')
+            append(query.requiredInvokedMethodDescriptors.joinToString("\u0001"))
             append('\u0000')
             append(query.parameterTypeNames?.joinToString("\u0001").orEmpty())
             append('\u0000')
             append(query.returnTypeName.orEmpty())
+            append('\u0000')
+            append(query.returnTypeMatchesDeclaringClass)
             append('\u0000')
             append(query.isStatic?.toString().orEmpty())
         }.sha256()
@@ -68,9 +76,13 @@ internal object OfficialProviderDexMethodCacheCodec {
         query: OfficialProviderDexMethodQuery,
     ): Boolean =
         (query.declaringClassName == null || target.className == query.declaringClassName) &&
+            (query.declaringClassNamePrefix == null ||
+                target.className.startsWith(query.declaringClassNamePrefix)) &&
             (query.parameterTypeNames == null ||
                 target.parameterTypeNames == query.parameterTypeNames) &&
             (query.returnTypeName == null || target.returnTypeName == query.returnTypeName) &&
+            (!query.returnTypeMatchesDeclaringClass ||
+                target.returnTypeName == target.className) &&
             (query.isStatic == null || target.isStatic == query.isStatic)
 
     private fun String.encoded(): String = Base64.getUrlEncoder()

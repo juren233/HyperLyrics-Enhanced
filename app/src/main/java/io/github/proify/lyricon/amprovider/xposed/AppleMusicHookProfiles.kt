@@ -1430,10 +1430,25 @@ internal data class ResolvedAppleMusicHookMethod(
 internal class AppleMusicHookResolver(
     val version: AppleMusicVersion,
     private val classLookup: (String) -> Class<*>,
+    private val dexKitResolver: AppleMusicDexKitResolver? = null,
 ) {
     constructor(version: AppleMusicVersion, classLoader: ClassLoader) : this(
         version = version,
         classLookup = classLoader::loadClass,
+    )
+
+    constructor(
+        version: AppleMusicVersion,
+        application: android.app.Application,
+        nativeLibraryDir: String,
+    ) : this(
+        version = version,
+        classLookup = application.classLoader::loadClass,
+        dexKitResolver = AppleMusicDexKitResolver(
+            application = application,
+            classLoader = application.classLoader,
+            nativeLibraryDir = nativeLibraryDir,
+        ),
     )
 
     val profile: AppleMusicHookProfile? = AppleMusicHookProfiles.profileFor(version)
@@ -1459,9 +1474,19 @@ internal class AppleMusicHookResolver(
         }
         if (exactClasses.isNotEmpty()) return exactClasses
 
-        return AppleMusicHookProfiles.candidates(version, hookPoint)
+        val compatibilityClasses = AppleMusicHookProfiles.candidates(version, hookPoint)
             .filterNot(exactTargets::contains)
             .mapNotNull { target -> loadClass(target, compatibilityFallback = true) }
+        if (compatibilityClasses.isNotEmpty()) return compatibilityClasses
+        return resolveDexKitMethod(hookPoint)?.let { resolved ->
+            listOf(
+                ResolvedAppleMusicHookClass(
+                    target = resolved.target,
+                    clazz = resolved.method.declaringClass,
+                    compatibilityFallback = true,
+                ),
+            )
+        }.orEmpty()
     }
 
     /** 解析单个类；精确档案缺失时才尝试已知版本候选。 */
@@ -1478,6 +1503,13 @@ internal class AppleMusicHookResolver(
                 target = target,
                 clazz = clazz,
                 compatibilityFallback = target !in exactTargets,
+            )
+        }
+        resolveDexKitMethod(hookPoint)?.let { resolved ->
+            return ResolvedAppleMusicHookClass(
+                target = resolved.target,
+                clazz = resolved.method.declaringClass,
+                compatibilityFallback = true,
             )
         }
         throw ClassNotFoundException(
@@ -1516,9 +1548,36 @@ internal class AppleMusicHookResolver(
                 "${target.className}#${target.methodName}:ambiguous(${matchingMethods.size})"
             }
         }
+        resolveDexKitMethod(hookPoint)?.let { return it }
+
         throw NoSuchMethodException(
             "Apple Music ${version.displayName} $hookPoint unresolved: " +
                 failures.joinToString(),
+        )
+    }
+
+    private fun resolveDexKitMethod(
+        hookPoint: AppleMusicHookPoint,
+    ): ResolvedAppleMusicHookMethod? {
+        val candidates = AppleMusicHookProfiles.candidates(version, hookPoint)
+        if (candidates.none { it.methodName != null || it.parameterCount != null }) return null
+        return dexKitResolver?.resolveMethod(
+            hookPoint = hookPoint,
+            templates = candidates,
+            validator = { template, method ->
+                methodMatches(
+                    hookPoint = hookPoint,
+                    target = template.copy(
+                        className = method.declaringClass.name,
+                        methodName = method.name,
+                        parameterCount = method.parameterCount,
+                        parameterTypeNames = method.parameterTypes.map(Class<*>::getName),
+                        returnTypeName = method.returnType.name,
+                        isStatic = Modifier.isStatic(method.modifiers),
+                    ),
+                    method = method,
+                )
+            },
         )
     }
 

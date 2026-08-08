@@ -57,6 +57,12 @@ interface OfficialProviderHost {
         query: OfficialProviderDexMethodQuery,
         callback: OfficialProviderMethodCallback,
     )
+
+    fun resolveDexMethods(
+        application: Application,
+        queries: List<OfficialProviderDexMethodQuery>,
+        callback: OfficialProviderDexMethodsCallback,
+    )
 }
 
 fun interface OfficialProviderApplicationCallback {
@@ -87,15 +93,54 @@ data class OfficialProviderMethodTarget(
  */
 data class OfficialProviderDexMethodQuery(
     val cacheKey: String,
+    val preferredTarget: OfficialProviderMethodTarget? = null,
     val declaringClassName: String? = null,
-    val requiredStrings: List<String>,
+    val declaringClassNamePrefix: String? = null,
+    val requiredStrings: List<String> = emptyList(),
+    val requiredInvokedMethodDescriptors: List<String> = emptyList(),
     val parameterTypeNames: List<String>? = null,
     val returnTypeName: String? = null,
+    val returnTypeMatchesDeclaringClass: Boolean = false,
     val isStatic: Boolean? = null,
 )
 
+internal object OfficialProviderDexMethodQueryValidator {
+    fun validate(query: OfficialProviderDexMethodQuery) {
+        require(query.cacheKey.isNotBlank()) { "Provider DexKit cacheKey 不能为空" }
+        require(query.declaringClassName == null || query.declaringClassName.isNotBlank()) {
+            "Provider DexKit declaringClassName 不能为空"
+        }
+        require(query.declaringClassNamePrefix == null || query.declaringClassNamePrefix.isNotBlank()) {
+            "Provider DexKit declaringClassNamePrefix 不能为空"
+        }
+        require(query.requiredStrings.all(String::isNotBlank)) {
+            "Provider DexKit 特征字符串不能包含空值"
+        }
+        require(query.requiredInvokedMethodDescriptors.all(String::isNotBlank)) {
+            "Provider DexKit 调用方法描述符不能包含空值"
+        }
+        require(
+            query.declaringClassName != null ||
+                query.declaringClassNamePrefix != null ||
+                query.requiredStrings.isNotEmpty() ||
+                query.requiredInvokedMethodDescriptors.isNotEmpty(),
+        ) {
+            "Provider DexKit 后备查询必须包含类名或特征字符串"
+        }
+        query.preferredTarget?.let { target ->
+            require(target.className.isNotBlank()) { "Provider 首选 className 不能为空" }
+            require(target.methodName.isNotBlank()) { "Provider 首选 methodName 不能为空" }
+            require(target.returnTypeName.isNotBlank()) { "Provider 首选 returnTypeName 不能为空" }
+        }
+    }
+}
+
 fun interface OfficialProviderMethodCallback {
     fun onMethodCalled(receiver: Any?, arguments: Array<Any?>)
+}
+
+fun interface OfficialProviderDexMethodsCallback {
+    fun onMethodsResolved(targets: List<OfficialProviderMethodTarget>)
 }
 
 data class OfficialProviderNextTrackFrame(
