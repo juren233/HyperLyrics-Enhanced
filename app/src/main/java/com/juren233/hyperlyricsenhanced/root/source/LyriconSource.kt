@@ -393,6 +393,8 @@ class LyriconSource : LyricSource {
         }
         val originalMetadataChanged = sameTrack &&
             AppleOnlineTranslationRequestPolicy.originalMetadataChanged(previousSong, song)
+        val matchingMetadataChanged = sameTrack &&
+            AppleOnlineTranslationRequestPolicy.matchingMetadataChanged(previousSong, song)
         val repeatedEmptySong = sameTrack && !originalMetadataChanged && song.lyrics.isNullOrEmpty() &&
             (fallbackSongActive || fallbackDelayRunnable != null || fallbackJob?.isActive == true)
         if (repeatedEmptySong) {
@@ -404,7 +406,7 @@ class LyriconSource : LyricSource {
         val repeatedNativeNeedingEnrichment = sameTrack &&
             !song.lyrics.isNullOrEmpty() &&
             needsOnlineEnrichment(song) &&
-            !originalMetadataChanged &&
+            !matchingMetadataChanged &&
             (onlineTranslationJob?.isActive == true || onlineMatchedTranslationActive)
         if (repeatedNativeNeedingEnrichment) {
             currentAppleSong = song
@@ -416,7 +418,7 @@ class LyriconSource : LyricSource {
         val incomingHasTranslation = hasTranslation(song)
         val incomingNeedsEnrichment = needsOnlineEnrichment(song)
         cancelOnlineTranslation(
-            clearAttempt = !sameTrack || !incomingNeedsEnrichment || originalMetadataChanged,
+            clearAttempt = !sameTrack || !incomingNeedsEnrichment || matchingMetadataChanged,
             clearMatched = true,
             reason = "apple_song_updated"
         )
@@ -444,7 +446,8 @@ class LyriconSource : LyricSource {
                 "titlePresent=${!song?.name.isNullOrBlank()}, " +
                 "requestOriginal=${originalMetadataPlan.requestOriginalMetadata}, " +
                 "waitOriginal=${originalMetadataPlan.waitForResult}, sameTrack=$sameTrack, " +
-                "originalMetadataChanged=$originalMetadataChanged"
+                "originalMetadataChanged=$originalMetadataChanged, " +
+                "matchingMetadataChanged=$matchingMetadataChanged"
         )
         if (song != null && originalMetadataPlan.requestOriginalMetadata) {
             requestOriginalMetadata(song, "setting_enabled")
@@ -699,6 +702,18 @@ class LyriconSource : LyricSource {
         val nativeLineCount = baseSong.lyrics.orEmpty().size
         val enrichmentNeeded = needsOnlineEnrichment(baseSong)
         val titlePresent = !baseSong.name.isNullOrBlank()
+        if (AppleOnlineTranslationRequestPolicy.shouldWaitForMatchingAlbum(
+                baseSong,
+                shouldPreferAppleOriginalMetadata(),
+            )
+        ) {
+            pronunciationDiagnostic(
+                "stage=request_deferred, reason=matching_album_pending, " +
+                    "id=${baseSong.id}, title=${baseSong.name}, album=" +
+                    AppleOnlineTranslationRequestPolicy.effectiveAlbum(baseSong)
+            )
+            return false
+        }
         if (!matchingEnabled || nativeLineCount == 0 || !enrichmentNeeded || !titlePresent) {
             pronunciationDiagnostic(
                 "stage=request_schedule_skipped, reason=precondition_failed, " +

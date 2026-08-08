@@ -40,19 +40,36 @@ internal object AppleOnlineTranslationRequestPolicy {
         song.metadata?.getString(LyricMetadataKeys.APPLE_ALBUM),
     ).mapNotNull { it?.trim()?.takeIf(String::isNotEmpty) }.firstOrNull().orEmpty()
 
+    /** Do not spend a lookup on Apple's transient payload before album replacement arrives. */
+    fun shouldWaitForMatchingAlbum(song: Song?, preferOriginalMetadata: Boolean): Boolean =
+        preferOriginalMetadata && song != null && effectiveAlbum(song).isEmpty() &&
+            !song.metadata
+                ?.getString(LyricMetadataKeys.APPLE_ORIGINAL_METADATA_RESOLVED)
+                .toBoolean()
+
     fun originalMetadataChanged(previous: Song?, current: Song?): Boolean =
         previous != null && current != null && originalMetadataKey(previous) != originalMetadataKey(current)
+
+    /** Metadata that is actually sent to the Q/NetEase matcher changed. */
+    fun matchingMetadataChanged(previous: Song?, current: Song?): Boolean =
+        previous != null && current != null && matchingMetadataKey(previous) != matchingMetadataKey(current)
 
     fun attemptKey(song: Song): String {
         val trackKey = song.id?.trim()?.takeIf(String::isNotEmpty)?.let { "id:$it" }
             ?: "${normalize(song.name)}|${normalize(song.artist)}"
-        return "$trackKey|${originalMetadataKey(song)}"
+        return "$trackKey|${originalMetadataKey(song)}|${matchingMetadataKey(song)}"
     }
 
     private fun originalMetadataKey(song: Song): String = listOf(
         song.metadata?.getString(LyricMetadataKeys.APPLE_ORIGINAL_TITLE),
         song.metadata?.getString(LyricMetadataKeys.APPLE_ORIGINAL_ARTIST),
         song.metadata?.getString(LyricMetadataKeys.APPLE_ORIGINAL_ALBUM),
+    ).joinToString("|") { normalize(it) }
+
+    private fun matchingMetadataKey(song: Song): String = listOf(
+        song.name,
+        song.artist,
+        effectiveAlbum(song),
     ).joinToString("|") { normalize(it) }
 
     private fun isOriginalMetadataResolved(song: Song): Boolean = song.metadata

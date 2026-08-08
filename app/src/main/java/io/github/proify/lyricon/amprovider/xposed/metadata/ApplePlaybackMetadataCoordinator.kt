@@ -116,6 +116,11 @@ internal class ApplePlaybackMetadataCoordinator(
                 playbackMember(AppleMusicRuntimeMember.PLAYBACK_QUEUE_ITEM_ITEM_METHOD),
             ) ?: return@runCatching
             val mediaId = mediaItemId(mediaItem) ?: return@runCatching
+            val queueAlbum = readAlbumName(mediaItem)
+            val aliasAlbum = host.effectiveMetadataAlias(mediaId)
+                ?.album
+                ?.trim()
+                ?.takeIf(String::isNotEmpty)
             val languageSelection = host.configuredContentUiLanguage()
             val overrideAccountLanguage = host.shouldOverrideAccountLanguage(languageSelection)
 
@@ -135,6 +140,7 @@ internal class ApplePlaybackMetadataCoordinator(
                     mediaItem,
                     playbackMember(AppleMusicRuntimeMember.PLAYBACK_MEDIA_ITEM_GENRE_NAME_METHOD),
                 ) as? String,
+                album = queueAlbum ?: aliasAlbum,
                 duration = AppleReflection.call(
                     mediaItem,
                     playbackMember(AppleMusicRuntimeMember.PLAYBACK_MEDIA_ITEM_DURATION_METHOD),
@@ -152,7 +158,9 @@ internal class ApplePlaybackMetadataCoordinator(
             MediaMetadataCache.put(metadata)
             ProviderLogger.debug(
                 "歌曲元数据已更新：source=$source, id=${metadata.id}, " +
-                    "queueId=${metadata.queueId}, 标题=${metadata.title}"
+                    "queueId=${metadata.queueId}, 标题=${metadata.title}, " +
+                    "专辑=${metadata.album}, 专辑来源=" +
+                    if (queueAlbum != null) "queue" else if (aliasAlbum != null) "alias" else "none"
             )
             if (publishAsCurrent) {
                 val previousCurrentId = currentMediaId
@@ -186,6 +194,17 @@ internal class ApplePlaybackMetadataCoordinator(
         }.onFailure {
             ProviderLogger.error("歌曲元数据解析异常：source=$source", it)
         }
+    }
+
+    /** Queue media items differ across Apple Music builds; probe the stable album accessors. */
+    private fun readAlbumName(mediaItem: Any): String? = listOf(
+        "getAlbumName",
+        "getAlbum",
+        "getCollectionName",
+    ).firstNotNullOfOrNull { methodName ->
+        runCatching {
+            AppleReflection.call(mediaItem, methodName) as? String
+        }.getOrNull()?.trim()?.takeIf(String::isNotEmpty)
     }
 
     fun resolveOriginalMetadataOnDemand(mediaId: String) {

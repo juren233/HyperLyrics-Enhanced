@@ -169,6 +169,18 @@ class OnlineLyricTargeterTest {
     }
 
     @Test
+    fun `normalizes catalog punctuation before matching`() {
+        assertEquals(
+            "超かぐや姫",
+            OnlineLyricTargeter.normalizeMatchText("超かぐや姫！"),
+        )
+        assertEquals(
+            OnlineLyricTargeter.normalizeMatchText("超かぐや姫!"),
+            OnlineLyricTargeter.normalizeMatchText("超かぐや姫！"),
+        )
+    }
+
+    @Test
     fun `rejects a title only candidate even when its numeric score is high`() {
         assertEquals(
             false,

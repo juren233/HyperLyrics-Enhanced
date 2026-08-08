@@ -19,6 +19,13 @@ object OnlineLyricTargeter {
     private const val TIMEOUT_MS = 5000L
     private const val TOTAL_TIMEOUT_MS = 15_000L
     private const val PASS_SCORE = 80
+    private const val TITLE_SCORE = 50
+    private const val ARTIST_SCORE = 30
+    private const val ALBUM_SCORE = 30
+    private const val FEATURE_SCORE = 20
+    private const val DURATION_CLOSE_SCORE = 15
+    private const val DURATION_DRIFT_SCORE = 10
+    private const val DURATION_MISMATCH_SCORE = -30
     private const val SEARCH_PAGE_SIZE = 50
     private const val MAX_LYRIC_CANDIDATES_PER_QUERY = 5
 
@@ -176,6 +183,8 @@ object OnlineLyricTargeter {
                         "candidateTitle=${localBest?.first?.title}, " +
                         "candidateArtist=${localBest?.first?.artist}, " +
                         "candidateAlbum=${localBest?.first?.album}, score=$localBestScore, " +
+                        "localAlbumKey=$cleanLocalAlbum, " +
+                        "candidateAlbumKey=${localBest?.first?.album?.let { cleanString(context, it) }.orEmpty()}, " +
                         "titleMatched=${localBest?.second?.titleMatched}, " +
                         "artistMatched=${localBest?.second?.artistMatched}, " +
                         "albumMatched=${localBest?.second?.albumMatched}, " +
@@ -189,16 +198,28 @@ object OnlineLyricTargeter {
                     .take(MAX_LYRIC_CANDIDATES_PER_QUERY)
                     .toList()
                 for ((candidate, candidateMatch) in eligibleCandidates) {
+                    val resolvedCandidate = resolveCandidateArtistAlias(
+                        context = context,
+                        source = source,
+                        candidate = candidate,
+                        candidateMatch = candidateMatch,
+                        cleanLocalTitle = cleanLocalTitle,
+                        cleanLocalAlbum = cleanLocalAlbum,
+                        localFeatures = localFeatures,
+                        durationMs = durationMs,
+                        metadataLabel = metadataLabel,
+                        diagnostic = diagnostic,
+                    ) ?: candidate
                     val lyricsResult = withTimeoutOrNull(TIMEOUT_MS) {
                         try {
-                            source.getLyrics(candidate)
+                            source.getLyrics(resolvedCandidate)
                         } catch (e: CancellationException) {
                             throw e
                         } catch (e: Exception) {
                             LogManager.w(
                                 "OnlineTargeter",
                                 "获取歌词异常: 源=${source.javaClass.simpleName}, " +
-                                    "id=${candidate.id}, ${e.message}"
+                                    "id=${resolvedCandidate.id}, ${e.message}"
                             )
                             null
                         }
@@ -210,7 +231,7 @@ object OnlineLyricTargeter {
                         LogManager.d(
                             "OnlineTargeter",
                             "候选无可用歌词，尝试下一条: 源=${source.javaClass.simpleName}, " +
-                                "id=${candidate.id}, score=${candidateMatch.total}"
+                                "id=${resolvedCandidate.id}, score=${candidateMatch.total}"
                         )
                         continue
                     }
@@ -253,6 +274,57 @@ object OnlineLyricTargeter {
                 "album=$album, bestScore=$bestScore, requirement=title+(artist|album)"
         )
         return null
+    }
+
+    /**
+     * A catalog may expose a creator under a different public name (for example KZ/livetune).
+     * Once title+album identifies a candidate, use that candidate's artist as the next query
+     * identity instead of maintaining provider-specific alias tables.
+     */
+    private suspend fun resolveCandidateArtistAlias(
+        context: Context,
+        source: SearchSource,
+        candidate: SongSearchResult,
+        candidateMatch: CandidateMatch,
+        cleanLocalTitle: String,
+        cleanLocalAlbum: String,
+        localFeatures: List<String>,
+        durationMs: Long,
+        metadataLabel: String,
+        diagnostic: ((String) -> Unit)?,
+    ): SongSearchResult? {
+        if (candidateMatch.artistMatched || !candidateMatch.albumMatched) return null
+        val aliasQuery = listOf(candidate.title, candidate.artist, candidate.album)
+            .filter(String::isNotBlank)
+            .joinToString(" ")
+        val aliasResults = withTimeoutOrNull(TIMEOUT_MS) {
+            runCatching { source.search(aliasQuery, 1, "/", SEARCH_PAGE_SIZE) }.getOrNull()
+        }.orEmpty()
+        val canonicalArtists = splitArtists(candidate.artist)
+            .map { cleanString(context, it) }
+        val canonical = aliasResults
+            .map { song ->
+                song to calculateScore(
+                    context,
+                    song,
+                    cleanLocalTitle,
+                    canonicalArtists,
+                    cleanLocalAlbum,
+                    localFeatures,
+                    durationMs,
+                )
+            }
+            .filter { (_, score) -> score.isEligible }
+            .maxByOrNull { (_, score) -> score.total }
+            ?.first
+        diagnostic?.invoke(
+            "在线候选歌手回填: metadata=$metadataLabel, " +
+                "source=${source.javaClass.simpleName}, " +
+                "fromArtist=${candidate.artist}, query=\"$aliasQuery\", " +
+                "resolvedArtist=${canonical?.artist ?: candidate.artist}, " +
+                "resolved=${canonical != null}"
+        )
+        return canonical
     }
 
     internal fun shouldRetryWithOriginalMetadata(
@@ -346,7 +418,7 @@ object OnlineLyricTargeter {
 
         val titleMatched = stringsMatch(cleanLocalTitle, cleanSongTitle)
         if (titleMatched) {
-            score += 50
+            score += TITLE_SCORE
         }
 
         val songArtists = splitArtists(song.artist).map { cleanString(context, it) }
@@ -354,21 +426,19 @@ object OnlineLyricTargeter {
         val artistMatched = localArtists.any { localArtist ->
             songArtists.any { songArtist -> stringsMatch(localArtist, songArtist) }
         }
-        if (artistMatched) {
-            score += 30
-        }
+        if (artistMatched) score += ARTIST_SCORE
 
         val cleanSongAlbum = cleanString(context, song.album)
         val albumMatched = cleanLocalAlbum.isNotEmpty() && cleanSongAlbum.isNotEmpty() &&
             stringsMatch(cleanLocalAlbum, cleanSongAlbum)
-        if (albumMatched) score += 30
+        if (albumMatched) score += ALBUM_SCORE
 
         val songFeatures = listOf("live", "remastered", "翻唱", "cover").filter { song.title.lowercase().contains(it) }
         
         if (localFeatures.isNotEmpty() && songFeatures.isNotEmpty()) {
             val commonFeatures = localFeatures.intersect(songFeatures.toSet())
             if (commonFeatures.isNotEmpty()) {
-                score += 20
+                score += FEATURE_SCORE
             }
         }
 
@@ -385,8 +455,17 @@ object OnlineLyricTargeter {
             .replace(BRACKETED_SEGMENT_REGEX, "")
             .trim()
             .lowercase()
-        return compactWhitespace(ChineseUtils.toSimplified(context, cleaned))
+        return compactWhitespace(
+            normalizeMatchText(ChineseUtils.toSimplified(context, cleaned))
+        )
     }
+
+    /** Build the same identity key for catalog punctuation, spacing, and invisible format chars. */
+    internal fun normalizeMatchText(value: String): String =
+        Normalizer.normalize(value, Normalizer.Form.NFKC)
+            .lowercase()
+            .replace(BRACKETED_SEGMENT_REGEX, "")
+            .replace(MATCH_IGNORED_REGEX, "")
 
     internal fun normalizeWidth(value: String): String =
         Normalizer.normalize(value, Normalizer.Form.NFKC)
@@ -394,9 +473,9 @@ object OnlineLyricTargeter {
     internal fun durationScore(localDurationMs: Long, remoteDurationMs: Long): Int {
         val diffMs = abs(localDurationMs - remoteDurationMs)
         return when {
-            diffMs > 5_000L -> -30
-            diffMs < 1_500L -> 15
-            else -> 10
+            diffMs > 5_000L -> DURATION_MISMATCH_SCORE
+            diffMs < 1_500L -> DURATION_CLOSE_SCORE
+            else -> DURATION_DRIFT_SCORE
         }
     }
 
@@ -455,6 +534,7 @@ object OnlineLyricTargeter {
     private val BRACKETED_SEGMENT_REGEX = Regex(
         "\\([^)]*\\)|\\[[^\\]]*\\]|\\{[^}]*\\}",
     )
+    private val MATCH_IGNORED_REGEX = Regex("[\\p{P}\\p{S}\\p{Cf}\\s]")
 
     internal data class CandidateMatch(
         val total: Int,

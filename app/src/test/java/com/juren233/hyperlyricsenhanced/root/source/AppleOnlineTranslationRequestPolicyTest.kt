@@ -70,6 +70,36 @@ class AppleOnlineTranslationRequestPolicyTest {
         )
     }
 
+    @Test
+    fun `album arrival changes the matching metadata and translation attempt`() {
+        val before = song()
+        val after = song(originalAlbum = "超かぐや姫!")
+
+        assertTrue(
+            AppleOnlineTranslationRequestPolicy.matchingMetadataChanged(before, after)
+        )
+        assertNotEquals(
+            AppleOnlineTranslationRequestPolicy.attemptKey(before),
+            AppleOnlineTranslationRequestPolicy.attemptKey(after)
+        )
+    }
+
+    @Test
+    fun `defers lookup while the replacement payload has no album`() {
+        assertTrue(
+            AppleOnlineTranslationRequestPolicy.shouldWaitForMatchingAlbum(
+                song(),
+                preferOriginalMetadata = true,
+            )
+        )
+        assertFalse(
+            AppleOnlineTranslationRequestPolicy.shouldWaitForMatchingAlbum(
+                song(originalAlbum = "超かぐや姫!", resolved = true),
+                preferOriginalMetadata = true,
+            )
+        )
+    }
+
     private fun song(
         originalTitle: String? = null,
         originalArtist: String? = null,
