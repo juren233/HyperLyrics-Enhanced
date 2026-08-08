@@ -29,7 +29,8 @@ class LyricProviderImpl(private val context: Context) : ILyricProvider {
                     params.packageName,
                     params.title,
                     params.artist,
-                    params.duration
+                    params.duration,
+                    album = params.album,
                 )
 
                 // 3. 搜索成功，存入缓存

@@ -41,14 +41,13 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlin.math.abs
 
 class LyriconSource : LyricSource {
 
     companion object {
         private const val TAG = "LyriconSource"
+        private const val MATCH_TAG = "LyriconMatch"
         private const val APPLE_MUSIC_PACKAGE = "com.apple.android.music"
         private const val BUILT_IN_PROVIDER_PACKAGE = "com.juren233.hyperlyricsenhanced"
         private const val APPLE_LYRICS_GRACE_MS = 5_000L
@@ -83,7 +82,6 @@ class LyriconSource : LyricSource {
     private var directBridge: AppleMusicDirectBridge? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private val fallbackScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val fallbackRequestMutex = Mutex()
     private val mediaPositionScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var fallbackJob: Job? = null
     private var onlineTranslationJob: Job? = null
@@ -359,7 +357,27 @@ class LyriconSource : LyricSource {
         ) ?: RootConstants.DEFAULT_HOOK_LYRICON_PROVIDER_DELAY
     }
 
-    private fun handleAppleSong(song: LocalSong?) {
+    private fun handleAppleSong(incomingSong: LocalSong?) {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post { handleAppleSong(incomingSong) }
+            return
+        }
+        if (sink == null) return
+        val song = AppleOnlineTranslationRequestPolicy.applyResolvedReplacement(
+            song = incomingSong,
+            enabled = shouldPreferAppleOriginalMetadata(),
+        )
+        if (
+            incomingSong != null && song != null &&
+            (incomingSong.name != song.name || incomingSong.artist != song.artist)
+        ) {
+            diagnostic(
+                "Apple Music 歌曲载荷已按专辑替换表改写: id=${song.id}, " +
+                    "before=${incomingSong.name}/${incomingSong.artist}, " +
+                    "after=${song.name}/${song.artist}, " +
+                    "album=${AppleOnlineTranslationRequestPolicy.effectiveAlbum(song)}"
+            )
+        }
         diagnostic(
             "Apple Music 歌曲入口: id=${song?.id}, title=${song?.name}, " +
                 "artist=${song?.artist}, duration=${song?.duration}, " +
@@ -565,12 +583,15 @@ class LyriconSource : LyricSource {
             }
             fallbackJob = fallbackScope.launch {
                 try {
-                    fallbackRequestMutex.withLock {
-                        if (generation != fallbackGeneration) return@withLock
+                    run request@ {
+                        if (generation != fallbackGeneration) return@request
                         val preferredSource = if (isQqFirst()) Source.QM else Source.NE
+                        val replacedAlbum =
+                            AppleOnlineTranslationRequestPolicy.effectiveAlbum(baseSong)
                         diagnostic(
                             "Apple Music 在线兜底开始: title=${baseSong.name}, " +
-                                "artist=${baseSong.artist}, source=$preferredSource"
+                                "artist=${baseSong.artist}, album=$replacedAlbum, " +
+                                "source=$preferredSource"
                         )
                         val lines = OnlineLyricTargeter.fetchBestLyric(
                             context = application,
@@ -578,12 +599,9 @@ class LyriconSource : LyricSource {
                             title = baseSong.name.orEmpty(),
                             artist = baseSong.artist.orEmpty(),
                             durationMs = baseSong.duration,
-                            originalTitle = baseSong.metadata
-                                ?.getString(LyricMetadataKeys.APPLE_ORIGINAL_TITLE),
-                            originalArtist = baseSong.metadata
-                                ?.getString(LyricMetadataKeys.APPLE_ORIGINAL_ARTIST),
-                            preferOriginalMetadata = shouldPreferAppleOriginalMetadata(),
-                            preferredSource = preferredSource
+                            album = replacedAlbum,
+                            preferredSource = preferredSource,
+                            diagnostic = { message -> diagnostic(message) },
                         )
                         val fallbackSong = lines?.let {
                             OnlineFallbackSongMapper.map(baseSong, it)
@@ -709,21 +727,21 @@ class LyriconSource : LyricSource {
         onlineTranslationJob?.cancel()
         onlineTranslationJob = fallbackScope.launch {
             try {
-                fallbackRequestMutex.withLock {
-                    if (generation != onlineTranslationGeneration) {
+                    run request@ {
+                        if (generation != onlineTranslationGeneration) {
                         pronunciationDiagnostic(
                             "stage=request_abandoned, generation=$generation, id=${baseSong.id}, " +
                                 "reason=generation_changed_before_start, " +
                                 "currentGeneration=$onlineTranslationGeneration"
                         )
-                        return@withLock
+                            return@request
                     }
                     val application = app ?: run {
                         pronunciationDiagnostic(
                             "stage=request_abandoned, generation=$generation, id=${baseSong.id}, " +
                                 "reason=application_unavailable"
                         )
-                        return@withLock
+                            return@request
                     }
                     val preferredSource = if (isTranslationQqFirst()) Source.QM else Source.NE
                     val alternativeSource = if (preferredSource == Source.QM) Source.NE else Source.QM
@@ -747,29 +765,20 @@ class LyriconSource : LyricSource {
                             ) 1 else 0)
                         }
                     }
-                    val mediaInfo = MediaMetadataHelper.getMediaInfo(
-                        application,
-                        APPLE_MUSIC_PACKAGE,
-                    )
-                    val searchDuration = AppleOnlineTranslationSearchDurationPolicy.resolve(
-                        song = baseSong,
-                        media = AppleOnlineTranslationSearchDurationPolicy.MediaSnapshot(
-                            title = mediaInfo.title,
-                            artist = mediaInfo.artist,
-                            durationMs = mediaInfo.duration,
-                        ),
-                    )
+                    val replacedAlbum =
+                        AppleOnlineTranslationRequestPolicy.effectiveAlbum(baseSong)
+                    val searchDurationMs = baseSong.duration
                     diagnostic(
                         "Apple Music 在线歌词补全开始: title=${baseSong.name}, " +
-                            "artist=${baseSong.artist}, preferred=$preferredSource, " +
+                            "artist=${baseSong.artist}, album=$replacedAlbum, " +
+                            "metadataSource=apple_replaced_payload, " +
+                            "preferred=$preferredSource, " +
                             "first=$firstSource, requested=${requestedFirstSource ?: "none"}"
                     )
                     pronunciationDiagnostic(
                         "stage=search_duration_resolved, generation=$generation, id=${baseSong.id}, " +
-                            "lyricDuration=${baseSong.duration}, mediaDuration=${mediaInfo.duration}, " +
-                            "mediaTitle=${mediaInfo.title}, mediaArtist=${mediaInfo.artist}, " +
-                            "identityMatched=${searchDuration.mediaIdentityMatched}, " +
-                            "selectedDuration=${searchDuration.durationMs}"
+                            "lyricDuration=${baseSong.duration}, metadataSource=apple_replaced_payload, " +
+                            "selectedDuration=$searchDurationMs"
                     )
                     pronunciationDiagnostic(
                         "stage=request_started, generation=$generation, id=${baseSong.id}, " +
@@ -783,7 +792,8 @@ class LyriconSource : LyricSource {
                         source = firstSource,
                         totalLineCount = totalLineCount,
                         generation = generation,
-                        searchDurationMs = searchDuration.durationMs,
+                        searchDurationMs = searchDurationMs,
+                        album = replacedAlbum,
                     )
                     val secondCandidate = if (
                         temporaryTranslationSource == secondSource ||
@@ -803,7 +813,8 @@ class LyriconSource : LyricSource {
                             source = secondSource,
                             totalLineCount = totalLineCount,
                             generation = generation,
-                            searchDurationMs = searchDuration.durationMs,
+                            searchDurationMs = searchDurationMs,
+                            album = replacedAlbum,
                         )
                     } else {
                         null
@@ -898,12 +909,20 @@ class LyriconSource : LyricSource {
                     }
                 }
             } catch (e: CancellationException) {
+                matchDiagnostic(
+                    "Apple Music 在线翻译最终状态: title=${baseSong.name}, matched=false, " +
+                        "reason=cancelled, generation=$generation"
+                )
                 pronunciationDiagnostic(
                     "stage=request_cancelled, generation=$generation, id=${baseSong.id}, " +
                         "currentGeneration=$onlineTranslationGeneration"
                 )
                 throw e
             } catch (e: Exception) {
+                matchDiagnostic(
+                    "Apple Music 在线翻译最终状态: title=${baseSong.name}, matched=false, " +
+                        "reason=exception:${e.javaClass.simpleName}, generation=$generation"
+                )
                 pronunciationDiagnostic(
                     "stage=request_failed, generation=$generation, id=${baseSong.id}, " +
                         "error=${e.javaClass.name}, message=${e.message}"
@@ -924,6 +943,7 @@ class LyriconSource : LyricSource {
         totalLineCount: Int,
         generation: Int,
         searchDurationMs: Long,
+        album: String,
     ): OnlineTranslationSelector.Candidate? {
         pronunciationDiagnostic(
             "stage=candidate_fetch_started, generation=$generation, id=${baseSong.id}, source=$source"
@@ -934,20 +954,17 @@ class LyriconSource : LyricSource {
             title = baseSong.name.orEmpty(),
             artist = baseSong.artist.orEmpty(),
             durationMs = searchDurationMs,
-            originalTitle = baseSong.metadata
-                ?.getString(LyricMetadataKeys.APPLE_ORIGINAL_TITLE),
-            originalArtist = baseSong.metadata
-                ?.getString(LyricMetadataKeys.APPLE_ORIGINAL_ARTIST),
-            preferOriginalMetadata = shouldPreferAppleOriginalMetadata(),
+            album = album,
             preferredSource = source,
             requireTranslation = false,
-            fallbackToOtherSources = false
+            fallbackToOtherSources = false,
+            diagnostic = { message -> matchDiagnostic(message) },
         ) ?: run {
             pronunciationDiagnostic(
                 "stage=candidate_fetch_finished, generation=$generation, id=${baseSong.id}, " +
                     "source=$source, found=false"
             )
-            diagnostic(
+            matchDiagnostic(
                 "Apple Music 在线翻译候选未命中: title=${baseSong.name}, source=$source"
             )
             return null
@@ -996,7 +1013,7 @@ class LyriconSource : LyricSource {
                 "matchedPronunciation=$matchedPronunciationCount, " +
                 "resultRomanized=${enrichedLines.count { !it.roma.isNullOrBlank() }}"
         )
-        diagnostic(
+        matchDiagnostic(
             "Apple Music 在线翻译候选: title=${baseSong.name}, source=$source, " +
                 "lines=${candidate.onlineLineCount}, " +
                 "translated=${candidate.translatedLineCount}, " +
@@ -1034,6 +1051,11 @@ class LyriconSource : LyricSource {
                 "candidateSources=${selection?.onlineLinesBySource?.keys?.joinToString("+").orEmpty()}"
         )
         if (!requestStillCurrent) {
+            matchDiagnostic(
+                "Apple Music 在线翻译最终状态: title=${baseSong.name}, matched=false, " +
+                    "reason=stale_result, generation=$generation, " +
+                    "currentGeneration=$onlineTranslationGeneration"
+            )
             diagnostic(
                 "Apple Music 在线翻译匹配结果已过期: title=${baseSong.name}, " +
                     "generation=$generation, currentGeneration=$onlineTranslationGeneration"
@@ -1084,7 +1106,10 @@ class LyriconSource : LyricSource {
                 "hasOnlineEnrichment=$hasOnlineEnrichment, sourceSwitch=$hasPendingSourceSwitch"
         )
         if (mergedResult == null || (!hasOnlineEnrichment && !hasPendingSourceSwitch)) {
-            diagnostic("Apple Music 在线翻译匹配未命中: title=${baseSong.name}")
+            matchDiagnostic(
+                "Apple Music 在线翻译最终状态: title=${baseSong.name}, matched=false, " +
+                    "reason=no_usable_enrichment, generation=$generation"
+            )
             HookLogger.i(TAG, "Apple Music 在线翻译匹配未命中: title=${baseSong.name}")
             if (requestOriginalMetadata(baseSong, "translation_match_miss")) return
             completePendingOnlineSourceSwitchRequests(null)
@@ -1101,8 +1126,8 @@ class LyriconSource : LyricSource {
         }
 
         onlineMatchedTranslationActive = hasOnlineEnrichment
-        diagnostic(
-            "Apple Music 在线翻译结果接受: title=${baseSong.name}, " +
+        matchDiagnostic(
+            "Apple Music 在线翻译最终状态: title=${baseSong.name}, matched=true, " +
                 "matched=${mergedResult.matchedCount}, enriched=$hasOnlineEnrichment, " +
                 "sourceSwitch=$hasPendingSourceSwitch, total=${baseSong.lyrics.orEmpty().size}"
         )
@@ -1462,6 +1487,10 @@ class LyriconSource : LyricSource {
         if (BuildConfig.DEBUG) HookLogger.w(TAG, "[debug] $message")
     }
 
+    private fun matchDiagnostic(message: String) {
+        if (BuildConfig.DEBUG) HookLogger.w(MATCH_TAG, message)
+    }
+
     private fun pronunciationDiagnostic(message: String) {
         if (BuildConfig.DEBUG) Log.i(PRONUNCIATION_DIAGNOSTIC_TAG, message)
     }
@@ -1480,6 +1509,60 @@ class LyriconSource : LyricSource {
         sub.register()
     }
 
+    private fun handleActiveProviderChanged(providerInfo: ProviderInfo?) {
+        if (sink == null) return
+        val playerPackageName = providerInfo?.playerPackageName
+        activeCentralPlayerPackageName = playerPackageName
+        if (playerPackageName == null && currentAppleSong != null) {
+            centralAppleProviderActive = false
+            diagnostic(
+                "忽略 Central 空提供者状态: directTitle=${currentAppleSong?.name}"
+            )
+            return
+        }
+
+        cancelFallback(clearAppleSong = true, reason = "central_provider_changed")
+        cancelOnlineTranslation(
+            clearAttempt = true,
+            clearMatched = true,
+            reason = "central_provider_changed"
+        )
+        lastAdjustedPosition = 0L
+        sink?.onStop()
+        centralAppleProviderActive = playerPackageName == APPLE_MUSIC_PACKAGE
+        if (!centralAppleProviderActive) {
+            currentPublishedAppleSong = null
+            currentPublishedAppleOnlineTranslationMatched = false
+        }
+        activeProviderPackageName = providerInfo?.providerPackageName
+        activeProviderDelayMs = providerInfo?.providerPackageName
+            ?.let(::readProviderDelay)
+            ?: RootConstants.DEFAULT_HOOK_LYRICON_PROVIDER_DELAY
+        LyriconDataBridge.updateLyricPackage(playerPackageName)
+    }
+
+    private fun handleCentralSongChanged(localSong: LocalSong?) {
+        if (sink == null) return
+        if (centralAppleProviderActive) {
+            handleAppleSong(localSong)
+        } else {
+            if (activeCentralPlayerPackageName == null) {
+                diagnostic(
+                    "忽略无活动提供者的 Central 歌曲回调: " +
+                        "title=${localSong?.name}, directTitle=${currentAppleSong?.name}"
+                )
+                return
+            }
+            cancelFallback(clearAppleSong = true, reason = "central_non_apple_song")
+            cancelOnlineTranslation(
+                clearAttempt = true,
+                clearMatched = true,
+                reason = "central_non_apple_song"
+            )
+            publishSong(localSong, restorePosition = false)
+        }
+    }
+
     private val connectionListener = object : ConnectionListener {
         override fun onConnected(subscriber: LyriconSubscriber) {
                 HookLogger.i(TAG, "订阅连接已建立")
@@ -1492,78 +1575,35 @@ class LyriconSource : LyricSource {
         }
 
         override fun onDisconnected(subscriber: LyriconSubscriber) {
+            mainHandler.post {
                 centralAppleProviderActive = false
                 activeCentralPlayerPackageName = null
                 activeProviderPackageName = null
                 HookLogger.w(TAG, "订阅连接已断开")
+            }
         }
 
         override fun onConnectTimeout(subscriber: LyriconSubscriber) {
+            mainHandler.post {
                 centralAppleProviderActive = false
                 activeCentralPlayerPackageName = null
                 activeProviderPackageName = null
                 HookLogger.w(TAG, "订阅连接超时")
-                mainHandler.post {
-                    onCentralConnectTimeout?.invoke()
-                    subscriber.register()
-                }
+                onCentralConnectTimeout?.invoke()
+                subscriber.register()
+            }
         }
     }
 
     private val activePlayerListener = object : ActivePlayerListener {
         override fun onActiveProviderChanged(providerInfo: ProviderInfo?) {
-            val playerPackageName = providerInfo?.playerPackageName
-            activeCentralPlayerPackageName = playerPackageName
-            if (playerPackageName == null && currentAppleSong != null) {
-                centralAppleProviderActive = false
-                diagnostic(
-                    "忽略 Central 空提供者状态: directTitle=${currentAppleSong?.name}"
-                )
-                return
-            }
-
-            cancelFallback(clearAppleSong = true, reason = "central_provider_changed")
-            cancelOnlineTranslation(
-                clearAttempt = true,
-                clearMatched = true,
-                reason = "central_provider_changed"
-            )
-            lastAdjustedPosition = 0L
-            sink?.onStop()
-            centralAppleProviderActive =
-                playerPackageName == APPLE_MUSIC_PACKAGE
-            if (!centralAppleProviderActive) {
-                currentPublishedAppleSong = null
-                currentPublishedAppleOnlineTranslationMatched = false
-            }
-            activeProviderPackageName = providerInfo?.providerPackageName
-            activeProviderDelayMs = providerInfo?.providerPackageName
-                ?.let(::readProviderDelay)
-                ?: RootConstants.DEFAULT_HOOK_LYRICON_PROVIDER_DELAY
-            LyriconDataBridge.updateLyricPackage(playerPackageName)
+            mainHandler.post { handleActiveProviderChanged(providerInfo) }
         }
 
 
         override fun onSongChanged(song: LyriconSong?) {
             val localSong = song?.toLocalSong()
-            if (centralAppleProviderActive) {
-                handleAppleSong(localSong)
-            } else {
-                if (activeCentralPlayerPackageName == null) {
-                    diagnostic(
-                        "忽略无活动提供者的 Central 歌曲回调: " +
-                            "title=${localSong?.name}, directTitle=${currentAppleSong?.name}"
-                    )
-                    return
-                }
-                cancelFallback(clearAppleSong = true, reason = "central_non_apple_song")
-                cancelOnlineTranslation(
-                    clearAttempt = true,
-                    clearMatched = true,
-                    reason = "central_non_apple_song"
-                )
-                publishSong(localSong, restorePosition = false)
-            }
+            mainHandler.post { handleCentralSongChanged(localSong) }
         }
 
         override fun onPlaybackStateChanged(isPlaying: Boolean) {
@@ -1648,6 +1688,11 @@ class LyriconSource : LyricSource {
 
     internal fun onDirectSongChanged(song: LyriconSong?) {
         val localSong = song?.toLocalSong()
+        mainHandler.post { handleDirectSongChanged(localSong) }
+    }
+
+    private fun handleDirectSongChanged(localSong: LocalSong?) {
+        if (sink == null) return
         currentDirectAppleSongId = localSong?.id
         appleDirectPositionReference = null
         if (hasActiveCentralPlayer()) return
@@ -1799,6 +1844,18 @@ class LyriconSource : LyricSource {
         contentType: String?,
         sourceName: String?,
     ) {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post {
+                onDirectOnlineLyricContentSourceRequested(
+                    requestId = requestId,
+                    songId = songId,
+                    contentType = contentType,
+                    sourceName = sourceName,
+                )
+            }
+            return
+        }
+        if (sink == null) return
         val nativeSong = currentAppleSong
         val requestedSource = runCatching { Source.valueOf(sourceName.orEmpty()) }
             .getOrNull()

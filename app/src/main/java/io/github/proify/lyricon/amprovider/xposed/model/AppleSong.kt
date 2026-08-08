@@ -12,9 +12,11 @@ import kotlinx.serialization.Serializable
 data class AppleSong(
     var name: String? = null,
     var artist: String? = null,
+    var album: String? = null,
     var genre: String? = null,
     var originalTitle: String? = null,
     var originalArtist: String? = null,
+    var originalAlbum: String? = null,
     var originalMetadataResolved: Boolean = false,
     var adamId: String? = null,
     var pronunciationLanguages: MutableList<String> = mutableListOf(),

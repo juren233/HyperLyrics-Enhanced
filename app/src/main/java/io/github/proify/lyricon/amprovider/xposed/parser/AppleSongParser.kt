@@ -46,9 +46,11 @@ object AppleSongParser {
                     ?.let { metadata ->
                         name = metadata.title
                         artist = metadata.artist
+                        album = metadata.album
                         genre = metadata.genre
                         originalTitle = metadata.originalTitle
                         originalArtist = metadata.originalArtist
+                        originalAlbum = metadata.originalAlbum
                     }
             }
         }

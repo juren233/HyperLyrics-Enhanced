@@ -26,6 +26,9 @@ object AppleSongMapper {
             song.genre?.takeIf { it.isNotBlank() }?.let {
                 add(LyricMetadataKeys.APPLE_CATALOG_GENRE to it)
             }
+            song.album?.takeIf { it.isNotBlank() }?.let {
+                add(LyricMetadataKeys.APPLE_ALBUM to it)
+            }
             song.pronunciationLanguages
                 .map(String::trim)
                 .filter(String::isNotEmpty)
@@ -40,6 +43,9 @@ object AppleSongMapper {
             }
             song.originalArtist?.takeIf { it.isNotBlank() }?.let {
                 add(LyricMetadataKeys.APPLE_ORIGINAL_ARTIST to it)
+            }
+            song.originalAlbum?.takeIf { it.isNotBlank() }?.let {
+                add(LyricMetadataKeys.APPLE_ORIGINAL_ALBUM to it)
             }
             if (song.originalMetadataResolved) {
                 add(LyricMetadataKeys.APPLE_ORIGINAL_METADATA_RESOLVED to "true")

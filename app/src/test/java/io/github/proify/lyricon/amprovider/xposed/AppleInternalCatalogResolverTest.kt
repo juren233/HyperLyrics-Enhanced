@@ -991,4 +991,144 @@ class AppleInternalCatalogResolverTest {
             AppleInternalCatalogResolver.normalizedArtistNameKey("周杰伦、梁静茹"),
         )
     }
+
+    @Test
+    fun `maps a confirmed original album to account song ids by track sequence`() {
+        val account = listOf(
+            sequenceTrack("101", "Localized One", "ISRC1", trackPosition = 1),
+            sequenceTrack("102", "Localized Two", "ISRC2", trackPosition = 2),
+            sequenceTrack("103", "Localized Three", "ISRC3", trackPosition = 3),
+        )
+        val original = listOf(
+            sequenceTrack("201", "原曲一", "ISRC1", album = "原專輯", trackPosition = 1),
+            sequenceTrack("202", "原曲二", "ISRC2", album = "原專輯", trackPosition = 2),
+            sequenceTrack("203", "原曲三", "ISRC3", album = "原專輯", trackPosition = 3),
+        )
+
+        val mappings = AppleInternalCatalogResolver.planOriginalAlbumSequence(
+            accountTracks = account,
+            originalTracks = original,
+            anchorMediaId = "102",
+            anchorAlias = AppleInternalCatalogResolver.Alias(
+                title = "原曲二",
+                artist = "原歌手",
+                album = "原專輯",
+                language = "zh-Hant",
+            ),
+        )
+
+        assertEquals(listOf("101", "102", "103"), mappings?.map { it.mediaId })
+        assertEquals(listOf("原曲一", "原曲二", "原曲三"), mappings?.map { it.alias.title })
+    }
+
+    @Test
+    fun `accepts position confirmed album replacement when regional ISRC values differ`() {
+        val account = listOf(
+            sequenceTrack("101", "Localized One", "ISRC1", trackPosition = 1),
+            sequenceTrack("102", "Localized Two", "ISRC2", trackPosition = 2),
+            sequenceTrack("103", "Localized Three", "ISRC3", trackPosition = 3),
+        )
+        val shiftedOriginal = listOf(
+            sequenceTrack("201", "原曲二", "ISRC2", album = "原專輯", trackPosition = 1),
+            sequenceTrack("202", "原曲一", "ISRC1", album = "原專輯", trackPosition = 2),
+            sequenceTrack("203", "原曲三", "ISRC3", album = "原專輯", trackPosition = 3),
+        )
+
+        val mappings = AppleInternalCatalogResolver.planOriginalAlbumSequence(
+                accountTracks = account,
+                originalTracks = shiftedOriginal,
+                anchorMediaId = "102",
+                anchorAlias = AppleInternalCatalogResolver.Alias(
+                    title = "原曲一",
+                    artist = "原歌手",
+                    album = "原專輯",
+                    language = "zh-Hant",
+                ),
+            )
+
+        assertEquals(listOf("101", "102", "103"), mappings?.map { it.mediaId })
+        assertEquals(listOf("原曲二", "原曲一", "原曲三"), mappings?.map { it.alias.title })
+    }
+
+    @Test
+    fun `maps album by disc and track position when API arrays are shuffled`() {
+        val account = listOf(
+            sequenceTrack("102", "Localized Two", "ISRC2", trackPosition = 2),
+            sequenceTrack("101", "Localized One", "ISRC1", trackPosition = 1),
+            sequenceTrack("103", "Localized Three", "ISRC3", trackPosition = 3),
+        )
+        val original = listOf(
+            sequenceTrack("203", "原曲三", "ISRC3", "原專輯", trackPosition = 3),
+            sequenceTrack("201", "原曲一", "ISRC1", "原專輯", trackPosition = 1),
+            sequenceTrack("202", "原曲二", "ISRC2", "原專輯", trackPosition = 2),
+        )
+
+        val mappings = AppleInternalCatalogResolver.planOriginalAlbumSequence(
+            accountTracks = account,
+            originalTracks = original,
+            anchorMediaId = "102",
+            anchorAlias = AppleInternalCatalogResolver.Alias(
+                title = "原曲二",
+                artist = "原歌手",
+                album = "原專輯",
+                language = "zh-Hant",
+            ),
+        )
+
+        assertEquals(listOf("101", "102", "103"), mappings?.map { it.mediaId })
+        assertEquals(listOf("原曲一", "原曲二", "原曲三"), mappings?.map { it.alias.title })
+    }
+
+    @Test
+    fun `rejects album replacement when position totals conflict`() {
+        val account = listOf(
+            sequenceTrack("101", "Localized One", "ISRC1", trackPosition = 1),
+            sequenceTrack("102", "Localized Two", "ISRC2", trackPosition = 2),
+            sequenceTrack("103", "Localized Three", "ISRC3", trackPosition = 3),
+        )
+        val invalidOriginal = listOf(
+            sequenceTrack("201", "原曲一", "ISRC1", "原專輯", 1, trackTotal = 13),
+            sequenceTrack("202", "原曲二", "ISRC2", "原專輯", 2, trackTotal = 13),
+            sequenceTrack("203", "原曲三", "ISRC3", "原專輯", 3, trackTotal = 13),
+        )
+
+        assertEquals(
+            null,
+            AppleInternalCatalogResolver.planOriginalAlbumSequence(
+                accountTracks = account,
+                originalTracks = invalidOriginal,
+                anchorMediaId = "102",
+                anchorAlias = AppleInternalCatalogResolver.Alias(
+                    title = "原曲二",
+                    artist = "原歌手",
+                    album = "原專輯",
+                    language = "zh-Hant",
+                ),
+            ),
+        )
+    }
+
+    private fun sequenceTrack(
+        id: String,
+        title: String,
+        isrc: String,
+        album: String = "Localized Album",
+        trackPosition: Int,
+        trackTotal: Int = 3,
+    ) = AppleInternalCatalogResolver.AlbumSequenceTrack(
+        mediaId = id,
+        alias = AppleInternalCatalogResolver.Alias(
+            title = title,
+            artist = "Artist",
+            album = album,
+            language = "current",
+        ),
+        isrc = isrc,
+        position = AppleInternalCatalogResolver.AlbumTrackPosition(
+            discPosition = 1,
+            discTotal = 1,
+            trackPosition = trackPosition,
+            trackTotal = trackTotal,
+        ),
+    )
 }

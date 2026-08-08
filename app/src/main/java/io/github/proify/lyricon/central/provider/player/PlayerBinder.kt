@@ -30,6 +30,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.decodeFromStream
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 internal class PlayerBinder(
     info: ProviderInfo,
@@ -39,6 +40,7 @@ internal class PlayerBinder(
     private val recorder = PlayerRecorder(info)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val closed = AtomicBoolean(false)
+    private val songUpdateGeneration = AtomicLong(0L)
     private val isState2Enabled = AtomicBoolean(false)
     private val closeMutex = Mutex()
     private val positionMemory = PositionMemoryBridge(info)
@@ -101,6 +103,7 @@ internal class PlayerBinder(
     override fun setSong(bytes: ByteArray?) {
         if (closed.get()) return
 
+        val generation = songUpdateGeneration.incrementAndGet()
         scope.launch {
             val song = bytes?.let {
                 runCatching {
@@ -114,6 +117,7 @@ internal class PlayerBinder(
             }
 
             val normalized = song?.normalize()
+            if (closed.get() || generation != songUpdateGeneration.get()) return@launch
             recorder.song = normalized
             playerEvents.safeNotify { onSongChanged(recorder, normalized) }
         }

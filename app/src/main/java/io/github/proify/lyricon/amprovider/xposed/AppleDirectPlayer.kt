@@ -57,6 +57,10 @@ internal class AppleDirectPlayer(
     private var bridge: IAppleMusicLyricBridge? = null
     @Volatile
     private var latestSongPayload: ByteArray? = null
+    @Volatile
+    private var latestPlaybackState: Boolean? = null
+    @Volatile
+    private var latestPosition: Long? = null
     private var registered = false
 
     private val translationReceiver = object : IAppleMusicTranslationReceiver.Stub() {
@@ -167,6 +171,18 @@ internal class AppleDirectPlayer(
                 "直连重连后补发当前歌曲：bytes=${payload.size}, success=$replayed"
             )
         }
+        latestPlaybackState?.let { isPlaying ->
+            val replayed = send { target -> target.onPlaybackStateChanged(isPlaying) }
+            ProviderLogger.debug(
+                "直连重连后补发播放状态：playing=$isPlaying, success=$replayed"
+            )
+        }
+        latestPosition?.let { position ->
+            val replayed = send { target -> target.onPositionChanged(position) }
+            ProviderLogger.debug(
+                "直连重连后补发播放进度：position=$position, success=$replayed"
+            )
+        }
     }
 
     override val isActive: Boolean
@@ -181,15 +197,24 @@ internal class AppleDirectPlayer(
             return false
         }
         latestSongPayload = payload
+        latestPosition = null
         return send { target -> target.onSongChanged(payload) }
     }
 
-    override fun setPlaybackState(playing: Boolean): Boolean =
-        send { it.onPlaybackStateChanged(playing) }
+    override fun setPlaybackState(playing: Boolean): Boolean {
+        latestPlaybackState = playing
+        return send { it.onPlaybackStateChanged(playing) }
+    }
 
-    override fun seekTo(position: Long): Boolean = send { it.onSeekTo(position) }
+    override fun seekTo(position: Long): Boolean {
+        latestPosition = position.coerceAtLeast(0L)
+        return send { it.onSeekTo(position) }
+    }
 
-    override fun setPosition(position: Long): Boolean = send { it.onPositionChanged(position) }
+    override fun setPosition(position: Long): Boolean {
+        latestPosition = position.coerceAtLeast(0L)
+        return send { it.onPositionChanged(position) }
+    }
 
     override fun setPositionUpdateInterval(interval: Int): Boolean = true
 

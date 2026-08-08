@@ -24,8 +24,10 @@ class AppleSongMapperTest {
         val mappedSong = AppleSongMapper.map(
             AppleSong(
                 genre = "J-Pop",
+                album = "超かぐや姫!",
                 originalTitle = "カワキヲアメク",
-                originalArtist = "美波"
+                originalArtist = "美波",
+                originalAlbum = "超かぐや姫!",
             )
         )
 
@@ -34,12 +36,20 @@ class AppleSongMapperTest {
             mappedSong.metadata?.getString(LyricMetadataKeys.APPLE_CATALOG_GENRE)
         )
         assertEquals(
+            "超かぐや姫!",
+            mappedSong.metadata?.getString(LyricMetadataKeys.APPLE_ALBUM)
+        )
+        assertEquals(
             "カワキヲアメク",
             mappedSong.metadata?.getString(LyricMetadataKeys.APPLE_ORIGINAL_TITLE)
         )
         assertEquals(
             "美波",
             mappedSong.metadata?.getString(LyricMetadataKeys.APPLE_ORIGINAL_ARTIST)
+        )
+        assertEquals(
+            "超かぐや姫!",
+            mappedSong.metadata?.getString(LyricMetadataKeys.APPLE_ORIGINAL_ALBUM)
         )
     }
 

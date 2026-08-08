@@ -34,6 +34,39 @@ class MediaMetadataCacheTest {
         )
     }
 
+    @Test
+    fun `original album survives later metadata updates`() {
+        val mediaId = "media-metadata-cache-original-album"
+        MediaMetadataCache.put(metadata(mediaId, genre = "J-Pop"))
+        MediaMetadataCache.updateOriginalMetadata(
+            mediaId = mediaId,
+            title = "Reply",
+            artist = "kz, かぐや(cv.夏吉ゆうこ)",
+            album = "超かぐや姫!",
+        )
+        MediaMetadataCache.put(metadata(mediaId, genre = null))
+
+        assertEquals(
+            "超かぐや姫!",
+            MediaMetadataCache.getMetadataById(mediaId)?.originalAlbum,
+        )
+    }
+
+    @Test
+    fun `display replacement updates current album`() {
+        val mediaId = "media-metadata-cache-display-album"
+        MediaMetadataCache.put(metadata(mediaId, genre = "J-Pop"))
+
+        MediaMetadataCache.updateDisplayMetadata(
+            mediaId = mediaId,
+            title = "Reply",
+            artist = "kz, かぐや(cv.夏吉ゆうこ)",
+            album = "超かぐや姫!",
+        )
+
+        assertEquals("超かぐや姫!", MediaMetadataCache.getMetadataById(mediaId)?.album)
+    }
+
     private fun metadata(mediaId: String, genre: String?) = MediaMetadataCache.Metadata(
         id = mediaId,
         title = "Title",

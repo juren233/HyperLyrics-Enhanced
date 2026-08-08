@@ -129,7 +129,12 @@ internal class AppleMetadataOverrideApplicationCoordinator(
         if (playbackMetadataCoordinator.currentMetadataId() == mediaId) {
             metadataStore.updateCurrentPlaybackOverride(effectiveAlias)
         }
-        MediaMetadataCache.updateDisplayMetadata(mediaId, effectiveAlias.title, effectiveAlias.artist)
+        MediaMetadataCache.updateDisplayMetadata(
+            mediaId = mediaId,
+            title = effectiveAlias.title,
+            artist = effectiveAlias.artist,
+            album = effectiveAlias.album,
+        )
         PlaybackManager.onCatalogMetadataResolved(mediaId)
         val listenNowDirectBindingTargets = if (
             !allowModelRefresh && listenNowHooks.hasDataBindingRefs(mediaId)

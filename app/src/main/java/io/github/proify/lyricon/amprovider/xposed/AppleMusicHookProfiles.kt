@@ -284,6 +284,10 @@ internal enum class AppleMusicRuntimeMember {
     CATALOG_ATTRIBUTES_NAME_METHOD,
     CATALOG_ATTRIBUTES_ARTIST_NAME_METHOD,
     CATALOG_ATTRIBUTES_ALBUM_NAME_METHOD,
+    CATALOG_ATTRIBUTES_DISC_NUMBER_METHOD,
+    CATALOG_ATTRIBUTES_DISC_COUNT_METHOD,
+    CATALOG_ATTRIBUTES_TRACK_NUMBER_METHOD,
+    CATALOG_ATTRIBUTES_TRACK_COUNT_METHOD,
     CATALOG_ATTRIBUTES_ARTIST_ID_METHOD,
     CATALOG_ATTRIBUTES_ARTIST_ADAM_ID_METHOD,
     CATALOG_ATTRIBUTES_ARTIST_STORE_ID_METHOD,
@@ -834,6 +838,14 @@ internal object AppleMusicHookProfiles {
                         "getArtistName",
                     AppleMusicRuntimeMember.CATALOG_ATTRIBUTES_ALBUM_NAME_METHOD to
                         "getAlbumName",
+                    AppleMusicRuntimeMember.CATALOG_ATTRIBUTES_DISC_NUMBER_METHOD to
+                        "getDiscNumber",
+                    AppleMusicRuntimeMember.CATALOG_ATTRIBUTES_DISC_COUNT_METHOD to
+                        "getDiscCount",
+                    AppleMusicRuntimeMember.CATALOG_ATTRIBUTES_TRACK_NUMBER_METHOD to
+                        "getTrackNumber",
+                    AppleMusicRuntimeMember.CATALOG_ATTRIBUTES_TRACK_COUNT_METHOD to
+                        "getTrackCount",
                     AppleMusicRuntimeMember.CATALOG_ATTRIBUTES_ARTIST_ID_METHOD to "getArtistId",
                     AppleMusicRuntimeMember.CATALOG_ATTRIBUTES_ARTIST_ADAM_ID_METHOD to
                         "getArtistAdamId",

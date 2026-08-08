@@ -2,9 +2,11 @@ package com.juren233.hyperlyricsenhanced.common.lyric
 
 object LyricMetadataKeys {
     const val APPLE_CATALOG_GENRE = "appleCatalogGenre"
+    const val APPLE_ALBUM = "appleAlbum"
     const val APPLE_PRONUNCIATION_LANGUAGES = "applePronunciationLanguages"
     const val APPLE_ORIGINAL_TITLE = "appleOriginalTitle"
     const val APPLE_ORIGINAL_ARTIST = "appleOriginalArtist"
+    const val APPLE_ORIGINAL_ALBUM = "appleOriginalAlbum"
     const val APPLE_ORIGINAL_METADATA_RESOLVED = "appleOriginalMetadataResolved"
     const val ONLINE_TRANSLATION_SOURCE = "onlineTranslationSource"
     const val ONLINE_PRONUNCIATION_SOURCE = "onlinePronunciationSource"

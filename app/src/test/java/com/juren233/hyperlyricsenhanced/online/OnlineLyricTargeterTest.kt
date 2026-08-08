@@ -72,6 +72,21 @@ class OnlineLyricTargeterTest {
     }
 
     @Test
+    fun `retries when only Apple original album differs`() {
+        assertEquals(
+            true,
+            OnlineLyricTargeter.shouldRetryWithOriginalMetadata(
+                title = "Reply",
+                artist = "kz",
+                originalTitle = "Reply",
+                originalArtist = "kz",
+                album = "Cosmic Princess Kaguya!",
+                originalAlbum = "超かぐや姫!",
+            ),
+        )
+    }
+
+    @Test
     fun `searches Apple original metadata first when correction is enabled`() {
         assertEquals(
             listOf(true, false),
@@ -101,6 +116,106 @@ class OnlineLyricTargeterTest {
         assertEquals(
             "藤井風",
             OnlineLyricTargeter.compactWhitespace("藤井 風")
+        )
+    }
+
+    @Test
+    fun `builds progressive searches for character song credits`() {
+        assertEquals(
+            listOf(
+                "Reply kz & かぐや(cv.夏吉ゆうこ)",
+                "Reply kz",
+                "Reply かぐや",
+                "Reply",
+            ),
+            OnlineLyricTargeter.resolveSearchKeywords(
+                title = "Reply",
+                artist = "kz & かぐや(cv.夏吉ゆうこ)",
+            ),
+        )
+    }
+
+    @Test
+    fun `deduplicates progressive searches for a simple artist`() {
+        assertEquals(
+            listOf("Remember yuigot", "Remember"),
+            OnlineLyricTargeter.resolveSearchKeywords("Remember", "yuigot"),
+        )
+    }
+
+    @Test
+    fun `includes album in progressive searches without losing broad fallbacks`() {
+        assertEquals(
+            listOf(
+                "Reply kz Cosmic Princess Kaguya!",
+                "Reply kz",
+                "Reply Cosmic Princess Kaguya!",
+                "Reply",
+            ),
+            OnlineLyricTargeter.resolveSearchKeywords(
+                title = "Reply",
+                artist = "kz",
+                album = "Cosmic Princess Kaguya!",
+            ),
+        )
+    }
+
+    @Test
+    fun `normalizes full width album punctuation`() {
+        assertEquals(
+            "超かぐや姫!",
+            OnlineLyricTargeter.normalizeWidth("超かぐや姫！"),
+        )
+    }
+
+    @Test
+    fun `rejects a title only candidate even when its numeric score is high`() {
+        assertEquals(
+            false,
+            OnlineLyricTargeter.CandidateMatch(
+                total = 105,
+                titleMatched = true,
+                artistMatched = false,
+                albumMatched = false,
+            ).isEligible,
+        )
+    }
+
+    @Test
+    fun `accepts title with either artist or album identity`() {
+        assertEquals(
+            true,
+            OnlineLyricTargeter.CandidateMatch(
+                total = 80,
+                titleMatched = true,
+                artistMatched = true,
+                albumMatched = false,
+            ).isEligible,
+        )
+        assertEquals(
+            true,
+            OnlineLyricTargeter.CandidateMatch(
+                total = 80,
+                titleMatched = true,
+                artistMatched = false,
+                albumMatched = true,
+            ).isEligible,
+        )
+    }
+
+    @Test
+    fun `strips every supported credit bracket without breaking keyword generation`() {
+        assertEquals(
+            listOf(
+                "Reply kz & Kaguya(cv.Yuko) [Character] {Live}",
+                "Reply kz",
+                "Reply Kaguya",
+                "Reply",
+            ),
+            OnlineLyricTargeter.resolveSearchKeywords(
+                title = "Reply",
+                artist = "kz & Kaguya(cv.Yuko) [Character] {Live}",
+            ),
         )
     }
 

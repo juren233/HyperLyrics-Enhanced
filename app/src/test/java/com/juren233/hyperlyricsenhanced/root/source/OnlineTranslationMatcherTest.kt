@@ -581,7 +581,7 @@ class OnlineTranslationMatcherTest {
     }
 
     @Test
-    fun `does not split an unstructured translation at arbitrary characters`() {
+    fun `repeats an unstructured combined translation instead of leaving split lines blank`() {
         val song = Song(
             name = "Song",
             lyrics = listOf(
@@ -601,9 +601,12 @@ class OnlineTranslationMatcherTest {
             )
         )
 
-        assertEquals(1, result.matchedCount)
+        assertEquals(2, result.matchedCount)
         assertEquals(
-            listOf(null, "这是一句没有任何可靠分隔符的中文译文"),
+            listOf(
+                "这是一句没有任何可靠分隔符的中文译文",
+                "这是一句没有任何可靠分隔符的中文译文",
+            ),
             result.song.lyrics?.map { it.translation }
         )
     }
@@ -630,7 +633,7 @@ class OnlineTranslationMatcherTest {
     }
 
     @Test
-    fun `does not split a Chinese translation at spaces inside an English name`() {
+    fun `keeps a Chinese translation with an English name complete on split lines`() {
         val song = Song(
             name = "I Like It",
             lyrics = listOf(
@@ -650,7 +653,43 @@ class OnlineTranslationMatcherTest {
             )
         )
 
-        assertEquals(listOf(null, null), result.song.lyrics?.map { it.translation })
+        assertEquals(
+            listOf(
+                "家喻户晓的Cardi B 成功就像有氧运动一样简单",
+                "家喻户晓的Cardi B 成功就像有氧运动一样简单",
+            ),
+            result.song.lyrics?.map { it.translation },
+        )
+    }
+
+    @Test
+    fun `matches an online line split into more than three Apple lines`() {
+        val song = Song(
+            name = "Song",
+            lyrics = listOf(
+                RichLyricLine(begin = 1_000L, end = 2_000L, text = "One"),
+                RichLyricLine(begin = 2_000L, end = 3_000L, text = "two"),
+                RichLyricLine(begin = 3_000L, end = 4_000L, text = "three"),
+                RichLyricLine(begin = 4_000L, end = 5_000L, text = "four"),
+            ),
+        )
+
+        val result = OnlineTranslationMatcher.apply(
+            song,
+            listOf(
+                LrcLine(
+                    1_000L,
+                    "One two three four",
+                    "这是没有分隔标记的完整译文",
+                ),
+            ),
+        )
+
+        assertEquals(4, result.matchedCount)
+        assertEquals(
+            List(4) { "这是没有分隔标记的完整译文" },
+            result.song.lyrics?.map { it.translation },
+        )
     }
 
     @Test

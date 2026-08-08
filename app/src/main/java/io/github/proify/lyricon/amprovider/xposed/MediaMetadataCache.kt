@@ -20,8 +20,10 @@ object MediaMetadataCache {
         val current = metadataCache[metadata.id]
         metadataCache[metadata.id] = metadata.copy(
             genre = mergeGenres(current?.genre, listOfNotNull(metadata.genre)),
+            album = metadata.album ?: current?.album,
             originalTitle = metadata.originalTitle ?: current?.originalTitle,
             originalArtist = metadata.originalArtist ?: current?.originalArtist,
+            originalAlbum = metadata.originalAlbum ?: current?.originalAlbum,
             originalMetadataResolved = metadata.originalMetadataResolved ||
                 current?.originalMetadataResolved == true,
         )
@@ -35,12 +37,14 @@ object MediaMetadataCache {
         mediaId: String,
         title: String?,
         artist: String?,
+        album: String? = null,
         resolved: Boolean = true,
     ): Metadata? {
         val current = metadataCache[mediaId] ?: return null
         val updated = current.copy(
             originalTitle = title,
             originalArtist = artist,
+            originalAlbum = album ?: current.originalAlbum,
             originalMetadataResolved = resolved,
         )
         metadataCache[mediaId] = updated
@@ -48,11 +52,17 @@ object MediaMetadataCache {
     }
 
     @Synchronized
-    fun updateDisplayMetadata(mediaId: String, title: String?, artist: String?): Metadata? {
+    fun updateDisplayMetadata(
+        mediaId: String,
+        title: String?,
+        artist: String?,
+        album: String? = null,
+    ): Metadata? {
         val current = metadataCache[mediaId] ?: return null
         val updated = current.copy(
             title = title?.takeIf(String::isNotBlank) ?: current.title,
             artist = artist?.takeIf(String::isNotBlank) ?: current.artist,
+            album = album?.takeIf(String::isNotBlank) ?: current.album,
         )
         metadataCache[mediaId] = updated
         return updated
@@ -84,8 +94,10 @@ object MediaMetadataCache {
         val title: String?,
         val artist: String?,
         val genre: String?,
+        val album: String? = null,
         val originalTitle: String? = null,
         val originalArtist: String? = null,
+        val originalAlbum: String? = null,
         val originalMetadataResolved: Boolean = false,
         val duration: Long,
         val queueId: Long

@@ -97,6 +97,19 @@ object BaseIslandRenderer : IslandRenderer {
         val config = IslandSlotRuntimeConfig.from(prefs)
         activeViews.forEach { (cv, _) ->
             cv.post {
+                if (LyriconDataBridge.currentLyricPackageName != lyricPkg ||
+                    !cv.isAttachedToWindow
+                ) {
+                    DisplayDiagnosticLogger.log(
+                        channel = "ISLAND",
+                        result = "skipped",
+                        reason = "stale_refresh_task",
+                        extra = "scheduledPackage=$lyricPkg, " +
+                            "currentPackage=${LyriconDataBridge.currentLyricPackageName}",
+                        dedupeKey = "ISLAND/refresh",
+                    )
+                    return@post
+                }
                 val injectionChanged = IslandLyricTextInjector.injectSlots(cv)
                 if (injectionChanged) {
                     IslandHostFacade.triggerSystemRelayout(cv)
@@ -154,15 +167,44 @@ object BaseIslandRenderer : IslandRenderer {
         }
         activeViews.forEach { (cv, _) ->
                 cv.post {
-                    if (!IslandLyricTextInjector.hasInjectedLyricText(cv)) {
+                    if (LyriconDataBridge.currentLyricPackageName != lyricPkg ||
+                        !cv.isAttachedToWindow
+                    ) {
                         DisplayDiagnosticLogger.log(
                             channel = "ISLAND",
                             result = "skipped",
-                            reason = "injected_view_missing",
-                            extra = "targetViews=${activeViews.size}",
+                            reason = "stale_line_task",
+                            extra = "scheduledPackage=$lyricPkg, " +
+                                "currentPackage=${LyriconDataBridge.currentLyricPackageName}",
                             dedupeKey = "ISLAND/line",
                         )
                         return@post
+                    }
+                    if (!IslandLyricTextInjector.hasInjectedLyricText(cv)) {
+                        val injectionChanged = IslandLyricTextInjector.injectSlots(
+                            rootView = cv,
+                            reconfigureExisting = false,
+                        )
+                        if (injectionChanged) {
+                            IslandHostFacade.triggerSystemRelayout(cv)
+                        }
+                        if (!IslandLyricTextInjector.hasInjectedLyricText(cv)) {
+                            DisplayDiagnosticLogger.log(
+                                channel = "ISLAND",
+                                result = "skipped",
+                                reason = "injected_view_recovery_failed",
+                                extra = "targetViews=${activeViews.size}",
+                                dedupeKey = "ISLAND/line",
+                            )
+                            return@post
+                        }
+                        DisplayDiagnosticLogger.log(
+                            channel = "ISLAND",
+                            result = "recovered",
+                            reason = "injected_view_recreated",
+                            extra = "targetViews=${activeViews.size}",
+                            dedupeKey = "ISLAND/line",
+                        )
                     }
                     updateLyricContentForView(cv, prefs, config)
                     DisplayDiagnosticLogger.log(

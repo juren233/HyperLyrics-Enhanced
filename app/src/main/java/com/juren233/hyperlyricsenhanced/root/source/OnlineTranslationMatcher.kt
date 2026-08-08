@@ -14,7 +14,7 @@ internal object OnlineTranslationMatcher {
     private const val MIN_TEXT_SIMILARITY = 0.65
     private const val MATCH_TIME_WINDOW_MS = 15_000L
     private const val MAX_TIME_PENALTY = 0.20
-    private const val MAX_GROUP_SPAN = 3
+    private const val MAX_GROUP_SPAN = 6
     private const val GROUP_SPAN_PENALTY = 0.015
 
     data class Result(
@@ -727,8 +727,15 @@ internal object OnlineTranslationMatcher {
         ) {
             return translatedComponents.map { TranslationParts(it.trim(), null) }
         }
-        return splitTextByNativeWeights(translation, nativeGroup)
-            .map { it?.let { text -> TranslationParts(text, null) } }
+        val split = splitTextByNativeWeights(translation, nativeGroup)
+        if (split.any { it != null }) {
+            return split.map { it?.let { text -> TranslationParts(text, null) } }
+        }
+
+        // Apple can split one provider line into several display lines. When the translated
+        // sentence has no trustworthy delimiter, repeating it is safer than either cutting at
+        // arbitrary characters or leaving most of the Apple group untranslated.
+        return List(nativeGroup.size) { TranslationParts(translation, null) }
     }
 
     private fun nativeComponentsMatch(
@@ -758,8 +765,7 @@ internal object OnlineTranslationMatcher {
             .filter(String::isNotBlank)
         if (punctuationParts.size == count) return punctuationParts
 
-        // A translated sentence cannot be divided safely from source-language
-        // character ratios. Leave it unmatched so a later source or AI can fill it.
+        // Signal that there is no trustworthy split; the caller keeps the full sentence intact.
         return List(count) { null }
     }
 
