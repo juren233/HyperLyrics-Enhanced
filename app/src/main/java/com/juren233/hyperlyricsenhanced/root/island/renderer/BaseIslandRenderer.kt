@@ -48,9 +48,6 @@ object BaseIslandRenderer : IslandRenderer {
     @Volatile
     private var screenRefreshGeneration = 0
 
-    @Volatile
-    private var forceHostRelayoutOnRefresh = false
-
     /**
      * Source lifecycle events are the authority for lyric rendering state.
      * Hook paths must not re-query MediaSession here: during a lyric refresh the source can
@@ -79,7 +76,6 @@ object BaseIslandRenderer : IslandRenderer {
             mainHandler.postDelayed(
                 {
                     if (generation != screenRefreshGeneration) return@postDelayed
-                    forceHostRelayoutOnRefresh = true
                     val estimatedPosition = LyriconDataBridge.estimatedPosition()
                     if (estimatedPosition != null) {
                         if (LyriconDataBridge.updateEstimatedPosition(estimatedPosition)) {
@@ -103,13 +99,10 @@ object BaseIslandRenderer : IslandRenderer {
 
     fun onScreenNonInteractive() {
         screenRefreshGeneration++
-        forceHostRelayoutOnRefresh = false
         DisplayDiagnosticLogger.clear("ISLAND/screen_on")
     }
 
     private fun performRefreshActiveIsland() {
-        val forceHostRelayout = forceHostRelayoutOnRefresh
-        forceHostRelayoutOnRefresh = false
         val prefs = HookEntry.instance?.prefs ?: run {
             DisplayDiagnosticLogger.log("ISLAND", "skipped", "preferences_unavailable")
             return
@@ -142,8 +135,14 @@ object BaseIslandRenderer : IslandRenderer {
         val config = IslandSlotRuntimeConfig.from(prefs)
         activeViews.forEach { (cv, _) ->
             cv.post {
-                val injectionChanged = IslandLyricTextInjector.injectSlots(cv)
-                if (injectionChanged || forceHostRelayout) {
+                // Existing content is refreshed below. Reconfiguring it here forces
+                // applySlotContent() to report a change on every screen-on retry, which
+                // incorrectly turns four content refreshes into four host width relayouts.
+                val injectionChanged = IslandLyricTextInjector.injectSlots(
+                    cv,
+                    reconfigureExisting = false,
+                )
+                if (injectionChanged) {
                     IslandHostFacade.triggerSystemRelayout(cv)
                 } else {
                     IslandHostFacade.applyHostSettings(cv, prefs)
@@ -155,7 +154,7 @@ object BaseIslandRenderer : IslandRenderer {
                     result = if (injected) "shown" else "skipped",
                     reason = if (injected) "injected_view_visible" else "injection_unavailable",
                     extra = "targetViews=${activeViews.size}, injectionChanged=$injectionChanged, " +
-                        "forceHostRelayout=$forceHostRelayout, playbackActive=$playbackActive",
+                        "playbackActive=$playbackActive",
                     dedupeKey = "ISLAND/refresh",
                 )
             }
@@ -403,7 +402,6 @@ object BaseIslandRenderer : IslandRenderer {
         mainHandler.removeCallbacks(refreshRunnable)
         mainHandler.removeCallbacks(pauseRestoreRunnable)
         screenRefreshGeneration++
-        forceHostRelayoutOnRefresh = false
         pauseTransitionGuard.reset()
         playbackActive = false
         clearedByPause = true

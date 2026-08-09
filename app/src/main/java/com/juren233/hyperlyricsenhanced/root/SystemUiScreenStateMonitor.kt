@@ -6,7 +6,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import com.juren233.hyperlyricsenhanced.root.island.renderer.BaseIslandRenderer
-import com.juren233.hyperlyricsenhanced.root.mediacard.notification.NotificationMediaAodLyricHooker
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 
 internal object SystemUiScreenStateMonitor {
@@ -23,15 +22,13 @@ internal object SystemUiScreenStateMonitor {
             override fun onReceive(context: Context?, intent: Intent?) {
                 when (intent?.action) {
                     Intent.ACTION_SCREEN_ON -> {
-                        HookLogger.d(TAG, "收到亮屏事件，刷新超级岛与息屏歌词状态")
-                        NotificationMediaAodLyricHooker.refresh()
+                        HookLogger.d(TAG, "收到亮屏事件，刷新超级岛状态")
                         BaseIslandRenderer.onScreenInteractive()
                     }
 
                     Intent.ACTION_SCREEN_OFF -> {
-                        HookLogger.d(TAG, "收到息屏事件，等待系统 AOD 展示窗口")
+                        HookLogger.d(TAG, "收到息屏事件，取消超级岛亮屏恢复任务")
                         BaseIslandRenderer.onScreenNonInteractive()
-                        NotificationMediaAodLyricHooker.refresh()
                     }
                 }
             }
