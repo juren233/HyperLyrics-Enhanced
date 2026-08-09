@@ -103,6 +103,8 @@ internal data class AodHorizontalMargins(
 
 internal object AodMediaLyricPolicy {
     private const val NO_LYRIC_PREVIEW_DURATION_MS = 5_000L
+    const val CLASSIC_AOD_TAP_DISPLAY_WINDOW_MS = 10_000L
+    private const val CLASSIC_AOD_FALLBACK_TOP_PERCENT = 45
 
     fun embeddedSongInfoGravity(position: Int): Int = when (position) {
         RootConstants.AOD_SONG_INFO_POSITION_LEFT ->
@@ -219,6 +221,43 @@ internal object AodMediaLyricPolicy {
             contentHeight.coerceAtLeast(1),
             availableHeight.coerceAtLeast(1)
         )
+
+    fun nextClassicAodSessionStart(
+        previousStartMs: Long?,
+        nativeAodShown: Boolean,
+        nowMs: Long,
+    ): Long? {
+        if (!nativeAodShown) return previousStartMs
+        val previous = previousStartMs ?: return nowMs
+        return if (nowMs - previous >= CLASSIC_AOD_TAP_DISPLAY_WINDOW_MS) {
+            nowMs
+        } else {
+            previous
+        }
+    }
+
+    fun isClassicAodDisplayActive(
+        attached: Boolean,
+        viewShown: Boolean,
+        interactive: Boolean,
+        nativeAodShown: Boolean,
+        sessionStartedAtMs: Long?,
+        nowMs: Long,
+    ): Boolean {
+        if (!attached || !viewShown || interactive) return false
+        if (nativeAodShown) return true
+        val sessionStart = sessionStartedAtMs ?: return false
+        val elapsed = nowMs - sessionStart
+        return elapsed in 0 until CLASSIC_AOD_TAP_DISPLAY_WINDOW_MS
+    }
+
+    fun classicFallbackTop(
+        rootTop: Int,
+        rootHeight: Int,
+        gap: Int,
+    ): Int = rootTop +
+        rootHeight.coerceAtLeast(0) * CLASSIC_AOD_FALLBACK_TOP_PERCENT / 100 +
+        gap.coerceAtLeast(0)
 
     fun isLockScreenAodActive(
         fullAod: Boolean,
@@ -729,6 +768,21 @@ object NotificationMediaAodLyricHooker {
                 "makeNormalPanel", "onAttachedToWindow" -> {
                     state.attached = (aodView as? View)?.isAttachedToWindow == true
                     state.playing = LyriconDataBridge.currentPlaybackState == true
+                    if (methodName == "makeNormalPanel") {
+                        val view = aodView as? View
+                        val interactive = view
+                            ?.context
+                            ?.getSystemService(PowerManager::class.java)
+                            ?.isInteractive == true
+                        if (!interactive) {
+                            state.sessionStartedAtMs =
+                                AodMediaLyricPolicy.nextClassicAodSessionStart(
+                                    previousStartMs = state.sessionStartedAtMs,
+                                    nativeAodShown = true,
+                                    nowMs = SystemClock.elapsedRealtime(),
+                                )
+                        }
+                    }
                     safeApplyAodPlugin(aodView, state)
                     scheduleAodPluginInitialRefresh(aodView, state)
                     (aodView as? View)?.context?.let {
@@ -1001,7 +1055,29 @@ object NotificationMediaAodLyricHooker {
         }
         val enabled = isEnabled()
         val viewShown = view.isShown
-        val aodShown = api.isAodShown(aodView)
+        val interactive = view.context.getSystemService(PowerManager::class.java).isInteractive
+        val nativeAodShown = api.isAodShown(aodView)
+        val now = SystemClock.elapsedRealtime()
+        if (!state.attached || !viewShown || interactive) {
+            state.sessionStartedAtMs = null
+        } else {
+            state.sessionStartedAtMs = AodMediaLyricPolicy.nextClassicAodSessionStart(
+                previousStartMs = state.sessionStartedAtMs,
+                nativeAodShown = nativeAodShown,
+                nowMs = now,
+            )
+        }
+        val aodDisplayActive = AodMediaLyricPolicy.isClassicAodDisplayActive(
+            attached = state.attached,
+            viewShown = viewShown,
+            interactive = interactive,
+            nativeAodShown = nativeAodShown,
+            sessionStartedAtMs = state.sessionStartedAtMs,
+            nowMs = now,
+        )
+        state.viewShown = viewShown
+        state.interactive = interactive
+        state.nativeAodShown = nativeAodShown
         val pauseAllowed = state.playing ||
             textStyle.pauseStyle == RootConstants.AOD_PAUSE_STYLE_KEEP_LYRICS
         val hasContent = content.main.isNotBlank() ||
@@ -1009,7 +1085,7 @@ object NotificationMediaAodLyricHooker {
         val show = enabled &&
             state.attached &&
             viewShown &&
-            aodShown &&
+            aodDisplayActive &&
             pauseAllowed &&
             !fullAodActive &&
             hasContent
@@ -1019,7 +1095,8 @@ object NotificationMediaAodLyricHooker {
                 !enabled -> "feature_disabled"
                 !state.attached -> "view_detached"
                 !viewShown -> "view_hidden"
-                !aodShown -> "aod_panel_hidden"
+                interactive -> "screen_interactive"
+                !aodDisplayActive -> "aod_panel_hidden"
                 !pauseAllowed -> "pause_policy"
                 fullAodActive -> "lockscreen_aod_active"
                 !hasContent -> "no_lyrics_or_song_info"
@@ -1030,7 +1107,8 @@ object NotificationMediaAodLyricHooker {
                 result = "hidden",
                 reason = reason,
                 extra = "attached=${state.attached}, viewShown=$viewShown, " +
-                    "aodShown=$aodShown, fullAodActive=$fullAodActive, " +
+                    "nativeAodShown=$nativeAodShown, displayActive=$aodDisplayActive, " +
+                    "interactive=$interactive, fullAodActive=$fullAodActive, " +
                     "overlay=${state.overlay != null}",
                 dedupeKey = diagnosticKey,
             )
@@ -1096,7 +1174,8 @@ object NotificationMediaAodLyricHooker {
             channel = "AOD_CLASSIC",
             result = "shown",
             reason = "overlay_visible",
-            extra = "attached=${state.attached}, viewShown=$viewShown, aodShown=$aodShown, " +
+            extra = "attached=${state.attached}, viewShown=$viewShown, " +
+                "nativeAodShown=$nativeAodShown, displayActive=$aodDisplayActive, " +
                 "contentChanged=$contentChanged, styleChanged=$styleChanged, " +
                 "songInfo=${songInfo.text.isNotBlank()}",
             dedupeKey = diagnosticKey,
@@ -1113,10 +1192,39 @@ object NotificationMediaAodLyricHooker {
         api: AodPluginApi,
         aodView: Any
     ): AodPluginOverlay? {
-        val aodRoot = aodView as? FrameLayout ?: return null
-        val anchor = api.getNotificationIcons(aodView) ?: return null
+        val diagnosticKey = "AOD_CLASSIC/${System.identityHashCode(aodView)}/overlay"
+        val aodRoot = aodView as? FrameLayout ?: run {
+            DisplayDiagnosticLogger.log(
+                channel = "AOD_CLASSIC",
+                result = "skipped",
+                reason = "root_not_frame_layout",
+                extra = "rootClass=${aodView.javaClass.name}",
+                dedupeKey = diagnosticKey,
+            )
+            return null
+        }
+        val anchor = api.getNotificationIcons(aodView)
         val movingContainer = api.getTableModeContainer(aodView) as? FrameLayout
-        val parent = movingContainer ?: aodRoot
+        val initialAnchorUsable = anchor?.let {
+            it.isAttachedToWindow && it.width > 0 && it.height > 0
+        } == true
+        val parent = if (initialAnchorUsable) movingContainer ?: aodRoot else aodRoot
+        if (!initialAnchorUsable) {
+            DisplayDiagnosticLogger.log(
+                channel = "AOD_CLASSIC",
+                result = "pending",
+                reason = if (anchor == null) {
+                    "notification_icons_unavailable_using_root_fallback"
+                } else {
+                    "notification_icons_not_laid_out_using_root_fallback"
+                },
+                extra = "anchorPresent=${anchor != null}, " +
+                    "anchorAttached=${anchor?.isAttachedToWindow}, " +
+                    "anchorWidth=${anchor?.width}, anchorHeight=${anchor?.height}, " +
+                    "parent=${parent.javaClass.name}",
+                dedupeKey = diagnosticKey,
+            )
+        }
         val context = aodRoot.context
         val main = TextView(context).apply {
             gravity = Gravity.CENTER
@@ -1415,7 +1523,7 @@ object NotificationMediaAodLyricHooker {
         HookLogger.i(
             TAG,
             "通知图标式息屏歌词已挂载: parent=${parent.javaClass.name}, " +
-                "anchor=${anchor.javaClass.name}"
+                "anchor=${anchor?.javaClass?.name ?: "root_fallback"}"
         )
         return overlay
     }
@@ -1473,10 +1581,8 @@ object NotificationMediaAodLyricHooker {
         val density = overlay.aodRoot.resources.displayMetrics.density
         val rootLocation = IntArray(2)
         val parentLocation = IntArray(2)
-        val anchorLocation = IntArray(2)
         overlay.aodRoot.getLocationOnScreen(rootLocation)
         overlay.parent.getLocationOnScreen(parentLocation)
-        overlay.anchor.getLocationOnScreen(anchorLocation)
 
         val sideMargin = (AOD_PLUGIN_SIDE_MARGIN_DP * density).toInt()
         val gap = (AOD_PLUGIN_GAP_DP * density).toInt()
@@ -1484,14 +1590,42 @@ object NotificationMediaAodLyricHooker {
         val maxWidth = (AOD_PLUGIN_MAX_WIDTH_DP * density).toInt()
         val availableWidth = (overlay.aodRoot.width - sideMargin * 2).coerceAtLeast(1)
         val width = minOf(maxWidth, availableWidth)
-        val anchorCenter = anchorLocation[0] + overlay.anchor.width / 2
+        val configuredAnchor = overlay.anchor
+        val usableAnchor = configuredAnchor?.takeIf {
+            it.isAttachedToWindow && it.width > 0 && it.height > 0
+        }
+        if (configuredAnchor != null && usableAnchor == null) {
+            DisplayDiagnosticLogger.log(
+                channel = "AOD_CLASSIC",
+                result = "pending",
+                reason = "notification_icons_not_laid_out_using_root_fallback",
+                extra = "attached=${configuredAnchor.isAttachedToWindow}, " +
+                    "width=${configuredAnchor.width}, height=${configuredAnchor.height}",
+                dedupeKey = "AOD_CLASSIC/${System.identityHashCode(overlay.aodRoot)}/anchor",
+            )
+        }
+        val anchorLocation = IntArray(2)
+        usableAnchor?.getLocationOnScreen(anchorLocation)
+        val anchorCenter = if (usableAnchor != null) {
+            anchorLocation[0] + usableAnchor.width / 2
+        } else {
+            rootLocation[0] + overlay.aodRoot.width / 2
+        }
         val rootLeft = rootLocation[0] + sideMargin
         val rootRight = rootLocation[0] + overlay.aodRoot.width - sideMargin
         val leftOnScreen = (anchorCenter - width / 2).coerceIn(
             rootLeft,
             (rootRight - width).coerceAtLeast(rootLeft)
         )
-        val topOnScreen = anchorLocation[1] + overlay.anchor.height + gap
+        val topOnScreen = if (usableAnchor != null) {
+            anchorLocation[1] + usableAnchor.height + gap
+        } else {
+            AodMediaLyricPolicy.classicFallbackTop(
+                rootTop = rootLocation[1],
+                rootHeight = overlay.aodRoot.height,
+                gap = gap,
+            )
+        }
         val bottomLimit = rootLocation[1] + overlay.aodRoot.height - bottomSafe
         val availableHeight = (bottomLimit - topOnScreen).coerceAtLeast(1)
         val widthSpec = View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY)
@@ -1993,10 +2127,22 @@ object NotificationMediaAodLyricHooker {
     }
 
     private fun hasActiveAodPluginState(): Boolean {
+        val now = SystemClock.elapsedRealtime()
         return isEnabled() &&
             LyriconDataBridge.currentSong != null &&
             synchronized(aodPluginStates) {
-                aodPluginStates.values.any { it.attached && it.playing }
+                aodPluginStates.values.any { state ->
+                    state.attached &&
+                        state.playing &&
+                        AodMediaLyricPolicy.isClassicAodDisplayActive(
+                            attached = state.attached,
+                            viewShown = state.viewShown,
+                            interactive = state.interactive,
+                            nativeAodShown = state.nativeAodShown,
+                            sessionStartedAtMs = state.sessionStartedAtMs,
+                            nowMs = now,
+                        )
+                }
             }
     }
 
@@ -2995,7 +3141,7 @@ object NotificationMediaAodLyricHooker {
         val next: TextView,
         val parent: FrameLayout,
         val aodRoot: FrameLayout,
-        val anchor: View,
+        val anchor: View?,
         val drawWakeLock: PowerManager.WakeLock,
         var preDrawListener: ViewTreeObserver.OnPreDrawListener? = null,
         var appliedHeight: Int? = null,
@@ -3013,6 +3159,10 @@ object NotificationMediaAodLyricHooker {
     private data class AodPluginState(
         var attached: Boolean = false,
         var playing: Boolean = false,
+        var viewShown: Boolean = false,
+        var interactive: Boolean = true,
+        var nativeAodShown: Boolean = false,
+        var sessionStartedAtMs: Long? = null,
         var overlay: AodPluginOverlay? = null,
         var initialRefreshGeneration: Int = 0
     )

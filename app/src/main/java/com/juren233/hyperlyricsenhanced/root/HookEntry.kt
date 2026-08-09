@@ -350,6 +350,7 @@ class HookEntry : XposedModule() {
             if (SystemUiEnhancementGate.isLyricRuntimeEnabled()) {
                 sourceManager?.start()
             }
+            SystemUiScreenStateMonitor.initialize(app)
             ClassicAodFocusNotificationRecovery.ensureListenerCanRecover(app, prefs)
 
             prefListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
@@ -585,6 +586,7 @@ class HookEntry : XposedModule() {
     private fun cleanupRuntime() {
         IslandAlbumCoverStyleHooker.cleanup()
         IslandMusicWaveColorHooker.cleanup()
+        SystemUiScreenStateMonitor.cleanup()
         prefListener?.let {
             runCatching { prefs.unregisterOnSharedPreferenceChangeListener(it) }
         }

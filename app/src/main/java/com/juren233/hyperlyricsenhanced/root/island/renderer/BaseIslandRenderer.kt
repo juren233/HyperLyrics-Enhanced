@@ -25,6 +25,7 @@ import java.util.WeakHashMap
 object BaseIslandRenderer : IslandRenderer {
 
     private const val REFRESH_DEBOUNCE_MS = 32L
+    private val SCREEN_ON_REFRESH_DELAYS_MS = longArrayOf(0L, 120L, 400L, 900L)
     private val mainHandler = Handler(Looper.getMainLooper())
     private val refreshRunnable = Runnable { performRefreshActiveIsland() }
     private val pauseTransitionGuard = IslandPauseTransitionGuard()
@@ -43,6 +44,12 @@ object BaseIslandRenderer : IslandRenderer {
 
     @Volatile
     private var clearedByPause = false
+
+    @Volatile
+    private var screenRefreshGeneration = 0
+
+    @Volatile
+    private var forceHostRelayoutOnRefresh = false
 
     /**
      * Source lifecycle events are the authority for lyric rendering state.
@@ -66,7 +73,43 @@ object BaseIslandRenderer : IslandRenderer {
         mainHandler.postDelayed(refreshRunnable, REFRESH_DEBOUNCE_MS)
     }
 
+    fun onScreenInteractive() {
+        val generation = ++screenRefreshGeneration
+        SCREEN_ON_REFRESH_DELAYS_MS.forEach { delay ->
+            mainHandler.postDelayed(
+                {
+                    if (generation != screenRefreshGeneration) return@postDelayed
+                    forceHostRelayoutOnRefresh = true
+                    val estimatedPosition = LyriconDataBridge.estimatedPosition()
+                    if (estimatedPosition != null) {
+                        if (LyriconDataBridge.updateEstimatedPosition(estimatedPosition)) {
+                            updateLyricLine()
+                        }
+                        updatePosition(estimatedPosition)
+                    }
+                    refreshActiveIsland()
+                },
+                delay,
+            )
+        }
+        DisplayDiagnosticLogger.log(
+            channel = "ISLAND",
+            result = "pending",
+            reason = "screen_on_refresh_scheduled",
+            extra = "attempts=${SCREEN_ON_REFRESH_DELAYS_MS.size}",
+            dedupeKey = "ISLAND/screen_on",
+        )
+    }
+
+    fun onScreenNonInteractive() {
+        screenRefreshGeneration++
+        forceHostRelayoutOnRefresh = false
+        DisplayDiagnosticLogger.clear("ISLAND/screen_on")
+    }
+
     private fun performRefreshActiveIsland() {
+        val forceHostRelayout = forceHostRelayoutOnRefresh
+        forceHostRelayoutOnRefresh = false
         val prefs = HookEntry.instance?.prefs ?: run {
             DisplayDiagnosticLogger.log("ISLAND", "skipped", "preferences_unavailable")
             return
@@ -100,7 +143,7 @@ object BaseIslandRenderer : IslandRenderer {
         activeViews.forEach { (cv, _) ->
             cv.post {
                 val injectionChanged = IslandLyricTextInjector.injectSlots(cv)
-                if (injectionChanged) {
+                if (injectionChanged || forceHostRelayout) {
                     IslandHostFacade.triggerSystemRelayout(cv)
                 } else {
                     IslandHostFacade.applyHostSettings(cv, prefs)
@@ -112,7 +155,7 @@ object BaseIslandRenderer : IslandRenderer {
                     result = if (injected) "shown" else "skipped",
                     reason = if (injected) "injected_view_visible" else "injection_unavailable",
                     extra = "targetViews=${activeViews.size}, injectionChanged=$injectionChanged, " +
-                        "playbackActive=$playbackActive",
+                        "forceHostRelayout=$forceHostRelayout, playbackActive=$playbackActive",
                     dedupeKey = "ISLAND/refresh",
                 )
             }
@@ -359,6 +402,8 @@ object BaseIslandRenderer : IslandRenderer {
     override fun clearAllViews() {
         mainHandler.removeCallbacks(refreshRunnable)
         mainHandler.removeCallbacks(pauseRestoreRunnable)
+        screenRefreshGeneration++
+        forceHostRelayoutOnRefresh = false
         pauseTransitionGuard.reset()
         playbackActive = false
         clearedByPause = true
