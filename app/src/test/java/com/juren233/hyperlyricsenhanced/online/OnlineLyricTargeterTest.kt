@@ -38,6 +38,12 @@ class OnlineLyricTargeterTest {
     }
 
     @Test
+    fun `source timeout budget reserves time for the fallback source`() {
+        assertEquals(7_500L, OnlineLyricTargeter.sourceBudgetMs(2))
+        assertEquals(15_000L, OnlineLyricTargeter.sourceBudgetMs(1))
+    }
+
+    @Test
     fun `automatic order keeps the playing app preference`() {
         assertEquals(
             listOf(Source.NE, Source.QM),
@@ -194,20 +200,20 @@ class OnlineLyricTargeterTest {
     }
 
     @Test
-    fun `accepts title with either artist or album identity`() {
+    fun `requires the matching artist even when the album matches`() {
         assertEquals(
             true,
             OnlineLyricTargeter.CandidateMatch(
-                total = 80,
+                total = 85,
                 titleMatched = true,
                 artistMatched = true,
                 albumMatched = false,
             ).isEligible,
         )
         assertEquals(
-            true,
+            false,
             OnlineLyricTargeter.CandidateMatch(
-                total = 80,
+                total = 115,
                 titleMatched = true,
                 artistMatched = false,
                 albumMatched = true,

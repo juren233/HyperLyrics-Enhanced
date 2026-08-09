@@ -1327,17 +1327,20 @@ internal class AppleLyricsBlurHooks(
                 val adapterClassName = resolvedClass.target.className
                 runCatching {
                     val adapterClass = resolvedClass.clazz
+                    val activeLinesMethodName = resolvedClass.target.runtimeMemberName(
+                        AppleMusicRuntimeMember.LYRICS_ADAPTER_ACTIVE_LINES_UPDATE_METHOD,
+                    )
                     val method = AppleReflection.findMethod(
                         adapterClass,
-                        "T",
+                        activeLinesMethodName,
                         parameterCount = 3,
                     )
                     hookRegistrar.installHook(method, after = { chain, _ ->
                         onAppleLyricsActiveLinesUpdated(chain.thisObject)
                     })
-                    installedHooks += "$adapterClassName.T"
+                    installedHooks += "$adapterClassName.$activeLinesMethodName"
                 }.onFailure { throwable ->
-                    failedHooks += "$adapterClassName.T:${throwable.javaClass.simpleName}"
+                    failedHooks += "$adapterClassName.activeLines:${throwable.javaClass.simpleName}"
                 }
             }
             check(installedHooks.isNotEmpty()) { "No RecyclerView lifecycle method was hookable" }

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="enhanced_version_notice">You are using HyperLyrics Enhanced, which is not maintained by the original developer. Report issues that occur only in HyperLyrics Enhanced in this project\'s Issues, and do not contact the original project maintainer.</string>
+    <string name="enhanced_version_notice">If you encounter an issue that occurs only in HyperLyrics Enhanced, please report it in this repository\'s Issues. You can open this module\'s repository from “About” - “Project”. Reporting it to the wrong repository causes unnecessary disturbance and reduces the efficiency of resolving the issue!</string>
     <string name="module_update_available_notice">A new module version is available. Download the update from the GitHub repository.</string>
     <string name="module_update_available_version">New version: %1$s</string>
     <string name="apple_music_provider_description">Built-in Apple Music word-synced lyric provider</string>
@@ -35,7 +35,7 @@
     <string name="title_super_island_config">Xiaomi HyperIsland Lyrics Custom Configuration</string>
     <string name="title_dynamic_island_lyrics">Notification Dynamic Island Lyrics</string>
     <string name="summary_dynamic_island_lyrics">Uses notifications for Dynamic Island lyric effects, suitable for non-rooted devices</string>
-    <string name="title_aod_lyrics">Always-on display lyrics</string>
+    <string name="title_aod_lyrics">Xiaomi AOD Lyrics</string>
     <string name="summary_aod_lyrics">Show lyrics on the always-on display during playback</string>
     <string name="title_extra_features">Additional Features</string>
     <string name="title_lock_screen_aod">Lock Screen AOD</string>
@@ -151,7 +151,7 @@
     <string name="lyric_mode_separated">Lyricon Separated Lyrics</string>
     <string name="title_lyric_mode">Lyric Mode</string>
     <string name="title_lyric_source">Lyric Source</string>
-    <string name="summary_lyric_source_apple_music_builtin">Apple Music is built into the Lyricon source and works without additional modules</string>
+    <string name="summary_lyric_source_apple_music_builtin">Apple Music users can select the Lyricon source directly without an additional module. Lyricon is also recommended for other music apps, with built-in plugins for easier setup.</string>
     <string name="lyric_source_lyricon">Lyricon</string>
     <string name="lyric_source_superlyric">SuperLyric</string>
     <string name="lyric_source_lyricinfo">LyricInfo</string>
@@ -200,7 +200,7 @@
     <string name="option_island_media_ambient_flow_disabled">Disabled</string>
     <string name="title_lyrics">Media Info</string>
     <string name="title_lyric_anim">Lyric Animation</string>
-    <string name="title_lyric_provider">Lyric Provider (Lyricon)</string>
+    <string name="title_lyric_provider">Lyricon Configuration</string>
     <string name="title_builtin_provider">Built-in Provider</string>
     <string name="summary_builtin_apple_provider">Built into HyperLyrics Enhanced and cannot be removed</string>
     <string name="title_official_provider_plugins">Added plugins</string>

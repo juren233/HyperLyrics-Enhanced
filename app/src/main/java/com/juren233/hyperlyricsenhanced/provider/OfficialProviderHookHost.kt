@@ -18,6 +18,9 @@ import io.github.libxposed.api.XposedInterface
 import io.github.libxposed.api.XposedModule
 import org.luckypray.dexkit.DexKitBridge
 import org.luckypray.dexkit.query.FindMethod
+import org.luckypray.dexkit.query.enums.StringMatchType
+import org.luckypray.dexkit.query.matchers.MethodMatcher
+import java.lang.reflect.Method
 import java.lang.reflect.Modifier
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
@@ -98,11 +101,7 @@ internal class OfficialProviderHookHost(
         require(application.packageName == packageName) {
             "Provider DexKit Application 与目标包不一致"
         }
-        require(query.cacheKey.isNotBlank()) { "Provider DexKit cacheKey 不能为空" }
-        require(query.requiredStrings.isNotEmpty()) { "Provider DexKit 特征字符串不能为空" }
-        require(query.requiredStrings.all(String::isNotBlank)) {
-            "Provider DexKit 特征字符串不能包含空值"
-        }
+        OfficialProviderDexMethodQueryValidator.validate(query)
 
         val packageInfo = application.packageManager.getPackageInfo(packageName, 0)
         val cacheKey = OfficialProviderDexMethodCacheCodec.cacheKey(
@@ -116,8 +115,33 @@ internal class OfficialProviderHookHost(
 
         Thread(
             {
-                runCatching {
-                    installAfterDexMethod(application, cacheKey, query, callback)
+                DexKitSession(application).use { session ->
+                    runCatching {
+                    val materializedQuery = materializeQuery(query, emptyMap())
+                    val target = resolveDexMethod(
+                        application,
+                        cacheKey,
+                        materializedQuery,
+                        session,
+                    )
+                    runCatching { installAfterMethod(target, callback) }
+                        .getOrElse { firstError ->
+                            invalidateDexMethodCache(application, cacheKey)
+                            module.log(
+                                Log.WARN,
+                                tag,
+                                "官方 Provider Hook 安装失败，清除缓存并重新查询: " +
+                                    "package=$packageName process=$processName key=${query.cacheKey}",
+                                firstError,
+                            )
+                            val repairedTarget = resolveDexMethod(
+                                application = application,
+                                cacheKey = cacheKey,
+                                query = materializedQuery.copy(preferredTarget = null),
+                                session = session,
+                            )
+                            installAfterMethod(repairedTarget, callback)
+                        }
                 }.onFailure { error ->
                     module.log(
                         Log.ERROR,
@@ -126,6 +150,7 @@ internal class OfficialProviderHookHost(
                             "process=$processName key=${query.cacheKey}",
                         error,
                     )
+                    }
                 }
             },
             "HLE-Provider-DexKit",
@@ -135,12 +160,73 @@ internal class OfficialProviderHookHost(
         }
     }
 
-    private fun installAfterDexMethod(
+    override fun resolveDexMethods(
+        application: Application,
+        queries: List<OfficialProviderDexMethodQuery>,
+        callback: OfficialProviderDexMethodsCallback,
+    ) {
+        require(application.packageName == packageName) {
+            "Provider DexKit Application 与目标包不一致"
+        }
+        require(queries.isNotEmpty()) { "Provider DexKit 查询列表不能为空" }
+        queries.forEach(OfficialProviderDexMethodQueryValidator::validate)
+        val packageInfo = application.packageManager.getPackageInfo(packageName, 0)
+        val taskKey = queries.joinToString("|") { query ->
+            OfficialProviderDexMethodCacheCodec.cacheKey(
+                packageName = packageName,
+                processName = processName,
+                versionCode = packageInfo.longVersionCode,
+                lastUpdateTime = packageInfo.lastUpdateTime,
+                query = query,
+            )
+        }
+        if (!dexHookTasks.add(taskKey)) return
+
+        Thread(
+            {
+                DexKitSession(application).use { session ->
+                    runCatching {
+                    val resolvedByKey = LinkedHashMap<String, OfficialProviderMethodTarget>()
+                    queries.map { rawQuery ->
+                        val query = materializeQuery(rawQuery, resolvedByKey)
+                        val cacheKey = OfficialProviderDexMethodCacheCodec.cacheKey(
+                            packageName = packageName,
+                            processName = processName,
+                            versionCode = packageInfo.longVersionCode,
+                            lastUpdateTime = packageInfo.lastUpdateTime,
+                            query = query,
+                        )
+                        resolveDexMethod(application, cacheKey, query, session).also { target ->
+                            check(resolvedByKey.put(rawQuery.cacheKey, target) == null) {
+                                "Provider DexKit 查询 cacheKey 重复: ${rawQuery.cacheKey}"
+                            }
+                        }
+                    }
+                }.onSuccess(callback::onMethodsResolved)
+                    .onFailure { error ->
+                        module.log(
+                            Log.ERROR,
+                            tag,
+                            "官方 Provider DexKit 批量解析失败: package=$packageName " +
+                                "process=$processName keys=${queries.joinToString { it.cacheKey }}",
+                            error,
+                        )
+                    }
+                }
+            },
+            "HLE-Provider-DexKit",
+        ).apply {
+            isDaemon = true
+            start()
+        }
+    }
+
+    private fun resolveDexMethod(
         application: Application,
         cacheKey: String,
         query: OfficialProviderDexMethodQuery,
-        callback: OfficialProviderMethodCallback,
-    ) {
+        session: DexKitSession,
+    ): OfficialProviderMethodTarget {
         val preferences = application.getSharedPreferences(
             DEX_METHOD_CACHE_PREFERENCES,
             Context.MODE_PRIVATE,
@@ -150,15 +236,16 @@ internal class OfficialProviderHookHost(
         )?.takeIf { OfficialProviderDexMethodCacheCodec.matches(it, query) }
 
         if (cachedTarget != null) {
-            val cachedHook = runCatching { installAfterMethod(cachedTarget, callback) }
-            if (cachedHook.isSuccess) {
+            val cachedResolution = runCatching { resolveMethod(cachedTarget) }
+            if (cachedResolution.isSuccess) {
+                recordDexMethodBaseline(application, query, cachedTarget)
                 module.log(
                     Log.INFO,
                     tag,
                     "官方 Provider DexKit 缓存命中: package=$packageName " +
                         "process=$processName target=${describe(cachedTarget)}",
                 )
-                return
+                return cachedTarget
             }
             preferences.edit().remove(cacheKey).apply()
             module.log(
@@ -166,11 +253,40 @@ internal class OfficialProviderHookHost(
                 tag,
                 "官方 Provider DexKit 缓存失效，重新查询: package=$packageName " +
                     "process=$processName key=${query.cacheKey}",
-                cachedHook.exceptionOrNull(),
+                cachedResolution.exceptionOrNull(),
             )
         } else if (preferences.contains(cacheKey)) {
             preferences.edit().remove(cacheKey).apply()
         }
+
+        query.preferredTarget
+            ?.takeIf { OfficialProviderDexMethodCacheCodec.matches(it, query) }
+            ?.let { preferredTarget ->
+                val preferredResolution = runCatching { resolveMethod(preferredTarget) }
+                if (preferredResolution.isSuccess) {
+                    recordDexMethodBaseline(application, query, preferredTarget)
+                    preferences.edit()
+                        .putString(
+                            cacheKey,
+                            OfficialProviderDexMethodCacheCodec.encode(preferredTarget),
+                        )
+                        .apply()
+                    module.log(
+                        Log.INFO,
+                        tag,
+                        "官方 Provider 首选目标命中并缓存: package=$packageName " +
+                            "process=$processName target=${describe(preferredTarget)}",
+                    )
+                    return preferredTarget
+                }
+                module.log(
+                    Log.WARN,
+                    tag,
+                    "官方 Provider 首选目标失效，进入 DexKit: package=$packageName " +
+                        "process=$processName key=${query.cacheKey}",
+                    preferredResolution.exceptionOrNull(),
+                )
+            }
 
         val startNanos = System.nanoTime()
         val threadCount = selectDexKitThreadCount(application)
@@ -180,14 +296,23 @@ internal class OfficialProviderHookHost(
             "官方 Provider DexKit 开始查询: package=$packageName process=$processName " +
                 "key=${query.cacheKey} threads=$threadCount",
         )
-        ensureDexKitLoaded(module)
-        val target = DexKitBridge.create(application.applicationInfo.sourceDir).use { bridge ->
-            bridge.setThreadNum(threadCount)
-            bridge.setMaxConcurrentQueries(1)
+        val target = session.bridge(threadCount).let { bridge ->
             val finder = FindMethod().apply {
                 matcher {
                     query.declaringClassName?.let(::declaredClass)
+                    query.declaringClassNamePrefix?.let { prefix ->
+                        declaredClass(prefix, StringMatchType.StartsWith, false)
+                    }
                     query.requiredStrings.forEach(::addEqString)
+                    query.requiredInvokedMethodDescriptors.forEach(::addInvoke)
+                    query.requiredInvokedMethodNames.forEach { methodName ->
+                        addInvoke(MethodMatcher().name(methodName))
+                    }
+                    query.parameterTypeNames?.let(::paramTypes)
+                    query.returnTypeName?.let(::returnType)
+                    query.returnTypeNamePrefix?.let { prefix ->
+                        returnType(prefix, StringMatchType.StartsWith, false)
+                    }
                 }
             }
             val matches = bridge.findMethod(finder)
@@ -202,14 +327,11 @@ internal class OfficialProviderHookHost(
                 }
                 .distinct()
                 .filter { OfficialProviderDexMethodCacheCodec.matches(it, query) }
-            require(matches.size == 1) {
-                "Provider DexKit 查询结果必须唯一: key=${query.cacheKey} " +
-                    "count=${matches.size} targets=${matches.joinToString { describe(it) }}"
-            }
-            matches.single()
+            selectDexMethodMatch(application, query, matches)
         }
 
-        installAfterMethod(target, callback)
+        resolveMethod(target)
+        recordDexMethodBaseline(application, query, target)
         preferences.edit()
             .putString(cacheKey, OfficialProviderDexMethodCacheCodec.encode(target))
             .apply()
@@ -217,9 +339,54 @@ internal class OfficialProviderHookHost(
         module.log(
             Log.INFO,
             tag,
-            "官方 Provider DexKit 查询并 Hook 成功: package=$packageName " +
+            "官方 Provider DexKit 查询并校验成功: package=$packageName " +
                 "process=$processName elapsedMs=$elapsedMs target=${describe(target)}",
         )
+        return target
+    }
+
+    private fun materializeQuery(
+        query: OfficialProviderDexMethodQuery,
+        resolvedByKey: Map<String, OfficialProviderMethodTarget>,
+    ): OfficialProviderDexMethodQuery {
+        fun resolve(reference: OfficialProviderDexTypeReference): String {
+            val target = checkNotNull(resolvedByKey[reference.queryCacheKey]) {
+                "Provider DexKit 类型引用必须指向更早的查询: " +
+                    "query=${query.cacheKey} reference=${reference.queryCacheKey}"
+            }
+            return when (reference.source) {
+                OfficialProviderDexTypeSource.DECLARING_CLASS -> target.className
+                OfficialProviderDexTypeSource.RETURN_TYPE -> target.returnTypeName
+                OfficialProviderDexTypeSource.PARAMETER_TYPE ->
+                    target.parameterTypeNames.getOrNull(reference.parameterIndex)
+                        ?: error(
+                            "Provider DexKit 参数类型引用越界: " +
+                                "query=${query.cacheKey} reference=${reference.queryCacheKey} " +
+                                "index=${reference.parameterIndex}",
+                        )
+            }
+        }
+
+        val materializedParameterTypes = query.parameterTypeNames?.toMutableList()
+        query.parameterTypeReferences.forEach { (index, reference) ->
+            checkNotNull(materializedParameterTypes)[index] = resolve(reference)
+        }
+        return query.copy(
+            declaringClassName = query.declaringClassReference?.let(::resolve)
+                ?: query.declaringClassName,
+            declaringClassReference = null,
+            parameterTypeNames = materializedParameterTypes,
+            parameterTypeReferences = emptyMap(),
+            returnTypeName = query.returnTypeReference?.let(::resolve) ?: query.returnTypeName,
+            returnTypeReference = null,
+        )
+    }
+
+    private fun invalidateDexMethodCache(application: Application, cacheKey: String) {
+        application.getSharedPreferences(
+            DEX_METHOD_CACHE_PREFERENCES,
+            Context.MODE_PRIVATE,
+        ).edit().remove(cacheKey).apply()
     }
 
     private fun installAfterMethod(
@@ -228,21 +395,161 @@ internal class OfficialProviderHookHost(
     ) {
         require(target.className.isNotBlank()) { "Provider Hook className 不能为空" }
         require(target.methodName.isNotBlank()) { "Provider Hook methodName 不能为空" }
-        val targetClass = Class.forName(target.className, false, targetClassLoader)
-        val parameterTypes = target.parameterTypeNames.map(::resolveParameterType).toTypedArray()
-        val method = targetClass.getDeclaredMethod(target.methodName, *parameterTypes).apply {
-            isAccessible = true
-        }
-        require(method.returnType == resolveReturnType(target.returnTypeName)) {
-            "Provider Hook 返回类型不匹配: ${method.returnType.name}"
-        }
-        require(Modifier.isStatic(method.modifiers) == target.isStatic) {
-            "Provider Hook static 约束不匹配"
-        }
+        val method = resolveMethod(target)
         val descriptor = describe(target)
         module.hook(method).intercept(AfterMethodHooker(module, descriptor, callback))
         module.log(Log.INFO, tag, "官方 Provider 方法 Hook 已安装: target=$descriptor")
     }
+
+    private fun resolveMethod(target: OfficialProviderMethodTarget): java.lang.reflect.Method {
+        val targetClass = Class.forName(target.className, false, targetClassLoader)
+        val parameterTypes = target.parameterTypeNames.map(::resolveParameterType).toTypedArray()
+        return targetClass.getDeclaredMethod(target.methodName, *parameterTypes).apply {
+            isAccessible = true
+            require(returnType == resolveReturnType(target.returnTypeName)) {
+                "Provider Hook 返回类型不匹配: ${returnType.name}"
+            }
+            require(Modifier.isStatic(modifiers) == target.isStatic) {
+                "Provider Hook static 约束不匹配"
+            }
+        }
+    }
+
+    private fun selectDexMethodMatch(
+        application: Application,
+        query: OfficialProviderDexMethodQuery,
+        matches: List<OfficialProviderMethodTarget>,
+    ): OfficialProviderMethodTarget {
+        if (matches.size == 1) return matches.single()
+        val baseline = OfficialProviderDexMethodBaselineCodec.decode(
+            application.getSharedPreferences(
+                DEX_METHOD_BASELINE_PREFERENCES,
+                Context.MODE_PRIVATE,
+            ).getString(dexBaselineKey(query), null),
+        )
+        val repaired = baseline?.let { seed ->
+            matches.filter { target ->
+                runCatching { resolveMethod(target) }.getOrNull()?.let { method ->
+                    seed.matchesClass(method.declaringClass) &&
+                        seed.matchesMethod(method) &&
+                        seed.ordinal == methodOrdinal(method, seed)
+                } == true
+            }
+        }.orEmpty()
+        require(repaired.size == 1) {
+            "Provider DexKit 查询结果必须唯一: key=${query.cacheKey} " +
+                "count=${matches.size} repaired=${repaired.size} " +
+                "targets=${matches.joinToString { describe(it) }}"
+        }
+        module.log(
+            Log.INFO,
+            tag,
+            "官方 Provider DexKit 使用跨版本结构基线消歧: package=$packageName " +
+                "process=$processName key=${query.cacheKey} target=${describe(repaired.single())}",
+        )
+        return repaired.single()
+    }
+
+    private fun recordDexMethodBaseline(
+        application: Application,
+        query: OfficialProviderDexMethodQuery,
+        target: OfficialProviderMethodTarget,
+    ) {
+        val method = runCatching { resolveMethod(target) }.getOrNull() ?: return
+        val clazz = method.declaringClass
+        val baseline = OfficialProviderDexMethodBaseline(
+            fieldCount = clazz.declaredFields.size,
+            methodCount = clazz.declaredMethods.size,
+            interfaceCount = clazz.interfaces.size,
+            stableFieldTypeCounts = clazz.declaredFields
+                .mapNotNull { field -> field.type.name.takeIf(::isStableRuntimeType) }
+                .groupingBy { it }
+                .eachCount(),
+            parameterCount = method.parameterCount,
+            stableParameterTypeNames = method.parameterTypes.map { type ->
+                type.name.takeIf(::isStableRuntimeType)
+            },
+            stableReturnTypeName = method.returnType.name.takeIf(::isStableRuntimeType),
+            isStatic = Modifier.isStatic(method.modifiers),
+            ordinal = methodOrdinal(
+                method,
+                OfficialProviderDexMethodBaseline(
+                    fieldCount = clazz.declaredFields.size,
+                    methodCount = clazz.declaredMethods.size,
+                    interfaceCount = clazz.interfaces.size,
+                    stableFieldTypeCounts = emptyMap(),
+                    parameterCount = method.parameterCount,
+                    stableParameterTypeNames = method.parameterTypes.map { type ->
+                        type.name.takeIf(::isStableRuntimeType)
+                    },
+                    stableReturnTypeName = method.returnType.name.takeIf(::isStableRuntimeType),
+                    isStatic = Modifier.isStatic(method.modifiers),
+                    ordinal = 0,
+                ),
+            ),
+        )
+        application.getSharedPreferences(
+            DEX_METHOD_BASELINE_PREFERENCES,
+            Context.MODE_PRIVATE,
+        ).edit()
+            .putString(
+                dexBaselineKey(query),
+                OfficialProviderDexMethodBaselineCodec.encode(baseline),
+            )
+            .apply()
+    }
+
+    private fun methodOrdinal(method: Method, baseline: OfficialProviderDexMethodBaseline): Int =
+        method.declaringClass.declaredMethods
+            .filter { candidate -> baseline.matchesMethod(candidate) }
+            .indexOfFirst { candidate ->
+                candidate.name == method.name &&
+                    candidate.parameterTypes.contentEquals(method.parameterTypes)
+            }
+            .coerceAtLeast(0)
+
+    private fun OfficialProviderDexMethodBaseline.matchesClass(clazz: Class<*>): Boolean {
+        if (kotlin.math.abs(clazz.declaredFields.size - fieldCount) > CLASS_COUNT_TOLERANCE) {
+            return false
+        }
+        if (kotlin.math.abs(clazz.declaredMethods.size - methodCount) > CLASS_COUNT_TOLERANCE) {
+            return false
+        }
+        if (kotlin.math.abs(clazz.interfaces.size - interfaceCount) > 1) return false
+        val fieldTypes = clazz.declaredFields
+            .mapNotNull { field -> field.type.name.takeIf(::isStableRuntimeType) }
+            .groupingBy { it }
+            .eachCount()
+        return stableFieldTypeCounts.all { (type, count) -> (fieldTypes[type] ?: 0) >= count }
+    }
+
+    private fun OfficialProviderDexMethodBaseline.matchesMethod(method: Method): Boolean =
+        method.parameterCount == parameterCount &&
+            Modifier.isStatic(method.modifiers) == isStatic &&
+            stableParameterTypeNames.withIndex().all { (index, typeName) ->
+                typeName == null || method.parameterTypes.getOrNull(index)?.name == typeName
+            } &&
+            (stableReturnTypeName == null || method.returnType.name == stableReturnTypeName)
+
+    private fun isStableRuntimeType(typeName: String): Boolean =
+        typeName == "void" ||
+            typeName in setOf(
+                "boolean",
+                "byte",
+                "char",
+                "short",
+                "int",
+                "long",
+                "float",
+                "double",
+            ) ||
+            typeName.startsWith("java.") ||
+            typeName.startsWith("android.") ||
+            typeName.startsWith("kotlin.") ||
+            typeName.startsWith("androidx.")
+
+    private fun dexBaselineKey(query: OfficialProviderDexMethodQuery): String =
+        "$packageName:$processName:${query.cacheKey}"
 
     private fun selectDexKitThreadCount(application: Application): Int {
         val availableProcessors = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
@@ -422,6 +729,9 @@ internal class OfficialProviderHookHost(
     private companion object {
         const val DEX_METHOD_CACHE_PREFERENCES =
             "com.juren233.hyperlyricsenhanced.official_provider_dex_methods"
+        const val DEX_METHOD_BASELINE_PREFERENCES =
+            "com.juren233.hyperlyricsenhanced.official_provider_dex_method_baselines"
+        const val CLASS_COUNT_TOLERANCE = 4
         const val TWO_GIB_BYTES = 2L * 1024L * 1024L * 1024L
         val dexKitLoaded = AtomicBoolean(false)
         val dexKitLoadLock = Any()
@@ -440,6 +750,27 @@ internal class OfficialProviderHookHost(
                 System.load(nativeLibrary.absolutePath)
                 dexKitLoaded.set(true)
             }
+        }
+    }
+
+    private inner class DexKitSession(
+        private val application: Application,
+    ) : AutoCloseable {
+        private var bridge: DexKitBridge? = null
+
+        fun bridge(threadCount: Int): DexKitBridge {
+            bridge?.let { return it }
+            ensureDexKitLoaded(module)
+            return DexKitBridge.create(application.applicationInfo.sourceDir).also { created ->
+                created.setThreadNum(threadCount)
+                created.setMaxConcurrentQueries(1)
+                bridge = created
+            }
+        }
+
+        override fun close() {
+            bridge?.close()
+            bridge = null
         }
     }
 }

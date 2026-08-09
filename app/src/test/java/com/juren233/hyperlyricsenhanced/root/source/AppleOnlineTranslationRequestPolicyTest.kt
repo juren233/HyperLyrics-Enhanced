@@ -11,13 +11,13 @@ import org.junit.Test
 
 class AppleOnlineTranslationRequestPolicyTest {
     @Test
-    fun `original metadata request waits before online lookup`() {
+    fun `original metadata request does not block online lookup`() {
         val plan = AppleOnlineTranslationRequestPolicy.originalMetadataLookupPlan(
             shouldRequestOriginalMetadata = true
         )
 
         assertTrue(plan.requestOriginalMetadata)
-        assertTrue(plan.waitForResult)
+        assertFalse(plan.waitForResult)
     }
 
     @Test

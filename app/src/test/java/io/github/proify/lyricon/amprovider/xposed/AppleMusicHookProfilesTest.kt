@@ -659,6 +659,13 @@ class AppleMusicHookProfilesTest {
             target(version, AppleMusicHookPoint.APPLE_PLAYER_UTIL_CLASS).className,
         )
         assertEquals(
+            mapOf(
+                AppleMusicRuntimeMember.APPLE_PLAYER_UTIL_CONTAINER_METHOD to "a",
+                AppleMusicRuntimeMember.APPLE_PLAYER_UTIL_PLAYBACK_ITEM_METHOD to "b",
+            ),
+            target(version, AppleMusicHookPoint.APPLE_PLAYER_UTIL_CLASS).runtimeMemberNames,
+        )
+        assertEquals(
             "com.apple.android.music.player.viewmodel.PlayerLyricsViewModel",
             target(version, AppleMusicHookPoint.PLAYER_LYRICS_VIEW_MODEL_CLASS).className,
         )
@@ -1151,6 +1158,7 @@ class AppleMusicHookProfilesTest {
                     AppleMusicRuntimeMember.LYRICS_ADAPTER_ITEM_VIEW_TYPE_METHOD to "k",
                     AppleMusicRuntimeMember.LYRICS_ADAPTER_ITEM_COUNT_METHOD to "i",
                     AppleMusicRuntimeMember.LYRICS_ADAPTER_NOTIFY_DATA_CHANGED_METHOD to "l",
+                    AppleMusicRuntimeMember.LYRICS_ADAPTER_ACTIVE_LINES_UPDATE_METHOD to "T",
                     AppleMusicRuntimeMember.LYRICS_ADAPTER_TRANSLATION_SELECTED_FIELD to "d",
                     AppleMusicRuntimeMember.LYRICS_ADAPTER_PRONUNCIATION_SELECTED_FIELD to "e",
                 ),

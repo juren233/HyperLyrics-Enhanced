@@ -18,7 +18,7 @@ import kotlin.math.abs
 object OnlineLyricTargeter {
     private const val TIMEOUT_MS = 5000L
     private const val TOTAL_TIMEOUT_MS = 15_000L
-    private const val PASS_SCORE = 80
+    private const val PASS_SCORE = 85
     private const val TITLE_SCORE = 50
     private const val ARTIST_SCORE = 30
     private const val ALBUM_SCORE = 30
@@ -26,8 +26,8 @@ object OnlineLyricTargeter {
     private const val DURATION_CLOSE_SCORE = 15
     private const val DURATION_DRIFT_SCORE = 10
     private const val DURATION_MISMATCH_SCORE = -30
-    private const val SEARCH_PAGE_SIZE = 50
-    private const val MAX_LYRIC_CANDIDATES_PER_QUERY = 5
+    private const val SEARCH_PAGE_SIZE = 20
+    private const val MAX_LYRIC_CANDIDATES_PER_QUERY = 1
 
     suspend fun fetchBestLyric(
         context: Context,
@@ -118,8 +118,9 @@ object OnlineLyricTargeter {
         var bestScore = -1
 
         for (source in sources) {
-            val attemptedSongIds = mutableSetOf<String>()
-            for (keyword in keywords) {
+            val sourceResult = withTimeoutOrNull(sourceBudgetMs(sources.size)) {
+                val attemptedSongIds = mutableSetOf<String>()
+                for (keyword in keywords) {
                 LogManager.d(
                     "OnlineTargeter",
                     "正在搜索: 类型=$metadataLabel, 关键词=\"$keyword\", " +
@@ -260,18 +261,21 @@ object OnlineLyricTargeter {
                             "artist=${candidate.artist}, album=${candidate.album}, " +
                             "score=${candidateMatch.total}"
                     )
-                    return list
+                    return@withTimeoutOrNull list
                 }
+                }
+                null
             }
+            if (sourceResult != null) return sourceResult
         }
         LogManager.d(
             "OnlineTargeter",
             "歌词未命中: 类型=$metadataLabel, 最佳得分=$bestScore, 阈值=$PASS_SCORE, " +
-                "要求=标题匹配且歌手或专辑至少一项匹配"
+            "要求=标题匹配且歌手匹配"
         )
         diagnostic?.invoke(
             "在线候选联合未命中: metadata=$metadataLabel, title=$title, artist=$artist, " +
-                "album=$album, bestScore=$bestScore, requirement=title+(artist|album)"
+                "album=$album, bestScore=$bestScore, requirement=title+artist"
         )
         return null
     }
@@ -371,6 +375,10 @@ object OnlineLyricTargeter {
             }
         }
     }
+
+    /** Reserve an equal slice of the total budget for every ordered source. */
+    internal fun sourceBudgetMs(sourceCount: Int): Long =
+        if (sourceCount <= 1) TOTAL_TIMEOUT_MS else TOTAL_TIMEOUT_MS / sourceCount
 
     internal fun toLrcLines(lyricsResult: LyricsResult): List<LrcLine> {
         val translationsByStart = lyricsResult.translated.orEmpty().associate { line ->
@@ -543,7 +551,7 @@ object OnlineLyricTargeter {
         val albumMatched: Boolean,
     ) {
         val isEligible: Boolean
-            get() = total >= PASS_SCORE && titleMatched && (artistMatched || albumMatched)
+            get() = total >= PASS_SCORE && titleMatched && artistMatched
     }
 
     private data class SearchMetadata(

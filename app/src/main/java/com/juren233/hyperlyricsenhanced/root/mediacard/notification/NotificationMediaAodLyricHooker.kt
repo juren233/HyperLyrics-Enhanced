@@ -1040,15 +1040,7 @@ object NotificationMediaAodLyricHooker {
 
         val overlay = state.overlay ?: createAodPluginOverlay(api, aodView)?.also {
             state.overlay = it
-        } ?: run {
-            DisplayDiagnosticLogger.log(
-                channel = "AOD_CLASSIC",
-                result = "skipped",
-                reason = "overlay_unavailable",
-                dedupeKey = diagnosticKey,
-            )
-            return
-        }
+        } ?: return
         val contentChanged = overlay.main.text.toString() != content.main ||
             overlay.translation.text.toString() != content.translation ||
             overlay.backing.text.toString() != content.backing ||
@@ -1113,9 +1105,59 @@ object NotificationMediaAodLyricHooker {
         api: AodPluginApi,
         aodView: Any
     ): AodPluginOverlay? {
-        val aodRoot = aodView as? FrameLayout ?: return null
-        val anchor = api.getNotificationIcons(aodView) ?: return null
-        val movingContainer = api.getTableModeContainer(aodView) as? FrameLayout
+        val diagnosticKey = "AOD_CLASSIC/${System.identityHashCode(aodView)}/overlay"
+        val aodRoot = aodView as? FrameLayout ?: run {
+            DisplayDiagnosticLogger.log(
+                channel = "AOD_CLASSIC",
+                result = "skipped",
+                reason = "root_not_frame_layout",
+                extra = "rootClass=${aodView.javaClass.name}",
+                dedupeKey = "$diagnosticKey/root",
+            )
+            return null
+        }
+        val anchor = api.getNotificationIcons(aodView) ?: run {
+            DisplayDiagnosticLogger.log(
+                channel = "AOD_CLASSIC",
+                result = "skipped",
+                reason = "notification_icons_null",
+                extra = "rootClass=${aodRoot.javaClass.name}",
+                dedupeKey = "$diagnosticKey/anchor_presence",
+            )
+            return null
+        }
+        if (!anchor.isAttachedToWindow) {
+            DisplayDiagnosticLogger.log(
+                channel = "AOD_CLASSIC",
+                result = "pending",
+                reason = "anchor_detached",
+                extra = "anchorClass=${anchor.javaClass.name}, " +
+                    "width=${anchor.width}, height=${anchor.height}",
+                dedupeKey = "$diagnosticKey/anchor_attachment",
+            )
+        }
+        if (anchor.width <= 0 || anchor.height <= 0) {
+            DisplayDiagnosticLogger.log(
+                channel = "AOD_CLASSIC",
+                result = "pending",
+                reason = "anchor_zero_size",
+                extra = "attached=${anchor.isAttachedToWindow}, " +
+                    "width=${anchor.width}, height=${anchor.height}",
+                dedupeKey = "$diagnosticKey/anchor_size",
+            )
+        }
+        val parentCandidate = api.getTableModeContainer(aodView)
+        val movingContainer = parentCandidate as? FrameLayout
+        if (movingContainer == null) {
+            DisplayDiagnosticLogger.log(
+                channel = "AOD_CLASSIC",
+                result = "pending",
+                reason = "parent_unavailable",
+                extra = "candidateClass=${parentCandidate?.javaClass?.name ?: "null"}, " +
+                    "usingRootFallback=true",
+                dedupeKey = "$diagnosticKey/parent",
+            )
+        }
         val parent = movingContainer ?: aodRoot
         val context = aodRoot.context
         val main = TextView(context).apply {

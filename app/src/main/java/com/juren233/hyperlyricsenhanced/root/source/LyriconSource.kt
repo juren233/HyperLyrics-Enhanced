@@ -509,7 +509,7 @@ class LyriconSource : LyricSource {
             )
         }
         publishSong(
-            song = song
+            song = AppleSongDisplayPolicy.copyForDisplay(song)
                 ?.let(::filterApplePronunciationForDisplay)
                 ?.let(::simplifyAppleSongForDisplay),
             restorePosition = restorePosition,
@@ -522,7 +522,13 @@ class LyriconSource : LyricSource {
         restorePosition: Boolean,
         onlineTranslationMatched: Boolean = false
     ) {
-        LyriconDataBridge.updateSong(song)
+        val preservedSameSongState = restorePosition &&
+            song != null &&
+            !song.lyrics.isNullOrEmpty() &&
+            LyriconDataBridge.replaceSameSongContent(song)
+        if (!preservedSameSongState) {
+            LyriconDataBridge.updateSong(song)
+        }
         if (onlineTranslationMatched) {
             sink?.onOnlineTranslationMatched(song)
         } else {
@@ -702,18 +708,6 @@ class LyriconSource : LyricSource {
         val nativeLineCount = baseSong.lyrics.orEmpty().size
         val enrichmentNeeded = needsOnlineEnrichment(baseSong)
         val titlePresent = !baseSong.name.isNullOrBlank()
-        if (AppleOnlineTranslationRequestPolicy.shouldWaitForMatchingAlbum(
-                baseSong,
-                shouldPreferAppleOriginalMetadata(),
-            )
-        ) {
-            pronunciationDiagnostic(
-                "stage=request_deferred, reason=matching_album_pending, " +
-                    "id=${baseSong.id}, title=${baseSong.name}, album=" +
-                    AppleOnlineTranslationRequestPolicy.effectiveAlbum(baseSong)
-            )
-            return false
-        }
         if (!matchingEnabled || nativeLineCount == 0 || !enrichmentNeeded || !titlePresent) {
             pronunciationDiagnostic(
                 "stage=request_schedule_skipped, reason=precondition_failed, " +
@@ -782,7 +776,19 @@ class LyriconSource : LyricSource {
                     }
                     val replacedAlbum =
                         AppleOnlineTranslationRequestPolicy.effectiveAlbum(baseSong)
-                    val searchDurationMs = baseSong.duration
+                    val mediaInfo = MediaMetadataHelper.getMediaInfo(
+                        application,
+                        APPLE_MUSIC_PACKAGE,
+                        HookLogger,
+                    )
+                    val searchDuration = AppleOnlineTranslationSearchDurationPolicy.resolve(
+                        song = baseSong,
+                        media = AppleOnlineTranslationSearchDurationPolicy.MediaSnapshot(
+                            title = mediaInfo.title,
+                            artist = mediaInfo.artist,
+                            durationMs = mediaInfo.duration,
+                        ),
+                    )
                     diagnostic(
                         "Apple Music 在线歌词补全开始: title=${baseSong.name}, " +
                             "artist=${baseSong.artist}, album=$replacedAlbum, " +
@@ -792,8 +798,10 @@ class LyriconSource : LyricSource {
                     )
                     pronunciationDiagnostic(
                         "stage=search_duration_resolved, generation=$generation, id=${baseSong.id}, " +
-                            "lyricDuration=${baseSong.duration}, metadataSource=apple_replaced_payload, " +
-                            "selectedDuration=$searchDurationMs"
+                            "lyricDuration=${baseSong.duration}, mediaDuration=${mediaInfo.duration}, " +
+                            "mediaTitle=${mediaInfo.title}, mediaArtist=${mediaInfo.artist}, " +
+                            "identityMatched=${searchDuration.mediaIdentityMatched}, " +
+                            "selectedDuration=${searchDuration.durationMs}"
                     )
                     pronunciationDiagnostic(
                         "stage=request_started, generation=$generation, id=${baseSong.id}, " +
@@ -807,7 +815,7 @@ class LyriconSource : LyricSource {
                         source = firstSource,
                         totalLineCount = totalLineCount,
                         generation = generation,
-                        searchDurationMs = searchDurationMs,
+                        searchDurationMs = searchDuration.durationMs,
                         album = replacedAlbum,
                     )
                     val secondCandidate = if (
@@ -828,7 +836,7 @@ class LyriconSource : LyricSource {
                             source = secondSource,
                             totalLineCount = totalLineCount,
                             generation = generation,
-                            searchDurationMs = searchDurationMs,
+                            searchDurationMs = searchDuration.durationMs,
                             album = replacedAlbum,
                         )
                     } else {
@@ -970,6 +978,13 @@ class LyriconSource : LyricSource {
             artist = baseSong.artist.orEmpty(),
             durationMs = searchDurationMs,
             album = album,
+            originalTitle = baseSong.metadata
+                ?.getString(LyricMetadataKeys.APPLE_ORIGINAL_TITLE),
+            originalArtist = baseSong.metadata
+                ?.getString(LyricMetadataKeys.APPLE_ORIGINAL_ARTIST),
+            originalAlbum = baseSong.metadata
+                ?.getString(LyricMetadataKeys.APPLE_ORIGINAL_ALBUM),
+            preferOriginalMetadata = shouldPreferAppleOriginalMetadata(),
             preferredSource = source,
             requireTranslation = false,
             fallbackToOtherSources = false,

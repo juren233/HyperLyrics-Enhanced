@@ -66,12 +66,15 @@ internal class ApplePlaybackItemConversionHooks(
 ) {
     fun installHooks() {
         runCatching {
-            val playerUtilClass = runtime.hookResolver.resolveClass(
+            val resolvedPlayerUtil = runtime.hookResolver.resolveClass(
                 AppleMusicHookPoint.APPLE_PLAYER_UTIL_CLASS,
-            ).clazz
+            )
+            val playerUtilClass = resolvedPlayerUtil.clazz
             val containerMethod = AppleReflection.findMethod(
                 playerUtilClass,
-                "a",
+                resolvedPlayerUtil.target.runtimeMemberName(
+                    AppleMusicRuntimeMember.APPLE_PLAYER_UTIL_CONTAINER_METHOD,
+                ),
                 parameterCount = 1,
             )
             runtime.hookRegistrar.installResultOverrideHook(containerMethod) { chain, original ->
@@ -107,7 +110,9 @@ internal class ApplePlaybackItemConversionHooks(
 
             val playbackItemMethod = AppleReflection.findMethod(
                 playerUtilClass,
-                "b",
+                resolvedPlayerUtil.target.runtimeMemberName(
+                    AppleMusicRuntimeMember.APPLE_PLAYER_UTIL_PLAYBACK_ITEM_METHOD,
+                ),
                 parameterCount = 1,
             )
             runtime.hookRegistrar.installResultOverrideHook(playbackItemMethod) { chain, original ->

@@ -7,7 +7,7 @@
 package com.juren233.hyperlyricsenhanced.provider
 
 object OfficialProviderCatalog {
-    const val PLUGIN_API_VERSION = 2
+    const val PLUGIN_API_VERSION = 3
     const val CORE_PACKAGE_NAME = "com.juren233.hyperlyricsenhanced"
     const val APPLE_MUSIC_PACKAGE_NAME = "com.apple.android.music"
     const val OFFICIAL_PROVIDER_PACKAGE_PREFIX =

@@ -176,7 +176,11 @@ internal object AppleMusicProviderOrchestrator {
         }.getOrElse {
             AppleMusicVersion(versionName = null, versionCode = null)
         }
-        val hookResolver = AppleMusicHookResolver(appleMusicVersion, app.classLoader)
+        val hookResolver = AppleMusicHookResolver(
+            version = appleMusicVersion,
+            application = app,
+            nativeLibraryDir = module.getModuleApplicationInfo().nativeLibraryDir,
+        )
         runtime.attach(app, hookResolver)
         ProviderLogger.info(
             "Apple Music Hook 版本档案已加载: app=${appleMusicVersion.displayName}, " +

@@ -2,6 +2,8 @@ package com.juren233.hyperlyricsenhanced.root
 
 import android.app.Application
 import android.content.Context
+import com.juren233.hyperlyricsenhanced.BuildConfig
+import com.juren233.hyperlyricsenhanced.common.PreferenceDiagnostics
 import com.juren233.hyperlyricsenhanced.common.PrefsBridge
 import com.juren233.hyperlyricsenhanced.common.UIConstants
 import com.juren233.hyperlyricsenhanced.provider.OfficialProviderScopeManager
@@ -24,11 +26,13 @@ class RootApplication : Application() {
         XposedServiceHelper.registerListener(object : XposedServiceHelper.OnServiceListener {
             override fun onServiceBind(service: XposedService) {
                 xposedService = service
+                LogManager.i("PrefsBridge", "xposed_service_bound")
                 syncAllPreferences(this@RootApplication)
                 OfficialProviderScopeManager.requestConfiguredScopes(service)
             }
             override fun onServiceDied(service: XposedService) {
                 xposedService = null
+                LogManager.w("PrefsBridge", "xposed_service_died")
                 OfficialProviderScopeManager.onServiceDied()
             }
         })
@@ -42,11 +46,24 @@ class RootApplication : Application() {
 
         @JvmStatic
         fun syncPreference(group: String, key: String, value: Any?) {
+            if (BuildConfig.DEBUG) {
+                LogManager.i(
+                    "PrefsBridge",
+                    "sync_request group=$group key=$key " +
+                        "type=${PreferenceDiagnostics.typeName(value)} " +
+                        "value=${PreferenceDiagnostics.formatValue(key, value)}",
+                )
+            }
             val remotePrefs = try {
                 xposedService?.getRemotePreferences(group)
-            } catch (_: Exception) {
+            } catch (error: Exception) {
+                LogManager.w("PrefsBridge", "remote_preferences_failed group=$group", error)
                 null
-            } ?: return
+            }
+            if (remotePrefs == null) {
+                LogManager.w("PrefsBridge", "sync_skipped reason=remote_unavailable group=$group key=$key")
+                return
+            }
 
             remotePrefs.edit().apply {
                 when (value) {
@@ -60,17 +77,31 @@ class RootApplication : Application() {
                 }
                 apply()
             }
+            if (BuildConfig.DEBUG) {
+                val readBack = runCatching { remotePrefs.all[key] }
+                    .getOrElse { error -> "<readback_failed:${error.javaClass.simpleName}>" }
+                LogManager.i(
+                    "PrefsBridge",
+                    "sync_queued group=$group key=$key " +
+                        "remote_readback=${PreferenceDiagnostics.formatValue(key, readBack)}",
+                )
+            }
         }
 
         @JvmStatic
         private fun syncAllPreferences(context: Context) {
             val prefs = context.getSharedPreferences(UIConstants.PREF_NAME, MODE_PRIVATE)
             val allEntries = prefs.all
-            if (allEntries.isEmpty()) return
+            LogManager.i("PrefsBridge", "sync_all_begin count=${allEntries.size}")
+            if (allEntries.isEmpty()) {
+                LogManager.i("PrefsBridge", "sync_all_end count=0")
+                return
+            }
 
             allEntries.forEach { (key, value) ->
                 syncPreference(UIConstants.PREF_NAME, key, value)
             }
+            LogManager.i("PrefsBridge", "sync_all_end count=${allEntries.size}")
         }
 
         @JvmStatic

@@ -9,12 +9,12 @@ internal object AppleOnlineTranslationRequestPolicy {
         val waitForResult: Boolean,
     )
 
-    /** When replacement is requested, do not race an online lookup against localized metadata. */
+    /** Cross-process original metadata resolution has no acknowledgement; never block lookup. */
     fun originalMetadataLookupPlan(
         shouldRequestOriginalMetadata: Boolean,
     ): OriginalMetadataLookupPlan = OriginalMetadataLookupPlan(
         requestOriginalMetadata = shouldRequestOriginalMetadata,
-        waitForResult = shouldRequestOriginalMetadata,
+        waitForResult = false,
     )
 
     fun applyResolvedReplacement(song: Song?, enabled: Boolean): Song? {

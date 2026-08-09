@@ -25,8 +25,11 @@ import java.util.WeakHashMap
 object BaseIslandRenderer : IslandRenderer {
 
     private const val REFRESH_DEBOUNCE_MS = 32L
+    private val SCREEN_ON_REFRESH_DELAYS_MS = longArrayOf(0L, 120L, 400L, 900L)
     private val mainHandler = Handler(Looper.getMainLooper())
     private val refreshRunnable = Runnable { performRefreshActiveIsland() }
+    private val pauseTransitionGuard = IslandPauseTransitionGuard()
+    private val pauseRestoreRunnable = Runnable { commitDeferredNativeRestore() }
     private val nextSongPreviewActive = WeakHashMap<ViewGroup, NextSongPreviewState>()
     private val nextSongPreviewFailures = WeakHashMap<ViewGroup, String>()
 
@@ -42,6 +45,9 @@ object BaseIslandRenderer : IslandRenderer {
     @Volatile
     private var clearedByPause = false
 
+    @Volatile
+    private var screenRefreshGeneration = 0
+
     /**
      * Source lifecycle events are the authority for lyric rendering state.
      * Hook paths must not re-query MediaSession here: during a lyric refresh the source can
@@ -56,12 +62,44 @@ object BaseIslandRenderer : IslandRenderer {
             RootConstants.KEY_HOOK_ISLAND_BEHAVIOR_AFTER_PAUSE,
             RootConstants.DEFAULT_HOOK_ISLAND_BEHAVIOR_AFTER_PAUSE
         )
-        return playbackActive || behavior != 0
+        return playbackActive || behavior != 0 || pauseTransitionGuard.nativeRestorePending
     }
 
     override fun refreshActiveIsland() {
         mainHandler.removeCallbacks(refreshRunnable)
         mainHandler.postDelayed(refreshRunnable, REFRESH_DEBOUNCE_MS)
+    }
+
+    fun onScreenInteractive() {
+        val generation = ++screenRefreshGeneration
+        SCREEN_ON_REFRESH_DELAYS_MS.forEach { delay ->
+            mainHandler.postDelayed(
+                {
+                    if (generation != screenRefreshGeneration) return@postDelayed
+                    val estimatedPosition = LyriconDataBridge.estimatedPosition()
+                    if (estimatedPosition != null) {
+                        if (LyriconDataBridge.updateEstimatedPosition(estimatedPosition)) {
+                            updateLyricLine()
+                        }
+                        updatePosition(estimatedPosition)
+                    }
+                    refreshActiveIsland()
+                },
+                delay,
+            )
+        }
+        DisplayDiagnosticLogger.log(
+            channel = "ISLAND",
+            result = "pending",
+            reason = "screen_on_refresh_scheduled",
+            extra = "attempts=${SCREEN_ON_REFRESH_DELAYS_MS.size}",
+            dedupeKey = "ISLAND/screen_on",
+        )
+    }
+
+    fun onScreenNonInteractive() {
+        screenRefreshGeneration++
+        DisplayDiagnosticLogger.clear("ISLAND/screen_on")
     }
 
     private fun performRefreshActiveIsland() {
@@ -97,20 +135,13 @@ object BaseIslandRenderer : IslandRenderer {
         val config = IslandSlotRuntimeConfig.from(prefs)
         activeViews.forEach { (cv, _) ->
             cv.post {
-                if (LyriconDataBridge.currentLyricPackageName != lyricPkg ||
-                    !cv.isAttachedToWindow
-                ) {
-                    DisplayDiagnosticLogger.log(
-                        channel = "ISLAND",
-                        result = "skipped",
-                        reason = "stale_refresh_task",
-                        extra = "scheduledPackage=$lyricPkg, " +
-                            "currentPackage=${LyriconDataBridge.currentLyricPackageName}",
-                        dedupeKey = "ISLAND/refresh",
-                    )
-                    return@post
-                }
-                val injectionChanged = IslandLyricTextInjector.injectSlots(cv)
+                // Existing content is refreshed below. Reconfiguring it here forces
+                // applySlotContent() to report a change on every screen-on retry, which
+                // incorrectly turns four content refreshes into four host width relayouts.
+                val injectionChanged = IslandLyricTextInjector.injectSlots(
+                    cv,
+                    reconfigureExisting = false,
+                )
                 if (injectionChanged) {
                     IslandHostFacade.triggerSystemRelayout(cv)
                 } else {
@@ -268,39 +299,77 @@ object BaseIslandRenderer : IslandRenderer {
             clearAllViews()
             return
         }
-        playbackActive = isPlaying
-        IslandProgressGlowController.onPlaybackStateChanged(isPlaying)
-        HookLogger.d("BaseIslandRenderer", "播放状态变化: 正在播放=$isPlaying")
         val behavior = prefs.getInt(
             RootConstants.KEY_HOOK_ISLAND_BEHAVIOR_AFTER_PAUSE,
             RootConstants.DEFAULT_HOOK_ISLAND_BEHAVIOR_AFTER_PAUSE
         )
+        val transition = pauseTransitionGuard.onPlaybackStateChanged(isPlaying, behavior)
+        playbackActive = isPlaying
+        IslandProgressGlowController.onPlaybackStateChanged(isPlaying)
+        HookLogger.d("BaseIslandRenderer", "播放状态变化: 正在播放=$isPlaying")
+
+        when (transition) {
+            IslandPauseTransitionGuard.Transition.RESUME -> {
+                mainHandler.removeCallbacks(pauseRestoreRunnable)
+                DisplayDiagnosticLogger.log(
+                    channel = "ISLAND",
+                    result = "shown",
+                    reason = "playback_resumed",
+                    extra = "pauseBehavior=$behavior",
+                )
+                if (clearedByPause) {
+                    clearedByPause = false
+                    refreshActiveIsland()
+                } else {
+                    applyPlaybackStateToActiveViews(true)
+                }
+                HookLogger.d("BaseIslandRenderer", "播放已继续，等待进度或歌词事件")
+            }
+
+            IslandPauseTransitionGuard.Transition.DEFER_NATIVE_RESTORE -> {
+                applyPlaybackStateToActiveViews(false)
+                mainHandler.postDelayed(
+                    pauseRestoreRunnable,
+                    IslandPauseTransitionGuard.NATIVE_RESTORE_DELAY_MS,
+                )
+                DisplayDiagnosticLogger.log(
+                    channel = "ISLAND",
+                    result = "pending",
+                    reason = "pause_policy_restore_native_deferred",
+                    extra = "pauseBehavior=$behavior, " +
+                        "delayMs=${IslandPauseTransitionGuard.NATIVE_RESTORE_DELAY_MS}",
+                )
+                HookLogger.d("BaseIslandRenderer", "播放短暂停顿，延迟恢复原生媒体岛")
+            }
+
+            IslandPauseTransitionGuard.Transition.NATIVE_RESTORE_ALREADY_PENDING -> Unit
+
+            IslandPauseTransitionGuard.Transition.NATIVE_RESTORE_ALREADY_COMMITTED -> Unit
+
+            IslandPauseTransitionGuard.Transition.KEEP_LYRICS -> {
+                mainHandler.removeCallbacks(pauseRestoreRunnable)
+                applyPlaybackStateToActiveViews(false)
+                DisplayDiagnosticLogger.log(
+                    channel = "ISLAND",
+                    result = "shown",
+                    reason = "pause_policy_keep_lyrics",
+                    extra = "pauseBehavior=$behavior",
+                )
+                HookLogger.d("BaseIslandRenderer", "已暂停，保留当前歌词注入")
+            }
+        }
+    }
+
+    private fun commitDeferredNativeRestore() {
+        if (!pauseTransitionGuard.consumeNativeRestore(playbackActive)) return
+        clearActiveViewsForPause()
         DisplayDiagnosticLogger.log(
             channel = "ISLAND",
-            result = if (isPlaying || behavior != 0) "shown" else "hidden",
-            reason = if (isPlaying) "playback_resumed" else if (behavior == 0) {
-                "pause_policy_restore_native"
-            } else {
-                "pause_policy_keep_lyrics"
-            },
-            extra = "pauseBehavior=$behavior",
+            result = "hidden",
+            reason = "pause_policy_restore_native",
+            extra = "pauseBehavior=0",
         )
-
-        if (isPlaying) {
-            if (clearedByPause) {
-                clearedByPause = false
-                refreshActiveIsland()
-            } else {
-                applyPlaybackStateToActiveViews(true)
-            }
-                HookLogger.d("BaseIslandRenderer", "播放已继续，等待进度或歌词事件")
-        } else if (behavior == 0) {
-            clearActiveViewsForPause()
-                HookLogger.d("BaseIslandRenderer", "已暂停，恢复原生媒体岛")
-        } else {
-            applyPlaybackStateToActiveViews(false)
-                HookLogger.d("BaseIslandRenderer", "已暂停，保留当前歌词注入")
-        }
+        HookLogger.d("BaseIslandRenderer", "暂停超过切歌宽限期，恢复原生媒体岛")
     }
 
     private fun clearActiveViewsForPause() {
@@ -360,6 +429,9 @@ object BaseIslandRenderer : IslandRenderer {
 
     override fun clearAllViews() {
         mainHandler.removeCallbacks(refreshRunnable)
+        mainHandler.removeCallbacks(pauseRestoreRunnable)
+        screenRefreshGeneration++
+        pauseTransitionGuard.reset()
         playbackActive = false
         clearedByPause = true
         IslandViewRegistry.snapshotAttached()
