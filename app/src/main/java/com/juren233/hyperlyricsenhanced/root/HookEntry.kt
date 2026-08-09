@@ -26,6 +26,7 @@ import com.juren233.hyperlyricsenhanced.root.source.RootLyricSink
 import com.juren233.hyperlyricsenhanced.root.source.SuperLyricSource
 import com.juren233.hyperlyricsenhanced.root.aitrans.AITranslator
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
+import com.juren233.hyperlyricsenhanced.common.PreferenceDiagnostics
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.common.UIConstants
 import com.juren233.hyperlyricsenhanced.common.media.NextTrackMetadataCache
@@ -305,6 +306,10 @@ class HookEntry : XposedModule() {
             cleanupRuntime()
             runtimeApp = app
 
+            PreferenceDiagnostics.logSnapshot("systemui_remote_init", prefs) { message ->
+                HookLogger.i("PrefsDiagnostics", message)
+            }
+
             val renderer = BaseIslandRenderer
             val sink = RootLyricSink(renderer, prefs)
 
@@ -348,6 +353,14 @@ class HookEntry : XposedModule() {
             ClassicAodFocusNotificationRecovery.ensureListenerCanRecover(app, prefs)
 
             prefListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+                if (com.juren233.hyperlyricsenhanced.BuildConfig.DEBUG && key != null) {
+                    val value = runCatching { prefs.all[key] }.getOrNull()
+                    HookLogger.i(
+                        "PrefsDiagnostics",
+                        "remote_change key=$key type=${PreferenceDiagnostics.typeName(value)} " +
+                            "value=${PreferenceDiagnostics.formatValue(key, value)}",
+                    )
+                }
                 val affectedOfficialProviderPlayers =
                     OfficialProviderPreferencePolicy.affectedPlayerPackages(key)
                 if (affectedOfficialProviderPlayers.isNotEmpty()) {
