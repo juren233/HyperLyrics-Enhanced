@@ -134,8 +134,17 @@ class LyriconSource : LyricSource {
     override fun isAvailable(): Boolean = true
 
     override fun start(sink: LyricSink) {
+        diagnostic(
+            "stage=source_start_requested, appPresent=${app != null}, " +
+                "prefsPresent=${prefs != null}, subscriberPresent=${subscriber != null}, " +
+                "directBridgePresent=${directBridge != null}",
+        )
         if (this.subscriber != null) {
             HookLogger.d(TAG, "跳过重复启动: reason=already_running")
+            diagnostic(
+                "stage=source_start_skipped, reason=already_running, " +
+                    "subscriberType=${subscriber?.javaClass?.name}",
+            )
             return
         }
         this.sink = sink
@@ -143,10 +152,16 @@ class LyriconSource : LyricSource {
             HookLogger.w(TAG, "数据源启动延后: reason=application_unavailable")
             return
         }
+        diagnostic("stage=direct_bridge_starting")
         directBridge = AppleMusicDirectBridge(application, this).also { it.start() }
+        diagnostic("stage=direct_bridge_started")
         initializeSubscriber(application)
         startAppleMediaMonitor()
         HookLogger.i(TAG, "数据源已启动")
+        diagnostic(
+            "stage=source_start_completed, subscriberType=${subscriber?.javaClass?.name}, " +
+                "directBridgePresent=${directBridge != null}",
+        )
     }
 
     override fun stop() {
@@ -191,6 +206,10 @@ class LyriconSource : LyricSource {
         this.prefs = prefs
         this.onCentralConnected = onCentralConnected
         this.onCentralConnectTimeout = onCentralConnectTimeout
+        diagnostic(
+            "stage=source_initialized, appPackage=${app.packageName}, " +
+                "prefsPresent=${prefs != null}",
+        )
 
         LyriconDataBridge.onAiTranslationComplete = {
             BaseIslandRenderer.refreshActiveIsland()
@@ -1478,47 +1497,64 @@ class LyriconSource : LyricSource {
 
 
     private fun initializeSubscriber(app: Application) {
+        diagnostic("stage=subscriber_create_started, appPackage=${app.packageName}")
         val sub = LyriconFactory.createSubscriber(app)
         subscriber = sub
 
         sub.addConnectionListener(connectionListener)
-        sub.subscribeActivePlayer(activePlayerListener)
+        val subscribed = sub.subscribeActivePlayer(activePlayerListener)
+        diagnostic(
+            "stage=subscriber_listener_registered, result=$subscribed, " +
+                "subscriberType=${sub.javaClass.name}",
+        )
         sub.register()
+        diagnostic("stage=subscriber_registration_requested")
     }
 
     private val connectionListener = object : ConnectionListener {
         override fun onConnected(subscriber: LyriconSubscriber) {
-                HookLogger.i(TAG, "订阅连接已建立")
-                mainHandler.post { onCentralConnected?.invoke() }
+            HookLogger.i(TAG, "订阅连接已建立")
+            diagnostic("stage=subscriber_connected")
+            mainHandler.post { onCentralConnected?.invoke() }
         }
 
         override fun onReconnected(subscriber: LyriconSubscriber) {
-                HookLogger.i(TAG, "订阅连接已恢复")
-                mainHandler.post { onCentralConnected?.invoke() }
+            HookLogger.i(TAG, "订阅连接已恢复")
+            diagnostic("stage=subscriber_reconnected")
+            mainHandler.post { onCentralConnected?.invoke() }
         }
 
         override fun onDisconnected(subscriber: LyriconSubscriber) {
-                centralAppleProviderActive = false
-                activeCentralPlayerPackageName = null
-                activeProviderPackageName = null
-                HookLogger.w(TAG, "订阅连接已断开")
+            centralAppleProviderActive = false
+            activeCentralPlayerPackageName = null
+            activeProviderPackageName = null
+            HookLogger.w(TAG, "订阅连接已断开")
+            diagnostic("stage=subscriber_disconnected")
         }
 
         override fun onConnectTimeout(subscriber: LyriconSubscriber) {
-                centralAppleProviderActive = false
-                activeCentralPlayerPackageName = null
-                activeProviderPackageName = null
-                HookLogger.w(TAG, "订阅连接超时")
-                mainHandler.post {
-                    onCentralConnectTimeout?.invoke()
-                    subscriber.register()
-                }
+            centralAppleProviderActive = false
+            activeCentralPlayerPackageName = null
+            activeProviderPackageName = null
+            HookLogger.w(TAG, "订阅连接超时")
+            diagnostic("stage=subscriber_connect_timeout")
+            mainHandler.post {
+                onCentralConnectTimeout?.invoke()
+                diagnostic("stage=subscriber_retry_requested")
+                subscriber.register()
+                diagnostic("stage=subscriber_retry_returned")
+            }
         }
     }
 
     private val activePlayerListener = object : ActivePlayerListener {
         override fun onActiveProviderChanged(providerInfo: ProviderInfo?) {
             val playerPackageName = providerInfo?.playerPackageName
+            diagnostic(
+                "stage=central_active_provider_callback, " +
+                    "provider=${providerInfo?.providerPackageName}, " +
+                    "player=$playerPackageName, process=${providerInfo?.processName}",
+            )
             activeCentralPlayerPackageName = playerPackageName
             if (playerPackageName == null && currentAppleSong != null) {
                 centralAppleProviderActive = false
@@ -1552,6 +1588,13 @@ class LyriconSource : LyricSource {
 
         override fun onSongChanged(song: LyriconSong?) {
             val localSong = song?.toLocalSong()
+            diagnostic(
+                "stage=central_song_callback, id=${localSong?.id}, title=${localSong?.name}, " +
+                    "lyrics=${localSong?.lyrics.orEmpty().size}, " +
+                    "translated=${localSong?.lyrics.orEmpty().count { !it.translation.isNullOrBlank() }}, " +
+                    "activePlayer=$activeCentralPlayerPackageName, " +
+                    "centralAppleProviderActive=$centralAppleProviderActive",
+            )
             if (centralAppleProviderActive) {
                 handleAppleSong(localSong)
             } else {
@@ -1654,6 +1697,11 @@ class LyriconSource : LyricSource {
 
     internal fun onDirectSongChanged(song: LyriconSong?) {
         val localSong = song?.toLocalSong()
+        diagnostic(
+            "stage=direct_song_callback, id=${localSong?.id}, title=${localSong?.name}, " +
+                "lyrics=${localSong?.lyrics.orEmpty().size}, " +
+                "activeCentralPlayer=$activeCentralPlayerPackageName",
+        )
         currentDirectAppleSongId = localSong?.id
         appleDirectPositionReference = null
         if (hasActiveCentralPlayer()) return

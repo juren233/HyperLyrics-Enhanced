@@ -49,9 +49,17 @@ internal class AppleMusicDirectBridge(
             translationReceiver = receiver
             receiver?.asBinder()?.let { binder ->
                 runCatching {
-                    binder.linkToDeath({ translationReceiver = null }, 0)
+                    binder.linkToDeath({
+                        translationReceiver = null
+                        bridgeDiagnostic("stage=translation_receiver_died")
+                    }, 0)
                 }
             }
+            bridgeDiagnostic(
+                "stage=translation_receiver_registered, receiverPresent=${receiver != null}, " +
+                    "binderAlive=${receiver?.asBinder()?.isBinderAlive}, " +
+                    "cachedBytes=${latestOnlineTranslationPayload?.size ?: 0}",
+            )
             pronunciationDiagnostic(
                 "stage=bridge_receiver_registered, generation=$latestOnlineTranslationGeneration, " +
                     "receiverPresent=${receiver != null}, " +
@@ -63,6 +71,10 @@ internal class AppleMusicDirectBridge(
         }
 
         override fun onSongChanged(compressedSong: ByteArray) {
+            bridgeDiagnostic(
+                "stage=direct_song_payload_received, bytes=${compressedSong.size}, " +
+                    "empty=${compressedSong.isEmpty()}",
+            )
             if (compressedSong.isEmpty()) {
                 mainHandler.post { source.onDirectSongChanged(null) }
                 return
@@ -75,7 +87,12 @@ internal class AppleMusicDirectBridge(
                 HookLogger.e(TAG, "解析 Apple Music 直连歌词失败", it)
             }
             if (decoded.isFailure) return
-            mainHandler.post { source.onDirectSongChanged(decoded.getOrThrow()) }
+            val song = decoded.getOrThrow()
+            bridgeDiagnostic(
+                "stage=direct_song_payload_decoded, id=${song.id}, " +
+                    "lyrics=${song.lyrics.orEmpty().size}",
+            )
+            mainHandler.post { source.onDirectSongChanged(song) }
         }
 
         override fun onPlaybackStateChanged(isPlaying: Boolean) {
@@ -118,9 +135,18 @@ internal class AppleMusicDirectBridge(
     private val requestReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.action != AppleDirectBridgeContract.ACTION_REQUEST) return
+            val senderPackage = if (Build.VERSION.SDK_INT >= 34) sentFromPackage else null
+            bridgeDiagnostic(
+                "stage=direct_bridge_request_received, senderPackage=$senderPackage",
+            )
             if (Build.VERSION.SDK_INT >= 34) {
                 sentFromPackage?.let {
-                    if (it != AppleDirectBridgeContract.APPLE_MUSIC_PACKAGE) return
+                    if (it != AppleDirectBridgeContract.APPLE_MUSIC_PACKAGE) {
+                        bridgeDiagnostic(
+                            "stage=direct_bridge_request_rejected, senderPackage=$it",
+                        )
+                        return
+                    }
                 }
             }
             sendRegistration()
@@ -128,7 +154,11 @@ internal class AppleMusicDirectBridge(
     }
 
     fun start() {
-        if (registered) return
+        bridgeDiagnostic("stage=direct_bridge_start_requested, registered=$registered")
+        if (registered) {
+            bridgeDiagnostic("stage=direct_bridge_start_skipped, reason=already_registered")
+            return
+        }
         ContextCompat.registerReceiver(
             app,
             requestReceiver,
@@ -136,14 +166,17 @@ internal class AppleMusicDirectBridge(
             ContextCompat.RECEIVER_EXPORTED
         )
         registered = true
+        bridgeDiagnostic("stage=direct_bridge_receiver_registered")
         sendRegistration()
     }
 
     fun stop() {
+        bridgeDiagnostic("stage=direct_bridge_stop_requested, registered=$registered")
         if (!registered) return
         runCatching { app.unregisterReceiver(requestReceiver) }
         translationReceiver = null
         registered = false
+        bridgeDiagnostic("stage=direct_bridge_stopped")
     }
 
     fun publishOnlineTranslation(song: LocalSong, generation: Int? = null): Boolean {
@@ -217,7 +250,12 @@ internal class AppleMusicDirectBridge(
         val intent = Intent(AppleDirectBridgeContract.ACTION_REGISTER)
             .setPackage(AppleDirectBridgeContract.APPLE_MUSIC_PACKAGE)
             .putExtras(extras)
+        bridgeDiagnostic(
+            "stage=direct_bridge_registration_sending, target=${intent.`package`}, " +
+                "binderAlive=${binder.asBinder().isBinderAlive}",
+        )
         app.sendBroadcast(intent)
+        bridgeDiagnostic("stage=direct_bridge_registration_sent")
     }
 
     private fun sendOnlineTranslationPayload(
@@ -247,5 +285,9 @@ internal class AppleMusicDirectBridge(
 
     private fun pronunciationDiagnostic(message: String) {
         if (BuildConfig.DEBUG) Log.i(PRONUNCIATION_DIAGNOSTIC_TAG, message)
+    }
+
+    private fun bridgeDiagnostic(message: String) {
+        if (BuildConfig.DEBUG) HookLogger.i(TAG, "[debug] $message")
     }
 }

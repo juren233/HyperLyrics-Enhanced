@@ -106,7 +106,17 @@ internal class AppleDirectPlayer(
                 AppleDirectBridgeContract.ACTION_REGISTER -> {
                     val binder = intent.extras
                         ?.getBinder(AppleDirectBridgeContract.EXTRA_BINDER)
-                        ?: return
+                        ?: run {
+                            ProviderLogger.diagnostic(
+                                "直连诊断: stage=registration_missing_binder, " +
+                                    "uid=$sentFromUid, package=$sentFromPackage",
+                            )
+                            return
+                        }
+                    ProviderLogger.diagnostic(
+                        "直连诊断: stage=registration_received, alive=${binder.isBinderAlive}, " +
+                            "uid=$sentFromUid, package=$sentFromPackage",
+                    )
                     pronunciationDiagnostic(
                         "stage=bridge_registration_received, " +
                             "alive=${binder.isBinderAlive}, uid=$sentFromUid"
@@ -124,7 +134,15 @@ internal class AppleDirectPlayer(
     }
 
     fun start() {
-        if (registered) return
+        ProviderLogger.diagnostic(
+            "直连诊断: stage=player_start_requested, registered=$registered",
+        )
+        if (registered) {
+            ProviderLogger.diagnostic(
+                "直连诊断: stage=player_start_skipped, reason=already_registered",
+            )
+            return
+        }
         ContextCompat.registerReceiver(
             context,
             registrationReceiver,
@@ -135,16 +153,22 @@ internal class AppleDirectPlayer(
             ContextCompat.RECEIVER_EXPORTED
         )
         registered = true
+        ProviderLogger.diagnostic("直连诊断: stage=player_receiver_registered")
         pronunciationDiagnostic("stage=direct_player_started")
         requestBridge()
     }
 
     private fun requestBridge() {
+        ProviderLogger.diagnostic(
+            "直连诊断: stage=bridge_request_sending, " +
+                "target=${AppleDirectBridgeContract.SYSTEM_UI_PACKAGE}",
+        )
         pronunciationDiagnostic("stage=bridge_requested")
         context.sendBroadcast(
             Intent(AppleDirectBridgeContract.ACTION_REQUEST)
                 .setPackage(AppleDirectBridgeContract.SYSTEM_UI_PACKAGE)
         )
+        ProviderLogger.diagnostic("直连诊断: stage=bridge_request_sent")
     }
 
     private fun connect(binder: IBinder) {
@@ -152,6 +176,7 @@ internal class AppleDirectPlayer(
         runCatching {
             binder.linkToDeath({
                 bridge = null
+                ProviderLogger.diagnostic("直连诊断: stage=bridge_binder_died")
                 requestBridge()
             }, 0)
         }
@@ -160,7 +185,10 @@ internal class AppleDirectPlayer(
             "stage=bridge_connected, alive=${binder.isBinderAlive}, " +
                 "receiverRegistered=$receiverRegistered"
         )
-        ProviderLogger.diagnostic("HyperLyrics Enhanced Apple Music 直连已建立")
+        ProviderLogger.diagnostic(
+            "直连诊断: stage=bridge_connected, alive=${binder.isBinderAlive}, " +
+                "receiverRegistered=$receiverRegistered",
+        )
         latestSongPayload?.let { payload ->
             val replayed = send { target -> target.onSongChanged(payload) }
             ProviderLogger.debug(

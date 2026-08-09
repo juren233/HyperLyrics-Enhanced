@@ -308,6 +308,9 @@ internal class OfficialProviderHookHost(
                     query.requiredInvokedMethodNames.forEach { methodName ->
                         addInvoke(MethodMatcher().name(methodName))
                     }
+                    query.requiredCallerMethodNames.forEach { methodName ->
+                        addCaller(MethodMatcher().name(methodName))
+                    }
                     query.parameterTypeNames?.let(::paramTypes)
                     query.returnTypeName?.let(::returnType)
                     query.returnTypeNamePrefix?.let { prefix ->

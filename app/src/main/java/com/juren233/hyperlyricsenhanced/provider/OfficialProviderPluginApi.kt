@@ -125,7 +125,51 @@ data class OfficialProviderDexMethodQuery(
     val returnTypeReference: OfficialProviderDexTypeReference? = null,
     val returnTypeMatchesDeclaringClass: Boolean = false,
     val isStatic: Boolean? = null,
+    val requiredCallerMethodNames: List<String> = emptyList(),
 ) {
+    /**
+     * Binary-compatible constructor for Provider Packs built against plugin API v3.
+     *
+     * Caller constraints were added without changing the plugin API version because the
+     * extension is additive. New Packs that use it must still raise minCoreVersionCode.
+     */
+    @Suppress("unused")
+    @Deprecated("Binary compatibility for Provider Packs", level = DeprecationLevel.HIDDEN)
+    constructor(
+        cacheKey: String,
+        preferredTarget: OfficialProviderMethodTarget? = null,
+        declaringClassName: String? = null,
+        declaringClassNamePrefix: String? = null,
+        declaringClassReference: OfficialProviderDexTypeReference? = null,
+        requiredStrings: List<String> = emptyList(),
+        requiredInvokedMethodDescriptors: List<String> = emptyList(),
+        requiredInvokedMethodNames: List<String> = emptyList(),
+        parameterTypeNames: List<String>? = null,
+        parameterTypeReferences: Map<Int, OfficialProviderDexTypeReference> = emptyMap(),
+        returnTypeName: String? = null,
+        returnTypeNamePrefix: String? = null,
+        returnTypeReference: OfficialProviderDexTypeReference? = null,
+        returnTypeMatchesDeclaringClass: Boolean = false,
+        isStatic: Boolean? = null,
+    ) : this(
+        cacheKey = cacheKey,
+        preferredTarget = preferredTarget,
+        declaringClassName = declaringClassName,
+        declaringClassNamePrefix = declaringClassNamePrefix,
+        declaringClassReference = declaringClassReference,
+        requiredStrings = requiredStrings,
+        requiredInvokedMethodDescriptors = requiredInvokedMethodDescriptors,
+        requiredInvokedMethodNames = requiredInvokedMethodNames,
+        parameterTypeNames = parameterTypeNames,
+        parameterTypeReferences = parameterTypeReferences,
+        returnTypeName = returnTypeName,
+        returnTypeNamePrefix = returnTypeNamePrefix,
+        returnTypeReference = returnTypeReference,
+        returnTypeMatchesDeclaringClass = returnTypeMatchesDeclaringClass,
+        isStatic = isStatic,
+        requiredCallerMethodNames = emptyList(),
+    )
+
     /**
      * Binary-compatible constructor used by Provider Packs built before ordered query references
      * were added. InMemoryDexClassLoader delegates this API package to the core class loader, so
@@ -160,6 +204,7 @@ data class OfficialProviderDexMethodQuery(
         returnTypeReference = null,
         returnTypeMatchesDeclaringClass = returnTypeMatchesDeclaringClass,
         isStatic = isStatic,
+        requiredCallerMethodNames = emptyList(),
     )
 }
 
@@ -183,6 +228,9 @@ internal object OfficialProviderDexMethodQueryValidator {
         }
         require(query.requiredInvokedMethodNames.all(String::isNotBlank)) {
             "Provider DexKit 调用方法名不能包含空值"
+        }
+        require(query.requiredCallerMethodNames.all(String::isNotBlank)) {
+            "Provider DexKit 调用方方法名不能包含空值"
         }
         require(query.parameterTypeReferences.keys.all { it >= 0 }) {
             "Provider DexKit 参数类型引用下标不能为负数"
@@ -237,9 +285,13 @@ internal object OfficialProviderDexMethodQueryValidator {
                 query.declaringClassReference != null ||
                 query.requiredStrings.isNotEmpty() ||
                 query.requiredInvokedMethodDescriptors.isNotEmpty() ||
-                query.requiredInvokedMethodNames.isNotEmpty(),
+                query.requiredInvokedMethodNames.isNotEmpty() ||
+                query.requiredCallerMethodNames.isNotEmpty(),
         ) {
             "Provider DexKit 后备查询必须包含类名或特征字符串"
+        }
+        require(query.preferredTarget == null || query.requiredCallerMethodNames.isEmpty()) {
+            "Provider DexKit 调用方约束不能与未经语义校验的首选目标同时使用"
         }
         query.preferredTarget?.let { target ->
             require(target.className.isNotBlank()) { "Provider 首选 className 不能为空" }

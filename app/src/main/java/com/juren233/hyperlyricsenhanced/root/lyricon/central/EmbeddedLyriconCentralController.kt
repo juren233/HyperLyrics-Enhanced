@@ -10,6 +10,7 @@ import android.app.Application
 import android.content.pm.PackageManager
 import android.os.Handler
 import android.os.Looper
+import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import io.github.proify.lyricon.central.BridgeCentral
 import io.github.proify.lyricon.central.CentralRuntime
@@ -34,7 +35,12 @@ internal object EmbeddedLyriconCentralController {
 
     fun prepare(app: Application) {
         val installed = installedStandalonePackages(app.packageManager)
+        diagnostic(
+            "stage=prepare_started, installedStandalone=${installed.sorted()}, " +
+                "started=${started.get()}",
+        )
         BridgeCentral.initialize(app, startActive = false)
+        diagnostic("stage=bridge_initialized, startActive=false")
         if (EmbeddedLyriconCentralPolicy.shouldStartImmediately(installed)) {
             ensureStarted(app, reason = "standalone_package_absent")
         } else {
@@ -47,12 +53,14 @@ internal object EmbeddedLyriconCentralController {
     }
 
     fun onCentralConnected() {
+        diagnostic("stage=subscriber_connected, started=${started.get()}")
         standaloneProbeTimeout?.let(mainHandler::removeCallbacks)
         standaloneProbeTimeout = null
         BridgeCentral.discardPendingRegistrations()
     }
 
     fun onSubscriberConnectTimeout(app: Application) {
+        diagnostic("stage=subscriber_connect_timeout, started=${started.get()}")
         ensureStarted(app, reason = "standalone_connection_timeout")
     }
 
@@ -62,11 +70,16 @@ internal object EmbeddedLyriconCentralController {
     }
 
     private fun ensureStarted(app: Application, reason: String) {
-        if (!started.compareAndSet(false, true)) return
+        diagnostic("stage=start_requested, reason=$reason, started=${started.get()}")
+        if (!started.compareAndSet(false, true)) {
+            diagnostic("stage=start_skipped, reason=already_started, trigger=$reason")
+            return
+        }
 
         runCatching {
             standaloneProbeTimeout?.let(mainHandler::removeCallbacks)
             standaloneProbeTimeout = null
+            diagnostic("stage=bridge_activating, reason=$reason")
             BridgeCentral.activate()
             BridgeCentral.sendBootCompleted()
         }.onSuccess {
@@ -81,8 +94,14 @@ internal object EmbeddedLyriconCentralController {
         standaloneProbeTimeout?.let(mainHandler::removeCallbacks)
         standaloneProbeTimeout = Runnable {
             standaloneProbeTimeout = null
+            diagnostic("stage=standalone_probe_timeout_fired")
             ensureStarted(app, reason = "standalone_probe_timeout")
         }.also { mainHandler.postDelayed(it, STANDALONE_PROBE_TIMEOUT_MS) }
+        diagnostic("stage=standalone_probe_timeout_scheduled, delayMs=$STANDALONE_PROBE_TIMEOUT_MS")
+    }
+
+    private fun diagnostic(message: String) {
+        if (BuildConfig.DEBUG) HookLogger.i(TAG, "[debug] $message")
     }
 
     private fun installedStandalonePackages(packageManager: PackageManager): Set<String> =

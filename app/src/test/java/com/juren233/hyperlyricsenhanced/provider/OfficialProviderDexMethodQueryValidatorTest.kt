@@ -84,6 +84,49 @@ class OfficialProviderDexMethodQueryValidatorTest {
     }
 
     @Test
+    fun `accepts caller method name as semantic anchor`() {
+        OfficialProviderDexMethodQueryValidator.validate(
+            OfficialProviderDexMethodQuery(
+                cacheKey = "kugou-lite-next-media-v2",
+                requiredCallerMethodNames = listOf("getNextMedia"),
+                parameterTypeNames = emptyList(),
+                returnTypeName = "com.kugou.common.player.manager.IMedia",
+                isStatic = false,
+            ),
+        )
+    }
+
+    @Test
+    fun `rejects blank caller method name`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            OfficialProviderDexMethodQueryValidator.validate(
+                OfficialProviderDexMethodQuery(
+                    cacheKey = "blank-caller",
+                    requiredCallerMethodNames = listOf(" "),
+                ),
+            )
+        }
+    }
+
+    @Test
+    fun `rejects preferred target with caller semantic constraint`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            OfficialProviderDexMethodQueryValidator.validate(
+                OfficialProviderDexMethodQuery(
+                    cacheKey = "unsafe-preferred-caller",
+                    preferredTarget = OfficialProviderMethodTarget(
+                        className = "example.QueuePlayerManager",
+                        methodName = "P0",
+                        returnTypeName = "example.IMedia",
+                        isStatic = false,
+                    ),
+                    requiredCallerMethodNames = listOf("getNextMedia"),
+                ),
+            )
+        }
+    }
+
+    @Test
     fun `keeps the pre-reference provider pack constructors`() {
         val oldParameters = arrayOf(
             String::class.java,
@@ -103,6 +146,37 @@ class OfficialProviderDexMethodQueryValidatorTest {
         assertNotNull(
             OfficialProviderDexMethodQuery::class.java.getDeclaredConstructor(
                 *oldParameters,
+                Int::class.javaPrimitiveType!!,
+                DefaultConstructorMarker::class.java,
+            ),
+        )
+    }
+
+    @Test
+    fun `keeps the plugin api v3 provider pack constructors`() {
+        val v3Parameters = arrayOf(
+            String::class.java,
+            OfficialProviderMethodTarget::class.java,
+            String::class.java,
+            String::class.java,
+            OfficialProviderDexTypeReference::class.java,
+            List::class.java,
+            List::class.java,
+            List::class.java,
+            List::class.java,
+            Map::class.java,
+            String::class.java,
+            String::class.java,
+            OfficialProviderDexTypeReference::class.java,
+            Boolean::class.javaPrimitiveType!!,
+            Boolean::class.javaObjectType,
+        )
+        assertNotNull(
+            OfficialProviderDexMethodQuery::class.java.getDeclaredConstructor(*v3Parameters),
+        )
+        assertNotNull(
+            OfficialProviderDexMethodQuery::class.java.getDeclaredConstructor(
+                *v3Parameters,
                 Int::class.javaPrimitiveType!!,
                 DefaultConstructorMarker::class.java,
             ),

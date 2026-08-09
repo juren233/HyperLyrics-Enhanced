@@ -105,6 +105,32 @@ class OfficialProviderDexMethodCacheCodecTest {
     }
 
     @Test
+    fun `cache key includes caller method semantics`() {
+        val base = OfficialProviderDexMethodQuery(
+            cacheKey = "kugou-lite-next-media-v2",
+            declaringClassName = "com.kugou.common.player.manager.QueuePlayerManager",
+            requiredCallerMethodNames = listOf("getNextMedia"),
+        )
+        val first = OfficialProviderDexMethodCacheCodec.cacheKey(
+            packageName = "com.kugou.android.lite",
+            processName = "com.kugou.android.lite.support",
+            versionCode = 11540,
+            lastUpdateTime = 1,
+            query = base,
+        )
+        assertNotEquals(
+            first,
+            OfficialProviderDexMethodCacheCodec.cacheKey(
+                packageName = "com.kugou.android.lite",
+                processName = "com.kugou.android.lite.support",
+                versionCode = 11540,
+                lastUpdateTime = 1,
+                query = base.copy(requiredCallerMethodNames = listOf("getPreMedia")),
+            ),
+        )
+    }
+
+    @Test
     fun `cross version method baseline round trips structural identity`() {
         val baseline = OfficialProviderDexMethodBaseline(
             fieldCount = 18,

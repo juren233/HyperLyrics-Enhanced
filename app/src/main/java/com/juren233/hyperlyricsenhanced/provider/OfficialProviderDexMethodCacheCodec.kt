@@ -36,6 +36,8 @@ internal object OfficialProviderDexMethodCacheCodec {
             append('\u0000')
             append(query.requiredInvokedMethodNames.joinToString("\u0001"))
             append('\u0000')
+            append(query.requiredCallerMethodNames.joinToString("\u0001"))
+            append('\u0000')
             append(query.parameterTypeNames?.joinToString("\u0001").orEmpty())
             append('\u0000')
             append(
