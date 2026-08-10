@@ -43,6 +43,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.abs
 
 class LyriconSource : LyricSource {
@@ -81,6 +82,7 @@ class LyriconSource : LyricSource {
     private var onCentralConnected: (() -> Unit)? = null
     private var onCentralConnectTimeout: (() -> Unit)? = null
     private var directBridge: AppleMusicDirectBridge? = null
+    private val loggedPlayerVersionSnapshots = ConcurrentHashMap.newKeySet<String>()
     private val mainHandler = Handler(Looper.getMainLooper())
     private val fallbackScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val fallbackRequestMutex = Mutex()
@@ -1487,6 +1489,39 @@ class LyriconSource : LyricSource {
         if (BuildConfig.DEBUG) HookLogger.w(TAG, "[debug] $message")
     }
 
+    private fun logPlayerVersionSnapshot(
+        playerPackageName: String?,
+        providerPackageName: String?,
+        processName: String?,
+        source: String,
+    ) {
+        if (playerPackageName.isNullOrBlank()) return
+        val application = app ?: return
+        runCatching {
+            application.packageManager.getPackageInfo(playerPackageName, 0)
+        }.onSuccess { packageInfo ->
+            val versionName = packageInfo.versionName ?: "unknown"
+            val versionCode = packageInfo.longVersionCode
+            val key = "$playerPackageName|$versionName|$versionCode|$providerPackageName|$processName"
+            if (!loggedPlayerVersionSnapshots.add(key)) return@onSuccess
+            HookLogger.i(
+                TAG,
+                "[PlayerVersionDiag] stage=active_player_snapshot, result=resolved, " +
+                    "source=$source, player=$playerPackageName, versionName=$versionName, " +
+                    "versionCode=$versionCode, provider=$providerPackageName, process=$processName",
+            )
+        }.onFailure { error ->
+            val key = "$playerPackageName|unavailable|$providerPackageName|$processName"
+            if (!loggedPlayerVersionSnapshots.add(key)) return@onFailure
+            HookLogger.w(
+                TAG,
+                "[PlayerVersionDiag] stage=active_player_snapshot, result=unavailable, " +
+                    "source=$source, player=$playerPackageName, provider=$providerPackageName, " +
+                    "process=$processName, error=${error.javaClass.simpleName}:${error.message}",
+            )
+        }
+    }
+
     private fun pronunciationDiagnostic(message: String) {
         if (BuildConfig.DEBUG) Log.i(PRONUNCIATION_DIAGNOSTIC_TAG, message)
     }
@@ -1554,6 +1589,12 @@ class LyriconSource : LyricSource {
                 "stage=central_active_provider_callback, " +
                     "provider=${providerInfo?.providerPackageName}, " +
                     "player=$playerPackageName, process=${providerInfo?.processName}",
+            )
+            logPlayerVersionSnapshot(
+                playerPackageName = playerPackageName,
+                providerPackageName = providerInfo?.providerPackageName,
+                processName = providerInfo?.processName,
+                source = "central_provider",
             )
             activeCentralPlayerPackageName = playerPackageName
             if (playerPackageName == null && currentAppleSong != null) {
@@ -1705,6 +1746,14 @@ class LyriconSource : LyricSource {
         currentDirectAppleSongId = localSong?.id
         appleDirectPositionReference = null
         if (hasActiveCentralPlayer()) return
+        if (localSong != null) {
+            logPlayerVersionSnapshot(
+                playerPackageName = APPLE_MUSIC_PACKAGE,
+                providerPackageName = BUILT_IN_PROVIDER_PACKAGE,
+                processName = APPLE_MUSIC_PACKAGE,
+                source = "apple_direct",
+            )
+        }
         val providerPackage = BUILT_IN_PROVIDER_PACKAGE
         activeProviderPackageName = providerPackage
         activeProviderDelayMs = readProviderDelay(providerPackage)

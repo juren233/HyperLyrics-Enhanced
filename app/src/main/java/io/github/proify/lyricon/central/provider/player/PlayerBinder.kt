@@ -13,6 +13,7 @@ import android.util.Log
 import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.common.media.NextTrackMetadataCache
 import com.juren233.hyperlyricsenhanced.provider.OfficialProviderControlProtocol
+import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import io.github.proify.lyricon.central.inflate
 import io.github.proify.lyricon.central.json
 import io.github.proify.lyricon.central.util.ScreenStateMonitor
@@ -30,6 +31,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.decodeFromStream
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 internal class PlayerBinder(
     info: ProviderInfo,
@@ -56,6 +58,7 @@ internal class PlayerBinder(
     private val providerInfo = info
     private var lastPositionDiagnosticAtMs = 0L
     private var lastPositionPublishDiagnosticAtMs = 0L
+    private val playbackStateSequence = AtomicLong(0L)
 
     init {
         ScreenStateMonitor.addListener(this)
@@ -122,6 +125,17 @@ internal class PlayerBinder(
     override fun setPlaybackState(isPlaying: Boolean) {
         if (closed.get()) return
 
+        val sequence = playbackStateSequence.incrementAndGet()
+        if (BuildConfig.DEBUG) {
+            HookLogger.i(
+                TAG,
+                "[LyricPositionDiag] stage=central_state_input, mode=legacy_boolean, " +
+                    "sequence=$sequence, provider=${providerInfo.providerPackageName}, " +
+                    "player=${providerInfo.playerPackageName}, process=${providerInfo.processName}, " +
+                    "playing=$isPlaying, decision=disable_state2",
+            )
+        }
+
         isState2Enabled.set(false)
         lastPlaybackState = null
 
@@ -136,7 +150,18 @@ internal class PlayerBinder(
     override fun setPlaybackState2(state: PlaybackState?) {
         if (closed.get()) return
 
+        val sequence = playbackStateSequence.incrementAndGet()
+
         if (state == null) {
+            if (BuildConfig.DEBUG) {
+                HookLogger.i(
+                    TAG,
+                    "[LyricPositionDiag] stage=central_state_input, mode=playback_state, " +
+                        "sequence=$sequence, provider=${providerInfo.providerPackageName}, " +
+                        "player=${providerInfo.playerPackageName}, process=${providerInfo.processName}, " +
+                        "state=null, decision=disable_state2",
+                )
+            }
             if (isState2Enabled.compareAndSet(true, false)) {
                 lastPlaybackState = null
                 stopPositionUpdate()
@@ -145,12 +170,17 @@ internal class PlayerBinder(
         }
 
         if (BuildConfig.DEBUG) {
-            Log.i(
+            val now = SystemClock.elapsedRealtime()
+            HookLogger.i(
                 TAG,
-                "Timing state2 anchor: provider=${providerInfo.providerPackageName}, " +
+                "[LyricPositionDiag] stage=central_state_input, mode=playback_state, " +
+                    "sequence=$sequence, provider=${providerInfo.providerPackageName}, " +
                     "player=${providerInfo.playerPackageName}, process=${providerInfo.processName}, " +
                     "state=${state.state}, position=${state.position}, " +
-                    "updatedAt=${state.lastPositionUpdateTime}, speed=${state.playbackSpeed}"
+                    "updatedAt=${state.lastPositionUpdateTime}, now=$now, " +
+                    "anchorAgeMs=${now - state.lastPositionUpdateTime}, " +
+                    "speed=${state.playbackSpeed}, buffered=${state.bufferedPosition}, " +
+                    "decision=${if (state.state == PlaybackState.STATE_BUFFERING) "ignore_buffering" else "accept_state2"}",
             )
         }
 
@@ -172,6 +202,15 @@ internal class PlayerBinder(
         if (closed.get()) return
 
         val safe = position.coerceAtLeast(0L)
+        if (BuildConfig.DEBUG) {
+            HookLogger.i(
+                TAG,
+                "[LyricPositionDiag] stage=central_seek_input, " +
+                    "provider=${providerInfo.providerPackageName}, " +
+                    "player=${providerInfo.playerPackageName}, process=${providerInfo.processName}, " +
+                    "position=$safe",
+            )
+        }
         recorder.position = safe
         playerEvents.safeNotify { onSeekTo(recorder, safe) }
     }
@@ -256,12 +295,17 @@ internal class PlayerBinder(
         val now = SystemClock.elapsedRealtime()
         if (now - lastPositionDiagnosticAtMs < POSITION_DIAGNOSTIC_INTERVAL_MS) return
         lastPositionDiagnosticAtMs = now
-        Log.i(
+        val state = lastPlaybackState
+        HookLogger.i(
             TAG,
-            "Timing central read: provider=${providerInfo.providerPackageName}, " +
+            "[LyricPositionDiag] stage=central_position_read, " +
+                "provider=${providerInfo.providerPackageName}, " +
                 "player=${providerInfo.playerPackageName}, process=${providerInfo.processName}, " +
                 "source=${if (state2Enabled) "playback_state" else "shared_memory"}, " +
-                "position=$position, playing=${recorder.isPlaying}"
+                "position=$position, playing=${recorder.isPlaying}, " +
+                "state=${state?.state}, statePosition=${state?.position}, " +
+                "stateUpdatedAt=${state?.lastPositionUpdateTime}, stateSpeed=${state?.playbackSpeed}, " +
+                positionMemory.diagnosticSummary(),
         )
     }
 
@@ -286,9 +330,9 @@ internal class PlayerBinder(
         val now = SystemClock.elapsedRealtime()
         if (now - lastPositionPublishDiagnosticAtMs < POSITION_DIAGNOSTIC_INTERVAL_MS) return
         lastPositionPublishDiagnosticAtMs = now
-        Log.i(
+        HookLogger.i(
             TAG,
-            "[LyricPositionDiag] stage=provider_publish, " +
+            "[LyricPositionDiag] stage=central_provider_publish, " +
                 "provider=${providerInfo.providerPackageName}, " +
                 "player=${providerInfo.playerPackageName}, process=${providerInfo.processName}, " +
                 "position=$position, playing=${recorder.isPlaying}, " +

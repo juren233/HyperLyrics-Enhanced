@@ -102,6 +102,28 @@ class OfficialProviderCatalogTest {
     }
 
     @Test
+    fun `keeps core host processes enabled`() {
+        assertTrue(
+            OfficialProviderCatalog.shouldLoadIntoProcess(
+                packageName = "com.android.systemui",
+                processName = "com.android.systemui",
+            ),
+        )
+        assertTrue(
+            OfficialProviderCatalog.shouldLoadIntoProcess(
+                packageName = "miui.systemui.plugin",
+                processName = "miui.systemui.plugin",
+            ),
+        )
+        assertTrue(
+            OfficialProviderCatalog.shouldLoadIntoProcess(
+                packageName = "com.apple.android.music",
+                processName = "com.apple.android.music",
+            ),
+        )
+    }
+
+    @Test
     fun `validates provider package against its declared player packages`() {
         assertTrue(
             OfficialProviderCatalog.isOfficialProviderPair(

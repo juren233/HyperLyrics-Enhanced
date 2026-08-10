@@ -12,6 +12,7 @@ import android.os.Parcel
 import android.system.OsConstants
 import android.util.Log
 import com.juren233.hyperlyricsenhanced.BuildConfig
+import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import io.github.proify.lyricon.central.json
 import io.github.proify.lyricon.central.provider.player.ActivePlayerListener
 import io.github.proify.lyricon.lyric.model.Song
@@ -38,6 +39,8 @@ internal class ActivePlayerSubscription(
 
     private var positionBuffer: ByteBuffer? = null
     private var lastPositionDiagnosticAtMs = 0L
+    @Volatile
+    private var lastPositionWriteFailure: String? = null
 
     init {
         initializePositionMemory(subscriberInfo)
@@ -65,16 +68,23 @@ internal class ActivePlayerSubscription(
     }
 
     override fun onPositionChanged(position: Long) {
+        val buffer = positionBuffer
         try {
-            val buffer = positionBuffer
             buffer?.putLong(0, position)
+            lastPositionWriteFailure = if (buffer == null) "buffer_unavailable" else null
             logPositionDiagnostic(
                 position = position,
                 bufferAvailable = buffer != null,
                 storedPosition = buffer?.getLong(0),
             )
         } catch (e: Exception) {
-            Log.e(TAG, "Position write failed", e)
+            lastPositionWriteFailure = "${e.javaClass.simpleName}:${e.message}"
+            logPositionDiagnostic(
+                position = position,
+                bufferAvailable = buffer != null,
+                storedPosition = null,
+            )
+            if (!BuildConfig.DEBUG) Log.e(TAG, "Position write failed", e)
         }
     }
 
@@ -112,18 +122,28 @@ internal class ActivePlayerSubscription(
             parcel.setDataPosition(0)
             SharedMemory.CREATOR.createFromParcel(parcel).also { duplicate ->
                 if (BuildConfig.DEBUG) {
-                    Log.i(
+                    HookLogger.i(
                         TAG,
                         "[LyricPositionDiag] stage=shared_memory_acquire, " +
                             "subscriber=$subscriberPackageName/$subscriberProcessName, " +
                             "sourceIdentity=${System.identityHashCode(memory)}, " +
                             "duplicateIdentity=${System.identityHashCode(duplicate)}, " +
-                            "sameObject=${memory === duplicate}"
+                            "sameObject=${memory === duplicate}, sourceSize=${memory.size}, " +
+                            "duplicateSize=${duplicate.size}"
                     )
                 }
             }
         } catch (t: Throwable) {
-            Log.e(TAG, "Position memory duplication failed", t)
+            if (BuildConfig.DEBUG) {
+                HookLogger.e(
+                    TAG,
+                    "[LyricPositionDiag] stage=shared_memory_acquire, result=failed, " +
+                        "subscriber=$subscriberPackageName/$subscriberProcessName",
+                    t,
+                )
+            } else {
+                Log.e(TAG, "Position memory duplication failed", t)
+            }
             null
         } finally {
             parcel.recycle()
@@ -145,8 +165,26 @@ internal class ActivePlayerSubscription(
                     setProtect(OsConstants.PROT_READ or OsConstants.PROT_WRITE)
                     positionBuffer = mapReadWrite()
                 }
+            if (BuildConfig.DEBUG) {
+                HookLogger.i(
+                    TAG,
+                    "[LyricPositionDiag] stage=subscriber_shared_memory_init, result=success, " +
+                        "subscriber=$subscriberPackageName/$subscriberProcessName, " +
+                        "memoryAvailable=${positionMemory != null}, " +
+                        "bufferAvailable=${positionBuffer != null}, size=${positionMemory?.size}",
+                )
+            }
         } catch (t: Throwable) {
-            Log.e(TAG, "SharedMemory mapping failed", t)
+            if (BuildConfig.DEBUG) {
+                HookLogger.e(
+                    TAG,
+                    "[LyricPositionDiag] stage=subscriber_shared_memory_init, result=failed, " +
+                        "subscriber=$subscriberPackageName/$subscriberProcessName",
+                    t,
+                )
+            } else {
+                Log.e(TAG, "SharedMemory mapping failed", t)
+            }
         }
     }
 
@@ -159,12 +197,13 @@ internal class ActivePlayerSubscription(
         val now = SystemClock.elapsedRealtime()
         if (now - lastPositionDiagnosticAtMs < POSITION_DIAGNOSTIC_INTERVAL_MS) return
         lastPositionDiagnosticAtMs = now
-        Log.i(
+        HookLogger.i(
             TAG,
             "[LyricPositionDiag] stage=shared_memory_write, " +
-                "subscriber=$subscriberPackageName/$subscriberProcessName, " +
-                "position=$position, stored=$storedPosition, " +
-                "bufferAvailable=$bufferAvailable, listenerAvailable=${remoteListener != null}"
+            "subscriber=$subscriberPackageName/$subscriberProcessName, " +
+            "position=$position, stored=$storedPosition, " +
+                "bufferAvailable=$bufferAvailable, listenerAvailable=${remoteListener != null}, " +
+                "writeFailure=${lastPositionWriteFailure ?: "none"}"
         )
     }
 

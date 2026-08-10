@@ -292,13 +292,6 @@ class HookEntry : XposedModule() {
                 HookLogger.e("HookEntry", "Apple Music 内置歌词提供器注入失败", it)
             }
         } else {
-            if (packageName == QishuiPackageBlockRuntimeIdentifiers.PACKAGE_NAME) {
-                runCatching {
-                    QishuiPackageBlockCompat.install(this, param.defaultClassLoader)
-                }.onFailure {
-                    HookLogger.e("HookEntry", "汽水安全阻断兼容 Hook 安装失败", it)
-                }
-            }
             OfficialProviderRuntime.installIfAvailable(
                 module = this,
                 targetClassLoader = param.defaultClassLoader,

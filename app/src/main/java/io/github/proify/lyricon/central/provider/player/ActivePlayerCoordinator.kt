@@ -9,6 +9,7 @@ package io.github.proify.lyricon.central.provider.player
 import android.os.SystemClock
 import android.util.Log
 import com.juren233.hyperlyricsenhanced.BuildConfig
+import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import io.github.proify.lyricon.central.Constants
 import io.github.proify.lyricon.central.provider.player.PlayerRecorder.LyricType.NONE
 import io.github.proify.lyricon.central.provider.player.PlayerRecorder.LyricType.SONG
@@ -318,7 +319,7 @@ internal class ActivePlayerCoordinator(
         val now = SystemClock.elapsedRealtime()
         if (now - lastPositionDiagnosticAtMs < POSITION_DIAGNOSTIC_INTERVAL_MS) return
         lastPositionDiagnosticAtMs = now
-        Log.i(
+        HookLogger.i(
             TAG,
             "[LyricPositionDiag] stage=central_route, decision=$decision, " +
                 "incoming=${recorderInfo.providerPackageName}/${recorderInfo.playerPackageName}, " +

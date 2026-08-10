@@ -13,7 +13,9 @@ import android.content.Context
 import android.media.MediaMetadata
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
+import android.os.SystemClock
 import android.util.Log
+import com.juren233.hyperlyricsenhanced.BuildConfig
 import io.github.libxposed.api.XposedInterface
 import io.github.libxposed.api.XposedModule
 import org.luckypray.dexkit.DexKitBridge
@@ -24,6 +26,7 @@ import java.lang.reflect.Method
 import java.lang.reflect.Modifier
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Static host for official Provider Packs.
@@ -69,7 +72,12 @@ internal class OfficialProviderHookHost(
             PlaybackState::class.java,
         )
         module.hook(setPlaybackState).intercept(
-            PlaybackStateHooker(module, packageName, playbackStateCallback),
+            PlaybackStateHooker(
+                module = module,
+                packageName = packageName,
+                processName = processName,
+                callback = playbackStateCallback,
+            ),
         )
 
         val setMetadata = mediaSessionClass.getDeclaredMethod(
@@ -632,16 +640,33 @@ internal class OfficialProviderHookHost(
     private class PlaybackStateHooker(
         private val module: XposedModule,
         private val packageName: String,
+        private val processName: String,
         private val callback: OfficialProviderPlaybackStateCallback,
     ) : XposedInterface.Hooker {
         private val firstCallbackRecorded = AtomicBoolean(false)
+        private val callbackSequence = AtomicLong(0L)
 
         override fun intercept(chain: XposedInterface.Chain): Any? {
             val result = chain.proceed()
+            val state = chain.args.firstOrNull() as? PlaybackState
+            val sequence = callbackSequence.incrementAndGet()
             runCatching {
-                callback.onPlaybackStateChanged(chain.args.firstOrNull() as? PlaybackState)
+                callback.onPlaybackStateChanged(state)
             }.onSuccess {
-                if (firstCallbackRecorded.compareAndSet(false, true)) {
+                val firstHit = firstCallbackRecorded.compareAndSet(false, true)
+                if (BuildConfig.DEBUG) {
+                    val now = SystemClock.elapsedRealtime()
+                    module.log(
+                        Log.INFO,
+                        "OfficialProviderHookHost",
+                        "[LyricPositionDiag] stage=media_session_state_hook, " +
+                            "result=callback_completed, firstHit=$firstHit, sequence=$sequence, " +
+                            "player=$packageName, process=$processName, state=${state?.state}, " +
+                            "position=${state?.position}, updatedAt=${state?.lastPositionUpdateTime}, " +
+                            "now=$now, anchorAgeMs=${state?.lastPositionUpdateTime?.let { now - it }}, " +
+                            "speed=${state?.playbackSpeed}, buffered=${state?.bufferedPosition}",
+                    )
+                } else if (firstHit) {
                     module.log(
                         Log.INFO,
                         "OfficialProviderHookHost",
