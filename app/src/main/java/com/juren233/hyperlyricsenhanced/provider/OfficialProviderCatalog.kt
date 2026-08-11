@@ -20,6 +20,8 @@ object OfficialProviderCatalog {
         val secondaryProcesses: Set<String> = emptySet(),
         val description: String? = null,
         val targetDisplayNames: Map<String, String> = emptyMap(),
+        val systemMediaRuntime: Boolean = false,
+        val supportsNextTrackPreview: Boolean = true,
     ) {
         fun displayNameForPackage(packageName: String): String =
             targetDisplayNames[packageName] ?: displayName
@@ -63,7 +65,13 @@ object OfficialProviderCatalog {
             displayName = "椒盐音乐",
             targetPackages = setOf("com.salt.music"),
         ),
-        Definition("qishui", "汽水音乐", setOf("com.luna.music")),
+        Definition(
+            id = "qishui",
+            displayName = "汽水音乐",
+            targetPackages = setOf("com.luna.music"),
+            systemMediaRuntime = true,
+            supportsNextTrackPreview = false,
+        ),
         Definition("musicfree", "MusicFree", setOf("fun.upup.musicfree")),
         Definition("gramophone", "Gramophone", setOf("org.akanework.gramophone")),
         Definition("symfonium", "Symfonium", setOf("app.symfonik.music.player")),
@@ -91,9 +99,13 @@ object OfficialProviderCatalog {
     }
 
     fun shouldLoadIntoProcess(packageName: String, processName: String): Boolean {
+        if (definitionForPackage(packageName)?.systemMediaRuntime == true) return false
         if (processName == packageName) return true
         return processName in definitionForPackage(packageName)?.secondaryProcesses.orEmpty()
     }
+
+    fun supportsNextTrackPreview(packageName: String): Boolean =
+        definitionForPackage(packageName)?.supportsNextTrackPreview ?: true
 
     fun enabledKey(pluginId: String) =
         "key_official_provider_enabled_$pluginId"

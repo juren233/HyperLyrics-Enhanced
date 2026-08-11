@@ -34,6 +34,7 @@ import com.juren233.hyperlyricsenhanced.online.utils.ChineseUtils
 import com.juren233.hyperlyricsenhanced.provider.OfficialProviderCatalog
 import com.juren233.hyperlyricsenhanced.provider.OfficialProviderPreferencePolicy
 import com.juren233.hyperlyricsenhanced.provider.OfficialProviderRuntime
+import com.juren233.hyperlyricsenhanced.provider.OfficialProviderSystemMediaRuntime
 import io.github.libxposed.api.XposedInterface.Chain
 import io.github.libxposed.api.XposedInterface.Hooker
 import io.github.libxposed.api.XposedModule
@@ -50,6 +51,7 @@ class HookEntry : XposedModule() {
 
     companion object {
         private const val STATE_RUNTIME_READY = "runtimeReady"
+        private const val SYSTEM_MEDIA_PROVIDER_REFRESH_DELAY_MS = 250L
 
         @Volatile
         var activeMode = 0
@@ -127,6 +129,8 @@ class HookEntry : XposedModule() {
     private var prefListener: android.content.SharedPreferences.OnSharedPreferenceChangeListener? = null
     private var runtimeApp: Application? = null
     private var lyricsOnlyAfterHotReload = false
+    private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
+    private var pendingSystemMediaProviderRefresh: Runnable? = null
 
     val prefs: android.content.SharedPreferences
         get() {
@@ -318,6 +322,7 @@ class HookEntry : XposedModule() {
                 .flatMapTo(linkedSetOf()) { definition -> definition.targetPackages }
             NextTrackMetadataCache.clearPlayers(officialProviderPlayers)
             EmbeddedLyriconCentralController.prepare(app)
+            OfficialProviderSystemMediaRuntime.installIfAvailable(this, app)
             EmbeddedLyriconCentralController.onOfficialProviderPreferencesChanged(
                 officialProviderPlayers,
             )
@@ -366,6 +371,13 @@ class HookEntry : XposedModule() {
                     OfficialProviderPreferencePolicy.affectedPlayerPackages(key)
                 if (affectedOfficialProviderPlayers.isNotEmpty()) {
                     NextTrackMetadataCache.clearPlayers(affectedOfficialProviderPlayers)
+                    val affectsSystemMediaProvider = affectedOfficialProviderPlayers.any { packageName ->
+                        OfficialProviderCatalog.definitionForPackage(packageName)
+                            ?.systemMediaRuntime == true
+                    }
+                    if (affectsSystemMediaProvider) {
+                        scheduleSystemMediaProviderRefresh(app)
+                    }
                     EmbeddedLyriconCentralController.onOfficialProviderPreferencesChanged(
                         affectedOfficialProviderPlayers,
                     )
@@ -584,6 +596,9 @@ class HookEntry : XposedModule() {
     }
 
     private fun cleanupRuntime() {
+        pendingSystemMediaProviderRefresh?.let(mainHandler::removeCallbacks)
+        pendingSystemMediaProviderRefresh = null
+        OfficialProviderSystemMediaRuntime.releaseAll()
         IslandAlbumCoverStyleHooker.cleanup()
         IslandMusicWaveColorHooker.cleanup()
         SystemUiScreenStateMonitor.cleanup()
@@ -596,6 +611,18 @@ class HookEntry : XposedModule() {
         sourceManager = null
         lyricInfoSource = null
         runtimeApp = null
+    }
+
+    private fun scheduleSystemMediaProviderRefresh(app: Application) {
+        pendingSystemMediaProviderRefresh?.let(mainHandler::removeCallbacks)
+        val refresh = Runnable {
+            pendingSystemMediaProviderRefresh = null
+            if (runtimeApp !== app) return@Runnable
+            OfficialProviderSystemMediaRuntime.releaseAll()
+            OfficialProviderSystemMediaRuntime.installIfAvailable(this, app)
+        }
+        pendingSystemMediaProviderRefresh = refresh
+        mainHandler.postDelayed(refresh, SYSTEM_MEDIA_PROVIDER_REFRESH_DELAY_MS)
     }
 
     private fun findCurrentApplication(): Application? {

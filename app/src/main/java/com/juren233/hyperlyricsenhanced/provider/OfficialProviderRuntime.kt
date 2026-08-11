@@ -27,6 +27,7 @@ object OfficialProviderRuntime {
     ): Boolean {
         val definition = OfficialProviderCatalog.definitionForPackage(packageName) ?: return false
         if (packageName == OfficialProviderCatalog.APPLE_MUSIC_PACKAGE_NAME) return false
+        if (definition.systemMediaRuntime) return false
         if (packageName in loadedPackages) return true
 
         return try {

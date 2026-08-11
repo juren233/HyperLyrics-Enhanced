@@ -106,7 +106,13 @@ fun LyricProviderPage() {
     var isManualRefreshing by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     val changeAppliedFormat = stringResource(R.string.provider_change_applied)
+    val changeAppliedSystemUiMessage = stringResource(
+        R.string.provider_change_applied_system_ui,
+    )
     val updateSuccessFormat = stringResource(R.string.provider_update_success)
+    val updateSuccessSystemUiMessage = stringResource(
+        R.string.provider_update_success_system_ui,
+    )
     val removeSuccessMessage = stringResource(R.string.provider_remove_success)
     val unknownText = stringResource(R.string.unknown)
     val updateFailedFormat = stringResource(R.string.provider_update_failed)
@@ -135,7 +141,11 @@ fun LyricProviderPage() {
         }
         coroutineScope.launch {
             snackbarHostState.showSnackbar(
-                message = changeAppliedFormat.replace("%1\$s", item.catalog.displayName),
+                message = if (item.usesSystemMediaRuntime()) {
+                    changeAppliedSystemUiMessage
+                } else {
+                    changeAppliedFormat.replace("%1\$s", item.catalog.displayName)
+                },
                 duration = SnackbarDuration.Custom(2500L),
             )
         }
@@ -167,7 +177,11 @@ fun LyricProviderPage() {
                         )
                     }
                     snackbarHostState.showSnackbar(
-                        message = updateSuccessFormat.replace("%1\$s", item.catalog.displayName),
+                        message = if (item.usesSystemMediaRuntime()) {
+                            updateSuccessSystemUiMessage
+                        } else {
+                            updateSuccessFormat.replace("%1\$s", item.catalog.displayName)
+                        },
                         duration = SnackbarDuration.Custom(2500L),
                     )
                 }.onFailure { error ->
@@ -312,6 +326,7 @@ fun OfficialProviderDownloadPage() {
     var isManualRefreshing by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     val addSuccessFormat = stringResource(R.string.provider_add_success)
+    val addSuccessSystemUiMessage = stringResource(R.string.provider_add_success_system_ui)
     val unknownText = stringResource(R.string.unknown)
     val addFailedFormat = stringResource(R.string.provider_add_failed)
     val providerErrorTexts = rememberProviderErrorTexts()
@@ -329,7 +344,11 @@ fun OfficialProviderDownloadPage() {
                     refreshOfficialProviders(stateFlow)
                 }.onSuccess {
                     snackbarHostState.showSnackbar(
-                        message = addSuccessFormat.replace("%1\$s", item.catalog.displayName),
+                        message = if (item.usesSystemMediaRuntime()) {
+                            addSuccessSystemUiMessage
+                        } else {
+                            addSuccessFormat.replace("%1\$s", item.catalog.displayName)
+                        },
                         duration = SnackbarDuration.Custom(2500L),
                     )
                 }.onFailure { error ->
@@ -1026,6 +1045,9 @@ private fun localizeProviderError(
         else -> texts.generic.replace("%1\$s", message)
     }
 }
+
+private fun OfficialProviderItem.usesSystemMediaRuntime(): Boolean =
+    OfficialProviderCatalog.definitionForId(catalog.id)?.systemMediaRuntime == true
 
 private suspend fun refreshOfficialProviders(
     stateFlow: MutableStateFlow<OfficialProviderUiState>,

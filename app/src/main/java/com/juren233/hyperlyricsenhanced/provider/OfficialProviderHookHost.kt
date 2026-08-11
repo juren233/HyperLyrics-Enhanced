@@ -16,6 +16,9 @@ import android.media.session.PlaybackState
 import android.os.SystemClock
 import android.util.Log
 import com.juren233.hyperlyricsenhanced.BuildConfig
+import com.juren233.hyperlyricsenhanced.common.dexkit.DexMethodWatchdog
+import com.juren233.hyperlyricsenhanced.common.dexkit.DexResolutionSource
+import com.juren233.hyperlyricsenhanced.common.dexkit.DexWatchdogEvent
 import io.github.libxposed.api.XposedInterface
 import io.github.libxposed.api.XposedModule
 import org.luckypray.dexkit.DexKitBridge
@@ -25,6 +28,9 @@ import org.luckypray.dexkit.query.matchers.MethodMatcher
 import java.lang.reflect.Method
 import java.lang.reflect.Modifier
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
@@ -42,6 +48,18 @@ internal class OfficialProviderHookHost(
 ) : OfficialProviderHost {
     private val tag = "OfficialProviderHookHost"
     private val dexHookTasks = ConcurrentHashMap.newKeySet<String>()
+    private val dexWatchdog = if (BuildConfig.DEBUG) {
+        DexMethodWatchdog { event -> logDexWatchdogEvent(event) }
+    } else {
+        null
+    }
+    private val dexWatchdogTimeoutScheduler: ScheduledExecutorService? = if (BuildConfig.DEBUG) {
+        Executors.newSingleThreadScheduledExecutor { task ->
+            Thread(task, "HLE-Provider-DexWatchdog").apply { isDaemon = true }
+        }
+    } else {
+        null
+    }
 
     override fun hookApplication(callback: OfficialProviderApplicationCallback) {
         val method = Instrumentation::class.java.getDeclaredMethod(
@@ -120,6 +138,7 @@ internal class OfficialProviderHookHost(
             query = query,
         )
         if (!dexHookTasks.add(cacheKey)) return
+        registerDexWatchdog(query.cacheKey, cacheKey)
 
         Thread(
             {
@@ -132,7 +151,13 @@ internal class OfficialProviderHookHost(
                         materializedQuery,
                         session,
                     )
-                    runCatching { installAfterMethod(target, callback) }
+                    runCatching {
+                        installAfterMethod(
+                            target = target,
+                            callback = callback,
+                            watchdogCacheKey = query.cacheKey,
+                        )
+                    }
                         .getOrElse { firstError ->
                             invalidateDexMethodCache(application, cacheKey)
                             module.log(
@@ -148,7 +173,11 @@ internal class OfficialProviderHookHost(
                                 query = materializedQuery.copy(preferredTarget = null),
                                 session = session,
                             )
-                            installAfterMethod(repairedTarget, callback)
+                            installAfterMethod(
+                                target = repairedTarget,
+                                callback = callback,
+                                watchdogCacheKey = query.cacheKey,
+                            )
                         }
                 }.onFailure { error ->
                     module.log(
@@ -204,6 +233,7 @@ internal class OfficialProviderHookHost(
                             lastUpdateTime = packageInfo.lastUpdateTime,
                             query = query,
                         )
+                        registerDexWatchdog(rawQuery.cacheKey, cacheKey)
                         resolveDexMethod(application, cacheKey, query, session).also { target ->
                             check(resolvedByKey.put(rawQuery.cacheKey, target) == null) {
                                 "Provider DexKit 查询 cacheKey 重复: ${rawQuery.cacheKey}"
@@ -229,6 +259,33 @@ internal class OfficialProviderHookHost(
         }
     }
 
+    override fun reportDexMethodValidation(
+        cacheKey: String,
+        valid: Boolean,
+        detail: String?,
+    ) {
+        if (!BuildConfig.DEBUG || cacheKey.isBlank()) return
+        dexWatchdog?.validation(cacheKey, valid, detail?.take(MAX_WATCHDOG_DETAIL_LENGTH))
+    }
+
+    override fun reportDiagnostic(tag: String, message: String) {
+        if (!BuildConfig.DEBUG) return
+        val safeTag = tag
+            .replace('\n', ' ')
+            .replace('\r', ' ')
+            .take(MAX_PROVIDER_DIAGNOSTIC_TAG_LENGTH)
+            .ifBlank { "Provider" }
+        val safeMessage = message
+            .replace('\n', ' ')
+            .replace('\r', ' ')
+            .take(MAX_PROVIDER_DIAGNOSTIC_MESSAGE_LENGTH)
+        module.log(
+            Log.INFO,
+            "OfficialProvider/$safeTag",
+            safeMessage,
+        )
+    }
+
     private fun resolveDexMethod(
         application: Application,
         cacheKey: String,
@@ -252,6 +309,12 @@ internal class OfficialProviderHookHost(
                     tag,
                     "官方 Provider DexKit 缓存命中: package=$packageName " +
                         "process=$processName target=${describe(cachedTarget)}",
+                )
+                recordDexWatchdogResolution(
+                    query = query,
+                    source = DexResolutionSource.CACHE,
+                    cacheWritten = false,
+                    target = cachedTarget,
                 )
                 return cachedTarget
             }
@@ -284,6 +347,12 @@ internal class OfficialProviderHookHost(
                         tag,
                         "官方 Provider 首选目标命中并缓存: package=$packageName " +
                             "process=$processName target=${describe(preferredTarget)}",
+                    )
+                    recordDexWatchdogResolution(
+                        query = query,
+                        source = DexResolutionSource.PREFERRED_TARGET,
+                        cacheWritten = true,
+                        target = preferredTarget,
                     )
                     return preferredTarget
                 }
@@ -353,6 +422,12 @@ internal class OfficialProviderHookHost(
             "官方 Provider DexKit 查询并校验成功: package=$packageName " +
                 "process=$processName elapsedMs=$elapsedMs target=${describe(target)}",
         )
+        recordDexWatchdogResolution(
+            query = query,
+            source = DexResolutionSource.DEXKIT,
+            cacheWritten = true,
+            target = target,
+        )
         return target
     }
 
@@ -400,15 +475,75 @@ internal class OfficialProviderHookHost(
         ).edit().remove(cacheKey).apply()
     }
 
+    private fun registerDexWatchdog(cacheKey: String, runtimeCacheKey: String) {
+        dexWatchdog?.register(cacheKey, runtimeCacheKey)
+    }
+
+    private fun recordDexWatchdogResolution(
+        query: OfficialProviderDexMethodQuery,
+        source: DexResolutionSource,
+        cacheWritten: Boolean,
+        target: OfficialProviderMethodTarget,
+    ) {
+        val watchdog = dexWatchdog ?: return
+        watchdog.resolved(
+            cacheKey = query.cacheKey,
+            source = source,
+            cacheWritten = cacheWritten,
+            target = describe(target),
+        )
+        armDexWatchdog(query.cacheKey)
+    }
+
+    private fun armDexWatchdog(cacheKey: String) {
+        val scheduler = dexWatchdogTimeoutScheduler ?: return
+        scheduler.schedule(
+            { dexWatchdog?.timeout(cacheKey) },
+            DEX_WATCHDOG_TIMEOUT_MS,
+            TimeUnit.MILLISECONDS,
+        )
+    }
+
+    private fun logDexWatchdogEvent(event: DexWatchdogEvent) {
+        val detail = event.detail
+            ?.replace('\n', ' ')
+            ?.replace('\r', ' ')
+            ?.take(MAX_WATCHDOG_DETAIL_LENGTH)
+        module.log(
+            Log.INFO,
+            tag,
+            "[ProviderDexWatchdog] stage=${event.stage}, result=${event.result}, " +
+                "package=$packageName, process=$processName, key=${event.cacheKey}, " +
+                "runtimeKey=${event.runtimeCacheKey}, " +
+                "source=${event.source?.name?.lowercase()}, " +
+                "cacheWritten=${event.cacheWritten}, hookInstalled=${event.hookInstalled}, " +
+                "callbackCount=${event.callbackCount}, validationCount=${event.validationCount}, " +
+                "validObserved=${event.validObserved}, target=${event.target}, detail=$detail",
+        )
+    }
+
     private fun installAfterMethod(
         target: OfficialProviderMethodTarget,
         callback: OfficialProviderMethodCallback,
+        watchdogCacheKey: String? = null,
     ) {
         require(target.className.isNotBlank()) { "Provider Hook className 不能为空" }
         require(target.methodName.isNotBlank()) { "Provider Hook methodName 不能为空" }
         val method = resolveMethod(target)
         val descriptor = describe(target)
-        module.hook(method).intercept(AfterMethodHooker(module, descriptor, callback))
+        module.hook(method).intercept(
+            AfterMethodHooker(
+                module = module,
+                descriptor = descriptor,
+                callback = callback,
+                onFirstCallback = watchdogCacheKey?.let { key ->
+                    { dexWatchdog?.callback(key) }
+                },
+            ),
+        )
+        watchdogCacheKey?.let { key ->
+            dexWatchdog?.hookInstalled(key, descriptor)
+        }
         module.log(Log.INFO, tag, "官方 Provider 方法 Hook 已安装: target=$descriptor")
     }
 
@@ -720,21 +855,22 @@ internal class OfficialProviderHookHost(
         private val module: XposedModule,
         private val descriptor: String,
         private val callback: OfficialProviderMethodCallback,
+        private val onFirstCallback: (() -> Unit)? = null,
     ) : XposedInterface.Hooker {
         private val firstCallbackRecorded = AtomicBoolean(false)
 
         override fun intercept(chain: XposedInterface.Chain): Any? {
             val result = chain.proceed()
+            if (firstCallbackRecorded.compareAndSet(false, true)) {
+                onFirstCallback?.invoke()
+                module.log(
+                    Log.INFO,
+                    "OfficialProviderHookHost",
+                    "官方 Provider 方法 Hook 首次命中: target=$descriptor",
+                )
+            }
             runCatching {
                 callback.onMethodCalled(chain.thisObject, chain.args.toTypedArray())
-            }.onSuccess {
-                if (firstCallbackRecorded.compareAndSet(false, true)) {
-                    module.log(
-                        Log.INFO,
-                        "OfficialProviderHookHost",
-                        "官方 Provider 方法 Hook 首次命中: target=$descriptor",
-                    )
-                }
             }.onFailure { error ->
                 module.log(
                     Log.ERROR,
@@ -760,6 +896,10 @@ internal class OfficialProviderHookHost(
         const val DEX_METHOD_BASELINE_PREFERENCES =
             "com.juren233.hyperlyricsenhanced.official_provider_dex_method_baselines"
         const val CLASS_COUNT_TOLERANCE = 4
+        const val DEX_WATCHDOG_TIMEOUT_MS = 30_000L
+        const val MAX_WATCHDOG_DETAIL_LENGTH = 256
+        const val MAX_PROVIDER_DIAGNOSTIC_TAG_LENGTH = 64
+        const val MAX_PROVIDER_DIAGNOSTIC_MESSAGE_LENGTH = 1_024
         const val TWO_GIB_BYTES = 2L * 1024L * 1024L * 1024L
         val dexKitLoaded = AtomicBoolean(false)
         val dexKitLoadLock = Any()

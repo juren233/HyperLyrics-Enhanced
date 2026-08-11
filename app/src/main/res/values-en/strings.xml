@@ -229,10 +229,13 @@
     <string name="provider_no_installed_plugins_summary">Use the button in the top-right corner to add a lyric plugin for your music app</string>
     <string name="provider_no_available_plugins">No plugins are available to add</string>
     <string name="provider_add_success">Plugin added. Restart %1$s and System UI.</string>
+    <string name="provider_add_success_system_ui">Plugin added. Restart System UI.</string>
     <string name="provider_update_success">Plugin updated. Restart %1$s and System UI.</string>
+    <string name="provider_update_success_system_ui">Plugin updated. Restart System UI.</string>
     <string name="provider_add_failed">Failed to add plugin: %1$s</string>
     <string name="provider_update_failed">Failed to update plugin: %1$s</string>
     <string name="provider_change_applied">Change applied. Restart %1$s and System UI.</string>
+    <string name="provider_change_applied_system_ui">Change applied. Restart System UI.</string>
     <string name="provider_error_network">Network request failed. Check your connection and try again.</string>
     <string name="provider_error_http">The server returned HTTP %1$s</string>
     <string name="provider_error_catalog_signature">Plugin catalog signature verification failed. Try again later.</string>

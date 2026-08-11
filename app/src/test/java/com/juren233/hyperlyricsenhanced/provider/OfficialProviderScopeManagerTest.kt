@@ -7,6 +7,7 @@
 package com.juren233.hyperlyricsenhanced.provider
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class OfficialProviderScopeManagerTest {
@@ -51,5 +52,12 @@ class OfficialProviderScopeManagerTest {
                 installedPackages = setOf("com.android.systemui"),
             ),
         )
+    }
+
+    @Test
+    fun `does not request target scope for a SystemMedia provider`() {
+        val qishui = requireNotNull(OfficialProviderCatalog.definitionForId("qishui"))
+
+        assertTrue(OfficialProviderScopeManager.scopeTargets(qishui).isEmpty())
     }
 }

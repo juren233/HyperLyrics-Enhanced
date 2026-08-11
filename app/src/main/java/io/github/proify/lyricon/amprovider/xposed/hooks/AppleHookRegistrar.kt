@@ -11,6 +11,7 @@ import io.github.libxposed.api.XposedInterface.Chain
 import io.github.libxposed.api.XposedInterface.Hooker
 import io.github.libxposed.api.XposedModule
 import io.github.proify.lyricon.amprovider.xposed.ProviderLogger
+import io.github.proify.lyricon.amprovider.xposed.AppleMusicDexKitWatchdog
 import io.github.proify.lyricon.amprovider.xposed.internal.ArgumentRewriteHook
 import io.github.proify.lyricon.amprovider.xposed.internal.CallbackHook
 import io.github.proify.lyricon.amprovider.xposed.internal.ConditionalVoidSkipHook
@@ -82,6 +83,7 @@ internal class AppleHookRegistrar(
         module.hook(executable).intercept(
             if (BuildConfig.DEBUG) callbackTracer.wrap(moduleId, executable, hooker) else hooker
         )
+        AppleMusicDexKitWatchdog.hookInstalled(executable)
     }
 }
 
@@ -97,10 +99,26 @@ internal class AppleHookCallbackTracer(
         delegate: Hooker,
     ): Hooker = object : Hooker {
         override fun intercept(chain: Chain): Any? = withModule(moduleId) {
+            AppleMusicDexKitWatchdog.callback(executable)
             if (firstCallbackModuleIds.add(moduleId)) {
                 onFirstCallback(moduleId, executable)
             }
-            delegate.intercept(chain)
+            runCatching { delegate.intercept(chain) }
+                .onSuccess {
+                    AppleMusicDexKitWatchdog.validation(
+                        executable = executable,
+                        valid = true,
+                        detail = "module=$moduleId callback_completed",
+                    )
+                }
+                .onFailure { error ->
+                    AppleMusicDexKitWatchdog.validation(
+                        executable = executable,
+                        valid = false,
+                        detail = "module=$moduleId ${error::class.java.simpleName}: ${error.message}",
+                    )
+                }
+                .getOrThrow()
         }
     }
 }

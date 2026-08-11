@@ -9,6 +9,7 @@ package io.github.proify.lyricon.amprovider.xposed
 import android.app.ActivityManager
 import android.app.Application
 import android.content.Context
+import com.juren233.hyperlyricsenhanced.common.dexkit.DexResolutionSource
 import org.luckypray.dexkit.DexKitBridge
 import org.luckypray.dexkit.query.FindClass
 import org.luckypray.dexkit.query.FindMethod
@@ -128,6 +129,11 @@ internal class AppleMusicDexKitResolver(
             val cachedClass = preferences.getString(cacheKey, null)
                 ?.let { name -> runCatching { classLoader.loadClass(name) }.getOrNull() }
                 ?.takeIf { shape.matches(it) }
+            val source = if (cachedClass != null) {
+                DexResolutionSource.CACHE
+            } else {
+                DexResolutionSource.DEXKIT
+            }
             val clazz = cachedClass ?: findClasses(template, shape).singleOrNull()?.also {
                 preferences.edit().putString(cacheKey, it.name).apply()
             } ?: run {
@@ -137,6 +143,14 @@ internal class AppleMusicDexKitResolver(
             val repaired = repairTarget(hookPoint, template, clazz, template.className)
             val repairedTarget = repaired.copy(className = clazz.name)
             recordBaseline(hookPoint, repairedTarget, clazz, template.className)
+            AppleMusicDexKitWatchdog.resolvedClass(
+                hookPoint = hookPoint,
+                templateClassName = template.className,
+                runtimeCacheKey = cacheKey,
+                source = source,
+                cacheWritten = cachedClass == null,
+                clazz = clazz,
+            )
             ResolvedAppleMusicHookClass(
                 target = repairedTarget,
                 clazz = clazz,
@@ -168,6 +182,13 @@ internal class AppleMusicDexKitResolver(
                     "Apple Music DexKit 缓存命中: hook=$hookPoint target=${cached.describe()}",
                 )
                 recordMethodBaseline(hookPoint, repairedTarget, method, template.className)
+                AppleMusicDexKitWatchdog.resolvedMethod(
+                    hookPoint = hookPoint,
+                    runtimeCacheKey = cacheKey,
+                    source = DexResolutionSource.CACHE,
+                    cacheWritten = false,
+                    method = method,
+                )
                 return ResolvedAppleMusicHookMethod(
                     target = repairedTarget,
                     method = method,
@@ -207,6 +228,13 @@ internal class AppleMusicDexKitResolver(
             baselineClassName = template.className,
         )
         recordMethodBaseline(hookPoint, repairedTarget, method, template.className)
+        AppleMusicDexKitWatchdog.resolvedMethod(
+            hookPoint = hookPoint,
+            runtimeCacheKey = cacheKey,
+            source = DexResolutionSource.DEXKIT,
+            cacheWritten = true,
+            method = method,
+        )
         return ResolvedAppleMusicHookMethod(
             target = repairedTarget,
             method = method.apply { isAccessible = true },

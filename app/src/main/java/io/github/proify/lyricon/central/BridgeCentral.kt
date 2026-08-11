@@ -11,6 +11,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import androidx.core.content.ContextCompat
+import io.github.proify.lyricon.central.provider.player.SystemActiveAudioPlaybackMonitor
 import io.github.proify.lyricon.central.util.ScreenStateMonitor
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -45,6 +46,9 @@ object BridgeCentral {
             if (!::context.isInitialized) {
                 context = appContext.applicationContext
                 ScreenStateMonitor.initialize(appContext)
+                CentralRuntime.activePlayers.setActiveAudioPlaybackMonitor(
+                    SystemActiveAudioPlaybackMonitor(context),
+                )
                 ContextCompat.registerReceiver(
                     context,
                     receiver,

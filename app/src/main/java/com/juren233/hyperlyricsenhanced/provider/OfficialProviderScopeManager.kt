@@ -21,6 +21,7 @@ object OfficialProviderScopeManager {
         service ?: return
         val desiredScopes = OfficialProviderCatalog.definitions
             .filter { definition ->
+                !definition.systemMediaRuntime &&
                 definition.targetPackages.any { playerPackageName ->
                     OfficialProviderPreferencePolicy.isOfficialProviderPreferred(
                         preferences = PrefsBridge.getPrefs(),
@@ -28,7 +29,7 @@ object OfficialProviderScopeManager {
                     )
                 }
             }
-            .flatMapTo(linkedSetOf()) { it.targetPackages }
+            .flatMapTo(linkedSetOf(), ::scopeTargets)
         requestMissingScopes(service, installedScopes(desiredScopes))
     }
 
@@ -38,7 +39,7 @@ object OfficialProviderScopeManager {
     ) {
         service ?: return
         val definition = requireNotNull(OfficialProviderCatalog.definitionForId(pluginId))
-        requestMissingScopes(service, installedScopes(definition.targetPackages))
+        requestMissingScopes(service, installedScopes(scopeTargets(definition)))
     }
 
     fun onServiceDied() {
@@ -54,6 +55,10 @@ object OfficialProviderScopeManager {
         desiredScopes: Set<String>,
         installedPackages: Set<String>,
     ): Set<String> = desiredScopes.filterTo(linkedSetOf(), installedPackages::contains)
+
+    internal fun scopeTargets(
+        definition: OfficialProviderCatalog.Definition,
+    ): Set<String> = if (definition.systemMediaRuntime) emptySet() else definition.targetPackages
 
     private fun installedScopes(desiredScopes: Set<String>): Set<String> {
         val context = RootApplication.currentContext() ?: return emptySet()

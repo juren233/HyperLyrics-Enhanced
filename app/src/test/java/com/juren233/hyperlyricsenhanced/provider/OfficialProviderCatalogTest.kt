@@ -124,6 +124,30 @@ class OfficialProviderCatalogTest {
     }
 
     @Test
+    fun `runs Qishui only as a SystemUI media provider`() {
+        val qishui = requireNotNull(OfficialProviderCatalog.definitionForId("qishui"))
+
+        assertTrue(qishui.systemMediaRuntime)
+        assertFalse(qishui.supportsNextTrackPreview)
+        assertFalse(
+            OfficialProviderCatalog.shouldLoadIntoProcess(
+                packageName = "com.luna.music",
+                processName = "com.luna.music",
+            ),
+        )
+        assertFalse(OfficialProviderCatalog.supportsNextTrackPreview("com.luna.music"))
+    }
+
+    @Test
+    fun `does not declare Qishui in the static Xposed scope`() {
+        val scopes = requireNotNull(
+            javaClass.classLoader?.getResourceAsStream("META-INF/xposed/scope.list"),
+        ).bufferedReader().useLines { it.toSet() }
+
+        assertFalse("com.luna.music" in scopes)
+    }
+
+    @Test
     fun `validates provider package against its declared player packages`() {
         assertTrue(
             OfficialProviderCatalog.isOfficialProviderPair(

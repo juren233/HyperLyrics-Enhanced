@@ -10,6 +10,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import com.juren233.hyperlyricsenhanced.common.HyperLogger
+import com.juren233.hyperlyricsenhanced.provider.OfficialProviderCatalog
 
 /**
  * 媒体元数据辅助类。
@@ -94,6 +95,9 @@ object MediaMetadataHelper {
         current: MediaInfo = getMediaInfo(context, packageName)
     ): NextMediaLookup {
         if (packageName.isEmpty()) return NextMediaLookup(reason = "package_empty")
+        if (!OfficialProviderCatalog.supportsNextTrackPreview(packageName)) {
+            return NextMediaLookup(reason = "next_track_unsupported")
+        }
         return try {
             val controller = findController(context, packageName)
                 ?: return NextMediaLookup(reason = "controller_missing")

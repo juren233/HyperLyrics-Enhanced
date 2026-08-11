@@ -63,6 +63,53 @@ interface OfficialProviderHost {
         queries: List<OfficialProviderDexMethodQuery>,
         callback: OfficialProviderDexMethodsCallback,
     )
+
+    /**
+     * Reports whether a DexKit-resolved target produced valid business data.
+     *
+     * [cacheKey] is the stable [OfficialProviderDexMethodQuery.cacheKey], not the
+     * versioned host cache key. Providers should report every real parse attempt;
+     * the host records only bounded first-hit diagnostics in debug builds.
+     *
+     * The default implementation keeps Provider Packs that do not need validation
+     * source-compatible. Packs that call this method must raise minCoreVersionCode.
+     */
+    fun reportDexMethodValidation(
+        cacheKey: String,
+        valid: Boolean,
+        detail: String? = null,
+    ) = Unit
+
+    /** Emits bounded debug-only diagnostics through the host's exported log channel. */
+    fun reportDiagnostic(
+        tag: String,
+        message: String,
+    ) = Unit
+}
+
+/**
+ * Optional Provider Pack entry point for packs that run in SystemUI and observe
+ * the target player's public MediaSession instead of entering the player process.
+ */
+interface OfficialProviderSystemMediaPlugin {
+    fun installSystemMedia(host: OfficialProviderSystemMediaHost)
+
+    fun releaseSystemMedia()
+}
+
+interface OfficialProviderSystemMediaHost {
+    val application: Application
+    val playerPackageName: String
+
+    fun subscribe(callback: OfficialProviderSystemMediaCallback): OfficialProviderSystemMediaSubscription
+}
+
+fun interface OfficialProviderSystemMediaCallback {
+    fun onMediaChanged(metadata: MediaMetadata?, playbackState: PlaybackState?)
+}
+
+fun interface OfficialProviderSystemMediaSubscription {
+    fun release()
 }
 
 fun interface OfficialProviderApplicationCallback {
