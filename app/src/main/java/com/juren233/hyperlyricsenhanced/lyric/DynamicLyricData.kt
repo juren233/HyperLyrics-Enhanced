@@ -13,6 +13,7 @@ val commonMusicApps = mapOf(
     "com.salt.music" to "Salt Player",
     "com.netease.cloudmusic" to "网易云音乐",
     "com.tencent.qqmusic" to "QQ音乐",
+    "com.tencent.qqmusicpad" to "QQ音乐HD",
     "cn.kuwo.player" to "酷我音乐",
     "com.kugou.android" to "酷狗音乐",
     "com.apple.android.music" to "Apple Music",

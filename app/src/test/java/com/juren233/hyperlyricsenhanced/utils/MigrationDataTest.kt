@@ -6,6 +6,20 @@ import org.junit.Test
 
 class MigrationDataTest {
     @Test
+    fun `7 4 notice uses the plugin system copy with requested spacing`() {
+        val item = MigrationData.notes
+            .single { note -> note.versionCode == 140000 }
+            .items
+            .single()
+
+        assertEquals("Lyricon歌词源已升级至插件体系", item.text)
+        assertEquals(
+            "\n现在 HyperLyrics Enhanced 已将 Lyricon 的词幕服务模块与主流音乐平台的 Provider 模块整合在一起，作为插件功能，实现无需额外模块，还能满足各取所需的需求。\n\n更多详情请在“歌词设置”-“Lyricon配置”查看。",
+            item.summary,
+        )
+    }
+
+    @Test
     fun `notice applies when current build exactly reaches its threshold`() {
         val notes = MigrationData.notesForUpgrade(
             lastSeenVersionCode = 131000,

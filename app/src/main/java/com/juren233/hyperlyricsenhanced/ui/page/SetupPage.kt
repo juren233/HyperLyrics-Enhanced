@@ -45,9 +45,15 @@ import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.common.UIConstants
 import com.juren233.hyperlyricsenhanced.lyric.ConfigRepository
 import com.juren233.hyperlyricsenhanced.lyric.commonMusicApps
+import com.juren233.hyperlyricsenhanced.provider.OfficialProviderItem
+import com.juren233.hyperlyricsenhanced.provider.OfficialProviderRepository
+import com.juren233.hyperlyricsenhanced.provider.OfficialProviderUiState
 import com.juren233.hyperlyricsenhanced.root.RootApplication
 import com.juren233.hyperlyricsenhanced.ui.component.EnhancedVersionNotice
+import com.juren233.hyperlyricsenhanced.ui.component.ProComponent
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.BasicComponent
@@ -164,12 +170,13 @@ fun SetupPage(onNavigateToMain: () -> Unit) {
                 1 -> if (workMode == 0) DisclaimerPage() else PermissionPage()
                 2 -> if (workMode == 0) LyricSourceSelectionPage(
                     selectedSource = selectedSource,
+                    snackbarHostState = snackbarHostState,
                     onSourceSelected = { source ->
                         selectedSource = source
                         prefs.edit { putString(RootConstants.KEY_HOOK_LYRIC_SOURCE, source) }
                     }
                 ) else WhitelistPage()
-                3 -> CompletionPage(workMode = workMode, selectedSource = selectedSource)
+                3 -> CompletionPage()
             }
         }
     }
@@ -370,27 +377,93 @@ fun WhitelistPage() {
 }
 
 @Composable
-fun LyricSourceSelectionPage(selectedSource: String, onSourceSelected: (String) -> Unit) {
+fun LyricSourceSelectionPage(
+    selectedSource: String,
+    snackbarHostState: SnackbarHostState,
+    onSourceSelected: (String) -> Unit,
+) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    val providerStateFlow = remember { MutableStateFlow(OfficialProviderUiState()) }
+    val providerState = providerStateFlow.collectAsState()
     val sourceOptions = listOf(
         stringResource(R.string.lyric_source_lyricon),
         stringResource(R.string.lyric_source_superlyric),
-        stringResource(R.string.lyric_source_lyricinfo)
+        stringResource(R.string.lyric_source_lyricinfo),
     )
     val sourceIds = listOf("lyricon", "superlyric", "lyricinfo")
+    val addSuccessFormat = stringResource(R.string.provider_add_success)
+    val addFailedFormat = stringResource(R.string.provider_add_failed)
+    val unknownText = stringResource(R.string.unknown)
+
+    LaunchedEffect(selectedSource) {
+        if (selectedSource == "lyricon" && providerStateFlow.value.items.isEmpty()) {
+            refreshSetupProviders(providerStateFlow)
+        }
+    }
+
+    val installProvider: (OfficialProviderItem) -> Unit = { item ->
+        val pluginId = item.catalog.id
+        if (
+            !item.installed &&
+            item.catalog.available &&
+            pluginId !in providerStateFlow.value.busyPluginIds
+        ) {
+            providerStateFlow.update { state ->
+                state.copy(busyPluginIds = state.busyPluginIds + pluginId)
+            }
+            coroutineScope.launch {
+                runCatching {
+                    OfficialProviderRepository.downloadAndInstall(context, item)
+                }.onSuccess { manifest ->
+                    providerStateFlow.update { state ->
+                        state.copy(
+                            items = state.items.map { current ->
+                                if (current.catalog.id == pluginId) {
+                                    current.copy(
+                                        installedVersionCode = manifest.versionCode,
+                                        installedVersionName = manifest.versionName,
+                                        enabled = true,
+                                    )
+                                } else {
+                                    current
+                                }
+                            },
+                            busyPluginIds = state.busyPluginIds - pluginId,
+                        )
+                    }
+                    snackbarHostState.showSnackbar(
+                        message = addSuccessFormat.replace("%1\$s", item.catalog.displayName),
+                        duration = SnackbarDuration.Custom(2500L),
+                    )
+                }.onFailure { error ->
+                    providerStateFlow.update { state ->
+                        state.copy(busyPluginIds = state.busyPluginIds - pluginId)
+                    }
+                    snackbarHostState.showSnackbar(
+                        message = addFailedFormat.replace(
+                            "%1\$s",
+                            error.message ?: unknownText,
+                        ),
+                        duration = SnackbarDuration.Custom(3500L),
+                    )
+                }
+            }
+        }
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 20.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         item {
             Text(
                 text = stringResource(R.string.setup_select_lyric_source),
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(vertical = 20.dp)
+                modifier = Modifier.padding(vertical = 20.dp),
             )
         }
         item {
@@ -402,7 +475,7 @@ fun LyricSourceSelectionPage(selectedSource: String, onSourceSelected: (String) 
                     selectedIndex = sourceIds.indexOf(selectedSource).coerceAtLeast(0),
                     onSelectedIndexChange = { index ->
                         onSourceSelected(sourceIds[index])
-                    }
+                    },
                 )
             }
         }
@@ -410,44 +483,130 @@ fun LyricSourceSelectionPage(selectedSource: String, onSourceSelected: (String) 
             when (selectedSource) {
                 "lyricon" -> {
                     Card(modifier = Modifier.fillMaxWidth()) {
-                        Column {
-                            BasicComponent(
-                                title = stringResource(R.string.setup_apple_music_ready),
-                                summary = stringResource(R.string.setup_apple_music_ready_summary)
-                            )
-                            BasicComponent(
-                                title = stringResource(R.string.setup_other_players),
-                                summary = stringResource(R.string.setup_other_players_summary)
-                            )
-                            ArrowPreference(
-                                title = stringResource(R.string.setup_download_provider),
-                                summary = stringResource(R.string.setup_download_provider_summary),
-                                onClick = {
-                                    context.startActivity(Intent(Intent.ACTION_VIEW,
-                                        "https://github.com/proify/LyricProvider/releases".toUri()))
-                                }
-                            )
-                        }
+                        BasicComponent(
+                            title = stringResource(R.string.setup_apple_music_ready),
+                            summary = stringResource(R.string.setup_apple_music_ready_summary),
+                        )
                     }
                 }
+
                 "superlyric" -> {
                     Card(modifier = Modifier.fillMaxWidth()) {
                         ArrowPreference(
                             title = stringResource(R.string.setup_download_superlyric),
                             summary = stringResource(R.string.setup_download_superlyric_summary),
                             onClick = {
-                                context.startActivity(Intent(Intent.ACTION_VIEW,
-                                    "https://github.com/HChenX/SuperLyric".toUri()))
-                            }
+                                context.startActivity(
+                                    Intent(
+                                        Intent.ACTION_VIEW,
+                                        "https://github.com/HChenX/SuperLyric".toUri(),
+                                    ),
+                                )
+                            },
                         )
                     }
                 }
+
                 "lyricinfo" -> {
                     Card(modifier = Modifier.fillMaxWidth()) {
                         BasicComponent(
                             title = stringResource(R.string.setup_no_dependency),
-                            summary = stringResource(R.string.setup_no_dependency_summary)
+                            summary = stringResource(R.string.setup_no_dependency_summary),
                         )
+                    }
+                }
+            }
+        }
+        if (selectedSource == "lyricon") {
+            item {
+                Text(
+                    text = stringResource(R.string.setup_available_provider_plugins),
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 16.dp, top = 4.dp),
+                )
+            }
+            item(key = "setup_provider_apple_music") {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    ProComponent(
+                        title = "Apple Music",
+                        summary = stringResource(R.string.setup_apple_music_plugin_summary),
+                        endActions = {
+                            Text(
+                                text = stringResource(R.string.setup_provider_added),
+                                color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+                                fontSize = 14.sp,
+                            )
+                        },
+                        enabled = false,
+                    )
+                }
+            }
+
+            when {
+                providerState.value.isLoading -> item(key = "setup_provider_loading") {
+                    SetupProviderStateCard(
+                        title = stringResource(R.string.provider_catalog_loading),
+                    )
+                }
+
+                providerState.value.error != null -> item(key = "setup_provider_error") {
+                    SetupProviderStateCard(
+                        title = stringResource(R.string.provider_catalog_load_failed),
+                        summary = providerState.value.error,
+                        actionText = stringResource(R.string.setup_provider_retry),
+                        onClick = {
+                            coroutineScope.launch {
+                                refreshSetupProviders(providerStateFlow)
+                            }
+                        },
+                    )
+                }
+
+                else -> providerState.value.items
+                    .filter { provider -> provider.catalog.available }
+                    .forEach { provider ->
+                    item(key = "setup_provider_${provider.catalog.id}") {
+                        val busy = provider.catalog.id in providerState.value.busyPluginIds
+                        val added = provider.installed
+                        val available = provider.catalog.available
+                        val versionText = provider.catalog.versionName
+                            ?: stringResource(R.string.unknown)
+                        val statusText = if (available) {
+                            stringResource(R.string.provider_status_available, versionText)
+                        } else {
+                            stringResource(R.string.provider_status_unavailable)
+                        }
+                        Card(modifier = Modifier.fillMaxWidth()) {
+                            ProComponent(
+                                title = provider.catalog.displayName,
+                                summary = "$statusText\n${provider.catalog.targetPackages.joinToString()}",
+                                onClick = if (!added && !busy && available) {
+                                    { installProvider(provider) }
+                                } else {
+                                    null
+                                },
+                                endActions = {
+                                    Text(
+                                        text = when {
+                                            added -> stringResource(R.string.setup_provider_added)
+                                            busy -> stringResource(R.string.provider_status_downloading)
+                                            available -> stringResource(R.string.provider_action_download)
+                                            else -> stringResource(R.string.provider_status_unavailable)
+                                        },
+                                        color = if (!added && (available || busy)) {
+                                            MiuixTheme.colorScheme.primary
+                                        } else {
+                                            MiuixTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                                        },
+                                        fontSize = 14.sp,
+                                    )
+                                },
+                                enabled = !added && !busy && available,
+                            )
+                        }
                     }
                 }
             }
@@ -456,17 +615,7 @@ fun LyricSourceSelectionPage(selectedSource: String, onSourceSelected: (String) 
 }
 
 @Composable
-fun CompletionPage(workMode: Int, selectedSource: String = "lyricon") {
-    val completionText = if (workMode == 0) {
-        when (selectedSource) {
-            "superlyric" -> stringResource(R.string.setup_completion_superlyric)
-            "lyricinfo" -> stringResource(R.string.setup_completion_lyricinfo)
-            else -> stringResource(R.string.setup_completion_lyricon)
-        }
-    } else {
-        stringResource(R.string.setup_completion_dynamic_island)
-    }
-
+fun CompletionPage() {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 20.dp),
@@ -489,7 +638,7 @@ fun CompletionPage(workMode: Int, selectedSource: String = "lyricon") {
                 )
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(
-                    text = completionText,
+                    text = stringResource(R.string.setup_completion_restart_hint),
                     fontSize = 14.sp,
                     color = MiuixTheme.colorScheme.onSurfaceSecondary,
                     modifier = Modifier.padding(horizontal = 16.dp),
@@ -498,6 +647,47 @@ fun CompletionPage(workMode: Int, selectedSource: String = "lyricon") {
             }
         }
     }
+}
+
+@Composable
+private fun SetupProviderStateCard(
+    title: String,
+    summary: String? = null,
+    actionText: String? = null,
+    onClick: (() -> Unit)? = null,
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        ProComponent(
+            title = title,
+            summary = summary,
+            onClick = onClick,
+            endActions = if (actionText != null) {
+                {
+                    Text(
+                        text = actionText,
+                        color = MiuixTheme.colorScheme.primary,
+                        fontSize = 14.sp,
+                    )
+                }
+            } else {
+                null
+            },
+            showIndication = onClick != null,
+        )
+    }
+}
+
+private suspend fun refreshSetupProviders(
+    stateFlow: MutableStateFlow<OfficialProviderUiState>,
+) {
+    stateFlow.update { state -> state.copy(isLoading = true, error = null) }
+    runCatching { OfficialProviderRepository.loadItems() }
+        .onSuccess { items ->
+            stateFlow.value = OfficialProviderUiState(items = items)
+        }
+        .onFailure { error ->
+            stateFlow.value = OfficialProviderUiState(error = error.message)
+        }
 }
 
 @Composable

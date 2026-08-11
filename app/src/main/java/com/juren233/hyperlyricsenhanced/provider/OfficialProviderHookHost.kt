@@ -34,6 +34,33 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
+internal object OfficialProviderDexMethodSemanticFilter {
+    fun accepts(
+        invokedMethodDescriptors: Collection<String>,
+        forbiddenInvokedMethodDescriptors: Collection<String>,
+    ): Boolean {
+        if (forbiddenInvokedMethodDescriptors.isEmpty()) return true
+        val forbidden = forbiddenInvokedMethodDescriptors.toHashSet()
+        return invokedMethodDescriptors.none(forbidden::contains)
+    }
+}
+
+internal class OfficialProviderDexRepairGate {
+    private val started = AtomicBoolean(false)
+
+    fun tryStart(): Boolean = started.compareAndSet(false, true)
+}
+
+internal class OfficialProviderDexHookActivation {
+    private val generation = AtomicLong(0L)
+
+    fun current(): Long = generation.get()
+
+    fun replace(): Long = generation.incrementAndGet()
+
+    fun isActive(candidate: Long): Boolean = generation.get() == candidate
+}
+
 /**
  * Static host for official Provider Packs.
  *
@@ -47,7 +74,11 @@ internal class OfficialProviderHookHost(
     override val processName: String,
 ) : OfficialProviderHost {
     private val tag = "OfficialProviderHookHost"
-    private val dexHookTasks = ConcurrentHashMap.newKeySet<String>()
+    private val dexRegistrationLock = Any()
+    private val dexHookTasks = ConcurrentHashMap<String, DexHookRegistration>()
+    private val dexHookByQueryKey = ConcurrentHashMap<String, DexHookRegistration>()
+    private val dexBatchTasks = ConcurrentHashMap<String, DexBatchRegistration>()
+    private val dexBatchByQueryKey = ConcurrentHashMap<String, DexBatchRegistration>()
     private val dexWatchdog = if (BuildConfig.DEBUG) {
         DexMethodWatchdog { event -> logDexWatchdogEvent(event) }
     } else {
@@ -137,64 +168,22 @@ internal class OfficialProviderHookHost(
             lastUpdateTime = packageInfo.lastUpdateTime,
             query = query,
         )
-        if (!dexHookTasks.add(cacheKey)) return
-        registerDexWatchdog(query.cacheKey, cacheKey)
-
-        Thread(
-            {
-                DexKitSession(application).use { session ->
-                    runCatching {
-                    val materializedQuery = materializeQuery(query, emptyMap())
-                    val target = resolveDexMethod(
-                        application,
-                        cacheKey,
-                        materializedQuery,
-                        session,
-                    )
-                    runCatching {
-                        installAfterMethod(
-                            target = target,
-                            callback = callback,
-                            watchdogCacheKey = query.cacheKey,
-                        )
-                    }
-                        .getOrElse { firstError ->
-                            invalidateDexMethodCache(application, cacheKey)
-                            module.log(
-                                Log.WARN,
-                                tag,
-                                "官方 Provider Hook 安装失败，清除缓存并重新查询: " +
-                                    "package=$packageName process=$processName key=${query.cacheKey}",
-                                firstError,
-                            )
-                            val repairedTarget = resolveDexMethod(
-                                application = application,
-                                cacheKey = cacheKey,
-                                query = materializedQuery.copy(preferredTarget = null),
-                                session = session,
-                            )
-                            installAfterMethod(
-                                target = repairedTarget,
-                                callback = callback,
-                                watchdogCacheKey = query.cacheKey,
-                            )
-                        }
-                }.onFailure { error ->
-                    module.log(
-                        Log.ERROR,
-                        tag,
-                        "官方 Provider DexKit Hook 失败: package=$packageName " +
-                            "process=$processName key=${query.cacheKey}",
-                        error,
-                    )
-                    }
-                }
-            },
-            "HLE-Provider-DexKit",
-        ).apply {
-            isDaemon = true
-            start()
+        val registration = synchronized(dexRegistrationLock) {
+            if (dexHookTasks.containsKey(cacheKey)) return
+            require(!dexBatchByQueryKey.containsKey(query.cacheKey)) {
+                "Provider DexKit 查询 cacheKey 已被批量解析注册: ${query.cacheKey}"
+            }
+            DexHookRegistration(
+                application = application,
+                query = query,
+                callback = callback,
+                runtimeCacheKey = cacheKey,
+            ).also { created ->
+                dexHookTasks[cacheKey] = created
+                dexHookByQueryKey[query.cacheKey] = created
+            }
         }
+        startDexHookResolution(registration, forceFresh = false, reason = "initial")
     }
 
     override fun resolveDexMethods(
@@ -207,6 +196,9 @@ internal class OfficialProviderHookHost(
         }
         require(queries.isNotEmpty()) { "Provider DexKit 查询列表不能为空" }
         queries.forEach(OfficialProviderDexMethodQueryValidator::validate)
+        require(queries.map { it.cacheKey }.distinct().size == queries.size) {
+            "Provider DexKit 批量查询 cacheKey 不能重复"
+        }
         val packageInfo = application.packageManager.getPackageInfo(packageName, 0)
         val taskKey = queries.joinToString("|") { query ->
             OfficialProviderDexMethodCacheCodec.cacheKey(
@@ -217,46 +209,27 @@ internal class OfficialProviderHookHost(
                 query = query,
             )
         }
-        if (!dexHookTasks.add(taskKey)) return
-
-        Thread(
-            {
-                DexKitSession(application).use { session ->
-                    runCatching {
-                    val resolvedByKey = LinkedHashMap<String, OfficialProviderMethodTarget>()
-                    queries.map { rawQuery ->
-                        val query = materializeQuery(rawQuery, resolvedByKey)
-                        val cacheKey = OfficialProviderDexMethodCacheCodec.cacheKey(
-                            packageName = packageName,
-                            processName = processName,
-                            versionCode = packageInfo.longVersionCode,
-                            lastUpdateTime = packageInfo.lastUpdateTime,
-                            query = query,
-                        )
-                        registerDexWatchdog(rawQuery.cacheKey, cacheKey)
-                        resolveDexMethod(application, cacheKey, query, session).also { target ->
-                            check(resolvedByKey.put(rawQuery.cacheKey, target) == null) {
-                                "Provider DexKit 查询 cacheKey 重复: ${rawQuery.cacheKey}"
-                            }
-                        }
-                    }
-                }.onSuccess(callback::onMethodsResolved)
-                    .onFailure { error ->
-                        module.log(
-                            Log.ERROR,
-                            tag,
-                            "官方 Provider DexKit 批量解析失败: package=$packageName " +
-                                "process=$processName keys=${queries.joinToString { it.cacheKey }}",
-                            error,
-                        )
-                    }
-                }
-            },
-            "HLE-Provider-DexKit",
-        ).apply {
-            isDaemon = true
-            start()
+        val registration = synchronized(dexRegistrationLock) {
+            if (dexBatchTasks.containsKey(taskKey)) return
+            val conflict = queries.firstOrNull { query ->
+                dexBatchByQueryKey.containsKey(query.cacheKey) ||
+                    dexHookByQueryKey.containsKey(query.cacheKey)
+            }
+            require(conflict == null) {
+                "Provider DexKit 查询 cacheKey 已被其他批次注册: ${conflict?.cacheKey}"
+            }
+            DexBatchRegistration(
+                application = application,
+                queries = queries.toList(),
+                callback = callback,
+                versionCode = packageInfo.longVersionCode,
+                lastUpdateTime = packageInfo.lastUpdateTime,
+            ).also { created ->
+                dexBatchTasks[taskKey] = created
+                queries.forEach { query -> dexBatchByQueryKey[query.cacheKey] = created }
+            }
         }
+        startDexBatchResolution(registration, forceFresh = false, reason = "initial")
     }
 
     override fun reportDexMethodValidation(
@@ -264,8 +237,27 @@ internal class OfficialProviderHookHost(
         valid: Boolean,
         detail: String?,
     ) {
-        if (!BuildConfig.DEBUG || cacheKey.isBlank()) return
-        dexWatchdog?.validation(cacheKey, valid, detail?.take(MAX_WATCHDOG_DETAIL_LENGTH))
+        if (cacheKey.isBlank()) return
+        val safeDetail = detail?.take(MAX_WATCHDOG_DETAIL_LENGTH)
+        dexWatchdog?.validation(cacheKey, valid, safeDetail)
+        if (!valid) {
+            val batch = dexBatchByQueryKey[cacheKey]
+            if (batch != null) {
+                requestDexBatchRepair(
+                    registration = batch,
+                    reason = "runtime_invalid:$cacheKey",
+                    detail = safeDetail,
+                )
+            } else {
+                dexHookByQueryKey[cacheKey]?.let { hook ->
+                    requestDexHookRepair(
+                        registration = hook,
+                        reason = "runtime_invalid:$cacheKey",
+                        detail = safeDetail,
+                    )
+                }
+            }
+        }
     }
 
     override fun reportDiagnostic(tag: String, message: String) {
@@ -291,14 +283,20 @@ internal class OfficialProviderHookHost(
         cacheKey: String,
         query: OfficialProviderDexMethodQuery,
         session: DexKitSession,
+        forceFresh: Boolean = false,
     ): OfficialProviderMethodTarget {
         val preferences = application.getSharedPreferences(
             DEX_METHOD_CACHE_PREFERENCES,
             Context.MODE_PRIVATE,
         )
-        val cachedTarget = OfficialProviderDexMethodCacheCodec.decode(
-            preferences.getString(cacheKey, null),
-        )?.takeIf { OfficialProviderDexMethodCacheCodec.matches(it, query) }
+        if (forceFresh) preferences.edit().remove(cacheKey).apply()
+        val cachedTarget = if (forceFresh) {
+            null
+        } else {
+            OfficialProviderDexMethodCacheCodec.decode(
+                preferences.getString(cacheKey, null),
+            )?.takeIf { OfficialProviderDexMethodCacheCodec.matches(it, query) }
+        }
 
         if (cachedTarget != null) {
             val cachedResolution = runCatching { resolveMethod(cachedTarget) }
@@ -331,6 +329,7 @@ internal class OfficialProviderHookHost(
         }
 
         query.preferredTarget
+            ?.takeIf { !forceFresh }
             ?.takeIf { OfficialProviderDexMethodCacheCodec.matches(it, query) }
             ?.let { preferredTarget ->
                 val preferredResolution = runCatching { resolveMethod(preferredTarget) }
@@ -395,7 +394,28 @@ internal class OfficialProviderHookHost(
                     }
                 }
             }
-            val matches = bridge.findMethod(finder)
+            val found = bridge.findMethod(finder)
+            val semanticMatches = found.filter { method ->
+                if (query.forbiddenInvokedMethodDescriptors.isEmpty()) {
+                    true
+                } else {
+                    OfficialProviderDexMethodSemanticFilter.accepts(
+                        invokedMethodDescriptors = method.invokes.map { it.descriptor },
+                        forbiddenInvokedMethodDescriptors =
+                            query.forbiddenInvokedMethodDescriptors,
+                    )
+                }
+            }
+            if (semanticMatches.size != found.size) {
+                module.log(
+                    Log.INFO,
+                    tag,
+                    "官方 Provider DexKit 调用负约束过滤: package=$packageName " +
+                        "process=$processName key=${query.cacheKey} " +
+                        "before=${found.size} after=${semanticMatches.size}",
+                )
+            }
+            val matches = semanticMatches
                 .map { method ->
                     OfficialProviderMethodTarget(
                         className = method.className,
@@ -429,6 +449,213 @@ internal class OfficialProviderHookHost(
             target = target,
         )
         return target
+    }
+
+    private fun startDexBatchResolution(
+        registration: DexBatchRegistration,
+        forceFresh: Boolean,
+        reason: String,
+    ) {
+        if (!registration.resolutionRunning.compareAndSet(false, true)) return
+        Thread(
+            {
+                val result = DexKitSession(registration.application).use { session ->
+                    runCatching {
+                        val resolvedByKey = LinkedHashMap<String, OfficialProviderMethodTarget>()
+                        registration.queries.map { rawQuery ->
+                            val query = materializeQuery(rawQuery, resolvedByKey)
+                            val cacheKey = OfficialProviderDexMethodCacheCodec.cacheKey(
+                                packageName = packageName,
+                                processName = processName,
+                                versionCode = registration.versionCode,
+                                lastUpdateTime = registration.lastUpdateTime,
+                                query = query,
+                            )
+                            registration.runtimeCacheKeys.add(cacheKey)
+                            registerDexWatchdog(rawQuery.cacheKey, cacheKey)
+                            resolveDexMethod(
+                                application = registration.application,
+                                cacheKey = cacheKey,
+                                query = query,
+                                session = session,
+                                forceFresh = forceFresh,
+                            ).also { target ->
+                                check(resolvedByKey.put(rawQuery.cacheKey, target) == null) {
+                                    "Provider DexKit 查询 cacheKey 重复: ${rawQuery.cacheKey}"
+                                }
+                            }
+                        }
+                    }
+                }
+                registration.resolutionRunning.set(false)
+                result.onSuccess { targets ->
+                    if (forceFresh) {
+                        module.log(
+                            Log.INFO,
+                            tag,
+                            "官方 Provider DexKit 批量自修复成功: package=$packageName " +
+                                "process=$processName reason=$reason " +
+                                "keys=${registration.queries.joinToString { it.cacheKey }}",
+                        )
+                    }
+                    runCatching { registration.callback.onMethodsResolved(targets) }
+                        .onFailure { error ->
+                            module.log(
+                                Log.ERROR,
+                                tag,
+                                "官方 Provider DexKit 批量回调失败: package=$packageName " +
+                                    "process=$processName reason=$reason",
+                                error,
+                            )
+                        }
+                }.onFailure { error ->
+                    module.log(
+                        Log.ERROR,
+                        tag,
+                        "官方 Provider DexKit 批量解析失败: package=$packageName " +
+                            "process=$processName repair=$forceFresh reason=$reason " +
+                            "keys=${registration.queries.joinToString { it.cacheKey }}",
+                        error,
+                    )
+                    if (!forceFresh) {
+                        requestDexBatchRepair(
+                            registration = registration,
+                            reason = "initial_failure",
+                            detail = error.message,
+                        )
+                    }
+                }
+            },
+            "HLE-Provider-DexKit",
+        ).apply {
+            isDaemon = true
+            start()
+        }
+    }
+
+    private fun startDexHookResolution(
+        registration: DexHookRegistration,
+        forceFresh: Boolean,
+        reason: String,
+    ) {
+        if (!registration.resolutionRunning.compareAndSet(false, true)) return
+        Thread(
+            {
+                val generation = registration.activation.current()
+                val result = DexKitSession(registration.application).use { session ->
+                    runCatching {
+                        val materializedQuery = materializeQuery(registration.query, emptyMap())
+                        registerDexWatchdog(
+                            registration.query.cacheKey,
+                            registration.runtimeCacheKey,
+                        )
+                        val target = resolveDexMethod(
+                            application = registration.application,
+                            cacheKey = registration.runtimeCacheKey,
+                            query = materializedQuery,
+                            session = session,
+                            forceFresh = forceFresh,
+                        )
+                        installAfterMethod(
+                            target = target,
+                            callback = OfficialProviderMethodCallback { receiver, arguments ->
+                                if (registration.activation.isActive(generation)) {
+                                    registration.callback.onMethodCalled(receiver, arguments)
+                                }
+                            },
+                            watchdogCacheKey = registration.query.cacheKey,
+                        )
+                        target
+                    }
+                }
+                registration.resolutionRunning.set(false)
+                result.onSuccess { target ->
+                    if (forceFresh) {
+                        module.log(
+                            Log.INFO,
+                            tag,
+                            "官方 Provider DexKit 单方法自修复成功: package=$packageName " +
+                                "process=$processName reason=$reason " +
+                                "key=${registration.query.cacheKey} target=${describe(target)}",
+                        )
+                    }
+                }.onFailure { error ->
+                    module.log(
+                        Log.ERROR,
+                        tag,
+                        "官方 Provider DexKit Hook 失败: package=$packageName " +
+                            "process=$processName repair=$forceFresh reason=$reason " +
+                            "key=${registration.query.cacheKey}",
+                        error,
+                    )
+                    if (!forceFresh) {
+                        requestDexHookRepair(
+                            registration = registration,
+                            reason = "initial_failure",
+                            detail = error.message,
+                        )
+                    }
+                }
+                if (!forceFresh && registration.repairRequested.get()) {
+                    startDexHookResolution(
+                        registration = registration,
+                        forceFresh = true,
+                        reason = registration.repairReason,
+                    )
+                }
+            },
+            "HLE-Provider-DexKit",
+        ).apply {
+            isDaemon = true
+            start()
+        }
+    }
+
+    private fun requestDexHookRepair(
+        registration: DexHookRegistration,
+        reason: String,
+        detail: String?,
+    ) {
+        if (!registration.repairGate.tryStart()) return
+        registration.activation.replace()
+        registration.repairReason = reason
+        registration.repairRequested.set(true)
+        invalidateDexMethodCache(registration.application, registration.runtimeCacheKey)
+        val safeDetail = detail
+            ?.replace('\n', ' ')
+            ?.replace('\r', ' ')
+            ?.take(MAX_WATCHDOG_DETAIL_LENGTH)
+        module.log(
+            Log.WARN,
+            tag,
+            "官方 Provider DexKit 触发一次有界单方法自修复: package=$packageName " +
+                "process=$processName reason=$reason detail=$safeDetail " +
+                "key=${registration.query.cacheKey}",
+        )
+        startDexHookResolution(registration, forceFresh = true, reason = reason)
+    }
+
+    private fun requestDexBatchRepair(
+        registration: DexBatchRegistration,
+        reason: String,
+        detail: String?,
+    ) {
+        if (!registration.repairGate.tryStart()) return
+        registration.runtimeCacheKeys.forEach { cacheKey ->
+            invalidateDexMethodCache(registration.application, cacheKey)
+        }
+        val safeDetail = detail
+            ?.replace('\n', ' ')
+            ?.replace('\r', ' ')
+            ?.take(MAX_WATCHDOG_DETAIL_LENGTH)
+        module.log(
+            Log.WARN,
+            tag,
+            "官方 Provider DexKit 触发一次有界批量自修复: package=$packageName " +
+                "process=$processName reason=$reason detail=$safeDetail " +
+                "keys=${registration.queries.joinToString { it.cacheKey }}",
+        )
+        startDexBatchResolution(registration, forceFresh = true, reason = reason)
     }
 
     private fun materializeQuery(
@@ -880,6 +1107,33 @@ internal class OfficialProviderHookHost(
             }
             return result
         }
+    }
+
+    private class DexBatchRegistration(
+        val application: Application,
+        val queries: List<OfficialProviderDexMethodQuery>,
+        val callback: OfficialProviderDexMethodsCallback,
+        val versionCode: Long,
+        val lastUpdateTime: Long,
+    ) {
+        val repairGate = OfficialProviderDexRepairGate()
+        val resolutionRunning = AtomicBoolean(false)
+        val runtimeCacheKeys = ConcurrentHashMap.newKeySet<String>()
+    }
+
+    private class DexHookRegistration(
+        val application: Application,
+        val query: OfficialProviderDexMethodQuery,
+        val callback: OfficialProviderMethodCallback,
+        val runtimeCacheKey: String,
+    ) {
+        val repairGate = OfficialProviderDexRepairGate()
+        val resolutionRunning = AtomicBoolean(false)
+        val activation = OfficialProviderDexHookActivation()
+        val repairRequested = AtomicBoolean(false)
+
+        @Volatile
+        var repairReason: String = "runtime_invalid"
     }
 
     fun logInstalled(pluginId: String) {

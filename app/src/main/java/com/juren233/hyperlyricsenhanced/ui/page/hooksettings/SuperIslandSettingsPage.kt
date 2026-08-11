@@ -418,6 +418,7 @@ fun SuperIslandSettingsPage() {
                             Column {
                                 OverlayDropdownPreference(
                                     title = stringResource(id = R.string.title_island_next_song_preview),
+                                    summary = stringResource(id = R.string.summary_island_next_song_preview),
                                     items = nextSongPreviewStyleOptions,
                                     selectedIndex = nextSongPreviewStyle,
                                     onSelectedIndexChange = {

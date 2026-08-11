@@ -82,7 +82,10 @@ internal class PlayerBinder(
     }
 
     override fun onScreenOff() {
-        stopPositionUpdate()
+        // Root normally estimates between authoritative ticks while the screen is off. Buffering
+        // must keep publishing the frozen anchor, otherwise Root would continue that estimation
+        // from the last PLAYING state and AOD lyrics would drift forward again.
+        if (!isBuffering()) stopPositionUpdate()
     }
 
     override fun onScreenUnlocked() = Unit
@@ -180,13 +183,11 @@ internal class PlayerBinder(
                     "updatedAt=${state.lastPositionUpdateTime}, now=$now, " +
                     "anchorAgeMs=${now - state.lastPositionUpdateTime}, " +
                     "speed=${state.playbackSpeed}, buffered=${state.bufferedPosition}, " +
-                    "decision=${if (state.state == PlaybackState.STATE_BUFFERING) "ignore_buffering" else "accept_state2"}",
+                    "decision=${if (state.state == PlaybackState.STATE_BUFFERING) "freeze_buffering" else "accept_state2"}",
             )
         }
 
-        if (state.state == PlaybackState.STATE_BUFFERING) return
-
-        val isPlaying = state.state == PlaybackState.STATE_PLAYING
+        val isPlaying = PlaybackStatePositionPolicy.keepsSessionActive(state.state)
         isState2Enabled.set(true)
         lastPlaybackState = state
 
@@ -271,18 +272,13 @@ internal class PlayerBinder(
             if (state == null) {
                 0L
             } else {
-                val basePosition = state.position.coerceAtLeast(0L)
-                val lastUpdate = state.lastPositionUpdateTime
-                if (state.state != PlaybackState.STATE_PLAYING || lastUpdate <= 0L) {
-                    basePosition
-                } else {
-                    val delta = (SystemClock.elapsedRealtime() - lastUpdate).coerceAtLeast(0L)
-                    if (state.playbackSpeed == 1.0f) {
-                        basePosition + delta
-                    } else {
-                        basePosition + (delta * state.playbackSpeed).toLong()
-                    }
-                }
+                PlaybackStatePositionPolicy.positionAt(
+                    state = state.state,
+                    basePosition = state.position,
+                    lastUpdateTime = state.lastPositionUpdateTime,
+                    playbackSpeed = state.playbackSpeed,
+                    now = SystemClock.elapsedRealtime(),
+                )
             }
         }
         val safePosition = position.coerceAtLeast(0L)
@@ -318,6 +314,9 @@ internal class PlayerBinder(
     private fun stopPositionUpdate() {
         positionTicker.stop()
     }
+
+    private fun isBuffering(): Boolean =
+        isState2Enabled.get() && lastPlaybackState?.state == PlaybackState.STATE_BUFFERING
 
     private fun publishPosition(position: Long) {
         recorder.position = position

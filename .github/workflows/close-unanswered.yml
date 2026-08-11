@@ -1,0 +1,35 @@
+name: 关闭长期未回复的 Issue 和 PR
+
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: close-unanswered-issues-and-prs
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  close-unanswered:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: 拉取代码 Checkout
+        uses: actions/checkout@v6
+
+      - name: 关闭长期未回复的 Issue 和 PR
+        uses: actions/github-script@v9
+        env:
+          MAINTAINER_LOGIN: juren233
+          ISSUE_TIMEOUT_DAYS: '7'
+          PR_TIMEOUT_DAYS: '30'
+        with:
+          script: |
+            const closeUnanswered = require('./.github/scripts/close-unanswered.js');
+            await closeUnanswered({ github, context, core });

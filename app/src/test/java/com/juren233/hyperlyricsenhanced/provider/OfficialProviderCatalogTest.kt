@@ -17,9 +17,21 @@ class OfficialProviderCatalogTest {
     @Test
     fun `uses canonical provider display names without spaces`() {
         assertEquals("QQ音乐", OfficialProviderCatalog.definitionForId("qqmusic")?.displayName)
-        assertEquals("QQ音乐HD", OfficialProviderCatalog.definitionForId("qqmusic-hd")?.displayName)
+        assertNull(OfficialProviderCatalog.definitionForId("qqmusic-hd"))
         assertEquals("LX音乐", OfficialProviderCatalog.definitionForId("lxmusic")?.displayName)
         assertEquals("椒盐音乐", OfficialProviderCatalog.definitionForId("salt-player")?.displayName)
+    }
+
+    @Test
+    fun `merges QQ Music mobile and HD into one provider`() {
+        val definition = requireNotNull(OfficialProviderCatalog.definitionForId("qqmusic"))
+
+        assertEquals(
+            setOf("com.tencent.qqmusic", "com.tencent.qqmusicpad"),
+            definition.targetPackages,
+        )
+        assertEquals("QQ音乐", definition.displayNameForPackage("com.tencent.qqmusic"))
+        assertEquals("QQ音乐HD", definition.displayNameForPackage("com.tencent.qqmusicpad"))
     }
 
     @Test
@@ -43,6 +55,22 @@ class OfficialProviderCatalogTest {
             OfficialProviderCatalog.shouldLoadIntoProcess(
                 packageName = "com.tencent.qqmusic",
                 processName = "com.tencent.qqmusic:push",
+            )
+        )
+    }
+
+    @Test
+    fun `runs QQ Music HD only in its main process`() {
+        assertTrue(
+            OfficialProviderCatalog.shouldLoadIntoProcess(
+                packageName = "com.tencent.qqmusicpad",
+                processName = "com.tencent.qqmusicpad",
+            )
+        )
+        assertFalse(
+            OfficialProviderCatalog.shouldLoadIntoProcess(
+                packageName = "com.tencent.qqmusicpad",
+                processName = "com.tencent.qqmusicpad:QQPlayerService",
             )
         )
     }
@@ -153,6 +181,12 @@ class OfficialProviderCatalogTest {
             OfficialProviderCatalog.isOfficialProviderPair(
                 providerPackageName = "com.juren233.hyperlyricsenhanced.provider.qqmusic",
                 playerPackageName = "com.tencent.qqmusic",
+            )
+        )
+        assertTrue(
+            OfficialProviderCatalog.isOfficialProviderPair(
+                providerPackageName = "com.juren233.hyperlyricsenhanced.provider.qqmusic",
+                playerPackageName = "com.tencent.qqmusicpad",
             )
         )
         assertFalse(

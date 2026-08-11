@@ -30,10 +30,10 @@ object MigrationData {
             scope = MigrationScope.MinorVersion(major = 7, minor = 4),
             items = listOf(
                 MigrationItem(
-                    text = "Lyricon Central 已内置到 HyperLyrics Enhanced",
-                    summary = "其他音乐 App 现在只需安装对应 LyricProvider；无需再单独安装词幕服务。更新后请重启系统界面和音乐 App。"
-                )
-            )
+                    text = "Lyricon歌词源已升级至插件体系",
+                    summary = "\n现在 HyperLyrics Enhanced 已将 Lyricon 的词幕服务模块与主流音乐平台的 Provider 模块整合在一起，作为插件功能，实现无需额外模块，还能满足各取所需的需求。\n\n更多详情请在“歌词设置”-“Lyricon配置”查看。",
+                ),
+            ),
         ),
         MigrationNote(
             versionCode = 100001,

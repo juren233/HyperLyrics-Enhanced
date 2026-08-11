@@ -32,10 +32,12 @@ object OfficialProviderCatalog {
         Definition(
             id = "qqmusic",
             displayName = "QQ音乐",
-            targetPackages = setOf("com.tencent.qqmusic"),
+            targetPackages = setOf("com.tencent.qqmusic", "com.tencent.qqmusicpad"),
             secondaryProcesses = setOf("com.tencent.qqmusic:QQPlayerService"),
+            targetDisplayNames = mapOf(
+                "com.tencent.qqmusicpad" to "QQ音乐HD",
+            ),
         ),
-        Definition("qqmusic-hd", "QQ音乐HD", setOf("com.tencent.qqmusicpad")),
         Definition(
             id = "kugou",
             displayName = "酷狗音乐",

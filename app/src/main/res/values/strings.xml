@@ -504,6 +504,7 @@
     <string name="option_content_title_plus_artist_album">标题\n艺术家-专辑</string>
     <string name="option_content_lyric">歌词</string>
     <string name="title_island_next_song_preview">下首歌曲信息预览</string>
+    <string name="summary_island_next_song_preview">不支持汽水音乐等检测hook的音乐App</string>
     <string name="option_island_next_song_preview_none">不显示</string>
     <string name="option_island_next_song_preview_full">切歌前全岛显示</string>
     <string name="option_island_next_song_preview_half">切歌前半岛显示</string>
@@ -646,8 +647,12 @@
     <string name="setup_completion_dynamic_island">请授予通知监听和发送通知权限后即可使用</string>
 
     <string name="setup_select_lyric_source">选择歌词源</string>
-    <string name="setup_apple_music_ready">Apple Music 开箱即用</string>
-    <string name="setup_apple_music_ready_summary">Provider 已内置。只需在 LSPosed 中为 HyperLyrics Enhanced 勾选推荐作用域 App，无需安装 Lyricon、Lyricon Central 或独立 LyricProvider。这里的“Lyricon”仅为内部歌词管线名称。</string>
+    <string name="setup_apple_music_ready">HyperLyrics Enhanced 独家插件</string>
+    <string name="setup_apple_music_ready_summary">现在 HyperLyrics Enhanced 已将 Lyricon 的词幕服务模块与主流音乐平台的 Provider 模块整合在一起，作为插件功能，实现无需额外模块，还能满足各取所需的需求。\n\n进入主页并正式开始使用之前，可提前在下方添加你所使用的音乐 App 插件。（添加完插件后需要在 lsp 管理器的作用域勾选上对应的音乐 App （汽水音乐除外），并重启你的系统界面与对应的音乐 App 进程，否则无法正常生效！）\n\n如果以下列表未包含你使用的音乐 App 插件，你依旧可以使用经典的独立 Provider 模块，而且无需额外的词幕服务模块，即可使用。</string>
+    <string name="setup_available_provider_plugins">可添加的插件</string>
+    <string name="setup_apple_music_plugin_summary">已预先内置，无需重复添加</string>
+    <string name="setup_provider_added">已添加</string>
+    <string name="setup_provider_retry">重试</string>
     <string name="setup_other_players">其他音乐 App（尚未测试）</string>
     <string name="setup_other_players_summary">只需安装对应的 LyricProvider。Lyricon Central 已内置，安装 Provider 后重启系统界面和音乐 App。</string>
     <string name="setup_download_provider">其他 App：下载 LyricProvider</string>
@@ -659,5 +664,6 @@
     <string name="setup_completion_lyricon">Apple Music 可直接使用内置 Provider；其他音乐 App 只需安装对应的 LyricProvider。无需额外安装 Lyricon Central。完成后请重启系统界面和音乐 App。</string>
     <string name="setup_completion_superlyric">请前往 LSPosed 启用 SuperLyric 模块，重启手机后即可使用</string>
     <string name="setup_completion_lyricinfo">安装歌词获取模块后，在 LSPosed 中启用并勾选音乐软件，重启系统界面即可使用</string>
+    <string name="setup_completion_restart_hint">添加完插件请重启系统界面与对应的音乐 App 进程，你可以在主页右上角点击“一键刷新”按钮进行重启。</string>
     <string name="no_lyric_data">歌词源无数据</string>
 </resources>

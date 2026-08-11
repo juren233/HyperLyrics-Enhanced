@@ -47,6 +47,10 @@ class OnlineLyricTargeterTest {
             listOf(Source.QM, Source.NE),
             OnlineLyricTargeter.resolveSourceOrder("com.tencent.qqmusic", null)
         )
+        assertEquals(
+            listOf(Source.QM, Source.NE),
+            OnlineLyricTargeter.resolveSourceOrder("com.tencent.qqmusicpad", null)
+        )
     }
 
     @Test

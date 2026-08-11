@@ -502,6 +502,7 @@
     <string name="option_content_title_plus_artist_album">Title\nArtist - Album</string>
     <string name="option_content_lyric">Lyric</string>
     <string name="title_island_next_song_preview">Next Song Preview</string>
+    <string name="summary_island_next_song_preview">Not supported in music apps that detect hooks, such as Soda Music</string>
     <string name="option_island_next_song_preview_none">Do Not Show</string>
     <string name="option_island_next_song_preview_full">Show on Full Island Before Track Change</string>
     <string name="option_island_next_song_preview_half">Show on Half Island Before Track Change</string>
@@ -643,8 +644,12 @@
     <string name="setup_completion_dynamic_island">Grant notification listener and send notification permissions to start using</string>
 
     <string name="setup_select_lyric_source">Select Lyric Source</string>
-    <string name="setup_apple_music_ready">Apple Music works out of the box</string>
-    <string name="setup_apple_music_ready_summary">The provider is built in. Select the recommended scope apps for HyperLyrics Enhanced in LSPosed. Lyricon, Lyricon Central, and a separate LyricProvider are not required. \"Lyricon\" here is only the name of the internal lyric pipeline.</string>
+    <string name="setup_apple_music_ready">Exclusive HyperLyrics Enhanced Plugins</string>
+    <string name="setup_apple_music_ready_summary">HyperLyrics Enhanced now integrates Lyricon’s lyric service module with Provider modules for mainstream music platforms as plugins. No additional service module is required, while each user can add only what they need.\n\nBefore entering the home page and starting to use the app, you can add plugins for your music apps below. After adding a plugin, select the corresponding music app in the LSPosed manager scope (except Qishui Music), then restart System UI and the corresponding music app process. Otherwise, the plugin will not work correctly.\n\nIf your music app is not listed below, you can still use its classic standalone Provider module without installing an additional lyric service module.</string>
+    <string name="setup_available_provider_plugins">Available plugins</string>
+    <string name="setup_apple_music_plugin_summary">Preinstalled; no need to add it again</string>
+    <string name="setup_provider_added">Added</string>
+    <string name="setup_provider_retry">Retry</string>
     <string name="setup_other_players">Other music apps (untested)</string>
     <string name="setup_other_players_summary">Install only the matching LyricProvider. Lyricon Central is embedded; restart System UI and the music app after installing the provider.</string>
     <string name="setup_download_provider">Other apps: LyricProvider</string>
@@ -656,5 +661,6 @@
     <string name="setup_completion_lyricon">Apple Music uses the built-in provider. Other music apps only need their matching LyricProvider; a separate Lyricon Central installation is not required. Restart System UI and the music app after setup.</string>
     <string name="setup_completion_superlyric">Please enable the SuperLyric module in LSPosed, then restart your phone</string>
     <string name="setup_completion_lyricinfo">Install the LyricInfo module, enable it in LSPosed and select your music app, then restart SystemUI</string>
+    <string name="setup_completion_restart_hint">After adding plugins, restart System UI and the corresponding music app processes. You can use the “One-tap refresh” button in the top-right corner of the home page to restart them.</string>
     <string name="no_lyric_data">No lyric data</string>
 </resources>

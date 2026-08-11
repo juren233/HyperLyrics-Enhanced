@@ -222,7 +222,8 @@ object OnlineLyricTargeter {
             Source.QM -> listOf(Source.QM, Source.NE)
             null -> when (pkgName) {
                 "com.netease.cloudmusic" -> listOf(Source.NE, Source.QM)
-                "com.tencent.qqmusic" -> listOf(Source.QM, Source.NE)
+                "com.tencent.qqmusic", "com.tencent.qqmusicpad" ->
+                    listOf(Source.QM, Source.NE)
                 else -> listOf(Source.QM, Source.NE)
             }
         }
