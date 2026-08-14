@@ -41,6 +41,9 @@ object AppleSongMapper {
             song.originalArtist?.takeIf { it.isNotBlank() }?.let {
                 add(LyricMetadataKeys.APPLE_ORIGINAL_ARTIST to it)
             }
+            song.originalAlbum?.takeIf { it.isNotBlank() }?.let {
+                add(LyricMetadataKeys.APPLE_ORIGINAL_ALBUM to it)
+            }
             if (song.originalMetadataResolved) {
                 add(LyricMetadataKeys.APPLE_ORIGINAL_METADATA_RESOLVED to "true")
             }

@@ -22,6 +22,10 @@
 # --- 歌词数据模型（Parcelable + Serializable）---
 -keep class com.juren233.hyperlyricsenhanced.lyric.model.** { *; }
 
+# Runtime hook target verified from provider-0.1.70.aar. The reconnect control-frame bridge
+# resolves this exact binary class and its method names, so R8 must not rename or inline it.
+-keep class io.github.proify.lyricon.provider.CachedRemotePlayer { *; }
+
 # --- Shizuku User Service ---
 -keep class com.juren233.hyperlyricsenhanced.service.utils.shizuku.PrivilegedServiceImpl { *; }
 
@@ -39,7 +43,10 @@
 -keep interface com.juren233.hyperlyricsenhanced.provider.OfficialProviderPlaybackStateCallback { *; }
 -keep interface com.juren233.hyperlyricsenhanced.provider.OfficialProviderMetadataCallback { *; }
 -keep interface com.juren233.hyperlyricsenhanced.provider.OfficialProviderMethodCallback { *; }
+-keep interface com.juren233.hyperlyricsenhanced.provider.OfficialProviderMethodResultCallback { *; }
+-keep interface com.juren233.hyperlyricsenhanced.provider.OfficialProviderConstructorCallback { *; }
 -keep class com.juren233.hyperlyricsenhanced.provider.OfficialProviderMethodTarget { *; }
+-keep class com.juren233.hyperlyricsenhanced.provider.OfficialProviderConstructorTarget { *; }
 -keep class com.juren233.hyperlyricsenhanced.provider.OfficialProviderDexMethodQuery { *; }
 -keep class com.juren233.hyperlyricsenhanced.provider.OfficialProviderNextTrackFrame { *; }
 -keep class com.juren233.hyperlyricsenhanced.provider.OfficialProviderControlProtocol { *; }

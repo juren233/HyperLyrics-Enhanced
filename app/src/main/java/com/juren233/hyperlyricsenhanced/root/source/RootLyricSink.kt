@@ -7,6 +7,7 @@ import android.os.SystemClock
 import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.lyric.source.LyricSink
 import com.juren233.hyperlyricsenhanced.root.LyriconDataBridge
+import com.juren233.hyperlyricsenhanced.online.OnlineTranslationSourcePreferences
 import com.juren233.hyperlyricsenhanced.root.island.IslandSlotContentAssembler
 import com.juren233.hyperlyricsenhanced.root.island.renderer.IslandRenderer
 import com.juren233.hyperlyricsenhanced.root.mediacard.notification.NotificationMediaAodLyricHooker
@@ -47,7 +48,6 @@ class RootLyricSink(
 
     private companion object {
         const val MIN_POSITION_DISPATCH_INTERVAL_MS = 33L
-        const val APPLE_MUSIC_PACKAGE = "com.apple.android.music"
         const val POSITION_DIAGNOSTIC_INTERVAL_MS = 5_000L
     }
 
@@ -95,7 +95,9 @@ class RootLyricSink(
                     if (BuildConfig.DEBUG) {
                         HookLogger.d(
                             "RootLyricSink",
-                            "Apple Music 在线歌词翻译优先，延后 AI 翻译: song=${song.name}"
+                            "三方在线歌词翻译优先，延后 AI 翻译: " +
+                                "player=${LyriconDataBridge.currentLyricPackageName}, " +
+                                "song=${song.name}"
                         )
                     }
                 } else {
@@ -296,13 +298,11 @@ class RootLyricSink(
         song: Song,
         prefs: SharedPreferences
     ): Boolean {
-        if (LyriconDataBridge.currentLyricPackageName != APPLE_MUSIC_PACKAGE) return false
+        val packageName = LyriconDataBridge.currentLyricPackageName ?: return false
         if (song.lyrics.isNullOrEmpty()) return false
         if (song.lyrics?.any { !it.translation.isNullOrBlank() } == true) return false
-        return prefs.getBoolean(
-            RootConstants.KEY_HOOK_APPLE_MUSIC_MATCH_ONLINE_TRANSLATION,
-            RootConstants.DEFAULT_HOOK_APPLE_MUSIC_MATCH_ONLINE_TRANSLATION
-        )
+        return OnlineTranslationSourcePreferences.isAppEnabled(prefs, packageName) &&
+            OnlineTranslationSourcePreferences.orderedSources(prefs).isNotEmpty()
     }
 
     private fun isSameSong(first: Song, second: Song): Boolean {

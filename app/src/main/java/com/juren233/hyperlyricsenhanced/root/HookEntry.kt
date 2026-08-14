@@ -20,6 +20,7 @@ import com.juren233.hyperlyricsenhanced.root.mediacard.island.IslandExpandedMedi
 import com.juren233.hyperlyricsenhanced.root.mediacard.notification.background.MediaBackgroundRendererPool
 import com.juren233.hyperlyricsenhanced.root.island.renderer.BaseIslandRenderer
 import com.juren233.hyperlyricsenhanced.root.lyricon.central.EmbeddedLyriconCentralController
+import com.juren233.hyperlyricsenhanced.root.lyricon.provider.LyriconProviderControlFrameBridge
 import com.juren233.hyperlyricsenhanced.root.source.LyriconSource
 import com.juren233.hyperlyricsenhanced.root.source.LyricInfoSource
 import com.juren233.hyperlyricsenhanced.root.source.RootLyricSink
@@ -216,6 +217,18 @@ class HookEntry : XposedModule() {
 
         // 普通目标仍只在主进程注入；官方 Provider 可精确声明必要的播放子进程。
         if (!OfficialProviderCatalog.shouldLoadIntoProcess(packageName, processName)) return
+
+        if (packageName != "com.android.systemui" && packageName != "miui.systemui.plugin") {
+            runCatching {
+                LyriconProviderControlFrameBridge.install(
+                    module = this,
+                    classLoader = HookEntry::class.java.classLoader
+                        ?: param.defaultClassLoader,
+                )
+            }.onFailure {
+                HookLogger.e("HookEntry", "Lyricon 控制帧重连通道安装失败", it)
+            }
+        }
         
         if (packageName == "com.android.systemui") {
             NotificationMediaAodLyricHooker.hook(this, param.defaultClassLoader)
@@ -388,10 +401,12 @@ class HookEntry : XposedModule() {
                     )
                 }
                 if (key?.startsWith(RootConstants.KEY_HOOK_LYRICON_PROVIDER_DELAY_PREFIX) == true ||
-                    key == RootConstants.KEY_HOOK_APPLE_MUSIC_ONLINE_FALLBACK ||
-                    key == RootConstants.KEY_HOOK_APPLE_MUSIC_FALLBACK_QQ_FIRST ||
                     key == RootConstants.KEY_HOOK_APPLE_MUSIC_MATCH_ONLINE_TRANSLATION ||
-                    key == RootConstants.KEY_HOOK_APPLE_MUSIC_TRANSLATION_QQ_FIRST ||
+                    key == RootConstants.KEY_HOOK_ONLINE_TRANSLATION_SALT_PREFER_ONLINE ||
+                    com.juren233.hyperlyricsenhanced.online.OnlineTranslationSourcePreferences
+                        .isSourcePreference(key) ||
+                    com.juren233.hyperlyricsenhanced.online.OnlineTranslationSourcePreferences
+                        .isAppPreference(key) ||
                     key == RootConstants.KEY_HOOK_APPLE_MUSIC_RESTORE_CJK_ORIGINAL_METADATA ||
                     key == RootConstants.KEY_HOOK_APPLE_MUSIC_SIMPLIFY_TRADITIONAL_LYRICS ||
                     key == RootConstants.KEY_HOOK_APPLE_MUSIC_NATIVE_ONLINE_TRANSLATION ||

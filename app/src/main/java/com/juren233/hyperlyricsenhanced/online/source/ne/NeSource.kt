@@ -290,7 +290,13 @@ class NeSource(
         }
     }
 
-    override suspend fun search(keyword: String, page: Int, separator: String, pageSize: Int): List<SongSearchResult> = withContext(
+    override suspend fun search(
+        keyword: String,
+        page: Int,
+        separator: String,
+        pageSize: Int,
+        durationMs: Long,
+    ): List<SongSearchResult> = withContext(
         Dispatchers.IO) {
         ensureInit()
 

@@ -36,6 +36,15 @@ internal object RealIslandHooker {
 
             val result = chain.proceed()
 
+            // updateBigIslandView is a suspend function. During the first cold template build,
+            // proceed() returns the target process' COROUTINE_SUSPENDED marker before the
+            // template has been initialized. The continuation later re-enters this same method
+            // with data=null, so treating either invocation as a completed non-media update
+            // unregisters the first music island. Only mutate the completed view below.
+            if (SuspendingHookResultPolicy.isCoroutineSuspended(result)) {
+                return result
+            }
+
             runCatching {
                 val contentView = chain.thisObject as? ViewGroup ?: return@runCatching
                 val prefs = HookEntry.instance?.prefs ?: return@runCatching
@@ -43,7 +52,10 @@ internal object RealIslandHooker {
                     return@runCatching
                 }
 
+                // Kotlin's generated continuation resumes updateBigIslandView(null, false, this).
+                // Recover the original data that the target method restored from its continuation.
                 val data = chain.args.getOrNull(0)
+                    ?: IslandProbeUtils.getCurrentIslandData(contentView)
                 val info = mediaInfo ?: IslandProbeUtils.extractMediaIslandInfo(data)
 
                 if (info == null) {

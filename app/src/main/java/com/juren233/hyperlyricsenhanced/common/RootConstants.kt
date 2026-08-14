@@ -77,10 +77,6 @@ object RootConstants {
     const val KEY_HOOK_LYRIC_SOURCE = "key_hook_lyric_source"
     const val DEFAULT_HOOK_LYRIC_SOURCE = "lyricon"
     const val KEY_HOOK_LYRICON_PROVIDER_DELAY_PREFIX = "key_hook_lyricon_provider_delay_"
-    const val KEY_HOOK_APPLE_MUSIC_ONLINE_FALLBACK =
-        "key_hook_apple_music_online_fallback"
-    const val KEY_HOOK_APPLE_MUSIC_FALLBACK_QQ_FIRST =
-        "key_hook_apple_music_fallback_qq_first"
     const val KEY_HOOK_REMOVE_CJK_LYRIC_SPACES =
         "key_hook_remove_cjk_lyric_spaces"
 
@@ -213,8 +209,26 @@ object RootConstants {
     // ================= AI TRANSLATION KEYS =================
     const val KEY_HOOK_APPLE_MUSIC_MATCH_ONLINE_TRANSLATION =
         "key_hook_apple_music_match_online_translation"
-    const val KEY_HOOK_APPLE_MUSIC_TRANSLATION_QQ_FIRST =
-        "key_hook_apple_music_translation_qq_first"
+    const val KEY_HOOK_ONLINE_TRANSLATION_SOURCE_ORDER =
+        "key_hook_online_translation_source_order"
+    const val KEY_HOOK_ONLINE_TRANSLATION_AUTO_SELECT_BEST_SOURCE =
+        "key_hook_online_translation_auto_select_best_source"
+    const val KEY_HOOK_ONLINE_TRANSLATION_SOURCE_NETEASE =
+        "key_hook_online_translation_source_netease"
+    const val KEY_HOOK_ONLINE_TRANSLATION_SOURCE_QQ =
+        "key_hook_online_translation_source_qq"
+    const val KEY_HOOK_ONLINE_TRANSLATION_SOURCE_KUWO =
+        "key_hook_online_translation_source_kuwo"
+    const val KEY_HOOK_ONLINE_TRANSLATION_SOURCE_KUGOU =
+        "key_hook_online_translation_source_kugou"
+    const val KEY_HOOK_ONLINE_TRANSLATION_APP_QISHUI =
+        "key_hook_online_translation_app_qishui"
+    const val KEY_HOOK_ONLINE_TRANSLATION_APP_SPOTIFY =
+        "key_hook_online_translation_app_spotify"
+    const val KEY_HOOK_ONLINE_TRANSLATION_APP_SALT =
+        "key_hook_online_translation_app_salt"
+    const val KEY_HOOK_ONLINE_TRANSLATION_SALT_PREFER_ONLINE =
+        "key_hook_online_translation_salt_prefer_online"
     const val KEY_HOOK_APPLE_MUSIC_CONTENT_UI_LANGUAGE =
         "key_hook_apple_music_content_ui_language"
     const val KEY_HOOK_APPLE_MUSIC_OVERRIDE_ACCOUNT_LANGUAGE =
@@ -260,8 +274,6 @@ object RootConstants {
     // ================= DEFAULTS =================
     const val DEFAULT_HOOK_LYRIC_MODE = 0
     const val DEFAULT_HOOK_LYRICON_PROVIDER_DELAY = 0
-    const val DEFAULT_HOOK_APPLE_MUSIC_ONLINE_FALLBACK = true
-    const val DEFAULT_HOOK_APPLE_MUSIC_FALLBACK_QQ_FIRST = false
     const val DEFAULT_HOOK_REMOVE_CJK_LYRIC_SPACES = false
     const val APPLE_MUSIC_CONTENT_UI_LANGUAGE_NONE = 0
     const val APPLE_MUSIC_CONTENT_UI_LANGUAGE_ZH_HANS_CN = 1
@@ -500,7 +512,16 @@ object RootConstants {
     const val DEFAULT_HOOK_WORD_MOTION_LATIN_WAVE = 3.6f
     const val DEFAULT_HOOK_AI_TRANS_ENABLE = false
     const val DEFAULT_HOOK_APPLE_MUSIC_MATCH_ONLINE_TRANSLATION = false
-    const val DEFAULT_HOOK_APPLE_MUSIC_TRANSLATION_QQ_FIRST = false
+    const val DEFAULT_HOOK_ONLINE_TRANSLATION_SOURCE_ORDER = "NE,QM,KUWO,KUGOU"
+    const val DEFAULT_HOOK_ONLINE_TRANSLATION_AUTO_SELECT_BEST_SOURCE = true
+    const val DEFAULT_HOOK_ONLINE_TRANSLATION_SOURCE_NETEASE = true
+    const val DEFAULT_HOOK_ONLINE_TRANSLATION_SOURCE_QQ = true
+    const val DEFAULT_HOOK_ONLINE_TRANSLATION_SOURCE_KUWO = false
+    const val DEFAULT_HOOK_ONLINE_TRANSLATION_SOURCE_KUGOU = false
+    const val DEFAULT_HOOK_ONLINE_TRANSLATION_APP_QISHUI = false
+    const val DEFAULT_HOOK_ONLINE_TRANSLATION_APP_SPOTIFY = false
+    const val DEFAULT_HOOK_ONLINE_TRANSLATION_APP_SALT = false
+    const val DEFAULT_HOOK_ONLINE_TRANSLATION_SALT_PREFER_ONLINE = false
     const val DEFAULT_HOOK_AI_TRANS_AUTO_IGNORE_CHINESE = false
     const val DEFAULT_HOOK_AI_TRANS_SKIP_EXISTING_TRANSLATION = false
     const val DEFAULT_HOOK_AI_TRANS_FORCE_OVERRIDE = false

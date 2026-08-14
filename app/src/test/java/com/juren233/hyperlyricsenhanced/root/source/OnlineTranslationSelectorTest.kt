@@ -3,6 +3,7 @@ package com.juren233.hyperlyricsenhanced.root.source
 import com.juren233.hyperlyricsenhanced.lyric.model.RichLyricLine
 import com.juren233.hyperlyricsenhanced.lyric.model.Song
 import com.juren233.hyperlyricsenhanced.online.model.Source
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
@@ -10,9 +11,10 @@ import org.junit.Test
 
 class OnlineTranslationSelectorTest {
     @Test
-    fun `tries alternative when preferred coverage is below threshold`() {
+    fun `tries alternatives until all requested content is covered`() {
         assertTrue(OnlineTranslationSelector.shouldTryAlternative(candidate(Source.NE, 44, 0.95), 48))
-        assertFalse(OnlineTranslationSelector.shouldTryAlternative(candidate(Source.NE, 47, 0.95), 48))
+        assertTrue(OnlineTranslationSelector.shouldTryAlternative(candidate(Source.NE, 47, 0.95), 48))
+        assertFalse(OnlineTranslationSelector.shouldTryAlternative(candidate(Source.NE, 48, 0.95), 48))
     }
 
     @Test
@@ -34,6 +36,38 @@ class OnlineTranslationSelectorTest {
         assertSame(
             preferred,
             OnlineTranslationSelector.select(preferred, alternative, totalLineCount = 48)
+        )
+    }
+
+    @Test
+    fun `ranks every candidate by combined quality`() {
+        val netease = candidate(Source.NE, 44, 0.98)
+        val qq = candidate(Source.QM, 47, 0.92)
+        val kuwo = candidate(Source.KUWO, 46, 0.97)
+        val kugou = candidate(Source.KUGOU, 48, 0.96)
+
+        assertEquals(
+            listOf(kugou, qq, kuwo, netease),
+            OnlineTranslationSelector.rank(
+                candidates = listOf(netease, qq, kuwo, kugou),
+                totalLineCount = 48,
+                tieBreakOrder = listOf(Source.NE, Source.QM, Source.KUWO, Source.KUGOU),
+            )
+        )
+    }
+
+    @Test
+    fun `ranking uses stable source order when qualities tie`() {
+        val netease = candidate(Source.NE, 48, 0.95)
+        val qq = candidate(Source.QM, 48, 0.95)
+
+        assertEquals(
+            listOf(qq, netease),
+            OnlineTranslationSelector.rank(
+                candidates = listOf(netease, qq),
+                totalLineCount = 48,
+                tieBreakOrder = listOf(Source.QM, Source.NE),
+            )
         )
     }
 

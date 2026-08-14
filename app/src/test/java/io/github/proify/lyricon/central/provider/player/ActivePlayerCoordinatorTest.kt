@@ -204,6 +204,38 @@ class ActivePlayerCoordinatorTest {
         assertEquals(listOf(1_000L), listener.positions)
     }
 
+    @Test
+    fun `suppressed active Provider replays cached Song when conflict clears`() {
+        var conflict: Boolean? = false
+        val coordinator = coordinator(
+            officialProviderPreference = { true },
+            audioConflict = { conflict },
+        )
+        val listener = RecordingListener()
+        coordinator.addListener(listener)
+        val recorder = playingRecorder(officialInfo)
+        val song = Song().apply {
+            id = "first-song"
+            name = "First Song"
+        }
+        recorder.song = song
+        coordinator.onSongChanged(recorder, song)
+        assertEquals(listOf("first-song"), listener.songIds)
+        listener.songIds.clear()
+
+        conflict = true
+        coordinator.onPositionChanged(recorder, 1_000L)
+
+        assertEquals(false, listener.isPlaying)
+        assertEquals(emptyList<String>(), listener.songIds)
+
+        conflict = false
+        coordinator.onPositionChanged(recorder, 2_000L)
+
+        assertEquals(true, listener.isPlaying)
+        assertEquals(listOf("first-song"), listener.songIds)
+    }
+
     private fun playingRecorder(providerInfo: ProviderInfo) = PlayerRecorder(providerInfo).apply {
         isPlaying = true
     }
@@ -225,12 +257,15 @@ class ActivePlayerCoordinatorTest {
         var activeProvider: ProviderInfo? = null
         var isPlaying = false
         val positions = mutableListOf<Long>()
+        val songIds = mutableListOf<String>()
 
         override fun onActiveProviderChanged(providerInfo: ProviderInfo?) {
             activeProvider = providerInfo
         }
 
-        override fun onSongChanged(song: Song?) = Unit
+        override fun onSongChanged(song: Song?) {
+            songIds += song?.id.orEmpty()
+        }
 
         override fun onPlaybackStateChanged(isPlaying: Boolean) {
             this.isPlaying = isPlaying

@@ -16,6 +16,7 @@ import android.media.session.PlaybackState
 import android.os.SystemClock
 import android.util.Log
 import com.juren233.hyperlyricsenhanced.BuildConfig
+import com.juren233.hyperlyricsenhanced.common.UIConstants
 import com.juren233.hyperlyricsenhanced.common.dexkit.DexMethodWatchdog
 import com.juren233.hyperlyricsenhanced.common.dexkit.DexResolutionSource
 import com.juren233.hyperlyricsenhanced.common.dexkit.DexWatchdogEvent
@@ -27,6 +28,7 @@ import org.luckypray.dexkit.query.enums.StringMatchType
 import org.luckypray.dexkit.query.matchers.MethodMatcher
 import java.lang.reflect.Method
 import java.lang.reflect.Modifier
+import java.util.WeakHashMap
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
@@ -59,6 +61,58 @@ internal class OfficialProviderDexHookActivation {
     fun replace(): Long = generation.incrementAndGet()
 
     fun isActive(candidate: Long): Boolean = generation.get() == candidate
+}
+
+/**
+ * Tracks whether a Provider has already received Metadata for each MediaSession.
+ *
+ * Some players create and populate their MediaSession before the Provider Pack finishes
+ * installing its hooks. The first observed callback can therefore be setPlaybackState(), while
+ * the current Metadata is already available through MediaSession.controller. Missing snapshots
+ * remain retryable; a delivered snapshot or a real setMetadata() callback suppresses duplicates.
+ */
+internal class OfficialProviderMediaSessionMetadataGate {
+    enum class SnapshotDecision {
+        DELIVER,
+        MISSING_FIRST,
+        MISSING_REPEATED,
+        ALREADY_DELIVERED,
+        NO_SESSION,
+    }
+
+    private val deliveredSessions = WeakHashMap<Any, Unit>()
+    private val missingSessions = WeakHashMap<Any, Unit>()
+
+    @Synchronized
+    fun recordExplicit(session: Any?) {
+        session ?: return
+        deliveredSessions[session] = Unit
+        missingSessions.remove(session)
+    }
+
+    @Synchronized
+    fun release(session: Any?) {
+        session ?: return
+        deliveredSessions.remove(session)
+    }
+
+    @Synchronized
+    fun claimSnapshot(session: Any?, hasMetadata: Boolean): SnapshotDecision {
+        session ?: return SnapshotDecision.NO_SESSION
+        if (deliveredSessions.containsKey(session)) {
+            return SnapshotDecision.ALREADY_DELIVERED
+        }
+        if (!hasMetadata) {
+            return if (missingSessions.put(session, Unit) == null) {
+                SnapshotDecision.MISSING_FIRST
+            } else {
+                SnapshotDecision.MISSING_REPEATED
+            }
+        }
+        deliveredSessions[session] = Unit
+        missingSessions.remove(session)
+        return SnapshotDecision.DELIVER
+    }
 }
 
 /**
@@ -107,10 +161,14 @@ internal class OfficialProviderHookHost(
         )
     }
 
+    override fun getBooleanPreference(key: String, default: Boolean): Boolean =
+        module.getRemotePreferences(UIConstants.PREF_NAME).getBoolean(key, default)
+
     override fun hookMediaSession(
         playbackStateCallback: OfficialProviderPlaybackStateCallback,
         metadataCallback: OfficialProviderMetadataCallback,
     ) {
+        val metadataGate = OfficialProviderMediaSessionMetadataGate()
         val mediaSessionClass = Class.forName(
             MediaSession::class.java.name,
             false,
@@ -126,6 +184,8 @@ internal class OfficialProviderHookHost(
                 packageName = packageName,
                 processName = processName,
                 callback = playbackStateCallback,
+                metadataCallback = metadataCallback,
+                metadataGate = metadataGate,
             ),
         )
 
@@ -134,7 +194,12 @@ internal class OfficialProviderHookHost(
             MediaMetadata::class.java,
         )
         module.hook(setMetadata).intercept(
-            MetadataHooker(module, packageName, metadataCallback),
+            MetadataHooker(
+                module = module,
+                packageName = packageName,
+                callback = metadataCallback,
+                metadataGate = metadataGate,
+            ),
         )
         module.log(
             Log.INFO,
@@ -148,6 +213,44 @@ internal class OfficialProviderHookHost(
         callback: OfficialProviderMethodCallback,
     ) {
         installAfterMethod(target, callback)
+    }
+
+    override fun hookMethodResult(
+        target: OfficialProviderMethodTarget,
+        callback: OfficialProviderMethodResultCallback,
+    ) {
+        require(target.className.isNotBlank()) { "Provider 结果 Hook className 不能为空" }
+        require(target.methodName.isNotBlank()) { "Provider 结果 Hook methodName 不能为空" }
+        val method = resolveMethod(target)
+        val descriptor = describe(target)
+        module.hook(method).intercept(
+            MethodResultHooker(
+                module = module,
+                descriptor = descriptor,
+                callback = callback,
+            ),
+        )
+        module.log(Log.INFO, tag, "官方 Provider 方法结果 Hook 已安装: target=$descriptor")
+    }
+
+    override fun hookAfterConstructor(
+        target: OfficialProviderConstructorTarget,
+        callback: OfficialProviderConstructorCallback,
+    ) {
+        require(target.className.isNotBlank()) { "Provider 构造 Hook className 不能为空" }
+        require(target.parameterTypeNames.all(String::isNotBlank)) {
+            "Provider 构造 Hook 参数类型不能为空"
+        }
+        val constructor = resolveConstructor(target)
+        val descriptor = describe(target)
+        module.hook(constructor).intercept(
+            AfterConstructorHooker(
+                module = module,
+                descriptor = descriptor,
+                callback = callback,
+            ),
+        )
+        module.log(Log.INFO, tag, "官方 Provider 构造 Hook 已安装: target=$descriptor")
     }
 
     override fun hookAfterDexMethod(
@@ -788,6 +891,17 @@ internal class OfficialProviderHookHost(
         }
     }
 
+    /** 根据原始二进制类名和参数描述符解析精确构造函数。 */
+    private fun resolveConstructor(
+        target: OfficialProviderConstructorTarget,
+    ): java.lang.reflect.Constructor<*> {
+        val targetClass = Class.forName(target.className, false, targetClassLoader)
+        val parameterTypes = target.parameterTypeNames.map(::resolveParameterType).toTypedArray()
+        return targetClass.getDeclaredConstructor(*parameterTypes).apply {
+            isAccessible = true
+        }
+    }
+
     private fun selectDexMethodMatch(
         application: Application,
         query: OfficialProviderDexMethodQuery,
@@ -947,6 +1061,14 @@ internal class OfficialProviderHookHost(
         append(if (target.isStatic) "[static]" else "[instance]")
     }
 
+    /** 生成用于中文诊断日志的构造函数描述。 */
+    private fun describe(target: OfficialProviderConstructorTarget): String = buildString {
+        append(target.className)
+        append("#<init>(")
+        append(target.parameterTypeNames.joinToString())
+        append(')')
+    }
+
     private fun resolveParameterType(typeName: String): Class<*> = when (typeName) {
         "boolean" -> Boolean::class.javaPrimitiveType!!
         "byte" -> Byte::class.javaPrimitiveType!!
@@ -1004,6 +1126,8 @@ internal class OfficialProviderHookHost(
         private val packageName: String,
         private val processName: String,
         private val callback: OfficialProviderPlaybackStateCallback,
+        private val metadataCallback: OfficialProviderMetadataCallback,
+        private val metadataGate: OfficialProviderMediaSessionMetadataGate,
     ) : XposedInterface.Hooker {
         private val firstCallbackRecorded = AtomicBoolean(false)
         private val callbackSequence = AtomicLong(0L)
@@ -1012,6 +1136,7 @@ internal class OfficialProviderHookHost(
             val result = chain.proceed()
             val state = chain.args.firstOrNull() as? PlaybackState
             val sequence = callbackSequence.incrementAndGet()
+            deliverCurrentMetadataSnapshot(chain.thisObject as? MediaSession)
             runCatching {
                 callback.onPlaybackStateChanged(state)
             }.onSuccess {
@@ -1045,17 +1170,76 @@ internal class OfficialProviderHookHost(
             }
             return result
         }
+
+        private fun deliverCurrentMetadataSnapshot(session: MediaSession?) {
+            val snapshot = runCatching { session?.controller?.metadata }
+                .onFailure { error ->
+                    module.log(
+                        Log.ERROR,
+                        "OfficialProviderHookHost",
+                        "官方 Provider MediaSession Metadata 快照读取失败: " +
+                            "package=$packageName error=${error.message}",
+                    )
+                }
+                .getOrNull()
+            when (metadataGate.claimSnapshot(session, snapshot != null)) {
+                OfficialProviderMediaSessionMetadataGate.SnapshotDecision.DELIVER -> {
+                    runCatching {
+                        metadataCallback.onMetadataChanged(snapshot)
+                    }.onSuccess {
+                        if (BuildConfig.DEBUG) {
+                            module.log(
+                                Log.INFO,
+                                "OfficialProviderHookHost",
+                                "[MediaSessionSnapshotDiag] " +
+                                    "stage=media_session_metadata_snapshot, result=delivered, " +
+                                    "player=$packageName, process=$processName, " +
+                                    "mediaId=${snapshot?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)}, " +
+                                    "title=${snapshot?.getString(MediaMetadata.METADATA_KEY_TITLE)}",
+                            )
+                        }
+                    }.onFailure { error ->
+                        metadataGate.release(session)
+                        module.log(
+                            Log.ERROR,
+                            "OfficialProviderHookHost",
+                            "官方 Provider MediaSession Metadata 快照回调失败: " +
+                                "package=$packageName error=${error.message}",
+                        )
+                    }
+                }
+
+                OfficialProviderMediaSessionMetadataGate.SnapshotDecision.MISSING_FIRST -> {
+                    if (BuildConfig.DEBUG) {
+                        module.log(
+                            Log.INFO,
+                            "OfficialProviderHookHost",
+                            "[MediaSessionSnapshotDiag] " +
+                                "stage=media_session_metadata_snapshot, result=missing_retryable, " +
+                                "player=$packageName, process=$processName",
+                        )
+                    }
+                }
+
+                OfficialProviderMediaSessionMetadataGate.SnapshotDecision.MISSING_REPEATED,
+                OfficialProviderMediaSessionMetadataGate.SnapshotDecision.ALREADY_DELIVERED,
+                OfficialProviderMediaSessionMetadataGate.SnapshotDecision.NO_SESSION -> Unit
+            }
+        }
     }
 
     private class MetadataHooker(
         private val module: XposedModule,
         private val packageName: String,
         private val callback: OfficialProviderMetadataCallback,
+        private val metadataGate: OfficialProviderMediaSessionMetadataGate,
     ) : XposedInterface.Hooker {
         private val firstCallbackRecorded = AtomicBoolean(false)
 
         override fun intercept(chain: XposedInterface.Chain): Any? {
             val result = chain.proceed()
+            val session = chain.thisObject
+            metadataGate.recordExplicit(session)
             runCatching {
                 callback.onMetadataChanged(chain.args.firstOrNull() as? MediaMetadata)
             }.onSuccess {
@@ -1067,6 +1251,7 @@ internal class OfficialProviderHookHost(
                     )
                 }
             }.onFailure { error ->
+                metadataGate.release(session)
                 module.log(
                     Log.ERROR,
                     "OfficialProviderHookHost",
@@ -1103,6 +1288,69 @@ internal class OfficialProviderHookHost(
                     Log.ERROR,
                     "OfficialProviderHookHost",
                     "官方 Provider 方法回调失败: target=$descriptor error=${error.message}",
+                )
+            }
+            return result
+        }
+    }
+
+    /** 允许 Provider 在失败时回退原值的前提下观察或包装方法返回值。 */
+    private class MethodResultHooker(
+        private val module: XposedModule,
+        private val descriptor: String,
+        private val callback: OfficialProviderMethodResultCallback,
+    ) : XposedInterface.Hooker {
+        private val firstCallbackRecorded = AtomicBoolean(false)
+
+        override fun intercept(chain: XposedInterface.Chain): Any? {
+            val original = chain.proceed()
+            if (firstCallbackRecorded.compareAndSet(false, true)) {
+                module.log(
+                    Log.INFO,
+                    "OfficialProviderHookHost",
+                    "官方 Provider 方法结果 Hook 首次命中: target=$descriptor",
+                )
+            }
+            return runCatching {
+                callback.onMethodReturned(
+                    chain.thisObject,
+                    chain.args.toTypedArray(),
+                    original,
+                )
+            }.onFailure { error ->
+                module.log(
+                    Log.ERROR,
+                    "OfficialProviderHookHost",
+                    "官方 Provider 方法结果回调失败: target=$descriptor error=${error.message}",
+                )
+            }.getOrDefault(original)
+        }
+    }
+
+    /** 在原构造函数完成后转发实例和原始参数，并记录首次真实命中。 */
+    private class AfterConstructorHooker(
+        private val module: XposedModule,
+        private val descriptor: String,
+        private val callback: OfficialProviderConstructorCallback,
+    ) : XposedInterface.Hooker {
+        private val firstCallbackRecorded = AtomicBoolean(false)
+
+        override fun intercept(chain: XposedInterface.Chain): Any? {
+            val result = chain.proceed()
+            if (firstCallbackRecorded.compareAndSet(false, true)) {
+                module.log(
+                    Log.INFO,
+                    "OfficialProviderHookHost",
+                    "官方 Provider 构造 Hook 首次命中: target=$descriptor",
+                )
+            }
+            runCatching {
+                callback.onConstructed(chain.thisObject, chain.args.toTypedArray())
+            }.onFailure { error ->
+                module.log(
+                    Log.ERROR,
+                    "OfficialProviderHookHost",
+                    "官方 Provider 构造回调失败: target=$descriptor error=${error.message}",
                 )
             }
             return result

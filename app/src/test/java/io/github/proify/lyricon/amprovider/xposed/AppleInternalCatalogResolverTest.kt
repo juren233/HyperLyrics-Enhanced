@@ -991,4 +991,66 @@ class AppleInternalCatalogResolverTest {
             AppleInternalCatalogResolver.normalizedArtistNameKey("周杰伦、梁静茹"),
         )
     }
+
+    @Test
+    fun `keeps original album when the song alias is not confident`() {
+        val rejectedAlias = AppleInternalCatalogResolver.Alias(
+            title = "Reply",
+            artist = "KZ, Cosmic Princess Kaguya!, かぐや(cv.夏吉ゆうこ)",
+            language = "ja-JP",
+            album = "超かぐや姫！",
+        )
+
+        assertEquals(
+            "超かぐや姫！",
+            originalAlbumFromResolution(
+                alias = null,
+                acceptableResults = listOf(rejectedAlias),
+            )
+        )
+    }
+
+    @Test
+    fun `confident alias album wins over other resolved albums`() {
+        val confident = AppleInternalCatalogResolver.Alias(
+            title = "カワキヲアメク",
+            artist = "美波",
+            language = "ja-JP",
+            album = "カワキヲアメク",
+        )
+
+        assertEquals(
+            "カワキヲアメク",
+            originalAlbumFromResolution(
+                alias = confident,
+                acceptableResults = listOf(
+                    confident,
+                    AppleInternalCatalogResolver.Alias(
+                        title = "Crying for Rain",
+                        artist = "Minami",
+                        language = "en-US",
+                        album = "Crying for Rain",
+                    ),
+                ),
+            )
+        )
+    }
+
+    @Test
+    fun `returns null when neither alias nor results carry an album`() {
+        assertEquals(
+            null,
+            originalAlbumFromResolution(
+                alias = null,
+                acceptableResults = listOf(
+                    AppleInternalCatalogResolver.Alias(
+                        title = "Reply",
+                        artist = "KZ",
+                        language = "ja-JP",
+                        album = " ",
+                    ),
+                ),
+            )
+        )
+    }
 }

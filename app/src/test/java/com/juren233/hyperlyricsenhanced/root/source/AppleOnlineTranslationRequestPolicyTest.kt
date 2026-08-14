@@ -46,22 +46,45 @@ class AppleOnlineTranslationRequestPolicyTest {
         )
         assertTrue(
             AppleOnlineTranslationRequestPolicy.attemptKey(first) ==
-                AppleOnlineTranslationRequestPolicy.attemptKey(second)
+            AppleOnlineTranslationRequestPolicy.attemptKey(second)
+        )
+    }
+
+    @Test
+    fun `original album arrival creates a new translation attempt`() {
+        val withoutAlbum = song("満ちてゆく", "藤井 風")
+        val withAlbum = song(
+            originalTitle = "満ちてゆく",
+            originalArtist = "藤井 風",
+            originalAlbum = "LOVE ALL SERVE ALL"
+        )
+
+        assertTrue(
+            AppleOnlineTranslationRequestPolicy.originalMetadataChanged(
+                withoutAlbum,
+                withAlbum
+            )
+        )
+        assertNotEquals(
+            AppleOnlineTranslationRequestPolicy.attemptKey(withoutAlbum),
+            AppleOnlineTranslationRequestPolicy.attemptKey(withAlbum)
         )
     }
 
     private fun song(
         originalTitle: String? = null,
-        originalArtist: String? = null
+        originalArtist: String? = null,
+        originalAlbum: String? = null
     ): Song = Song(
         id = "1882935962",
         name = "Michi Teyu Ku (Overflowing)",
         artist = "Fujii Kaze",
         duration = 315_000,
-        metadata = if (originalTitle != null || originalArtist != null) {
+        metadata = if (originalTitle != null || originalArtist != null || originalAlbum != null) {
             lyricMetadataOf(
                 LyricMetadataKeys.APPLE_ORIGINAL_TITLE to originalTitle,
-                LyricMetadataKeys.APPLE_ORIGINAL_ARTIST to originalArtist
+                LyricMetadataKeys.APPLE_ORIGINAL_ARTIST to originalArtist,
+                LyricMetadataKeys.APPLE_ORIGINAL_ALBUM to originalAlbum
             )
         } else {
             null

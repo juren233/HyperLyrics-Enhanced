@@ -71,6 +71,7 @@ object SongRepository {
         genre = metadata.genre
         originalTitle = metadata.originalTitle
         originalArtist = metadata.originalArtist
+        originalAlbum = metadata.originalAlbum
         originalMetadataResolved = metadata.originalMetadataResolved
     }
 
@@ -78,6 +79,7 @@ object SongRepository {
         LyricMetadataKeys.APPLE_CATALOG_GENRE to genre,
         LyricMetadataKeys.APPLE_ORIGINAL_TITLE to originalTitle,
         LyricMetadataKeys.APPLE_ORIGINAL_ARTIST to originalArtist,
+        LyricMetadataKeys.APPLE_ORIGINAL_ALBUM to originalAlbum,
         LyricMetadataKeys.APPLE_ORIGINAL_METADATA_RESOLVED to
             originalMetadataResolved.toString()
     )

@@ -34,6 +34,25 @@ class MediaMetadataCacheTest {
         )
     }
 
+    @Test
+    fun `original album is stored and survives later queue metadata updates`() {
+        val mediaId = "media-metadata-cache-original-album"
+        MediaMetadataCache.put(metadata(mediaId, genre = null))
+
+        MediaMetadataCache.updateOriginalMetadata(
+            mediaId = mediaId,
+            title = "超かぐや姫！",
+            artist = "livetune",
+            album = "超かぐや姫！",
+        )
+        MediaMetadataCache.put(metadata(mediaId, genre = null))
+
+        val updated = MediaMetadataCache.getMetadataById(mediaId)
+        assertEquals("超かぐや姫！", updated?.originalTitle)
+        assertEquals("livetune", updated?.originalArtist)
+        assertEquals("超かぐや姫！", updated?.originalAlbum)
+    }
+
     private fun metadata(mediaId: String, genre: String?) = MediaMetadataCache.Metadata(
         id = mediaId,
         title = "Title",

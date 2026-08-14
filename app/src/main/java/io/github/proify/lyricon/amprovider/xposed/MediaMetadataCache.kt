@@ -22,6 +22,7 @@ object MediaMetadataCache {
             genre = mergeGenres(current?.genre, listOfNotNull(metadata.genre)),
             originalTitle = metadata.originalTitle ?: current?.originalTitle,
             originalArtist = metadata.originalArtist ?: current?.originalArtist,
+            originalAlbum = metadata.originalAlbum ?: current?.originalAlbum,
             originalMetadataResolved = metadata.originalMetadataResolved ||
                 current?.originalMetadataResolved == true,
         )
@@ -35,12 +36,14 @@ object MediaMetadataCache {
         mediaId: String,
         title: String?,
         artist: String?,
+        album: String? = null,
         resolved: Boolean = true,
     ): Metadata? {
         val current = metadataCache[mediaId] ?: return null
         val updated = current.copy(
             originalTitle = title,
             originalArtist = artist,
+            originalAlbum = album,
             originalMetadataResolved = resolved,
         )
         metadataCache[mediaId] = updated
@@ -86,6 +89,7 @@ object MediaMetadataCache {
         val genre: String?,
         val originalTitle: String? = null,
         val originalArtist: String? = null,
+        val originalAlbum: String? = null,
         val originalMetadataResolved: Boolean = false,
         val duration: Long,
         val queueId: Long

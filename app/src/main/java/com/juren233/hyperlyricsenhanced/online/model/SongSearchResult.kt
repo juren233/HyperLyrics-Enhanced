@@ -5,7 +5,9 @@ import kotlinx.parcelize.Parcelize
 
 enum class Source {
     QM,
-    NE
+    NE,
+    KUWO,
+    KUGOU,
 }
 
 @Parcelize
@@ -21,4 +23,3 @@ data class SongSearchResult(
     val picUrl: String = "",
     val extras: Map<String, String> = emptyMap()
 ) : Parcelable
-

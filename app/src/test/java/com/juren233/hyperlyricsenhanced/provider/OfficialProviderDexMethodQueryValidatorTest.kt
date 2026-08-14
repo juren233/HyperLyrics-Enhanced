@@ -13,6 +13,49 @@ import org.junit.Test
 
 class OfficialProviderDexMethodQueryValidatorTest {
     @Test
+    fun `keeps method result hook provider ABI`() {
+        assertNotNull(
+            OfficialProviderHost::class.java.getDeclaredMethod(
+                "hookMethodResult",
+                OfficialProviderMethodTarget::class.java,
+                OfficialProviderMethodResultCallback::class.java,
+            ),
+        )
+        assertNotNull(
+            OfficialProviderMethodResultCallback::class.java.getDeclaredMethod(
+                "onMethodReturned",
+                Any::class.java,
+                Array<Any?>::class.java,
+                Any::class.java,
+            ),
+        )
+    }
+
+    @Test
+    fun `keeps exact constructor hook provider ABI`() {
+        assertNotNull(
+            OfficialProviderHost::class.java.getDeclaredMethod(
+                "hookAfterConstructor",
+                OfficialProviderConstructorTarget::class.java,
+                OfficialProviderConstructorCallback::class.java,
+            ),
+        )
+        assertNotNull(
+            OfficialProviderConstructorTarget::class.java.getDeclaredConstructor(
+                String::class.java,
+                List::class.java,
+            ),
+        )
+        assertNotNull(
+            OfficialProviderConstructorCallback::class.java.getDeclaredMethod(
+                "onConstructed",
+                Any::class.java,
+                Array<Any?>::class.java,
+            ),
+        )
+    }
+
+    @Test
     fun `accepts exact declaring class without required strings`() {
         OfficialProviderDexMethodQueryValidator.validate(
             OfficialProviderDexMethodQuery(

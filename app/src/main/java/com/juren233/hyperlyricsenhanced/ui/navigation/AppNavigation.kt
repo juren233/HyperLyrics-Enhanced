@@ -20,6 +20,7 @@ import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.LyricProviderPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.OfficialProviderDownloadPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.LyricAnimationPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.LyricSettingsPage
+import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.OnlineTranslationSourcesPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.AppleMusicOptimizationPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.SuperIslandSettingsPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.media.MediaCardSettingsPage
@@ -57,6 +58,7 @@ fun AppNavigation(startRoute: Route) {
                 entry<Route.LyricProviderDownloads> { OfficialProviderDownloadPage() }
                 entry<Route.LyricAnimation> { LyricAnimationPage() }
                 entry<Route.LyricSettings> { LyricSettingsPage() }
+                entry<Route.OnlineTranslationSources> { OnlineTranslationSourcesPage() }
                 entry<Route.LyricDisplay> { LyricDisplayPage() }
                 entry<Route.LyricScroll> { LyricScrollPage() }
                 entry<Route.VerbatimLyric> { VerbatimLyricPage() }

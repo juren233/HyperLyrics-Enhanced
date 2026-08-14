@@ -31,7 +31,8 @@ internal object AppleOnlineTranslationRequestPolicy {
 
     private fun originalMetadataKey(song: Song): String = listOf(
         song.metadata?.getString(LyricMetadataKeys.APPLE_ORIGINAL_TITLE),
-        song.metadata?.getString(LyricMetadataKeys.APPLE_ORIGINAL_ARTIST)
+        song.metadata?.getString(LyricMetadataKeys.APPLE_ORIGINAL_ARTIST),
+        song.metadata?.getString(LyricMetadataKeys.APPLE_ORIGINAL_ALBUM)
     ).joinToString("|") { normalize(it) }
 
     private fun normalize(value: String?): String = value.orEmpty().trim().lowercase()

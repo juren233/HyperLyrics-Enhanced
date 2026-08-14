@@ -214,6 +214,7 @@ internal class ActivePlayerCoordinator(
         var shouldBroadcastOriginal = false
         var effectivePlaybackChanged = false
         var decision = "unknown"
+        var transitionedFromSuppression = false
         var previousInfo: ProviderInfo? = null
         var resultingInfo: ProviderInfo? = null
         var invalidActiveCleared = false
@@ -232,7 +233,8 @@ internal class ActivePlayerCoordinator(
                 }
                 false -> {
                     audioConflictFirstSeenAt.remove(recorderInfo.playerPackageName)
-                    audioSuppressedPlayers.remove(recorderInfo.playerPackageName)
+                    transitionedFromSuppression =
+                        audioSuppressedPlayers.remove(recorderInfo.playerPackageName)
                 }
                 null -> audioConflictFirstSeenAt.remove(recorderInfo.playerPackageName)
             }
@@ -344,6 +346,21 @@ internal class ActivePlayerCoordinator(
 
         if (shouldBroadcastOriginal) {
             broadcast(notifier)
+        }
+
+        // A transient audio conflict can suppress the very first Song of a cold-started Provider.
+        // Playback state and position recover through the normal path once the conflict clears,
+        // but the cached lyric is only replayed when the next setSong arrives. Re-dispatch the
+        // recorded lyric exactly on the suppressed -> unsuppressed transition so the first Song
+        // is not lost forever and AOD/Super Island recover without a track switch.
+        if (transitionedFromSuppression && !isSwitched && recorderInfo === activeInfo) {
+            broadcast {
+                when (recorder.lyricType) {
+                    SONG -> it.onSongChanged(recorder.song)
+                    TEXT -> it.onSendText(recorder.text)
+                    NONE -> Unit
+                }
+            }
         }
     }
 

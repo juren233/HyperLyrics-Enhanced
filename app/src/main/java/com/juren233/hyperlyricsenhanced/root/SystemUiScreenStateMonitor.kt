@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import com.juren233.hyperlyricsenhanced.root.island.renderer.BaseIslandRenderer
+import com.juren233.hyperlyricsenhanced.root.mediacard.notification.NotificationMediaAodLyricHooker
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 
 internal object SystemUiScreenStateMonitor {
@@ -24,6 +25,7 @@ internal object SystemUiScreenStateMonitor {
                     Intent.ACTION_SCREEN_ON -> {
                         HookLogger.d(TAG, "收到亮屏事件，刷新超级岛状态")
                         BaseIslandRenderer.onScreenInteractive()
+                        NotificationMediaAodLyricHooker.hideLockScreenOverlays()
                     }
 
                     Intent.ACTION_SCREEN_OFF -> {

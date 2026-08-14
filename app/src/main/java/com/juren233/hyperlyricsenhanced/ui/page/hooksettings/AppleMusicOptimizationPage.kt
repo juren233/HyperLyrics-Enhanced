@@ -75,38 +75,6 @@ fun AppleMusicOptimizationPage() {
             )
         )
     }
-    var onlineFallback by remember {
-        mutableStateOf(
-            prefs.getBoolean(
-                RootConstants.KEY_HOOK_APPLE_MUSIC_ONLINE_FALLBACK,
-                RootConstants.DEFAULT_HOOK_APPLE_MUSIC_ONLINE_FALLBACK,
-            )
-        )
-    }
-    var fallbackQqFirst by remember {
-        mutableStateOf(
-            prefs.getBoolean(
-                RootConstants.KEY_HOOK_APPLE_MUSIC_FALLBACK_QQ_FIRST,
-                RootConstants.DEFAULT_HOOK_APPLE_MUSIC_FALLBACK_QQ_FIRST,
-            )
-        )
-    }
-    var onlineTranslation by remember {
-        mutableStateOf(
-            prefs.getBoolean(
-                RootConstants.KEY_HOOK_APPLE_MUSIC_MATCH_ONLINE_TRANSLATION,
-                RootConstants.DEFAULT_HOOK_APPLE_MUSIC_MATCH_ONLINE_TRANSLATION,
-            )
-        )
-    }
-    var translationQqFirst by remember {
-        mutableStateOf(
-            prefs.getBoolean(
-                RootConstants.KEY_HOOK_APPLE_MUSIC_TRANSLATION_QQ_FIRST,
-                RootConstants.DEFAULT_HOOK_APPLE_MUSIC_TRANSLATION_QQ_FIRST,
-            )
-        )
-    }
     var simplifyTraditionalLyrics by remember {
         mutableStateOf(
             prefs.getBoolean(
@@ -294,76 +262,6 @@ fun AppleMusicOptimizationPage() {
         title = stringResource(R.string.title_apple_music_optimization_page),
         subtitle = stringResource(R.string.summary_apple_music_optimization_page),
     ) {
-        item(key = "global_lyrics_title") {
-            SmallTitle(text = stringResource(R.string.title_apple_music_global_lyrics))
-        }
-        item(key = "apple_music_global_lyrics") {
-            Card(
-                modifier = Modifier
-                    .padding(horizontal = 12.dp)
-                    .fillMaxWidth()
-            ) {
-                SwitchPreference(
-                    title = stringResource(R.string.title_apple_music_online_fallback),
-                    summary = stringResource(R.string.summary_apple_music_online_fallback),
-                    checked = onlineFallback,
-                    onCheckedChange = {
-                        onlineFallback = it
-                        saveConfig(RootConstants.KEY_HOOK_APPLE_MUSIC_ONLINE_FALLBACK, it)
-                    },
-                )
-                AnimatedVisibility(visible = onlineFallback) {
-                    SwitchPreference(
-                        title = stringResource(R.string.title_apple_music_fallback_qq_first),
-                        summary = stringResource(
-                            R.string.summary_apple_music_fallback_qq_first
-                        ),
-                        checked = fallbackQqFirst,
-                        onCheckedChange = {
-                            fallbackQqFirst = it
-                            saveConfig(
-                                RootConstants.KEY_HOOK_APPLE_MUSIC_FALLBACK_QQ_FIRST,
-                                it,
-                            )
-                        },
-                    )
-                }
-                SwitchPreference(
-                    title = stringResource(
-                        R.string.title_apple_music_match_online_translation
-                    ),
-                    summary = stringResource(
-                        R.string.summary_apple_music_match_online_translation
-                    ),
-                    checked = onlineTranslation,
-                    onCheckedChange = {
-                        onlineTranslation = it
-                        saveConfig(
-                            RootConstants.KEY_HOOK_APPLE_MUSIC_MATCH_ONLINE_TRANSLATION,
-                            it,
-                        )
-                    },
-                )
-                AnimatedVisibility(visible = onlineTranslation) {
-                    SwitchPreference(
-                        title = stringResource(
-                            R.string.title_apple_music_translation_qq_first
-                        ),
-                        summary = stringResource(
-                            R.string.summary_apple_music_translation_qq_first
-                        ),
-                        checked = translationQqFirst,
-                        onCheckedChange = {
-                            translationQqFirst = it
-                            saveConfig(
-                                RootConstants.KEY_HOOK_APPLE_MUSIC_TRANSLATION_QQ_FIRST,
-                                it,
-                            )
-                        },
-                    )
-                }
-            }
-        }
         item(key = "app_content_title") {
             SmallTitle(text = stringResource(R.string.title_apple_music_app_content))
         }

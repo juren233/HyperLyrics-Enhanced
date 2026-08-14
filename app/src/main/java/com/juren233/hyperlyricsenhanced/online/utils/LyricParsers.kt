@@ -7,7 +7,8 @@ import com.juren233.hyperlyricsenhanced.online.model.LyricsWord
 import java.util.regex.Pattern
 
 internal object LrcParserUtils {
-    val LRC_TIME_TAG_PATTERN: Pattern = Pattern.compile("\\[(\\d{2}):(\\d{2})\\.(\\d{2,3})]")
+    val LRC_TIME_TAG_PATTERN: Pattern =
+        Pattern.compile("\\[(\\d{2}):(\\d{2})[.:](\\d{2,3})]")
 
     fun parseLrc(lrc: String): List<LyricsLine> {
         val timedLines = mutableListOf<Pair<Long, String>>()

@@ -54,6 +54,26 @@ class OnlineLyricTargeterTest {
     }
 
     @Test
+    fun `strict Kuwo and Kugou lookups stay on the requested provider`() {
+        assertEquals(
+            listOf(Source.KUWO),
+            OnlineLyricTargeter.resolveSourceOrder(
+                pkgName = "com.spotify.music",
+                preferredSource = Source.KUWO,
+                fallbackToOtherSources = false,
+            )
+        )
+        assertEquals(
+            listOf(Source.KUGOU),
+            OnlineLyricTargeter.resolveSourceOrder(
+                pkgName = "com.spotify.music",
+                preferredSource = Source.KUGOU,
+                fallbackToOtherSources = false,
+            )
+        )
+    }
+
+    @Test
     fun `retries when Apple internal metadata differs`() {
         assertEquals(
             true,
@@ -101,6 +121,86 @@ class OnlineLyricTargeterTest {
     }
 
     @Test
+    fun `near miss requires exact title containment match`() {
+        assertEquals(
+            true,
+            OnlineLyricTargeter.isStrongTitleMatch("reply", "reply")
+        )
+        assertEquals(
+            true,
+            OnlineLyricTargeter.isStrongTitleMatch("reply", "reply (tv size)")
+        )
+        assertEquals(
+            false,
+            OnlineLyricTargeter.isStrongTitleMatch("reply", "replay")
+        )
+        assertEquals(
+            false,
+            OnlineLyricTargeter.isStrongTitleMatch("", "reply")
+        )
+    }
+
+    @Test
+    fun `near miss requires duration within the strong identity tolerance`() {
+        assertEquals(
+            true,
+            OnlineLyricTargeter.isStrongDurationMatch(269_342, 269_343)
+        )
+        assertEquals(
+            true,
+            OnlineLyricTargeter.isStrongDurationMatch(0, 269_343)
+        )
+        assertEquals(
+            false,
+            OnlineLyricTargeter.isStrongDurationMatch(269_342, 272_000)
+        )
+    }
+
+    @Test
+    fun `near miss eligibility keeps the score floor and identity flags`() {
+        assertEquals(true, OnlineLyricTargeter.isNearMissEligible(60, true, true))
+        assertEquals(false, OnlineLyricTargeter.isNearMissEligible(49, true, true))
+        assertEquals(false, OnlineLyricTargeter.isNearMissEligible(60, false, true))
+        assertEquals(false, OnlineLyricTargeter.isNearMissEligible(60, true, false))
+    }
+
+    @Test
+    fun `multi credit artists require at least two non blank tokens`() {
+        assertEquals(
+            true,
+            OnlineLyricTargeter.isMultiCreditArtist(listOf("kz", "cosmic princess kaguya!"))
+        )
+        assertEquals(false, OnlineLyricTargeter.isMultiCreditArtist(listOf("livetune")))
+        assertEquals(false, OnlineLyricTargeter.isMultiCreditArtist(listOf("livetune", "")))
+    }
+
+    @Test
+    fun `common artist requires an intersecting token`() {
+        assertEquals(
+            true,
+            OnlineLyricTargeter.hasCommonArtist(
+                listOf("a", "b"),
+                listOf("b", "c"),
+            )
+        )
+        assertEquals(
+            false,
+            OnlineLyricTargeter.hasCommonArtist(
+                listOf("kz", "cosmic princess kaguya!"),
+                listOf("livetune", "夏吉ゆうこ"),
+            )
+        )
+    }
+
+    @Test
+    fun `lyric fallback applies only when duration is unverified for multi credit songs`() {
+        assertEquals(true, OnlineLyricTargeter.isLyricFallbackEligible(true, true, false))
+        assertEquals(false, OnlineLyricTargeter.isLyricFallbackEligible(true, true, true))
+        assertEquals(false, OnlineLyricTargeter.isLyricFallbackEligible(false, true, false))
+        assertEquals(false, OnlineLyricTargeter.isLyricFallbackEligible(true, false, false))
+    }
+
+    @Test
     fun `normalizes internal spaces in Apple original artist names`() {
         assertEquals(
             "藤井風",
@@ -113,6 +213,38 @@ class OnlineLyricTargeterTest {
         assertEquals(10, OnlineLyricTargeter.durationScore(315_000L, 310_000L))
         assertEquals(15, OnlineLyricTargeter.durationScore(315_000L, 315_386L))
         assertEquals(-30, OnlineLyricTargeter.durationScore(315_000L, 309_999L))
+    }
+
+    @Test
+    fun `album comparison rewards exact match and penalizes mismatch`() {
+        assertEquals(10, OnlineLyricTargeter.albumScore("midnights", "midnights"))
+        assertEquals(0, OnlineLyricTargeter.albumScore("midnights", "folklore"))
+        assertEquals(0, OnlineLyricTargeter.albumScore("", "midnights"))
+        assertEquals(0, OnlineLyricTargeter.albumScore("midnights", ""))
+    }
+
+    @Test
+    fun `album version suffixes are treated as the same base album`() {
+        assertEquals(5, OnlineLyricTargeter.albumScore("midnights", "midnights deluxe edition"))
+        assertEquals(5, OnlineLyricTargeter.albumScore("midnights", "midnights豪华版"))
+        assertEquals(5, OnlineLyricTargeter.albumScore("midnights", "midnights - live"))
+        assertEquals(10, OnlineLyricTargeter.albumScore("midnights live", "midnights live"))
+    }
+
+    @Test
+    fun `album suffix stripping keeps ordinary names intact`() {
+        assertEquals("greatest hits", OnlineLyricTargeter.stripAlbumVersionSuffixes("greatest hits"))
+        assertEquals("alive", OnlineLyricTargeter.stripAlbumVersionSuffixes("alive"))
+        assertEquals("midnights", OnlineLyricTargeter.stripAlbumVersionSuffixes("midnights 不插电版"))
+        assertEquals("", OnlineLyricTargeter.stripAlbumVersionSuffixes("现场版"))
+    }
+
+    @Test
+    fun `album character normalization maps full width forms to half width`() {
+        assertEquals(
+            "Midnights(Live)",
+            OnlineLyricTargeter.normalizeAlbumCharacters("Ｍｉｄｎｉｇｈｔｓ（Ｌｉｖｅ）")
+        )
     }
 
     @Test

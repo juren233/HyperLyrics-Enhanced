@@ -18,6 +18,34 @@ import org.junit.Test
 
 class OnlineTranslationSelectionTest {
     @Test
+    fun `ordered sources keep the first enabled translation authoritative`() {
+        val nativeSong = song(
+            line(1_000L, "First"),
+            line(2_000L, "Second"),
+        )
+        val selection = OnlineTranslationSelection(
+            onlineLinesBySource = mapOf(
+                Source.NE to listOf(
+                    LrcLine(1_000L, "First", translation = "网易第一句"),
+                ),
+                Source.KUGOU to listOf(
+                    LrcLine(1_000L, "First", translation = "酷狗第一句"),
+                    LrcLine(2_000L, "Second", translation = "酷狗第二句"),
+                ),
+            ),
+            sourceOrder = listOf(Source.NE, Source.KUGOU),
+        )
+
+        val result = selection.compose(nativeSong, currentPublishedSong = null)
+
+        assertEquals("网易第一句", result?.song?.lyrics?.get(0)?.translation)
+        assertEquals("酷狗第二句", result?.song?.lyrics?.get(1)?.translation)
+        assertEquals(
+            Source.NE.name,
+            result?.song?.metadata?.getString(LyricMetadataKeys.ONLINE_TRANSLATION_SOURCE),
+        )
+    }
+    @Test
     fun `rematches fetched lines when native line structure changes during request`() {
         val requestSong = song(
             line(1_000L, "First"),

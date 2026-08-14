@@ -7,6 +7,31 @@ import org.junit.Test
 
 class LrcParserUtilsTest {
     @Test
+    fun `parses netease colon centisecond timestamps`() {
+        val parsed = LrcParserUtils.parseLrc(
+            "[00:27:76]瞳映る　静かな世界　なにを見てたんだろう\n" +
+                "[00:39:15]優しい思い出　ふさいだ鍵穴"
+        )
+
+        assertEquals(2, parsed.size)
+        assertEquals(27_760L, parsed[0].start)
+        assertEquals("瞳映る　静かな世界　なにを見てたんだろう", parsed[0].words.single().text)
+        assertEquals(39_150L, parsed[1].start)
+    }
+
+    @Test
+    fun `keeps parsing dot millisecond timestamps`() {
+        val parsed = LrcParserUtils.parseLrc(
+            "[00:27.760]瞳映る\n" +
+                "[00:39.15]優しい"
+        )
+
+        assertEquals(2, parsed.size)
+        assertEquals(27_760L, parsed[0].start)
+        assertEquals(39_150L, parsed[1].start)
+    }
+
+    @Test
     fun `matches translation to the nearest original timestamp instead of the next window entry`() {
         val original = listOf(
             line(47_780L, "Eating halal"),

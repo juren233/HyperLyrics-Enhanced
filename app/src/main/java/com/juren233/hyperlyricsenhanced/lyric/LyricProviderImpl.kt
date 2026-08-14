@@ -4,6 +4,7 @@ import android.content.Context
 import com.juren233.hyperlyricsenhanced.common.lyric.LrcParser
 import com.juren233.hyperlyricsenhanced.online.LrcCacheManager
 import com.juren233.hyperlyricsenhanced.online.OnlineLyricTargeter
+import com.juren233.hyperlyricsenhanced.online.OnlineTranslationSourcePreferences
 import com.juren233.hyperlyricsenhanced.utils.LogManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -25,11 +26,12 @@ class LyricProviderImpl(private val context: Context) : ILyricProvider {
                 // 2. 缓存没有，则在线搜索
                 LogManager.d("LyricProvider", "缓存未命中，正在在线搜索")
                 lines = OnlineLyricTargeter.fetchBestLyric(
-                    context,
-                    params.packageName,
-                    params.title,
-                    params.artist,
-                    params.duration
+                    context = context,
+                    pkgName = params.packageName,
+                    title = params.title,
+                    artist = params.artist,
+                    durationMs = params.duration,
+                    album = params.album,
                 )
 
                 // 3. 搜索成功，存入缓存

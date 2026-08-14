@@ -20,17 +20,43 @@ import com.juren233.hyperlyricsenhanced.online.model.Source
  */
 internal data class OnlineTranslationSelection(
     val onlineLinesBySource: Map<Source, List<LrcLine>> = emptyMap(),
+    val requestedSources: List<Source> = onlineLinesBySource.keys.toList(),
     val defaultTranslationSource: Source? = null,
     val defaultPronunciationSource: Source? = null,
     val forcedTranslationSource: Source? = null,
     val forcedPronunciationSource: Source? = null,
+    val sourceOrder: List<Source> = emptyList(),
+    val pronunciationRequested: Boolean = false,
 ) {
+    fun matchCandidates(latestNativeSong: Song): Map<Source, OnlineTranslationMatcher.Result> =
+        onlineLinesBySource.mapValues { (_, onlineLines) ->
+            OnlineTranslationMatcher.apply(latestNativeSong, onlineLines)
+        }
+
     fun compose(
         latestNativeSong: Song,
         currentPublishedSong: Song?,
+    ): OnlineTranslationMatcher.Result? = composeMatched(
+        latestNativeSong = latestNativeSong,
+        currentPublishedSong = currentPublishedSong,
+        rebasedCandidates = matchCandidates(latestNativeSong),
+    )
+
+    fun composeMatched(
+        latestNativeSong: Song,
+        currentPublishedSong: Song?,
+        rebasedCandidates: Map<Source, OnlineTranslationMatcher.Result>,
     ): OnlineTranslationMatcher.Result? {
-        val rebasedCandidates = onlineLinesBySource.mapValues { (_, onlineLines) ->
-            OnlineTranslationMatcher.apply(latestNativeSong, onlineLines)
+        if (sourceOrder.isNotEmpty() &&
+            forcedTranslationSource == null &&
+            forcedPronunciationSource == null
+        ) {
+            return OnlineTranslationMatcher.composeOrderedSources(
+                baseSong = latestNativeSong,
+                candidates = rebasedCandidates,
+                sourceOrder = sourceOrder,
+                currentPublishedSong = currentPublishedSong,
+            )
         }
         return OnlineTranslationMatcher.composeSelectedSources(
             baseSong = latestNativeSong,

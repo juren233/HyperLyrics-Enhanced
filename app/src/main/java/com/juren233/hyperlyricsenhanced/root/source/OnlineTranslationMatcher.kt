@@ -86,6 +86,51 @@ internal object OnlineTranslationMatcher {
         )
     }
 
+    fun composeOrderedSources(
+        baseSong: Song,
+        candidates: Map<Source, Result>,
+        sourceOrder: List<Source>,
+        currentPublishedSong: Song?,
+    ): Result? {
+        val ordered = sourceOrder.mapNotNull { source ->
+            candidates[source]?.let { source to it }
+        }
+        val translationEntries = ordered.filter { (_, result) ->
+            contributesTranslation(baseSong, result)
+        }
+        val pronunciationEntries = ordered.filter { (_, result) ->
+            contributesPronunciation(baseSong, result)
+        }
+        val publishedResult = currentPublishedSong?.let(::contentResult)
+        val translation = translationEntries
+            .map(Pair<Source, Result>::second)
+            .fold<Result, Result?>(null) { accumulated, result ->
+                if (accumulated == null) result else fillMissing(accumulated, result)
+            }
+            ?.let { result ->
+                publishedResult?.let { fillMissing(result, it) } ?: result
+            }
+        val pronunciation = pronunciationEntries
+            .map(Pair<Source, Result>::second)
+            .fold<Result, Result?>(null) { accumulated, result ->
+                if (accumulated == null) result else fillMissing(accumulated, result)
+            }
+            ?.let { result ->
+                publishedResult?.let { fillMissing(result, it) } ?: result
+            }
+        val composed = composeContent(
+            baseSong = baseSong,
+            translation = translation,
+            pronunciation = pronunciation,
+        ) ?: return null
+        return composed.copy(
+            song = composed.song.withOnlineContentSources(
+                translationSource = translationEntries.firstOrNull()?.first,
+                pronunciationSource = pronunciationEntries.firstOrNull()?.first,
+            )
+        )
+    }
+
     fun apply(song: Song, onlineLines: List<LrcLine>): Result {
         val candidates = onlineLines
             .asSequence()

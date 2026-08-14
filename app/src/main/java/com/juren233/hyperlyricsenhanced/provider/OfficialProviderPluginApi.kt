@@ -46,6 +46,27 @@ interface OfficialProviderHost {
     )
 
     /**
+     * 在精确方法返回后读取并转换返回值。
+     *
+     * 回调失败时 Host 保留原始返回值，避免 Provider 的观察逻辑破坏目标 App 调用链。
+     */
+    fun hookMethodResult(
+        target: OfficialProviderMethodTarget,
+        callback: OfficialProviderMethodResultCallback,
+    )
+
+    /**
+     * 为精确的构造函数描述符安装执行后 Hook。
+     *
+     * 构造函数使用独立目标类型，避免 Provider Pack 把反编译器显示的 `<init>`
+     * 当作普通反射方法名进行查找。
+     */
+    fun hookAfterConstructor(
+        target: OfficialProviderConstructorTarget,
+        callback: OfficialProviderConstructorCallback,
+    )
+
+    /**
      * Resolves an obfuscation-sensitive method from the original target DEX.
      *
      * The host first tries a previously verified exact descriptor. DexKit is
@@ -88,6 +109,15 @@ interface OfficialProviderHost {
         tag: String,
         message: String,
     ) = Unit
+
+    /**
+     * 读取主模块远端 Hook 配置中的布尔键，Provider Pack 用它决定本地歌词策略。
+     *
+     * 例如椒盐音乐在“优先使用在线源”开启时跳过内置歌词与同目录歌词读取。
+     * 默认实现返回 [default]，保持旧 Provider Pack 的二进制兼容；调用此方法的
+     * Pack 应相应提高 manifest 的 minCoreVersionCode，避免在旧主模块上静默降级。
+     */
+    fun getBooleanPreference(key: String, default: Boolean): Boolean = default
 }
 
 /**
@@ -133,6 +163,11 @@ data class OfficialProviderMethodTarget(
     val parameterTypeNames: List<String> = emptyList(),
     val returnTypeName: String,
     val isStatic: Boolean,
+)
+
+data class OfficialProviderConstructorTarget(
+    val className: String,
+    val parameterTypeNames: List<String> = emptyList(),
 )
 
 enum class OfficialProviderDexTypeSource {
@@ -410,6 +445,14 @@ internal object OfficialProviderDexMethodQueryValidator {
 
 fun interface OfficialProviderMethodCallback {
     fun onMethodCalled(receiver: Any?, arguments: Array<Any?>)
+}
+
+fun interface OfficialProviderMethodResultCallback {
+    fun onMethodReturned(receiver: Any?, arguments: Array<Any?>, result: Any?): Any?
+}
+
+fun interface OfficialProviderConstructorCallback {
+    fun onConstructed(instance: Any?, arguments: Array<Any?>)
 }
 
 fun interface OfficialProviderDexMethodsCallback {

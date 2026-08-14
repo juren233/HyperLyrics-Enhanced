@@ -40,8 +40,8 @@ android {
         applicationId = "com.juren233.hyperlyricsenhanced"
         minSdk = 33
         targetSdk = 37
-        versionCode = 140081
-        versionName = ciVersionName ?: "7.4.0-beta"
+        versionCode = 140139
+        versionName = ciVersionName ?: "7.4.0-canary"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -132,6 +132,7 @@ dependencies {
     implementation(libs.lyricon.provider)
 
     testImplementation(libs.junit)
+    testImplementation("org.json:json:20180813")
 
     // --- 布局兼容 ---
     implementation(libs.androidx.constraintlayout)

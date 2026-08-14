@@ -361,6 +361,7 @@ internal class ApplePlaybackMetadataCoordinator(
                     mediaId = metadata.id,
                     title = alias?.title,
                     artist = alias?.artist,
+                    album = resolution.album ?: alias?.album,
                     resolved = true,
                 )
                 if (alias == null) {

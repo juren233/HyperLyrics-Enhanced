@@ -727,6 +727,7 @@ private fun AodSettingsPage(spec: AodSettingsSpec) {
                     }
                     SwitchPreference(
                         title = stringResource(R.string.title_aod_next_song_preview),
+                        summary = stringResource(R.string.summary_island_next_song_preview),
                         checked = nextSongPreview,
                         onCheckedChange = {
                             nextSongPreview = it

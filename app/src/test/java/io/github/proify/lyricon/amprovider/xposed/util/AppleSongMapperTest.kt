@@ -25,7 +25,8 @@ class AppleSongMapperTest {
             AppleSong(
                 genre = "J-Pop",
                 originalTitle = "カワキヲアメク",
-                originalArtist = "美波"
+                originalArtist = "美波",
+                originalAlbum = "カワキヲアメク"
             )
         )
 
@@ -40,6 +41,10 @@ class AppleSongMapperTest {
         assertEquals(
             "美波",
             mappedSong.metadata?.getString(LyricMetadataKeys.APPLE_ORIGINAL_ARTIST)
+        )
+        assertEquals(
+            "カワキヲアメク",
+            mappedSong.metadata?.getString(LyricMetadataKeys.APPLE_ORIGINAL_ALBUM)
         )
     }
 

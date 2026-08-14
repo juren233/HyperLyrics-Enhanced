@@ -4,7 +4,6 @@ import com.juren233.hyperlyricsenhanced.lyric.LrcLine
 import com.juren233.hyperlyricsenhanced.online.model.Source
 
 internal object OnlineTranslationSelector {
-    private const val PREFERRED_COVERAGE_THRESHOLD = 0.96
     private const val COVERAGE_WEIGHT = 0.75
     private const val CONFIDENCE_WEIGHT = 0.25
     private const val QUALITY_EPSILON = 0.005
@@ -21,7 +20,7 @@ internal object OnlineTranslationSelector {
 
     fun shouldTryAlternative(candidate: Candidate?, totalLineCount: Int): Boolean {
         if (candidate == null || totalLineCount <= 0) return true
-        return coverage(candidate, totalLineCount) < PREFERRED_COVERAGE_THRESHOLD
+        return candidate.matchedContentCount < totalLineCount
     }
 
     fun select(
@@ -38,6 +37,18 @@ internal object OnlineTranslationSelector {
         } else {
             preferred
         }
+    }
+
+    fun rank(
+        candidates: Collection<Candidate>,
+        totalLineCount: Int,
+        tieBreakOrder: List<Source>,
+    ): List<Candidate> {
+        val tieBreakIndices = tieBreakOrder.withIndex().associate { it.value to it.index }
+        return candidates.sortedWith(
+            compareByDescending<Candidate> { quality(it, totalLineCount) }
+                .thenBy { tieBreakIndices[it.source] ?: Int.MAX_VALUE }
+        )
     }
 
     fun coverage(candidate: Candidate, totalLineCount: Int): Double {

@@ -215,6 +215,20 @@ fun LyricSettingsPage() {
             }
         }
 
+        item(key = "online_translation_sources") {
+            Card(
+                modifier = Modifier
+                    .padding(horizontal = 12.dp)
+                    .padding(bottom = 12.dp)
+                    .fillMaxWidth()
+            ) {
+                ArrowPreference(
+                    title = stringResource(R.string.title_online_translation_sources),
+                    onClick = { navigator.navigate(Route.OnlineTranslationSources) },
+                )
+            }
+        }
+
         item(key = "display_title") {
             SmallTitle(text = stringResource(R.string.title_lyric_display_group))
         }

@@ -6,6 +6,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 
 class AodMediaLyricPolicyTest {
     @Test
@@ -329,16 +330,13 @@ class AodMediaLyricPolicyTest {
     }
 
     @Test
-    fun `centers a short lyric inside the native aod background`() {
-        val lyricTop = AodMediaLyricPolicy.centeredLyricTop(
-            nativeCardHeight = 138,
+    fun `anchors lock screen lyric top below the media content`() {
+        val lyricTop = AodMediaLyricPolicy.lockScreenLyricTop(
             anchorBottom = 65,
-            lyricHeight = 18,
-            topGap = 17,
-            bottomPadding = 21
+            topGap = 17
         )
 
-        assertEquals(90, lyricTop)
+        assertEquals(82, lyricTop)
         assertEquals(
             138,
             AodMediaLyricPolicy.requiredCardHeight(
@@ -350,13 +348,10 @@ class AodMediaLyricPolicyTest {
     }
 
     @Test
-    fun `keeps tall lyrics at the minimum top gap and grows the card`() {
-        val lyricTop = AodMediaLyricPolicy.centeredLyricTop(
-            nativeCardHeight = 138,
+    fun `grows the card below fixed-top tall lyrics`() {
+        val lyricTop = AodMediaLyricPolicy.lockScreenLyricTop(
             anchorBottom = 65,
-            lyricHeight = 124,
-            topGap = 17,
-            bottomPadding = 21
+            topGap = 17
         )
 
         assertEquals(82, lyricTop)
@@ -820,6 +815,163 @@ class AodMediaLyricPolicyTest {
                 lyricBottom = 257,
                 bottomPadding = 21,
             )
+        )
+    }
+
+    @Test
+    fun `shrinks lock screen card when multiline lyrics return to one line`() {
+        val multilineHeight = AodMediaLyricPolicy.lockScreenTargetCardHeight(
+            nativeCardHeight = 429,
+            lyricBottom = 607,
+            bottomPadding = 21,
+        )
+        val singleLineHeight = AodMediaLyricPolicy.lockScreenTargetCardHeight(
+            nativeCardHeight = 429,
+            lyricBottom = 453,
+            bottomPadding = 21,
+        )
+
+        assertEquals(628, multilineHeight)
+        assertEquals(474, singleLineHeight)
+        assertTrue(singleLineHeight < multilineHeight)
+    }
+
+    @Test
+    fun `keeps full aod media background top fixed while card grows downward`() {
+        assertEquals(
+            698,
+            AodMediaLyricPolicy.lockScreenBackgroundTargetHeight(
+                targetCardHeight = 698,
+            )
+        )
+    }
+
+    @Test
+    fun `clamps invalid full aod background height`() {
+        assertEquals(
+            0,
+            AodMediaLyricPolicy.lockScreenBackgroundTargetHeight(
+                targetCardHeight = -1,
+            )
+        )
+    }
+
+    @Test
+    fun `full aod media background still shrinks with the current lyric`() {
+        val multilineCardHeight = AodMediaLyricPolicy.lockScreenTargetCardHeight(
+            nativeCardHeight = 429,
+            lyricBottom = 607,
+            bottomPadding = 21,
+        )
+        val singleLineCardHeight = AodMediaLyricPolicy.lockScreenTargetCardHeight(
+            nativeCardHeight = 429,
+            lyricBottom = 453,
+            bottomPadding = 21,
+        )
+
+        assertEquals(
+            628,
+            AodMediaLyricPolicy.lockScreenBackgroundTargetHeight(
+                targetCardHeight = multilineCardHeight,
+            )
+        )
+        assertEquals(
+            474,
+            AodMediaLyricPolicy.lockScreenBackgroundTargetHeight(
+                targetCardHeight = singleLineCardHeight,
+            )
+        )
+    }
+
+    @Test
+    fun `selects mode aware native height for the lock screen card`() {
+        assertEquals(
+            429,
+            AodMediaLyricPolicy.lockScreenNativeCardHeight(
+                fullAod = true,
+                fullAodBaseHeight = 429,
+                playerBaseHeight = 579,
+            )
+        )
+        assertEquals(
+            579,
+            AodMediaLyricPolicy.lockScreenNativeCardHeight(
+                fullAod = false,
+                fullAodBaseHeight = 429,
+                playerBaseHeight = 579,
+            )
+        )
+    }
+
+    @Test
+    fun `detects lock screen height drift only for a positive applied height`() {
+        assertTrue(
+            AodMediaLyricPolicy.lockScreenHeightNeedsReassert(
+                appliedHeight = 532,
+                currentLayoutHeight = 429,
+            )
+        )
+        assertFalse(
+            AodMediaLyricPolicy.lockScreenHeightNeedsReassert(
+                appliedHeight = 532,
+                currentLayoutHeight = 532,
+            )
+        )
+        assertFalse(
+            AodMediaLyricPolicy.lockScreenHeightNeedsReassert(
+                appliedHeight = null,
+                currentLayoutHeight = 429,
+            )
+        )
+        assertFalse(
+            AodMediaLyricPolicy.lockScreenHeightNeedsReassert(
+                appliedHeight = 0,
+                currentLayoutHeight = 429,
+            )
+        )
+        assertFalse(
+            AodMediaLyricPolicy.lockScreenHeightNeedsReassert(
+                appliedHeight = 532,
+                currentLayoutHeight = null,
+            )
+        )
+    }
+
+    @Test
+    fun `restores native lock screen height only after this overlay changed it`() {
+        assertFalse(
+            AodMediaLyricPolicy.lockScreenHeightNeedsRestore(
+                appliedHeight = null,
+                heightAnimationActive = false,
+            )
+        )
+        assertTrue(
+            AodMediaLyricPolicy.lockScreenHeightNeedsRestore(
+                appliedHeight = 532,
+                heightAnimationActive = false,
+            )
+        )
+        assertTrue(
+            AodMediaLyricPolicy.lockScreenHeightNeedsRestore(
+                appliedHeight = null,
+                heightAnimationActive = true,
+            )
+        )
+    }
+
+    @Test
+    fun `lock screen AOD never takes ownership of notification stack translation y`() {
+        val relativeSourcePath =
+            "src/main/java/com/juren233/hyperlyricsenhanced/root/mediacard/notification/" +
+                "NotificationMediaAodLyricHooker.kt"
+        val sourceFile = listOf(File("app/$relativeSourcePath"), File(relativeSourcePath))
+            .first(File::isFile)
+        val source = sourceFile.readText()
+
+        assertFalse(
+            "MiuiMediaHeaderView.translationY belongs to the notification stack positioner",
+            source.contains("headerHeightController?.view?.translationY") ||
+                source.contains("pinnedHeaderTop"),
         )
     }
 }
