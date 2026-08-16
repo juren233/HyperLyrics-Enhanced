@@ -61,6 +61,8 @@
     <string name="title_apple_music_simplify_traditional_lyrics">将繁体歌词转成简体</string>
     <string name="title_apple_music_native_online_translation">补全歌词翻译与发音</string>
     <string name="summary_apple_music_native_online_translation">优先使用Apple源，三方在线源兜底</string>
+    <string name="title_apple_music_fill_missing_lyrics">为无歌词的歌曲补充歌词</string>
+    <string name="summary_apple_music_fill_missing_lyrics">来源请在三方在线源配置中设置</string>
     <string name="title_apple_music_hide_mandarin_pinyin">不显示国语歌拼音</string>
     <string name="title_apple_music_lyrics_blur_effect">歌词模糊效果</string>
     <string name="option_apple_music_lyrics_blur_effect_off">不开启</string>

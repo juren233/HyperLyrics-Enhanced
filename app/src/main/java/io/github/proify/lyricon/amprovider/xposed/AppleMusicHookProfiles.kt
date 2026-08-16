@@ -42,11 +42,17 @@ internal enum class AppleMusicHookPoint {
     LYRICS_PREFERRED_LANGUAGES_REQUEST,
     LYRICS_VIEW_MODEL_LOAD,
     LYRICS_VIEW_MODEL_BUILD,
+    LYRICS_RESULT_PRESENTATION,
     LYRICS_NATIVE_PRESENTATION,
     LYRICS_UI_ON_CREATE_VIEW,
     LYRICS_UI_ON_RESUME,
     LYRICS_UI_ON_DESTROY_VIEW,
     LYRICS_WORD_VECTOR_CLASS,
+    LYRICS_TTML_PARSER,
+    LYRICS_AVAILABILITY_HAS_LYRICS,
+    LYRICS_AVAILABILITY_TIME_SYNCED,
+    PLAYER_LYRICS_AVAILABILITY_CALCULATOR,
+    PLAYER_SONG_BINDING_EXECUTE,
     APPLE_CUSTOM_TEXT_VIEW,
     LYRICS_GRADIENT_MASK_UPDATE,
     COMPOSE_TEXT_LAYOUT,
@@ -153,6 +159,9 @@ internal enum class AppleMusicRuntimeMember {
     LYRICS_NATIVE_WHITESPACE_METHOD,
     LYRICS_NATIVE_SONG_PRONUNCIATION_LANGUAGES_METHOD,
     LYRICS_NATIVE_SONG_TRANSLATION_LANGUAGES_METHOD,
+    LYRICS_NATIVE_SET_ADAM_ID_METHOD,
+    LYRICS_NATIVE_SET_QUEUE_ID_METHOD,
+    LYRICS_NATIVE_SONG_QUEUE_ID_METHOD,
     LYRICS_NATIVE_SONG_AGENTS_METHOD,
     LYRICS_NATIVE_AGENT_METHOD,
     LYRICS_NATIVE_AGENT_NAME_TYPES_METHOD,
@@ -162,11 +171,14 @@ internal enum class AppleMusicRuntimeMember {
     LYRICS_SONG_ID_METHOD,
     LYRICS_SONG_QUEUE_ID_METHOD,
     LYRICS_VIEW_MODEL_CURRENT_LANGUAGE_METHOD,
+    LYRICS_VIEW_MODEL_RESULT_GETTER,
     LYRICS_UI_RECYCLER_VIEW_METHOD,
+    LYRICS_UI_ROOT_VIEW_GETTER,
     LYRICS_UI_BINDING_FIELD,
     LYRICS_UI_BINDING_RECYCLER_FIELD,
     LYRICS_UI_ADAPTER_FIELD,
     LYRICS_UI_VIEW_MODEL_FIELD,
+    LYRICS_UI_LOADING_PROGRESS_RESOURCE_NAME,
     LYRICS_ADAPTER_ACTIVE_POSITIONS_METHOD,
     LYRICS_ADAPTER_LYRICS_METHOD,
     LYRICS_ADAPTER_LINE_COUNT_METHOD,
@@ -181,6 +193,10 @@ internal enum class AppleMusicRuntimeMember {
     LYRICS_VIEW_MODEL_PRONUNCIATION_AVAILABLE_GETTER,
     LYRICS_VIEW_MODEL_TRANSLATION_SELECTED_GETTER,
     LYRICS_VIEW_MODEL_TRANSLATION_AVAILABLE_GETTER,
+    PLAYER_LYRICS_ITEM_HAS_LYRICS_METHOD,
+    PLAYER_LYRICS_ITEM_HAS_CUSTOM_LYRICS_METHOD,
+    PLAYER_SONG_BINDING_PLAYBACK_ITEM_FIELD,
+    PLAYER_SONG_BINDING_LYRICS_BUTTON_FIELD,
     LYRICS_WORD_VECTOR_CLASS_NAME,
     LYRICS_GRADIENT_LAYOUT_CLASS_NAME,
     LYRICS_GRADIENT_MASK_START_CHILD_FIELD,
@@ -1302,6 +1318,12 @@ internal object AppleMusicHookProfiles {
                             "getPronunciationLanguages",
                         AppleMusicRuntimeMember.LYRICS_NATIVE_SONG_TRANSLATION_LANGUAGES_METHOD to
                             "getTranslationLanguages",
+                        AppleMusicRuntimeMember.LYRICS_NATIVE_SET_ADAM_ID_METHOD to
+                            "setAdamId",
+                        AppleMusicRuntimeMember.LYRICS_NATIVE_SET_QUEUE_ID_METHOD to
+                            "setQueueId",
+                        AppleMusicRuntimeMember.LYRICS_NATIVE_SONG_QUEUE_ID_METHOD to
+                            "getQueueId",
                         AppleMusicRuntimeMember.LYRICS_NATIVE_SONG_AGENTS_METHOD to "getAgents",
                         AppleMusicRuntimeMember.LYRICS_NATIVE_AGENT_METHOD to "getAgent",
                         AppleMusicRuntimeMember.LYRICS_NATIVE_AGENT_NAME_TYPES_METHOD to
@@ -1311,6 +1333,8 @@ internal object AppleMusicHookProfiles {
                         AppleMusicRuntimeMember.LYRICS_SONG_ADAM_ID_METHOD to "getAdamId",
                         AppleMusicRuntimeMember.LYRICS_VIEW_MODEL_CURRENT_LANGUAGE_METHOD to
                             "getCurrentSystemLyricsLanguage",
+                        AppleMusicRuntimeMember.LYRICS_VIEW_MODEL_RESULT_GETTER to
+                            "getLyricsResult",
                         AppleMusicRuntimeMember.LYRICS_WORD_VECTOR_CLASS_NAME to
                             "com.apple.android.music.ttml.javanative.model.LyricsWordVector",
                     ),
@@ -1321,6 +1345,22 @@ internal object AppleMusicHookProfiles {
                     "com.apple.android.music.player.viewmodel.PlayerLyricsViewModel",
                     "buildTimeRangeToLyricsMap",
                     1,
+                ),
+            ),
+            // Verified from the original Apple Music 6.5.1 (1583) classes2.dex:
+            // PlayerLyricsViewFragment.I2(SongInfoPtr)V is the main lyrics-result consumer. It
+            // validates SongInfoNative.adamId against the current BaseContentItem.getId(), then
+            // installs the lyrics adapter and closes the loading/no-lyrics state. R2 only updates
+            // translation/pronunciation availability and must not be used as the main result path.
+            AppleMusicHookPoint.LYRICS_RESULT_PRESENTATION to listOf(
+                AppleMusicHookTarget(
+                    "com.apple.android.music.player.fragment.PlayerLyricsViewFragment",
+                    "I2",
+                    1,
+                    parameterTypeNames = listOf(
+                        "com.apple.android.music.ttml.javanative.model.SongInfo\$SongInfoPtr"
+                    ),
+                    returnTypeName = "void",
                 ),
             ),
             AppleMusicHookPoint.LYRICS_NATIVE_PRESENTATION to listOf(
@@ -1338,10 +1378,14 @@ internal object AppleMusicHookProfiles {
                     runtimeMemberNames = mapOf(
                         AppleMusicRuntimeMember.LYRICS_UI_RECYCLER_VIEW_METHOD to
                             "getRecyclerView",
+                        AppleMusicRuntimeMember.LYRICS_UI_ROOT_VIEW_GETTER to
+                            "getView",
                         AppleMusicRuntimeMember.LYRICS_UI_BINDING_FIELD to "i0",
                         AppleMusicRuntimeMember.LYRICS_UI_BINDING_RECYCLER_FIELD to "a0",
                         AppleMusicRuntimeMember.LYRICS_UI_ADAPTER_FIELD to "k0",
                         AppleMusicRuntimeMember.LYRICS_UI_VIEW_MODEL_FIELD to "j1",
+                        AppleMusicRuntimeMember.LYRICS_UI_LOADING_PROGRESS_RESOURCE_NAME to
+                            "loading_progress",
                         AppleMusicRuntimeMember.LYRICS_VIEW_MODEL_PRONUNCIATION_SELECTED_GETTER to
                             "getPronunciationSelectedLiveResult",
                         AppleMusicRuntimeMember.LYRICS_VIEW_MODEL_PRONUNCIATION_AVAILABLE_GETTER to
@@ -1370,6 +1414,77 @@ internal object AppleMusicHookProfiles {
             AppleMusicHookPoint.LYRICS_WORD_VECTOR_CLASS to listOf(
                 AppleMusicHookTarget(
                     "com.apple.android.music.ttml.javanative.model.LyricsWordVector"
+                ),
+            ),
+            // Verified from Apple Music 6.5.1 (1583) classes3.dex:
+            // com.apple.android.music.ttml.f#e 直接以 MediaEntity.getTtml() 的
+            // TTML 字符串调用 TTMLParser$TTMLParserNative.songInfoFromTTML(String)。
+            AppleMusicHookPoint.LYRICS_TTML_PARSER to listOf(
+                AppleMusicHookTarget(
+                    "com.apple.android.music.ttml.javanative.TTMLParser\$TTMLParserNative",
+                    "songInfoFromTTML",
+                    1,
+                    parameterTypeNames = listOf("java.lang.String"),
+                    returnTypeName =
+                        "com.apple.android.music.ttml.javanative.model.SongInfo\$SongInfoPtr",
+                ),
+            ),
+            // Verified from Apple Music 6.5.1 (1583) classes2.dex:
+            // PlaybackItem.hasLyrics()Z / hasTimeSyncedLyrics()Z 由 BasePlaybackItem 实现，
+            // 播放页歌词按钮的可用状态读取该值。
+            AppleMusicHookPoint.LYRICS_AVAILABILITY_HAS_LYRICS to listOf(
+                AppleMusicHookTarget(
+                    "com.apple.android.music.model.BasePlaybackItem",
+                    "hasLyrics",
+                    0,
+                    returnTypeName = "boolean",
+                ),
+            ),
+            AppleMusicHookPoint.LYRICS_AVAILABILITY_TIME_SYNCED to listOf(
+                AppleMusicHookTarget(
+                    "com.apple.android.music.model.BasePlaybackItem",
+                    "hasTimeSyncedLyrics",
+                    0,
+                    returnTypeName = "boolean",
+                ),
+            ),
+            // Verified from the original Apple Music 6.5.1 (1583) classes2.dex:
+            // player.e1.i(PlaybackItem)Z gates the playback-page lyrics entry with the global
+            // feature switch and (hasLyrics() || hasCustomLyrics()). This diagnostic target must
+            // remain observational; it does not replace the calculated result.
+            AppleMusicHookPoint.PLAYER_LYRICS_AVAILABILITY_CALCULATOR to listOf(
+                AppleMusicHookTarget(
+                    className = "com.apple.android.music.player.e1",
+                    methodName = "i",
+                    parameterCount = 1,
+                    parameterTypeNames = listOf(
+                        "com.apple.android.music.model.PlaybackItem"
+                    ),
+                    returnTypeName = "boolean",
+                    isStatic = true,
+                    runtimeMemberNames = mapOf(
+                        AppleMusicRuntimeMember.PLAYER_LYRICS_ITEM_HAS_LYRICS_METHOD to
+                            "hasLyrics",
+                        AppleMusicRuntimeMember.PLAYER_LYRICS_ITEM_HAS_CUSTOM_LYRICS_METHOD to
+                            "hasCustomLyrics",
+                    ),
+                ),
+            ),
+            // Verified from the same original DEX. l7.N2.l() is the generated DataBinding
+            // execute method; its PlaybackItem is inherited as M2.i0 and the lyrics ImageView as
+            // M2.a0. The method passes e1.i(item) to a0.setEnabled(result).
+            AppleMusicHookPoint.PLAYER_SONG_BINDING_EXECUTE to listOf(
+                AppleMusicHookTarget(
+                    className = "l7.N2",
+                    methodName = "l",
+                    parameterCount = 0,
+                    parameterTypeNames = emptyList(),
+                    returnTypeName = "void",
+                    isStatic = false,
+                    runtimeMemberNames = mapOf(
+                        AppleMusicRuntimeMember.PLAYER_SONG_BINDING_PLAYBACK_ITEM_FIELD to "i0",
+                        AppleMusicRuntimeMember.PLAYER_SONG_BINDING_LYRICS_BUTTON_FIELD to "a0",
+                    ),
                 ),
             ),
             AppleMusicHookPoint.APPLE_CUSTOM_TEXT_VIEW to listOf(
@@ -1704,10 +1819,16 @@ internal class AppleMusicHookResolver(
             AppleMusicHookPoint.LYRICS_OFFICIAL_PRONUNCIATION_MATCH,
             AppleMusicHookPoint.LYRICS_VIEW_MODEL_LOAD,
             AppleMusicHookPoint.LYRICS_VIEW_MODEL_BUILD,
+            AppleMusicHookPoint.LYRICS_RESULT_PRESENTATION,
             AppleMusicHookPoint.LYRICS_NATIVE_PRESENTATION,
             AppleMusicHookPoint.LYRICS_UI_ON_CREATE_VIEW,
             AppleMusicHookPoint.LYRICS_UI_ON_RESUME,
             AppleMusicHookPoint.LYRICS_UI_ON_DESTROY_VIEW,
+            AppleMusicHookPoint.LYRICS_TTML_PARSER,
+            AppleMusicHookPoint.LYRICS_AVAILABILITY_HAS_LYRICS,
+            AppleMusicHookPoint.LYRICS_AVAILABILITY_TIME_SYNCED,
+            AppleMusicHookPoint.PLAYER_LYRICS_AVAILABILITY_CALCULATOR,
+            AppleMusicHookPoint.PLAYER_SONG_BINDING_EXECUTE,
             AppleMusicHookPoint.LYRICS_GRADIENT_MASK_UPDATE -> true
 
             AppleMusicHookPoint.IN_APP_GLOBAL_METADATA_DISPATCHER,

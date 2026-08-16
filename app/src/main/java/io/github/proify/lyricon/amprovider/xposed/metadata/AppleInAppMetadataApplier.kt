@@ -401,6 +401,41 @@ internal class AppleInAppMetadataApplier(
         }
     }
 
+    /**
+     * 重新触发当前 PlaybackItem 的 DataBinding 计算。
+     *
+     * Apple Music 6.5.1 的歌词按钮把 `e1.i(playbackItem)` 的首次结果缓存在
+     * `l7.N2` 绑定中；仅重放媒体元数据回调时，新旧 PlaybackItem 在 Hook 下会同时
+     * 返回相同的 `hasLyrics()`，差异比较因此不会重新绑定。这里使用原始 DEX 已确认的
+     * `BaseCollectionItemView -> androidx.databinding.a#notifyChange()` 路径，只使现有绑定
+     * 重新读取可用性，不修改 Apple 的歌词字段或来源优先级。
+     */
+    fun refreshPlaybackItemBindings(mediaId: String?) {
+        val targetId = mediaId?.takeIf(String::isNotBlank) ?: return
+        runtime.mainHandler.post {
+            var refreshed = 0
+            val notifiedItems = ArrayList<String>()
+            registry.livePlaybackItemRefs(targetId).forEach { ref ->
+                if (ref.contract != InAppPlaybackItemContract.STANDARD) return@forEach
+                val playbackItem = ref.playbackItem.get() ?: return@forEach
+                val itemIdentity =
+                    "${playbackItem.javaClass.name}@" +
+                        System.identityHashCode(playbackItem).toString(16)
+                if (notifyPlaybackItemChanged(playbackItem, "歌词可用性刷新")) {
+                    refreshed += 1
+                    notifiedItems += itemIdentity
+                }
+            }
+            if (BuildConfig.DEBUG) {
+                ProviderLogger.diagnostic(
+                    "Apple Music 无歌词补充播放页绑定刷新: " +
+                        "id=$targetId, items=$refreshed, " +
+                        "notified=${notifiedItems.joinToString(prefix = "[", postfix = "]")}"
+                )
+            }
+        }
+    }
+
     private fun localizedEntityType(
         contentItem: Any,
     ): AppleInternalCatalogResolver.LocalizedEntityType? = localizedEntityTypeForQueueItem(
@@ -453,7 +488,7 @@ internal class AppleInAppMetadataApplier(
         }.isSuccess
     }
 
-    private fun notifyPlaybackItemChanged(playbackItem: Any, operation: String) {
+    private fun notifyPlaybackItemChanged(playbackItem: Any, operation: String): Boolean =
         runCatching {
             AppleReflection.call(
                 playbackItem,
@@ -461,15 +496,16 @@ internal class AppleInAppMetadataApplier(
                     AppleMusicRuntimeMember.CONTENT_ITEM_NOTIFY_CHANGE_METHOD,
                 ),
             )
+            true
         }
-            .onFailure {
+            .getOrElse {
                 ProviderLogger.error(
                     "Apple Music App PlaybackItem $operation 通知失败: " +
                         "class=${playbackItem.javaClass.name}",
                     it,
                 )
+                false
             }
-    }
 
     private fun setMetadataField(
         metadata: Any,

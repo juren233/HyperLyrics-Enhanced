@@ -1076,6 +1076,9 @@ class AppleMusicHookProfilesTest {
                     "getPronunciationLanguages",
                 AppleMusicRuntimeMember.LYRICS_NATIVE_SONG_TRANSLATION_LANGUAGES_METHOD to
                     "getTranslationLanguages",
+                AppleMusicRuntimeMember.LYRICS_NATIVE_SET_ADAM_ID_METHOD to "setAdamId",
+                AppleMusicRuntimeMember.LYRICS_NATIVE_SET_QUEUE_ID_METHOD to "setQueueId",
+                AppleMusicRuntimeMember.LYRICS_NATIVE_SONG_QUEUE_ID_METHOD to "getQueueId",
                 AppleMusicRuntimeMember.LYRICS_NATIVE_SONG_AGENTS_METHOD to "getAgents",
                 AppleMusicRuntimeMember.LYRICS_NATIVE_AGENT_METHOD to "getAgent",
                 AppleMusicRuntimeMember.LYRICS_NATIVE_AGENT_NAME_TYPES_METHOD to "getNameTypes_",
@@ -1084,6 +1087,7 @@ class AppleMusicHookProfilesTest {
                 AppleMusicRuntimeMember.LYRICS_SONG_ADAM_ID_METHOD to "getAdamId",
                 AppleMusicRuntimeMember.LYRICS_VIEW_MODEL_CURRENT_LANGUAGE_METHOD to
                     "getCurrentSystemLyricsLanguage",
+                AppleMusicRuntimeMember.LYRICS_VIEW_MODEL_RESULT_GETTER to "getLyricsResult",
                 AppleMusicRuntimeMember.LYRICS_NATIVE_LINE_TEXT_METHOD to "getHtmlLineText",
                 AppleMusicRuntimeMember.LYRICS_NATIVE_TRANSLATION_TEXT_METHOD to
                     "getHtmlTranslationLineText",
@@ -1117,6 +1121,16 @@ class AppleMusicHookProfilesTest {
             "buildTimeRangeToLyricsMap",
             target(version, AppleMusicHookPoint.LYRICS_VIEW_MODEL_BUILD).methodName,
         )
+        val resultPresentation = target(
+            version,
+            AppleMusicHookPoint.LYRICS_RESULT_PRESENTATION,
+        )
+        assertEquals("I2", resultPresentation.methodName)
+        assertEquals(
+            listOf("com.apple.android.music.ttml.javanative.model.SongInfo\$SongInfoPtr"),
+            resultPresentation.parameterTypeNames,
+        )
+        assertEquals("void", resultPresentation.returnTypeName)
         assertEquals(
             "R2",
             target(version, AppleMusicHookPoint.LYRICS_NATIVE_PRESENTATION).methodName,
@@ -1126,10 +1140,13 @@ class AppleMusicHookProfilesTest {
         assertEquals(
             mapOf(
                 AppleMusicRuntimeMember.LYRICS_UI_RECYCLER_VIEW_METHOD to "getRecyclerView",
+                AppleMusicRuntimeMember.LYRICS_UI_ROOT_VIEW_GETTER to "getView",
                 AppleMusicRuntimeMember.LYRICS_UI_BINDING_FIELD to "i0",
                 AppleMusicRuntimeMember.LYRICS_UI_BINDING_RECYCLER_FIELD to "a0",
                 AppleMusicRuntimeMember.LYRICS_UI_ADAPTER_FIELD to "k0",
                 AppleMusicRuntimeMember.LYRICS_UI_VIEW_MODEL_FIELD to "j1",
+                AppleMusicRuntimeMember.LYRICS_UI_LOADING_PROGRESS_RESOURCE_NAME to
+                    "loading_progress",
                 AppleMusicRuntimeMember.LYRICS_VIEW_MODEL_PRONUNCIATION_SELECTED_GETTER to
                     "getPronunciationSelectedLiveResult",
                 AppleMusicRuntimeMember.LYRICS_VIEW_MODEL_PRONUNCIATION_AVAILABLE_GETTER to
@@ -1161,6 +1178,45 @@ class AppleMusicHookProfilesTest {
                 adapter.runtimeMemberNames,
             )
         }
+        val availabilityCalculator = target(
+            version,
+            AppleMusicHookPoint.PLAYER_LYRICS_AVAILABILITY_CALCULATOR,
+        )
+        assertEquals(
+            "com.apple.android.music.player.e1",
+            availabilityCalculator.className,
+        )
+        assertEquals("i", availabilityCalculator.methodName)
+        assertEquals(
+            listOf("com.apple.android.music.model.PlaybackItem"),
+            availabilityCalculator.parameterTypeNames,
+        )
+        assertEquals("boolean", availabilityCalculator.returnTypeName)
+        assertEquals(true, availabilityCalculator.isStatic)
+        assertEquals(
+            mapOf(
+                AppleMusicRuntimeMember.PLAYER_LYRICS_ITEM_HAS_LYRICS_METHOD to "hasLyrics",
+                AppleMusicRuntimeMember.PLAYER_LYRICS_ITEM_HAS_CUSTOM_LYRICS_METHOD to
+                    "hasCustomLyrics",
+            ),
+            availabilityCalculator.runtimeMemberNames,
+        )
+        val playerSongBinding = target(
+            version,
+            AppleMusicHookPoint.PLAYER_SONG_BINDING_EXECUTE,
+        )
+        assertEquals("l7.N2", playerSongBinding.className)
+        assertEquals("l", playerSongBinding.methodName)
+        assertEquals(emptyList<String?>(), playerSongBinding.parameterTypeNames)
+        assertEquals("void", playerSongBinding.returnTypeName)
+        assertEquals(false, playerSongBinding.isStatic)
+        assertEquals(
+            mapOf(
+                AppleMusicRuntimeMember.PLAYER_SONG_BINDING_PLAYBACK_ITEM_FIELD to "i0",
+                AppleMusicRuntimeMember.PLAYER_SONG_BINDING_LYRICS_BUTTON_FIELD to "a0",
+            ),
+            playerSongBinding.runtimeMemberNames,
+        )
         val customTextView = target(version, AppleMusicHookPoint.APPLE_CUSTOM_TEXT_VIEW)
         assertEquals(
             "com.apple.android.music.common.views.CustomTextView",

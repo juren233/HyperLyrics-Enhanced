@@ -243,6 +243,8 @@ object RootConstants {
         "key_hook_apple_music_simplify_traditional_lyrics"
     const val KEY_HOOK_APPLE_MUSIC_NATIVE_ONLINE_TRANSLATION =
         "key_hook_apple_music_native_online_translation"
+    const val KEY_HOOK_APPLE_MUSIC_FILL_MISSING_LYRICS =
+        "key_hook_apple_music_fill_missing_lyrics"
     const val KEY_HOOK_APPLE_MUSIC_HIDE_MANDARIN_PINYIN =
         "key_hook_apple_music_hide_mandarin_pinyin"
     const val KEY_HOOK_APPLE_MUSIC_LYRICS_BLUR_EFFECT =
@@ -290,6 +292,7 @@ object RootConstants {
     const val DEFAULT_HOOK_APPLE_MUSIC_NOTIFICATION_OPEN_FULL_PLAYER = false
     const val DEFAULT_HOOK_APPLE_MUSIC_SIMPLIFY_TRADITIONAL_LYRICS = false
     const val DEFAULT_HOOK_APPLE_MUSIC_NATIVE_ONLINE_TRANSLATION = false
+    const val DEFAULT_HOOK_APPLE_MUSIC_FILL_MISSING_LYRICS = false
     const val DEFAULT_HOOK_APPLE_MUSIC_HIDE_MANDARIN_PINYIN = false
     const val APPLE_MUSIC_LYRICS_BLUR_EFFECT_OFF = 0
     const val APPLE_MUSIC_LYRICS_BLUR_EFFECT_NATIVE = 1

@@ -60,6 +60,8 @@
     <string name="title_apple_music_simplify_traditional_lyrics">Convert Traditional Chinese lyrics to Simplified Chinese</string>
     <string name="title_apple_music_native_online_translation">Fill missing lyric translations and pronunciations</string>
     <string name="summary_apple_music_native_online_translation">Prioritizes Apple, with third-party online sources as fallback</string>
+    <string name="title_apple_music_fill_missing_lyrics">Fill lyrics for songs without lyrics</string>
+    <string name="summary_apple_music_fill_missing_lyrics">Configure sources in the third-party online source settings</string>
     <string name="title_apple_music_hide_mandarin_pinyin">Hide pinyin for Mandarin songs</string>
     <string name="title_apple_music_lyrics_blur_effect">Lyrics blur effect</string>
     <string name="option_apple_music_lyrics_blur_effect_off">Off</string>

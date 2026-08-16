@@ -382,6 +382,61 @@ class AppleNativeOnlineTranslationStoreTest {
         assertNull(store.translation("100", 2_000, 3_000, "君の名は"))
     }
 
+    @Test
+    fun `reports display content unchanged when only translation source changes`() {
+        val store = AppleNativeOnlineTranslationStore()
+        val first = song(
+            id = "100",
+            RichLyricLine(
+                begin = 1_000,
+                end = 2_000,
+                text = "Hello world",
+                translation = "你好，世界",
+            ),
+        ).copy(
+            metadata = lyricMetadataOf(
+                LyricMetadataKeys.ONLINE_TRANSLATION_SOURCE to "KUGOU",
+            )
+        )
+
+        assertTrue(store.wouldChangeDisplayContent(first))
+        assertTrue(store.update(first))
+
+        val sourceOnlyChange = first.copy(
+            metadata = lyricMetadataOf(
+                LyricMetadataKeys.ONLINE_TRANSLATION_SOURCE to "NE",
+            )
+        )
+        assertFalse(store.wouldChangeDisplayContent(sourceOnlyChange))
+        assertTrue(store.update(sourceOnlyChange))
+    }
+
+    @Test
+    fun `reports display content changed when translation text changes`() {
+        val store = AppleNativeOnlineTranslationStore()
+        val first = song(
+            id = "100",
+            RichLyricLine(
+                begin = 1_000,
+                end = 2_000,
+                text = "Hello world",
+                translation = "你好，世界",
+            ),
+        )
+        assertTrue(store.update(first))
+
+        val changed = song(
+            id = "100",
+            RichLyricLine(
+                begin = 1_000,
+                end = 2_000,
+                text = "Hello world",
+                translation = "你好世界",
+            ),
+        )
+        assertTrue(store.wouldChangeDisplayContent(changed))
+    }
+
     private fun song(id: String, vararg lines: RichLyricLine) = Song(
         id = id,
         lyrics = lines.toList(),

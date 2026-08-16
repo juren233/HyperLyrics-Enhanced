@@ -95,6 +95,22 @@ import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
+/**
+ * 按 Apple 播放页原生回调顺序刷新无歌词补充状态。
+ *
+ * 先重放媒体元数据回调：Apple 的 PlayerSongViewFragment 会在这里读取
+ * ReturnToLyrics 标志、歌词按钮 selected 状态和 hasLyrics()，满足条件时自动调用
+ * 原生歌词页切换；随后再刷新 DataBinding，覆盖按钮尚未重新绑定的冷启动时序。
+ */
+internal fun refreshMissingLyricsNowPlaying(
+    mediaId: String?,
+    refreshMetadataCallbacks: (String?) -> Unit,
+    refreshPlaybackItemBindings: (String?) -> Unit,
+) {
+    refreshMetadataCallbacks(mediaId)
+    refreshPlaybackItemBindings(mediaId)
+}
+
 /** Internal lifecycle and module coordinator behind [AppleMusicProvider]. */
 internal object AppleMusicProviderOrchestrator {
     private const val APPLE_MUSIC_PACKAGE = "com.apple.android.music"
@@ -115,6 +131,7 @@ internal object AppleMusicProviderOrchestrator {
     private lateinit var frameworkMetadataHooks: AppleFrameworkMetadataHooks
     private lateinit var lyricsHooks: AppleLyricsSupplementHooks
     private lateinit var onlineSourceMenuHooks: AppleOnlineSourceMenuHooks
+    private lateinit var missingLyricsHooks: AppleMissingLyricsHooks
     private lateinit var playbackHooks: ApplePlaybackHooks
     private lateinit var queueMetadataHooks: AppleQueueMetadataHooks
     private lateinit var listenNowHooks: AppleListenNowHooks
@@ -233,6 +250,20 @@ internal object AppleMusicProviderOrchestrator {
                         this@AppleMusicProviderOrchestrator.setMetadataPlaybackMediaId(mediaId)
                     }
 
+                    override fun onCurrentPlaybackItem(
+                        mediaId: String,
+                        playbackItem: Any,
+                        queueId: Long,
+                    ) {
+                        if (::missingLyricsHooks.isInitialized) {
+                            missingLyricsHooks.onCurrentPlaybackItem(
+                                contentSongId = mediaId,
+                                item = playbackItem,
+                                queueId = queueId,
+                            )
+                        }
+                    }
+
                     override fun effectiveMetadataAlias(
                         mediaId: String,
                     ): AppleInternalCatalogResolver.Alias? =
@@ -319,16 +350,78 @@ internal object AppleMusicProviderOrchestrator {
                 },
                 currentPlaybackQueueMediaId =
                     playbackMetadataCoordinator::currentPlaybackQueueMediaId,
+                registeredPlaybackItems = inAppMetadataRegistry::livePlaybackItems,
+                registeredPlaybackItemId = inAppMetadataRegistry::playbackItemId,
                 epoxyDataBindingFromHolderCallback = { holder ->
                     dataBindingHooks.bindingFromHolder(holder)
+                },
+                missingLyricsSupplement = { missingLyricsHooks },
+            )
+            missingLyricsHooks = AppleMissingLyricsHooks(
+                runtime = runtime,
+                preferences = { contentUiLanguagePrefs },
+                currentPlaybackQueueMediaId =
+                    playbackMetadataCoordinator::currentPlaybackQueueMediaId,
+                currentVisibleLyricsSongId = lyricsHooks::currentSongId,
+                requestPresentationRefresh = { pointer, fragment, playbackItem ->
+                    lyricsHooks.requestMissingLyricsPresentationRefresh(
+                        supplementPointer = pointer,
+                        fragmentOverride = fragment,
+                        currentPlaybackItem = playbackItem,
+                    )
+                },
+                requestBlankNativeLyricsPageRecovery = { fragment ->
+                    lyricsHooks.scheduleBlankNativeLyricsPageRecovery(fragment)
+                },
+                refreshNowPlaying = { mediaId ->
+                    refreshMissingLyricsNowPlaying(
+                        mediaId = mediaId,
+                        refreshMetadataCallbacks = { id ->
+                            inAppMetadataApplier.refreshMetadataCallbacks(id)
+                        },
+                        refreshPlaybackItemBindings = { id ->
+                            inAppMetadataApplier.refreshPlaybackItemBindings(id)
+                        },
+                    )
                 },
             )
             onlineSourceMenuHooks = AppleOnlineSourceMenuHooks(
                 runtime = runtime,
                 nativeTranslationStore = lyricsHooks.nativeOnlineTranslationStore,
-                currentSongId = lyricsHooks::currentSongId,
+                currentSongId = {
+                    currentLyricsMenuSongId(
+                        playbackSongId = playbackMetadataCoordinator.currentPlaybackQueueMediaId(),
+                        visibleLyricsSongId = lyricsHooks.currentSongId(),
+                    )
+                },
+                visibleLyricsSongId = lyricsHooks::currentSongId,
                 shouldHideMandarinPronunciation = lyricsHooks::shouldHideMandarinPronunciation,
                 hasOnlineContentConsumption = lyricsHooks::hasCurrentOnlineContentConsumption,
+                missingLyricsSourceInfo = { songId ->
+                    if (::missingLyricsHooks.isInitialized) {
+                        missingLyricsHooks.sourceInfo(songId)
+                    } else {
+                        null
+                    }
+                },
+                hasMissingLyricsSupplement = { songId ->
+                    ::missingLyricsHooks.isInitialized &&
+                        missingLyricsHooks.hasSupplementContent(songId)
+                },
+                missingLyricsTranslationSource = { songId ->
+                    if (::missingLyricsHooks.isInitialized) {
+                        missingLyricsHooks.translationSource(songId)
+                    } else {
+                        null
+                    }
+                },
+                missingLyricsPronunciationSource = { songId ->
+                    if (::missingLyricsHooks.isInitialized) {
+                        missingLyricsHooks.pronunciationSource(songId)
+                    } else {
+                        null
+                    }
+                },
                 requestOnlineSource = { requestId, songId, contentType, source ->
                     directPlayer?.requestOnlineLyricContentSource(
                         requestId = requestId,
@@ -1882,6 +1975,8 @@ internal object AppleMusicProviderOrchestrator {
                         lyricsHooks.refreshAppleLyricsSupplementPresentation()
                     }
                 }
+                RootConstants.KEY_HOOK_APPLE_MUSIC_FILL_MISSING_LYRICS ->
+                    missingLyricsHooks.onPreferenceChanged()
                 RootConstants.KEY_HOOK_ENABLE_AOD_LYRICS -> {
                     playbackHooks.onAodPreferenceChanged()
                 }
@@ -1914,6 +2009,8 @@ internal object AppleMusicProviderOrchestrator {
                 playbackMetadataCoordinator::resolveOriginalMetadataOnDemand,
             onOnlineTranslationReceived = lyricsHooks::receiveNativeOnlineTranslation,
             onOnlineTranslationCleared = lyricsHooks::clearNativeOnlineTranslation,
+            onMissingLyricsSupplementReceived = lyricsHooks::receiveMissingLyricsSupplement,
+            onMissingLyricsSupplementCleared = missingLyricsHooks::clearSupplement,
             onOnlineTranslationSourceSwitchResult = onlineSourceMenuHooks::receiveSourceSwitchResult,
         ).also { it.start() }
         this.directPlayer = directPlayer
@@ -1930,7 +2027,13 @@ internal object AppleMusicProviderOrchestrator {
         val activePlayer = helper?.player?.let { CompositeRemotePlayer(it, directPlayer) }
             ?: directPlayer
         lyricRequester = LyricRequester(hookResolver, application)
-        PlaybackManager.init(activePlayer, lyricRequester, hookResolver)
+        PlaybackManager.init(
+            remotePlayer = activePlayer,
+            requester = lyricRequester,
+            hookResolver = hookResolver,
+            onMissingLyricsSupplementBuilt = lyricsHooks::receiveModuleMissingLyrics,
+            hasKnownNativeLyrics = missingLyricsHooks::hasKnownNativeLyricsFor,
+        )
         playbackHooks.attachRemotePlayer(activePlayer)
         playbackHooks.setDisplayTranslation(PreferencesMonitor.isTranslationSelected())
     }
@@ -2100,6 +2203,10 @@ internal object AppleMusicProviderOrchestrator {
         FunctionalAppleMusicHookModule(
             "hookAppleLyricsSourceMenu",
             installer = { onlineSourceMenuHooks.installSourceMenu() },
+        ),
+        FunctionalAppleMusicHookModule(
+            "hookAppleMissingLyricsSupplement",
+            installer = { missingLyricsHooks.installHooks() },
         ),
         FunctionalAppleMusicHookModule(
             "hookLyricsNetworkRequest",

@@ -74,6 +74,24 @@ class OnlineLyricTargeterTest {
     }
 
     @Test
+    fun `strict source switch does not wait for unrelated status providers`() {
+        assertEquals(
+            false,
+            OnlineLyricTargeter.shouldWaitForStatusOnlySources(
+                candidateSourceCount = 1,
+                statusOnlySourceCount = 3,
+            )
+        )
+        assertEquals(
+            true,
+            OnlineLyricTargeter.shouldWaitForStatusOnlySources(
+                candidateSourceCount = 4,
+                statusOnlySourceCount = 0,
+            )
+        )
+    }
+
+    @Test
     fun `retries when Apple internal metadata differs`() {
         assertEquals(
             true,

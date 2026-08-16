@@ -19,6 +19,8 @@ internal interface ApplePlaybackMetadataCoordinatorHost {
 
     fun setMetadataPlaybackMediaId(mediaId: String)
 
+    fun onCurrentPlaybackItem(mediaId: String, playbackItem: Any, queueId: Long)
+
     fun effectiveMetadataAlias(mediaId: String): AppleInternalCatalogResolver.Alias?
 
     fun applyPlaybackMetadataOverride(
@@ -47,6 +49,16 @@ internal interface ApplePlaybackMetadataCoordinatorHost {
 
     fun isRestoreOriginalMetadataEnabled(): Boolean
 }
+
+/**
+ * 选择补充歌词链使用的当前歌曲 ID。
+ * 已由队列发布流程确认的 ID 优先，避免播放器 getter 在切歌边界返回上一首歌曲。
+ */
+internal fun selectCurrentPlaybackMediaId(
+    publishedMediaId: String?,
+    observedQueueMediaId: String?,
+): String? = publishedMediaId?.takeIf(String::isNotBlank)
+    ?: observedQueueMediaId?.takeIf(String::isNotBlank)
 
 /**
  * Owns the current Apple Music queue identity and the configured/original catalog resolution
@@ -158,6 +170,11 @@ internal class ApplePlaybackMetadataCoordinator(
                 val previousCurrentId = currentMediaId
                 currentMediaId = mediaId
                 host.setMetadataPlaybackMediaId(mediaId)
+                host.onCurrentPlaybackItem(
+                    mediaId = mediaId,
+                    playbackItem = mediaItem,
+                    queueId = metadata.queueId,
+                )
                 metadataStore.updateCurrentPlaybackOverride(host.effectiveMetadataAlias(mediaId))
                 refreshPlaybackMetadata?.let { callback ->
                     currentRefresh = PlaybackMetadataRefresh(mediaId, callback)
@@ -232,12 +249,20 @@ internal class ApplePlaybackMetadataCoordinator(
     }
 
     fun currentPlaybackQueueMediaId(): String? {
-        val currentQueueItem = host.activePlayer()?.let { player ->
-            runCatching { currentQueueItem(player) }.getOrNull()
+        val publishedMediaId = currentMediaId
+        val observedQueueMediaId = if (publishedMediaId.isNullOrBlank()) {
+            host.activePlayer()?.let { player ->
+                runCatching { currentQueueItem(player) }.getOrNull()
+            }?.let { queueItem ->
+                runCatching { queueItemMediaId(queueItem) }.getOrNull()
+            }
+        } else {
+            null
         }
-        return currentQueueItem
-            ?.let { queueItem -> runCatching { queueItemMediaId(queueItem) }.getOrNull() }
-            ?: currentMediaId
+        return selectCurrentPlaybackMediaId(
+            publishedMediaId = publishedMediaId,
+            observedQueueMediaId = observedQueueMediaId,
+        )
     }
 
     private fun resolveCatalogMetadata(

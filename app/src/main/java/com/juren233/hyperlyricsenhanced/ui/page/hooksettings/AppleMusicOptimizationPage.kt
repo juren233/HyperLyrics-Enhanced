@@ -91,6 +91,14 @@ fun AppleMusicOptimizationPage() {
             )
         )
     }
+    var fillMissingLyrics by remember {
+        mutableStateOf(
+            prefs.getBoolean(
+                RootConstants.KEY_HOOK_APPLE_MUSIC_FILL_MISSING_LYRICS,
+                RootConstants.DEFAULT_HOOK_APPLE_MUSIC_FILL_MISSING_LYRICS,
+            )
+        )
+    }
     var hideMandarinPinyin by remember {
         mutableStateOf(
             prefs.getBoolean(
@@ -351,6 +359,22 @@ fun AppleMusicOptimizationPage() {
                         notificationOpenFullPlayer = enabled
                         saveConfig(
                             RootConstants.KEY_HOOK_APPLE_MUSIC_NOTIFICATION_OPEN_FULL_PLAYER,
+                            enabled,
+                        )
+                    },
+                )
+                SwitchPreference(
+                    title = stringResource(
+                        R.string.title_apple_music_fill_missing_lyrics
+                    ),
+                    summary = stringResource(
+                        R.string.summary_apple_music_fill_missing_lyrics
+                    ),
+                    checked = fillMissingLyrics,
+                    onCheckedChange = { enabled ->
+                        fillMissingLyrics = enabled
+                        saveConfig(
+                            RootConstants.KEY_HOOK_APPLE_MUSIC_FILL_MISSING_LYRICS,
                             enabled,
                         )
                     },

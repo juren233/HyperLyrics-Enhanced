@@ -49,6 +49,7 @@ import android.widget.LinearLayout
 import android.widget.ImageView
 import android.widget.PopupWindow
 import android.widget.TextView
+import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.common.UIConstants
@@ -57,6 +58,7 @@ import com.juren233.hyperlyricsenhanced.common.lyric.AppleOriginalMetadataPolicy
 import com.juren233.hyperlyricsenhanced.common.lyric.AppleLyricsBlurPolicy
 import com.juren233.hyperlyricsenhanced.common.lyric.ApplePronunciationVisibilityPolicy
 import com.juren233.hyperlyricsenhanced.common.lyric.AppleSystemFontWeightPolicy
+import com.juren233.hyperlyricsenhanced.common.lyric.LyricMetadataKeys
 import com.juren233.hyperlyricsenhanced.common.lyric.RomanizationPolicy
 import com.juren233.hyperlyricsenhanced.lyric.model.Song as LocalSong
 import io.github.libxposed.api.XposedInterface.Chain
@@ -73,6 +75,7 @@ import io.github.proify.lyricon.amprovider.xposed.lyrics.AppleOnlineSourceMenuHo
 import io.github.proify.lyricon.amprovider.xposed.internal.ThreadLocalReentryGuard
 import io.github.proify.lyricon.amprovider.xposed.internal.ThreadLocalStack
 import io.github.proify.lyricon.amprovider.xposed.internal.WeakIdentityMap
+import io.github.proify.lyricon.lyric.model.Song as LyriconSong
 import io.github.proify.lyricon.provider.LyriconFactory
 import io.github.proify.lyricon.provider.ProviderConstants
 import io.github.proify.lyricon.provider.ProviderLogo
@@ -85,6 +88,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
 import java.lang.reflect.Constructor
 import java.lang.reflect.Executable
 import java.lang.reflect.Field
@@ -105,6 +109,65 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 
 import android.content.SharedPreferences
+
+internal fun selectLyricsViewModelPlaybackItem(
+    expectedSongId: String,
+    expectedType: Class<*>,
+    candidates: List<Any?>,
+    registeredSongId: (Any) -> String?,
+    runtimeSongId: (Any) -> String?,
+): Any? = candidates.asSequence()
+    .filterNotNull()
+    .firstOrNull { candidate ->
+        expectedType.isInstance(candidate) &&
+            (registeredSongId(candidate)?.takeIf(String::isNotBlank)
+                ?: runtimeSongId(candidate)?.takeIf(String::isNotBlank)) == expectedSongId
+    }
+
+/**
+ * 判断 Apple 的一次 loadLyrics 调用是否属于当前歌词页。
+ *
+ * 页面可见歌曲 ID 可能在切歌后的若干秒内仍停在上一首；此时 Apple 为队列当前歌曲
+ * 发起的 loadLyrics 恰恰是让页面追上新歌的合法调用，必须接受。只有既不匹配可见歌曲
+ * 也不匹配队列当前歌曲的历史调用才需要拒绝。
+ */
+internal fun belongsToCurrentLyricsPage(
+    loadedSongId: String?,
+    visibleSongId: String?,
+    queueSongId: String?,
+): Boolean {
+    if (loadedSongId.isNullOrBlank()) return true
+    val visibleSong = visibleSongId?.takeIf(String::isNotBlank)
+    val queueSong = queueSongId?.takeIf(String::isNotBlank)
+    if (visibleSong == null && queueSong == null) return true
+    return loadedSongId == visibleSong || loadedSongId == queueSong
+}
+
+/**
+ * 判断带「无歌词补充」标记的在线翻译回传是否应该继续走补充歌词链路。
+ *
+ * 同一首歌可能在模块歌词先到、Apple 原生歌词后到的窗口里把标记合并到原生载荷上。
+ * 如果当前歌词页已经是 Apple 原生指针、或本进程已登记该曲 Apple 原生歌词，翻译必须
+ * 走原生在线翻译 Store，否则补充链会因 `native_lyrics_present` 丢弃翻译。
+ */
+internal fun shouldRouteAppleTranslationAsMissingSupplement(
+    markedAsSupplement: Boolean,
+    knownNativeLyrics: Boolean,
+    visiblePageIsSupplement: Boolean?,
+): Boolean {
+    if (!markedAsSupplement || knownNativeLyrics) return false
+    return visiblePageIsSupplement != false
+}
+
+internal fun shouldKeepAppleLyricsScrollSnapshot(
+    existingPosition: Int?,
+    capturedPosition: Int,
+    presentationInFlight: Boolean,
+): Boolean = presentationInFlight &&
+    capturedPosition == 0 &&
+    existingPosition != null &&
+    existingPosition > 0
+
 internal class AppleLyricsSupplementHooks(
     private val runtime: AppleMusicProviderRuntime,
     private val preferences: () -> SharedPreferences?,
@@ -115,7 +178,10 @@ internal class AppleLyricsSupplementHooks(
     private val applyConfiguredContentUiLanguageCallback: () -> Unit,
     private val recordLyricsRequestSource: (String, String) -> Unit,
     private val currentPlaybackQueueMediaId: () -> String?,
+    private val registeredPlaybackItems: (String) -> List<Any>,
+    private val registeredPlaybackItemId: (Any) -> String?,
     private val epoxyDataBindingFromHolderCallback: (Any?) -> Any?,
+    private val missingLyricsSupplement: () -> AppleMissingLyricsHooks,
 ) {
     private companion object {
         const val APPLE_LYRICS_INITIAL_ANCHOR_Y_FRACTION = 0.22f
@@ -126,6 +192,9 @@ internal class AppleLyricsSupplementHooks(
         const val APPLE_LYRICS_HYPER_OS_SELF_BLUR_TYPE = 0
         const val MAX_APPLE_SYSTEM_FONT_VARIATION_CACHE_ENTRIES = 64
         const val APPLE_MUSIC_PACKAGE = "com.apple.android.music"
+        const val LEGACY_MODULE_PROMOTION_DELAY_MS = 1_000L
+        const val SUPPLEMENT_ACTIVE_LINE_INTERVAL_MS = 300L
+        const val BLANK_NATIVE_LYRICS_PAGE_RECOVERY_DELAY_MS = 1_500L
     }
 
     private val application: Application
@@ -176,11 +245,35 @@ internal class AppleLyricsSupplementHooks(
     @Volatile
     private var appleLyricsPresentationMethod: Method? = null
     @Volatile
+    private var appleLyricsResultPresentationMethod: Method? = null
+    @Volatile
     private var appleLyricsFragmentRef: WeakReference<Any>? = null
     @Volatile
     private var appleLyricsSongPointerRef: WeakReference<Any>? = null
     @Volatile
     private var currentAppleLyricsSongId: String? = null
+    /** 已绑定「可见即隐藏」监听的 loading_progress View，避免同一实例重复注册。 */
+    private val suppressedLyricsLoadingViews =
+        Collections.newSetFromMap(IdentityHashMap<View, Boolean>())
+    private val forcedLyricsTranslationButtons =
+        Collections.newSetFromMap(IdentityHashMap<View, Boolean>())
+    private val trackedLyricsRecyclerViews =
+        Collections.newSetFromMap(WeakHashMap<RecyclerView, Boolean>())
+    private data class AppleLyricsScrollSnapshot(
+        val firstPosition: Int,
+        val firstOffset: Int,
+    )
+    private var appleLyricsScrollSnapshot: AppleLyricsScrollSnapshot? = null
+    private var appleLyricsScrollSnapshotSongId: String? = null
+    private var appleLyricsPresentationInFlight = false
+    private var supplementActiveLineUpdateScheduled = false
+    private var lastSupplementActiveLineIndex = -1
+    private val supplementActiveLineUpdateRunnable = object : Runnable {
+        override fun run() {
+            supplementActiveLineUpdateScheduled = false
+            updateSupplementActiveLine()
+        }
+    }
     private lateinit var lyricsRuntimeTarget: AppleMusicHookTarget
     private val lyricsUiTarget by lazy {
         hookResolver.resolveClass(AppleMusicHookPoint.LYRICS_UI_ON_CREATE_VIEW).target
@@ -271,11 +364,14 @@ internal class AppleLyricsSupplementHooks(
         songId: String?,
         contentType: String,
     ): Boolean {
-        if (
-            songId.isNullOrBlank() ||
-            songId != currentAppleLyricsSongId ||
-            !isNativeOnlineTranslationEnabled()
-        ) return false
+        if (songId.isNullOrBlank() || songId != currentAppleLyricsSongId) return false
+        if (contentType == "lyrics") {
+            return missingLyricsSupplement().sourceInfo(songId)?.selectedSource != null
+        }
+        if (contentType == "translation" && missingLyricsSupplement().hasTranslation(songId)) {
+            return true
+        }
+        if (!isNativeOnlineTranslationEnabled()) return false
         val songNative = currentAppleLyricsNativeSong(songId) ?: return false
         val lines = currentAppleLyricsNativeLines(songNative)
         if (lines.isEmpty()) return false
@@ -334,6 +430,25 @@ internal class AppleLyricsSupplementHooks(
         }
     }
 
+    private fun appleNativeSongHasLines(songNative: Any?): Boolean =
+        songNative != null && currentAppleLyricsNativeLines(songNative).isNotEmpty()
+
+    private fun reportNativeLyricsState(
+        songNative: Any?,
+        songId: String?,
+        sourcePointer: Any? = null,
+    ) {
+        // 补充歌词的原生模型不是 Apple 原生歌词，绝不能记为「原生已存在」。
+        if (missingLyricsSupplement().isSupplementPointer(sourcePointer)) return
+        // 无歌词结果只接受 I2 主结果入口的明确完成信号；R2/时间轴构建中的空模型
+        // 可能只是加载中间态，不能据此提前允许三方接管。
+        if (!appleNativeSongHasLines(songNative)) return
+        missingLyricsSupplement().onNativeLyricsState(
+            songId = songId,
+            hasLines = true,
+        )
+    }
+
 
 
     fun refreshAppleLyricsDisplay() {
@@ -349,6 +464,114 @@ internal class AppleLyricsSupplementHooks(
         }
     }
 
+    /**
+     * 原生歌词页恢复可见后的空白自愈。
+     *
+     * 复现路径：歌词页隐藏期间 Apple 已为队列当前歌曲调用过 loadLyrics，但重新可见时
+     * Fragment 仍持有上一首歌曲的空 adapter，且 Apple 不会再重放 loadLyrics。此时页面
+     * 空白而 AOD/超级岛正常。这里只对已确认 Apple 原生歌词的歌曲、且 adapter 仍为空的
+     * 可见页面补一次当前队列 PlaybackItem 的 loadLyrics；已有内容时不做任何操作。
+     */
+    fun scheduleBlankNativeLyricsPageRecovery(fragment: Any? = null) {
+        if (!missingLyricsSupplement().isEnabled()) return
+        val queueSongId = currentPlaybackQueueMediaId()
+            ?.takeIf(String::isNotBlank)
+            ?: return
+        if (!missingLyricsSupplement().hasKnownNativeLyricsFor(queueSongId)) return
+        mainHandler.postDelayed(
+            {
+                recoverBlankNativeLyricsPage(fragment, queueSongId)
+            },
+            BLANK_NATIVE_LYRICS_PAGE_RECOVERY_DELAY_MS,
+        )
+    }
+
+    private fun recoverBlankNativeLyricsPage(
+        fragmentOverride: Any?,
+        expectedSongId: String,
+    ) {
+        if (!missingLyricsSupplement().isEnabled()) return
+        if (currentPlaybackQueueMediaId() != expectedSongId) return
+        val fragment = fragmentOverride ?: appleLyricsFragmentRef?.get() ?: run {
+            ProviderLogger.debug(
+                "Apple Music 原生歌词空白页自愈跳过: reason=fragment_missing, " +
+                    "id=$expectedSongId"
+            )
+            return
+        }
+        val rootView = runCatching {
+            AppleReflection.call(
+                fragment,
+                lyricsUiMember(AppleMusicRuntimeMember.LYRICS_UI_ROOT_VIEW_GETTER),
+            ) as? View
+        }.getOrNull() ?: run {
+            ProviderLogger.debug(
+                "Apple Music 原生歌词空白页自愈跳过: reason=root_missing, " +
+                    "id=$expectedSongId"
+            )
+            return
+        }
+        if (!rootView.isShown) return
+        val recyclerView = resolveAppleLyricsRecyclerView(fragment) ?: run {
+            ProviderLogger.debug(
+                "Apple Music 原生歌词空白页自愈跳过: reason=recycler_missing, " +
+                    "id=$expectedSongId"
+            )
+            return
+        }
+        val adapter = appleRecyclerAdapter(recyclerView) ?: run {
+            ProviderLogger.debug(
+                "Apple Music 原生歌词空白页自愈跳过: reason=adapter_missing, " +
+                    "id=$expectedSongId"
+            )
+            return
+        }
+        if (appleRecyclerAdapterItemCount(adapter) > 0) return
+        val viewModel = runCatching {
+            lyricsUiField(fragment, AppleMusicRuntimeMember.LYRICS_UI_VIEW_MODEL_FIELD)
+        }.getOrNull() ?: run {
+            ProviderLogger.debug(
+                "Apple Music 原生歌词空白页自愈跳过: reason=view_model_missing, " +
+                    "id=$expectedSongId"
+            )
+            return
+        }
+        val loadMethod = appleLyricsLoadMethod ?: runCatching {
+            hookResolver.resolveMethod(AppleMusicHookPoint.LYRICS_VIEW_MODEL_LOAD).method
+        }.getOrNull() ?: return
+        val expectedType = loadMethod.parameterTypes.singleOrNull() ?: return
+        val playbackItem = selectLyricsViewModelPlaybackItem(
+            expectedSongId = expectedSongId,
+            expectedType = expectedType,
+            candidates = registeredPlaybackItems(expectedSongId),
+            registeredSongId = registeredPlaybackItemId,
+            runtimeSongId = ::playbackItemSongId,
+        ) ?: run {
+            if (BuildConfig.DEBUG) {
+                ProviderLogger.diagnostic(
+                    "Apple Music 原生歌词空白页自愈跳过: " +
+                        "reason=playback_item_missing, id=$expectedSongId, " +
+                        "expectedType=${expectedType.name}"
+                )
+            }
+            return
+        }
+        appleLyricsViewModelRef = WeakReference(viewModel)
+        appleLyricsItemRef = WeakReference(playbackItem)
+        runCatching {
+            loadMethod.invoke(viewModel, playbackItem)
+        }.onSuccess {
+            ProviderLogger.info(
+                "Apple Music 原生歌词空白页自愈已触发: id=$expectedSongId"
+            )
+        }.onFailure {
+            ProviderLogger.error(
+                "Apple Music 原生歌词空白页自愈失败: id=$expectedSongId",
+                it,
+            )
+        }
+    }
+
     fun receiveNativeOnlineTranslation(compressedSong: ByteArray) {
         coroutineScope.launch {
             val song = runCatching {
@@ -358,6 +581,42 @@ internal class AppleLyricsSupplementHooks(
             }.onFailure {
                 ProviderLogger.error("Apple Music 原生在线翻译解析失败", it)
             }.getOrNull() ?: return@launch
+
+            // 三方在线源为原生无歌词歌曲补充的完整歌词走独立显示链路。
+            // 但同一首歌可能先以模块补充身份发布、随后 Apple 原生歌词才确认；
+            // 此时回传仍带补充标记，必须按当前页/已确认原生身份改走原生在线翻译，
+            // 否则翻译会被补充链的 native_lyrics_present 保护直接丢弃。
+            val markedAsSupplement = song.metadata
+                ?.getString(LyricMetadataKeys.APPLE_MISSING_LYRICS_SUPPLEMENT)
+                .toBoolean()
+            val visiblePointer = appleLyricsSongPointerRef?.get()
+            val visiblePointerSongId = visiblePointer?.let { pointer ->
+                runCatching {
+                    nativeSongId(
+                        lyricsNativeCall(
+                            pointer,
+                            AppleMusicRuntimeMember.LYRICS_NATIVE_POINTER_GET_METHOD,
+                        )
+                    )
+                }.getOrNull()
+            }
+            val visiblePageIsSupplement = visiblePointerSongId
+                ?.takeIf { it == song.id }
+                ?.let {
+                    missingLyricsSupplement().isSupplementPointer(visiblePointer)
+                }
+            if (
+                shouldRouteAppleTranslationAsMissingSupplement(
+                    markedAsSupplement = markedAsSupplement,
+                    knownNativeLyrics = song.id?.let {
+                        missingLyricsSupplement().hasKnownNativeLyricsFor(it)
+                    } == true,
+                    visiblePageIsSupplement = visiblePageIsSupplement,
+                )
+            ) {
+                missingLyricsSupplement().receiveSupplement(song)
+                return@launch
+            }
 
             mainHandler.post {
                 val romanizedLineCount = song.lyrics.orEmpty().count {
@@ -371,6 +630,8 @@ internal class AppleLyricsSupplementHooks(
                         "featureEnabled=${isNativeOnlineTranslationEnabled()}",
                 )
                 if (!isNativeOnlineTranslationEnabled()) return@post
+                val displayContentChanged =
+                    nativeOnlineTranslationStore.wouldChangeDisplayContent(song)
                 if (nativeOnlineTranslationStore.update(song)) {
                     val revision = nativeOnlineTranslationStore.revision()
                     clearPendingApplePronunciationRenderPlans()
@@ -380,15 +641,57 @@ internal class AppleLyricsSupplementHooks(
                                 !it.translation.isNullOrBlank()
                             }}, romanizedLines=${song.lyrics.orEmpty().count {
                                 !it.roma.isNullOrBlank()
-                            }}"
+                            }}, displayContentChanged=$displayContentChanged"
                     )
                     song.id?.let(onlineSourceMenuHooks()::resolvePendingSwitches)
                     song.id?.let(onlineSourceMenuHooks()::refreshActiveMenu)
-                    refreshAppleLyricsSupplementPresentation(
-                        expectedSongId = song.id,
-                        expectedRevision = revision,
-                    )
+                    if (displayContentChanged) {
+                        refreshAppleLyricsSupplementPresentation(
+                            expectedSongId = song.id,
+                            expectedRevision = revision,
+                        )
+                    } else {
+                        ProviderLogger.debug(
+                            "Apple Music 原生在线翻译仅来源信息变化，跳过整页刷新: " +
+                                "id=${song.id}"
+                        )
+                    }
                 }
+            }
+        }
+    }
+
+    /** 独立接收 SystemUI 回传的“无原生歌词补充”载荷，不再借用在线翻译事务。 */
+    fun receiveMissingLyricsSupplement(compressedSong: ByteArray) {
+        coroutineScope.launch {
+            val song = runCatching {
+                json.decodeFromString<LocalSong>(
+                    compressedSong.inflate().toString(Charsets.UTF_8)
+                )
+            }.onFailure {
+                ProviderLogger.error("Apple Music 无歌词补充解析失败", it)
+            }.getOrNull() ?: return@launch
+            missingLyricsSupplement().receiveSupplement(song)
+            song.id?.let { songId ->
+                mainHandler.post { onlineSourceMenuHooks().refreshActiveMenu(songId) }
+            }
+        }
+    }
+
+    /**
+     * Apple Music 自己的模块歌词 ViewModel 已经产出完整歌词时，直接填充本进程 Store。
+     * 这条路径不依赖 SystemUI 的进程内缓存，覆盖 SystemUI 重启后的冷启动场景。
+     */
+    fun receiveModuleMissingLyrics(song: LyriconSong) {
+        coroutineScope.launch {
+            val localSong = runCatching {
+                json.decodeFromString<LocalSong>(json.encodeToString(song))
+            }.onFailure {
+                ProviderLogger.error("Apple Music 模块补充歌词转换失败", it)
+            }.getOrNull() ?: return@launch
+            missingLyricsSupplement().receiveSupplement(localSong)
+            localSong.id?.let { songId ->
+                mainHandler.post { onlineSourceMenuHooks().refreshActiveMenu(songId) }
             }
         }
     }
@@ -403,6 +706,527 @@ internal class AppleLyricsSupplementHooks(
             }
         }
     }
+
+    /**
+     * 无歌词补充：写入 ViewModel 结果并显式调用 I2 主结果入口。I2 会验证
+     * SongInfo.adamId、安装歌词适配器，并通过 Apple 自身的 L2/N2/R2 链路收尾。
+     */
+    fun requestMissingLyricsPresentationRefresh(
+        supplementPointer: Any? = null,
+        fragmentOverride: Any? = null,
+        currentPlaybackItem: Any? = null,
+    ) {
+        mainHandler.post {
+            ProviderLogger.debug(
+                "Apple Music 无歌词补充呈现刷新进入: method=" +
+                    "${appleLyricsResultPresentationMethod != null}, fragmentRef=" +
+                    "${appleLyricsFragmentRef?.get() != null}, override=" +
+                    "${fragmentOverride != null}, supplement=${supplementPointer != null}, " +
+                    "currentPlaybackItem=${currentPlaybackItem != null}"
+            )
+            val method = appleLyricsResultPresentationMethod ?: return@post
+            val fragment = fragmentOverride ?: appleLyricsFragmentRef?.get() ?: return@post
+            val pointer = supplementPointer
+                ?: appleLyricsSongPointerRef?.get()
+                ?: return@post
+            if (supplementPointer != null) {
+                if (!injectSupplementIntoViewModel(
+                        fragment = fragment,
+                        pointer = supplementPointer,
+                        currentPlaybackItem = currentPlaybackItem,
+                    )
+                ) {
+                    return@post
+                }
+            }
+            runCatching { method.invoke(fragment, pointer) }
+                .onSuccess {
+                    ProviderLogger.debug("Apple Music 无歌词补充原生呈现已刷新")
+                }
+                .onFailure {
+                    ProviderLogger.error("Apple Music 无歌词补充原生呈现刷新失败", it)
+                }
+            ensureMissingLyricsTranslationButtonVisible(fragment)
+            dismissAppleLyricsLoadingOverlay(fragment)
+            mainHandler.postDelayed(
+                { dismissAppleLyricsLoadingOverlay(fragment) },
+                800L,
+            )
+            scheduleSupplementActiveLineUpdate()
+        }
+    }
+
+    /**
+     * 补充歌词已经通过结果 LiveData / I2 呈现后，Apple 仍可能因后续原生加载状态
+     * 重新显示 `loading_progress` 遮罩。该遮罩覆盖在 RecyclerView 上方并拦截点击，
+     * 对无歌词补充歌曲必须在每次呈现后强制隐藏。
+     */
+    private fun dismissAppleLyricsLoadingOverlay(fragment: Any?) {
+        fragment ?: return
+        val root = runCatching {
+            AppleReflection.call(
+                fragment,
+                lyricsUiMember(AppleMusicRuntimeMember.LYRICS_UI_ROOT_VIEW_GETTER),
+            ) as? View
+        }.getOrNull() ?: return
+        val targetResourceName = lyricsUiMember(
+            AppleMusicRuntimeMember.LYRICS_UI_LOADING_PROGRESS_RESOURCE_NAME
+        )
+        var hidden = 0
+        fun hideLoadingView(view: View?, depth: Int) {
+            if (view == null || depth > 4) return
+            val entryName = runCatching {
+                if (view.id == View.NO_ID) null else {
+                    view.resources.getResourceEntryName(view.id)
+                }
+            }.getOrNull()
+            if (entryName == targetResourceName) {
+                if (view.visibility != View.GONE) {
+                    view.visibility = View.GONE
+                    view.isClickable = false
+                    hidden += 1
+                }
+                // Apple 可能在任意后续回调里把遮罩重新置为 VISIBLE。把抑制动作
+                // 绑定到该 View 自己的 layout 变化上，不再依赖固定延迟窗口。
+                if (suppressedLyricsLoadingViews.add(view)) {
+                    view.addOnLayoutChangeListener(
+                        object : View.OnLayoutChangeListener {
+                            override fun onLayoutChange(
+                                changedView: View,
+                                left: Int,
+                                top: Int,
+                                right: Int,
+                                bottom: Int,
+                                oldLeft: Int,
+                                oldTop: Int,
+                                oldRight: Int,
+                                oldBottom: Int,
+                            ) {
+                                if (changedView.visibility != View.GONE) {
+                                    changedView.visibility = View.GONE
+                                    changedView.isClickable = false
+                                    ProviderLogger.debug(
+                                        "Apple Music 无歌词补充加载遮罩再次显示并被抑制: " +
+                                            "id=$targetResourceName"
+                                    )
+                                }
+                            }
+                        }
+                    )
+                }
+            }
+            (view as? ViewGroup)?.let { group ->
+                for (index in 0 until group.childCount) {
+                    hideLoadingView(group.getChildAt(index), depth + 1)
+                }
+            }
+        }
+        hideLoadingView(root, 0)
+        if (hidden > 0) {
+            ProviderLogger.debug(
+                "Apple Music 无歌词补充加载遮罩已隐藏: id=$targetResourceName, count=$hidden"
+            )
+        }
+    }
+
+    /**
+     * 无歌词补充歌曲的播放页必须始终保留 translations_button，否则用户无法进入
+     * 来源菜单选择歌词来源。Apple 会在翻译尚未回传时把该按钮置 GONE，这里在补充页
+     * 呈现成功后强制恢复 VISIBLE，并持续监听布局变化。
+     */
+    private fun ensureMissingLyricsTranslationButtonVisible(fragment: Any?) {
+        fragment ?: return
+        val songId = currentAppleLyricsSongId
+            ?: currentPlaybackQueueMediaId()
+            ?: return
+        if (!missingLyricsSupplement().hasSupplementContent(songId)) return
+        val root = runCatching {
+            AppleReflection.call(
+                fragment,
+                lyricsUiMember(AppleMusicRuntimeMember.LYRICS_UI_ROOT_VIEW_GETTER),
+            ) as? View
+        }.getOrNull() ?: return
+        var forced = 0
+        fun forceButton(view: View?, depth: Int) {
+            if (view == null || depth > 6) return
+            val entryName = runCatching {
+                if (view.id == View.NO_ID) null else {
+                    view.resources.getResourceEntryName(view.id)
+                }
+            }.getOrNull()
+            if (entryName == "translations_button") {
+                if (view.visibility != View.VISIBLE || !view.isEnabled) {
+                    view.visibility = View.VISIBLE
+                    view.isEnabled = true
+                    view.isClickable = true
+                    forced += 1
+                }
+                if (forcedLyricsTranslationButtons.add(view)) {
+                    view.addOnLayoutChangeListener(
+                        object : View.OnLayoutChangeListener {
+                            override fun onLayoutChange(
+                                changedView: View,
+                                left: Int,
+                                top: Int,
+                                right: Int,
+                                bottom: Int,
+                                oldLeft: Int,
+                                oldTop: Int,
+                                oldRight: Int,
+                                oldBottom: Int,
+                            ) {
+                                if (
+                                    missingLyricsSupplement()
+                                        .hasSupplementContent(songId) &&
+                                    changedView.visibility != View.VISIBLE
+                                ) {
+                                    changedView.visibility = View.VISIBLE
+                                    changedView.isEnabled = true
+                                    changedView.isClickable = true
+                                }
+                            }
+                        }
+                    )
+                }
+            }
+            (view as? ViewGroup)?.let { group ->
+                for (index in 0 until group.childCount) {
+                    forceButton(group.getChildAt(index), depth + 1)
+                }
+            }
+        }
+        forceButton(root, 0)
+        if (forced > 0) {
+            ProviderLogger.debug(
+                "Apple Music 补充歌词翻译按钮已强制可见: id=$songId, count=$forced"
+            )
+        }
+    }
+
+    private fun ensureAppleLyricsScrollTracking(fragment: Any, songId: String) {
+        val recycler = resolveAppleLyricsRecyclerView(fragment) as? RecyclerView ?: return
+        if (trackedLyricsRecyclerViews.add(recycler)) {
+            recycler.addOnScrollListener(
+                object : RecyclerView.OnScrollListener() {
+                    override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
+                        if (!appleLyricsPresentationInFlight) {
+                            currentAppleLyricsSongId?.let { currentSongId ->
+                                captureAppleLyricsScrollSnapshot(recyclerView, currentSongId)
+                            }
+                        }
+                    }
+
+                    override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
+                        if (
+                            newState == RecyclerView.SCROLL_STATE_IDLE &&
+                            !appleLyricsPresentationInFlight
+                        ) {
+                            currentAppleLyricsSongId?.let { currentSongId ->
+                                captureAppleLyricsScrollSnapshot(recyclerView, currentSongId)
+                            }
+                        }
+                    }
+                },
+            )
+            ProviderLogger.debug(
+                "Apple Music 歌词滚动位置监听已绑定: id=$songId, " +
+                    "recycler=${System.identityHashCode(recycler)}"
+            )
+        }
+        captureAppleLyricsScrollSnapshot(recycler, songId)
+    }
+
+    private fun captureAppleLyricsScrollSnapshot(recycler: RecyclerView, songId: String) {
+        if (currentAppleLyricsSongId != songId) return
+        val firstChild = recycler.getChildAt(0) ?: return
+        val layoutManager = recycler.layoutManager as? LinearLayoutManager ?: return
+        val position = layoutManager.getPosition(firstChild)
+        if (position == RecyclerView.NO_POSITION) return
+        val snapshot = AppleLyricsScrollSnapshot(
+            firstPosition = position,
+            firstOffset = firstChild.top,
+        )
+        val existing = appleLyricsScrollSnapshot
+            ?.takeIf { appleLyricsScrollSnapshotSongId == songId }
+        if (shouldKeepAppleLyricsScrollSnapshot(
+                existingPosition = existing?.firstPosition,
+                capturedPosition = snapshot.firstPosition,
+                presentationInFlight = appleLyricsPresentationInFlight,
+            )
+        ) {
+            return
+        }
+        appleLyricsScrollSnapshot = snapshot
+        appleLyricsScrollSnapshotSongId = songId
+    }
+
+    private fun restoreAppleLyricsScrollSnapshot(fragment: Any, songId: String) {
+        val snapshot = appleLyricsScrollSnapshot
+            ?.takeIf { appleLyricsScrollSnapshotSongId == songId }
+            ?: return
+        val recycler = resolveAppleLyricsRecyclerView(fragment) as? RecyclerView ?: return
+        recycler.postOnAnimation {
+            val layoutManager = recycler.layoutManager as? LinearLayoutManager ?: return@postOnAnimation
+            val firstChild = recycler.getChildAt(0) ?: return@postOnAnimation
+            val currentPosition = layoutManager.getPosition(firstChild)
+            if (
+                currentPosition == snapshot.firstPosition &&
+                kotlin.math.abs(firstChild.top - snapshot.firstOffset) <= 2
+            ) {
+                return@postOnAnimation
+            }
+            layoutManager.scrollToPositionWithOffset(
+                snapshot.firstPosition,
+                snapshot.firstOffset,
+            )
+            ProviderLogger.debug(
+                "Apple Music 歌词滚动位置已恢复: id=$songId, " +
+                    "position=${snapshot.firstPosition}, offset=${snapshot.firstOffset}"
+            )
+        }
+    }
+
+    private fun scheduleSupplementActiveLineUpdate() {
+        if (supplementActiveLineUpdateScheduled) return
+        supplementActiveLineUpdateScheduled = true
+        mainHandler.postDelayed(
+            supplementActiveLineUpdateRunnable,
+            SUPPLEMENT_ACTIVE_LINE_INTERVAL_MS,
+        )
+    }
+
+    /**
+     * Apple 没有为补充歌词持续下发 active line（adapter.B() 始终为空），但点击歌词
+     * seek 仍正常，说明 adapter 只缺 T 的激活集合。这里按补充 Store 自己的行时间
+     * 计算当前句，并在 index 变化时补发与 Apple 跳转歌词相同的行级 T 调用。
+     */
+    private fun updateSupplementActiveLine() {
+        val fragment = appleLyricsFragmentRef?.get() ?: run {
+                stopSupplementActiveLineUpdate()
+                return
+            }
+        val recyclerView = resolveAppleLyricsRecyclerView(fragment)
+            ?: run {
+                stopSupplementActiveLineUpdate()
+                return
+            }
+        val adapter = appleRecyclerAdapter(recyclerView)
+            ?: run {
+                stopSupplementActiveLineUpdate()
+                return
+            }
+        val songId = currentAppleLyricsSongId
+            ?: currentPlaybackQueueMediaId()
+            ?: run {
+                stopSupplementActiveLineUpdate()
+                return
+            }
+        if (
+            !missingLyricsSupplement().hasSupplementContent(songId) ||
+            missingLyricsSupplement().hasKnownNativeLyricsFor(songId)
+        ) {
+            stopSupplementActiveLineUpdate()
+            return
+        }
+        val position = appleLyricsCurrentPlaybackPositionMs()
+            ?: return scheduleSupplementActiveLineUpdate()
+        val lines = missingLyricsSupplement().store.lines(songId)
+        if (lines.isEmpty()) {
+            stopSupplementActiveLineUpdate()
+            return
+        }
+        val lineIndex = lines.indexOfLast { line -> line.begin <= position }
+            .coerceAtLeast(0)
+        if (lineIndex == lastSupplementActiveLineIndex) {
+            return scheduleSupplementActiveLineUpdate()
+        }
+        val methodName = blurHooks.lyricsAdapterMember(
+            adapter,
+            AppleMusicRuntimeMember.LYRICS_ADAPTER_ACTIVE_LINES_UPDATE_METHOD,
+        )
+        val emptyPairs = java.lang.reflect.Array.newInstance(
+            classLoader.loadClass("android.util.Pair"),
+            0,
+        )
+        val applied = runCatching {
+            AppleReflection.call(
+                adapter,
+                methodName,
+                listOf(lineIndex),
+                -1,
+                emptyPairs,
+            )
+            true
+        }.onFailure {
+            ProviderLogger.error("Apple Music 无歌词补充激活行补发失败", it)
+        }.getOrDefault(false)
+        if (applied) {
+            lastSupplementActiveLineIndex = lineIndex
+            ProviderLogger.debug(
+                "Apple Music 无歌词补充激活行补发: " +
+                    "id=$songId, index=$lineIndex, position=$position"
+            )
+        }
+        scheduleSupplementActiveLineUpdate()
+    }
+
+    private fun stopSupplementActiveLineUpdate() {
+        lastSupplementActiveLineIndex = -1
+    }
+
+    /** 与 Apple 自身链路一致：时间轴地图 + 结果 LiveData，让原生观察者接管显示。 */
+    private fun injectSupplementIntoViewModel(
+        fragment: Any,
+        pointer: Any,
+        currentPlaybackItem: Any?,
+    ): Boolean {
+        val viewModel = runCatching {
+            AppleReflection.field(
+                fragment,
+                lyricsUiMember(AppleMusicRuntimeMember.LYRICS_UI_VIEW_MODEL_FIELD),
+            )
+        }.getOrNull() ?: run {
+            ProviderLogger.debug(
+                "Apple Music 无歌词补充注入跳过: reason=view_model_missing, " +
+                "fragment=${fragment.javaClass.name}"
+            )
+            return false
+        }
+        if (!synchronizeSupplementPlaybackItem(viewModel, pointer, currentPlaybackItem)) {
+            // 冷启动时兼容的 PlaybackItem 可能晚于补充模型就绪；此时仍先构建时间轴
+            // 并写入结果 LiveData，让歌词页立即显示当前补充指针。待 onCurrentPlaybackItem
+            // 捕获到真实条目后，现有刷新链会再次同步并覆盖。
+            ProviderLogger.debug(
+                "Apple Music 无歌词补充注入降级: reason=playback_item_sync_deferred, " +
+                    "pointerSongId=${nativeSongId(lyricsNativeCall(
+                        pointer,
+                        AppleMusicRuntimeMember.LYRICS_NATIVE_POINTER_GET_METHOD,
+                    ))}"
+            )
+        }
+        runCatching {
+            hookResolver.resolveMethod(AppleMusicHookPoint.LYRICS_VIEW_MODEL_BUILD).method
+        }.getOrNull()?.let { buildMethod ->
+            runCatching { buildMethod.invoke(viewModel, pointer) }
+                .onSuccess {
+                    ProviderLogger.debug("Apple Music 无歌词补充时间轴地图已构建")
+                }
+                .onFailure {
+                    ProviderLogger.error("Apple Music 无歌词补充时间轴地图构建失败", it)
+                }
+        }
+        val resultLiveData = runCatching {
+            AppleReflection.call(
+                viewModel,
+                lyricsRuntimeMember(
+                    AppleMusicRuntimeMember.LYRICS_VIEW_MODEL_RESULT_GETTER
+                ),
+            )
+        }.getOrNull() ?: return false
+        // 结果 LiveData 的值类型为 kotlin.Pair<SongInfoPtr, Exception>（6.5.1 DEX：
+        // PlayerLyricsViewFragment$14.onChanged 先取 first 再取 second）。
+        val resultValue = runCatching {
+            val pairClass = classLoader.loadClass("kotlin.Pair")
+            pairClass
+                .getConstructor(Any::class.java, Any::class.java)
+                .newInstance(pointer, null)
+        }.getOrNull() ?: return false
+        runCatching {
+            AppleReflection.call(resultLiveData, "setValue", resultValue)
+        }.recoverCatching {
+            AppleReflection.call(resultLiveData, "postValue", resultValue)
+        }.onSuccess {
+            ProviderLogger.debug("Apple Music 无歌词补充结果 LiveData 已写入")
+        }.onFailure {
+            ProviderLogger.error("Apple Music 无歌词补充结果 LiveData 写入失败", it)
+        }
+        return true
+    }
+
+    /**
+     * 冷启动时歌词 Fragment 可能先绑定恢复队列中的上一首歌。补充指针注入前必须
+     * 先让同一个 ViewModel 消费当前 PlaybackItem，否则适配器内容与页面标题会属于
+     * 不同歌曲。
+     */
+    private fun synchronizeSupplementPlaybackItem(
+        viewModel: Any,
+        pointer: Any,
+        currentPlaybackItem: Any?,
+    ): Boolean {
+        val expectedSongId = runCatching {
+            lyricsNativeCall(
+                pointer,
+                AppleMusicRuntimeMember.LYRICS_NATIVE_POINTER_GET_METHOD,
+            )
+        }.getOrNull()?.let(::nativeSongId)
+        if (expectedSongId.isNullOrBlank()) {
+            ProviderLogger.debug(
+                "Apple Music 无歌词补充注入跳过: reason=supplement_song_id_missing"
+            )
+            return false
+        }
+        val loadMethod = appleLyricsLoadMethod ?: runCatching {
+            hookResolver.resolveMethod(AppleMusicHookPoint.LYRICS_VIEW_MODEL_LOAD).method
+        }.getOrNull() ?: return false
+        val expectedType = loadMethod.parameterTypes.singleOrNull() ?: run {
+            ProviderLogger.debug(
+                "Apple Music 无歌词补充注入跳过: reason=load_signature_mismatch, " +
+                    "parameterCount=${loadMethod.parameterTypes.size}"
+            )
+            return false
+        }
+        val candidates = buildList<Any?> {
+            add(currentPlaybackItem)
+            addAll(registeredPlaybackItems(expectedSongId))
+        }
+        val playbackItem = selectLyricsViewModelPlaybackItem(
+            expectedSongId = expectedSongId,
+            expectedType = expectedType,
+            candidates = candidates,
+            registeredSongId = registeredPlaybackItemId,
+            runtimeSongId = ::playbackItemSongId,
+        ) ?: run {
+            if (BuildConfig.DEBUG) {
+                val candidateSummary = candidates.filterNotNull().joinToString(limit = 16) { item ->
+                    val itemId = registeredPlaybackItemId(item) ?: playbackItemSongId(item)
+                    "${item.javaClass.name}:$itemId"
+                }
+                ProviderLogger.diagnostic(
+                    "Apple Music 无歌词补充注入跳过: " +
+                        "reason=compatible_playback_item_missing, expectedId=$expectedSongId, " +
+                        "expectedType=${expectedType.name}, candidates=[$candidateSummary]"
+                )
+            }
+            return false
+        }
+        val itemSongId = registeredPlaybackItemId(playbackItem)
+            ?: playbackItemSongId(playbackItem)
+        val boundItemId = appleLyricsItemRef?.get()?.let { item ->
+            registeredPlaybackItemId(item) ?: playbackItemSongId(item)
+        }
+        if (appleLyricsViewModelRef?.get() === viewModel && boundItemId == expectedSongId) {
+            return true
+        }
+        return runCatching {
+            loadMethod.invoke(viewModel, playbackItem)
+        }.onSuccess {
+            appleLyricsViewModelRef = WeakReference(viewModel)
+            appleLyricsItemRef = WeakReference(playbackItem)
+            ProviderLogger.debug(
+                "Apple Music 无歌词补充已同步当前 PlaybackItem: " +
+                    "previousId=$boundItemId, currentId=$itemSongId"
+            )
+        }.onFailure {
+            ProviderLogger.error("Apple Music 无歌词补充同步当前 PlaybackItem 失败", it)
+        }.isSuccess
+    }
+
+    private fun playbackItemSongId(item: Any): String? = runCatching {
+        AppleReflection.call(
+            item,
+            lyricsSongMember(AppleMusicRuntimeMember.LYRICS_SONG_ID_METHOD),
+        )?.toString()
+    }.getOrNull()?.takeIf(String::isNotBlank)
 
     fun refreshAppleLyricsSupplementPresentation(
         expectedSongId: String? = null,
@@ -457,7 +1281,10 @@ internal class AppleLyricsSupplementHooks(
             if (currentAppleLyricsSongId != currentSongId) {
                 clearPendingApplePronunciationRenderPlans()
                 currentAppleLyricsSongId = currentSongId
+                appleLyricsScrollSnapshot = null
+                appleLyricsScrollSnapshotSongId = null
             }
+            currentSongId?.let { ensureAppleLyricsScrollTracking(fragment, it) }
             ensureAppleLyricTextHooks(songNative)
             applyAppleNativeSupplementSelection(songNative)
             runCatching {
@@ -1257,10 +2084,10 @@ internal class AppleLyricsSupplementHooks(
         val translationAvailabilityChecks = mapOf<String, (String?) -> Boolean>(
             lyricsRuntimeMember(
                 AppleMusicRuntimeMember.LYRICS_NATIVE_SET_TRANSLATION_METHOD
-            ) to nativeOnlineTranslationStore::hasTranslation,
+            ) to ::hasAnyOnlineTranslation,
             lyricsRuntimeMember(
                 AppleMusicRuntimeMember.LYRICS_NATIVE_HAS_TRANSLATION_METHOD
-            ) to nativeOnlineTranslationStore::hasTranslation,
+            ) to ::hasAnyOnlineTranslation,
         )
         translationAvailabilityChecks.forEach { (name, hasOnlineContent) ->
             val method = runCatching {
@@ -1302,8 +2129,7 @@ internal class AppleLyricsSupplementHooks(
                 if (original == true) {
                     true
                 } else {
-                    isNativeOnlineTranslationEnabled() &&
-                        hasOnlineContent(nativeSongId(chain.thisObject))
+                    hasOnlineContent(nativeSongId(chain.thisObject))
                 }
             }
             ProviderLogger.debug(
@@ -1949,7 +2775,7 @@ internal class AppleLyricsSupplementHooks(
         blurHooks.appleRecyclerNotifyDataSetChanged(adapter)
 
     private fun onlineTranslationForNativeLine(line: Any?): String? {
-        if (line == null || !isNativeOnlineTranslationEnabled()) return null
+        if (line == null) return null
         val begin = (
             lyricsNativeCall(line, AppleMusicRuntimeMember.LYRICS_NATIVE_BEGIN_METHOD) as? Number
             )?.toLong()
@@ -1967,8 +2793,17 @@ internal class AppleLyricsSupplementHooks(
             begin = begin,
             end = end,
             text = text,
+        ) ?: missingLyricsSupplement().translationForLine(
+            songId = currentAppleLyricsSongId,
+            begin = begin,
+            end = end,
+            text = text,
         )
     }
+
+    private fun hasAnyOnlineTranslation(songId: String?): Boolean =
+        (isNativeOnlineTranslationEnabled() && nativeOnlineTranslationStore.hasTranslation(songId)) ||
+            missingLyricsSupplement().hasTranslation(songId)
 
     private fun onlinePronunciationForNativeLine(line: Any?): String? {
         if (line == null || !isNativeOnlineTranslationEnabled()) return null
@@ -2294,14 +3129,45 @@ internal class AppleLyricsSupplementHooks(
         hookRegistrar.installHook(load.method, before = { chain ->
             val item = chain.args.firstOrNull() ?: return@installHook
             val source = if (lyricRequester().ownsViewModel(chain.thisObject)) "module" else "apple"
-            if (source == "apple") {
-                chain.thisObject?.let { appleLyricsViewModelRef = WeakReference(it) }
-                appleLyricsItemRef = WeakReference(item)
-            }
-            val id = runCatching {
-                AppleReflection.call(item, lyricsSongMember(AppleMusicRuntimeMember.LYRICS_SONG_ID_METHOD))
+            val loadedSongId = runCatching {
+                AppleReflection.call(
+                    item,
+                    lyricsSongMember(AppleMusicRuntimeMember.LYRICS_SONG_ID_METHOD),
+                ).toString()
             }.getOrNull()
-            id?.toString()?.let { requestId ->
+            if (source == "apple") {
+                // Apple 可能为队列/历史里的其他歌曲调用 loadLyrics。只有属于当前歌词页
+                // 的调用才能记成当前页；切歌后页面可见歌曲 ID 尚未追上队列时，队列当前
+                // 歌曲的合法 loadLyrics 同样属于当前页，历史歌曲调用仍必须拒绝。
+                val visibleSongId = currentAppleLyricsSongId
+                val queueSongId = currentPlaybackQueueMediaId()
+                    ?: missingLyricsSupplement().store
+                        .playbackIdentity(null)
+                        ?.contentSongId
+                val belongsToCurrentPage = belongsToCurrentLyricsPage(
+                    loadedSongId = loadedSongId,
+                    visibleSongId = visibleSongId,
+                    queueSongId = queueSongId,
+                )
+                if (belongsToCurrentPage) {
+                    missingLyricsSupplement().onNativeLyricsRequestStarted(loadedSongId)
+                    chain.thisObject?.let { appleLyricsViewModelRef = WeakReference(it) }
+                    appleLyricsItemRef = WeakReference(item)
+                    missingLyricsSupplement().onLyricsItem(item)
+                } else {
+                    ProviderLogger.debug(
+                        "忽略非当前歌词页 loadLyrics: " +
+                            "loadedId=$loadedSongId, visibleId=$visibleSongId, " +
+                            "queueId=$queueSongId"
+                    )
+                }
+            } else {
+                // 旧版缓存没有 lyricsSource；若模块请求后 Apple 原生链仍未产出，延迟迁移为补充歌词。
+                loadedSongId?.takeIf(String::isNotBlank)?.let { songId ->
+                    scheduleLegacyModuleCachePromotion(songId)
+                }
+            }
+            loadedSongId?.let { requestId ->
                 recordLyricsRequestSource(requestId, source)
             }
             val queueId = runCatching {
@@ -2319,7 +3185,7 @@ internal class AppleLyricsSupplementHooks(
                 }
             }.getOrNull()
             ProviderLogger.debug(
-                "loadLyrics：source=$source, id=$id, queueId=$queueId, language=$language"
+                "loadLyrics：source=$source, id=$loadedSongId, queueId=$queueId, language=$language"
             )
         })
 
@@ -2348,9 +3214,18 @@ internal class AppleLyricsSupplementHooks(
                 val songNative = lyricsNativeCall(
                     pointer,
                     AppleMusicRuntimeMember.LYRICS_NATIVE_POINTER_GET_METHOD,
-                ) ?: return@installHook
+                )
+                val source =
+                    if (lyricRequester().ownsViewModel(chain.thisObject)) "module" else "apple"
+                if (source == "apple") {
+                    reportNativeLyricsState(
+                        songNative = songNative,
+                        songId = songNative?.let(::nativeSongId),
+                        sourcePointer = pointer,
+                    )
+                }
+                if (songNative == null) return@installHook
 
-                val source = if (lyricRequester().ownsViewModel(chain.thisObject)) "module" else "apple"
                 val songId = nativeSongId(songNative)
                 logApplePronunciationModelState(
                     stage = "build_after:$source",
@@ -2376,13 +3251,17 @@ internal class AppleLyricsSupplementHooks(
                     }
                 }
                 applyConfiguredContentUiLanguageCallback()
-                val onlineTranslation =
-                    songId?.let(nativeOnlineTranslationStore::hasTranslation) == true
+                val onlineTranslation = songId?.let(::hasAnyOnlineTranslation) == true
                 val onlinePronunciation =
                     songId?.let(nativeOnlineTranslationStore::hasPronunciation) == true
                 val officialPronunciation = source == "apple" &&
                     hasValidOfficialRomanization(songNative)
+                // 补充歌词有自己的 requestMissingLyricsPresentationRefresh 收尾；
+                // Apple 的 R2 轨道刷新会反复重绑 adapter 并引起歌词页抽搐。
+                val supplementPointer =
+                    missingLyricsSupplement().isSupplementPointer(pointer)
                 if (
+                    !supplementPointer &&
                     ApplePronunciationPolicy.shouldRefreshPresentationAfterBuild(
                         sourceIsApple = source == "apple",
                         hasValidOfficialPronunciation = officialPronunciation,
@@ -2405,7 +3284,42 @@ internal class AppleLyricsSupplementHooks(
         ProviderLogger.debug("歌词构建 Hook 已安装")
     }
 
+    /** 延迟迁移旧缓存，避免抢在 Apple 原生歌词结果之前。 */
+    private fun scheduleLegacyModuleCachePromotion(songId: String) {
+        mainHandler.postDelayed({
+            if (missingLyricsSupplement().hasKnownNativeLyricsFor(songId)) return@postDelayed
+            PlaybackManager.promoteLegacyCachedLyricsAsMissingSupplement(songId)
+        }, LEGACY_MODULE_PROMOTION_DELAY_MS)
+    }
+
     fun hookAppleNativeLyricsPresentation() {
+        appleLyricsResultPresentationMethod = hookResolver.resolveMethod(
+            AppleMusicHookPoint.LYRICS_RESULT_PRESENTATION
+        ).method
+        // 无歌词补充的原生模型可能先于 Apple 自身的原生呈现回调完成。若只等
+        // PlayerLyricsViewFragment 的 N2/I2 呈现 Hook 来登记 Fragment，冷启动时
+        // requestMissingLyricsPresentationRefresh 会因 fragmentRef=false 直接放弃，
+        // 表现为歌词页一直加载、直到后台回前台触发下一次呈现。
+        runCatching {
+            val onCreateView = hookResolver.resolveMethod(
+                AppleMusicHookPoint.LYRICS_UI_ON_CREATE_VIEW
+            ).method
+            hookRegistrar.installHook(onCreateView, before = { chain ->
+                val fragment = chain.thisObject ?: return@installHook
+                if (appleLyricsFragmentRef?.get() !== fragment) {
+                    appleLyricsFragmentRef = WeakReference(fragment)
+                    ProviderLogger.debug(
+                        "Apple Music 歌词页 Fragment 已提前登记: " +
+                            "class=${fragment.javaClass.name}"
+                    )
+                }
+                currentAppleLyricsSongId?.let { songId ->
+                    ensureAppleLyricsScrollTracking(fragment, songId)
+                }
+            })
+        }.onFailure {
+            ProviderLogger.error("Apple Music 歌词页 Fragment 提前登记 Hook 安装失败", it)
+        }
         val method = hookResolver.resolveMethod(
             AppleMusicHookPoint.LYRICS_NATIVE_PRESENTATION
         ).method
@@ -2414,18 +3328,30 @@ internal class AppleLyricsSupplementHooks(
             method,
             before = { chain ->
                 val fragment = chain.thisObject ?: return@installHook
-                val pointer = chain.args.firstOrNull() ?: return@installHook
                 appleLyricsFragmentRef = WeakReference(fragment)
-                appleLyricsSongPointerRef = WeakReference(pointer)
+                val pointer = chain.args.firstOrNull()
+                if (pointer != null) {
+                    appleLyricsSongPointerRef = WeakReference(pointer)
+                }
                 val songNative = runCatching {
                     lyricsNativeCall(pointer, AppleMusicRuntimeMember.LYRICS_NATIVE_POINTER_GET_METHOD)
-                }.getOrNull() ?: return@installHook
-                val songId = nativeSongId(songNative)
+                }.getOrNull()
+                val songId = songNative?.let(::nativeSongId)
+                reportNativeLyricsState(
+                    songNative = songNative,
+                    songId = songId,
+                    sourcePointer = pointer,
+                )
+                if (songNative == null) return@installHook
                 if (currentAppleLyricsSongId != songId) {
                     clearPendingApplePronunciationRenderPlans()
                     currentAppleLyricsSongId = songId
+                    appleLyricsScrollSnapshot = null
+                    appleLyricsScrollSnapshotSongId = null
                 }
                 ensureAppleLyricTextHooks(songNative)
+                appleLyricsPresentationInFlight = true
+                songId?.let { ensureAppleLyricsScrollTracking(fragment, it) }
                 logAppleLyricsUiState(
                     fragment = fragment,
                     stage = "presentation_before",
@@ -2434,6 +3360,7 @@ internal class AppleLyricsSupplementHooks(
             },
             after = { chain, _ ->
                 val fragment = chain.thisObject ?: return@installHook
+                appleLyricsPresentationInFlight = false
                 val pointer = chain.args.firstOrNull() ?: return@installHook
                 val songNative = runCatching {
                     lyricsNativeCall(pointer, AppleMusicRuntimeMember.LYRICS_NATIVE_POINTER_GET_METHOD)
@@ -2442,12 +3369,21 @@ internal class AppleLyricsSupplementHooks(
                 if (currentAppleLyricsSongId != songId) {
                     clearPendingApplePronunciationRenderPlans()
                     currentAppleLyricsSongId = songId
+                    appleLyricsScrollSnapshot = null
+                    appleLyricsScrollSnapshotSongId = null
                 }
+                ensureAppleLyricsScrollTracking(fragment, songId)
                 logAppleLyricsUiState(
                     fragment = fragment,
                     stage = "presentation_after",
                     expectedSongId = songId,
                 )
+                if (missingLyricsSupplement().isSupplementPointer(pointer)) {
+                    dismissAppleLyricsLoadingOverlay(fragment)
+                    ensureMissingLyricsTranslationButtonVisible(fragment)
+                    scheduleSupplementActiveLineUpdate()
+                }
+                restoreAppleLyricsScrollSnapshot(fragment, songId)
                 scheduleAppleLyricsBlur(resolveAppleLyricsRecyclerView(fragment))
                 mainHandler.post {
                     PlaybackManager.onLyricsBuilt(

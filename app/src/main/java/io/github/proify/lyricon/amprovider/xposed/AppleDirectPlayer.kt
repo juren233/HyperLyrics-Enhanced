@@ -45,6 +45,8 @@ internal class AppleDirectPlayer(
     private val onOriginalMetadataRequested: (String) -> Unit,
     private val onOnlineTranslationReceived: (ByteArray) -> Unit,
     private val onOnlineTranslationCleared: (String?) -> Unit,
+    private val onMissingLyricsSupplementReceived: (ByteArray) -> Unit,
+    private val onMissingLyricsSupplementCleared: (String?) -> Unit,
     private val onOnlineTranslationSourceSwitchResult:
         (Long, String?, String?, String?, String?, Boolean) -> Unit,
 ) : RemotePlayer {
@@ -70,6 +72,18 @@ internal class AppleDirectPlayer(
         override fun onOnlineTranslationCleared(songId: String?) {
             pronunciationDiagnostic("stage=bridge_payload_cleared, id=$songId")
             this@AppleDirectPlayer.onOnlineTranslationCleared(songId)
+        }
+
+        override fun onMissingLyricsSupplementCleared(songId: String?) {
+            pronunciationDiagnostic("stage=bridge_supplement_payload_cleared, id=$songId")
+            this@AppleDirectPlayer.onMissingLyricsSupplementCleared(songId)
+        }
+
+        override fun onMissingLyricsSupplementResult(compressedSong: ByteArray) {
+            pronunciationDiagnostic(
+                "stage=bridge_supplement_payload_callback, bytes=${compressedSong.size}"
+            )
+            this@AppleDirectPlayer.onMissingLyricsSupplementReceived(compressedSong)
         }
 
         override fun onOnlineTranslationSourceSwitchResult(

@@ -1,9 +1,11 @@
 package com.juren233.hyperlyricsenhanced.online
 
 import android.content.Context
+import com.juren233.hyperlyricsenhanced.common.lyric.AppleMissingLyricsSourceStatus
 import com.juren233.hyperlyricsenhanced.common.lyric.RomanizationPolicy
 import com.juren233.hyperlyricsenhanced.common.lyric.OnlineTranslationContentPolicy
 import com.juren233.hyperlyricsenhanced.lyric.LrcLine
+import com.juren233.hyperlyricsenhanced.online.model.LyricsLine
 import com.juren233.hyperlyricsenhanced.online.model.LyricsResult
 import com.juren233.hyperlyricsenhanced.online.model.SearchSource
 import com.juren233.hyperlyricsenhanced.online.model.SongSearchResult
@@ -11,6 +13,9 @@ import com.juren233.hyperlyricsenhanced.online.model.Source
 import com.juren233.hyperlyricsenhanced.online.utils.ChineseUtils
 import com.juren233.hyperlyricsenhanced.utils.LogManager
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withTimeoutOrNull
 import java.text.Normalizer
 import kotlin.math.abs
@@ -33,7 +38,10 @@ object OnlineLyricTargeter {
 
     data class FetchOutcome(
         val lines: List<LrcLine>? = null,
+        val wordLines: List<LyricsLine>? = null,
         val nearMiss: NearMissCandidate? = null,
+        val sourceStatuses: List<AppleMissingLyricsSourceStatus> = emptyList(),
+        val selectedSource: Source? = null,
     )
 
     suspend fun fetchBestLyric(
@@ -49,8 +57,10 @@ object OnlineLyricTargeter {
         requireTranslation: Boolean = false,
         fallbackToOtherSources: Boolean = true,
         sourceOrder: List<Source>? = null,
+        statusSourceOrder: List<Source>? = null,
         album: String? = null,
         originalAlbum: String? = null,
+        collectSourceStatuses: Boolean = false,
     ): List<LrcLine>? = fetchBestLyricWithNearMiss(
         context = context,
         pkgName = pkgName,
@@ -64,8 +74,10 @@ object OnlineLyricTargeter {
         requireTranslation = requireTranslation,
         fallbackToOtherSources = fallbackToOtherSources,
         sourceOrder = sourceOrder,
+        statusSourceOrder = statusSourceOrder,
         album = album,
         originalAlbum = originalAlbum,
+        collectSourceStatuses = collectSourceStatuses,
     ).lines
 
     suspend fun fetchBestLyricWithNearMiss(
@@ -81,8 +93,10 @@ object OnlineLyricTargeter {
         requireTranslation: Boolean = false,
         fallbackToOtherSources: Boolean = true,
         sourceOrder: List<Source>? = null,
+        statusSourceOrder: List<Source>? = null,
         album: String? = null,
         originalAlbum: String? = null,
+        collectSourceStatuses: Boolean = false,
     ): FetchOutcome {
         val outcome = performSearch(
             context = context,
@@ -97,13 +111,22 @@ object OnlineLyricTargeter {
             requireTranslation = requireTranslation,
             fallbackToOtherSources = fallbackToOtherSources,
             sourceOrder = sourceOrder,
+            statusSourceOrder = statusSourceOrder,
             album = album,
             originalAlbum = originalAlbum,
+            collectSourceStatuses = collectSourceStatuses,
         )
         if (outcome.lines != null) {
-            return FetchOutcome(lines = outcome.lines)
+            return FetchOutcome(
+                lines = outcome.lines,
+                wordLines = outcome.wordLines,
+                sourceStatuses = outcome.sourceStatuses,
+                selectedSource = outcome.selectedSource,
+            )
         }
-        val nearMiss = outcome.nearMiss ?: return FetchOutcome()
+        val nearMiss = outcome.nearMiss ?: return FetchOutcome(
+            sourceStatuses = outcome.sourceStatuses,
+        )
         val lyricsResult = withTimeoutOrNull(TIMEOUT_MS) {
             try {
                 nearMiss.source.getLyrics(nearMiss.song)
@@ -120,7 +143,7 @@ object OnlineLyricTargeter {
         if (lyricsResult == null ||
             (lyricsResult.original.isEmpty() && lyricsResult.translated.isNullOrEmpty())
         ) {
-            return FetchOutcome()
+            return FetchOutcome(sourceStatuses = outcome.sourceStatuses)
         }
         val lines = toLrcLines(lyricsResult)
         if (lines.isEmpty()) return FetchOutcome()
@@ -128,8 +151,9 @@ object OnlineLyricTargeter {
                 OnlineTranslationContentPolicy.isMeaningful(it.translation)
             }
         ) {
-            return FetchOutcome()
+            return FetchOutcome(sourceStatuses = outcome.sourceStatuses)
         }
+        val wordLines = toWordLines(lyricsResult)
         LogManager.d(
             "OnlineTargeter",
             "近失候选歌词: 源=${nearMiss.source.javaClass.simpleName}, " +
@@ -137,11 +161,18 @@ object OnlineLyricTargeter {
                 "时长已校验=${nearMiss.durationVerified}",
         )
         return FetchOutcome(
+            lines = lines,
+            wordLines = wordLines,
             nearMiss = NearMissCandidate(
                 score = nearMiss.score,
                 lines = lines,
                 durationVerified = nearMiss.durationVerified,
             ),
+            sourceStatuses = mergeStatuses(
+                outcome.sourceStatuses,
+                statusFor(nearMiss.source.sourceType, lyricsResult, lines),
+            ),
+            selectedSource = nearMiss.source.sourceType,
         )
     }
 
@@ -158,8 +189,10 @@ object OnlineLyricTargeter {
         requireTranslation: Boolean,
         fallbackToOtherSources: Boolean,
         sourceOrder: List<Source>?,
+        statusSourceOrder: List<Source>?,
         album: String?,
         originalAlbum: String?,
+        collectSourceStatuses: Boolean,
     ): SearchOutcome {
         val ne = LyricApiProvider.getNeSource(context)
         val qm = LyricApiProvider.qmSource
@@ -177,6 +210,12 @@ object OnlineLyricTargeter {
             )
         }
         val sources = resolvedSourceOrder.mapNotNull(sourcesByType::get)
+        val searchedSourceTypes = resolvedSourceOrder.toSet()
+        val statusOnlySources = statusSourceOrder
+            ?.distinct()
+            .orEmpty()
+            .filterNot(searchedSourceTypes::contains)
+            .mapNotNull(sourcesByType::get)
 
         val resolvedTitle = originalTitle?.takeIf { it.isNotBlank() } ?: title
         val resolvedArtist = originalArtist?.takeIf { it.isNotBlank() } ?: artist
@@ -197,6 +236,7 @@ object OnlineLyricTargeter {
             }
         }
         var bestNearMiss: NearMiss? = null
+        val allSourceStatuses = linkedMapOf<Source, AppleMissingLyricsSourceStatus>()
         searches.forEachIndexed { index, metadata ->
             if (index > 0 && metadata.label == "Apple 内部原名") {
                 LogManager.d(
@@ -214,9 +254,27 @@ object OnlineLyricTargeter {
                 metadataLabel = metadata.label,
                 album = album,
                 originalAlbum = originalAlbum,
+                collectSourceStatuses = collectSourceStatuses,
+                statusSources = if (index == 0) statusOnlySources else emptyList(),
             )
+            if (collectSourceStatuses) {
+                outcome.sourceStatuses.forEach { status -> allSourceStatuses.mergeStatus(status) }
+            }
             if (outcome.lines != null) {
-                return SearchOutcome(lines = outcome.lines)
+                if (!collectSourceStatuses) {
+                    return SearchOutcome(
+                        lines = outcome.lines,
+                        wordLines = outcome.wordLines,
+                        selectedSource = outcome.selectedSource,
+                        sourceStatuses = allSourceStatuses.values.toList(),
+                    )
+                }
+                return SearchOutcome(
+                    lines = outcome.lines,
+                    wordLines = outcome.wordLines,
+                    sourceStatuses = allSourceStatuses.values.toList(),
+                    selectedSource = outcome.selectedSource,
+                )
             }
             if (outcome.nearMiss != null) {
                 bestNearMiss = if (bestNearMiss == null) {
@@ -226,7 +284,11 @@ object OnlineLyricTargeter {
                 }
             }
         }
-        return SearchOutcome(nearMiss = bestNearMiss)
+        return SearchOutcome(
+            nearMiss = bestNearMiss,
+            sourceStatuses = allSourceStatuses.values.toList(),
+            selectedSource = bestNearMiss?.source?.sourceType,
+        )
     }
 
     private suspend fun searchSources(
@@ -239,6 +301,8 @@ object OnlineLyricTargeter {
         metadataLabel: String,
         album: String?,
         originalAlbum: String?,
+        collectSourceStatuses: Boolean,
+        statusSources: List<SearchSource> = emptyList(),
     ): SearchOutcome {
 
         val keyword = "$title $artist"
@@ -262,43 +326,75 @@ object OnlineLyricTargeter {
         val featureKeywords = listOf("live", "remastered", "翻唱", "cover")
         val localFeatures = featureKeywords.filter { title.lowercase().contains(it) }
 
+        val parallelEvaluations = if (collectSourceStatuses) {
+            val candidateTypes = sources.mapTo(linkedSetOf()) { it.sourceType }
+            val statusOnlyWork = statusSources
+                .filterNot { it.sourceType in candidateTypes }
+            val work = buildList {
+                sources.forEach { add(it to true) }
+                statusOnlyWork.forEach { add(it to false) }
+            }
+            coroutineScope {
+                val evaluations = work.associate { (source, allowFallbackRetry) ->
+                    source.sourceType to async {
+                        source.sourceType to evaluateSource(
+                            context = context,
+                            source = source,
+                            title = title,
+                            keyword = keyword,
+                            fallbackKeyword = fallbackKeyword,
+                            artist = artist,
+                            durationMs = durationMs,
+                            requireTranslation = requireTranslation,
+                            metadataLabel = metadataLabel,
+                            cleanLocalTitle = cleanLocalTitle,
+                            localArtists = localArtists,
+                            localFeatures = localFeatures,
+                            cleanLocalAlbum = cleanLocalAlbum,
+                            multiCredit = multiCredit,
+                            allowFallbackRetry = allowFallbackRetry,
+                        )
+                    }
+                }
+                if (
+                    shouldWaitForStatusOnlySources(
+                        candidateSourceCount = sources.size,
+                        statusOnlySourceCount = statusOnlyWork.size,
+                    )
+                ) {
+                    evaluations.values.awaitAll().toMap()
+                } else {
+                    // 严格歌词源切换只需要等待目标源。其他来源的状态已有历史值，
+                    // 不能让无关网络请求把目标行长期卡在「获取中」。
+                    val candidateResults = sources.associate { source ->
+                        evaluations.getValue(source.sourceType).await()
+                    }
+                    statusOnlyWork.forEach { source ->
+                        evaluations[source.sourceType]?.cancel()
+                    }
+                    candidateResults
+                }
+            }
+        } else {
+            emptyMap()
+        }
+
         var bestScore = -1
         var bestNearMiss: NearMiss? = null
+        var selectedSuccess: SourceAttempt? = null
+        val sourceStatuses = linkedMapOf<Source, AppleMissingLyricsSourceStatus>()
 
         for (source in sources) {
-            val sourceKeyword = if (source.sourceType == Source.KUGOU && artist.isNotBlank()) {
-                "$artist - $title"
+            val evaluation = if (collectSourceStatuses) {
+                parallelEvaluations.getValue(source.sourceType)
             } else {
-                keyword
-            }
-            var attempt = scoreSource(
-                context = context,
-                source = source,
-                keyword = sourceKeyword,
-                durationMs = durationMs,
-                requireTranslation = requireTranslation,
-                metadataLabel = metadataLabel,
-                cleanLocalTitle = cleanLocalTitle,
-                localArtists = localArtists,
-                localFeatures = localFeatures,
-                cleanLocalAlbum = cleanLocalAlbum,
-            )
-            if (attempt.lines != null) {
-                return SearchOutcome(lines = attempt.lines)
-            }
-            if (multiCredit &&
-                !attempt.passAttempted &&
-                (attempt.song == null || !attempt.artistMatched)
-            ) {
-                LogManager.d(
-                    "OnlineTargeter",
-                    "多人署名候选无歌手交集，使用歌曲名+原名专辑降级重试: " +
-                        "源=${source.javaClass.simpleName}, 关键词=\"$fallbackKeyword\"",
-                )
-                val retry = scoreSource(
+                evaluateSource(
                     context = context,
                     source = source,
-                    keyword = fallbackKeyword,
+                    title = title,
+                    keyword = keyword,
+                    fallbackKeyword = fallbackKeyword,
+                    artist = artist,
                     durationMs = durationMs,
                     requireTranslation = requireTranslation,
                     metadataLabel = metadataLabel,
@@ -306,11 +402,23 @@ object OnlineLyricTargeter {
                     localArtists = localArtists,
                     localFeatures = localFeatures,
                     cleanLocalAlbum = cleanLocalAlbum,
+                    multiCredit = multiCredit,
+                    allowFallbackRetry = true,
                 )
-                if (retry.lines != null) {
-                    return SearchOutcome(lines = retry.lines)
+            }
+            var attempt = evaluation.attempt
+            if (collectSourceStatuses) {
+                evaluation.statuses.forEach { status -> sourceStatuses.mergeStatus(status) }
+            }
+            if (attempt.lines != null) {
+                if (selectedSuccess == null) selectedSuccess = attempt
+                if (!collectSourceStatuses) {
+                    return SearchOutcome(
+                        lines = attempt.lines,
+                        wordLines = attempt.wordLines,
+                        selectedSource = source.sourceType,
+                    )
                 }
-                attempt = betterSourceAttempt(attempt, retry)
             }
             if (attempt.song != null) {
                 if (attempt.score > bestScore) bestScore = attempt.score
@@ -325,11 +433,99 @@ object OnlineLyricTargeter {
                 }
             }
         }
-        LogManager.d(
-            "OnlineTargeter",
-            "歌词未命中: 类型=$metadataLabel, 最佳得分=$bestScore < 阈值 $PASS_SCORE"
+        if (collectSourceStatuses) {
+            // 补充歌词弹窗要求每个来源都给出「已检索到」或「检索失败」，
+            // 不能因为某来源不在候选顺序里就显示「未检索」。这里只补状态，
+            // 不参与歌词/近失候选选择。
+            statusSources.forEach { statusSource ->
+                parallelEvaluations[statusSource.sourceType]
+                    ?.statuses
+                    ?.forEach { status -> sourceStatuses.mergeStatus(status) }
+            }
+        }
+        if (selectedSuccess == null) {
+            LogManager.d(
+                "OnlineTargeter",
+                "歌词未命中: 类型=$metadataLabel, 最佳得分=$bestScore, 阈值=$PASS_SCORE"
+            )
+        }
+        return SearchOutcome(
+            lines = selectedSuccess?.lines,
+            wordLines = selectedSuccess?.wordLines,
+            nearMiss = bestNearMiss,
+            sourceStatuses = sourceStatuses.values.toList(),
+            selectedSource = selectedSuccess?.song?.source ?: bestNearMiss?.source?.sourceType,
         )
-        return SearchOutcome(nearMiss = bestNearMiss)
+    }
+
+    private data class SourceEvaluation(
+        val attempt: SourceAttempt,
+        val statuses: List<AppleMissingLyricsSourceStatus>,
+    )
+
+    private suspend fun evaluateSource(
+        context: Context,
+        source: SearchSource,
+        title: String,
+        keyword: String,
+        fallbackKeyword: String,
+        artist: String,
+        durationMs: Long,
+        requireTranslation: Boolean,
+        metadataLabel: String,
+        cleanLocalTitle: String,
+        localArtists: List<String>,
+        localFeatures: List<String>,
+        cleanLocalAlbum: String,
+        multiCredit: Boolean,
+        allowFallbackRetry: Boolean,
+    ): SourceEvaluation {
+        val sourceKeyword = if (source.sourceType == Source.KUGOU && artist.isNotBlank()) {
+            "$artist - $title"
+        } else {
+            keyword
+        }
+        val statuses = mutableListOf<AppleMissingLyricsSourceStatus>()
+        var attempt = scoreSource(
+            context = context,
+            source = source,
+            keyword = sourceKeyword,
+            durationMs = durationMs,
+            requireTranslation = requireTranslation,
+            metadataLabel = metadataLabel,
+            cleanLocalTitle = cleanLocalTitle,
+            localArtists = localArtists,
+            localFeatures = localFeatures,
+            cleanLocalAlbum = cleanLocalAlbum,
+        )
+        statuses += attempt.status
+        if (
+            allowFallbackRetry &&
+            multiCredit &&
+            !attempt.passAttempted &&
+            (attempt.song == null || !attempt.artistMatched)
+        ) {
+            LogManager.d(
+                "OnlineTargeter",
+                "多人署名候选无歌手交集，使用歌曲名+原名专辑降级重试: " +
+                    "源=${source.javaClass.simpleName}, 关键词=\"$fallbackKeyword\"",
+            )
+            val retry = scoreSource(
+                context = context,
+                source = source,
+                keyword = fallbackKeyword,
+                durationMs = durationMs,
+                requireTranslation = requireTranslation,
+                metadataLabel = metadataLabel,
+                cleanLocalTitle = cleanLocalTitle,
+                localArtists = localArtists,
+                localFeatures = localFeatures,
+                cleanLocalAlbum = cleanLocalAlbum,
+            )
+            statuses += retry.status
+            attempt = betterSourceAttempt(attempt, retry)
+        }
+        return SourceEvaluation(attempt = attempt, statuses = statuses)
     }
 
     private suspend fun scoreSource(
@@ -362,7 +558,12 @@ object OnlineLyricTargeter {
                 "OnlineTargeter",
                 "搜索结果为空: 源=${source.javaClass.simpleName}, 关键词=\"$keyword\"",
             )
-            return SourceAttempt()
+            return SourceAttempt(
+                status = AppleMissingLyricsSourceStatus(
+                    source = source.sourceType.name,
+                    searched = true,
+                )
+            )
         }
         LogManager.d(
             "OnlineTargeter",
@@ -445,6 +646,7 @@ object OnlineLyricTargeter {
                             durationClose = durationClose,
                             artistMatched = artistMatched,
                             passAttempted = true,
+                            status = statusFor(source.sourceType, lyricsResult, list),
                         )
                     }
                     LogManager.d(
@@ -452,7 +654,13 @@ object OnlineLyricTargeter {
                         "歌词命中: 类型=$metadataLabel, 源=${source.javaClass.simpleName}, " +
                             "关键词=\"$keyword\", 得分=$localBestScore, 行数=${list.size}",
                     )
-                    return SourceAttempt(lines = list, song = bestSong, score = localBestScore)
+                    return SourceAttempt(
+                        lines = list,
+                        wordLines = toWordLines(lyricsResult),
+                        song = bestSong,
+                        score = localBestScore,
+                        status = statusFor(source.sourceType, lyricsResult, list),
+                    )
                 }
             }
             return SourceAttempt(
@@ -462,6 +670,10 @@ object OnlineLyricTargeter {
                 durationClose = durationClose,
                 artistMatched = artistMatched,
                 passAttempted = true,
+                status = AppleMissingLyricsSourceStatus(
+                    source = source.sourceType.name,
+                    searched = true,
+                ),
             )
         }
         return SourceAttempt(
@@ -470,6 +682,10 @@ object OnlineLyricTargeter {
             titleMatched = titleMatched,
             durationClose = durationClose,
             artistMatched = artistMatched,
+            status = AppleMissingLyricsSourceStatus(
+                source = source.sourceType.name,
+                searched = true,
+            ),
         )
     }
 
@@ -510,12 +726,17 @@ object OnlineLyricTargeter {
 
     private data class SourceAttempt(
         val lines: List<LrcLine>? = null,
+        val wordLines: List<LyricsLine>? = null,
         val song: SongSearchResult? = null,
         val score: Int = -1,
         val titleMatched: Boolean = false,
         val durationClose: Boolean = false,
         val artistMatched: Boolean = false,
         val passAttempted: Boolean = false,
+        val status: AppleMissingLyricsSourceStatus = AppleMissingLyricsSourceStatus(
+            source = "",
+            searched = false,
+        ),
     )
 
     private data class NearMiss(
@@ -527,8 +748,52 @@ object OnlineLyricTargeter {
 
     private data class SearchOutcome(
         val lines: List<LrcLine>? = null,
+        val wordLines: List<LyricsLine>? = null,
         val nearMiss: NearMiss? = null,
+        val sourceStatuses: List<AppleMissingLyricsSourceStatus> = emptyList(),
+        val selectedSource: Source? = null,
     )
+
+    private fun statusFor(
+        source: Source,
+        result: LyricsResult,
+        lines: List<LrcLine>,
+    ): AppleMissingLyricsSourceStatus {
+        val wordTimed = result.original.any { line ->
+            line.words.size > 1 && line.words.any { word -> word.end > word.start }
+        }
+        return AppleMissingLyricsSourceStatus(
+            source = source.name,
+            searched = true,
+            found = lines.isNotEmpty(),
+            wordTimed = wordTimed,
+            lineCount = lines.size,
+        )
+    }
+
+    private fun MutableMap<Source, AppleMissingLyricsSourceStatus>.mergeStatus(
+        status: AppleMissingLyricsSourceStatus,
+    ) {
+        if (status.source.isBlank()) return
+        val source = runCatching { Source.valueOf(status.source) }.getOrNull() ?: return
+        val previous = this[source]
+        this[source] = when {
+            previous == null -> status
+            status.found && !previous.found -> status
+            status.found && previous.found && status.lineCount > previous.lineCount -> status
+            else -> previous.copy(searched = previous.searched || status.searched)
+        }
+    }
+
+    private fun mergeStatuses(
+        statuses: List<AppleMissingLyricsSourceStatus>,
+        status: AppleMissingLyricsSourceStatus,
+    ): List<AppleMissingLyricsSourceStatus> {
+        val merged = linkedMapOf<Source, AppleMissingLyricsSourceStatus>()
+        statuses.forEach { existing -> merged.mergeStatus(existing) }
+        merged.mergeStatus(status)
+        return merged.values.toList()
+    }
 
     internal fun isStrongTitleMatch(localTitle: String, remoteTitle: String): Boolean =
         localTitle.isNotEmpty() && (
@@ -609,6 +874,17 @@ object OnlineLyricTargeter {
             }
         }
     }
+
+    internal fun shouldWaitForStatusOnlySources(
+        candidateSourceCount: Int,
+        statusOnlySourceCount: Int,
+    ): Boolean = candidateSourceCount != 1 || statusOnlySourceCount == 0
+
+    /** 保留来源逐词时间轴的行列表，供需要逐字渲染的消费方使用。 */
+    internal fun toWordLines(lyricsResult: LyricsResult): List<LyricsLine> =
+        lyricsResult.original.filter { line ->
+            line.words.joinToString("") { it.text }.trim().isNotEmpty()
+        }
 
     internal fun toLrcLines(lyricsResult: LyricsResult): List<LrcLine> {
         val translationsByStart = lyricsResult.translated.orEmpty().associate { line ->

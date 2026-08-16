@@ -44,7 +44,30 @@ internal class AppleNativeOnlineTranslationStore {
 
     @Synchronized
     fun update(song: Song): Boolean {
-        val songId = song.id?.takeIf(String::isNotBlank) ?: return false
+        val updatedOverlay = buildOverlay(song) ?: return false
+        if (overlay == updatedOverlay) return false
+
+        overlay = updatedOverlay
+        contentRevision += 1
+        return true
+    }
+
+    /**
+     * 只比较会显示在歌词页上的逐行内容，忽略来源字段。
+     *
+     * 同曲 RACE_FIRST/RACE_FINAL 载荷经常只有 ONLINE_TRANSLATION_SOURCE 变化；
+     * 此时 [update] 仍会推进 revision 以刷新来源菜单，但页面逐行内容没有变化，
+     * 不应再触发整页重呈现。
+     */
+    @Synchronized
+    fun wouldChangeDisplayContent(song: Song): Boolean {
+        val updatedOverlay = buildOverlay(song) ?: return false
+        val currentOverlay = overlay ?: return true
+        return currentOverlay.exactContent != updatedOverlay.exactContent
+    }
+
+    private fun buildOverlay(song: Song): Overlay? {
+        val songId = song.id?.takeIf(String::isNotBlank) ?: return null
         val entries = song.lyrics.orEmpty().mapNotNull { line ->
             val content = Content(
                 translation = sanitizeContent(line.translation),
@@ -56,9 +79,8 @@ internal class AppleNativeOnlineTranslationStore {
             val timing = TimingKey(line.begin, line.end)
             LineKey(timing, normalizeText(line.text)) to content
         }
-        if (entries.isEmpty()) return false
-
-        val updatedOverlay = Overlay(
+        if (entries.isEmpty()) return null
+        return Overlay(
             songId = songId,
             exactContent = entries.toMap(),
             translationsByTiming = entries.groupBy(
@@ -72,11 +94,6 @@ internal class AppleNativeOnlineTranslationStore {
             pronunciationSource = song.metadata
                 ?.getString(LyricMetadataKeys.ONLINE_PRONUNCIATION_SOURCE),
         )
-        if (overlay == updatedOverlay) return false
-
-        overlay = updatedOverlay
-        contentRevision += 1
-        return true
     }
 
     @Synchronized

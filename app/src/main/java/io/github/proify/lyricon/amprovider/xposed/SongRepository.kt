@@ -25,7 +25,15 @@ object SongRepository {
         // 1. 尝试从磁盘缓存读取
         val cache = DiskSongManager.load(id)
         if (cache != null) {
-            return cache.applyCurrentMetadata().toSong()
+            val mapped = normalizeRenderableLyrics(cache.applyCurrentMetadata().toSong())
+            if (cache.lyrics.isNotEmpty() && mapped.lyrics.isNullOrEmpty()) {
+                DiskSongManager.delete(id)
+                ProviderLogger.info(
+                    "SongRepository: Discarded textless lyrics cache for $id, " +
+                        "cachedLines=${cache.lyrics.size}"
+                )
+            }
+            return mapped
         }
 
         // 2. 缓存未命中，从 Metadata 生成占位符（只有标题/歌手，无歌词）
@@ -42,7 +50,11 @@ object SongRepository {
     /**
      * 保存解析好的歌曲到磁盘
      */
-    internal fun saveSong(nativeSongObj: Any, parserAccess: AppleLyricsParserAccess): Song? {
+    internal fun saveSong(
+        nativeSongObj: Any,
+        parserAccess: AppleLyricsParserAccess,
+        source: String,
+    ): Song? {
         val song = AppleLyricTextTransform.withRawReads {
             AppleSongParser.parser(nativeSongObj, parserAccess)
         }
@@ -59,9 +71,40 @@ object SongRepository {
                     "translatedBackgroundLines=${song.lyrics.count { !it.htmlTranslatedBackgroundVocalsLineText.isNullOrBlank() }}"
             )
         }
+        song.lyricsSource = source
         val songWithMetadata = song.applyCurrentMetadata()
+        val mapped = normalizeRenderableLyrics(songWithMetadata.toSong())
+        if (mapped.lyrics.isNullOrEmpty()) {
+            DiskSongManager.delete(song.adamId.orEmpty())
+            ProviderLogger.info(
+                "SongRepository: Rejected textless parsed lyrics for ${song.adamId}, " +
+                    "source=$source, parsedLines=${song.lyrics.size}"
+            )
+            return mapped
+        }
         DiskSongManager.save(songWithMetadata)
-        return songWithMetadata.toSong()
+        return mapped
+    }
+
+    /**
+     * Native timing vectors without any main text are not lyrics that a consumer can render.
+     * Old caches may contain exactly that shape, so repair recoverable word-only lines and drop
+     * the remaining empty lines before availability/fallback decisions are made.
+     */
+    internal fun normalizeRenderableLyrics(song: Song): Song {
+        val normalizedLines = song.lyrics.orEmpty().mapNotNull { line ->
+            val text = line.text?.takeIf(String::isNotBlank)
+                ?: line.words.orEmpty()
+                    .joinToString("") { it.text.orEmpty() }
+                    .takeIf(String::isNotBlank)
+                ?: return@mapNotNull null
+            val secondary = line.secondary?.takeIf(String::isNotBlank)
+                ?: line.secondaryWords.orEmpty()
+                    .joinToString("") { it.text.orEmpty() }
+                    .takeIf(String::isNotBlank)
+            line.copy(text = text, secondary = secondary)
+        }
+        return song.copy(lyrics = normalizedLines)
     }
 
     private fun AppleSong.applyCurrentMetadata(): AppleSong = apply {

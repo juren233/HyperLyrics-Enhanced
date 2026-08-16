@@ -3,6 +3,7 @@ package com.juren233.hyperlyricsenhanced;
 oneway interface IAppleMusicTranslationReceiver {
     void onOnlineTranslationResult(in byte[] compressedSong);
     void onOnlineTranslationCleared(String songId);
+    void onMissingLyricsSupplementCleared(String songId);
     void onOnlineTranslationSourceSwitchResult(
         long requestId,
         String songId,
@@ -11,4 +12,5 @@ oneway interface IAppleMusicTranslationReceiver {
         String actualSource,
         boolean successful
     );
+    void onMissingLyricsSupplementResult(in byte[] compressedSong);
 }

@@ -23,6 +23,22 @@ class AppleMusicProviderHookOrderTest {
         )
     }
 
+    @Test
+    fun `missing lyrics refresh preserves native return to lyrics callback order`() {
+        val calls = mutableListOf<String>()
+
+        refreshMissingLyricsNowPlaying(
+            mediaId = "635770202",
+            refreshMetadataCallbacks = { id -> calls += "metadata:$id" },
+            refreshPlaybackItemBindings = { id -> calls += "binding:$id" },
+        )
+
+        assertEquals(
+            listOf("metadata:635770202", "binding:635770202"),
+            calls,
+        )
+    }
+
     private companion object {
         val PROTECTED_HOOK_ORDER = listOf(
             "hookMetadataSurfaceLifecycle",
@@ -62,6 +78,7 @@ class AppleMusicProviderHookOrderTest {
             "hookAppleLyricsUiDiagnostics",
             "hookAppleLyricsBindingDiagnostics",
             "hookAppleLyricsSourceMenu",
+            "hookAppleMissingLyricsSupplement",
             "hookLyricsNetworkRequest",
             "hookLyricsCookies",
             "hookFinalLyricsHttp",

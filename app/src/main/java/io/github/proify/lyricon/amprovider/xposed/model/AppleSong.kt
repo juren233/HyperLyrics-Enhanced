@@ -17,6 +17,7 @@ data class AppleSong(
     var originalArtist: String? = null,
     var originalAlbum: String? = null,
     var originalMetadataResolved: Boolean = false,
+    var lyricsSource: String? = null,
     var adamId: String? = null,
     var pronunciationLanguages: MutableList<String> = mutableListOf(),
     var agents: MutableList<LyricAgent> = mutableListOf(),

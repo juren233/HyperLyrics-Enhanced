@@ -43,6 +43,8 @@ internal class AppleMusicDirectBridge(
     private var latestOnlineTranslationPayload: ByteArray? = null
     @Volatile
     private var latestOnlineTranslationGeneration: Int? = null
+    @Volatile
+    private var latestMissingLyricsSupplementPayload: ByteArray? = null
 
     private val binder = object : IAppleMusicLyricBridge.Stub() {
         override fun registerTranslationReceiver(receiver: IAppleMusicTranslationReceiver?) {
@@ -58,7 +60,8 @@ internal class AppleMusicDirectBridge(
             bridgeDiagnostic(
                 "stage=translation_receiver_registered, receiverPresent=${receiver != null}, " +
                     "binderAlive=${receiver?.asBinder()?.isBinderAlive}, " +
-                    "cachedBytes=${latestOnlineTranslationPayload?.size ?: 0}",
+                    "cachedOnlineBytes=${latestOnlineTranslationPayload?.size ?: 0}, " +
+                    "cachedSupplementBytes=${latestMissingLyricsSupplementPayload?.size ?: 0}",
             )
             pronunciationDiagnostic(
                 "stage=bridge_receiver_registered, generation=$latestOnlineTranslationGeneration, " +
@@ -67,6 +70,9 @@ internal class AppleMusicDirectBridge(
             )
             latestOnlineTranslationPayload?.let { payload ->
                 sendOnlineTranslationPayload(payload, latestOnlineTranslationGeneration)
+            }
+            latestMissingLyricsSupplementPayload?.let { payload ->
+                sendMissingLyricsSupplementPayload(payload)
             }
         }
 
@@ -202,6 +208,29 @@ internal class AppleMusicDirectBridge(
         return sendOnlineTranslationPayload(payload, generation)
     }
 
+    fun publishMissingLyricsSupplement(song: LocalSong): Boolean {
+        val payload = json.encodeToString(song)
+            .toByteArray(Charsets.UTF_8)
+            .deflate()
+        if (payload.size > MAX_DIRECT_PAYLOAD_BYTES) {
+            HookLogger.e(TAG, "Apple Music 无歌词补充回传载荷过大: bytes=${payload.size}")
+            return false
+        }
+        latestMissingLyricsSupplementPayload = payload
+        return sendMissingLyricsSupplementPayload(payload)
+    }
+
+    fun clearMissingLyricsSupplement(songId: String?) {
+        latestMissingLyricsSupplementPayload = null
+        val target = translationReceiver ?: return
+        runCatching {
+            target.onMissingLyricsSupplementCleared(songId)
+        }.onFailure {
+            translationReceiver = null
+            HookLogger.e(TAG, "清除 Apple Music 无歌词补充失败", it)
+        }
+    }
+
     fun clearOnlineTranslation(songId: String?) {
         latestOnlineTranslationPayload = null
         latestOnlineTranslationGeneration = null
@@ -279,6 +308,29 @@ internal class AppleMusicDirectBridge(
         pronunciationDiagnostic(
             "stage=binder_send_result, generation=$generation, success=$success, " +
                 "reason=${if (success) "delivered" else "binder_exception"}, bytes=${payload.size}"
+        )
+        return success
+    }
+
+    private fun sendMissingLyricsSupplementPayload(payload: ByteArray): Boolean {
+        val target = translationReceiver ?: run {
+            bridgeDiagnostic(
+                "stage=missing_lyrics_supplement_send_result, success=false, " +
+                    "reason=receiver_missing, bytes=${payload.size}",
+            )
+            return false
+        }
+        val success = runCatching {
+            target.onMissingLyricsSupplementResult(payload)
+            true
+        }.onFailure {
+            translationReceiver = null
+            HookLogger.e(TAG, "回传 Apple Music 无歌词补充失败", it)
+        }.getOrDefault(false)
+        bridgeDiagnostic(
+            "stage=missing_lyrics_supplement_send_result, success=$success, " +
+                "reason=${if (success) "delivered" else "binder_exception"}, " +
+                "bytes=${payload.size}",
         )
         return success
     }

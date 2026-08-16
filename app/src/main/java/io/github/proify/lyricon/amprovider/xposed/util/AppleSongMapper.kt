@@ -47,6 +47,9 @@ object AppleSongMapper {
             if (song.originalMetadataResolved) {
                 add(LyricMetadataKeys.APPLE_ORIGINAL_METADATA_RESOLVED to "true")
             }
+            song.lyricsSource?.takeIf { it.isNotBlank() }?.let {
+                add(LyricMetadataKeys.APPLE_LYRICS_CACHE_SOURCE to it)
+            }
         }
         return Song(
             id = song.adamId,
@@ -78,8 +81,8 @@ object AppleSongMapper {
                 end = appleLine.end.toLong()
                 duration = appleLine.duration.toLong()
 
-                text = appleLine.htmlLineText
                 words = appleLine.words.map { it.toLyricWord() }.toMutableList()
+                text = appleLine.mainText()
 
                 secondary = appleLine.backgroundVocalsText()
                 secondaryWords = appleLine.backgroundWords
@@ -88,7 +91,7 @@ object AppleSongMapper {
 
                 translation = appleLine.htmlTranslationLineText
                 roma = RomanizationPolicy.sanitize(
-                    originalText = appleLine.htmlLineText,
+                    originalText = text,
                     pronunciation = appleLine.htmlPronunciationLineText,
                 )
                 val metadataEntries = buildList {
@@ -192,8 +195,8 @@ object AppleSongMapper {
 
         return directionAfterAgentChange(
             previousDirection = previous.direction,
-            previousTextIsRtl = isAppleRtlText(appleLyrics[lineIndex - 1].htmlLineText),
-            currentTextIsRtl = isAppleRtlText(appleLyrics[lineIndex].htmlLineText)
+            previousTextIsRtl = isAppleRtlText(appleLyrics[lineIndex - 1].mainText()),
+            currentTextIsRtl = isAppleRtlText(appleLyrics[lineIndex].mainText())
         )
     }
 
@@ -243,10 +246,19 @@ object AppleSongMapper {
             ProviderLogger.diagnostic(
                 "AppleSongMapper: line[$index] agent=$agentId, " +
                     "type=${agentTypes[agentId]}, direction=${directions[index].logName}, " +
-                    "text=${line.htmlLineText.orEmpty().take(DIAGNOSTIC_TEXT_LIMIT)}"
+                    "text=${line.mainText().orEmpty().take(DIAGNOSTIC_TEXT_LIMIT)}"
             )
         }
     }
+
+    /**
+     * 部分 Apple syllable-lyrics 只在逐字向量中保留正文，行级 HTML 文本为空。
+     * 超级岛与 AOD 的公共模型必须同时携带行级正文，不能把这种有效逐字歌词映射为空行。
+     */
+    private fun LyricLine.mainText(): String? =
+        htmlLineText?.takeIf(String::isNotBlank)
+            ?: words.joinToString("") { it.text.orEmpty() }
+                .takeIf(String::isNotBlank)
 
     private data class DirectedLine(
         val agentId: String,

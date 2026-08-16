@@ -49,6 +49,18 @@ class AppleSongMapperTest {
     }
 
     @Test
+    fun `carries lyric cache source for cold start recovery`() {
+        val mappedSong = AppleSongMapper.map(
+            AppleSong(lyricsSource = "module")
+        )
+
+        assertEquals(
+            "module",
+            mappedSong.metadata?.getString(LyricMetadataKeys.APPLE_LYRICS_CACHE_SOURCE),
+        )
+    }
+
+    @Test
     fun `builds secondary text from background words when line text is blank`() {
         val appleSong = AppleSong(
             lyrics = mutableListOf(
@@ -68,6 +80,26 @@ class AppleSongMapperTest {
 
         assertEquals("(Ooh, yeah)", mappedLine.secondary)
         assertEquals("主歌词翻译", mappedLine.translation)
+    }
+
+    @Test
+    fun `builds main text from words when Apple line text is blank`() {
+        val appleSong = AppleSong(
+            lyrics = mutableListOf(
+                LyricLine(
+                    htmlLineText = "",
+                    words = mutableListOf(
+                        LyricWord(text = "Shape"),
+                        LyricWord(text = "shifter"),
+                    ),
+                )
+            )
+        )
+
+        val mappedLine = AppleSongMapper.map(appleSong).lyrics.orEmpty().single()
+
+        assertEquals("Shapeshifter", mappedLine.text)
+        assertEquals(listOf("Shape", "shifter"), mappedLine.words.orEmpty().map { it.text })
     }
 
     @Test
