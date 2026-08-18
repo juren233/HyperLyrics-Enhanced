@@ -7,6 +7,7 @@
 package com.juren233.hyperlyricsenhanced.root.source
 
 import com.juren233.hyperlyricsenhanced.common.lyric.LyricMetadataKeys
+import com.juren233.hyperlyricsenhanced.common.lyric.OnlineTranslationMatchStatsCodec
 import com.juren233.hyperlyricsenhanced.lyric.LrcLine
 import com.juren233.hyperlyricsenhanced.lyric.model.RichLyricLine
 import com.juren233.hyperlyricsenhanced.lyric.model.Song
@@ -100,6 +101,38 @@ class OnlineTranslationSelectionTest {
             result?.song?.metadata
                 ?.getString(LyricMetadataKeys.ONLINE_TRANSLATION_SOURCE),
         )
+    }
+
+    @Test
+    fun `publishes per-source translation match stats against current lyric lines`() {
+        val nativeSong = song(
+            line(1_000L, "First"),
+            line(2_000L, "Second"),
+            line(3_000L, "Third"),
+        )
+        val selection = OnlineTranslationSelection(
+            onlineLinesBySource = mapOf(
+                Source.NE to listOf(
+                    LrcLine(1_000L, "First", translation = "网易第一句"),
+                    LrcLine(2_000L, "Second", translation = "网易第二句"),
+                ),
+                Source.QM to listOf(
+                    LrcLine(1_000L, "First", translation = "QQ第一句"),
+                ),
+            ),
+            sourceOrder = listOf(Source.NE, Source.QM),
+        )
+
+        val result = selection.compose(nativeSong, currentPublishedSong = null)
+        val stats = OnlineTranslationMatchStatsCodec.decode(
+            result?.song?.metadata
+                ?.getString(LyricMetadataKeys.ONLINE_TRANSLATION_MATCH_STATS)
+        )
+
+        assertEquals(2, stats[Source.NE.name]?.matchedLines)
+        assertEquals(3, stats[Source.NE.name]?.totalLines)
+        assertEquals(1, stats[Source.QM.name]?.matchedLines)
+        assertEquals(33, stats[Source.QM.name]?.percentage)
     }
 
     @Test

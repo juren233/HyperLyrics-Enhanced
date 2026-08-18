@@ -921,6 +921,12 @@ internal class AppleMissingLyricsHooks(
     fun translationSource(songId: String?): String? =
         store.translationSource(resolveSupplementContentId(songId))
 
+    fun translationMatchPercentage(songId: String?, source: String): Int? =
+        store.translationMatchPercentage(resolveSupplementContentId(songId), source)
+
+    fun pronunciationMatchPercentage(songId: String?, source: String): Int? =
+        store.pronunciationMatchPercentage(resolveSupplementContentId(songId), source)
+
     fun pronunciationSource(songId: String?): String? =
         store.pronunciationSource(resolveSupplementContentId(songId))
 

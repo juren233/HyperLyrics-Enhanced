@@ -3,6 +3,8 @@ package io.github.proify.lyricon.amprovider.xposed
 import com.juren233.hyperlyricsenhanced.common.lyric.RomanizationPolicy
 import com.juren233.hyperlyricsenhanced.common.lyric.LyricMetadataKeys
 import com.juren233.hyperlyricsenhanced.common.lyric.OnlineTranslationContentPolicy
+import com.juren233.hyperlyricsenhanced.common.lyric.OnlineTranslationMatchStat
+import com.juren233.hyperlyricsenhanced.common.lyric.OnlineTranslationMatchStatsCodec
 import com.juren233.hyperlyricsenhanced.lyric.model.Song
 
 internal class AppleNativeOnlineTranslationStore {
@@ -34,6 +36,8 @@ internal class AppleNativeOnlineTranslationStore {
         val hasPronunciation: Boolean,
         val translationSource: String?,
         val pronunciationSource: String?,
+        val translationMatchStats: Map<String, OnlineTranslationMatchStat>,
+        val pronunciationMatchStats: Map<String, OnlineTranslationMatchStat>,
     )
 
     @Volatile
@@ -93,6 +97,12 @@ internal class AppleNativeOnlineTranslationStore {
                 ?.getString(LyricMetadataKeys.ONLINE_TRANSLATION_SOURCE),
             pronunciationSource = song.metadata
                 ?.getString(LyricMetadataKeys.ONLINE_PRONUNCIATION_SOURCE),
+            translationMatchStats = OnlineTranslationMatchStatsCodec.decode(
+                song.metadata?.getString(LyricMetadataKeys.ONLINE_TRANSLATION_MATCH_STATS)
+            ),
+            pronunciationMatchStats = OnlineTranslationMatchStatsCodec.decode(
+                song.metadata?.getString(LyricMetadataKeys.ONLINE_PRONUNCIATION_MATCH_STATS)
+            ),
         )
     }
 
@@ -123,6 +133,20 @@ internal class AppleNativeOnlineTranslationStore {
 
     fun translationSource(songId: String?): String? =
         overlay?.takeIf { it.songId == songId && it.hasTranslation }?.translationSource
+
+    fun translationMatchPercentage(songId: String?, source: String): Int? =
+        overlay
+            ?.takeIf { it.songId == songId }
+            ?.translationMatchStats
+            ?.get(source)
+            ?.percentage
+
+    fun pronunciationMatchPercentage(songId: String?, source: String): Int? =
+        overlay
+            ?.takeIf { it.songId == songId }
+            ?.pronunciationMatchStats
+            ?.get(source)
+            ?.percentage
 
     fun pronunciationSource(songId: String?): String? =
         overlay?.takeIf { it.songId == songId && it.hasPronunciation }?.pronunciationSource

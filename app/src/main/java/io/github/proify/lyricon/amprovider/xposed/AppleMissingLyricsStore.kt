@@ -12,6 +12,8 @@ import com.juren233.hyperlyricsenhanced.lyric.model.RichLyricLine
 import com.juren233.hyperlyricsenhanced.common.lyric.AppleMissingLyricsSourceInfo
 import com.juren233.hyperlyricsenhanced.common.lyric.AppleMissingLyricsSourceMetadata
 import com.juren233.hyperlyricsenhanced.common.lyric.LyricMetadataKeys
+import com.juren233.hyperlyricsenhanced.common.lyric.OnlineTranslationMatchStat
+import com.juren233.hyperlyricsenhanced.common.lyric.OnlineTranslationMatchStatsCodec
 
 internal data class AppleMissingLyricsWord(
     val begin: Long,
@@ -64,6 +66,8 @@ internal class AppleMissingLyricsStore {
         val sourceInfo: AppleMissingLyricsSourceInfo?,
         val translationSource: String?,
         val pronunciationSource: String?,
+        val translationMatchStats: Map<String, OnlineTranslationMatchStat>,
+        val pronunciationMatchStats: Map<String, OnlineTranslationMatchStat>,
     )
 
     private data class NativeModel(
@@ -137,6 +141,12 @@ internal class AppleMissingLyricsStore {
             pronunciationSource = song.metadata
                 ?.getString(LyricMetadataKeys.ONLINE_PRONUNCIATION_SOURCE)
                 ?: previousContent?.pronunciationSource,
+            translationMatchStats = OnlineTranslationMatchStatsCodec.decode(
+                song.metadata?.getString(LyricMetadataKeys.ONLINE_TRANSLATION_MATCH_STATS)
+            ).ifEmpty { previousContent?.translationMatchStats.orEmpty() },
+            pronunciationMatchStats = OnlineTranslationMatchStatsCodec.decode(
+                song.metadata?.getString(LyricMetadataKeys.ONLINE_PRONUNCIATION_MATCH_STATS)
+            ).ifEmpty { previousContent?.pronunciationMatchStats.orEmpty() },
         )
         // TTML/native 模型只依赖主歌词文本与逐字时间轴；翻译和来源状态变化不需要
         // 重建模型，否则在线翻译赛马的多个同曲载荷会反复清空已暴露的 native model，
@@ -484,6 +494,20 @@ internal class AppleMissingLyricsStore {
 
     fun translationSource(songId: String?): String? =
         content?.takeIf { songId.isNullOrBlank() || it.songId == songId }?.translationSource
+
+    fun translationMatchPercentage(songId: String?, source: String): Int? =
+        content
+            ?.takeIf { it.songId == songId }
+            ?.translationMatchStats
+            ?.get(source)
+            ?.percentage
+
+    fun pronunciationMatchPercentage(songId: String?, source: String): Int? =
+        content
+            ?.takeIf { it.songId == songId }
+            ?.pronunciationMatchStats
+            ?.get(source)
+            ?.percentage
 
     fun pronunciationSource(songId: String?): String? =
         content?.takeIf { songId.isNullOrBlank() || it.songId == songId }?.pronunciationSource

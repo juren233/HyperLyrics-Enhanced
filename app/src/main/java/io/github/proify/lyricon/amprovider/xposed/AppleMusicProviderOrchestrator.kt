@@ -465,6 +465,20 @@ internal object AppleMusicProviderOrchestrator {
                         null
                     }
                 },
+                missingLyricsTranslationMatchPercentage = { songId, source ->
+                    if (::missingLyricsHooks.isInitialized) {
+                        missingLyricsHooks.translationMatchPercentage(songId, source)
+                    } else {
+                        null
+                    }
+                },
+                missingLyricsPronunciationMatchPercentage = { songId, source ->
+                    if (::missingLyricsHooks.isInitialized) {
+                        missingLyricsHooks.pronunciationMatchPercentage(songId, source)
+                    } else {
+                        null
+                    }
+                },
                 missingLyricsPronunciationSource = { songId ->
                     if (::missingLyricsHooks.isInitialized) {
                         missingLyricsHooks.pronunciationSource(songId)

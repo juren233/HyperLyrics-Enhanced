@@ -7,7 +7,12 @@
 package com.juren233.hyperlyricsenhanced.root.source
 
 import com.juren233.hyperlyricsenhanced.lyric.LrcLine
+import com.juren233.hyperlyricsenhanced.common.lyric.LyricMetadataKeys
+import com.juren233.hyperlyricsenhanced.common.lyric.OnlineTranslationContentPolicy
+import com.juren233.hyperlyricsenhanced.common.lyric.OnlineTranslationMatchStat
+import com.juren233.hyperlyricsenhanced.common.lyric.OnlineTranslationMatchStatsCodec
 import com.juren233.hyperlyricsenhanced.lyric.model.Song
+import com.juren233.hyperlyricsenhanced.lyric.model.lyricMetadataOf
 import com.juren233.hyperlyricsenhanced.online.model.Source
 
 /**
@@ -47,25 +52,81 @@ internal data class OnlineTranslationSelection(
         currentPublishedSong: Song?,
         rebasedCandidates: Map<Source, OnlineTranslationMatcher.Result>,
     ): OnlineTranslationMatcher.Result? {
-        if (sourceOrder.isNotEmpty() &&
+        val composed = if (sourceOrder.isNotEmpty() &&
             forcedTranslationSource == null &&
             forcedPronunciationSource == null
         ) {
-            return OnlineTranslationMatcher.composeOrderedSources(
+            OnlineTranslationMatcher.composeOrderedSources(
                 baseSong = latestNativeSong,
                 candidates = rebasedCandidates,
                 sourceOrder = sourceOrder,
                 currentPublishedSong = currentPublishedSong,
             )
+        } else {
+            OnlineTranslationMatcher.composeSelectedSources(
+                baseSong = latestNativeSong,
+                candidates = rebasedCandidates,
+                defaultTranslationSource = defaultTranslationSource,
+                defaultPronunciationSource = defaultPronunciationSource,
+                forcedTranslationSource = forcedTranslationSource,
+                forcedPronunciationSource = forcedPronunciationSource,
+                currentPublishedSong = currentPublishedSong,
+            )
         }
-        return OnlineTranslationMatcher.composeSelectedSources(
+        return composed?.withOnlineContentMatchStats(
             baseSong = latestNativeSong,
             candidates = rebasedCandidates,
-            defaultTranslationSource = defaultTranslationSource,
-            defaultPronunciationSource = defaultPronunciationSource,
-            forcedTranslationSource = forcedTranslationSource,
-            forcedPronunciationSource = forcedPronunciationSource,
-            currentPublishedSong = currentPublishedSong,
+        )
+    }
+
+    private fun OnlineTranslationMatcher.Result.withOnlineContentMatchStats(
+        baseSong: Song,
+        candidates: Map<Source, OnlineTranslationMatcher.Result>,
+    ): OnlineTranslationMatcher.Result {
+        val baseLines = baseSong.lyrics.orEmpty()
+        fun statsFor(
+            matches: (baseLine: com.juren233.hyperlyricsenhanced.lyric.model.RichLyricLine,
+                candidateLine: com.juren233.hyperlyricsenhanced.lyric.model.RichLyricLine?) -> Boolean,
+        ): Map<String, OnlineTranslationMatchStat> = candidates.mapValues { (_, candidate) ->
+            val matchedLines = baseLines.indices.count { index ->
+                val baseLine = baseLines[index]
+                val candidateLine = candidate.song.lyrics?.getOrNull(index)
+                matches(baseLine, candidateLine)
+            }
+            OnlineTranslationMatchStat(
+                matchedLines = matchedLines,
+                totalLines = baseLines.size,
+            )
+        }.mapKeys { it.key.name }
+        val translationStats = statsFor { baseLine, candidateLine ->
+            !OnlineTranslationContentPolicy.isMeaningful(baseLine.translation) &&
+                OnlineTranslationContentPolicy.isMeaningful(candidateLine?.translation)
+        }
+        val pronunciationStats = statsFor { baseLine, candidateLine ->
+            baseLine.roma.isNullOrBlank() && !candidateLine?.roma.isNullOrBlank()
+        }
+        val encodedTranslationStats = OnlineTranslationMatchStatsCodec.encode(translationStats)
+        val encodedPronunciationStats = OnlineTranslationMatchStatsCodec.encode(pronunciationStats)
+        val metadataEntries = song.metadata?.entries
+            ?.filterNot {
+                it.key == LyricMetadataKeys.ONLINE_TRANSLATION_MATCH_STATS ||
+                    it.key == LyricMetadataKeys.ONLINE_PRONUNCIATION_MATCH_STATS
+            }
+            ?.map { it.key to it.value }
+            .orEmpty()
+            .toMutableList()
+        encodedTranslationStats?.let {
+            metadataEntries += LyricMetadataKeys.ONLINE_TRANSLATION_MATCH_STATS to it
+        }
+        encodedPronunciationStats?.let {
+            metadataEntries += LyricMetadataKeys.ONLINE_PRONUNCIATION_MATCH_STATS to it
+        }
+        return copy(
+            song = song.copy(
+                metadata = metadataEntries
+                    .takeIf { it.isNotEmpty() }
+                    ?.let { lyricMetadataOf(*it.toTypedArray()) }
+            )
         )
     }
 }

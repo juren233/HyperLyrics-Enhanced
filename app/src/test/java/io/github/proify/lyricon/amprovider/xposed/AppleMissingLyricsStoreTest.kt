@@ -9,6 +9,8 @@ package io.github.proify.lyricon.amprovider.xposed
 import com.juren233.hyperlyricsenhanced.common.lyric.AppleMissingLyricsSourceMetadata
 import com.juren233.hyperlyricsenhanced.common.lyric.AppleMissingLyricsSourceStatus
 import com.juren233.hyperlyricsenhanced.common.lyric.LyricMetadataKeys
+import com.juren233.hyperlyricsenhanced.common.lyric.OnlineTranslationMatchStat
+import com.juren233.hyperlyricsenhanced.common.lyric.OnlineTranslationMatchStatsCodec
 import com.juren233.hyperlyricsenhanced.lyric.model.LyricWord
 import com.juren233.hyperlyricsenhanced.lyric.model.RichLyricLine
 import com.juren233.hyperlyricsenhanced.lyric.model.Song
@@ -820,5 +822,27 @@ class AppleMissingLyricsStoreTest {
         )
 
         assertEquals("翻译", store.translation("shifted-timing", 240L, 1_240L, "Original"))
+    }
+
+    @Test
+    fun `supplement store exposes translation match percentage by source`() {
+        val store = AppleMissingLyricsStore()
+        store.update(
+            Song(
+                id = "match-stats",
+                metadata = lyricMetadataOf(
+                    LyricMetadataKeys.ONLINE_TRANSLATION_MATCH_STATS to
+                        OnlineTranslationMatchStatsCodec.encode(
+                            mapOf("NE" to OnlineTranslationMatchStat(56, 60))
+                        )
+                ),
+                lyrics = listOf(
+                    RichLyricLine(begin = 0L, end = 1_000L, text = "Original")
+                ),
+            )
+        )
+
+        assertEquals(93, store.translationMatchPercentage("match-stats", "NE"))
+        assertNull(store.translationMatchPercentage("match-stats", "QM"))
     }
 }

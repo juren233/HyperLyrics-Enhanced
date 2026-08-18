@@ -56,6 +56,8 @@ internal class AppleOnlineSourceMenuHooks(
     private val missingLyricsSourceInfo: (String?) -> AppleMissingLyricsSourceInfo?,
     private val hasMissingLyricsSupplement: (String?) -> Boolean,
     private val missingLyricsTranslationSource: (String?) -> String?,
+    private val missingLyricsTranslationMatchPercentage: (String?, String) -> Int?,
+    private val missingLyricsPronunciationMatchPercentage: (String?, String) -> Int?,
     private val missingLyricsPronunciationSource: (String?) -> String?,
     private val requestOnlineSource: (Long, String, String, String) -> Boolean,
     private val debugValue: (Any?) -> String,
@@ -78,6 +80,7 @@ internal class AppleOnlineSourceMenuHooks(
     private data class ActiveLyricsSourceDialog(
         val dialog: WeakReference<Dialog>,
         val songId: String,
+        val contentType: String,
         val rows: Map<String, LyricsSourceDialogRow>,
         val primaryColor: Int,
         val onSurfaceColor: Int,
@@ -415,50 +418,12 @@ internal class AppleOnlineSourceMenuHooks(
         item.setCompoundDrawablesRelativeWithIntrinsicBounds(0, 0, iconId, 0)
         item.isEnabled = presentation.status != OnlineSourceMenuStatus.SWITCHING
         item.setOnClickListener {
-            val targetSource = if (presentation.source == "QM") "NE" else "QM"
-            val requestId = ++requestSequence
-            val pending = PendingOnlineSourceSwitch(
-                requestId = requestId,
-                songId = songId,
-                contentType = contentType,
-                previousSource = presentation.source,
-                targetSource = targetSource,
-            )
-            failedSwitches.remove(contentType)
-            pendingSwitches[contentType] = pending
-            ProviderLogger.diagnostic(
-                "Apple Music 在线翻译来源菜单点击: requestId=$requestId, " +
-                    "songId=$songId, contentType=$contentType, " +
-                    "from=${presentation.source}, to=$targetSource, " +
-                    "popupShowing=${activeMenu?.popup?.get()?.isShowing}"
-            )
-            refreshActiveMenu(songId)
-            val requestAccepted = requestOnlineSource(
-                requestId,
-                songId,
-                contentType,
-                targetSource,
-            )
-            ProviderLogger.diagnostic(
-                "Apple Music 在线翻译来源请求投递: requestId=$requestId, " +
-                    "accepted=$requestAccepted"
-            )
-            if (!requestAccepted) {
-                markSwitchFailed(pending, presentation.source, "binder_unavailable")
-                return@setOnClickListener
+            if (contentType == "translation" || contentType == "pronunciation") {
+                showSourceDialog(menu.context, songId, contentType)
+            } else {
+                val targetSource = if (presentation.source == "QM") "NE" else "QM"
+                requestOnlineSourceSwitch(songId, contentType, targetSource)
             }
-            runtime.mainHandler.postDelayed(
-                {
-                    val current = pendingSwitches[contentType]
-                    if (current?.requestId != requestId) return@postDelayed
-                    markSwitchFailed(
-                        pending = current,
-                        actualSource = currentSource(songId, contentType),
-                        reason = "timeout",
-                    )
-                },
-                ONLINE_SOURCE_SWITCH_TIMEOUT_MS,
-            )
         }
         return item
     }
@@ -486,12 +451,19 @@ internal class AppleOnlineSourceMenuHooks(
         ).takeIf { it != 0 } ?: android.R.drawable.ic_menu_info_details
         item.setCompoundDrawablesRelativeWithIntrinsicBounds(0, 0, iconId, 0)
         item.setOnClickListener {
-            showLyricsSourceDialog(menu.context, songId)
+            showSourceDialog(menu.context, songId, "lyrics")
         }
         return item
     }
 
-    private fun showLyricsSourceDialog(context: android.content.Context, songId: String) {
+    private fun showSourceDialog(
+        context: android.content.Context,
+        songId: String,
+        contentType: String,
+    ) {
+        val isLyricsSourceDialog = contentType == "lyrics"
+        val isTranslationSourceDialog = contentType == "translation"
+        activeLyricsSourceDialog?.dialog?.get()?.dismiss()
         val surfaceColor = resolveThemeColor(
             context,
             android.R.attr.colorBackgroundFloating,
@@ -518,7 +490,11 @@ internal class AppleOnlineSourceMenuHooks(
             setPadding(dp(context, 24), dp(context, 20), dp(context, 24), dp(context, 20))
         }
         val title = TextView(context).apply {
-            text = "选择歌词来源"
+            text = when {
+                isLyricsSourceDialog -> "选择歌词来源"
+                isTranslationSourceDialog -> "选择翻译来源"
+                else -> "选择发音来源"
+            }
             textSize = 21f
             setTextColor(onSurfaceColor)
             typeface = Typeface.DEFAULT_BOLD
@@ -527,13 +503,17 @@ internal class AppleOnlineSourceMenuHooks(
         list.addView(title)
         list.addView(
             TextView(context).apply {
-                text = "选择补充歌词使用的在线来源"
+                text = if (isLyricsSourceDialog) {
+                    "选择补充歌词使用的在线来源"
+                } else {
+                    "缺失行将从其余源自动补全"
+                }
                 textSize = 13f
                 setTextColor(onSurfaceVariantColor)
                 setPadding(0, 0, 0, dp(context, 14))
             }
         )
-        val selected = currentSource(songId, "lyrics")
+        val selected = currentSource(songId, contentType)
         val dialog = Dialog(context).apply {
             requestWindowFeature(android.view.Window.FEATURE_NO_TITLE)
         }
@@ -544,9 +524,20 @@ internal class AppleOnlineSourceMenuHooks(
         }
         val rows = linkedMapOf<String, LyricsSourceDialogRow>()
         SOURCE_ORDER.forEachIndexed { index, source ->
-            val status = lyricsSourceStatus(songId, source)
+            val status = if (isLyricsSourceDialog) lyricsSourceStatus(songId, source) else null
+            val contentMatchPercentage = if (status == null) {
+                contentMatchPercentage(songId, contentType, source) ?: 0
+            } else {
+                null
+            }
             val isSelected = source == selected
-            val selectable = isMissingLyricsSourceSelectable(status, isSelected)
+            val pending = pendingSwitches[contentType]?.takeIf { it.songId == songId }
+            val isPending = pending?.targetSource == source
+            val selectable = pending == null && if (status != null) {
+                isMissingLyricsSourceSelectable(status, isSelected)
+            } else {
+                !isSelected
+            }
             val row = LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = android.view.Gravity.CENTER_VERTICAL
@@ -555,7 +546,7 @@ internal class AppleOnlineSourceMenuHooks(
                 isClickable = selectable
                 isFocusable = selectable
                 isEnabled = selectable
-                alpha = if (!status.searched || !status.found) 0.52f else 1f
+                alpha = if (isPending || status == null || status.found) 1f else 0.52f
                 contentDescription = sourceMenuSourceName(source)
             }
             val textColumn = LinearLayout(context).apply {
@@ -586,7 +577,18 @@ internal class AppleOnlineSourceMenuHooks(
                 contentDescription = if (isSelected) "已选择" else null
             }
             val rowSubtitle = TextView(context).apply {
-                text = missingLyricsSourceStatusLabel(status)
+                text = when {
+                    isPending -> "获取中…"
+                    status != null -> missingLyricsSourceStatusLabel(status)
+                    isSelected -> currentSourceSubtitle(
+                        contentType = contentType,
+                        percentage = contentMatchPercentage ?: 0,
+                    )
+                    else -> sourceMatchSubtitle(
+                        contentType = contentType,
+                        percentage = contentMatchPercentage ?: 0,
+                    )
+                }
                 textSize = 12.5f
                 setTextColor(onSurfaceVariantColor)
                 setPadding(0, dp(context, 1), 0, 0)
@@ -596,15 +598,24 @@ internal class AppleOnlineSourceMenuHooks(
             row.addView(textColumn)
             row.addView(rowCheck)
             row.setOnClickListener {
-                val currentStatus = lyricsSourceStatus(songId, source)
-                val currentlySelected = source == currentSource(songId, "lyrics")
+                val currentStatus = if (isLyricsSourceDialog) {
+                    lyricsSourceStatus(songId, source)
+                } else {
+                    null
+                }
+                val currentlySelected = source == currentSource(songId, contentType)
+                val currentlySelectable = if (currentStatus != null) {
+                    isMissingLyricsSourceSelectable(currentStatus, currentlySelected)
+                } else {
+                    !currentlySelected
+                }
                 if (
-                    pendingSwitches["lyrics"] != null ||
-                    !isMissingLyricsSourceSelectable(currentStatus, currentlySelected)
+                    pendingSwitches[contentType] != null ||
+                    !currentlySelectable
                 ) {
                     return@setOnClickListener
                 }
-                requestLyricsSourceSwitch(songId, source)
+                requestOnlineSourceSwitch(songId, contentType, source)
             }
             rows[source] = LyricsSourceDialogRow(
                 container = row,
@@ -672,6 +683,7 @@ internal class AppleOnlineSourceMenuHooks(
         activeLyricsSourceDialog = ActiveLyricsSourceDialog(
             dialog = WeakReference(dialog),
             songId = songId,
+            contentType = contentType,
             rows = rows,
             primaryColor = primaryColor,
             onSurfaceColor = onSurfaceColor,
@@ -696,24 +708,47 @@ internal class AppleOnlineSourceMenuHooks(
             activeLyricsSourceDialog = null
             return
         }
-        val selected = currentSource(songId, "lyrics")
-        val pending = pendingSwitches["lyrics"]?.takeIf { it.songId == songId }
+        val isLyricsSourceDialog = active.contentType == "lyrics"
+        val selected = currentSource(songId, active.contentType)
+        val pending = pendingSwitches[active.contentType]?.takeIf { it.songId == songId }
+        val failed = failedSwitches[active.contentType]?.takeIf { it.songId == songId }
         active.rows.forEach { (source, row) ->
-            val status = lyricsSourceStatus(songId, source)
+            val status = if (isLyricsSourceDialog) lyricsSourceStatus(songId, source) else null
+            val contentMatchPercentage = if (status == null) {
+                contentMatchPercentage(songId, active.contentType, source) ?: 0
+            } else {
+                null
+            }
             val isSelected = source == selected
             val isPending = pending?.targetSource == source
-            val selectable = pending == null &&
+            val isFailed = failed?.displayedSource == source
+            val selectable = pending == null && if (status != null) {
                 isMissingLyricsSourceSelectable(status, isSelected)
+            } else {
+                !isSelected
+            }
             row.container.isClickable = selectable
             row.container.isFocusable = selectable
             row.container.isEnabled = selectable
-            row.container.alpha = if (isPending || status.found) 1f else 0.52f
+            row.container.alpha = if (isPending || status == null || status.found) 1f else 0.52f
             row.title.setTextColor(if (isSelected) active.primaryColor else active.onSurfaceColor)
             row.title.typeface = Typeface.create(
                 Typeface.DEFAULT,
                 if (isSelected) Typeface.BOLD else Typeface.NORMAL,
             )
-            row.subtitle.text = if (isPending) "获取中…" else missingLyricsSourceStatusLabel(status)
+            row.subtitle.text = when {
+                isPending -> "获取中…"
+                isFailed -> "切换失败"
+                status != null -> missingLyricsSourceStatusLabel(status)
+                isSelected -> currentSourceSubtitle(
+                    contentType = active.contentType,
+                    percentage = contentMatchPercentage ?: 0,
+                )
+                else -> sourceMatchSubtitle(
+                    contentType = active.contentType,
+                    percentage = contentMatchPercentage ?: 0,
+                )
+            }
             row.subtitle.setTextColor(active.onSurfaceVariantColor)
             row.indicator.text = when {
                 isPending -> "…"
@@ -772,18 +807,22 @@ internal class AppleOnlineSourceMenuHooks(
     private fun hairline(context: android.content.Context): Int =
         (context.resources.displayMetrics.density * 0.5f).roundToInt().coerceAtLeast(1)
 
-    private fun requestLyricsSourceSwitch(songId: String, targetSource: String) {
+    private fun requestOnlineSourceSwitch(
+        songId: String,
+        contentType: String,
+        targetSource: String,
+    ) {
         val requestId = ++requestSequence
-        val previousSource = currentSource(songId, "lyrics") ?: targetSource
+        val previousSource = currentSource(songId, contentType) ?: targetSource
         val pending = PendingOnlineSourceSwitch(
             requestId = requestId,
             songId = songId,
-            contentType = "lyrics",
+            contentType = contentType,
             previousSource = previousSource,
             targetSource = targetSource,
         )
-        failedSwitches.remove("lyrics")
-        pendingSwitches["lyrics"] = pending
+        failedSwitches.remove(contentType)
+        pendingSwitches[contentType] = pending
         AppleSourceSwitchPerformanceDiagnostics.start(
             mainHandler = runtime.mainHandler,
             requestId = requestId,
@@ -792,8 +831,9 @@ internal class AppleOnlineSourceMenuHooks(
             targetSource = targetSource,
         )
         ProviderLogger.diagnostic(
-            "Apple Music 歌词来源菜单点击: requestId=$requestId, " +
-                "songId=$songId, from=$previousSource, to=$targetSource"
+            "Apple Music 在线来源菜单点击: requestId=$requestId, " +
+                "songId=$songId, contentType=$contentType, " +
+                "from=$previousSource, to=$targetSource"
         )
         refreshActiveMenu(songId)
         AppleSourceSwitchPerformanceDiagnostics.stage(
@@ -801,7 +841,7 @@ internal class AppleOnlineSourceMenuHooks(
             songId = songId,
             stage = "menu_refreshed_after_click",
         )
-        val accepted = requestOnlineSource(requestId, songId, "lyrics", targetSource)
+        val accepted = requestOnlineSource(requestId, songId, contentType, targetSource)
         AppleSourceSwitchPerformanceDiagnostics.stage(
             requestId = requestId,
             songId = songId,
@@ -809,16 +849,17 @@ internal class AppleOnlineSourceMenuHooks(
             details = "accepted=$accepted",
         )
         ProviderLogger.diagnostic(
-            "Apple Music 歌词来源请求投递: requestId=$requestId, accepted=$accepted"
+            "Apple Music 在线来源请求投递: requestId=$requestId, " +
+                "contentType=$contentType, accepted=$accepted"
         )
         if (!accepted) {
             markSwitchFailed(pending, previousSource, "binder_unavailable")
             return
         }
         runtime.mainHandler.postDelayed({
-            val current = pendingSwitches["lyrics"]
+            val current = pendingSwitches[contentType]
             if (current?.requestId == requestId) {
-                markSwitchFailed(current, currentSource(songId, "lyrics"), "timeout")
+                markSwitchFailed(current, currentSource(songId, contentType), "timeout")
             }
         }, ONLINE_SOURCE_SWITCH_TIMEOUT_MS)
     }
@@ -883,6 +924,28 @@ internal class AppleOnlineSourceMenuHooks(
             onlineContentConsumed = hasOnlineContentConsumption(songId, contentType),
         )
     }
+
+    private fun contentMatchPercentage(
+        songId: String?,
+        contentType: String,
+        source: String,
+    ): Int? = when (contentType) {
+        "translation" -> nativeTranslationStore.translationMatchPercentage(songId, source)
+            ?: missingLyricsTranslationMatchPercentage(songId, source)
+        "pronunciation" -> nativeTranslationStore.pronunciationMatchPercentage(songId, source)
+            ?: missingLyricsPronunciationMatchPercentage(songId, source)
+        else -> null
+    }
+
+    private fun sourceMatchSubtitle(contentType: String, percentage: Int): String =
+        if (contentType == "pronunciation") {
+            "发音匹配度${percentage}%"
+        } else {
+            "翻译匹配度${percentage}%"
+        }
+
+    private fun currentSourceSubtitle(contentType: String, percentage: Int): String =
+        "当前使用 · ${sourceMatchSubtitle(contentType, percentage)}"
 
     private fun storedSource(songId: String?, contentType: String): String? = when (contentType) {
         "pronunciation" -> nativeTranslationStore.pronunciationSource(songId)
