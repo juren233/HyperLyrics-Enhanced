@@ -27,6 +27,7 @@ import io.github.proify.lyricon.amprovider.xposed.AppleMusicHookTarget
 import io.github.proify.lyricon.amprovider.xposed.AppleMusicProviderRuntime
 import io.github.proify.lyricon.amprovider.xposed.AppleMusicRuntimeMember
 import io.github.proify.lyricon.amprovider.xposed.AppleNativeOnlineTranslationStore
+import io.github.proify.lyricon.amprovider.xposed.AppleSourceSwitchPerformanceDiagnostics
 import io.github.proify.lyricon.amprovider.xposed.AppleReflection
 import io.github.proify.lyricon.amprovider.xposed.ConfirmedOnlineSourceSelection
 import io.github.proify.lyricon.amprovider.xposed.FailedOnlineSourceSwitch
@@ -156,6 +157,12 @@ internal class AppleOnlineSourceMenuHooks(
                         "requestId=$requestId, songId=$songId, contentType=$contentType, " +
                         "requested=$requestedSource, actual=$actualSource, successful=$successful"
                 )
+                AppleSourceSwitchPerformanceDiagnostics.stage(
+                    requestId = requestId,
+                    songId = songId,
+                    stage = "stale_result_ignored",
+                    details = "contentType=$contentType,requested=$requestedSource",
+                )
                 return@post
             }
             ProviderLogger.diagnostic(
@@ -172,6 +179,13 @@ internal class AppleOnlineSourceMenuHooks(
                     source = actualSource ?: requireNotNull(requestedSource),
                 )
                 refreshActiveMenu(requireNotNull(songId))
+                AppleSourceSwitchPerformanceDiagnostics.complete(
+                    mainHandler = runtime.mainHandler,
+                    requestId = requestId,
+                    songId = songId,
+                    successful = true,
+                    actualSource = actualSource ?: requestedSource,
+                )
             } else {
                 markSwitchFailed(
                     pending = pending,
@@ -770,12 +784,30 @@ internal class AppleOnlineSourceMenuHooks(
         )
         failedSwitches.remove("lyrics")
         pendingSwitches["lyrics"] = pending
+        AppleSourceSwitchPerformanceDiagnostics.start(
+            mainHandler = runtime.mainHandler,
+            requestId = requestId,
+            songId = songId,
+            previousSource = previousSource,
+            targetSource = targetSource,
+        )
         ProviderLogger.diagnostic(
             "Apple Music 歌词来源菜单点击: requestId=$requestId, " +
                 "songId=$songId, from=$previousSource, to=$targetSource"
         )
         refreshActiveMenu(songId)
+        AppleSourceSwitchPerformanceDiagnostics.stage(
+            requestId = requestId,
+            songId = songId,
+            stage = "menu_refreshed_after_click",
+        )
         val accepted = requestOnlineSource(requestId, songId, "lyrics", targetSource)
+        AppleSourceSwitchPerformanceDiagnostics.stage(
+            requestId = requestId,
+            songId = songId,
+            stage = "binder_request_returned",
+            details = "accepted=$accepted",
+        )
         ProviderLogger.diagnostic(
             "Apple Music 歌词来源请求投递: requestId=$requestId, accepted=$accepted"
         )
@@ -822,6 +854,12 @@ internal class AppleOnlineSourceMenuHooks(
                 "requestId=${pending.requestId}, songId=${pending.songId}, " +
                 "contentType=${pending.contentType}, target=${pending.targetSource}, " +
                 "actual=$displayedSource, reason=$reason"
+        )
+        AppleSourceSwitchPerformanceDiagnostics.fail(
+            mainHandler = runtime.mainHandler,
+            requestId = pending.requestId,
+            songId = pending.songId,
+            reason = reason,
         )
         refreshActiveMenu(pending.songId)
         runtime.mainHandler.postDelayed(

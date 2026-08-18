@@ -69,6 +69,16 @@ internal fun shouldShowMissingLyricsSourceMenu(
 ): Boolean = hasSupplementContent && !hasKnownNativeLyrics
 
 /**
+ * 来源菜单会以约 300ms 的频率轮询补充歌词可用性。歌曲已经完成接管后，
+ * 这类查询只能读取 Store，不能再次调度原生模型或刷新播放页。首次接受仍需
+ * 执行完整激活；正文或翻译 revision 的后续变化由对应接收回调继续驱动。
+ */
+internal fun shouldRunSupplementActivationSideEffects(
+    trigger: String,
+    newlyAccepted: Boolean,
+): Boolean = newlyAccepted || trigger != "source_menu_query"
+
+/**
  * 三方候选的按钮可用性与最终呈现接管必须相互独立。
  *
  * Apple 原生请求仍在进行时，已经缓存且身份匹配的三方候选也应让歌词按钮可点；
@@ -322,6 +332,7 @@ internal class AppleMissingLyricsHooks(
     private val currentVisibleLyricsSongId: () -> String?,
     private val requestPresentationRefresh: (Any?, Any?, Any?) -> Unit,
     private val requestBlankNativeLyricsPageRecovery: (Any?) -> Unit,
+    private val refreshVisibleSupplementTranslation: (String) -> Unit,
     private val refreshNowPlaying: (String?) -> Unit,
 ) {
     private companion object {
@@ -856,6 +867,10 @@ internal class AppleMissingLyricsHooks(
     }
 
     private fun maybeActivateSupplement(songId: String, trigger: String): Boolean {
+        AppleSourceSwitchPerformanceDiagnostics.record(
+            songId = songId,
+            event = "activation_query_$trigger",
+        )
         if (!isEnabled() || currentSupplementSongId() != songId) return false
         val decision = takeoverDecision(songId)
         if (!decision.allowed) {
@@ -871,6 +886,19 @@ internal class AppleMissingLyricsHooks(
         }
         if (!store.hasContent(songId)) return false
         val newlyAccepted = acceptedSupplementSongIds.add(songId)
+        AppleSourceSwitchPerformanceDiagnostics.record(
+            songId = songId,
+            event = "activation_allowed",
+            details = "trigger=$trigger,newlyAccepted=$newlyAccepted,revision=${store.revision()}",
+        )
+        if (!shouldRunSupplementActivationSideEffects(trigger, newlyAccepted)) {
+            AppleSourceSwitchPerformanceDiagnostics.record(
+                songId = songId,
+                event = "activation_side_effects_skipped",
+                details = "trigger=$trigger,revision=${store.revision()}",
+            )
+            return true
+        }
         if (newlyAccepted || BuildConfig.DEBUG) {
             ProviderLogger.info(
                 "Apple Music 无歌词补充允许接管: id=$songId, trigger=$trigger, " +
@@ -878,6 +906,11 @@ internal class AppleMissingLyricsHooks(
             )
         }
         scheduleNativeLyricsModel(songId)
+        AppleSourceSwitchPerformanceDiagnostics.record(
+            songId = songId,
+            event = "refresh_now_playing_requested",
+            details = "trigger=$trigger",
+        )
         refreshNowPlaying(songId)
         return true
     }
@@ -901,6 +934,38 @@ internal class AppleMissingLyricsHooks(
     fun sourceInfo(songId: String?): AppleMissingLyricsSourceInfo? {
         songId?.takeIf(String::isNotBlank)?.let(::restoreCachedSupplement)
         return store.sourceInfo(resolveSupplementContentId(songId))
+    }
+
+    /**
+     * Debug-only timing/source description used to correlate source switching with
+     * Apple's adapter coordinates. This intentionally exposes no lyric text; it only
+     * records the source metadata, line/word counts, and begin-time fingerprints.
+     */
+    fun timingDebugSnapshot(songId: String?): String {
+        if (!BuildConfig.DEBUG) return "disabled"
+        val contentSongId = songId?.takeIf(String::isNotBlank)
+            ?: return "song=none"
+        restoreCachedSupplement(contentSongId)
+        val resolvedSongId = resolveSupplementContentId(contentSongId)
+        val lines = store.lines(resolvedSongId)
+        val info = store.sourceInfo(resolvedSongId)
+        val wordLines = lines.count { it.words.size >= 2 }
+        val wordCount = lines.sumOf { it.words.size }
+        var beginFingerprint = 1
+        lines.forEach { line ->
+            beginFingerprint = 31 * beginFingerprint + line.begin.hashCode()
+            beginFingerprint = 31 * beginFingerprint + line.end.hashCode()
+        }
+        val beginSample = lines
+            .take(8)
+            .joinToString(",") { "${it.begin}-${it.end}" }
+        val status = info?.statuses.orEmpty().joinToString(";") {
+            "${it.source}:${it.lineCount}:${it.wordTimed}:${it.found}"
+        }
+        return "source=${info?.selectedSource ?: "none"},statuses=$status," +
+            "lines=${lines.size},wordLines=$wordLines,words=$wordCount," +
+            "beginFingerprint=$beginFingerprint,begins=[$beginSample]," +
+            "revision=${store.revision()}"
     }
 
     fun hasSupplementContent(songId: String?): Boolean {
@@ -1048,6 +1113,21 @@ internal class AppleMissingLyricsHooks(
             return
         }
         val songId = song.id?.takeIf(String::isNotBlank) ?: return
+        val receiveStartedAtNanos = SystemClock.elapsedRealtimeNanos()
+        val incomingLines = song.lyrics.orEmpty()
+        val incomingWordLines = incomingLines.count { it.words.orEmpty().size >= 2 }
+        AppleSourceSwitchPerformanceDiagnostics.stageForSong(
+            songId = songId,
+            stage = "supplement_store_receive_started",
+            details = "lines=${incomingLines.size},wordLines=$incomingWordLines," +
+                "thread=${Thread.currentThread().name}"
+        )
+        AppleSourceSwitchPerformanceDiagnostics.record(
+            songId = songId,
+            event = "supplement_received",
+            units = incomingLines.size.toLong(),
+            details = "wordLines=$incomingWordLines,thread=${Thread.currentThread().name}",
+        )
         nativeTakeoverGate.observe(songId)
         if (hasKnownNativeLyrics(songId)) {
             ProviderLogger.info(
@@ -1058,14 +1138,46 @@ internal class AppleMissingLyricsHooks(
             return
         }
         val hadContent = store.hasContent(songId)
-        val contentChanged = store.update(song)
-        if (contentChanged) {
-            val wordLines = song.lyrics.orEmpty().count { it.words.orEmpty().size >= 2 }
+        val revisionBefore = store.revision()
+        val storeUpdateStartedAtNanos = SystemClock.elapsedRealtimeNanos()
+        AppleSourceSwitchPerformanceDiagnostics.stageForSong(
+            songId = songId,
+            stage = "supplement_store_update_started",
+            details = "hadContent=$hadContent,revision=$revisionBefore," +
+                "thread=${Thread.currentThread().name}"
+        )
+        val updateResult = store.updateDetailed(song)
+        AppleSourceSwitchPerformanceDiagnostics.stageForSong(
+            songId = songId,
+            stage = "supplement_store_update_finished",
+            details = "kind=${updateResult.kind},changed=${updateResult.requiresNativeRebuild}," +
+                "revision=$revisionBefore->${store.revision()}," +
+                "elapsedMs=${(SystemClock.elapsedRealtimeNanos() - storeUpdateStartedAtNanos) / 1_000_000.0}," +
+                "thread=${Thread.currentThread().name}"
+        )
+        AppleSourceSwitchPerformanceDiagnostics.record(
+            songId = songId,
+            event = "store_update",
+            durationNanos = SystemClock.elapsedRealtimeNanos() - storeUpdateStartedAtNanos,
+            units = incomingLines.size.toLong(),
+            details = "kind=${updateResult.kind}," +
+                "changed=${updateResult.requiresNativeRebuild}," +
+                "revision=$revisionBefore->${store.revision()}",
+        )
+        if (updateResult.requiresNativeRebuild) {
             ProviderLogger.info(
                 "Apple Music 无歌词补充已接收: id=$songId, " +
-                    "lines=${song.lyrics.orEmpty().size}, wordLines=$wordLines"
+                    "lines=${incomingLines.size}, wordLines=$incomingWordLines"
             )
-            if (!DiskSongManager.saveMissingLyrics(song)) {
+            val diskWriteStartedAtNanos = SystemClock.elapsedRealtimeNanos()
+            val diskSaved = DiskSongManager.saveMissingLyrics(song)
+            AppleSourceSwitchPerformanceDiagnostics.record(
+                songId = songId,
+                event = "disk_cache_write",
+                durationNanos = SystemClock.elapsedRealtimeNanos() - diskWriteStartedAtNanos,
+                details = "saved=$diskSaved,contentChanged=true",
+            )
+            if (!diskSaved) {
                 ProviderLogger.debug(
                     "Apple Music 无歌词补充磁盘缓存写入失败: id=$songId"
                 )
@@ -1083,14 +1195,65 @@ internal class AppleMissingLyricsHooks(
             // Apple 原生请求仍在进行时不得构建或注入补充模型。最终呈现继续由
             // takeover gate 决定，与上面的按钮可用性刷新相互独立。
             maybeActivateSupplement(songId, trigger = "supplement_received")
+            AppleSourceSwitchPerformanceDiagnostics.record(
+                songId = songId,
+                event = "receive_supplement_total",
+                durationNanos = SystemClock.elapsedRealtimeNanos() - receiveStartedAtNanos,
+                details = "changed=true,hadContent=$hadContent",
+            )
+            AppleSourceSwitchPerformanceDiagnostics.stageForSong(
+                songId = songId,
+                stage = "supplement_store_receive_finished",
+                details = "kind=${updateResult.kind},changed=true,hadContent=$hadContent,totalMs=" +
+                    ((SystemClock.elapsedRealtimeNanos() - receiveStartedAtNanos) / 1_000_000.0) +
+                    ",thread=${Thread.currentThread().name}"
+            )
             return
         }
-        // 正文/时间轴没有变化时只持久化来源状态，不重建模型、不重刷播放页，
-        // 避免在线翻译赛马的多个同曲载荷触发“抽搐式”整页重呈现。
-        if (store.hasContent(songId)) {
-            DiskSongManager.saveMissingLyrics(song)
-            maybeActivateSupplement(songId, trigger = "supplement_metadata_updated")
+        // 正文/时间轴没有变化时保留现有 native pointer。翻译变化只重绑当前可见行，
+        // 元数据变化只持久化，完全相同的竞速载荷不再写盘或刷新播放页。
+        if (updateResult.shouldPersist && store.hasContent(songId)) {
+            val diskWriteStartedAtNanos = SystemClock.elapsedRealtimeNanos()
+            AppleSourceSwitchPerformanceDiagnostics.stageForSong(
+                songId = songId,
+                stage = "supplement_metadata_disk_write_started",
+                details = "thread=${Thread.currentThread().name}"
+            )
+            val diskSaved = DiskSongManager.saveMissingLyrics(song)
+            AppleSourceSwitchPerformanceDiagnostics.stageForSong(
+                songId = songId,
+                stage = "supplement_metadata_disk_write_finished",
+                details = "saved=$diskSaved,elapsedMs=" +
+                    ((SystemClock.elapsedRealtimeNanos() - diskWriteStartedAtNanos) / 1_000_000.0) +
+                    ",thread=${Thread.currentThread().name}"
+            )
+            AppleSourceSwitchPerformanceDiagnostics.record(
+                songId = songId,
+                event = "disk_cache_write",
+                durationNanos = SystemClock.elapsedRealtimeNanos() - diskWriteStartedAtNanos,
+                details = "saved=$diskSaved,contentChanged=false,kind=${updateResult.kind}",
+            )
         }
+        if (updateResult.kind == AppleMissingLyricsUpdateKind.TRANSLATION_ONLY) {
+            AppleSourceSwitchPerformanceDiagnostics.record(
+                songId = songId,
+                event = "supplement_translation_visible_refresh_requested",
+            )
+            refreshVisibleSupplementTranslation(songId)
+        }
+        AppleSourceSwitchPerformanceDiagnostics.record(
+            songId = songId,
+            event = "receive_supplement_total",
+            durationNanos = SystemClock.elapsedRealtimeNanos() - receiveStartedAtNanos,
+            details = "kind=${updateResult.kind},changed=false,hadContent=$hadContent",
+        )
+        AppleSourceSwitchPerformanceDiagnostics.stageForSong(
+            songId = songId,
+            stage = "supplement_store_receive_finished",
+            details = "kind=${updateResult.kind},changed=false,hadContent=$hadContent,totalMs=" +
+                ((SystemClock.elapsedRealtimeNanos() - receiveStartedAtNanos) / 1_000_000.0) +
+                ",thread=${Thread.currentThread().name}"
+        )
     }
 
     fun clearSupplement(songId: String?) {
@@ -1167,7 +1330,17 @@ internal class AppleMissingLyricsHooks(
     }
 
     private fun scheduleNativeLyricsModel(songId: String) {
+        AppleSourceSwitchPerformanceDiagnostics.record(
+            songId = songId,
+            event = "native_model_schedule_call",
+            details = "revision=${store.revision()}",
+        )
         if (songId !in acceptedSupplementSongIds) {
+            AppleSourceSwitchPerformanceDiagnostics.record(
+                songId = songId,
+                event = "native_model_deferred",
+                details = "reason=native_resolution_pending",
+            )
             if (BuildConfig.DEBUG) {
                 ProviderLogger.debug(
                     "Apple Music 无歌词补充暂缓原生模型构建: " +
@@ -1178,6 +1351,11 @@ internal class AppleMissingLyricsHooks(
             return
         }
         val identity = store.playbackIdentity(songId) ?: run {
+            AppleSourceSwitchPerformanceDiagnostics.record(
+                songId = songId,
+                event = "native_model_deferred",
+                details = "reason=playback_identity_missing",
+            )
             ProviderLogger.debug(
                 "Apple Music 无歌词补充暂缓原生模型构建: " +
                     "id=$songId, reason=playback_identity_missing"
@@ -1189,11 +1367,46 @@ internal class AppleMissingLyricsHooks(
             identity = identity,
         )
         synchronized(nativeBuildLock) {
-            if (pendingNativeBuildKey == key) return
+            if (pendingNativeBuildKey == key) {
+                AppleSourceSwitchPerformanceDiagnostics.record(
+                    songId = songId,
+                    event = "native_model_schedule_deduplicated",
+                    details = "revision=${key.contentRevision}",
+                )
+                return
+            }
             pendingNativeBuildKey = key
         }
+        val queuedAtNanos = SystemClock.elapsedRealtimeNanos()
+        AppleSourceSwitchPerformanceDiagnostics.stageForSong(
+            songId = songId,
+            stage = "native_model_main_posted",
+            details = "revision=${key.contentRevision},thread=${Thread.currentThread().name}"
+        )
         mainHandler.post {
-            if (pendingNativeBuildKey != key) return@post
+            if (pendingNativeBuildKey != key) {
+                AppleSourceSwitchPerformanceDiagnostics.stageForSong(
+                    songId = songId,
+                    stage = "native_model_main_skipped",
+                    details = "reason=key_replaced,revision=${key.contentRevision}," +
+                        "thread=${Thread.currentThread().name}"
+                )
+                return@post
+            }
+            val mainStartedAtNanos = SystemClock.elapsedRealtimeNanos()
+            AppleSourceSwitchPerformanceDiagnostics.stageForSong(
+                songId = songId,
+                stage = "native_model_main_started",
+                details = "revision=${key.contentRevision},queueWaitMs=" +
+                    ((mainStartedAtNanos - queuedAtNanos) / 1_000_000.0) +
+                    ",thread=${Thread.currentThread().name}"
+            )
+            AppleSourceSwitchPerformanceDiagnostics.record(
+                songId = songId,
+                event = "native_model_main_queue_wait",
+                durationNanos = SystemClock.elapsedRealtimeNanos() - queuedAtNanos,
+                details = "revision=${key.contentRevision}",
+            )
             try {
                 buildNativeLyricsModel(key)
             } finally {
@@ -1202,6 +1415,13 @@ internal class AppleMissingLyricsHooks(
                         pendingNativeBuildKey = null
                     }
                 }
+                AppleSourceSwitchPerformanceDiagnostics.stageForSong(
+                    songId = songId,
+                    stage = "native_model_main_finished",
+                    details = "revision=${key.contentRevision},elapsedMs=" +
+                        ((SystemClock.elapsedRealtimeNanos() - mainStartedAtNanos) / 1_000_000.0) +
+                        ",thread=${Thread.currentThread().name}"
+                )
             }
         }
     }
@@ -1209,6 +1429,7 @@ internal class AppleMissingLyricsHooks(
     private fun buildNativeLyricsModel(key: NativeBuildKey) {
         val identity = key.identity
         val songId = identity.contentSongId
+        val totalStartedAtNanos = SystemClock.elapsedRealtimeNanos()
         if (!isEnabled() || key.contentRevision != store.revision()) return
         if (songId !in acceptedSupplementSongIds) return
         if (!store.isCurrentIdentity(identity)) return
@@ -1221,10 +1442,26 @@ internal class AppleMissingLyricsHooks(
         if (store.nativeSongInfoPointer(songId) != null) return
         val lines = store.lines(songId)
         if (lines.isEmpty()) return
+        val ttmlStartedAtNanos = SystemClock.elapsedRealtimeNanos()
         val ttml = AppleMissingLyricsTtml.build(lines, store.durationMs(songId))
+        AppleSourceSwitchPerformanceDiagnostics.record(
+            songId = songId,
+            event = "ttml_build",
+            durationNanos = SystemClock.elapsedRealtimeNanos() - ttmlStartedAtNanos,
+            units = lines.size.toLong(),
+            details = "bytes=${ttml.length}",
+        )
+        val parseStartedAtNanos = SystemClock.elapsedRealtimeNanos()
         val pointer = nativeBuildScope.within {
             nativeParser.parse(ttml)
         }
+        AppleSourceSwitchPerformanceDiagnostics.record(
+            songId = songId,
+            event = "native_ttml_parse",
+            durationNanos = SystemClock.elapsedRealtimeNanos() - parseStartedAtNanos,
+            units = lines.size.toLong(),
+            details = "pointer=${pointer != null}",
+        )
         if (pointer == null) {
             ProviderLogger.error(
                 "Apple Music 无歌词补充原生模型构建失败: id=$songId, " +
@@ -1245,13 +1482,34 @@ internal class AppleMissingLyricsHooks(
         }
         val parsedLines = readNativeLineCount(pointer)
         val parsedWords = readNativeWordCount(pointer)
+        AppleSourceSwitchPerformanceDiagnostics.stageForSong(
+            songId = songId,
+            stage = "native_model_pointer_installed",
+            details = "revision=${key.contentRevision}," +
+                "pointer=${pointer.javaClass.name}@${System.identityHashCode(pointer)}," +
+                "parsedLines=$parsedLines,parsedWords=$parsedWords",
+        )
         ProviderLogger.info(
             "Apple Music 无歌词补充原生模型已生成: id=$songId, " +
                 "adamId=${identity.adamId}, queueId=${identity.queueId}, " +
                 "ttmlBytes=${ttml.length}, parsedLines=$parsedLines, " +
                 "parsedWords=$parsedWords"
         )
+        AppleSourceSwitchPerformanceDiagnostics.record(
+            songId = songId,
+            event = "native_model_build_total",
+            durationNanos = SystemClock.elapsedRealtimeNanos() - totalStartedAtNanos,
+            units = parsedLines.coerceAtLeast(0).toLong(),
+            details = "parsedWords=$parsedWords,revision=${key.contentRevision}",
+        )
+        val presentationStartedAtNanos = SystemClock.elapsedRealtimeNanos()
         requestPresentationRefresh(pointer, null, currentPlaybackItem(songId))
+        AppleSourceSwitchPerformanceDiagnostics.record(
+            songId = songId,
+            event = "presentation_refresh_request",
+            durationNanos = SystemClock.elapsedRealtimeNanos() - presentationStartedAtNanos,
+            details = "pointer=true",
+        )
     }
 
     private fun currentPlaybackItem(songId: String): Any? {

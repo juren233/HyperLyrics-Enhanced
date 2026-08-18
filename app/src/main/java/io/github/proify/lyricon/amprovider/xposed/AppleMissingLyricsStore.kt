@@ -33,6 +33,25 @@ internal data class AppleMissingLyricsPlaybackIdentity(
     val queueId: Long,
 )
 
+internal enum class AppleMissingLyricsUpdateKind {
+    INVALID,
+    UNCHANGED,
+    METADATA_ONLY,
+    TRANSLATION_ONLY,
+    LYRICS,
+}
+
+internal data class AppleMissingLyricsUpdateResult(
+    val kind: AppleMissingLyricsUpdateKind,
+) {
+    val requiresNativeRebuild: Boolean
+        get() = kind == AppleMissingLyricsUpdateKind.LYRICS
+
+    val shouldPersist: Boolean
+        get() = kind != AppleMissingLyricsUpdateKind.INVALID &&
+            kind != AppleMissingLyricsUpdateKind.UNCHANGED
+}
+
 /**
  * 保存三方在线源为「Apple Music 原生无歌词」歌曲补充的完整歌词。
  * 只承载原始歌词文本与逐字时间轴，不参与翻译/发音补全。
@@ -73,9 +92,12 @@ internal class AppleMissingLyricsStore {
      */
     private val retainedNativePointers = ArrayList<Any>()
 
+    fun update(song: Song): Boolean = updateDetailed(song).requiresNativeRebuild
+
     @Synchronized
-    fun update(song: Song): Boolean {
-        val songId = song.id?.takeIf(String::isNotBlank) ?: return false
+    fun updateDetailed(song: Song): AppleMissingLyricsUpdateResult {
+        val songId = song.id?.takeIf(String::isNotBlank)
+            ?: return AppleMissingLyricsUpdateResult(AppleMissingLyricsUpdateKind.INVALID)
         val previousContent = content?.takeIf { it.songId == songId }
         val previousLines = previousContent?.lines
         val lines = song.lyrics.orEmpty().mapNotNull { line ->
@@ -90,12 +112,16 @@ internal class AppleMissingLyricsStore {
                 begin = line.begin,
                 end = line.end,
                 text = text,
-                words = normalizeWords(line, text, containsCjk),
+                words = normalizeWords(line, text, containsCjk).let { words ->
+                    if (isFullLinePseudoWord(line, text, words)) emptyList() else words
+                },
                 translation = line.translation?.trim()?.takeIf(String::isNotEmpty)
                     ?: matchingPreviousTranslation(previousLines, line.begin, line.end, text),
             )
         }
-        if (lines.isEmpty()) return false
+        if (lines.isEmpty()) {
+            return AppleMissingLyricsUpdateResult(AppleMissingLyricsUpdateKind.INVALID)
+        }
         val updated = Content(
             songId = songId,
             durationMs = song.duration.coerceAtLeast(lines.last().end),
@@ -112,11 +138,11 @@ internal class AppleMissingLyricsStore {
                 ?.getString(LyricMetadataKeys.ONLINE_PRONUNCIATION_SOURCE)
                 ?: previousContent?.pronunciationSource,
         )
-        if (content == updated) return false
         // TTML/native 模型只依赖主歌词文本与逐字时间轴；翻译和来源状态变化不需要
         // 重建模型，否则在线翻译赛马的多个同曲载荷会反复清空已暴露的 native model，
         // 造成歌词页多层错位、回顶再回到当前句的“抽搐”。
         val current = content
+        val contentIdentical = current == updated
         val lyricsChanged = current == null ||
             current.songId != updated.songId ||
             current.durationMs != updated.durationMs ||
@@ -124,26 +150,36 @@ internal class AppleMissingLyricsStore {
                 updated.lines.map { it.copy(translation = null) }
         val translationChanged = current != null &&
             current.lines.map { it.translation } != updated.lines.map { it.translation }
-        // 已经暴露给 Apple 的 native model 不包含后来才到达的翻译。翻译内容真正变化
-        // 时必须重建一次，否则磁盘缓存先构建、翻译后到的时序下页面永远没有翻译，
-        // 左下角翻译按钮也会因 translationAvailable=false 消失。
-        // 同曲 RACE 载荷只有来源元数据变化时 translationChanged=false，仍不重建。
-        val requiresNativeRebuild = lyricsChanged ||
-            (translationChanged && nativeModel != null)
+        if (BuildConfig.DEBUG) {
+            AppleSourceSwitchPerformanceDiagnostics.stageForSong(
+                songId = songId,
+                stage = "supplement_content_fingerprint",
+                details = "identical=$contentIdentical,lyricsChanged=$lyricsChanged," +
+                    "translationChanged=$translationChanged,revision=$contentRevision," +
+                    "nativePointer=${nativeModel?.pointer?.let(::debugPointerIdentity) ?: "none"}," +
+                    "previous=${current?.debugFingerprint() ?: "none"}," +
+                    "incoming=${updated.debugFingerprint()}",
+            )
+        }
+        if (contentIdentical) {
+            return AppleMissingLyricsUpdateResult(AppleMissingLyricsUpdateKind.UNCHANGED)
+        }
         if (!lyricsChanged) {
             content = updated
-            if (requiresNativeRebuild) {
-                clearNativeModelLocked()
-                contentRevision += 1
-                return true
-            }
             if (BuildConfig.DEBUG) {
                 ProviderLogger.debug(
-                    "Apple Music 补充歌词翻译/来源已更新但不重建: " +
-                        "id=$songId, revision=$contentRevision"
+                    "Apple Music 补充歌词覆盖层已更新并保留原生模型: " +
+                        "id=$songId, translationChanged=$translationChanged, " +
+                        "revision=$contentRevision"
                 )
             }
-            return false
+            return AppleMissingLyricsUpdateResult(
+                if (translationChanged) {
+                    AppleMissingLyricsUpdateKind.TRANSLATION_ONLY
+                } else {
+                    AppleMissingLyricsUpdateKind.METADATA_ONLY
+                }
+            )
         }
         clearNativeModelLocked()
         content = updated
@@ -151,7 +187,7 @@ internal class AppleMissingLyricsStore {
         if (playbackIdentity?.contentSongId != songId) {
             playbackIdentity = null
         }
-        return true
+        return AppleMissingLyricsUpdateResult(AppleMissingLyricsUpdateKind.LYRICS)
     }
 
     /**
@@ -243,6 +279,24 @@ internal class AppleMissingLyricsStore {
             normalized += converted
         }
         return normalized
+    }
+
+    /**
+     * 部分逐行源把整句伪装成一个覆盖整行的 word，后续翻译载荷又会把该伪 word
+     * 清空。Apple TTML 本来就把“全曲没有两段以上分词”的内容按 Line timing 渲染，
+     * 因此只在文本和时间边界都严格等于整行时提前规范化为空，避免同一逐行歌词在
+     * 两次载荷之间产生无意义的结构 revision。真实多 word 时间轴和边界不同的单词
+     * 仍原样保留。
+     */
+    private fun isFullLinePseudoWord(
+        line: RichLyricLine,
+        normalizedLineText: String,
+        words: List<AppleMissingLyricsWord>,
+    ): Boolean {
+        val word = words.singleOrNull() ?: return false
+        return word.begin == line.begin &&
+            word.end == line.end &&
+            word.text == normalizedLineText
     }
 
     /** 修改列表中的最后一个逐字片段，保持分隔符位于前一个片段的末尾。 */
@@ -452,4 +506,45 @@ internal class AppleMissingLyricsStore {
 
     fun sourceInfo(songId: String?): AppleMissingLyricsSourceInfo? =
         content?.takeIf { it.songId == songId }?.sourceInfo
+
+    private fun Content.debugFingerprint(): String =
+        "lines=${lines.size},words=${lines.sumOf { it.words.size }}," +
+            "base=${lines.baseFingerprint()},word=${lines.wordFingerprint()}," +
+            "translation=${lines.translationFingerprint()},duration=$durationMs," +
+            "source=${sourceInfo.hashCode()},translationSource=${translationSource.hashCode()}," +
+            "pronunciationSource=${pronunciationSource.hashCode()}"
+
+    private fun List<AppleMissingLyricsLine>.baseFingerprint(): Int {
+        var result = 1
+        forEach { line ->
+            result = 31 * result + line.begin.hashCode()
+            result = 31 * result + line.end.hashCode()
+            result = 31 * result + line.text.hashCode()
+        }
+        return result
+    }
+
+    private fun List<AppleMissingLyricsLine>.wordFingerprint(): Int {
+        var result = 1
+        forEach { line ->
+            result = 31 * result + line.words.size
+            line.words.forEach { word ->
+                result = 31 * result + word.begin.hashCode()
+                result = 31 * result + word.end.hashCode()
+                result = 31 * result + word.text.hashCode()
+            }
+        }
+        return result
+    }
+
+    private fun List<AppleMissingLyricsLine>.translationFingerprint(): Int {
+        var result = 1
+        forEach { line ->
+            result = 31 * result + line.translation.hashCode()
+        }
+        return result
+    }
+
+    private fun debugPointerIdentity(pointer: Any): String =
+        "${pointer.javaClass.name}@${System.identityHashCode(pointer)}"
 }

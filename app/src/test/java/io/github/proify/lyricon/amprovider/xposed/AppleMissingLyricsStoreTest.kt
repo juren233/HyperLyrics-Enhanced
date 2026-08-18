@@ -23,6 +23,34 @@ import org.junit.Test
 class AppleMissingLyricsStoreTest {
 
     @Test
+    fun `source menu availability query only activates a newly accepted supplement`() {
+        assertTrue(
+            shouldRunSupplementActivationSideEffects(
+                trigger = "source_menu_query",
+                newlyAccepted = true,
+            )
+        )
+        assertFalse(
+            shouldRunSupplementActivationSideEffects(
+                trigger = "source_menu_query",
+                newlyAccepted = false,
+            )
+        )
+        assertTrue(
+            shouldRunSupplementActivationSideEffects(
+                trigger = "supplement_received",
+                newlyAccepted = false,
+            )
+        )
+        assertTrue(
+            shouldRunSupplementActivationSideEffects(
+                trigger = "page_resume",
+                newlyAccepted = false,
+            )
+        )
+    }
+
+    @Test
     fun `native Apple lyrics suppress the missing-lyrics source menu`() {
         assertTrue(
             shouldShowMissingLyricsSourceMenu(
@@ -571,7 +599,7 @@ class AppleMissingLyricsStoreTest {
     }
 
     @Test
-    fun `translation content change rebuilds exposed native model`() {
+    fun `translation content change keeps exposed native model`() {
         val store = AppleMissingLyricsStore()
         val identity = AppleMissingLyricsPlaybackIdentity(
             contentSongId = "translation-only",
@@ -596,7 +624,7 @@ class AppleMissingLyricsStoreTest {
         assertTrue(store.updateNativeSongInfoPointer(pointer, identity))
         val revision = store.revision()
 
-        assertTrue(
+        assertFalse(
             store.update(
                 Song(
                     id = "translation-only",
@@ -612,11 +640,31 @@ class AppleMissingLyricsStoreTest {
             )
         )
 
-        assertTrue(store.revision() > revision)
+        assertEquals(revision, store.revision())
         assertEquals("新翻译", store.translation("translation-only", 0L, 1_000L, "Original"))
-        assertNull(store.nativeSongInfoPointer("translation-only"))
-        // 已暴露给 Apple 的旧指针进入保留集而不是立刻 deallocate。
+        assertSame(pointer, store.nativeSongInfoPointer("translation-only"))
+        // 翻译 getter 会动态读取 Store；已暴露给 Apple 的指针继续有效。
         assertFalse(pointer.deallocated)
+    }
+
+    @Test
+    fun `single full-line pseudo word is normalized away`() {
+        val store = AppleMissingLyricsStore()
+        store.update(
+            Song(
+                id = "line-only-pseudo-word",
+                lyrics = listOf(
+                    RichLyricLine(
+                        begin = 0L,
+                        end = 1_000L,
+                        text = "整句歌词",
+                        words = listOf(word(0L, 1_000L, "整句歌词")),
+                    )
+                ),
+            )
+        )
+
+        assertTrue(store.lines("line-only-pseudo-word").single().words.isEmpty())
     }
 
     @Test

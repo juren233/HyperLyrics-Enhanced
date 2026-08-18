@@ -29,6 +29,7 @@ import com.juren233.hyperlyricsenhanced.root.LyriconDataBridge
 import com.juren233.hyperlyricsenhanced.root.island.renderer.BaseIslandRenderer
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import io.github.proify.lyricon.amprovider.xposed.AppleDirectBridgeContract
+import io.github.proify.lyricon.amprovider.xposed.AppleSourceSwitchPerformanceDiagnostics
 import io.github.proify.lyricon.lyric.model.Song as LyriconSong
 import io.github.proify.lyricon.subscriber.ActivePlayerListener
 import io.github.proify.lyricon.subscriber.ConnectionListener
@@ -189,6 +190,7 @@ class LyriconSource : LyricSource {
         private const val APPLE_MEDIA_MONITOR_INTERVAL_MS = 1_000L
         private const val SAME_TRACK_DURATION_TOLERANCE_MS = 2_000L
         private const val TIMING_DIAGNOSTIC_INTERVAL_MS = 5_000L
+        private const val SOURCE_SWITCH_DIAGNOSTIC_WINDOW_MS = 20_000L
         private const val PRONUNCIATION_DIAGNOSTIC_TAG = "ApplePronunciationDiag"
         private val json = Json { ignoreUnknownKeys = true; coerceInputValues = true }
     }
@@ -241,6 +243,8 @@ class LyriconSource : LyricSource {
     private var pendingTranslationSourceRequest: OnlineSourceSwitchRequest? = null
     private var pendingPronunciationSourceRequest: OnlineSourceSwitchRequest? = null
     private var pendingLyricsSourceRequest: OnlineSourceSwitchRequest? = null
+    @Volatile
+    private var latestSourceSwitchTraceRequest: OnlineSourceSwitchRequest? = null
     private var confirmedLyricsSourceSelection: ConfirmedLyricsSourceSelection? = null
     private var currentAppleSong: LocalSong? = null
     private var currentAppleHasNativeLyrics = false
@@ -923,6 +927,11 @@ class LyriconSource : LyricSource {
         preferredSourceOverride: Source? = null,
         strictSource: Boolean = false,
     ) {
+        val sourceSwitchRequest = activeSourceSwitchTraceRequest(baseSong.id)
+            ?.takeIf { request ->
+                request.contentType == "lyrics" &&
+                    preferredSourceOverride == request.requestedSource
+            }
         val fallbackEnabled = isOnlineTranslationEnabledFor(APPLE_MUSIC_PACKAGE)
         val supplementEnabled = isFillMissingLyricsEnabled()
         if (baseSong.name.isNullOrBlank() || (!fallbackEnabled && !supplementEnabled)) {
@@ -930,18 +939,47 @@ class LyriconSource : LyricSource {
         }
         val configuredSources = OnlineTranslationSourcePreferences.orderedSources(prefs)
         if (configuredSources.isEmpty() && preferredSourceOverride == null) return
+        val previousGeneration = fallbackGeneration
+        val previousJobActive = fallbackJob?.isActive == true
+        val previousDelayPending = fallbackDelayRunnable != null
         fallbackGeneration += 1
         val generation = fallbackGeneration
         fallbackDelayRunnable?.let(mainHandler::removeCallbacks)
         fallbackDelayRunnable = null
         fallbackJob?.cancel()
         fallbackJob = null
+        sourceSwitchCoreStage(
+            request = sourceSwitchRequest,
+            stage = "fallback_scheduled",
+            details = "generation=$previousGeneration->$generation,delayMs=$delayMs," +
+                "strict=$strictSource,preferred=${preferredSourceOverride ?: "none"}," +
+                "order=${configuredSources.joinToString("+")}," +
+                "cancelledJobActive=$previousJobActive," +
+                "cancelledDelayPending=$previousDelayPending",
+        )
 
         val delayedSearch = Runnable {
-            if (generation != fallbackGeneration) return@Runnable
+            if (generation != fallbackGeneration) {
+                sourceSwitchCoreStage(
+                    request = sourceSwitchRequest,
+                    stage = "fallback_delay_abandoned",
+                    details = "generation=$generation,currentGeneration=$fallbackGeneration",
+                )
+                return@Runnable
+            }
             fallbackDelayRunnable = null
+            sourceSwitchCoreStage(
+                request = sourceSwitchRequest,
+                stage = "fallback_worker_launching",
+                details = "generation=$generation",
+            )
             val application = app
             if (application == null) {
+                sourceSwitchCoreStage(
+                    request = sourceSwitchRequest,
+                    stage = "fallback_worker_abandoned",
+                    details = "generation=$generation,reason=application_unavailable",
+                )
                 diagnostic(
                     "Apple Music 在线兜底无法启动: reason=application_unavailable, " +
                         "title=${baseSong.name}"
@@ -949,12 +987,40 @@ class LyriconSource : LyricSource {
                 return@Runnable
             }
             fallbackJob = fallbackScope.launch {
+                val mutexWaitStartedAtNanos = SystemClock.elapsedRealtimeNanos()
+                sourceSwitchCoreStage(
+                    request = sourceSwitchRequest,
+                    stage = "fallback_mutex_wait_started",
+                    details = "generation=$generation",
+                )
                 try {
                     fallbackRequestMutex.withLock {
-                        if (generation != fallbackGeneration) return@withLock
+                        sourceSwitchCoreStage(
+                            request = sourceSwitchRequest,
+                            stage = "fallback_mutex_acquired",
+                            details = "generation=$generation,waitMs=" +
+                                ((SystemClock.elapsedRealtimeNanos() - mutexWaitStartedAtNanos) /
+                                    1_000_000.0),
+                        )
+                        if (generation != fallbackGeneration) {
+                            sourceSwitchCoreStage(
+                                request = sourceSwitchRequest,
+                                stage = "fallback_search_abandoned",
+                                details = "generation=$generation," +
+                                    "currentGeneration=$fallbackGeneration",
+                            )
+                            return@withLock
+                        }
                         diagnostic(
                             "Apple Music 在线兜底开始: title=${baseSong.name}, " +
                                 "artist=${baseSong.artist}, order=${configuredSources.joinToString("+")}"
+                        )
+                        val searchStartedAtNanos = SystemClock.elapsedRealtimeNanos()
+                        sourceSwitchCoreStage(
+                            request = sourceSwitchRequest,
+                            stage = "fallback_search_started",
+                            details = "generation=$generation," +
+                                "source=${preferredSourceOverride ?: "automatic"}",
                         )
                         val outcome = OnlineLyricTargeter.fetchBestLyricWithNearMiss(
                             context = application,
@@ -987,20 +1053,61 @@ class LyriconSource : LyricSource {
                                 .album,
                             collectSourceStatuses = isFillMissingLyricsEnabled(),
                         )
+                        sourceSwitchCoreStage(
+                            request = sourceSwitchRequest,
+                            stage = "fallback_search_finished",
+                            details = "generation=$generation,elapsedMs=" +
+                                ((SystemClock.elapsedRealtimeNanos() - searchStartedAtNanos) /
+                                    1_000_000.0) +
+                                ",selected=${outcome.selectedSource ?: "none"}," +
+                                "lines=${outcome.lines?.size ?: 0}," +
+                                "wordLines=${outcome.wordLines?.size ?: 0}," +
+                                "statuses=${outcome.sourceStatuses.joinToString("+") {
+                                    it.source + ":" + it.found
+                                }}",
+                        )
+                        val applyPostedAtNanos = SystemClock.elapsedRealtimeNanos()
                         mainHandler.post {
-                            applyFallbackResult(
-                                generation = generation,
-                                baseSong = baseSong,
-                                outcome = outcome,
-                                application = application,
-                                fallbackEnabled = fallbackEnabled,
-                                requestedSource = preferredSourceOverride,
+                            val applyStartedAtNanos = SystemClock.elapsedRealtimeNanos()
+                            sourceSwitchCoreStage(
+                                request = sourceSwitchRequest,
+                                stage = "fallback_apply_main_started",
+                                details = "generation=$generation,queueWaitMs=" +
+                                    ((applyStartedAtNanos - applyPostedAtNanos) / 1_000_000.0),
                             )
+                            try {
+                                applyFallbackResult(
+                                    generation = generation,
+                                    baseSong = baseSong,
+                                    outcome = outcome,
+                                    application = application,
+                                    fallbackEnabled = fallbackEnabled,
+                                    requestedSource = preferredSourceOverride,
+                                )
+                            } finally {
+                                sourceSwitchCoreStage(
+                                    request = sourceSwitchRequest,
+                                    stage = "fallback_apply_main_finished",
+                                    details = "generation=$generation,elapsedMs=" +
+                                        ((SystemClock.elapsedRealtimeNanos() - applyStartedAtNanos) /
+                                            1_000_000.0),
+                                )
+                            }
                         }
                     }
                 } catch (e: CancellationException) {
+                    sourceSwitchCoreStage(
+                        request = sourceSwitchRequest,
+                        stage = "fallback_worker_cancelled",
+                        details = "generation=$generation,currentGeneration=$fallbackGeneration",
+                    )
                     throw e
                 } catch (e: Exception) {
+                    sourceSwitchCoreStage(
+                        request = sourceSwitchRequest,
+                        stage = "fallback_worker_failed",
+                        details = "generation=$generation,error=${e.javaClass.simpleName}",
+                    )
                     debugError("Apple Music 在线兜底失败: title=${baseSong.name}", e)
                 }
             }
@@ -1009,6 +1116,11 @@ class LyriconSource : LyricSource {
         diagnostic(
             "Apple Music 在线兜底已调度: title=${baseSong.name}, " +
                 "delayMs=$delayMs, generation=$generation"
+        )
+        sourceSwitchCoreStage(
+            request = sourceSwitchRequest,
+            stage = "fallback_delay_posted",
+            details = "generation=$generation,delayMs=$delayMs",
         )
         mainHandler.postDelayed(delayedSearch, delayMs)
     }
@@ -1021,6 +1133,18 @@ class LyriconSource : LyricSource {
         fallbackEnabled: Boolean,
         requestedSource: Source? = null,
     ) {
+        val sourceSwitchRequest = activeSourceSwitchTraceRequest(baseSong.id)
+            ?.takeIf { request ->
+                request.contentType == "lyrics" &&
+                    (requestedSource == null || requestedSource == request.requestedSource)
+            }
+        sourceSwitchCoreStage(
+            request = sourceSwitchRequest,
+            stage = "fallback_result_applying",
+            details = "generation=$generation,currentGeneration=$fallbackGeneration," +
+                "selected=${outcome.selectedSource ?: "none"}," +
+                "lines=${outcome.lines?.size ?: 0},wordLines=${outcome.wordLines?.size ?: 0}",
+        )
         val nativeSong = currentAppleSong
         val sameTrack = nativeSong != null && isSameTrack(nativeSong, baseSong)
         val nativeSupplement = isMissingLyricsSupplement(nativeSong)
@@ -1038,6 +1162,14 @@ class LyriconSource : LyricSource {
             manualSourceSwitch = manualLyricsSourceSwitch,
         )
         if (!requestStillCurrent) {
+            sourceSwitchCoreStage(
+                request = sourceSwitchRequest,
+                stage = "fallback_result_rejected",
+                details = "generation=$generation,currentGeneration=$fallbackGeneration," +
+                    "sameTrack=$sameTrack,currentNative=$currentAppleHasNativeLyrics," +
+                    "currentSongHasNative=$nativeSongHasNativeLyrics," +
+                    "manual=$manualLyricsSourceSwitch",
+            )
             diagnostic(
                 "Apple Music 在线兜底结果已过期: title=${baseSong.name}, " +
                     "generation=$generation, currentGeneration=$fallbackGeneration, " +
@@ -1094,8 +1226,17 @@ class LyriconSource : LyricSource {
                     "builtLines=${supplementSong?.lyrics.orEmpty().size}"
             )
             if (supplementSong != null) {
-                val published =
-                    directBridge?.publishMissingLyricsSupplement(supplementSong) == true
+                val publishStartedAtNanos = SystemClock.elapsedRealtimeNanos()
+                val published = directBridge?.publishMissingLyricsSupplement(supplementSong) == true
+                sourceSwitchCoreStage(
+                    request = sourceSwitchRequest,
+                    stage = "supplement_binder_published",
+                    details = "generation=$generation,elapsedMs=" +
+                        ((SystemClock.elapsedRealtimeNanos() - publishStartedAtNanos) /
+                            1_000_000.0) +
+                        ",published=$published,lines=${supplementSong.lyrics.orEmpty().size}," +
+                        "mode=$supplementBuildMode",
+                )
                 diagnostic(
                     "Apple Music 无歌词补充回传: id=${supplementSong.id}, " +
                         "lines=${supplementSong.lyrics.orEmpty().size}, published=$published"
@@ -1116,6 +1257,12 @@ class LyriconSource : LyricSource {
             completePendingLyricsSourceRequest(
                 song = supplementSong,
                 requestedSource = requestedSource,
+            )
+            sourceSwitchCoreStage(
+                request = sourceSwitchRequest,
+                stage = "fallback_result_applied",
+                details = "generation=$generation,supplement=${supplementSong != null}," +
+                    "source=${outcome.selectedSource ?: "none"}",
             )
         }
 
@@ -1365,6 +1512,7 @@ class LyriconSource : LyricSource {
     }
 
     private fun scheduleOnlineTranslation(baseSong: LocalSong): Boolean {
+        val sourceSwitchRequest = activeSourceSwitchTraceRequest(baseSong.id)
         val effectivePlayerPackage = activeCentralPlayerPackageName ?: APPLE_MUSIC_PACKAGE
         val matchingEnabled = if (effectivePlayerPackage == APPLE_MUSIC_PACKAGE) {
             isAppleTranslationEnrichmentEnabled()
@@ -1374,7 +1522,19 @@ class LyriconSource : LyricSource {
         val nativeLineCount = baseSong.lyrics.orEmpty().size
         val enrichmentNeeded = needsOnlineEnrichment(baseSong)
         val titlePresent = !baseSong.name.isNullOrBlank()
+        sourceSwitchCoreStage(
+            request = sourceSwitchRequest,
+            stage = "translation_schedule_evaluated",
+            details = "matchingEnabled=$matchingEnabled,nativeLines=$nativeLineCount," +
+                "enrichmentNeeded=$enrichmentNeeded,titlePresent=$titlePresent," +
+                "generation=$onlineTranslationGeneration",
+        )
         if (!matchingEnabled || nativeLineCount == 0 || !enrichmentNeeded || !titlePresent) {
+            sourceSwitchCoreStage(
+                request = sourceSwitchRequest,
+                stage = "translation_schedule_skipped",
+                details = "reason=precondition_failed",
+            )
             pronunciationDiagnostic(
                 "stage=request_schedule_skipped, reason=precondition_failed, " +
                     "id=${baseSong.id}, prefsPresent=${prefs != null}, " +
@@ -1385,6 +1545,11 @@ class LyriconSource : LyricSource {
         }
         val attemptKey = translationIdentity(baseSong)
         if (onlineTranslationAttemptKey == attemptKey) {
+            sourceSwitchCoreStage(
+                request = sourceSwitchRequest,
+                stage = "translation_schedule_skipped",
+                details = "reason=attempt_already_recorded",
+            )
             pronunciationDiagnostic(
                 "stage=request_schedule_skipped, reason=attempt_already_recorded, " +
                     "id=${baseSong.id}, attempt=$attemptKey"
@@ -1398,15 +1563,82 @@ class LyriconSource : LyricSource {
         onlineRaceFirstPublishedGeneration = null
         onlineRaceFirstAcceptedGeneration = null
         pendingOnlineTranslationCommit = null
+        val previousJobActive = onlineTranslationJob?.isActive == true
         pronunciationDiagnostic(
             "stage=request_scheduled, generation=$generation, id=${baseSong.id}, " +
                 "attempt=$attemptKey, nativeLines=${baseSong.lyrics.orEmpty().size}"
         )
         onlineTranslationJob?.cancel()
+        sourceSwitchCoreStage(
+            request = sourceSwitchRequest,
+            stage = "translation_job_scheduled",
+            details = "generation=$generation,cancelledJobActive=$previousJobActive",
+        )
+
+        fun postTranslationApply(
+            selection: OnlineTranslationSelection?,
+            publicationStage: OnlineTranslationPublicationStage,
+            reason: String,
+        ) {
+            val postedAtNanos = SystemClock.elapsedRealtimeNanos()
+            sourceSwitchCoreStage(
+                request = sourceSwitchRequest,
+                stage = "translation_apply_posted",
+                details = "generation=$generation,publicationStage=$publicationStage," +
+                    "reason=$reason,resultPresent=${selection != null}",
+            )
+            mainHandler.post {
+                val applyStartedAtNanos = SystemClock.elapsedRealtimeNanos()
+                sourceSwitchCoreStage(
+                    request = sourceSwitchRequest,
+                    stage = "translation_apply_main_started",
+                    details = "generation=$generation,publicationStage=$publicationStage," +
+                        "queueWaitMs=" +
+                        ((applyStartedAtNanos - postedAtNanos) / 1_000_000.0),
+                )
+                try {
+                    applyOnlineTranslationResult(
+                        generation = generation,
+                        baseSong = baseSong,
+                        selection = selection,
+                        publicationStage = publicationStage,
+                    )
+                } finally {
+                    sourceSwitchCoreStage(
+                        request = sourceSwitchRequest,
+                        stage = "translation_apply_main_finished",
+                        details = "generation=$generation,publicationStage=$publicationStage," +
+                            "elapsedMs=" +
+                            ((SystemClock.elapsedRealtimeNanos() - applyStartedAtNanos) /
+                                1_000_000.0),
+                    )
+                }
+            }
+        }
+
         onlineTranslationJob = fallbackScope.launch {
+            val mutexWaitStartedAtNanos = SystemClock.elapsedRealtimeNanos()
+            sourceSwitchCoreStage(
+                request = sourceSwitchRequest,
+                stage = "translation_mutex_wait_started",
+                details = "generation=$generation",
+            )
             try {
                 fallbackRequestMutex.withLock {
+                    sourceSwitchCoreStage(
+                        request = sourceSwitchRequest,
+                        stage = "translation_mutex_acquired",
+                        details = "generation=$generation,waitMs=" +
+                            ((SystemClock.elapsedRealtimeNanos() - mutexWaitStartedAtNanos) /
+                                1_000_000.0),
+                    )
                     if (generation != onlineTranslationGeneration) {
+                        sourceSwitchCoreStage(
+                            request = sourceSwitchRequest,
+                            stage = "translation_search_abandoned",
+                            details = "generation=$generation," +
+                                "currentGeneration=$onlineTranslationGeneration",
+                        )
                         pronunciationDiagnostic(
                             "stage=request_abandoned, generation=$generation, id=${baseSong.id}, " +
                                 "reason=generation_changed_before_start, " +
@@ -1423,9 +1655,11 @@ class LyriconSource : LyricSource {
                     }
                     val configuredSources = configuredOnlineSources()
                     if (configuredSources.isEmpty()) {
-                        mainHandler.post {
-                            applyOnlineTranslationResult(generation, baseSong, null)
-                        }
+                        postTranslationApply(
+                            selection = null,
+                            publicationStage = OnlineTranslationPublicationStage.SINGLE,
+                            reason = "no_configured_sources",
+                        )
                         return@withLock
                     }
                     val automaticSelection =
@@ -1492,7 +1726,14 @@ class LyriconSource : LyricSource {
                         "stage=request_started, generation=$generation, id=${baseSong.id}, " +
                             "preferred=$preferredSource, order=${remainingSources.joinToString("+")}, " +
                             "pronunciationAllowed=$completeOnlinePronunciation, " +
-                            "targetContent=$totalLineCount"
+                        "targetContent=$totalLineCount"
+                    )
+                    val searchStartedAtNanos = SystemClock.elapsedRealtimeNanos()
+                    sourceSwitchCoreStage(
+                        request = sourceSwitchRequest,
+                        stage = "translation_search_started",
+                        details = "generation=$generation,order=${remainingSources.joinToString("+")}," +
+                            "race=$raceEnabled,targetContent=$totalLineCount",
                     )
                     val fetchedCandidates = linkedMapOf<Source, OnlineTranslationSelector.Candidate>()
                     if (raceEnabled && remainingSources.size > 1) {
@@ -1555,14 +1796,12 @@ class LyriconSource : LyricSource {
                                                 "id=${baseSong.id}, source=$source, " +
                                                 "matchedContent=${candidate.matchedContentCount}"
                                         )
-                                        mainHandler.post {
-                                            applyOnlineTranslationResult(
-                                                generation = generation,
-                                                baseSong = baseSong,
-                                                selection = firstSelection,
-                                                publicationStage = OnlineTranslationPublicationStage.RACE_FIRST,
-                                            )
-                                        }
+                                        postTranslationApply(
+                                            selection = firstSelection,
+                                            publicationStage =
+                                                OnlineTranslationPublicationStage.RACE_FIRST,
+                                            reason = "race_first_ready",
+                                        )
                                     }
                                 }
                             },
@@ -1700,33 +1939,52 @@ class LyriconSource : LyricSource {
                                 }}"
                         )
                     }
-                    mainHandler.post {
-                        applyOnlineTranslationResult(
-                            generation = generation,
-                            baseSong = baseSong,
-                            selection = selection,
-                            publicationStage = if (raceEnabled) {
-                                OnlineTranslationPublicationStage.RACE_FINAL
-                            } else {
-                                OnlineTranslationPublicationStage.SINGLE
-                            },
-                        )
-                    }
+                    sourceSwitchCoreStage(
+                        request = sourceSwitchRequest,
+                        stage = "translation_search_finished",
+                        details = "generation=$generation,elapsedMs=" +
+                            ((SystemClock.elapsedRealtimeNanos() - searchStartedAtNanos) /
+                                1_000_000.0) +
+                            ",candidates=${candidates.keys.joinToString("+")}," +
+                            "selected=${selected?.source ?: "none"}",
+                    )
+                    postTranslationApply(
+                        selection = selection,
+                        publicationStage = if (raceEnabled) {
+                            OnlineTranslationPublicationStage.RACE_FINAL
+                        } else {
+                            OnlineTranslationPublicationStage.SINGLE
+                        },
+                        reason = "search_finished",
+                    )
                 }
             } catch (e: CancellationException) {
+                sourceSwitchCoreStage(
+                    request = sourceSwitchRequest,
+                    stage = "translation_job_cancelled",
+                    details = "generation=$generation," +
+                        "currentGeneration=$onlineTranslationGeneration",
+                )
                 pronunciationDiagnostic(
                     "stage=request_cancelled, generation=$generation, id=${baseSong.id}, " +
                         "currentGeneration=$onlineTranslationGeneration"
                 )
                 throw e
             } catch (e: Exception) {
+                sourceSwitchCoreStage(
+                    request = sourceSwitchRequest,
+                    stage = "translation_job_failed",
+                    details = "generation=$generation,error=${e.javaClass.simpleName}",
+                )
                 pronunciationDiagnostic(
                     "stage=request_failed, generation=$generation, id=${baseSong.id}, " +
                         "error=${e.javaClass.name}, message=${e.message}"
                 )
-                mainHandler.post {
-                    applyOnlineTranslationResult(generation, baseSong, null)
-                }
+                postTranslationApply(
+                    selection = null,
+                    publicationStage = OnlineTranslationPublicationStage.SINGLE,
+                    reason = "search_failed",
+                )
                 debugError(
                     "在线翻译匹配失败: player=$activeCentralPlayerPackageName, " +
                         "title=${baseSong.name}",
@@ -1745,6 +2003,13 @@ class LyriconSource : LyricSource {
         generation: Int,
         searchDurationMs: Long,
     ): OnlineTranslationSelector.Candidate? {
+        val sourceSwitchRequest = activeSourceSwitchTraceRequest(baseSong.id)
+        val fetchStartedAtNanos = SystemClock.elapsedRealtimeNanos()
+        sourceSwitchCoreStage(
+            request = sourceSwitchRequest,
+            stage = "translation_source_fetch_started",
+            details = "generation=$generation,source=$source,durationMs=$searchDurationMs",
+        )
         pronunciationDiagnostic(
             "stage=candidate_fetch_started, generation=$generation, id=${baseSong.id}, source=$source"
         )
@@ -1772,6 +2037,14 @@ class LyriconSource : LyricSource {
         )
         val onlineLines = fetchOutcome.lines ?: fetchOutcome.nearMiss?.lines
         if (onlineLines == null) {
+            sourceSwitchCoreStage(
+                request = sourceSwitchRequest,
+                stage = "translation_source_fetch_finished",
+                details = "generation=$generation,source=$source,elapsedMs=" +
+                    ((SystemClock.elapsedRealtimeNanos() - fetchStartedAtNanos) /
+                        1_000_000.0) +
+                    ",found=false",
+            )
             pronunciationDiagnostic(
                 "stage=candidate_fetch_finished, generation=$generation, id=${baseSong.id}, " +
                     "source=$source, found=false"
@@ -1818,6 +2091,16 @@ class LyriconSource : LyricSource {
             )
             val coverage = AppleOnlineTranslationNearMissPolicy.contentCoverage(verification)
             if (!AppleOnlineTranslationNearMissPolicy.accepts(verification)) {
+                sourceSwitchCoreStage(
+                    request = sourceSwitchRequest,
+                    stage = "translation_source_fetch_finished",
+                    details = "generation=$generation,source=$source,elapsedMs=" +
+                        ((SystemClock.elapsedRealtimeNanos() - fetchStartedAtNanos) /
+                            1_000_000.0) +
+                        ",found=false,reason=near_miss_rejected," +
+                        "matchedTranslation=$matchedTranslationCount," +
+                        "matchedPronunciation=$matchedPronunciationCount",
+                )
                 pronunciationDiagnostic(
                     "stage=near_miss_rejected, generation=$generation, id=${baseSong.id}, " +
                         "source=$source, score=${fetchOutcome.nearMiss.score}, " +
@@ -1857,6 +2140,16 @@ class LyriconSource : LyricSource {
             },
             matchedContentCount = matchedTranslationCount + matchedPronunciationCount,
             onlineLines = filteredOnlineLines,
+        )
+        sourceSwitchCoreStage(
+            request = sourceSwitchRequest,
+            stage = "translation_source_fetch_finished",
+            details = "generation=$generation,source=$source,elapsedMs=" +
+                ((SystemClock.elapsedRealtimeNanos() - fetchStartedAtNanos) /
+                    1_000_000.0) +
+                ",found=true,rawLines=${onlineLines.size}," +
+                "matchedTranslation=$matchedTranslationCount," +
+                "matchedPronunciation=$matchedPronunciationCount",
         )
         pronunciationDiagnostic(
             "stage=candidate_fetch_finished, generation=$generation, id=${baseSong.id}, " +
@@ -2531,6 +2824,46 @@ class LyriconSource : LyricSource {
         if (BuildConfig.DEBUG) HookLogger.w(TAG, "[debug] $message")
     }
 
+    private fun activeSourceSwitchTraceRequest(songId: String?): OnlineSourceSwitchRequest? {
+        val targetId = songId?.takeIf(String::isNotBlank) ?: return null
+        val now = SystemClock.elapsedRealtime()
+        return listOfNotNull(
+            pendingLyricsSourceRequest,
+            pendingTranslationSourceRequest,
+            pendingPronunciationSourceRequest,
+            latestSourceSwitchTraceRequest,
+        ).firstOrNull { request ->
+            request.songId == targetId &&
+                now - request.startedAtMs <= SOURCE_SWITCH_DIAGNOSTIC_WINDOW_MS
+        }
+    }
+
+    private fun sourceSwitchCoreStage(
+        request: OnlineSourceSwitchRequest?,
+        stage: String,
+        details: String = "",
+    ) {
+        if (!BuildConfig.DEBUG || request == null) return
+        val elapsedMs = SystemClock.elapsedRealtime() - request.startedAtMs
+        val context =
+            "contentType=${request.contentType},requested=${request.requestedSource}," +
+                "requestElapsedMs=$elapsedMs"
+        AppleSourceSwitchPerformanceDiagnostics.coreStage(
+            requestId = request.requestId,
+            songId = request.songId,
+            stage = stage,
+            details = if (details.isBlank()) context else "$context,$details",
+        )
+    }
+
+    private fun sourceSwitchCoreStage(
+        songId: String?,
+        stage: String,
+        details: String = "",
+    ) {
+        sourceSwitchCoreStage(activeSourceSwitchTraceRequest(songId), stage, details)
+    }
+
     private fun logPlayerVersionSnapshot(
         playerPackageName: String?,
         providerPackageName: String?,
@@ -2996,6 +3329,14 @@ class LyriconSource : LyricSource {
         val nativeSong = currentAppleSong
         val requestedSource = runCatching { Source.valueOf(sourceName.orEmpty()) }
             .getOrNull()
+        AppleSourceSwitchPerformanceDiagnostics.coreStage(
+            requestId = requestId,
+            songId = songId,
+            stage = "request_received",
+            details = "contentType=${contentType ?: "none"},source=${sourceName ?: "none"}," +
+                "currentSongId=${nativeSong?.id ?: "none"},fallbackGeneration=$fallbackGeneration," +
+                "onlineTranslationGeneration=$onlineTranslationGeneration",
+        )
         if (
             nativeSong == null ||
             songId.isNullOrBlank() ||
@@ -3004,6 +3345,14 @@ class LyriconSource : LyricSource {
             contentType !in setOf("translation", "pronunciation", "lyrics") ||
             (contentType == "lyrics" && !isFillMissingLyricsEnabled())
         ) {
+            AppleSourceSwitchPerformanceDiagnostics.coreStage(
+                requestId = requestId,
+                songId = songId,
+                stage = "request_rejected",
+                details = "contentType=${contentType ?: "none"},source=${sourceName ?: "none"}," +
+                    "currentSongId=${nativeSong?.id ?: "none"},requestedSource=$requestedSource," +
+                    "fillMissingLyrics=${isFillMissingLyricsEnabled()}",
+            )
             diagnostic(
                 "Apple Music 在线翻译来源切换拒绝: requestId=$requestId, " +
                     "songId=$songId, currentSongId=${nativeSong?.id}, " +
@@ -3024,6 +3373,14 @@ class LyriconSource : LyricSource {
             songId = requireNotNull(songId),
             contentType = requireNotNull(contentType),
             requestedSource = requestedSource,
+            startedAtMs = SystemClock.elapsedRealtime(),
+        )
+        latestSourceSwitchTraceRequest = request
+        sourceSwitchCoreStage(
+            request = request,
+            stage = "request_accepted",
+            details = "fallbackGeneration=$fallbackGeneration," +
+                "onlineTranslationGeneration=$onlineTranslationGeneration",
         )
         when (contentType) {
             "translation" -> {
@@ -3040,7 +3397,17 @@ class LyriconSource : LyricSource {
                     "Apple Music 歌词来源切换接受: requestId=$requestId, " +
                         "songId=$songId, source=$requestedSource"
                 )
+                val previousFallbackGeneration = fallbackGeneration
+                val previousFallbackJobActive = fallbackJob?.isActive == true
+                val previousFallbackDelayPending = fallbackDelayRunnable != null
                 cancelFallback(clearAppleSong = false, reason = "temporary_lyrics_source_switched")
+                sourceSwitchCoreStage(
+                    request = request,
+                    stage = "previous_fallback_cancelled",
+                    details = "generation=$previousFallbackGeneration->$fallbackGeneration," +
+                        "jobActive=$previousFallbackJobActive," +
+                        "delayPending=$previousFallbackDelayPending",
+                )
                 // 歌词正文即将换成新来源，旧翻译任务必须作废并重新按新时间轴匹配；
                 // 但已显示的翻译继续保留到新补充载荷到达，避免 Apple Music、超级岛
                 // 和 AOD 在切换窗口先被主动清空。
@@ -3049,11 +3416,21 @@ class LyriconSource : LyricSource {
                     clearMatched = false,
                     reason = "temporary_lyrics_source_switched",
                 )
+                sourceSwitchCoreStage(
+                    request = request,
+                    stage = "previous_translation_cancelled",
+                    details = "onlineTranslationGeneration=$onlineTranslationGeneration",
+                )
                 scheduleFallback(
                     baseSong = nativeSong,
                     delayMs = 0L,
                     preferredSourceOverride = requestedSource,
                     strictSource = true,
+                )
+                sourceSwitchCoreStage(
+                    request = request,
+                    stage = "fallback_schedule_returned",
+                    details = "fallbackGeneration=$fallbackGeneration",
                 )
                 return
             }
@@ -3066,6 +3443,11 @@ class LyriconSource : LyricSource {
             clearAttempt = true,
             clearMatched = false,
             reason = "temporary_" + contentType + "_source_switched",
+        )
+        sourceSwitchCoreStage(
+            request = request,
+            stage = "previous_translation_cancelled",
+            details = "onlineTranslationGeneration=$onlineTranslationGeneration",
         )
         if (!scheduleOnlineTranslation(nativeSong)) {
             failPendingOnlineSourceSwitchRequest(request)
@@ -3082,6 +3464,12 @@ class LyriconSource : LyricSource {
             ?.metadata
             ?.getString(LyricMetadataKeys.APPLE_MISSING_LYRICS_SOURCE)
             ?.let { runCatching { Source.valueOf(it) }.getOrNull() }
+        sourceSwitchCoreStage(
+            request = request,
+            stage = "lyrics_result_resolved",
+            details = "requestedArgument=${requestedSource ?: "none"}," +
+                "actual=${actualSource ?: "none"},lines=${song?.lyrics.orEmpty().size}",
+        )
         pendingLyricsSourceRequest = null
         if (actualSource == request.requestedSource) {
             confirmedLyricsSourceSelection = ConfirmedLyricsSourceSelection(
@@ -3105,6 +3493,11 @@ class LyriconSource : LyricSource {
             pendingTranslationSourceRequest?.let { it to translationSource },
             pendingPronunciationSourceRequest?.let { it to pronunciationSource },
         ).forEach { (request, actualSource) ->
+            sourceSwitchCoreStage(
+                request = request,
+                stage = "online_result_resolved",
+                details = "actual=${actualSource ?: "none"},lines=${song?.lyrics.orEmpty().size}",
+            )
             publishOnlineSourceSwitchResult(request, actualSource)
         }
         pendingTranslationSourceRequest = null
@@ -3112,6 +3505,10 @@ class LyriconSource : LyricSource {
     }
 
     private fun failPendingOnlineSourceSwitchRequest(request: OnlineSourceSwitchRequest) {
+        sourceSwitchCoreStage(
+            request = request,
+            stage = "source_switch_failed_before_publish",
+        )
         when (request.contentType) {
             "translation" -> {
                 if (pendingTranslationSourceRequest?.requestId == request.requestId) {
@@ -3132,19 +3529,33 @@ class LyriconSource : LyricSource {
         actualSource: Source?,
     ) {
         val successful = actualSource == request.requestedSource
+        sourceSwitchCoreStage(
+            request = request,
+            stage = "result_binder_publish_started",
+            details = "actual=${actualSource ?: "none"},successful=$successful," +
+                "bridgePresent=${directBridge != null}",
+        )
         diagnostic(
             "Apple Music 在线翻译来源切换完成: requestId=${request.requestId}, " +
                 "songId=${request.songId}, contentType=${request.contentType}, " +
                 "requested=${request.requestedSource}, actual=${actualSource ?: "none"}, " +
                 "successful=$successful"
         )
-        directBridge?.publishOnlineTranslationSourceSwitchResult(
+        val publishStartedAtNanos = SystemClock.elapsedRealtimeNanos()
+        val published = directBridge?.publishOnlineTranslationSourceSwitchResult(
             requestId = request.requestId,
             songId = request.songId,
             contentType = request.contentType,
             requestedSource = request.requestedSource.name,
             actualSource = actualSource?.name,
             successful = successful,
+        ) == true
+        sourceSwitchCoreStage(
+            request = request,
+            stage = "result_binder_publish_finished",
+            details = "actual=${actualSource ?: "none"},successful=$successful," +
+                "published=$published,elapsedMs=" +
+                ((SystemClock.elapsedRealtimeNanos() - publishStartedAtNanos) / 1_000_000.0),
         )
     }
 }
@@ -3154,6 +3565,7 @@ private data class OnlineSourceSwitchRequest(
     val songId: String,
     val contentType: String,
     val requestedSource: Source,
+    val startedAtMs: Long,
 )
 
 private data class ConfirmedLyricsSourceSelection(

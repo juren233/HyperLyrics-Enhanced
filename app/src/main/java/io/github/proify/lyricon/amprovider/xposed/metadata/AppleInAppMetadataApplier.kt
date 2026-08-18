@@ -6,6 +6,7 @@
 
 package io.github.proify.lyricon.amprovider.xposed
 
+import android.os.SystemClock
 import com.juren233.hyperlyricsenhanced.BuildConfig
 import java.util.Collections
 import java.util.WeakHashMap
@@ -353,26 +354,62 @@ internal class AppleInAppMetadataApplier(
             ?.takeIf { mediaId == null || it.mediaId == mediaId }
         if (dispatcherRefresh == null && listenerRefresh == null) return
         val appliedAlias = mediaId?.let { id -> alias?.let { AppliedMetadataAlias(id, it) } }
+        val traceTargetId = mediaId ?: listenerRefresh?.mediaId ?: dispatcherRefresh?.mediaId
+        val postedAtNanos = SystemClock.elapsedRealtimeNanos()
         runtime.mainHandler.post {
+            val mainStartedAtNanos = SystemClock.elapsedRealtimeNanos()
+            AppleSourceSwitchPerformanceDiagnostics.stageForSong(
+                songId = traceTargetId,
+                stage = "metadata_refresh_main_started",
+                details = "queueWaitMs=${(mainStartedAtNanos - postedAtNanos) / 1_000_000.0}," +
+                    "thread=${Thread.currentThread().name}"
+            )
             var listenerHandled = false
+            var callbackTarget = "none"
+            var callbackInvocations = 0
             listenerRefresh?.let { refresh ->
                 val listener = refresh.listener.get()
                 val metadata = refresh.metadata.get()
                 if (listener != null && metadata != null) {
                     if (appliedAlias != null && callbackAppliedAliases[listener] == appliedAlias) {
                         listenerHandled = true
+                        callbackTarget = "listener_deduplicated"
                     } else {
+                        val callbackStartedAtNanos = SystemClock.elapsedRealtimeNanos()
+                        callbackInvocations += 1
+                        AppleSourceSwitchPerformanceDiagnostics.stageForSong(
+                            songId = refresh.mediaId,
+                            stage = "metadata_listener_callback_started",
+                            details = "thread=${Thread.currentThread().name}"
+                        )
                         runCatching { refresh.method.invoke(listener, metadata) }
                             .onSuccess {
                                 listenerHandled = true
+                                callbackTarget = "listener"
                                 appliedAlias?.let { callbackAppliedAliases[listener] = it }
                                 logMetadataIdentity(
                                     "in_app_now_playing_refresh",
                                     "refreshId=${refresh.mediaId}",
                                 )
+                                AppleSourceSwitchPerformanceDiagnostics.record(
+                                    songId = refresh.mediaId,
+                                    event = "metadata_callback_invoke",
+                                    durationNanos =
+                                        SystemClock.elapsedRealtimeNanos() - callbackStartedAtNanos,
+                                    details = "target=listener,success=true",
+                                )
                             }
                             .onFailure {
+                                callbackTarget = "listener_failed"
                                 ProviderLogger.error("Apple Music App 播放页元数据刷新失败", it)
+                                AppleSourceSwitchPerformanceDiagnostics.record(
+                                    songId = refresh.mediaId,
+                                    event = "metadata_callback_invoke",
+                                    durationNanos =
+                                        SystemClock.elapsedRealtimeNanos() - callbackStartedAtNanos,
+                                    details = "target=listener,success=false,error=" +
+                                        it.javaClass.simpleName,
+                                )
                             }
                     }
                 }
@@ -384,20 +421,61 @@ internal class AppleInAppMetadataApplier(
                     if (dispatcher != null && metadata != null &&
                         (appliedAlias == null || callbackAppliedAliases[dispatcher] != appliedAlias)
                     ) {
+                        val callbackStartedAtNanos = SystemClock.elapsedRealtimeNanos()
+                        callbackInvocations += 1
+                        AppleSourceSwitchPerformanceDiagnostics.stageForSong(
+                            songId = refresh.mediaId,
+                            stage = "metadata_dispatcher_callback_started",
+                            details = "thread=${Thread.currentThread().name}"
+                        )
                         runCatching { refresh.method.invoke(dispatcher, metadata) }
                             .onSuccess {
+                                callbackTarget = "dispatcher"
                                 appliedAlias?.let { callbackAppliedAliases[dispatcher] = it }
                                 logMetadataIdentity(
                                     "in_app_dispatcher_refresh",
                                     "refreshId=${refresh.mediaId}",
                                 )
+                                AppleSourceSwitchPerformanceDiagnostics.record(
+                                    songId = refresh.mediaId,
+                                    event = "metadata_callback_invoke",
+                                    durationNanos =
+                                        SystemClock.elapsedRealtimeNanos() - callbackStartedAtNanos,
+                                    details = "target=dispatcher,success=true",
+                                )
                             }
                             .onFailure {
+                                callbackTarget = "dispatcher_failed"
                                 ProviderLogger.error("Apple Music App 全局元数据刷新失败", it)
+                                AppleSourceSwitchPerformanceDiagnostics.record(
+                                    songId = refresh.mediaId,
+                                    event = "metadata_callback_invoke",
+                                    durationNanos =
+                                        SystemClock.elapsedRealtimeNanos() - callbackStartedAtNanos,
+                                    details = "target=dispatcher,success=false,error=" +
+                                        it.javaClass.simpleName,
+                                )
                             }
                     }
                 }
             }
+            AppleSourceSwitchPerformanceDiagnostics.record(
+                songId = traceTargetId,
+                event = "metadata_refresh_main_total",
+                durationNanos = SystemClock.elapsedRealtimeNanos() - mainStartedAtNanos,
+                details = "queueWaitMs=" +
+                    ((mainStartedAtNanos - postedAtNanos) / 1_000_000.0) +
+                    ",target=$callbackTarget,invocations=$callbackInvocations," +
+                    "listenerHandled=$listenerHandled",
+            )
+            AppleSourceSwitchPerformanceDiagnostics.stageForSong(
+                songId = traceTargetId,
+                stage = "metadata_refresh_main_finished",
+                details = "target=$callbackTarget,invocations=$callbackInvocations," +
+                    "listenerHandled=$listenerHandled,totalMs=" +
+                    ((SystemClock.elapsedRealtimeNanos() - mainStartedAtNanos) / 1_000_000.0) +
+                    ",thread=${Thread.currentThread().name}"
+            )
         }
     }
 
@@ -412,11 +490,23 @@ internal class AppleInAppMetadataApplier(
      */
     fun refreshPlaybackItemBindings(mediaId: String?) {
         val targetId = mediaId?.takeIf(String::isNotBlank) ?: return
+        val postedAtNanos = SystemClock.elapsedRealtimeNanos()
         runtime.mainHandler.post {
+            val mainStartedAtNanos = SystemClock.elapsedRealtimeNanos()
+            AppleSourceSwitchPerformanceDiagnostics.stageForSong(
+                songId = targetId,
+                stage = "playback_binding_refresh_main_started",
+                details = "queueWaitMs=${(mainStartedAtNanos - postedAtNanos) / 1_000_000.0}," +
+                    "thread=${Thread.currentThread().name}"
+            )
+            var candidates = 0
+            var standardCandidates = 0
             var refreshed = 0
             val notifiedItems = ArrayList<String>()
             registry.livePlaybackItemRefs(targetId).forEach { ref ->
+                candidates += 1
                 if (ref.contract != InAppPlaybackItemContract.STANDARD) return@forEach
+                standardCandidates += 1
                 val playbackItem = ref.playbackItem.get() ?: return@forEach
                 val itemIdentity =
                     "${playbackItem.javaClass.name}@" +
@@ -433,6 +523,22 @@ internal class AppleInAppMetadataApplier(
                         "notified=${notifiedItems.joinToString(prefix = "[", postfix = "]")}"
                 )
             }
+            AppleSourceSwitchPerformanceDiagnostics.record(
+                songId = targetId,
+                event = "playback_binding_refresh_main_total",
+                durationNanos = SystemClock.elapsedRealtimeNanos() - mainStartedAtNanos,
+                units = refreshed.toLong(),
+                details = "queueWaitMs=" +
+                    ((mainStartedAtNanos - postedAtNanos) / 1_000_000.0) +
+                    ",candidates=$candidates,standard=$standardCandidates,notified=$refreshed",
+            )
+            AppleSourceSwitchPerformanceDiagnostics.stageForSong(
+                songId = targetId,
+                stage = "playback_binding_refresh_main_finished",
+                details = "candidates=$candidates,standard=$standardCandidates,notified=$refreshed," +
+                    "totalMs=${(SystemClock.elapsedRealtimeNanos() - mainStartedAtNanos) / 1_000_000.0}," +
+                    "thread=${Thread.currentThread().name}"
+            )
         }
     }
 

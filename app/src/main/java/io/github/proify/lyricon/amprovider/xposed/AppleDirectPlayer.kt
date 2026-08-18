@@ -63,10 +63,21 @@ internal class AppleDirectPlayer(
 
     private val translationReceiver = object : IAppleMusicTranslationReceiver.Stub() {
         override fun onOnlineTranslationResult(compressedSong: ByteArray) {
+            val callbackStartedAtNanos = SystemClock.elapsedRealtimeNanos()
             pronunciationDiagnostic(
                 "stage=bridge_payload_callback, bytes=${compressedSong.size}"
             )
+            ProviderLogger.diagnostic(
+                "[SourceSwitchPerf] stage=bridge_translation_callback_enter, " +
+                    "bytes=${compressedSong.size}, thread=${Thread.currentThread().name}"
+            )
             this@AppleDirectPlayer.onOnlineTranslationReceived(compressedSong)
+            ProviderLogger.diagnostic(
+                "[SourceSwitchPerf] stage=bridge_translation_callback_delegate_finished, " +
+                    "bytes=${compressedSong.size}, elapsedMs=" +
+                    ((SystemClock.elapsedRealtimeNanos() - callbackStartedAtNanos) / 1_000_000.0) +
+                    ", thread=${Thread.currentThread().name}"
+            )
         }
 
         override fun onOnlineTranslationCleared(songId: String?) {
@@ -80,10 +91,21 @@ internal class AppleDirectPlayer(
         }
 
         override fun onMissingLyricsSupplementResult(compressedSong: ByteArray) {
+            val callbackStartedAtNanos = SystemClock.elapsedRealtimeNanos()
             pronunciationDiagnostic(
                 "stage=bridge_supplement_payload_callback, bytes=${compressedSong.size}"
             )
+            ProviderLogger.diagnostic(
+                "[SourceSwitchPerf] stage=bridge_supplement_callback_enter, " +
+                    "bytes=${compressedSong.size}, thread=${Thread.currentThread().name}"
+            )
             this@AppleDirectPlayer.onMissingLyricsSupplementReceived(compressedSong)
+            ProviderLogger.diagnostic(
+                "[SourceSwitchPerf] stage=bridge_supplement_callback_delegate_finished, " +
+                    "bytes=${compressedSong.size}, elapsedMs=" +
+                    ((SystemClock.elapsedRealtimeNanos() - callbackStartedAtNanos) / 1_000_000.0) +
+                    ", thread=${Thread.currentThread().name}"
+            )
         }
 
         override fun onOnlineTranslationSourceSwitchResult(

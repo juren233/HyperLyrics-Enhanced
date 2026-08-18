@@ -773,7 +773,7 @@ internal class AppleLyricsBlurHooks(
             (AppleReflection.call(recyclerView, "getScrollState") as? Number)?.toInt()
         }.getOrNull() ?: APPLE_LYRICS_SCROLL_STATE_IDLE
 
-    private fun appleLyricsActiveAdapterPositions(adapter: Any): Set<Int> =
+    fun appleLyricsActiveAdapterPositions(adapter: Any): Set<Int> =
         ((runCatching {
             AppleReflection.call(
                 adapter,
@@ -786,6 +786,26 @@ internal class AppleLyricsBlurHooks(
             ?.mapNotNull { (it as? Number)?.toInt()?.takeIf { position -> position >= 0 } }
             ?.toSet())
             .orEmpty()
+
+    private fun appleLyricsLineBeginMs(
+        adapter: Any,
+        lyrics: Any,
+        lineIndex: Int,
+    ): Long? = runCatching {
+        val linePointer = AppleReflection.call(
+            lyrics,
+            lyricsAdapterMember(adapter, AppleMusicRuntimeMember.LYRICS_ADAPTER_LINE_AT_METHOD),
+            lineIndex,
+        ) ?: return@runCatching null
+        val nativeLine = AppleReflection.call(
+            linePointer,
+            lyricsNativeMember(AppleMusicRuntimeMember.LYRICS_NATIVE_POINTER_GET_METHOD),
+        ) ?: return@runCatching null
+        (AppleReflection.call(
+            nativeLine,
+            lyricsNativeMember(AppleMusicRuntimeMember.LYRICS_NATIVE_BEGIN_METHOD),
+        ) as? Number)?.toLong()
+    }.getOrNull()
 
     private fun appleLyricsFirstLineBeginMs(adapter: Any): Long? = runCatching {
         val lyrics = AppleReflection.call(
@@ -800,22 +820,100 @@ internal class AppleLyricsBlurHooks(
             )?.toInt()
             ?: return@runCatching null
         if (lineCount <= 0) return@runCatching null
-        val firstLinePointer = AppleReflection.call(
-            lyrics,
-            lyricsAdapterMember(adapter, AppleMusicRuntimeMember.LYRICS_ADAPTER_LINE_AT_METHOD),
-            0,
-        )
-            ?: return@runCatching null
-        val firstLine = AppleReflection.call(
-            firstLinePointer,
-            lyricsNativeMember(AppleMusicRuntimeMember.LYRICS_NATIVE_POINTER_GET_METHOD),
-        )
-            ?: return@runCatching null
-        (AppleReflection.call(
-            firstLine,
-            lyricsNativeMember(AppleMusicRuntimeMember.LYRICS_NATIVE_BEGIN_METHOD),
-        ) as? Number)?.toLong()
+        appleLyricsLineBeginMs(adapter, lyrics, 0)
     }.getOrNull()
+
+    fun appleLyricsAdapterPositionForPlayback(
+        adapter: Any,
+        playbackPositionMs: Long,
+    ): Int? = runCatching {
+        val lyrics = AppleReflection.call(
+            adapter,
+            lyricsAdapterMember(adapter, AppleMusicRuntimeMember.LYRICS_ADAPTER_LYRICS_METHOD),
+        ) ?: return@runCatching null
+        val lineCount = (AppleReflection.call(
+            lyrics,
+            lyricsAdapterMember(adapter, AppleMusicRuntimeMember.LYRICS_ADAPTER_LINE_COUNT_METHOD),
+        ) as? Number)?.toInt() ?: return@runCatching null
+        if (lineCount <= 0) return@runCatching null
+        val itemCount = appleRecyclerAdapterItemCount(adapter)
+        selectAppleLyricsPlaybackAdapterPosition(
+            lineBeginsMs = (0 until lineCount).map { lineIndex ->
+                appleLyricsLineBeginMs(adapter, lyrics, lineIndex)
+            },
+            playbackPositionMs = playbackPositionMs,
+            itemCount = itemCount,
+        )
+    }.getOrNull()
+
+    /**
+     * Returns a compact, debug-only view of the adapter's lyric time axis and the
+     * adapter positions that are relevant to the current layout. Adapter positions
+     * are deliberately not assumed to equal lyric indexes: both the direct position
+     * probes and the complete logical begin-time list are emitted so that a later
+     * diagnosis can prove or falsify that assumption from runtime evidence.
+     */
+    fun appleLyricsAdapterDebugSnapshot(
+        adapter: Any,
+        relevantPositions: Iterable<Int> = emptyList(),
+        playbackPositionMs: Long? = null,
+    ): String {
+        val active = appleLyricsActiveAdapterPositions(adapter).sorted()
+        val itemCount = runCatching {
+            (AppleReflection.call(adapter, "getItemCount") as? Number)?.toInt()
+        }.getOrNull() ?: 0
+        val lyrics = runCatching {
+            AppleReflection.call(
+                adapter,
+                lyricsAdapterMember(adapter, AppleMusicRuntimeMember.LYRICS_ADAPTER_LYRICS_METHOD),
+            )
+        }.getOrNull()
+        val lineCount = lyrics?.let {
+            runCatching {
+                (AppleReflection.call(
+                    it,
+                    lyricsAdapterMember(adapter, AppleMusicRuntimeMember.LYRICS_ADAPTER_LINE_COUNT_METHOD),
+                ) as? Number)?.toInt()
+            }.getOrNull()
+        } ?: 0
+        val logicalBegins = if (lyrics == null || lineCount <= 0) {
+            emptyList()
+        } else {
+            (0 until lineCount.coerceAtMost(256)).mapNotNull { index ->
+                appleLyricsLineBeginMs(adapter, lyrics, index)?.let { index to it }
+            }
+        }
+        val playbackLine = playbackPositionMs?.let { position ->
+            logicalBegins.indexOfLast { (_, begin) -> begin <= position }
+                .takeIf { it >= 0 }
+                ?.let { logicalBegins[it].first }
+        }
+        val positions = (relevantPositions.asSequence() + active.asSequence())
+            .filter { it >= 0 }
+            .distinct()
+            .sorted()
+            .take(48)
+            .toList()
+        val viewTypes = positions.joinToString(",") { position ->
+            val viewType = appleLyricsAdapterItemViewType(adapter, position)
+            "$position:${viewType ?: "?"}"
+        }
+        val directBegins = if (lyrics == null) {
+            emptyList()
+        } else {
+            positions.mapNotNull { position ->
+                appleLyricsLineBeginMs(adapter, lyrics, position)?.let { "$position:$it" }
+            }
+        }
+        val logicalSample = logicalBegins
+            .take(16)
+            .joinToString(",") { (index, begin) -> "$index:$begin" }
+        return "adapter=${adapter.javaClass.name}@${System.identityHashCode(adapter)}," +
+            "itemCount=$itemCount,active=$active,viewTypes=[$viewTypes]," +
+            "logicalLineCount=$lineCount,logicalBegins=[$logicalSample]," +
+            "directPositionBegins=[${directBegins.joinToString(",")}]," +
+            "playback=${playbackPositionMs ?: "none"},playbackLine=$playbackLine"
+    }
 
     private fun appleLyricsCurrentPlaybackPositionMs(): Long? = playbackHooks().currentPositionMs()
 
@@ -879,16 +977,17 @@ internal class AppleLyricsBlurHooks(
         return rootId != 0 && view.findViewById<View>(rootId) != null
     }
 
-    private fun appleLyricsChildAdapterPosition(recyclerView: View, child: View): Int {
+    fun appleLyricsChildAdapterPosition(recyclerView: Any, child: View): Int {
+        val recyclerViewAsView = recyclerView as? View ?: return -1
         val namedPosition = runCatching {
-            (AppleReflection.call(recyclerView, "getChildAdapterPosition", child) as? Number)
+            (AppleReflection.call(recyclerViewAsView, "getChildAdapterPosition", child) as? Number)
                 ?.toInt()
         }.getOrNull()?.takeIf { it >= 0 }
         if (namedPosition != null) return namedPosition
 
-        val method = appleLyricsChildAdapterPositionMethods[recyclerView.javaClass]
-            ?: findAppleLyricsChildAdapterPositionMethod(recyclerView.javaClass)?.also {
-                appleLyricsChildAdapterPositionMethods[recyclerView.javaClass] = it
+        val method = appleLyricsChildAdapterPositionMethods[recyclerViewAsView.javaClass]
+            ?: findAppleLyricsChildAdapterPositionMethod(recyclerViewAsView.javaClass)?.also {
+                appleLyricsChildAdapterPositionMethods[recyclerViewAsView.javaClass] = it
             }
             ?: return -1
         return runCatching {
@@ -1198,6 +1297,24 @@ internal class AppleLyricsBlurHooks(
                 ),
             ) as? Number
         }.getOrNull()?.toInt()?.coerceAtLeast(0) ?: 0
+
+    /**
+     * Invoke the host's verified two-int scroll method without relying on a
+     * decompiler/display name. Apple Music's lyrics layout manager is loaded by
+     * the host ClassLoader and may expose an obfuscated method name.
+     */
+    fun appleLyricsScrollToPositionWithOffset(
+        layoutManager: Any,
+        position: Int,
+        offset: Int,
+    ): String? {
+        val method = findAppleLyricsScrollToPositionWithOffsetMethod(layoutManager.javaClass)
+            ?: return null
+        return runCatching {
+            method.invoke(layoutManager, position, offset)
+            "${method.declaringClass.name}#${method.name}"
+        }.getOrNull()
+    }
 
     fun appleRecyclerNotifyDataSetChanged(adapter: Any) {
         runCatching {

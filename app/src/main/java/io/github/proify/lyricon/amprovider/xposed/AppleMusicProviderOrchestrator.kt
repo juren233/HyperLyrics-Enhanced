@@ -357,31 +357,81 @@ internal object AppleMusicProviderOrchestrator {
                 },
                 missingLyricsSupplement = { missingLyricsHooks },
             )
-            missingLyricsHooks = AppleMissingLyricsHooks(
+                missingLyricsHooks = AppleMissingLyricsHooks(
                 runtime = runtime,
                 preferences = { contentUiLanguagePrefs },
                 currentPlaybackQueueMediaId =
                     playbackMetadataCoordinator::currentPlaybackQueueMediaId,
                 currentVisibleLyricsSongId = lyricsHooks::currentSongId,
                 requestPresentationRefresh = { pointer, fragment, playbackItem ->
+                    val refreshStartedAtNanos = SystemClock.elapsedRealtimeNanos()
+                    val refreshSongId = lyricsHooks.currentSongId()
                     lyricsHooks.requestMissingLyricsPresentationRefresh(
                         supplementPointer = pointer,
                         fragmentOverride = fragment,
                         currentPlaybackItem = playbackItem,
                     )
+                    AppleSourceSwitchPerformanceDiagnostics.record(
+                        songId = refreshSongId,
+                        event = "presentation_refresh_dispatch",
+                        durationNanos = SystemClock.elapsedRealtimeNanos() - refreshStartedAtNanos,
+                        details = "pointer=${pointer != null},fragment=${fragment != null}," +
+                            "playbackItem=${playbackItem != null}",
+                    )
                 },
                 requestBlankNativeLyricsPageRecovery = { fragment ->
                     lyricsHooks.scheduleBlankNativeLyricsPageRecovery(fragment)
                 },
+                refreshVisibleSupplementTranslation = { songId ->
+                    lyricsHooks.refreshVisibleMissingLyricsTranslation(songId)
+                },
                 refreshNowPlaying = { mediaId ->
+                    val refreshStartedAtNanos = SystemClock.elapsedRealtimeNanos()
+                    AppleSourceSwitchPerformanceDiagnostics.stageForSong(
+                        songId = mediaId,
+                        stage = "refresh_now_playing_dispatch_started",
+                        details = "thread=${Thread.currentThread().name}"
+                    )
                     refreshMissingLyricsNowPlaying(
                         mediaId = mediaId,
                         refreshMetadataCallbacks = { id ->
+                            AppleSourceSwitchPerformanceDiagnostics.stageForSong(
+                                songId = id,
+                                stage = "refresh_metadata_dispatch_started",
+                                details = "thread=${Thread.currentThread().name}"
+                            )
                             inAppMetadataApplier.refreshMetadataCallbacks(id)
+                            AppleSourceSwitchPerformanceDiagnostics.stageForSong(
+                                songId = id,
+                                stage = "refresh_metadata_dispatch_finished",
+                                details = "thread=${Thread.currentThread().name}"
+                            )
                         },
                         refreshPlaybackItemBindings = { id ->
+                            AppleSourceSwitchPerformanceDiagnostics.stageForSong(
+                                songId = id,
+                                stage = "refresh_playback_binding_dispatch_started",
+                                details = "thread=${Thread.currentThread().name}"
+                            )
                             inAppMetadataApplier.refreshPlaybackItemBindings(id)
+                            AppleSourceSwitchPerformanceDiagnostics.stageForSong(
+                                songId = id,
+                                stage = "refresh_playback_binding_dispatch_finished",
+                                details = "thread=${Thread.currentThread().name}"
+                            )
                         },
+                    )
+                    AppleSourceSwitchPerformanceDiagnostics.stageForSong(
+                        songId = mediaId,
+                        stage = "refresh_now_playing_dispatch_finished",
+                        details = "thread=${Thread.currentThread().name}"
+                    )
+                    AppleSourceSwitchPerformanceDiagnostics.record(
+                        songId = mediaId,
+                        event = "refresh_now_playing_dispatch_total",
+                        durationNanos =
+                            SystemClock.elapsedRealtimeNanos() - refreshStartedAtNanos,
+                        details = "mediaId=${mediaId ?: "none"}",
                     )
                 },
             )

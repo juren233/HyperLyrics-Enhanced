@@ -131,6 +131,73 @@ internal class AppleLyricsDiagnostics(
         ConcurrentHashMap.newKeySet<Executable>()
     private val appleLyricsBindingDiagnosticContexts =
         ThreadLocalStack<AppleLyricsBindingDiagnosticContext>()
+    private val appleLyricsBindingPerformanceContexts =
+        ThreadLocalStack<AppleLyricsBindingPerformanceContext>()
+    private val appleLyricsPerformanceHookedMethods =
+        ConcurrentHashMap.newKeySet<Executable>()
+    private val appleLyricsAdapterClasses =
+        ConcurrentHashMap.newKeySet<Class<*>>()
+    private val appleLyricsAdapterPerformanceContexts =
+        ThreadLocalStack<AppleLyricsPerformanceContext>()
+    private val appleLyricsRecyclerPerformanceContexts =
+        ThreadLocalStack<AppleLyricsPerformanceContext>()
+    private val performanceMainHandler = Handler(Looper.getMainLooper())
+    private val performanceBatchLock = Any()
+    private var bindingPerformanceBatch: AppleLyricsPerformanceBatch? = null
+    private var bindingPerformanceBatchScheduled = false
+
+    private data class AppleLyricsPerformanceContext(
+        val songId: String?,
+        val stage: String,
+        val methodName: String,
+        val identity: Int,
+        val startedAtNanos: Long,
+    )
+
+    private data class AppleLyricsPerformanceBatch(
+        var songId: String?,
+        var count: Long = 0L,
+        var outerCount: Long = 0L,
+        var nestedCount: Long = 0L,
+        var originalExclusiveNanos: Long = 0L,
+        var originalExclusiveMaxNanos: Long = 0L,
+        var diagnosticsExclusiveNanos: Long = 0L,
+        var diagnosticsExclusiveMaxNanos: Long = 0L,
+        var outerWallNanos: Long = 0L,
+        var outerWallMaxNanos: Long = 0L,
+        var firstAtNanos: Long = 0L,
+        val groups: LinkedHashMap<String, AppleLyricsBindingPerformanceAggregate> = linkedMapOf(),
+        val slowest: MutableList<AppleLyricsBindingPerformanceSample> = mutableListOf(),
+    )
+
+    private data class AppleLyricsBindingPerformanceContext(
+        val binding: AppleLyricsBindingDiagnosticContext,
+        val startedAtNanos: Long,
+        val depth: Int,
+        val inLayout: Boolean,
+        var originalInclusiveNanos: Long = 0L,
+        var childFullNanos: Long = 0L,
+    )
+
+    private data class AppleLyricsBindingPerformanceAggregate(
+        var calls: Long = 0L,
+        var originalExclusiveNanos: Long = 0L,
+        var diagnosticsExclusiveNanos: Long = 0L,
+        var fullExclusiveNanos: Long = 0L,
+        var fullExclusiveMaxNanos: Long = 0L,
+    )
+
+    private data class AppleLyricsBindingPerformanceSample(
+        val adapterClass: String,
+        val adapterIdentity: Int,
+        val methodName: String,
+        val position: Int?,
+        val depth: Int,
+        val inLayout: Boolean,
+        val originalExclusiveNanos: Long,
+        val diagnosticsExclusiveNanos: Long,
+        val fullExclusiveNanos: Long,
+    )
 
     fun currentBindingContext(): AppleLyricsBindingDiagnosticContext? =
         appleLyricsBindingDiagnosticContexts.current
@@ -156,12 +223,266 @@ internal class AppleLyricsDiagnostics(
             runCatching { AppleReflection.field(value, name) as? Boolean }.getOrNull()
         }
 
+    private fun isAppleLyricsAdapterInstance(adapter: Any?): Boolean =
+        adapter != null && appleLyricsAdapterClasses.any { it.isInstance(adapter) }
+
+    private fun appleLyricsAdapterItemCount(adapter: Any?): Int =
+        runCatching {
+            (adapter?.let { AppleReflection.call(it, "getItemCount") } as? Number)
+                ?.toInt()
+        }.getOrNull() ?: -1
+
+    private fun recordAdapterPerformance(
+        context: AppleLyricsPerformanceContext,
+        elapsedNanos: Long,
+    ) {
+        AppleSourceSwitchPerformanceDiagnostics.record(
+            songId = context.songId,
+            event = context.stage,
+            durationNanos = elapsedNanos,
+            details = "method=${context.methodName},identity=${context.identity}",
+        )
+        AppleSourceSwitchPerformanceDiagnostics.stageForSong(
+            songId = context.songId,
+            stage = "${context.stage}_finished",
+            details = "method=${context.methodName},identity=${context.identity}," +
+                "elapsedMs=${elapsedNanos / 1_000_000.0}",
+        )
+    }
+
+    private fun installAppleLyricsAdapterPerformanceHooks(adapterClass: Class<*>) {
+        appleLyricsAdapterClasses.add(adapterClass)
+        val notifyMethodName = runCatching {
+            hookResolver.resolveClass(AppleMusicHookPoint.LYRICS_RECYCLER_ADAPTER)
+                .target.runtimeMemberName(
+                    AppleMusicRuntimeMember.LYRICS_ADAPTER_NOTIFY_DATA_CHANGED_METHOD,
+                )
+        }.getOrNull()
+        val notifyNames = setOf(
+            "notifyDataSetChanged",
+            "notifyItemChanged",
+            "notifyItemRangeChanged",
+            "notifyItemInserted",
+            "notifyItemRangeInserted",
+            "notifyItemRemoved",
+            "notifyItemRangeRemoved",
+            "notifyItemMoved",
+            notifyMethodName,
+        )
+        generateSequence(adapterClass) { it.superclass }
+            .flatMap { it.declaredMethods.asSequence() }
+            .filter { method ->
+                method.name in notifyNames &&
+                    method.returnType == Void.TYPE &&
+                    method.parameterCount <= 3
+            }
+            .distinctBy { method ->
+                method.declaringClass.name + ":" + method.name + ":" +
+                    method.parameterTypes.joinToString(",") { it.name }
+            }
+            .forEach { method ->
+                if (!appleLyricsPerformanceHookedMethods.add(method)) return@forEach
+                method.isAccessible = true
+                hookRegistrar.installScopedHook(
+                    executable = method,
+                    enter = { chain ->
+                        val adapter = chain.thisObject
+                        if (!isAppleLyricsAdapterInstance(adapter)) return@installScopedHook false
+                        val songId = currentSongId()
+                        if (!AppleSourceSwitchPerformanceDiagnostics.isTracing(songId)) {
+                            return@installScopedHook false
+                        }
+                        val context = AppleLyricsPerformanceContext(
+                            songId = songId,
+                            stage = "lyrics_adapter_notify",
+                            methodName = "${method.declaringClass.name}.${method.name}/" +
+                                method.parameterCount,
+                            identity = System.identityHashCode(adapter),
+                            startedAtNanos = SystemClock.elapsedRealtimeNanos(),
+                        )
+                        appleLyricsAdapterPerformanceContexts.push(context)
+                        AppleSourceSwitchPerformanceDiagnostics.stageForSong(
+                            songId = songId,
+                            stage = "lyrics_adapter_notify_started",
+                            details = "method=${context.methodName},identity=${context.identity}," +
+                                "itemCount=${appleLyricsAdapterItemCount(adapter)}",
+                        )
+                        true
+                    },
+                    after = { _, _ ->
+                        val context = appleLyricsAdapterPerformanceContexts.current
+                            ?: return@installScopedHook
+                        recordAdapterPerformance(
+                            context,
+                            SystemClock.elapsedRealtimeNanos() - context.startedAtNanos,
+                        )
+                    },
+                    exit = { appleLyricsAdapterPerformanceContexts.pop() },
+                )
+            }
+    }
+
+    private fun recordBindingPerformance(
+        context: AppleLyricsBindingPerformanceContext,
+        fullNanos: Long,
+    ) {
+        val binding = context.binding
+        if (!AppleSourceSwitchPerformanceDiagnostics.isTracing(binding.songId)) return
+        val originalExclusiveNanos =
+            (context.originalInclusiveNanos - context.childFullNanos).coerceAtLeast(0L)
+        val diagnosticsExclusiveNanos =
+            (fullNanos - context.originalInclusiveNanos).coerceAtLeast(0L)
+        val fullExclusiveNanos =
+            (fullNanos - context.childFullNanos).coerceAtLeast(0L)
+        val outermost = context.depth == 1
+        val details = "class=${binding.adapterClass},method=${binding.methodName}," +
+            "position=${binding.position},adapter=${binding.adapterIdentity}," +
+            "depth=${context.depth},layout=${context.inLayout}"
+        AppleSourceSwitchPerformanceDiagnostics.record(
+            songId = binding.songId,
+            event = "lyrics_adapter_bind_original_exclusive",
+            durationNanos = originalExclusiveNanos,
+            details = details,
+        )
+        AppleSourceSwitchPerformanceDiagnostics.record(
+            songId = binding.songId,
+            event = "lyrics_adapter_bind_diagnostics_exclusive",
+            durationNanos = diagnosticsExclusiveNanos,
+            details = details,
+        )
+        if (outermost) {
+            AppleSourceSwitchPerformanceDiagnostics.record(
+                songId = binding.songId,
+                event = "lyrics_adapter_bind_outer_wall",
+                durationNanos = fullNanos,
+                details = details,
+            )
+        }
+        synchronized(performanceBatchLock) {
+            val batch = bindingPerformanceBatch
+                ?: AppleLyricsPerformanceBatch(
+                    songId = binding.songId,
+                    firstAtNanos = SystemClock.elapsedRealtimeNanos(),
+                ).also { bindingPerformanceBatch = it }
+            batch.songId = binding.songId ?: batch.songId
+            batch.count += 1L
+            if (outermost) {
+                batch.outerCount += 1L
+                batch.outerWallNanos += fullNanos
+                batch.outerWallMaxNanos = maxOf(batch.outerWallMaxNanos, fullNanos)
+            } else {
+                batch.nestedCount += 1L
+            }
+            batch.originalExclusiveNanos += originalExclusiveNanos
+            batch.originalExclusiveMaxNanos = maxOf(
+                batch.originalExclusiveMaxNanos,
+                originalExclusiveNanos,
+            )
+            batch.diagnosticsExclusiveNanos += diagnosticsExclusiveNanos
+            batch.diagnosticsExclusiveMaxNanos = maxOf(
+                batch.diagnosticsExclusiveMaxNanos,
+                diagnosticsExclusiveNanos,
+            )
+            val groupKey = "${binding.adapterClass.substringAfterLast('.')}@" +
+                "${binding.adapterIdentity}:${binding.methodName}:d${context.depth}:" +
+                if (context.inLayout) "layout" else "outside"
+            val aggregate = batch.groups.getOrPut(groupKey) {
+                AppleLyricsBindingPerformanceAggregate()
+            }
+            aggregate.calls += 1L
+            aggregate.originalExclusiveNanos += originalExclusiveNanos
+            aggregate.diagnosticsExclusiveNanos += diagnosticsExclusiveNanos
+            aggregate.fullExclusiveNanos += fullExclusiveNanos
+            aggregate.fullExclusiveMaxNanos = maxOf(
+                aggregate.fullExclusiveMaxNanos,
+                fullExclusiveNanos,
+            )
+            batch.slowest += AppleLyricsBindingPerformanceSample(
+                adapterClass = binding.adapterClass,
+                adapterIdentity = binding.adapterIdentity,
+                methodName = binding.methodName,
+                position = binding.position,
+                depth = context.depth,
+                inLayout = context.inLayout,
+                originalExclusiveNanos = originalExclusiveNanos,
+                diagnosticsExclusiveNanos = diagnosticsExclusiveNanos,
+                fullExclusiveNanos = fullExclusiveNanos,
+            )
+            batch.slowest.sortByDescending { it.fullExclusiveNanos }
+            while (batch.slowest.size > 8) batch.slowest.removeAt(batch.slowest.lastIndex)
+            if (!bindingPerformanceBatchScheduled) {
+                bindingPerformanceBatchScheduled = true
+                performanceMainHandler.postDelayed(::emitBindingPerformanceBatch, 32L)
+            }
+        }
+    }
+
+    private fun emitBindingPerformanceBatch() {
+        val batch = synchronized(performanceBatchLock) {
+            val current = bindingPerformanceBatch
+            bindingPerformanceBatch = null
+            bindingPerformanceBatchScheduled = false
+            current
+        } ?: return
+        val groups = batch.groups.entries
+            .sortedByDescending { it.value.fullExclusiveNanos }
+            .joinToString(separator = ";") { (key, aggregate) ->
+                "$key[calls=${aggregate.calls},rawMs=" +
+                    "${aggregate.originalExclusiveNanos / 1_000_000.0},diagMs=" +
+                    "${aggregate.diagnosticsExclusiveNanos / 1_000_000.0},fullMs=" +
+                    "${aggregate.fullExclusiveNanos / 1_000_000.0},maxMs=" +
+                    "${aggregate.fullExclusiveMaxNanos / 1_000_000.0}]"
+            }
+        val slowest = batch.slowest.joinToString(separator = ";") { sample ->
+            "${sample.adapterClass.substringAfterLast('.')}@${sample.adapterIdentity}:" +
+                "${sample.methodName}:p${sample.position}:d${sample.depth}:" +
+                "layout=${sample.inLayout}[rawMs=" +
+                "${sample.originalExclusiveNanos / 1_000_000.0},diagMs=" +
+                "${sample.diagnosticsExclusiveNanos / 1_000_000.0},fullMs=" +
+                "${sample.fullExclusiveNanos / 1_000_000.0}]"
+        }
+        AppleSourceSwitchPerformanceDiagnostics.stageForSong(
+            songId = batch.songId,
+            stage = "lyrics_adapter_bind_batch",
+            details = "calls=${batch.count},outer=${batch.outerCount}," +
+                "nested=${batch.nestedCount},rawExclusiveMs=" +
+                "${batch.originalExclusiveNanos / 1_000_000.0},rawExclusiveMaxMs=" +
+                "${batch.originalExclusiveMaxNanos / 1_000_000.0},diagExclusiveMs=" +
+                "${batch.diagnosticsExclusiveNanos / 1_000_000.0},diagExclusiveMaxMs=" +
+                "${batch.diagnosticsExclusiveMaxNanos / 1_000_000.0},outerWallMs=" +
+                "${batch.outerWallNanos / 1_000_000.0},outerWallMaxMs=" +
+                "${batch.outerWallMaxNanos / 1_000_000.0},spanMs=" +
+                "${(SystemClock.elapsedRealtimeNanos() - batch.firstAtNanos) / 1_000_000.0}," +
+                "groups=$groups,slow=$slowest",
+        )
+    }
+
+    private inline fun measureBindingDiagnosticPhase(
+        context: AppleLyricsBindingDiagnosticContext,
+        phase: String,
+        block: () -> Unit,
+    ) {
+        val startedAtNanos = SystemClock.elapsedRealtimeNanos()
+        try {
+            block()
+        } finally {
+            AppleSourceSwitchPerformanceDiagnostics.record(
+                songId = context.songId,
+                event = "lyrics_binding_diagnostic_$phase",
+                durationNanos = SystemClock.elapsedRealtimeNanos() - startedAtNanos,
+                details = "class=${context.adapterClass},method=${context.methodName}," +
+                    "position=${context.position},adapter=${context.adapterIdentity}",
+            )
+        }
+    }
+
 
     fun hookAppleLyricsBindingDiagnostics() {
         val holderClassName = "androidx.recyclerview.widget.RecyclerView\$D"
         hookResolver.resolveClasses(AppleMusicHookPoint.LYRICS_RECYCLER_ADAPTER)
             .forEach { resolvedClass ->
             val adapterClass = resolvedClass.clazz
+            installAppleLyricsAdapterPerformanceHooks(adapterClass)
             val translationFieldName = resolvedClass.target.runtimeMemberName(
                 AppleMusicRuntimeMember.LYRICS_ADAPTER_TRANSLATION_SELECTED_FIELD,
             )
@@ -204,55 +525,93 @@ internal class AppleLyricsDiagnostics(
                                 pronunciationFieldName,
                             ),
                         )
+                        val parentPerformanceContext =
+                            appleLyricsBindingPerformanceContexts.current
                         appleLyricsBindingDiagnosticContexts.push(context)
+                        appleLyricsBindingPerformanceContexts.push(
+                            AppleLyricsBindingPerformanceContext(
+                                binding = context,
+                                startedAtNanos = SystemClock.elapsedRealtimeNanos(),
+                                depth = (parentPerformanceContext?.depth ?: 0) + 1,
+                                inLayout = appleLyricsRecyclerPerformanceContexts.current
+                                    ?.stage == "lyrics_recycler_layout",
+                            )
+                        )
                         true
                     },
                     after = { _, _ ->
                         val context = appleLyricsBindingDiagnosticContexts.current
                             ?: return@installScopedHook
-                        val root = appleLyricsHolderRoot(context.holder)
-                        val texts = root?.let(::debugTextSnapshot) ?: "none"
-                        val layers = debugAppleLyricsHolderLayers(context.holder)
-                        logApplePronunciationBindingDiagnostic(
-                            stage = "holder_bound",
-                            context = context,
-                            details = "root=${root?.let(::debugViewDescription)}, " +
-                                "texts=$texts, layers=$layers",
-                            dedupeKey = "holder:${context.methodName}:${context.position}:" +
-                                "${context.pronunciationEnabled}:$texts",
-                        )
-                        root?.let { capturedRoot ->
-                            val capturedContext = context
-                            capturedRoot.postOnAnimation {
-                                logApplePronunciationBindingDiagnostic(
-                                    stage = "holder_next_frame",
-                                    context = capturedContext,
-                                    details = "root=${debugViewDescription(capturedRoot)}, " +
-                                        "texts=${debugTextSnapshot(capturedRoot)}, " +
-                                        "layers=${debugAppleLyricsHolderLayers(capturedContext.holder)}",
-                                    dedupeKey = "holder_next_frame:" +
-                                        "${capturedContext.methodName}:" +
-                                        "${capturedContext.position}",
+                        appleLyricsBindingPerformanceContexts.current?.let { performance ->
+                            performance.originalInclusiveNanos =
+                                SystemClock.elapsedRealtimeNanos() - performance.startedAtNanos
+                        }
+                        measureBindingDiagnosticPhase(context, "immediate") {
+                            val root = appleLyricsHolderRoot(context.holder)
+                            val texts = root?.let(::debugTextSnapshot) ?: "none"
+                            val layers = debugAppleLyricsHolderLayers(context.holder)
+                            logApplePronunciationBindingDiagnostic(
+                                stage = "holder_bound",
+                                context = context,
+                                details = "root=${root?.let(::debugViewDescription)}, " +
+                                    "texts=$texts, layers=$layers",
+                                dedupeKey = "holder:${context.methodName}:${context.position}:" +
+                                    "${context.pronunciationEnabled}:$texts",
+                            )
+                            root?.let { capturedRoot ->
+                                val capturedContext = context
+                                capturedRoot.postOnAnimation {
+                                    measureBindingDiagnosticPhase(
+                                        capturedContext,
+                                        "next_frame",
+                                    ) {
+                                        logApplePronunciationBindingDiagnostic(
+                                            stage = "holder_next_frame",
+                                            context = capturedContext,
+                                            details = "root=${debugViewDescription(capturedRoot)}, " +
+                                                "texts=${debugTextSnapshot(capturedRoot)}, " +
+                                                "layers=${debugAppleLyricsHolderLayers(capturedContext.holder)}",
+                                            dedupeKey = "holder_next_frame:" +
+                                                "${capturedContext.methodName}:" +
+                                                "${capturedContext.position}",
+                                        )
+                                    }
+                                }
+                                capturedRoot.postDelayed(
+                                    {
+                                        measureBindingDiagnosticPhase(
+                                            capturedContext,
+                                            "delayed_120ms",
+                                        ) {
+                                            logApplePronunciationBindingDiagnostic(
+                                                stage = "holder_120ms",
+                                                context = capturedContext,
+                                                details = "root=${debugViewDescription(capturedRoot)}, " +
+                                                    "texts=${debugTextSnapshot(capturedRoot)}, " +
+                                                    "layers=${debugAppleLyricsHolderLayers(capturedContext.holder)}",
+                                                dedupeKey = "holder_120ms:" +
+                                                    "${capturedContext.methodName}:" +
+                                                    "${capturedContext.position}",
+                                            )
+                                        }
+                                    },
+                                    120L,
                                 )
                             }
-                            capturedRoot.postDelayed(
-                                {
-                                    logApplePronunciationBindingDiagnostic(
-                                        stage = "holder_120ms",
-                                        context = capturedContext,
-                                        details = "root=${debugViewDescription(capturedRoot)}, " +
-                                            "texts=${debugTextSnapshot(capturedRoot)}, " +
-                                            "layers=${debugAppleLyricsHolderLayers(capturedContext.holder)}",
-                                        dedupeKey = "holder_120ms:" +
-                                            "${capturedContext.methodName}:" +
-                                            "${capturedContext.position}",
-                                    )
-                                },
-                                120L,
-                            )
                         }
                     },
-                    exit = { appleLyricsBindingDiagnosticContexts.pop() },
+                    exit = {
+                        appleLyricsBindingPerformanceContexts.pop()?.let { performance ->
+                            val fullNanos =
+                                SystemClock.elapsedRealtimeNanos() - performance.startedAtNanos
+                            appleLyricsBindingPerformanceContexts.current
+                                ?.let { parent -> parent.childFullNanos += fullNanos }
+                            if (performance.originalInclusiveNanos > 0L) {
+                                recordBindingPerformance(performance, fullNanos)
+                            }
+                        }
+                        appleLyricsBindingDiagnosticContexts.pop()
+                    },
                 )
             }
         }
@@ -315,6 +674,66 @@ internal class AppleLyricsDiagnostics(
         }
     }
 
+    private fun installAppleLyricsRecyclerPerformanceHook(
+        method: Method,
+        stage: String,
+    ) {
+        if (!appleLyricsPerformanceHookedMethods.add(method)) return
+        method.isAccessible = true
+        hookRegistrar.installScopedHook(
+            executable = method,
+            enter = { chain ->
+                val recycler = chain.thisObject
+                    ?.takeIf(::isAppleRecyclerViewInstance)
+                    ?: return@installScopedHook false
+                val songId = currentSongId()
+                if (!AppleSourceSwitchPerformanceDiagnostics.isTracing(songId)) {
+                    return@installScopedHook false
+                }
+                val context = AppleLyricsPerformanceContext(
+                    songId = songId,
+                    stage = stage,
+                    methodName = "${method.declaringClass.name}.${method.name}/" +
+                        method.parameterCount,
+                    identity = System.identityHashCode(recycler),
+                    startedAtNanos = SystemClock.elapsedRealtimeNanos(),
+                )
+                appleLyricsRecyclerPerformanceContexts.push(context)
+                val recyclerView = recycler as? ViewGroup
+                AppleSourceSwitchPerformanceDiagnostics.stageForSong(
+                    songId = songId,
+                    stage = "${stage}_started",
+                    details = "method=${context.methodName},identity=${context.identity}," +
+                        "children=${recyclerView?.childCount ?: -1}," +
+                        "adapter=${runCatching {
+                            AppleReflection.call(recycler, "getAdapter")?.javaClass?.name
+                        }.getOrNull() ?: "none"}",
+                )
+                true
+            },
+            after = { chain, _ ->
+                val context = appleLyricsRecyclerPerformanceContexts.current
+                    ?: return@installScopedHook
+                val elapsedNanos =
+                    SystemClock.elapsedRealtimeNanos() - context.startedAtNanos
+                AppleSourceSwitchPerformanceDiagnostics.record(
+                    songId = context.songId,
+                    event = context.stage,
+                    durationNanos = elapsedNanos,
+                    details = "method=${context.methodName},identity=${context.identity}",
+                )
+                AppleSourceSwitchPerformanceDiagnostics.stageForSong(
+                    songId = context.songId,
+                    stage = "${context.stage}_finished",
+                    details = "method=${context.methodName},identity=${context.identity}," +
+                        "elapsedMs=${elapsedNanos / 1_000_000.0},snapshot=" +
+                        "${chain.thisObject?.let(::debugRecyclerViewSnapshot) ?: "none"}",
+                )
+            },
+            exit = { appleLyricsRecyclerPerformanceContexts.pop() },
+        )
+    }
+
     fun hookAppleLyricsUiDiagnostics() {
         runCatching {
             val onCreateView = hookResolver.resolveMethod(
@@ -363,6 +782,29 @@ internal class AppleLyricsDiagnostics(
             })
 
             val recyclerClass = classLoader.loadClass("androidx.recyclerview.widget.RecyclerView")
+            recyclerClass.getDeclaredMethod(
+                "onMeasure",
+                Int::class.javaPrimitiveType,
+                Int::class.javaPrimitiveType,
+            ).let { method ->
+                installAppleLyricsRecyclerPerformanceHook(
+                    method = method,
+                    stage = "lyrics_recycler_measure",
+                )
+            }
+            recyclerClass.getDeclaredMethod(
+                "onLayout",
+                Boolean::class.javaPrimitiveType,
+                Int::class.javaPrimitiveType,
+                Int::class.javaPrimitiveType,
+                Int::class.javaPrimitiveType,
+                Int::class.javaPrimitiveType,
+            ).let { method ->
+                installAppleLyricsRecyclerPerformanceHook(
+                    method = method,
+                    stage = "lyrics_recycler_layout",
+                )
+            }
             val setAdapter = AppleReflection.findMethod(
                 recyclerClass,
                 "setAdapter",
