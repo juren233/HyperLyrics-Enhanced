@@ -70,7 +70,8 @@ object LyricStyleHelper {
         mediaColorKey: String? = CoverColorHelper.currentMediaKey()
     ): StyleBuildResult {
         val fontSize = prefs.getInt(RootConstants.KEY_HOOK_TEXT_SIZE, RootConstants.DEFAULT_HOOK_TEXT_SIZE)
-        val tf = FontHelper.loadTypeface(prefs)
+        val baseTf = FontHelper.loadBaseTypeface(prefs)
+        val narrowTf = FontHelper.loadNarrowTypeface(prefs)
 
         val textSizeRatio = prefs.getFloat(RootConstants.KEY_HOOK_TEXT_SIZE_RATIO, RootConstants.DEFAULT_HOOK_TEXT_SIZE_RATIO)
         val primarySizePx = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, fontSize.toFloat(), res.displayMetrics)
@@ -153,14 +154,16 @@ object LyricStyleHelper {
             primary = TextLook(
                 color = primaryColors,
                 size = primarySizePx,
-                typeface = tf,
+                typeface = baseTf,
+                narrowTypeface = narrowTf,
                 relativeProgress = prefs.getBoolean(RootConstants.KEY_HOOK_SYLLABLE_RELATIVE, RootConstants.DEFAULT_HOOK_SYLLABLE_RELATIVE),
                 relativeHighlight = prefs.getBoolean(RootConstants.KEY_HOOK_SYLLABLE_HIGHLIGHT, RootConstants.DEFAULT_HOOK_SYLLABLE_HIGHLIGHT),
             ),
             secondary = TextLook(
                 color = if (showSecondary) primaryColors else intArrayOf(Color.TRANSPARENT),
                 size = if (showSecondary) primarySizePx * textSizeRatio else 0f,
-                typeface = tf,
+                typeface = baseTf,
+                narrowTypeface = narrowTf,
             ),
             highlight = Highlight(
                 background = bgColors,

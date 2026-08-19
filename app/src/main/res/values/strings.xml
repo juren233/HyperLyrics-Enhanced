@@ -373,6 +373,7 @@
     <string name="label_text_size_ratio_range">范围：10 ~ 100</string>
     <string name="title_bold">粗体</string>
     <string name="title_italic">斜体</string>
+    <string name="title_narrow_latin_font">英数窄字体</string>
     <string name="title_gradient_progress">羽化进度样式</string>
     <string name="title_lyric_marquee">歌词滚动</string>
     <string name="title_marquee">滚动显示</string>

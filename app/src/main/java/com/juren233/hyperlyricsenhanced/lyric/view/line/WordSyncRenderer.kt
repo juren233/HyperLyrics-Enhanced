@@ -63,6 +63,12 @@ internal class WordSyncRenderer(private val view: LyricLineView) : LineRenderer 
             }
         }
 
+    var typefaceSelector: ((Char) -> Typeface)?
+        get() = textDrawer.typefaceSelector
+        set(value) {
+            textDrawer.typefaceSelector = value
+        }
+
     var playListener: LyricPlayListener? = null
         set(value) {
             field = value

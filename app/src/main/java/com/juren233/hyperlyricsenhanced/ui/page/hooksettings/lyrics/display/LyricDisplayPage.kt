@@ -28,6 +28,14 @@ fun LyricDisplayPage() {
     var extractCoverColor by remember { mutableStateOf(prefs.getBoolean(RootConstants.KEY_HOOK_EXTRACT_COVER_TEXT_COLOR, RootConstants.DEFAULT_HOOK_EXTRACT_COVER_TEXT_COLOR)) }
     var extractCoverGradient by remember { mutableStateOf(prefs.getBoolean(RootConstants.KEY_HOOK_EXTRACT_COVER_TEXT_GRADIENT, RootConstants.DEFAULT_HOOK_EXTRACT_COVER_TEXT_GRADIENT)) }
     var customFontPath by remember { mutableStateOf(prefs.getString(RootConstants.KEY_HOOK_CUSTOM_FONT_PATH, null) ?: "") }
+    var narrowLatinFont by remember {
+        mutableStateOf(
+            prefs.getBoolean(
+                RootConstants.KEY_HOOK_NARROW_LATIN_FONT,
+                RootConstants.DEFAULT_HOOK_NARROW_LATIN_FONT
+            )
+        )
+    }
     var fontWeight by remember { mutableIntStateOf(prefs.getInt(RootConstants.KEY_HOOK_FONT_WEIGHT, RootConstants.DEFAULT_HOOK_FONT_WEIGHT)) }
     var fontItalic by remember { mutableStateOf(prefs.getBoolean(RootConstants.KEY_HOOK_FONT_ITALIC, RootConstants.DEFAULT_HOOK_FONT_ITALIC)) }
     val legacyLyricPosition = remember {
@@ -166,6 +174,11 @@ fun LyricDisplayPage() {
             onFontItalicChange = {
                 fontItalic = it
                 saveConfig(RootConstants.KEY_HOOK_FONT_ITALIC, it)
+            },
+            narrowLatinFont = narrowLatinFont,
+            onNarrowLatinFontChange = {
+                narrowLatinFont = it
+                saveConfig(RootConstants.KEY_HOOK_NARROW_LATIN_FONT, it)
             },
             leftLyricPosition = leftLyricPosition,
             onLeftLyricPositionChange = {

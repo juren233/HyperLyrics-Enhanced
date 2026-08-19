@@ -57,6 +57,7 @@ internal data class IslandSlotRuntimeConfig(
     val extractCoverTextColor: Boolean,
     val extractCoverTextGradient: Boolean,
     val customFontPath: String,
+    val narrowLatinFont: Boolean,
     val wordMotionEnabled: Boolean,
     val wordMotionCjkLift: Float,
     val wordMotionCjkWave: Float,
@@ -124,6 +125,7 @@ internal data class IslandSlotRuntimeConfig(
         extractCoverTextColor,
         extractCoverTextGradient,
         customFontPath,
+        narrowLatinFont,
         wordMotionEnabled,
         wordMotionCjkLift,
         wordMotionCjkWave,
@@ -382,6 +384,10 @@ internal data class IslandSlotRuntimeConfig(
                 extractCoverTextColor = prefs.getBoolean(RootConstants.KEY_HOOK_EXTRACT_COVER_TEXT_COLOR, RootConstants.DEFAULT_HOOK_EXTRACT_COVER_TEXT_COLOR),
                 extractCoverTextGradient = prefs.getBoolean(RootConstants.KEY_HOOK_EXTRACT_COVER_TEXT_GRADIENT, RootConstants.DEFAULT_HOOK_EXTRACT_COVER_TEXT_GRADIENT),
                 customFontPath = prefs.getString(RootConstants.KEY_HOOK_CUSTOM_FONT_PATH, null).orEmpty(),
+                narrowLatinFont = prefs.getBoolean(
+                    RootConstants.KEY_HOOK_NARROW_LATIN_FONT,
+                    RootConstants.DEFAULT_HOOK_NARROW_LATIN_FONT
+                ),
                 wordMotionEnabled = prefs.getBoolean(RootConstants.KEY_HOOK_WORD_MOTION_ENABLED, RootConstants.DEFAULT_HOOK_WORD_MOTION_ENABLED),
                 wordMotionCjkLift = prefs.getFloat(RootConstants.KEY_HOOK_WORD_MOTION_CJK_LIFT, RootConstants.DEFAULT_HOOK_WORD_MOTION_CJK_LIFT),
                 wordMotionCjkWave = prefs.getFloat(RootConstants.KEY_HOOK_WORD_MOTION_CJK_WAVE, RootConstants.DEFAULT_HOOK_WORD_MOTION_CJK_WAVE),

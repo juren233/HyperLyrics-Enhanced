@@ -11,6 +11,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.LinearGradient
 import android.graphics.Shader
+import android.graphics.Typeface
 import android.text.TextPaint
 import android.util.AttributeSet
 import android.view.Choreographer
@@ -133,6 +134,16 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
     internal val syncRenderer = SpaceGateWordSyncRenderer(this)
     private val animator = Animator()
 
+    private var baseTypeface: Typeface = Typeface.DEFAULT
+    private var narrowTypeface: Typeface? = null
+
+    private val currentTypefaceSelector: ((Char) -> Typeface)?
+        get() {
+            val narrow = narrowTypeface ?: return null
+            val base = baseTypeface
+            return { ch -> if (ch.isCjk()) base else narrow }
+        }
+
     internal var activeRenderer: LineRenderer = scrollRenderer
 
     private var primaryColors = intArrayOf()
@@ -171,6 +182,13 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
         invalidate()
     }
 
+    private fun applyCurrentTypeface() {
+        textPaint.typeface = baseTypeface
+        syncRenderer.setTypeface(baseTypeface)
+        syncRenderer.typefaceSelector = currentTypefaceSelector
+        scrollRenderer.typefaceSelector = currentTypefaceSelector
+    }
+
     fun setLyric(rawLine: LyricLine?) {
         val line = if (rawLine?.text.isNullOrBlank()) null else rawLine
 
@@ -179,6 +197,7 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
         scrollStarted = false
 
         _model = line?.normalize()?.createModel() ?: emptyLyricModel()
+        applyCurrentTypeface()
         activeRenderer = if (_model.isPlainText) scrollRenderer else syncRenderer
         refreshSizes()
         updateColorsIfReady()
@@ -192,8 +211,9 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
         this.centerIfPossible = center
         updateColor(text.color, highlight.background, highlight.foreground)
         setTextSize(text.size)
-        textPaint.typeface = text.typeface
-        syncRenderer.setTypeface(text.typeface)
+        baseTypeface = text.typeface
+        narrowTypeface = text.narrowTypeface
+        applyCurrentTypeface()
         syncRenderer.isGradientEnabled = gradient
 
         scrollRenderer.apply {
@@ -318,7 +338,7 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
     }
 
     fun refreshSizes() {
-        _model.updateSizes(textPaint)
+        _model.updateSizes(textPaint, currentTypefaceSelector)
     }
 
     fun relayout() {
@@ -606,4 +626,17 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
             }
         }
     }
+}
+
+private fun Char.isCjk(): Boolean {
+    val block = Character.UnicodeBlock.of(this)
+    return block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS ||
+        block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_A ||
+        block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_B ||
+        block == Character.UnicodeBlock.CJK_COMPATIBILITY_IDEOGRAPHS ||
+        block == Character.UnicodeBlock.HIRAGANA ||
+        block == Character.UnicodeBlock.KATAKANA ||
+        block == Character.UnicodeBlock.HANGUL_SYLLABLES ||
+        block == Character.UnicodeBlock.HANGUL_JAMO ||
+        block == Character.UnicodeBlock.HANGUL_COMPATIBILITY_JAMO
 }

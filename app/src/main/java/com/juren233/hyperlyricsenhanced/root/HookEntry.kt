@@ -128,6 +128,7 @@ class HookEntry : XposedModule() {
             RootConstants.KEY_HOOK_EXTRACT_COVER_TEXT_COLOR,
             RootConstants.KEY_HOOK_EXTRACT_COVER_TEXT_GRADIENT,
             RootConstants.KEY_HOOK_CUSTOM_FONT_PATH,
+            RootConstants.KEY_HOOK_NARROW_LATIN_FONT,
             RootConstants.KEY_HOOK_WORD_MOTION_ENABLED,
             RootConstants.KEY_HOOK_WORD_MOTION_CJK_LIFT,
             RootConstants.KEY_HOOK_WORD_MOTION_CJK_WAVE,
@@ -152,6 +153,14 @@ class HookEntry : XposedModule() {
             }
             return _prefs!!
         }
+
+    internal fun moduleContext(): Context? {
+        val app = runtimeApp ?: return null
+        val info = runCatching { moduleApplicationInfo }.getOrNull() ?: return null
+        return runCatching {
+            app.createPackageContext(info.packageName, 0)
+        }.getOrNull()
+    }
 
     override fun onModuleLoaded(param: ModuleLoadedParam) {
         super.onModuleLoaded(param)

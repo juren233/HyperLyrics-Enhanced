@@ -34,6 +34,8 @@ fun LazyListScope.lyricDisplaySections(
     onFontWeightClick: () -> Unit,
     fontItalic: Boolean,
     onFontItalicChange: (Boolean) -> Unit,
+    narrowLatinFont: Boolean,
+    onNarrowLatinFontChange: (Boolean) -> Unit,
     leftLyricPosition: Int,
     onLeftLyricPositionChange: (Int) -> Unit,
     rightLyricPosition: Int,
@@ -126,6 +128,11 @@ fun LazyListScope.lyricDisplaySections(
             }
             Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
                 Column {
+                    SwitchPreference(
+                        title = stringResource(id = R.string.title_narrow_latin_font),
+                        checked = narrowLatinFont,
+                        onCheckedChange = onNarrowLatinFontChange
+                    )
                     ArrowPreference(
                         title = stringResource(id = R.string.title_custom_font),
                         endActions = {

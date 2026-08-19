@@ -8,6 +8,8 @@ package com.juren233.hyperlyricsenhanced.lyric.view.line.model
 
 import android.graphics.Paint
 import android.graphics.Rect
+import android.graphics.Typeface
+import com.juren233.hyperlyricsenhanced.lyric.view.line.MixedTypefaceText
 import com.juren233.hyperlyricsenhanced.lyric.model.LyricLine
 import com.juren233.hyperlyricsenhanced.lyric.model.LyricMetadata
 import com.juren233.hyperlyricsenhanced.lyric.model.LyricWord
@@ -29,11 +31,18 @@ data class LyricModel(
     val wordTimingNavigator: TimingNavigator<WordModel> by lazy { TimingNavigator(words.toTypedArray()) }
     val isPlainText: Boolean = words.isEmpty()
 
-    fun updateSizes(paint: Paint) {
-        width = getTextFullWidth(paint, text)
+    fun updateSizes(
+        paint: Paint,
+        typefaceSelector: ((Char) -> Typeface)? = null
+    ) {
+        width = if (typefaceSelector != null) {
+            MixedTypefaceText.measureText(paint, text, typefaceSelector)
+        } else {
+            getTextFullWidth(paint, text)
+        }
         var previous: WordModel? = null
         words.forEach { word ->
-            word.updateSizes(previous, paint)
+            word.updateSizes(previous, paint, typefaceSelector)
             previous = word
         }
     }

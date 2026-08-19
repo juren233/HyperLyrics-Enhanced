@@ -11,6 +11,7 @@ import android.graphics.Color
 import android.graphics.ComposeShader
 import android.graphics.LinearGradient
 import android.graphics.Paint
+import android.graphics.Typeface
 import android.graphics.PorterDuff
 import android.graphics.Shader
 import android.text.TextPaint
@@ -28,6 +29,8 @@ internal class TextDrawer {
     var cjkWaveFactor = DEFAULT_CJK_WAVE_FACTOR
     var latinLiftFactor = DEFAULT_LATIN_LIFT_FACTOR
     var latinWaveFactor = DEFAULT_LATIN_WAVE_FACTOR
+
+    var typefaceSelector: ((Char) -> Typeface)? = null
 
     val isRainbowBg get() = bgColors.size > 1
     val isRainbowHl get() = hlColors.size > 1
@@ -86,7 +89,12 @@ internal class TextDrawer {
             translate(xOffset, 0f)
 
             if (scrollOnly) {
-                canvas.drawText(model.wordText, 0f, y, normPaint)
+                val selector = typefaceSelector
+                if (selector != null) {
+                    MixedTypefaceText.drawText(canvas, model.wordText, 0f, y, normPaint, selector)
+                } else {
+                    canvas.drawText(model.wordText, 0f, y, normPaint)
+                }
                 return@withSave
             }
 
@@ -111,10 +119,20 @@ internal class TextDrawer {
             } else if (!useGradient) {
                 canvas.withSave {
                     canvas.clipRect(highlightWidth, 0f, Float.MAX_VALUE, viewHeight.toFloat())
-                    canvas.drawText(model.wordText, 0f, y, bgPaint)
+                    val selector = typefaceSelector
+                    if (selector != null) {
+                        MixedTypefaceText.drawText(canvas, model.wordText, 0f, y, bgPaint, selector)
+                    } else {
+                        canvas.drawText(model.wordText, 0f, y, bgPaint)
+                    }
                 }
             } else {
-                canvas.drawText(model.wordText, 0f, y, bgPaint)
+                val selector = typefaceSelector
+                if (selector != null) {
+                    MixedTypefaceText.drawText(canvas, model.wordText, 0f, y, bgPaint, selector)
+                } else {
+                    canvas.drawText(model.wordText, 0f, y, bgPaint)
+                }
             }
 
             if (highlightWidth > 0f) {
@@ -154,7 +172,12 @@ internal class TextDrawer {
                             hlPaint
                         )
                     } else {
-                        canvas.drawText(model.wordText, 0f, y, hlPaint)
+                        val selector = typefaceSelector
+                        if (selector != null) {
+                            MixedTypefaceText.drawText(canvas, model.wordText, 0f, y, hlPaint, selector)
+                        } else {
+                            canvas.drawText(model.wordText, 0f, y, hlPaint)
+                        }
                     }
                 }
             }
@@ -240,7 +263,19 @@ internal class TextDrawer {
 
         canvas.withSave {
             clipRect(visibleLeft, 0f, visibleRight, viewHeight.toFloat())
-            drawText(text, start, end, drawX, baselineY + liftY, paint)
+            val selector = typefaceSelector
+            if (selector != null) {
+                MixedTypefaceText.drawText(
+                    canvas,
+                    text.substring(start, end),
+                    drawX,
+                    baselineY + liftY,
+                    paint,
+                    selector
+                )
+            } else {
+                drawText(text, start, end, drawX, baselineY + liftY, paint)
+            }
         }
     }
 

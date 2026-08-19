@@ -372,6 +372,7 @@
     <string name="label_text_size_ratio_range">Range: 10 ~ 100</string>
     <string name="title_bold">Bold</string>
     <string name="title_italic">Italic</string>
+    <string name="title_narrow_latin_font">Narrow Latin &amp; Digits</string>
     <string name="title_gradient_progress">Gradient Progress Style</string>
     <string name="title_lyric_marquee">Lyric Marquee</string>
     <string name="summary_lyric_marquee">Marquee scrolling for 没有时间轴的 lyric</string>

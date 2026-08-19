@@ -29,6 +29,7 @@ data class TextLook(
     val color: IntArray = intArrayOf(Color.WHITE),
     val size: Float = 16f,
     val typeface: Typeface = Typeface.DEFAULT,
+    val narrowTypeface: Typeface? = null,
     val relativeProgress: Boolean = false,
     val relativeHighlight: Boolean = false,
 ) {
@@ -36,6 +37,7 @@ data class TextLook(
         if (this === other) return true
         if (other !is TextLook) return false
         return size == other.size && typeface == other.typeface &&
+                narrowTypeface == other.narrowTypeface &&
                 relativeProgress == other.relativeProgress &&
                 relativeHighlight == other.relativeHighlight &&
                 color.contentEquals(other.color)
@@ -44,6 +46,7 @@ data class TextLook(
     override fun hashCode(): Int {
         var r = size.hashCode()
         r = 31 * r + typeface.hashCode()
+        r = 31 * r + (narrowTypeface?.hashCode() ?: 0)
         r = 31 * r + relativeProgress.hashCode()
         r = 31 * r + relativeHighlight.hashCode()
         r = 31 * r + color.contentHashCode()

@@ -8,6 +8,7 @@ package com.juren233.hyperlyricsenhanced.lyric.view.line
 
 import android.content.res.Resources
 import android.graphics.Canvas
+import android.graphics.Typeface
 import android.text.TextPaint
 import android.view.animation.LinearInterpolator
 import androidx.core.graphics.withTranslation
@@ -35,6 +36,8 @@ internal class SpaceGateScrollTextRenderer : LineRenderer {
     override val isStarted get() = true
     override var centerIfPossible = false
     override var alignRight = false
+
+    var typefaceSelector: ((Char) -> Typeface)? = null
 
     val scrollProgress get() = currentUnitOffset
 
@@ -144,9 +147,14 @@ internal class SpaceGateScrollTextRenderer : LineRenderer {
             cachedViewHeight = viewHeight
         }
 
+        val selector = typefaceSelector
         if (offset < vw && offset + model.width > 0) {
             canvas.withTranslation(x = offset) {
-                drawText(model.text, 0f, cachedBaseline, paint)
+                if (selector != null) {
+                    MixedTypefaceText.drawText(canvas, model.text, 0f, cachedBaseline, paint, selector)
+                } else {
+                    drawText(model.text, 0f, cachedBaseline, paint)
+                }
             }
         }
 
@@ -157,7 +165,11 @@ internal class SpaceGateScrollTextRenderer : LineRenderer {
                 val ghostX = rightEdge + ghostSpacing
                 if (ghostX < vw) {
                     canvas.withTranslation(x = ghostX) {
-                        drawText(model.text, 0f, cachedBaseline, paint)
+                        if (selector != null) {
+                            MixedTypefaceText.drawText(canvas, model.text, 0f, cachedBaseline, paint, selector)
+                        } else {
+                            drawText(model.text, 0f, cachedBaseline, paint)
+                        }
                     }
                 }
             }

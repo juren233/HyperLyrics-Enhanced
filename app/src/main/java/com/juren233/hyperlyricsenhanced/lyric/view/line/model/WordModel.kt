@@ -9,6 +9,8 @@
 package com.juren233.hyperlyricsenhanced.lyric.view.line.model
 
 import android.graphics.Paint
+import android.graphics.Typeface
+import com.juren233.hyperlyricsenhanced.lyric.view.line.MixedTypefaceText
 import com.juren233.hyperlyricsenhanced.lyric.model.LyricMetadata
 import com.juren233.hyperlyricsenhanced.lyric.model.interfaces.ILyricTiming
 
@@ -73,8 +75,16 @@ data class WordModel(
      * @param previous 上一个单词模型
      * @param paint 绘制文本的 Paint 对象
      */
-    fun updateSizes(previous: WordModel?, paint: Paint) {
-        paint.getTextWidths(chars, 0, chars.size, charWidths)
+    fun updateSizes(
+        previous: WordModel?,
+        paint: Paint,
+        typefaceSelector: ((Char) -> Typeface)? = null
+    ) {
+        if (typefaceSelector != null) {
+            MixedTypefaceText.getTextWidths(paint, text, typefaceSelector, charWidths)
+        } else {
+            paint.getTextWidths(chars, 0, chars.size, charWidths)
+        }
         textWidth = charWidths.sum()
         startPosition = previous?.endPosition ?: 0f
         endPosition = startPosition + textWidth

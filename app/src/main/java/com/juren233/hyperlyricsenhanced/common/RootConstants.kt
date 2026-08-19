@@ -228,6 +228,7 @@ object RootConstants {
 
     // ================= FONT KEYS =================
     const val KEY_HOOK_CUSTOM_FONT_PATH = "key_hook_custom_font_path"
+    const val KEY_HOOK_NARROW_LATIN_FONT = "key_hook_narrow_latin_font"
 
     // ================= WORD MOTION KEYS =================
     const val KEY_HOOK_WORD_MOTION_ENABLED = "key_hook_word_motion_enabled"
@@ -496,6 +497,7 @@ object RootConstants {
     const val DEFAULT_HOOK_TEXT_SIZE_RATIO = 0.7f
     const val DEFAULT_HOOK_FONT_WEIGHT = 600
     const val DEFAULT_HOOK_FONT_ITALIC = false
+    const val DEFAULT_HOOK_NARROW_LATIN_FONT = false
     const val DEFAULT_HOOK_FADING_EDGE_LENGTH = 15
     const val DEFAULT_HOOK_GRADIENT_PROGRESS = true
     const val ISLAND_LYRIC_POSITION_DEFAULT = 0
