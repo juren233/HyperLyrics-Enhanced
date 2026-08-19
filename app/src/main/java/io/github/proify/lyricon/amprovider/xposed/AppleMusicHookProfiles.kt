@@ -334,6 +334,10 @@ internal data class AppleMusicHookTarget(
     val includeSynthetic: Boolean = false,
     val allowFirstMatch: Boolean = false,
     val runtimeMemberNames: Map<AppleMusicRuntimeMember, String> = emptyMap(),
+    val requiredInvokedMethodDescriptors: List<String> = emptyList(),
+    val requiredInvokedMethodNames: List<String> = emptyList(),
+    val requiredCallerMethodNames: List<String> = emptyList(),
+    val contract: AppleMusicHookContract? = null,
 ) {
     init {
         require(
@@ -1655,12 +1659,14 @@ internal data class ResolvedAppleMusicHookClass(
     val target: AppleMusicHookTarget,
     val clazz: Class<*>,
     val compatibilityFallback: Boolean,
+    val contractReason: String? = null,
 )
 
 internal data class ResolvedAppleMusicHookMethod(
     val target: AppleMusicHookTarget,
     val method: Method,
     val compatibilityFallback: Boolean,
+    val contractReason: String? = null,
 )
 
 /** 统一负责按 Apple Music 版本加载并校验混淆 Hook 目标。 */
@@ -1707,7 +1713,7 @@ internal class AppleMusicHookResolver(
     fun resolveClasses(hookPoint: AppleMusicHookPoint): List<ResolvedAppleMusicHookClass> {
         val exactTargets = AppleMusicHookProfiles.exactTargets(version, hookPoint)
         val exactClasses = exactTargets.mapNotNull { target ->
-            loadClass(target, compatibilityFallback = false)
+            loadClass(hookPoint, target, compatibilityFallback = false)
                 ?.let { resolved -> repairAndRecordClass(hookPoint, resolved, target.className) }
         }
         val resolved = LinkedHashMap<String, ResolvedAppleMusicHookClass>()
@@ -1715,7 +1721,7 @@ internal class AppleMusicHookResolver(
 
         val compatibilityClasses = AppleMusicHookProfiles.candidates(version, hookPoint)
             .filterNot { target -> exactClasses.any { it.target.className == target.className } }
-            .mapNotNull { target -> loadClass(target, compatibilityFallback = true) }
+            .mapNotNull { target -> loadClass(hookPoint, target, compatibilityFallback = true) }
             .map { resolved ->
                 repairAndRecordClass(hookPoint, resolved, resolved.target.className)
             }
@@ -1736,12 +1742,13 @@ internal class AppleMusicHookResolver(
                     target = resolved.target,
                     clazz = resolved.method.declaringClass,
                     compatibilityFallback = true,
+                    contractReason = resolved.contractReason,
                 ),
             )
         }.orEmpty()
     }
 
-    /** 解析单个类；精确档案缺失时才尝试已知版本候选。 */
+    /** 解析单个类；精确档案缺失时才尝试已知版本候选。通过语义契约校验才允许返回。 */
     fun resolveClass(hookPoint: AppleMusicHookPoint): ResolvedAppleMusicHookClass {
         val exactTargets = AppleMusicHookProfiles.exactTargets(version, hookPoint).toSet()
         val failures = mutableListOf<String>()
@@ -1751,13 +1758,28 @@ internal class AppleMusicHookResolver(
                     failures += "${target.className}:${throwable.javaClass.simpleName}"
                     return@forEach
                 }
+            val contractResult = AppleMusicHookContracts.validate(
+                HookContractContext(
+                    hookPoint = hookPoint,
+                    target = target,
+                    clazz = clazz,
+                    method = null,
+                    classLookup = classLookup,
+                    dexKitResolver = dexKitResolver,
+                ),
+            )
+            if (contractResult is ContractResult.Rejected) {
+                failures += "${target.className}:contract:${contractResult.reason}"
+                return@forEach
+            }
             return repairAndRecordClass(
                 hookPoint = hookPoint,
                 baselineClassName = target.className,
                 resolved = ResolvedAppleMusicHookClass(
-                target = target,
-                clazz = clazz,
-                compatibilityFallback = target !in exactTargets,
+                    target = target,
+                    clazz = clazz,
+                    compatibilityFallback = target !in exactTargets,
+                    contractReason = if (target !in exactTargets) "contract_passed" else null,
                 ),
             )
         }
@@ -1769,6 +1791,7 @@ internal class AppleMusicHookResolver(
                 target = resolved.target,
                 clazz = resolved.method.declaringClass,
                 compatibilityFallback = true,
+                contractReason = resolved.contractReason,
             )
         }
         throw ClassNotFoundException(
@@ -1777,7 +1800,7 @@ internal class AppleMusicHookResolver(
         )
     }
 
-    /** 解析单个方法；候选类存在但方法签名不符时继续尝试下一版本候选。 */
+    /** 解析单个方法；候选类存在但方法签名或语义契约不符时继续尝试下一版本候选。 */
     fun resolveMethod(hookPoint: AppleMusicHookPoint): ResolvedAppleMusicHookMethod {
         val exactTargets = AppleMusicHookProfiles.exactTargets(version, hookPoint).toSet()
         val failures = mutableListOf<String>()
@@ -1795,13 +1818,28 @@ internal class AppleMusicHookResolver(
                 .toList()
             if (matchingMethods.size == 1 || target.allowFirstMatch && matchingMethods.isNotEmpty()) {
                 val method = matchingMethods.first().apply { isAccessible = true }
+                val contractResult = AppleMusicHookContracts.validate(
+                    HookContractContext(
+                        hookPoint = hookPoint,
+                        target = target,
+                        clazz = clazz,
+                        method = method,
+                        classLookup = classLookup,
+                        dexKitResolver = dexKitResolver,
+                    ),
+                )
+                if (contractResult is ContractResult.Rejected) {
+                    failures += "${target.className}#${method.name}:contract:${contractResult.reason}"
+                    return@forEach
+                }
                 return repairAndRecordMethod(
                     hookPoint = hookPoint,
                     baselineClassName = target.className,
                     resolved = ResolvedAppleMusicHookMethod(
-                    target = target,
-                    method = method,
-                    compatibilityFallback = target !in exactTargets,
+                        target = target,
+                        method = method,
+                        compatibilityFallback = target !in exactTargets,
+                        contractReason = if (target !in exactTargets) "contract_passed" else null,
                     ),
                 )
             }
@@ -1828,7 +1866,7 @@ internal class AppleMusicHookResolver(
             hookPoint = hookPoint,
             templates = candidates,
             validator = { template, method ->
-                methodMatches(
+                val matches = methodMatches(
                     hookPoint = hookPoint,
                     target = template.copy(
                         className = method.declaringClass.name,
@@ -1840,6 +1878,18 @@ internal class AppleMusicHookResolver(
                     ),
                     method = method,
                 )
+                if (!matches) return@resolveMethod false
+                val contractResult = AppleMusicHookContracts.validate(
+                    HookContractContext(
+                        hookPoint = hookPoint,
+                        target = template,
+                        clazz = method.declaringClass,
+                        method = method,
+                        classLookup = classLookup,
+                        dexKitResolver = dexKitResolver,
+                    ),
+                )
+                contractResult is ContractResult.Passed
             },
         )
     }
@@ -1885,13 +1935,27 @@ internal class AppleMusicHookResolver(
     }
 
     private fun loadClass(
+        hookPoint: AppleMusicHookPoint,
         target: AppleMusicHookTarget,
         compatibilityFallback: Boolean,
     ): ResolvedAppleMusicHookClass? = runCatching {
+        val clazz = classLookup(target.className)
+        val contractResult = AppleMusicHookContracts.validate(
+            HookContractContext(
+                hookPoint = hookPoint,
+                target = target,
+                clazz = clazz,
+                method = null,
+                classLookup = classLookup,
+                dexKitResolver = dexKitResolver,
+            ),
+        )
+        if (contractResult is ContractResult.Rejected) return null
         ResolvedAppleMusicHookClass(
             target = target,
-            clazz = classLookup(target.className),
+            clazz = clazz,
             compatibilityFallback = compatibilityFallback,
+            contractReason = if (compatibilityFallback) "contract_passed" else null,
         )
     }.getOrNull()
 

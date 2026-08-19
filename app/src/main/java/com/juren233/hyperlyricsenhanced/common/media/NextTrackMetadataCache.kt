@@ -181,6 +181,11 @@ internal object NextTrackMetadataCache {
         playerPackageName: String,
         officialProviderPreference: Boolean?,
     ): Boolean =
-        OfficialProviderCatalog.isOfficialProviderPair(providerPackageName, playerPackageName) &&
-            officialProviderPreference != false
+        (
+            OfficialProviderCatalog.isOfficialProviderPair(providerPackageName, playerPackageName) &&
+                officialProviderPreference != false
+            ) || (
+                providerPackageName == OfficialProviderCatalog.CORE_PACKAGE_NAME &&
+                    playerPackageName == OfficialProviderCatalog.SALT_PLAYER_PACKAGE_NAME
+                )
 }

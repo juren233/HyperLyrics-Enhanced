@@ -3058,8 +3058,12 @@ class LyriconSource : LyricSource {
         }
 
         override fun onPlaybackStateChanged(isPlaying: Boolean) {
-            if (!hasActiveCentralPlayer()) return
-            if (centralAppleProviderActive && fallbackSongActive) return
+            if (!shouldForwardCentralPlaybackState(
+                    hasActiveCentralPlayer = hasActiveCentralPlayer(),
+                    centralAppleProviderActive = centralAppleProviderActive,
+                    fallbackSongActive = fallbackSongActive,
+                )
+            ) return
             sink?.onPlaybackStateChanged(isPlaying)
         }
 

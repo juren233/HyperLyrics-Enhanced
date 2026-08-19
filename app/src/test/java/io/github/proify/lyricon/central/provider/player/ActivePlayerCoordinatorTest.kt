@@ -6,8 +6,10 @@
 
 package io.github.proify.lyricon.central.provider.player
 
+import com.juren233.hyperlyricsenhanced.provider.OfficialProviderControlProtocol
 import io.github.proify.lyricon.lyric.model.Song
 import io.github.proify.lyricon.provider.ProviderInfo
+import io.github.proify.lyricon.provider.ProviderMetadata
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -21,6 +23,17 @@ class ActivePlayerCoordinatorTest {
     private val officialInfo = ProviderInfo(
         "com.juren233.hyperlyricsenhanced.provider.salt-player",
         playerPackageName,
+    )
+    private val nativeSaltInfo = ProviderInfo(
+        playerPackageName,
+        playerPackageName,
+    )
+    private val controlOnlyInfo = ProviderInfo(
+        "com.juren233.hyperlyricsenhanced.provider.salt-player",
+        playerPackageName,
+        metadata = ProviderMetadata(
+            mapOf(OfficialProviderControlProtocol.CONTROL_ONLY_METADATA_KEY to "true"),
+        ),
     )
     private val otherPlayerPackageName = "com.luna.music"
     private val otherOfficialInfo = ProviderInfo(
@@ -49,6 +62,29 @@ class ActivePlayerCoordinatorTest {
         coordinator.onPlaybackStateChanged(playingRecorder(legacyInfo), true)
 
         assertEquals(officialInfo, listener.activeProvider)
+    }
+
+    @Test
+    fun `control only official Provider never becomes active`() {
+        val coordinator = coordinator(officialProviderPreference = { true })
+        val listener = RecordingListener()
+        coordinator.addListener(listener)
+
+        coordinator.onPlaybackStateChanged(playingRecorder(controlOnlyInfo), true)
+
+        assertNull(listener.activeProvider)
+    }
+
+    @Test
+    fun `enabled Salt Pack keeps native Salt Lyricon active`() {
+        val coordinator = coordinator(officialProviderPreference = { true })
+        val listener = RecordingListener()
+        coordinator.addListener(listener)
+
+        coordinator.onPlaybackStateChanged(playingRecorder(nativeSaltInfo), true)
+        coordinator.onPlaybackStateChanged(playingRecorder(controlOnlyInfo), true)
+
+        assertEquals(nativeSaltInfo, listener.activeProvider)
     }
 
     @Test

@@ -476,6 +476,7 @@ data class OfficialProviderNextTrackFrame(
  * Reserved frames are consumed by Central and must never reach plain-text lyrics.
  */
 object OfficialProviderControlProtocol {
+    const val CONTROL_ONLY_METADATA_KEY = "hle.control_only"
     const val NEXT_TRACK_PREFIX = "\u001eHLE_OFFICIAL_NEXT_TRACK_V1|"
 
     private const val UPDATE_OPERATION = "U"

@@ -32,8 +32,19 @@ object OnlineTranslationSourcePreferences {
             rawOrder = stored,
             automaticSelection = isAutoSelectBestSourceEnabled(prefs),
         )
-        return order.filter { source -> isSourceEnabled(prefs, source) }
+        return resolveEnabledSources(order) { source -> isSourceEnabled(prefs, source) }
     }
+
+    fun resolveEnabledSources(
+        order: List<Source>,
+        isEnabled: (Source) -> Boolean,
+    ): List<Source> {
+        val enabledSources = order.filter(isEnabled)
+        return enabledSources.ifEmpty { order.take(1) }
+    }
+
+    fun canToggleSource(source: Source, enabledSources: Collection<Source>): Boolean =
+        source !in enabledSources || enabledSources.size > 1
 
     fun resolveOrder(rawOrder: String?, automaticSelection: Boolean): List<Source> =
         if (automaticSelection) defaultOrder else normalizeOrder(rawOrder)

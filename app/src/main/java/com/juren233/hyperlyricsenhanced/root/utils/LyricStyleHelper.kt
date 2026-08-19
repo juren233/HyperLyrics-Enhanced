@@ -183,7 +183,8 @@ object LyricStyleHelper {
                 latinWaveFactor = prefs.getFloat(RootConstants.KEY_HOOK_WORD_MOTION_LATIN_WAVE, RootConstants.DEFAULT_HOOK_WORD_MOTION_LATIN_WAVE),
             ),
             placeholder = TitleSlot.NONE,
-            centerIfPossible = prefs.getBoolean(RootConstants.KEY_HOOK_CENTER_LYRIC, RootConstants.DEFAULT_HOOK_CENTER_LYRIC),
+            centerIfPossible = false,
+            alignRight = false,
         )
         return StyleBuildResult(
             style = style,
@@ -201,4 +202,5 @@ object LyricStyleHelper {
             )
         )
     }
+
 }

@@ -288,22 +288,41 @@ internal object IslandProgressGlowController {
                 diagnosticSource = "island_edge_progress"
             )
         } ?: CoverColorHelper.currentMediaKey()
-        val resolvedPalette = CoverColorHelper.resolveColors(
-            bitmap = mediaInfo?.albumArt,
-            useGradient = useGradient,
-            songKey = mediaColorKey
-        ) ?: return ProgressColors(
-            progressStart = DEFAULT_PROGRESS_COLOR,
-            progressEnd = DEFAULT_PROGRESS_COLOR,
-            track = DEFAULT_TRACK_COLOR,
-            coverEnabled = true,
-            coverGradient = useGradient,
-            mediaKey = mediaColorKey,
-            artworkState = if (mediaInfo?.albumArt != null) "present" else "missing",
-            fallbackReason = "NO_ARTWORK_OR_CACHE"
-        )
+        val resolvedPalette = runCatching {
+            CoverColorHelper.resolveColors(
+                bitmap = mediaInfo?.albumArt,
+                useGradient = useGradient,
+                songKey = mediaColorKey
+            )
+        }.getOrNull()
+        val artworkFallback = mediaInfo?.albumArt?.let(CoverColorHelper::fallbackArtworkColor)
+        if (resolvedPalette == null && artworkFallback != null) {
+            return ProgressColors(
+                progressStart = artworkFallback,
+                progressEnd = artworkFallback,
+                track = withAlpha(artworkFallback, COVER_TRACK_ALPHA),
+                coverEnabled = true,
+                coverGradient = useGradient,
+                mediaKey = mediaColorKey,
+                artworkState = "present",
+                paletteSource = CoverColorHelper.PaletteSource.ARTWORK_SAMPLED_FALLBACK
+            )
+        }
+        if (resolvedPalette == null) {
+            return ProgressColors(
+                progressStart = DEFAULT_PROGRESS_COLOR,
+                progressEnd = DEFAULT_PROGRESS_COLOR,
+                track = DEFAULT_TRACK_COLOR,
+                coverEnabled = true,
+                coverGradient = useGradient,
+                mediaKey = mediaColorKey,
+                artworkState = if (mediaInfo?.albumArt != null) "present" else "missing",
+                fallbackReason = "NO_ARTWORK_OR_CACHE"
+            )
+        }
         val palette = resolvedPalette.colors
         val highlight = palette.second.firstOrNull()
+            ?: artworkFallback
             ?: return ProgressColors(
                 progressStart = DEFAULT_PROGRESS_COLOR,
                 progressEnd = DEFAULT_PROGRESS_COLOR,

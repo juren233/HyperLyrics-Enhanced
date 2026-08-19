@@ -472,7 +472,10 @@ fun OfficialProviderDownloadPage() {
                 modifier = Modifier.fillMaxSize(),
             ) {
                 val lazyListState = rememberLazyListState()
-                val availableItems = state.value.items.filterNot { it.installed }
+                val availableItems = state.value.items.filter { item ->
+                    !item.installed &&
+                        OfficialProviderCatalog.shouldShowInDownloadList(item.catalog.id)
+                }
                 LazyColumn(
                     state = lazyListState,
                     modifier = Modifier.pageScrollModifiers(
@@ -530,6 +533,10 @@ fun OfficialProviderDownloadPage() {
                                                 stringResource(R.string.provider_status_unavailable)
                                             },
                                         )
+                                        if (item.catalog.id == "salt-player") {
+                                            append("\n")
+                                            append(stringResource(R.string.provider_salt_player_upgrade_hint))
+                                        }
                                         append("\n")
                                         append(item.catalog.targetPackages.joinToString())
                                     },
@@ -759,6 +766,10 @@ private fun LazyListScope.providerSections(
                             providerDescription?.takeIf(String::isNotBlank)?.let { description ->
                                 append("\n")
                                 append(description)
+                            }
+                            if (item.catalog.id == "salt-player") {
+                                append("\n")
+                                append(stringResource(R.string.provider_salt_player_upgrade_hint))
                             }
                             append("\n")
                             append(item.catalog.targetPackages.joinToString())

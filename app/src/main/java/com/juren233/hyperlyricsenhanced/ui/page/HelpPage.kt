@@ -28,6 +28,7 @@ import androidx.core.net.toUri
 import com.juren233.hyperlyricsenhanced.R
 import com.juren233.hyperlyricsenhanced.ui.component.TagComponent
 import com.juren233.hyperlyricsenhanced.ui.navigation.LocalNavigator
+import com.juren233.hyperlyricsenhanced.ui.navigation.Route
 import com.juren233.hyperlyricsenhanced.ui.utils.BlurredBar
 import com.juren233.hyperlyricsenhanced.ui.utils.pageScrollModifiers
 import com.juren233.hyperlyricsenhanced.ui.utils.rememberBlurBackdrop
@@ -115,7 +116,11 @@ fun HelpPage() {
                     contentPadding = contentPadding,
                 ) {
                     when (page) {
-                        0 -> superIslandHelpSections()
+                        0 -> superIslandHelpSections(
+                            onOpenLyriconConfig = {
+                                navigator.navigate(Route.LyricProvider)
+                            }
+                        )
                         1 -> dynamicIslandHelpSections()
                     }
                 }
@@ -125,7 +130,9 @@ fun HelpPage() {
 }
 
 @OptIn(ExperimentalLayoutApi::class)
-private fun LazyListScope.superIslandHelpSections() {
+private fun LazyListScope.superIslandHelpSections(
+    onOpenLyriconConfig: () -> Unit,
+) {
     // 1. 配置流程
     item(key = "config_steps_title") {
         SmallTitle(text = stringResource(R.string.title_help_config_steps))
@@ -143,7 +150,6 @@ private fun LazyListScope.superIslandHelpSections() {
         SmallTitle(text = stringResource(R.string.title_help_lyric_sources))
     }
     item(key = "source_lyricon") {
-        val context = LocalContext.current
         Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
             Column {
                 BasicComponent(
@@ -155,10 +161,8 @@ private fun LazyListScope.superIslandHelpSections() {
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     TagComponent(
-                        text = stringResource(R.string.tag_download_providers),
-                        onClick = {
-                            context.startActivity(Intent(Intent.ACTION_VIEW, "https://github.com/proify/LyricProvider/releases".toUri()))
-                        }
+                        text = stringResource(R.string.tag_open_lyricon_configuration),
+                        onClick = onOpenLyriconConfig,
                     )
                 }
             }

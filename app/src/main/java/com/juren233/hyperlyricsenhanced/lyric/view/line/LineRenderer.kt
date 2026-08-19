@@ -15,6 +15,7 @@ internal interface LineRenderer {
     val isFinished: Boolean
     val isStarted: Boolean
     var centerIfPossible: Boolean
+    var alignRight: Boolean
 
     fun step(deltaNanos: Long, model: LyricModel, state: LineState, viewWidth: Int): Boolean
     fun draw(canvas: Canvas, model: LyricModel, paint: TextPaint, state: LineState, viewWidth: Int, viewHeight: Int)
@@ -28,10 +29,12 @@ internal fun resolvePlainTextOffset(
     viewWidth: Float,
     scrollOffset: Float,
     isAlignedRight: Boolean,
-    centerIfPossible: Boolean
+    centerIfPossible: Boolean,
+    alignRight: Boolean = false
 ): Float = when {
     textWidth > viewWidth -> scrollOffset
-    isAlignedRight -> viewWidth - textWidth
+    alignRight -> viewWidth - textWidth
     centerIfPossible -> (viewWidth - textWidth) / 2f
+    isAlignedRight -> viewWidth - textWidth
     else -> scrollOffset
 }

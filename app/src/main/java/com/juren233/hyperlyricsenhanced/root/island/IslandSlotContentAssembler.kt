@@ -6,6 +6,7 @@ import android.text.TextPaint
 import android.view.View
 import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.common.RootConstants
+import com.juren233.hyperlyricsenhanced.common.IslandLyricPosition
 import com.juren233.hyperlyricsenhanced.common.lyric.CjkLyricWhitespacePolicy
 import com.juren233.hyperlyricsenhanced.common.lyric.LyricMetadataKeys
 import com.juren233.hyperlyricsenhanced.common.lyric.RichLyricLineSplitter
@@ -129,7 +130,7 @@ internal object IslandSlotContentAssembler {
                     "size=${artwork.width}x${artwork.height},generation=${artwork.generationId}," +
                         "identity=${System.identityHashCode(artwork).toUInt().toString(16)}," +
                         "acceptedContent=${artworkContentKey.toUInt().toString(16)}," +
-                        "recycled=${artwork.isRecycled}"
+                        "recycled=${artwork.isRecycled},source=${mediaInfo.artworkSource}"
                 } ?: "none",
                 signature = signature,
                 previousSignature = previousSignature
@@ -373,7 +374,9 @@ internal object IslandSlotContentAssembler {
         if (lastContentSignatures[view] == signature && !contentChanged) return false
 
         applyContentUpdate(view, config, contentChanged = contentChanged) { target ->
-            applyLineCentering(target, config.centerLyric)
+            val isLeft = view.tag == IslandProbeUtils.LEFT_TEST_VIEW_TAG
+            applyLineCentering(target, config.centerLyric(isLeft))
+            applyLineRightAlignment(target, config.rightAlignLyric(isLeft))
             when (target) {
                 is RichLyricLineView -> {
                     target.line = line
@@ -464,13 +467,13 @@ internal object IslandSlotContentAssembler {
         config: IslandSlotRuntimeConfig,
         isLeft: Boolean
     ): IRichLyricLine? {
-        val rawLine = displayLyricLine(prefs, processedRawLine(prefs, config))
+        val rawLine = displayLyricLine(prefs, processedRawLine(prefs, config, isLeft))
         if (!config.isSplitMode || rawLine == null) return rawLine
         if (rawLine.text.isNullOrEmpty()) return rawLine
 
         val density = view.resources.displayMetrics.density
         val leftMaxPx = config.leftMaxWidthDp * density
-        val centerCurrentLine = shouldCenterLine(config, rawLine)
+        val centerCurrentLine = shouldCenterLine(config, rawLine, isLeft)
         val textPaint = TextPaint().apply {
             textSize = config.textSizeSp.toFloat() * density
         }
@@ -490,7 +493,11 @@ internal object IslandSlotContentAssembler {
         return if (isLeft) splitResult.left else splitResult.right
     }
 
-    fun processedRawLine(prefs: SharedPreferences, config: IslandSlotRuntimeConfig? = null): IRichLyricLine? {
+    fun processedRawLine(
+        prefs: SharedPreferences,
+        config: IslandSlotRuntimeConfig? = null,
+        isLeft: Boolean? = null
+    ): IRichLyricLine? {
         val songName = LyriconDataBridge.currentSongName?.takeIf { it.isNotEmpty() } ?: ""
         var rawLine = LyriconDataBridge.currentLyricLineForIsland(
             nextLyricLineEnabled = config?.nextLyricLine != false
@@ -501,7 +508,7 @@ internal object IslandSlotContentAssembler {
             val nextLine = LyriconDataBridge.currentNextLyricLine
             return rawLine.withNextLinePreview(
                 nextLine = nextLine,
-                centerNextLine = shouldCenterLine(config, nextLine)
+                centerNextLine = shouldCenterLine(config, nextLine, isLeft)
             )
         }
 
@@ -535,7 +542,8 @@ internal object IslandSlotContentAssembler {
                 isLeft = view.tag == IslandProbeUtils.LEFT_TEST_VIEW_TAG
             )
         )
-        val centerCurrentLine = shouldCenterLine(config, targetLine)
+        val isLeft = view.tag == IslandProbeUtils.LEFT_TEST_VIEW_TAG
+        val centerCurrentLine = shouldCenterLine(config, targetLine, isLeft)
         val isNextLinePreview = targetLine?.metadata?.getBoolean(
             METADATA_NEXT_LINE_PREVIEW
         ) == true
@@ -552,12 +560,22 @@ internal object IslandSlotContentAssembler {
         val lyricsJustBecameAvailable = recordLyricAvailability(view, targetLine)
         if (!force && lastContentSignatures[view] == signature && !contentChanged) {
             applyLineCentering(view, centerCurrentLine, centerSecondaryLine)
+            applyLineRightAlignment(
+                view,
+                alignMainRight = config.rightAlignLyric(isLeft) && !centerCurrentLine,
+                alignSecondaryRight = config.rightAlignLyric(isLeft) && !centerSecondaryLine
+            )
             applyPlaybackActive(view, playbackActive)
             return false
         }
 
         val applyLine: (View) -> Unit = { target ->
             applyLineCentering(target, centerCurrentLine, centerSecondaryLine)
+            applyLineRightAlignment(
+                target,
+                alignMainRight = config.rightAlignLyric(isLeft) && !centerCurrentLine,
+                alignSecondaryRight = config.rightAlignLyric(isLeft) && !centerSecondaryLine
+            )
             when (target) {
                 is RichLyricLineView -> {
                     target.line = targetLine
@@ -626,7 +644,9 @@ internal object IslandSlotContentAssembler {
         if (!force && lastContentSignatures[view] == signature && !contentChanged) return false
 
         applyContentUpdate(view, config, suppressAnimation, contentChanged) { target ->
-            applyLineCentering(target, config.centerLyric)
+            val isLeft = view.tag == IslandProbeUtils.LEFT_TEST_VIEW_TAG
+            applyLineCentering(target, config.centerLyric(isLeft))
+            applyLineRightAlignment(target, config.rightAlignLyric(isLeft))
             when (target) {
                 is RichLyricLineView -> {
                     if (contentChanged) target.line = newLine
@@ -928,8 +948,10 @@ internal object IslandSlotContentAssembler {
 
     private fun shouldCenterLine(
         config: IslandSlotRuntimeConfig,
-        line: IRichLyricLine?
-    ): Boolean = config.centerLyric || (
+        line: IRichLyricLine?,
+        isLeft: Boolean?
+    ): Boolean = isLeft != null && config.centerLyric(isLeft) || (
+        config.groupVocalCenteringEnabled &&
         config.centerGroupVocals &&
             line?.metadata?.getBoolean(LyricMetadataKeys.GROUP_VOCALS) == true
         )
@@ -946,6 +968,23 @@ internal object IslandSlotContentAssembler {
             is SpaceGateRichLyricLineView -> {
                 view.setLineCentering(centerMain, centerSecondary)
             }
+        }
+    }
+
+    private fun applyLineRightAlignment(
+        view: View,
+        alignMainRight: Boolean,
+        alignSecondaryRight: Boolean = alignMainRight
+    ) {
+        when (view) {
+            is RichLyricLineView -> view.setLineAlignmentRight(
+                alignMainRight,
+                alignSecondaryRight
+            )
+            is SpaceGateRichLyricLineView -> view.setLineAlignmentRight(
+                alignMainRight,
+                alignSecondaryRight
+            )
         }
     }
 

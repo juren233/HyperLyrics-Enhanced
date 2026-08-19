@@ -10,6 +10,7 @@ object OfficialProviderCatalog {
     const val PLUGIN_API_VERSION = 3
     const val CORE_PACKAGE_NAME = "com.juren233.hyperlyricsenhanced"
     const val APPLE_MUSIC_PACKAGE_NAME = "com.apple.android.music"
+    const val SALT_PLAYER_PACKAGE_NAME = "com.salt.music"
     const val OFFICIAL_PROVIDER_PACKAGE_PREFIX =
         "com.juren233.hyperlyricsenhanced.provider."
 
@@ -22,6 +23,7 @@ object OfficialProviderCatalog {
         val targetDisplayNames: Map<String, String> = emptyMap(),
         val systemMediaRuntime: Boolean = false,
         val supportsNextTrackPreview: Boolean = true,
+        val showInDownloadList: Boolean = true,
     ) {
         fun displayNameForPackage(packageName: String): String =
             targetDisplayNames[packageName] ?: displayName
@@ -60,8 +62,14 @@ object OfficialProviderCatalog {
                 "com.ikunshare.music.mobile",
                 "com.lxnetease.music.mobile",
             ),
+            showInDownloadList = false,
         ),
-        Definition("poweramp", "Poweramp", setOf("com.maxmpz.audioplayer")),
+        Definition(
+            "poweramp",
+            "Poweramp",
+            setOf("com.maxmpz.audioplayer"),
+            showInDownloadList = false,
+        ),
         Definition(
             id = "salt-player",
             displayName = "椒盐音乐",
@@ -74,9 +82,24 @@ object OfficialProviderCatalog {
             systemMediaRuntime = true,
             supportsNextTrackPreview = false,
         ),
-        Definition("musicfree", "MusicFree", setOf("fun.upup.musicfree")),
-        Definition("gramophone", "Gramophone", setOf("org.akanework.gramophone")),
-        Definition("symfonium", "Symfonium", setOf("app.symfonik.music.player")),
+        Definition(
+            "musicfree",
+            "MusicFree",
+            setOf("fun.upup.musicfree"),
+            showInDownloadList = false,
+        ),
+        Definition(
+            "gramophone",
+            "Gramophone",
+            setOf("org.akanework.gramophone"),
+            showInDownloadList = false,
+        ),
+        Definition(
+            "symfonium",
+            "Symfonium",
+            setOf("app.symfonik.music.player"),
+            showInDownloadList = false,
+        ),
     )
 
     private val definitionsByPackage = buildMap {
@@ -90,6 +113,9 @@ object OfficialProviderCatalog {
 
     fun definitionForId(id: String): Definition? =
         definitions.firstOrNull { it.id == id }
+
+    fun shouldShowInDownloadList(pluginId: String): Boolean =
+        definitionForId(pluginId)?.showInDownloadList == true
 
     fun isOfficialProviderPair(
         providerPackageName: String,

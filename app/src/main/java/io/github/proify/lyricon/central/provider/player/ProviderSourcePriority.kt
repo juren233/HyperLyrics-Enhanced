@@ -26,6 +26,9 @@ internal object ProviderSourcePriorityResolver {
         providerPackageName == OfficialProviderCatalog.CORE_PACKAGE_NAME &&
             playerPackageName == OfficialProviderCatalog.APPLE_MUSIC_PACKAGE_NAME ->
             ProviderSourcePriority.BUILT_IN
+        providerPackageName == OfficialProviderCatalog.SALT_PLAYER_PACKAGE_NAME &&
+            playerPackageName == OfficialProviderCatalog.SALT_PLAYER_PACKAGE_NAME ->
+            ProviderSourcePriority.BUILT_IN
         OfficialProviderCatalog.isOfficialProviderPair(providerPackageName, playerPackageName) ->
             ProviderSourcePriority.OFFICIAL_PLUGIN
         else -> ProviderSourcePriority.LEGACY_APK

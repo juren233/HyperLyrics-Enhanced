@@ -57,4 +57,15 @@ class NextTrackMetadataCacheTest {
             ),
         )
     }
+
+    @Test
+    fun `built in Salt control channel is accepted without Pack preference`() {
+        assertTrue(
+            NextTrackMetadataCache.isProviderAccepted(
+                "com.juren233.hyperlyricsenhanced",
+                "com.salt.music",
+                officialProviderPreference = false,
+            ),
+        )
+    }
 }

@@ -22,6 +22,17 @@ class ProviderSourcePriorityTest {
     }
 
     @Test
+    fun nativeSaltPlayerProviderUsesBuiltInPriority() {
+        assertEquals(
+            ProviderSourcePriority.BUILT_IN,
+            ProviderSourcePriorityResolver.resolve(
+                "com.salt.music",
+                "com.salt.music",
+            ),
+        )
+    }
+
+    @Test
     fun officialPackOutranksLegacyApk() {
         assertEquals(
             ProviderSourcePriority.OFFICIAL_PLUGIN,

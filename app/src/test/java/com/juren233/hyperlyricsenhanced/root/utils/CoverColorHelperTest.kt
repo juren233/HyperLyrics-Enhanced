@@ -2,6 +2,7 @@ package com.juren233.hyperlyricsenhanced.root.utils
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class CoverColorHelperTest {
@@ -44,5 +45,20 @@ class CoverColorHelperTest {
         )
 
         assertEquals(first, second)
+    }
+
+    @Test
+    fun `opaque white artwork remains white instead of becoming a default-color sentinel`() {
+        assertEquals(
+            0xFFFFFFFF.toInt(),
+            CoverColorHelper.sampledArtworkColor(8, 8) { _, _ -> 0xFFFFFFFF.toInt() }
+        )
+    }
+
+    @Test
+    fun `fully transparent artwork has no usable fallback color`() {
+        assertNull(
+            CoverColorHelper.sampledArtworkColor(8, 8) { _, _ -> 0x00FFFFFF }
+        )
     }
 }

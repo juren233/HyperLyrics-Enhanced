@@ -81,6 +81,15 @@ open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
             invalidate()
         }
 
+    var alignRight: Boolean = false
+        set(value) {
+            if (field == value) return
+            field = value
+            syncRenderer.alignRight = value
+            scrollRenderer.alignRight = value
+            invalidate()
+        }
+
     var playListener: LyricPlayListener? = null
         set(value) {
             field = value
@@ -341,7 +350,8 @@ open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
                 textPaint,
                 measuredWidth,
                 measuredHeight,
-                centerIfPossible
+                centerIfPossible,
+                alignRight
             )
             if (playbackActive && !isStaticPreview && isShown) postInvalidateOnAnimation()
         } else {
@@ -446,8 +456,9 @@ open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
         val availableWidth = measuredWidth.toFloat()
         return when {
             textWidth >= availableWidth -> 0f
-            isAlignedRight -> availableWidth - textWidth
+            alignRight -> availableWidth - textWidth
             centerIfPossible -> (availableWidth - textWidth) / 2f
+            isAlignedRight -> availableWidth - textWidth
             else -> 0f
         }
     }

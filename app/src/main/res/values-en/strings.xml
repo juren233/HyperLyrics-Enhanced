@@ -217,6 +217,7 @@
     <string name="provider_status_available">Available: v%1$s</string>
     <string name="provider_status_unavailable">Temporarily unavailable</string>
     <string name="provider_status_needs_repair">Needs repair · Missing or damaged file (v%1$s)</string>
+    <string name="provider_salt_player_upgrade_hint">Recommended: upgrade Salt Player to 12.2.0 or later for plugin-free use. This plugin remains available for older Salt Player versions.</string>
     <string name="provider_action_download">Download</string>
     <string name="provider_action_update">Update</string>
     <string name="provider_action_repair">Repair</string>
@@ -225,7 +226,7 @@
     <string name="provider_remove_failed">Failed to remove plugin: %1$s</string>
     <string name="provider_no_installed_plugins">No other plugins have been added</string>
     <string name="provider_no_installed_plugins_summary">Use the button in the top-right corner to add a lyric plugin for your music app</string>
-    <string name="provider_no_available_plugins">No plugins are available to add</string>
+    <string name="provider_no_available_plugins">Looks like you\'ve added all available plugins! Want official support for another music app? Open an issue on GitHub or post on CoolApk and tag @juren233 to let me know, and your wish might just come true!</string>
     <string name="provider_add_success">Plugin added. Restart %1$s and System UI.</string>
     <string name="provider_add_success_system_ui">Plugin added. Restart System UI.</string>
     <string name="provider_update_success">Plugin updated. Restart %1$s and System UI.</string>
@@ -495,11 +496,13 @@
     <string name="title_content">Content</string>
     <string name="title_left_content_width">Left Content Width</string>
     <string name="title_right_content_width">Right Content Width</string>
-    <string name="label_content_width_range">Range: 0 ~ 100</string>
+    <string name="label_content_width_range">Range: 0 ~ 500</string>
     <string name="title_left_padding">Left Content Padding</string>
     <string name="title_right_padding">Right Content Padding</string>
     <string name="label_left_padding">Left Padding</string>
     <string name="label_right_padding">Right Padding</string>
+    <string name="label_left_padding_range">Left Padding (Range: -50 ~ 100)</string>
+    <string name="label_right_padding_range">Right Padding (Range: -50 ~ 100)</string>
     <string name="title_audio_cover">Audio Cover</string>
     <string name="title_audio_cover_style">Audio cover style</string>
     <string name="title_hide_audio_cover_source">Hide audio cover source badge</string>
@@ -583,10 +586,10 @@
     <string name="summary_help_supported_devices">Only supports HyperOS 3 devices with LSPosed v2.0+ installed</string>
     <string name="summary_help_prerequisites">① Enable HyperLyrics Enhanced in LSPosed and select its recommended scope apps\n② Select the appropriate source under \"Lyric Settings\" on the home page, then enable \"Xiaomi System UI enhancements\" as needed\n③ Restart System UI or reboot your device as required by the lyric source</string>
     <string name="title_help_lyric_sources">Lyric Sources</string>
-    <string name="summary_help_source_lyricon">Apple Music users: the provider is built in. Select the recommended scope apps for HyperLyrics Enhanced in LSPosed and it works out of the box.\n\nFor other music apps, install only the matching LyricProvider. HyperLyrics Enhanced provides a Lyricon Central-compatible bridge inside System UI, so the separate service is no longer required. Restart System UI and the music app after setup.</string>
+    <string name="summary_help_source_lyricon">Lyricon provides lyrics for Apple Music and other supported music apps. The Apple Music provider is built in; enable the recommended scope apps in LSPosed to use it.\n\nFor other music apps, open Lyricon Configuration to add the matching official provider. HyperLyrics Enhanced provides a Lyricon Central-compatible service inside System UI, so no separate lyric service is required. After adding or updating a provider, restart the related music app and System UI as instructed.</string>
     <string name="summary_help_source_superlyric">Reboot device</string>
     <string name="summary_help_source_lyricinfo">Restart System UI</string>
-    <string name="tag_download_providers">Other apps: LyricProvider</string>
+    <string name="tag_open_lyricon_configuration">Open Lyricon Configuration</string>
     <string name="tag_download_superlyric">Download SuperLyric</string>
     <string name="tag_download_lyricinfo">Download LyricInfo</string>
 
@@ -639,7 +642,12 @@
 
     <string name="channel_name_live">Live Update Notification Lyrics</string>
     <string name="channel_name_focus">Xiaomi Notification Spotlight Lyrics</string>
-    <string name="title_center_lyric">Center Lyric</string>
+    <string name="title_center_lyric">Lyric Position</string>
+    <string name="title_left_lyric_position">Left Lyric Position</string>
+    <string name="title_right_lyric_position">Right Lyric Position</string>
+    <string name="option_lyric_position_default">Default</string>
+    <string name="option_lyric_position_center">Center</string>
+    <string name="option_lyric_position_right">Right</string>
     <string name="title_center_group_vocals">Center Group Vocals</string>
     <string name="title_adjacent_background_translation">Temporarily Show Backing-Vocal Translation Next Door</string>
     <string name="summary_adjacent_background_translation">Available only in Verbatim Lyrics mode when exactly one side is set to lyrics</string>

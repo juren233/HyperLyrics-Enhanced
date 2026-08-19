@@ -124,7 +124,7 @@ class OnlineTranslationSourcePreferencesTest {
     }
 
     @Test
-    fun `orderedSources returns empty list when all sources are disabled`() {
+    fun `orderedSources restores the highest priority source when all are disabled`() {
         val prefs = TestSharedPreferences(
             mapOf(
                 OnlineTranslationSourcePreferences.sourcePreferenceKey(Source.NE) to false,
@@ -134,8 +134,33 @@ class OnlineTranslationSourcePreferencesTest {
             )
         )
         assertEquals(
-            emptyList<Source>(),
+            listOf(Source.NE),
             OnlineTranslationSourcePreferences.orderedSources(prefs),
+        )
+    }
+
+    @Test
+    fun `last enabled source cannot be toggled off`() {
+        assertEquals(
+            false,
+            OnlineTranslationSourcePreferences.canToggleSource(
+                Source.QM,
+                setOf(Source.QM),
+            ),
+        )
+        assertEquals(
+            true,
+            OnlineTranslationSourcePreferences.canToggleSource(
+                Source.NE,
+                setOf(Source.QM),
+            ),
+        )
+        assertEquals(
+            true,
+            OnlineTranslationSourcePreferences.canToggleSource(
+                Source.QM,
+                setOf(Source.NE, Source.QM),
+            ),
         )
     }
 

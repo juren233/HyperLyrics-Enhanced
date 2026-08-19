@@ -22,6 +22,7 @@ data class LyricViewStyle(
     val placeholder: TitleSlot = TitleSlot.NAME_ARTIST,
     val transitionConfig: String = "smooth",
     val centerIfPossible: Boolean = false,
+    val alignRight: Boolean = false,
 )
 
 data class TextLook(

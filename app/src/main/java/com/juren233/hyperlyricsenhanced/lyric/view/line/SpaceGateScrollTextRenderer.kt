@@ -34,6 +34,7 @@ internal class SpaceGateScrollTextRenderer : LineRenderer {
     override val isFinished get() = finished
     override val isStarted get() = true
     override var centerIfPossible = false
+    override var alignRight = false
 
     val scrollProgress get() = currentUnitOffset
 
@@ -133,7 +134,8 @@ internal class SpaceGateScrollTextRenderer : LineRenderer {
             vw,
             state.scrollOffset,
             model.isAlignedRight,
-            centerIfPossible
+            centerIfPossible,
+            alignRight
         )
 
         if (cachedViewHeight != viewHeight) {

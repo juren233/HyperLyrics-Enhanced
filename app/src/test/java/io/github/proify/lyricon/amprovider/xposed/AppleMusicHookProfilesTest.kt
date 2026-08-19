@@ -352,6 +352,44 @@ class AppleMusicHookProfilesTest {
     }
 
     @Test
+    fun `Apple Music 652 selects its exact obfuscated hook targets`() {
+        val version = AppleMusicVersion("6.5.2", 1586L)
+
+        assertEquals("am-6.5.2-1586", AppleMusicHookProfiles.profileFor(version)?.id)
+        assertEquals(
+            listOf("com.apple.android.music.player.fragment.d0"),
+            classNames(version, AppleMusicHookPoint.LYRICS_SOURCE_MENU_CLICK_LISTENER),
+        )
+        assertEquals(
+            "a",
+            target(version, AppleMusicHookPoint.LYRICS_SOURCE_MENU_CLICK_LISTENER)
+                .runtimeMemberName(
+                    AppleMusicRuntimeMember.LYRICS_SOURCE_MENU_FRAGMENT_FIELD
+                ),
+        )
+        assertEquals(
+            listOf("z0.s0"),
+            classNames(version, AppleMusicHookPoint.COMPOSE_NEVER_EQUAL_POLICY),
+        )
+        assertEquals(
+            listOf("C1.w"),
+            classNames(version, AppleMusicHookPoint.COMPOSE_OBSERVE_AS_STATE),
+        )
+        assertEquals(
+            listOf("com.apple.android.music.common.L"),
+            classNames(version, AppleMusicHookPoint.LISTEN_NOW_ARTWORK_RESOLVER),
+        )
+        assertEquals(
+            listOf("com.apple.android.music.player.e"),
+            classNames(version, AppleMusicHookPoint.IN_APP_GLOBAL_METADATA_DISPATCHER),
+        )
+        assertEquals(
+            listOf("com.apple.android.music.library2.LibraryMainContentEpoxyController"),
+            classNames(version, AppleMusicHookPoint.LIBRARY_EPOXY_BUILD),
+        )
+    }
+
+    @Test
     fun `unknown versions try newer verified targets before older ones`() {
         val version = AppleMusicVersion("6.6.0", 1600L)
 
@@ -384,7 +422,7 @@ class AppleMusicHookProfilesTest {
             ).map(AppleMusicHookTarget::className),
         )
         assertEquals(
-            listOf("z0.t0", "z0.v0"),
+            listOf("z0.s0", "z0.t0", "z0.v0"),
             AppleMusicHookProfiles.candidates(
                 version,
                 AppleMusicHookPoint.COMPOSE_NEVER_EQUAL_POLICY,
@@ -415,6 +453,31 @@ class AppleMusicHookProfilesTest {
                 version,
                 AppleMusicHookPoint.LIBRARY_COMPOSE_VIEW_MODEL_GETTER,
             ).mapNotNull(AppleMusicHookTarget::methodName),
+        )
+        assertEquals(
+            listOf("com.apple.android.music.common.L", "com.apple.android.music.common.J"),
+            AppleMusicHookProfiles.candidates(
+                version,
+                AppleMusicHookPoint.LISTEN_NOW_ARTWORK_RESOLVER,
+            ).map(AppleMusicHookTarget::className),
+        )
+        assertEquals(
+            listOf("com.apple.android.music.player.e", "com.apple.android.music.player.f"),
+            AppleMusicHookProfiles.candidates(
+                version,
+                AppleMusicHookPoint.IN_APP_GLOBAL_METADATA_DISPATCHER,
+            ).map(AppleMusicHookTarget::className),
+        )
+        assertEquals(
+            listOf(
+                "com.apple.android.music.player.fragment.d0",
+                "com.apple.android.music.player.fragment.a0",
+                "com.apple.android.music.player.fragment.e0",
+            ),
+            AppleMusicHookProfiles.candidates(
+                version,
+                AppleMusicHookPoint.LYRICS_SOURCE_MENU_CLICK_LISTENER,
+            ).map(AppleMusicHookTarget::className),
         )
     }
 

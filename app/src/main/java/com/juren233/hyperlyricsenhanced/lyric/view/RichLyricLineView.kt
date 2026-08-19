@@ -245,12 +245,21 @@ class RichLyricLineView(
             style.centerIfPossible
         )
         applyLineCentering()
+        setLineAlignmentRight(style.alignRight)
     }
 
     fun setLineCentering(centerMain: Boolean, centerSecondary: Boolean = centerMain) {
         centerMainLine = centerMain
         centerSecondaryLine = centerSecondary
         applyLineCentering()
+    }
+
+    fun setLineAlignmentRight(
+        alignMainRight: Boolean,
+        alignSecondaryRight: Boolean = alignMainRight
+    ) {
+        main.alignRight = alignMainRight
+        secondary.alignRight = alignSecondaryRight
     }
 
     private fun applyLineCentering() {

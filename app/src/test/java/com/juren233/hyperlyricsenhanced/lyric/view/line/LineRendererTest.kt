@@ -28,6 +28,36 @@ class LineRendererTest {
     }
 
     @Test
+    fun `explicit right position overrides centered or source alignment`() {
+        assertEquals(
+            60f,
+            resolvePlainTextOffset(
+                textWidth = 40f,
+                viewWidth = 100f,
+                scrollOffset = 0f,
+                isAlignedRight = false,
+                centerIfPossible = true,
+                alignRight = true
+            )
+        )
+    }
+
+    @Test
+    fun `explicit center position overrides a source right aligned line`() {
+        assertEquals(
+            30f,
+            resolvePlainTextOffset(
+                textWidth = 40f,
+                viewWidth = 100f,
+                scrollOffset = 0f,
+                isAlignedRight = true,
+                centerIfPossible = true,
+                alignRight = false
+            )
+        )
+    }
+
+    @Test
     fun `keeps the scroll offset for overflowing text`() {
         assertEquals(
             -12f,

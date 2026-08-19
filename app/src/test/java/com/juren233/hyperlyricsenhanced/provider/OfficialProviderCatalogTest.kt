@@ -40,6 +40,20 @@ class OfficialProviderCatalogTest {
     }
 
     @Test
+    fun `hides discontinued entries only from the download list`() {
+        val hiddenIds = OfficialProviderCatalog.definitions
+            .filterNot(OfficialProviderCatalog.Definition::showInDownloadList)
+            .mapTo(linkedSetOf(), OfficialProviderCatalog.Definition::id)
+
+        assertEquals(
+            setOf("lxmusic", "poweramp", "musicfree", "gramophone", "symfonium"),
+            hiddenIds,
+        )
+        assertTrue(OfficialProviderCatalog.shouldShowInDownloadList("salt-player"))
+        assertFalse(OfficialProviderCatalog.shouldShowInDownloadList("lxmusic"))
+    }
+
+    @Test
     fun `allows QQ Music playback service process`() {
         assertTrue(
             OfficialProviderCatalog.shouldLoadIntoProcess(

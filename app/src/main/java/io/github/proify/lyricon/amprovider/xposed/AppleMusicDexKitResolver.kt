@@ -200,20 +200,24 @@ internal class AppleMusicDexKitResolver(
         }
 
         val startedAt = System.nanoTime()
-        val descriptors = findCandidates(hookPoint, templates)
+        val descriptors = findCandidates(hookPoint, templates).ifEmpty {
+            findCandidatesViaClassSearch(hookPoint, templates)
+        }
         val matches = descriptors.mapNotNull { descriptor ->
             val template = bestTemplate(templates, descriptor) ?: return@mapNotNull null
             val method = runCatching { descriptor.toMethod(classLoader) }.getOrNull()
                 ?: return@mapNotNull null
             method.takeIf { validator(template, it) }?.let { template to it }
         }.distinctBy { (_, method) -> method.toGenericString() }
-        if (matches.size != 1) {
+
+        val disambiguated = disambiguateMatches(matches)
+        if (disambiguated == null) {
             ProviderLogger.diagnostic(
-                "Apple Music DexKit 查询未得到唯一目标: hook=$hookPoint count=${matches.size}",
+                "Apple Music DexKit 查询未得到唯一目标或存在歧义: hook=$hookPoint count=${matches.size}",
             )
             return null
         }
-        val (template, method) = matches.single()
+        val (template, method) = disambiguated
         val descriptor = MethodDescriptor.from(method)
         preferences.edit().putString(cacheKey, encode(descriptor)).apply()
         val elapsedMs = (System.nanoTime() - startedAt) / 1_000_000L
@@ -239,7 +243,36 @@ internal class AppleMusicDexKitResolver(
             target = repairedTarget,
             method = method.apply { isAccessible = true },
             compatibilityFallback = true,
+            contractReason = "dexkit_resolved",
         )
+    }
+
+    private fun disambiguateMatches(
+        matches: List<Pair<AppleMusicHookTarget, Method>>,
+    ): Pair<AppleMusicHookTarget, Method>? {
+        if (matches.isEmpty()) return null
+        if (matches.size == 1) return matches.single()
+
+        val scored = matches.map { (template, method) ->
+            var score = 100
+            if (template.methodName != null && method.name == template.methodName) score += 50
+            if (method.declaringClass.name == template.className) score += 40
+            val templatePackage = template.className.substringBeforeLast('.', "")
+            val declaringPackage = method.declaringClass.name.substringBeforeLast('.', "")
+            if (templatePackage.isNotBlank() && declaringPackage == templatePackage) score += 20
+            if (template.parameterCount != null && method.parameterCount == template.parameterCount) score += 20
+            if (template.returnTypeName != null && method.returnType.name == template.returnTypeName) score += 20
+            if (!method.isBridge && !method.isSynthetic) score += 10
+            Triple(template, method, score)
+        }.sortedByDescending { it.third }
+
+        val best = scored.first()
+        val secondBest = scored.getOrNull(1)
+        return if (secondBest == null || best.third - secondBest.third >= 20) {
+            best.first to best.second
+        } else {
+            null
+        }
     }
 
     private fun preferences() = application.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
@@ -266,6 +299,107 @@ internal class AppleMusicDexKitResolver(
         }
         val packagePrefix = template.className.substringBeforeLast('.', "")
         return query(packagePrefix).ifEmpty { query(null) }.distinctBy(Class<*>::getName)
+    }
+
+    private fun findCandidatesViaClassSearch(
+        hookPoint: AppleMusicHookPoint,
+        templates: List<AppleMusicHookTarget>,
+    ): List<MethodDescriptor> {
+        val preferences = preferences()
+        return templates.flatMap { template ->
+            val classSeed = decodeClassShape(
+                preferences.getString(classBaselineKey(hookPoint, template.className), null),
+            ) ?: return@flatMap emptyList()
+            val candidateClasses = findClasses(template, classSeed)
+            candidateClasses.flatMap { clazz ->
+                val methods = allMethods(clazz)
+                methods.filter { method ->
+                    (template.methodName == null || method.name == template.methodName) &&
+                        (template.parameterCount == null || method.parameterCount == template.parameterCount) &&
+                        (template.returnTypeName == null || !isStableRuntimeType(template.returnTypeName) ||
+                            method.returnType.name == template.returnTypeName) &&
+                        (template.isStatic == null || Modifier.isStatic(method.modifiers) == template.isStatic)
+                }.map(MethodDescriptor::from)
+            }
+        }.distinct()
+    }
+
+    private fun findCandidates(
+        hookPoint: AppleMusicHookPoint,
+        templates: List<AppleMusicHookTarget>,
+    ): List<MethodDescriptor> {
+        ensureDexKitLoaded()
+        val bridge = dexKitBridge()
+        return templates.map { template ->
+            val preferences = preferences()
+            val methodSeed = decodeMemberDescriptor(
+                preferences.getString(hookMethodBaselineKey(hookPoint, template.className), null),
+            )
+            val classSeed = decodeClassShape(
+                preferences.getString(classBaselineKey(hookPoint, template.className), null),
+            )
+            val packagePrefix = template.className.substringBeforeLast('.', "")
+
+            fun executeQuery(scopedPackage: String?): List<MethodDescriptor> {
+                val finder = FindMethod().apply {
+                    scopedPackage?.takeIf(String::isNotBlank)?.let { searchPackages(it) }
+                    matcher {
+                        template.methodName?.let { name(it) }
+                        (methodSeed?.parameterCount ?: template.parameterCount)?.let(::paramCount)
+                        (methodSeed?.returnTypeName ?: template.returnTypeName)
+                            ?.takeIf(::isStableRuntimeType)
+                            ?.let(::returnType)
+                        if (methodSeed?.static == true || template.isStatic == true) {
+                            modifiers(Modifier.STATIC, org.luckypray.dexkit.query.enums.MatchType.Contains)
+                        }
+                        template.parameterTypeNames
+                            ?.takeIf { types -> types.all { it != null && isStableRuntimeType(it) } }
+                            ?.map { it!! }
+                            ?.let(::paramTypes)
+                        template.requiredInvokedMethodNames.forEach { invokeName ->
+                            addInvoke(org.luckypray.dexkit.query.matchers.MethodMatcher().name(invokeName))
+                        }
+                        template.requiredInvokedMethodDescriptors.forEach { invokeDesc ->
+                            addInvoke(org.luckypray.dexkit.query.matchers.MethodMatcher().descriptor(invokeDesc))
+                        }
+                        template.requiredCallerMethodNames.forEach { callerName ->
+                            addCaller(org.luckypray.dexkit.query.matchers.MethodMatcher().name(callerName))
+                        }
+                        classSeed?.let { seed ->
+                            declaredClass {
+                                fieldCount(seed.fieldCountRange.first, seed.fieldCountRange.last)
+                                methodCount(seed.methodCountRange.first, seed.methodCountRange.last)
+                                interfaceCount(seed.interfaceCountRange.first, seed.interfaceCountRange.last)
+                            }
+                        }
+                    }
+                }
+                return bridge.findMethod(finder).map { method ->
+                    MethodDescriptor(
+                        className = method.className,
+                        methodName = method.methodName,
+                        parameterTypeNames = method.paramTypeNames,
+                        returnTypeName = method.returnTypeName,
+                        isStatic = Modifier.isStatic(method.modifiers),
+                    )
+                }
+            }
+
+            val scopedResults = if (packagePrefix.isNotBlank()) executeQuery(packagePrefix) else emptyList()
+            if (scopedResults.isNotEmpty()) scopedResults else executeQuery(null)
+        }.flatten().distinct()
+    }
+
+    private fun dexKitBridge(): DexKitBridge {
+        sharedBridge?.let { return it }
+        synchronized(dexKitBridgeLock) {
+            sharedBridge?.let { return it }
+            return DexKitBridge.create(application.applicationInfo.sourceDir).also { bridge ->
+                bridge.setThreadNum(selectThreadCount())
+                bridge.setMaxConcurrentQueries(1)
+                sharedBridge = bridge
+            }
+        }
     }
 
     private fun repairTarget(
@@ -332,62 +466,6 @@ internal class AppleMusicDexKitResolver(
             .flatMap { current -> current.declaredMethods.asSequence() }
             .filter { it.name == name }
             .toList()
-
-    private fun findCandidates(
-        hookPoint: AppleMusicHookPoint,
-        templates: List<AppleMusicHookTarget>,
-    ): List<MethodDescriptor> {
-        ensureDexKitLoaded()
-        val bridge = dexKitBridge()
-        return templates.map { template ->
-            val preferences = preferences()
-            val methodSeed = decodeMemberDescriptor(
-                preferences.getString(hookMethodBaselineKey(hookPoint, template.className), null),
-            )
-            val classSeed = decodeClassShape(
-                preferences.getString(classBaselineKey(hookPoint, template.className), null),
-            )
-            val finder = FindMethod().apply {
-                matcher {
-                    (methodSeed?.parameterCount ?: template.parameterCount)?.let(::paramCount)
-                    (methodSeed?.returnTypeName ?: template.returnTypeName)
-                        ?.takeIf(::isStableRuntimeType)
-                        ?.let(::returnType)
-                    if (methodSeed?.static == true) {
-                        modifiers(Modifier.STATIC, org.luckypray.dexkit.query.enums.MatchType.Contains)
-                    }
-                    classSeed?.let { seed ->
-                        declaredClass {
-                            fieldCount(seed.fieldCountRange.first, seed.fieldCountRange.last)
-                            methodCount(seed.methodCountRange.first, seed.methodCountRange.last)
-                            interfaceCount(seed.interfaceCountRange.first, seed.interfaceCountRange.last)
-                        }
-                    }
-                }
-            }
-            bridge.findMethod(finder).map { method ->
-                MethodDescriptor(
-                    className = method.className,
-                    methodName = method.methodName,
-                    parameterTypeNames = method.paramTypeNames,
-                    returnTypeName = method.returnTypeName,
-                    isStatic = Modifier.isStatic(method.modifiers),
-                )
-            }
-        }.flatten().distinct()
-    }
-
-    private fun dexKitBridge(): DexKitBridge {
-        sharedBridge?.let { return it }
-        synchronized(dexKitBridgeLock) {
-            sharedBridge?.let { return it }
-            return DexKitBridge.create(application.applicationInfo.sourceDir).also { bridge ->
-                bridge.setThreadNum(selectThreadCount())
-                bridge.setMaxConcurrentQueries(1)
-                sharedBridge = bridge
-            }
-        }
-    }
 
     private fun bestTemplate(
         templates: List<AppleMusicHookTarget>,

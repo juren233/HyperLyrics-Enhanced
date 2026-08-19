@@ -9,6 +9,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.stringResource
 import com.juren233.hyperlyricsenhanced.R
+import com.juren233.hyperlyricsenhanced.common.IslandLyricPosition
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.ui.component.NumberInputDialog
 import com.juren233.hyperlyricsenhanced.ui.component.TextInputDialog
@@ -29,8 +30,45 @@ fun LyricDisplayPage() {
     var customFontPath by remember { mutableStateOf(prefs.getString(RootConstants.KEY_HOOK_CUSTOM_FONT_PATH, null) ?: "") }
     var fontWeight by remember { mutableIntStateOf(prefs.getInt(RootConstants.KEY_HOOK_FONT_WEIGHT, RootConstants.DEFAULT_HOOK_FONT_WEIGHT)) }
     var fontItalic by remember { mutableStateOf(prefs.getBoolean(RootConstants.KEY_HOOK_FONT_ITALIC, RootConstants.DEFAULT_HOOK_FONT_ITALIC)) }
-    var centerLyric by remember { mutableStateOf(prefs.getBoolean(RootConstants.KEY_HOOK_CENTER_LYRIC, RootConstants.DEFAULT_HOOK_CENTER_LYRIC)) }
+    val legacyLyricPosition = remember {
+        IslandLyricPosition.resolve(
+            storedPosition = prefs.getInt(RootConstants.KEY_HOOK_LYRIC_POSITION, Int.MIN_VALUE)
+                .takeUnless { it == Int.MIN_VALUE },
+            legacyCenterEnabled = prefs.getBoolean(
+                RootConstants.KEY_HOOK_CENTER_LYRIC,
+                RootConstants.DEFAULT_HOOK_CENTER_LYRIC
+            )
+        )
+    }
+    var leftLyricPosition by remember {
+        mutableIntStateOf(
+            IslandLyricPosition.resolveSide(
+                storedSidePosition = prefs.getInt(RootConstants.KEY_HOOK_ISLAND_LEFT_LYRIC_POSITION, Int.MIN_VALUE)
+                    .takeUnless { it == Int.MIN_VALUE },
+                legacyGlobalPosition = legacyLyricPosition,
+                legacyCenterEnabled = false
+            )
+        )
+    }
+    var rightLyricPosition by remember {
+        mutableIntStateOf(
+            IslandLyricPosition.resolveSide(
+                storedSidePosition = prefs.getInt(RootConstants.KEY_HOOK_ISLAND_RIGHT_LYRIC_POSITION, Int.MIN_VALUE)
+                    .takeUnless { it == Int.MIN_VALUE },
+                legacyGlobalPosition = legacyLyricPosition,
+                legacyCenterEnabled = false
+            )
+        )
+    }
     var centerGroupVocals by remember { mutableStateOf(prefs.getBoolean(RootConstants.KEY_HOOK_CENTER_GROUP_VOCALS, RootConstants.DEFAULT_HOOK_CENTER_GROUP_VOCALS)) }
+    val lyricMode = prefs.getInt(RootConstants.KEY_HOOK_LYRIC_MODE, RootConstants.DEFAULT_HOOK_LYRIC_MODE)
+    val leftContent = prefs.getInt(RootConstants.KEY_HOOK_ISLAND_CONTENT_LEFT, RootConstants.DEFAULT_HOOK_ISLAND_CONTENT_LEFT)
+    val rightContent = prefs.getInt(RootConstants.KEY_HOOK_ISLAND_CONTENT_RIGHT, RootConstants.DEFAULT_HOOK_ISLAND_CONTENT_RIGHT)
+    val showCenterGroupVocals = IslandLyricPosition.supportsGroupVocalCentering(
+        lyricMode = lyricMode,
+        leftContent = leftContent,
+        rightContent = rightContent
+    )
 
     var showTextSizeDialog by remember { mutableStateOf(false) }
     var showTextSizeRatioDialog by remember { mutableStateOf(false) }
@@ -129,12 +167,18 @@ fun LyricDisplayPage() {
                 fontItalic = it
                 saveConfig(RootConstants.KEY_HOOK_FONT_ITALIC, it)
             },
-            centerLyric = centerLyric,
-            onCenterLyricChange = {
-                centerLyric = it
-                saveConfig(RootConstants.KEY_HOOK_CENTER_LYRIC, it)
+            leftLyricPosition = leftLyricPosition,
+            onLeftLyricPositionChange = {
+                leftLyricPosition = it
+                saveConfig(RootConstants.KEY_HOOK_ISLAND_LEFT_LYRIC_POSITION, it)
+            },
+            rightLyricPosition = rightLyricPosition,
+            onRightLyricPositionChange = {
+                rightLyricPosition = it
+                saveConfig(RootConstants.KEY_HOOK_ISLAND_RIGHT_LYRIC_POSITION, it)
             },
             centerGroupVocals = centerGroupVocals,
+            showCenterGroupVocals = showCenterGroupVocals,
             onCenterGroupVocalsChange = {
                 centerGroupVocals = it
                 saveConfig(RootConstants.KEY_HOOK_CENTER_GROUP_VOCALS, it)

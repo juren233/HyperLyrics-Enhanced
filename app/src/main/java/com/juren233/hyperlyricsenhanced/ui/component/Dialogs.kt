@@ -30,6 +30,7 @@ fun NumberInputDialog(
     show: Boolean,
     title: String,
     label: String,
+    useLabelAsPlaceholder: Boolean = false,
     initialValue: Int,
     min: Int,
     max: Int,
@@ -47,6 +48,7 @@ fun NumberInputDialog(
                 value = inputValue,
                 onValueChange = { newValue -> if (newValue.all { it.isDigit() }) inputValue = newValue },
                 label = label,
+                useLabelAsPlaceholder = useLabelAsPlaceholder,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
                 maxLines = 1
@@ -367,7 +369,8 @@ fun PaddingInputDialog(
             TextField(
                 value = leftValue,
                 onValueChange = { if (filter(it)) leftValue = it },
-                label = stringResource(id = R.string.label_left_padding),
+                label = stringResource(id = R.string.label_left_padding_range),
+                useLabelAsPlaceholder = false,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 modifier = Modifier.fillMaxWidth(),
                 maxLines = 1
@@ -376,7 +379,8 @@ fun PaddingInputDialog(
             TextField(
                 value = rightValue,
                 onValueChange = { if (filter(it)) rightValue = it },
-                label = stringResource(id = R.string.label_right_padding),
+                label = stringResource(id = R.string.label_right_padding_range),
+                useLabelAsPlaceholder = false,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 modifier = Modifier.fillMaxWidth(),
                 maxLines = 1

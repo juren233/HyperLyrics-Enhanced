@@ -48,6 +48,7 @@ internal class InterludeDotsRenderer {
         viewWidth: Int,
         viewHeight: Int,
         centerIfPossible: Boolean,
+        alignRight: Boolean = false,
         nowMs: Long = SystemClock.uptimeMillis()
     ) {
         val positionMs = resolvePlaybackPosition(model, nowMs)
@@ -61,7 +62,8 @@ internal class InterludeDotsRenderer {
             totalWidth = totalWidth,
             viewWidth = viewWidth.toFloat(),
             isAlignedRight = model.isAlignedRight,
-            centerIfPossible = centerIfPossible
+            centerIfPossible = centerIfPossible,
+            alignRight = alignRight
         )
         val centerY = viewHeight / 2f
         val groupCenterX = startX + totalWidth / 2f
@@ -233,10 +235,12 @@ internal fun resolveInterludeDotsStartX(
     totalWidth: Float,
     viewWidth: Float,
     isAlignedRight: Boolean,
-    centerIfPossible: Boolean
+    centerIfPossible: Boolean,
+    alignRight: Boolean = false
 ): Float = when {
     totalWidth >= viewWidth -> 0f
-    isAlignedRight -> viewWidth - totalWidth
+    alignRight -> viewWidth - totalWidth
     centerIfPossible -> (viewWidth - totalWidth) / 2f
+    isAlignedRight -> viewWidth - totalWidth
     else -> 0f
 }

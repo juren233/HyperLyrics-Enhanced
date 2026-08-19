@@ -1,6 +1,24 @@
 package com.juren233.hyperlyricsenhanced.common
 
 object RootConstants {
+    const val ACTION_REMOTE_PREFERENCE_CHANGED =
+        "com.juren233.hyperlyricsenhanced.action.REMOTE_PREFERENCE_CHANGED_V2"
+    const val EXTRA_REMOTE_PREFERENCE_GROUP =
+        "com.juren233.hyperlyricsenhanced.extra.REMOTE_PREFERENCE_GROUP"
+    const val EXTRA_REMOTE_PREFERENCE_KEY =
+        "com.juren233.hyperlyricsenhanced.extra.REMOTE_PREFERENCE_KEY"
+    const val EXTRA_REMOTE_PREFERENCE_TYPE =
+        "com.juren233.hyperlyricsenhanced.extra.REMOTE_PREFERENCE_TYPE"
+    const val EXTRA_REMOTE_PREFERENCE_INT =
+        "com.juren233.hyperlyricsenhanced.extra.REMOTE_PREFERENCE_INT"
+    const val EXTRA_REMOTE_PREFERENCE_BOOLEAN =
+        "com.juren233.hyperlyricsenhanced.extra.REMOTE_PREFERENCE_BOOLEAN"
+    const val EXTRA_REMOTE_PREFERENCE_LONG =
+        "com.juren233.hyperlyricsenhanced.extra.REMOTE_PREFERENCE_LONG"
+    const val EXTRA_REMOTE_PREFERENCE_FLOAT =
+        "com.juren233.hyperlyricsenhanced.extra.REMOTE_PREFERENCE_FLOAT"
+    const val EXTRA_REMOTE_PREFERENCE_STRING =
+        "com.juren233.hyperlyricsenhanced.extra.REMOTE_PREFERENCE_STRING"
     const val CLASSIC_AOD_FOCUS_REFRESH_AUTHORITY =
         "com.juren233.hyperlyricsenhanced.classic_aod_focus_refresh"
     const val CLASSIC_AOD_FOCUS_REFRESH_METHOD = "refresh"
@@ -156,7 +174,10 @@ object RootConstants {
     const val KEY_HOOK_FONT_ITALIC = "key_hook_font_italic"
     const val KEY_HOOK_FADING_EDGE_LENGTH = "key_hook_fading_edge_length"
     const val KEY_HOOK_GRADIENT_PROGRESS = "key_hook_gradient_progress"
+    const val KEY_HOOK_LYRIC_POSITION = "key_hook_lyric_position"
     const val KEY_HOOK_CENTER_LYRIC = "key_hook_center_lyric"
+    const val KEY_HOOK_ISLAND_LEFT_LYRIC_POSITION = "key_hook_island_left_lyric_position"
+    const val KEY_HOOK_ISLAND_RIGHT_LYRIC_POSITION = "key_hook_island_right_lyric_position"
     const val KEY_HOOK_CENTER_GROUP_VOCALS = "key_hook_center_group_vocals"
     const val KEY_HOOK_ISLAND_RIGHT_ICON = "key_hook_island_right_icon"
     const val KEY_HOOK_ISLAND_MUSIC_WAVE_COLOR = "key_hook_island_music_wave_color"
@@ -477,6 +498,10 @@ object RootConstants {
     const val DEFAULT_HOOK_FONT_ITALIC = false
     const val DEFAULT_HOOK_FADING_EDGE_LENGTH = 15
     const val DEFAULT_HOOK_GRADIENT_PROGRESS = true
+    const val ISLAND_LYRIC_POSITION_DEFAULT = 0
+    const val ISLAND_LYRIC_POSITION_CENTER = 1
+    const val ISLAND_LYRIC_POSITION_RIGHT = 2
+    const val DEFAULT_HOOK_LYRIC_POSITION = ISLAND_LYRIC_POSITION_DEFAULT
     const val DEFAULT_HOOK_CENTER_LYRIC = false
     const val DEFAULT_HOOK_CENTER_GROUP_VOCALS = false
     const val DEFAULT_HOOK_ISLAND_RIGHT_ICON = false

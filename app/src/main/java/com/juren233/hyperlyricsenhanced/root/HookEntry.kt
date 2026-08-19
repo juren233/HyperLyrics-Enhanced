@@ -1,6 +1,10 @@
 package com.juren233.hyperlyricsenhanced.root
 
 import android.app.Application
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -9,6 +13,7 @@ import com.juren233.hyperlyricsenhanced.root.island.FakeIslandTransitionHooker
 import com.juren233.hyperlyricsenhanced.root.island.IslandAlbumCoverStyleHooker
 import com.juren233.hyperlyricsenhanced.root.island.IslandMusicWaveColorHooker
 import com.juren233.hyperlyricsenhanced.root.island.IslandProgressGlowController
+import com.juren233.hyperlyricsenhanced.root.island.IslandRuntimePreferenceOverrides
 import com.juren233.hyperlyricsenhanced.root.island.IslandModuleRestoreHooker
 import com.juren233.hyperlyricsenhanced.root.island.SystemUIHookRegistry
 import com.juren233.hyperlyricsenhanced.root.island.IslandWidthHooker
@@ -21,6 +26,7 @@ import com.juren233.hyperlyricsenhanced.root.mediacard.notification.background.M
 import com.juren233.hyperlyricsenhanced.root.island.renderer.BaseIslandRenderer
 import com.juren233.hyperlyricsenhanced.root.lyricon.central.EmbeddedLyriconCentralController
 import com.juren233.hyperlyricsenhanced.root.lyricon.provider.LyriconProviderControlFrameBridge
+import com.juren233.hyperlyricsenhanced.root.salt.SaltPlayerNextTrackHooker
 import com.juren233.hyperlyricsenhanced.root.source.LyriconSource
 import com.juren233.hyperlyricsenhanced.root.source.LyricInfoSource
 import com.juren233.hyperlyricsenhanced.root.source.RootLyricSink
@@ -31,6 +37,7 @@ import com.juren233.hyperlyricsenhanced.common.PreferenceDiagnostics
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.common.UIConstants
 import com.juren233.hyperlyricsenhanced.common.media.NextTrackMetadataCache
+import com.juren233.hyperlyricsenhanced.common.media.MediaMetadataHelper
 import com.juren233.hyperlyricsenhanced.online.utils.ChineseUtils
 import com.juren233.hyperlyricsenhanced.provider.OfficialProviderCatalog
 import com.juren233.hyperlyricsenhanced.provider.OfficialProviderPreferencePolicy
@@ -90,6 +97,9 @@ class HookEntry : XposedModule() {
             RootConstants.KEY_HOOK_FONT_ITALIC,
             RootConstants.KEY_HOOK_FADING_EDGE_LENGTH,
             RootConstants.KEY_HOOK_GRADIENT_PROGRESS,
+            RootConstants.KEY_HOOK_LYRIC_POSITION,
+            RootConstants.KEY_HOOK_ISLAND_LEFT_LYRIC_POSITION,
+            RootConstants.KEY_HOOK_ISLAND_RIGHT_LYRIC_POSITION,
             RootConstants.KEY_HOOK_CENTER_LYRIC,
             RootConstants.KEY_HOOK_CENTER_GROUP_VOCALS,
             RootConstants.KEY_HOOK_ANIM_ENABLE,
@@ -129,6 +139,7 @@ class HookEntry : XposedModule() {
 
     private var _prefs: android.content.SharedPreferences? = null
     private var prefListener: android.content.SharedPreferences.OnSharedPreferenceChangeListener? = null
+    private var preferenceBroadcastReceiver: BroadcastReceiver? = null
     private var runtimeApp: Application? = null
     private var lyricsOnlyAfterHotReload = false
     private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
@@ -309,6 +320,19 @@ class HookEntry : XposedModule() {
             }.onFailure {
                 HookLogger.e("HookEntry", "Apple Music 内置歌词提供器注入失败", it)
             }
+        } else if (packageName == OfficialProviderCatalog.SALT_PLAYER_PACKAGE_NAME) {
+            SaltPlayerNextTrackHooker.install(
+                module = this,
+                classLoader = param.defaultClassLoader,
+                packageName = packageName,
+                processName = processName,
+            )
+            OfficialProviderRuntime.installIfAvailable(
+                module = this,
+                targetClassLoader = param.defaultClassLoader,
+                packageName = packageName,
+                processName = processName,
+            )
         } else {
             OfficialProviderRuntime.installIfAvailable(
                 module = this,
@@ -323,6 +347,8 @@ class HookEntry : XposedModule() {
         try {
             cleanupRuntime()
             runtimeApp = app
+            MediaMetadataHelper.setArtworkResolvedListener(BaseIslandRenderer::refreshActiveIsland)
+            registerPreferenceBroadcastReceiver(app)
 
             PreferenceDiagnostics.logSnapshot("systemui_remote_init", prefs) { message ->
                 HookLogger.i("PrefsDiagnostics", message)
@@ -617,6 +643,7 @@ class HookEntry : XposedModule() {
     private fun cleanupRuntime() {
         pendingSystemMediaProviderRefresh?.let(mainHandler::removeCallbacks)
         pendingSystemMediaProviderRefresh = null
+        MediaMetadataHelper.clearArtworkResolution()
         OfficialProviderSystemMediaRuntime.releaseAll()
         IslandAlbumCoverStyleHooker.cleanup()
         IslandMusicWaveColorHooker.cleanup()
@@ -625,11 +652,73 @@ class HookEntry : XposedModule() {
             runCatching { prefs.unregisterOnSharedPreferenceChangeListener(it) }
         }
         prefListener = null
+        preferenceBroadcastReceiver?.let { receiver ->
+            runCatching { runtimeApp?.unregisterReceiver(receiver) }
+        }
+        preferenceBroadcastReceiver = null
+        IslandRuntimePreferenceOverrides.clear()
         runCatching { sourceManager?.stop() }
         AITranslator.cancelActiveRequests()
         sourceManager = null
         lyricInfoSource = null
         runtimeApp = null
+    }
+
+    private fun registerPreferenceBroadcastReceiver(app: Application) {
+        preferenceBroadcastReceiver?.let { receiver ->
+            runCatching { app.unregisterReceiver(receiver) }
+        }
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                if (intent.action != RootConstants.ACTION_REMOTE_PREFERENCE_CHANGED) return
+                val expectedUid = runCatching {
+                    context.packageManager
+                        .getApplicationInfo("com.juren233.hyperlyricsenhanced", 0)
+                        .uid
+                }.getOrDefault(-1)
+                val senderUid = runCatching { sentFromUid }.getOrDefault(-1)
+                if (expectedUid >= 0 && senderUid >= 0 && senderUid != expectedUid) {
+                    HookLogger.w(
+                        "HookEntry",
+                        "拒绝非 HyperLyrics 配置广播: senderUid=$senderUid expectedUid=$expectedUid"
+                    )
+                    return
+                }
+                if (intent.getStringExtra(RootConstants.EXTRA_REMOTE_PREFERENCE_GROUP) != UIConstants.PREF_NAME) {
+                    return
+                }
+                val key = intent.getStringExtra(RootConstants.EXTRA_REMOTE_PREFERENCE_KEY) ?: return
+                val type = intent.getStringExtra(RootConstants.EXTRA_REMOTE_PREFERENCE_TYPE) ?: return
+                val value: Any? = when (type) {
+                    "clear" -> null
+                    "boolean" -> intent.getBooleanExtra(
+                        RootConstants.EXTRA_REMOTE_PREFERENCE_BOOLEAN,
+                        false
+                    )
+                    "int" -> intent.getIntExtra(RootConstants.EXTRA_REMOTE_PREFERENCE_INT, 0)
+                    "long" -> intent.getLongExtra(RootConstants.EXTRA_REMOTE_PREFERENCE_LONG, 0L)
+                    "float" -> intent.getFloatExtra(RootConstants.EXTRA_REMOTE_PREFERENCE_FLOAT, 0f)
+                    "string" -> intent.getStringExtra(RootConstants.EXTRA_REMOTE_PREFERENCE_STRING)
+                    else -> return
+                }
+                IslandRuntimePreferenceOverrides.put(key, value)
+                if (key == RootConstants.KEY_HOOK_LYRIC_MODE && value is Int) {
+                    activeMode = value
+                }
+                BaseIslandRenderer.refreshActiveIsland()
+                HookLogger.i(
+                    "HookEntry",
+                    "收到配置广播并更新运行时覆盖: key=$key, " +
+                        "value=${PreferenceDiagnostics.formatValue(key, value)}"
+                )
+            }
+        }
+        app.registerReceiver(
+            receiver,
+            IntentFilter(RootConstants.ACTION_REMOTE_PREFERENCE_CHANGED),
+            Context.RECEIVER_EXPORTED
+        )
+        preferenceBroadcastReceiver = receiver
     }
 
     private fun scheduleSystemMediaProviderRefresh(app: Application) {

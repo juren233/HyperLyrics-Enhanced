@@ -9,6 +9,7 @@ package io.github.proify.lyricon.central.provider.player
 import android.os.SystemClock
 import android.util.Log
 import com.juren233.hyperlyricsenhanced.BuildConfig
+import com.juren233.hyperlyricsenhanced.provider.OfficialProviderControlProtocol
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import io.github.proify.lyricon.central.Constants
 import io.github.proify.lyricon.central.provider.player.PlayerRecorder.LyricType.NONE
@@ -365,6 +366,9 @@ internal class ActivePlayerCoordinator(
     }
 
     private fun isProviderAllowed(providerInfo: ProviderInfo): Boolean {
+        if (providerInfo.metadata?.get(OfficialProviderControlProtocol.CONTROL_ONLY_METADATA_KEY) == "true") {
+            return false
+        }
         val preference = officialProviderPreference(providerInfo.playerPackageName) ?: return true
         return when (ProviderSourcePriorityResolver.resolve(providerInfo)) {
             ProviderSourcePriority.BUILT_IN -> true

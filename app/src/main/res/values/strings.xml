@@ -219,6 +219,7 @@
     <string name="provider_status_unavailable">暂不可用</string>
     <string name="provider_status_migrating">正在迁移，暂未发布</string>
     <string name="provider_status_needs_repair">需修复 · 文件缺失或损坏 (v%1$s)</string>
+    <string name="provider_salt_player_upgrade_hint">推荐将椒盐音乐升级至12.2.0及以上版本来实现免插件使用，本插件依旧适用于低版本的椒盐音乐</string>
     <string name="provider_action_download">下载</string>
     <string name="provider_action_update">更新</string>
     <string name="provider_action_repair">修复插件</string>
@@ -227,7 +228,7 @@
     <string name="provider_remove_failed">插件移除失败：%1$s</string>
     <string name="provider_no_installed_plugins">暂未添加其他插件</string>
     <string name="provider_no_installed_plugins_summary">进入右上角来添加你所使用的音乐软件歌词插件</string>
-    <string name="provider_no_available_plugins">暂无可添加的插件</string>
+    <string name="provider_no_available_plugins">好像所有插件都被你添加完啦！有想要官方适配的音乐软件？在 GitHub 上提 issue 或酷安 App 发帖 @juren233 告诉我，或许你的愿望真的会被实现呢？</string>
     <string name="provider_add_success">插件已添加，请重启%1$s与系统界面</string>
     <string name="provider_add_success_system_ui">插件已添加，请重启系统界面</string>
     <string name="provider_update_success">插件更新成功，请重启%1$s与系统界面</string>
@@ -498,11 +499,13 @@
     <string name="title_content">内容</string>
     <string name="title_left_content_width">左侧内容长度</string>
     <string name="title_right_content_width">右侧内容长度</string>
-    <string name="label_content_width_range">范围：0 ~ 100</string>
+    <string name="label_content_width_range">范围：0 ~ 500</string>
     <string name="title_left_padding">左侧内容内边距</string>
     <string name="title_right_padding">右侧内容内边距</string>
     <string name="label_left_padding">左边距</string>
     <string name="label_right_padding">右边距</string>
+    <string name="label_left_padding_range">左边距（范围：-50 ~ 100）</string>
+    <string name="label_right_padding_range">右边距（范围：-50 ~ 100）</string>
     <string name="title_audio_cover">音频封面</string>
     <string name="title_audio_cover_style">音频封面样式</string>
     <string name="title_hide_audio_cover_source">隐藏音频封面的来源标识</string>
@@ -586,10 +589,10 @@
     <string name="summary_help_supported_devices">仅支持已安装 LSPosed v2.0+ 的 HyperOS 3 设备</string>
     <string name="summary_help_prerequisites">① 在 LSPosed 中启用 HyperLyrics Enhanced，并勾选推荐作用域 App\n② 在主页“歌词设置”中选择合适的歌词源，并按需打开“小米系统界面增强”\n③ 根据歌词源需要，重启系统界面或重启手机</string>
     <string name="title_help_lyric_sources">歌词源</string>
-    <string name="summary_help_source_lyricon">Apple Music 用户：Provider 已内置，只需在 LSPosed 中为 HyperLyrics Enhanced 勾选推荐作用域 App，即可开箱即用。\n\n其他音乐 App 只需安装对应的 LyricProvider。HyperLyrics Enhanced 会在系统界面内提供 Lyricon Central 兼容服务，无需额外安装词幕服务。完成配置后请重启系统界面和音乐 App。</string>
+    <string name="summary_help_source_lyricon">Lyricon 可为 Apple Music 及其他受支持的音乐 App 提供歌词。Apple Music Provider 已内置，只需在 LSPosed 中勾选推荐作用域即可使用。\n\n其他音乐 App 可前往“Lyricon配置”添加对应的官方 Provider。HyperLyrics Enhanced 已在系统界面内提供 Lyricon Central 兼容服务，无需额外安装词幕服务。添加或更新 Provider 后，请按页面提示重启相关音乐 App 与系统界面。</string>
     <string name="summary_help_source_superlyric">重启手机</string>
     <string name="summary_help_source_lyricinfo">重启系统界面</string>
-    <string name="tag_download_providers">其他 App：下载 LyricProvider</string>
+    <string name="tag_open_lyricon_configuration">打开 Lyricon配置</string>
     <string name="tag_download_superlyric">下载 SuperLyric</string>
     <string name="tag_download_lyricinfo">下载 LyricInfo</string>
 
@@ -643,7 +646,12 @@
 
     <string name="channel_name_live">实时通知歌词</string>
     <string name="channel_name_focus">焦点通知歌词</string>
-    <string name="title_center_lyric">居中显示</string>
+    <string name="title_center_lyric">位置显示</string>
+    <string name="title_left_lyric_position">左侧位置显示</string>
+    <string name="title_right_lyric_position">右侧位置显示</string>
+    <string name="option_lyric_position_default">默认</string>
+    <string name="option_lyric_position_center">居中</string>
+    <string name="option_lyric_position_right">靠右</string>
     <string name="title_center_group_vocals">合唱歌词居中显示</string>
     <string name="title_adjacent_background_translation">含伴唱的歌词翻译临时显示在隔壁</string>
     <string name="summary_adjacent_background_translation">仅在逐字歌词模式且仅一侧设为歌词时可用</string>

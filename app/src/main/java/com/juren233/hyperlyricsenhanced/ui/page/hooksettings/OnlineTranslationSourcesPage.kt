@@ -95,10 +95,20 @@ fun OnlineTranslationSourcesPage() {
             )
         }
     }
+    val configuredEnabledSources = remember {
+        sourceOrder.filter { source ->
+            OnlineTranslationSourcePreferences.isSourceEnabled(prefs, source)
+        }
+    }
+    val initialEnabledSources = remember {
+        OnlineTranslationSourcePreferences.resolveEnabledSources(sourceOrder) { source ->
+            source in configuredEnabledSources
+        }
+    }
     val sourceEnabled = remember {
         mutableStateMapOf<Source, Boolean>().apply {
             sourceOrder.forEach { source ->
-                this[source] = OnlineTranslationSourcePreferences.isSourceEnabled(prefs, source)
+                this[source] = source in initialEnabledSources
             }
         }
     }
@@ -130,6 +140,16 @@ fun OnlineTranslationSourcesPage() {
     }
     val context = LocalContext.current
     var installedApps by remember { mutableStateOf<List<InstalledTranslationApp>?>(null) }
+    LaunchedEffect(Unit) {
+        if (configuredEnabledSources.isEmpty()) {
+            initialEnabledSources.firstOrNull()?.let { source ->
+                saveConfig(
+                    OnlineTranslationSourcePreferences.sourcePreferenceKey(source),
+                    true,
+                )
+            }
+        }
+    }
     LaunchedEffect(Unit) {
         installedApps = withContext(Dispatchers.IO) {
             val packageManager = context.packageManager
@@ -210,6 +230,9 @@ fun OnlineTranslationSourcesPage() {
                     .fillMaxWidth()
             ) {
                 Column {
+                    val enabledSources = sourceEnabled
+                        .filterValues { enabled -> enabled }
+                        .keys
                     sourceOrder.forEachIndexed { index, source ->
                         key(source) {
                             val swapDirection = when (source) {
@@ -221,6 +244,10 @@ fun OnlineTranslationSourcesPage() {
                                 source = source,
                                 priority = index + 1,
                                 checked = sourceEnabled[source] == true,
+                                enabled = OnlineTranslationSourcePreferences.canToggleSource(
+                                    source,
+                                    enabledSources,
+                                ),
                                 sortingVisible = !autoSelectBestSource,
                                 offsetY = swapDirection * sourceRowHeightPx * swapProgress.value,
                                 isMovingForward = pendingSwap?.source == source,
@@ -229,11 +256,19 @@ fun OnlineTranslationSourcesPage() {
                                 canMoveDown = index < sourceOrder.lastIndex &&
                                     pendingSwap == null && swapProgress.value == 0f,
                                 onCheckedChange = { checked ->
-                                    sourceEnabled[source] = checked
-                                    saveConfig(
-                                        OnlineTranslationSourcePreferences.sourcePreferenceKey(source),
-                                        checked,
-                                    )
+                                    val canApplyChange = checked ||
+                                        OnlineTranslationSourcePreferences.canToggleSource(
+                                            source,
+                                            enabledSources,
+                                        )
+                                    if (canApplyChange) {
+                                        sourceEnabled[source] = checked
+                                        saveConfig(
+                                            OnlineTranslationSourcePreferences
+                                                .sourcePreferenceKey(source),
+                                            checked,
+                                        )
+                                    }
                                 },
                                 onMoveUp = { requestSourceMove(source, -1) },
                                 onMoveDown = { requestSourceMove(source, 1) },
@@ -391,6 +426,7 @@ private fun SourceOrderPreference(
     source: Source,
     priority: Int,
     checked: Boolean,
+    enabled: Boolean,
     sortingVisible: Boolean,
     offsetY: Float,
     isMovingForward: Boolean,
@@ -464,6 +500,7 @@ private fun SourceOrderPreference(
         Switch(
             checked = checked,
             onCheckedChange = onCheckedChange,
+            enabled = enabled,
         )
         Box(
             modifier = Modifier

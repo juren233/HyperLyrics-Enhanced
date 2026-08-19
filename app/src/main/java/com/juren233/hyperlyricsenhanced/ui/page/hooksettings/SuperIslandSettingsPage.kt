@@ -91,8 +91,8 @@ fun SuperIslandSettingsPage() {
     var leftPaddingRight by remember { mutableIntStateOf(prefs.getInt(RootConstants.KEY_HOOK_ISLAND_LEFT_PADDING_RIGHT, RootConstants.DEFAULT_HOOK_ISLAND_LEFT_PADDING_RIGHT)) }
     var rightPaddingLeft by remember { mutableIntStateOf(prefs.getInt(RootConstants.KEY_HOOK_ISLAND_RIGHT_PADDING_LEFT, RootConstants.DEFAULT_HOOK_ISLAND_RIGHT_PADDING_LEFT)) }
     var rightPaddingRight by remember { mutableIntStateOf(prefs.getInt(RootConstants.KEY_HOOK_ISLAND_RIGHT_PADDING_RIGHT, RootConstants.DEFAULT_HOOK_ISLAND_RIGHT_PADDING_RIGHT)) }
-    var leftContentWidth by remember { mutableIntStateOf(prefs.getInt(RootConstants.KEY_HOOK_ISLAND_LEFT_CONTENT_MAX_WIDTH, RootConstants.DEFAULT_HOOK_ISLAND_LEFT_CONTENT_MAX_WIDTH).coerceIn(20, 100)) }
-    var rightContentWidth by remember { mutableIntStateOf(prefs.getInt(RootConstants.KEY_HOOK_ISLAND_RIGHT_CONTENT_MAX_WIDTH, RootConstants.DEFAULT_HOOK_ISLAND_RIGHT_CONTENT_MAX_WIDTH).coerceIn(20, 100)) }
+    var leftContentWidth by remember { mutableIntStateOf(prefs.getInt(RootConstants.KEY_HOOK_ISLAND_LEFT_CONTENT_MAX_WIDTH, RootConstants.DEFAULT_HOOK_ISLAND_LEFT_CONTENT_MAX_WIDTH).coerceIn(0, 500)) }
+    var rightContentWidth by remember { mutableIntStateOf(prefs.getInt(RootConstants.KEY_HOOK_ISLAND_RIGHT_CONTENT_MAX_WIDTH, RootConstants.DEFAULT_HOOK_ISLAND_RIGHT_CONTENT_MAX_WIDTH).coerceIn(0, 500)) }
     var afterPauseBehavior by remember { mutableIntStateOf(prefs.getInt(RootConstants.KEY_HOOK_ISLAND_BEHAVIOR_AFTER_PAUSE, RootConstants.DEFAULT_HOOK_ISLAND_BEHAVIOR_AFTER_PAUSE)) }
     var forceNextSongAtEnd by remember { mutableStateOf(prefs.getBoolean(RootConstants.KEY_HOOK_ISLAND_FORCE_NEXT_SONG_AT_END, RootConstants.DEFAULT_HOOK_ISLAND_FORCE_NEXT_SONG_AT_END)) }
     val storedNextSongDuration = prefs.getInt(
@@ -266,8 +266,8 @@ fun SuperIslandSettingsPage() {
             title = stringResource(id = R.string.title_left_content_width), 
             label = stringResource(id = R.string.label_content_width_range), 
             initialValue = leftContentWidth, 
-            min = 20, 
-            max = 100, 
+            min = 0,
+            max = 500,
             onDismiss = { showLeftContentWidthDialog = false }, 
             onConfirm = { value -> leftContentWidth = value; saveConfig(RootConstants.KEY_HOOK_ISLAND_LEFT_CONTENT_MAX_WIDTH, value) }
         )
@@ -276,8 +276,8 @@ fun SuperIslandSettingsPage() {
             title = stringResource(id = R.string.title_right_content_width), 
             label = stringResource(id = R.string.label_content_width_range), 
             initialValue = rightContentWidth, 
-            min = 20, 
-            max = 100, 
+            min = 0,
+            max = 500,
             onDismiss = { showRightContentWidthDialog = false }, 
             onConfirm = { value -> rightContentWidth = value; saveConfig(RootConstants.KEY_HOOK_ISLAND_RIGHT_CONTENT_MAX_WIDTH, value) }
         )

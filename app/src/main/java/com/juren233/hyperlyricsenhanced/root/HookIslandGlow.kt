@@ -112,9 +112,12 @@ object HookIslandGlow {
                 RootConstants.KEY_HOOK_EXTRACT_COVER_TEXT_GRADIENT,
                 RootConstants.DEFAULT_HOOK_EXTRACT_COVER_TEXT_GRADIENT
             )
-            val color = CoverColorHelper.extractColors(albumArt, useGradient, mediaColorKey)
-                .second
-                .firstOrNull()
+            val color = runCatching {
+                CoverColorHelper.extractColors(albumArt, useGradient, mediaColorKey)
+                    .second
+                    .firstOrNull()
+            }.getOrNull()
+                ?: CoverColorHelper.fallbackArtworkColor(albumArt)
                 ?: return@runCatching null
 
             String.format("#%08X", color)

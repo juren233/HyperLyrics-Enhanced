@@ -10,6 +10,7 @@ object CoverColorHelper {
         ARTWORK_KEYED_CACHE,
         ARTWORK_SIGNATURE_CACHE,
         ARTWORK_EXTRACTED,
+        ARTWORK_SAMPLED_FALLBACK,
         KEYED_CACHE,
         ACTIVE_CACHE
     }
@@ -100,6 +101,17 @@ object CoverColorHelper {
     fun currentMediaKey(): String? = activeMediaKey
 
     fun artworkContentKey(bitmap: Bitmap): Int = bitmap.artworkSignature().hashCode()
+
+    fun fallbackArtworkColor(bitmap: Bitmap): Int? = runCatching {
+        sampledArtworkColor(bitmap.width, bitmap.height, bitmap::getPixel)
+    }.getOrElse {
+        val softwareCopy = bitmap.copy(Bitmap.Config.ARGB_8888, false)
+        try {
+            sampledArtworkColor(softwareCopy.width, softwareCopy.height, softwareCopy::getPixel)
+        } finally {
+            softwareCopy.recycle()
+        }
+    }
 
     fun extractColors(bitmap: Bitmap, useGradient: Boolean, songKey: String? = null): Pair<IntArray, IntArray> {
         return resolveArtworkColors(bitmap, useGradient, songKey).colors
@@ -278,5 +290,37 @@ object CoverColorHelper {
             }
         }
         return hash
+    }
+
+    internal fun sampledArtworkColor(
+        width: Int,
+        height: Int,
+        pixelAt: (x: Int, y: Int) -> Int
+    ): Int? {
+        if (width <= 0 || height <= 0) return null
+        val columns = minOf(width, 8)
+        val rows = minOf(height, 8)
+        var totalAlpha = 0L
+        var red = 0L
+        var green = 0L
+        var blue = 0L
+        for (row in 0 until rows) {
+            val y = if (rows == 1) 0 else row * (height - 1) / (rows - 1)
+            for (column in 0 until columns) {
+                val x = if (columns == 1) 0 else column * (width - 1) / (columns - 1)
+                val color = pixelAt(x, y)
+                val alpha = (color ushr 24) and 0xFF
+                if (alpha == 0) continue
+                totalAlpha += alpha
+                red += ((color ushr 16) and 0xFF) * alpha.toLong()
+                green += ((color ushr 8) and 0xFF) * alpha.toLong()
+                blue += (color and 0xFF) * alpha.toLong()
+            }
+        }
+        if (totalAlpha == 0L) return null
+        return (0xFF shl 24) or
+            ((red / totalAlpha).toInt() shl 16) or
+            ((green / totalAlpha).toInt() shl 8) or
+            (blue / totalAlpha).toInt()
     }
 }

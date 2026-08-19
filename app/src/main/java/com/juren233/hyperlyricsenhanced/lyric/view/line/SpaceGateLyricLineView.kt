@@ -90,6 +90,16 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
             invalidate()
         }
 
+    var alignRight: Boolean = false
+        set(value) {
+            if (field == value) return
+            field = value
+            syncRenderer.alignRight = value
+            scrollRenderer.alignRight = value
+            invalidate()
+            siblingView?.invalidate()
+        }
+
     var playListener: LyricPlayListener? = null
         set(value) {
             field = value
@@ -404,7 +414,8 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
                 textPaint,
                 availableWidth,
                 measuredHeight,
-                centerIfPossible
+                centerIfPossible,
+                alignRight
             )
             if (playbackActive && !isStaticPreview && isShown) {
                 postInvalidateOnAnimation()
