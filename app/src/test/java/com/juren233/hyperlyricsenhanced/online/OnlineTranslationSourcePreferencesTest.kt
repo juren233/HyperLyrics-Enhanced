@@ -94,4 +94,75 @@ class OnlineTranslationSourcePreferencesTest {
             OnlineTranslationSourcePreferences.normalizeOrder("unknown,QM"),
         )
     }
+
+    @Test
+    fun `orderedSources defaults to enabled sources only`() {
+        assertEquals(
+            listOf(Source.NE, Source.QM),
+            OnlineTranslationSourcePreferences.orderedSources(null),
+        )
+    }
+
+    @Test
+    fun `orderedSources filters disabled sources and respects custom order`() {
+        val prefs = TestSharedPreferences(
+            mapOf(
+                com.juren233.hyperlyricsenhanced.common.RootConstants
+                    .KEY_HOOK_ONLINE_TRANSLATION_AUTO_SELECT_BEST_SOURCE to false,
+                com.juren233.hyperlyricsenhanced.common.RootConstants
+                    .KEY_HOOK_ONLINE_TRANSLATION_SOURCE_ORDER to "KUGOU,KUWO,QM,NE",
+                OnlineTranslationSourcePreferences.sourcePreferenceKey(Source.NE) to false,
+                OnlineTranslationSourcePreferences.sourcePreferenceKey(Source.QM) to true,
+                OnlineTranslationSourcePreferences.sourcePreferenceKey(Source.KUWO) to false,
+                OnlineTranslationSourcePreferences.sourcePreferenceKey(Source.KUGOU) to true,
+            )
+        )
+        assertEquals(
+            listOf(Source.KUGOU, Source.QM),
+            OnlineTranslationSourcePreferences.orderedSources(prefs),
+        )
+    }
+
+    @Test
+    fun `orderedSources returns empty list when all sources are disabled`() {
+        val prefs = TestSharedPreferences(
+            mapOf(
+                OnlineTranslationSourcePreferences.sourcePreferenceKey(Source.NE) to false,
+                OnlineTranslationSourcePreferences.sourcePreferenceKey(Source.QM) to false,
+                OnlineTranslationSourcePreferences.sourcePreferenceKey(Source.KUWO) to false,
+                OnlineTranslationSourcePreferences.sourcePreferenceKey(Source.KUGOU) to false,
+            )
+        )
+        assertEquals(
+            emptyList<Source>(),
+            OnlineTranslationSourcePreferences.orderedSources(prefs),
+        )
+    }
+
+    private class TestSharedPreferences(
+        private val values: Map<String, Any?>
+    ) : android.content.SharedPreferences {
+        override fun getAll(): MutableMap<String, *> = values.toMutableMap()
+        override fun getString(key: String?, defValue: String?): String? =
+            (values[key] as? String) ?: defValue
+        override fun getStringSet(key: String?, defValues: MutableSet<String>?): MutableSet<String>? =
+            @Suppress("UNCHECKED_CAST") (values[key] as? MutableSet<String>) ?: defValues
+        override fun getInt(key: String?, defValue: Int): Int =
+            (values[key] as? Number)?.toInt() ?: defValue
+        override fun getLong(key: String?, defValue: Long): Long =
+            (values[key] as? Number)?.toLong() ?: defValue
+        override fun getFloat(key: String?, defValue: Float): Float =
+            (values[key] as? Number)?.toFloat() ?: defValue
+        override fun getBoolean(key: String?, defValue: Boolean): Boolean =
+            (values[key] as? Boolean) ?: defValue
+        override fun contains(key: String?): Boolean = values.containsKey(key)
+        override fun edit(): android.content.SharedPreferences.Editor =
+            throw UnsupportedOperationException()
+        override fun registerOnSharedPreferenceChangeListener(
+            listener: android.content.SharedPreferences.OnSharedPreferenceChangeListener?
+        ) {}
+        override fun unregisterOnSharedPreferenceChangeListener(
+            listener: android.content.SharedPreferences.OnSharedPreferenceChangeListener?
+        ) {}
+    }
 }

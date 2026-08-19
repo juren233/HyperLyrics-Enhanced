@@ -95,11 +95,15 @@ internal data class AodTextStyleConfig(
     val centerNonDuetSong: Boolean,
     val centerGroupVocals: Boolean,
     val pauseStyle: Int,
-    val translationDisplay: Boolean,
+    val translationDisplayMode: Int,
+    val translationFallback: Boolean,
     val swapTranslation: Boolean,
     val nextSongPreview: Boolean,
     val nextSongPreviewPosition: Int,
-)
+) {
+    val translationDisplay: Boolean
+        get() = translationDisplayMode != RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_OFF
+}
 
 internal data class AodHorizontalMargins(
     val left: Int,
@@ -259,6 +263,36 @@ internal object AodMediaLyricPolicy {
         playerShown: Boolean
     ): Boolean = fullAod || (!interactive && playerShown)
 
+    fun readTranslationPronunciationMode(
+        prefs: SharedPreferences?,
+        key: String,
+        defaultValue: Int = RootConstants.DEFAULT_HOOK_AOD_TRANSLATION_DISPLAY_MODE
+    ): Int {
+        if (prefs == null) return defaultValue
+        val raw = try {
+            prefs.all[key]
+        } catch (_: Exception) {
+            null
+        }
+        return when (raw) {
+            is Int -> raw.coerceIn(
+                RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_OFF,
+                RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_PRONUNCIATION
+            )
+            is Number -> raw.toInt().coerceIn(
+                RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_OFF,
+                RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_PRONUNCIATION
+            )
+            is Boolean -> if (raw) RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_TRANSLATION
+            else RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_OFF
+            is String -> raw.toIntOrNull()?.coerceIn(
+                RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_OFF,
+                RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_PRONUNCIATION
+            ) ?: defaultValue
+            else -> defaultValue
+        }
+    }
+
     fun assembleContent(
         main: String?,
         translation: String?,
@@ -281,53 +315,72 @@ internal object AodMediaLyricPolicy {
         duetLyrics: Boolean = RootConstants.DEFAULT_HOOK_AOD_DUET_LYRICS,
         centerNonDuetSong: Boolean = RootConstants.DEFAULT_HOOK_AOD_CENTER_NON_DUET_SONG,
         centerGroupVocals: Boolean = RootConstants.DEFAULT_HOOK_AOD_CENTER_GROUP_VOCALS,
-        translationDisplay: Boolean = RootConstants.DEFAULT_HOOK_AOD_TRANSLATION_DISPLAY,
+        translationDisplayMode: Int = RootConstants.DEFAULT_HOOK_AOD_TRANSLATION_DISPLAY_MODE,
+        translationFallback: Boolean = RootConstants.DEFAULT_HOOK_AOD_TRANSLATION_FALLBACK,
     ): AodLyricContent {
         val normalizedMain = main.normalized()
-        val normalizedTranslation = translation.normalized()
-            .takeIf { translationDisplay }
+        val rawTranslation = translation.normalized()
             .takeUnless { it == normalizedMain }
             .orEmpty()
-        val normalizedBacking = backing.normalized()
+        val rawBacking = backing.normalized()
             .takeUnless { it == normalizedMain }
             .orEmpty()
-        val normalizedBackingTranslation = backingTranslation.normalized()
-            .takeIf { translationDisplay }
-            .takeIf { normalizedBacking.isNotBlank() && it != normalizedBacking }
+        val rawBackingTranslation = backingTranslation.normalized()
+            .takeIf { rawBacking.isNotBlank() && it != rawBacking }
             .orEmpty()
-        val normalizedOverlappingMain = overlappingMain.normalized()
+        val rawOverlappingMain = overlappingMain.normalized()
             .takeUnless { it == normalizedMain }
             .orEmpty()
-        val normalizedOverlappingTranslation = overlappingTranslation.normalized()
-            .takeIf { translationDisplay }
+        val rawOverlappingTranslation = overlappingTranslation.normalized()
             .takeIf {
-                normalizedOverlappingMain.isNotBlank() &&
-                    it != normalizedOverlappingMain
+                rawOverlappingMain.isNotBlank() &&
+                    it != rawOverlappingMain
             }
             .orEmpty()
-        val normalizedOverlappingBacking = overlappingBacking.normalized()
+        val rawOverlappingBacking = overlappingBacking.normalized()
             .takeIf {
-                normalizedOverlappingMain.isNotBlank() &&
-                    it != normalizedOverlappingMain
+                rawOverlappingMain.isNotBlank() &&
+                    it != rawOverlappingMain
             }
             .orEmpty()
-        val normalizedOverlappingBackingTranslation = overlappingBackingTranslation.normalized()
-            .takeIf { translationDisplay }
+        val rawOverlappingBackingTranslation = overlappingBackingTranslation.normalized()
             .takeIf {
-                normalizedOverlappingBacking.isNotBlank() &&
-                    it != normalizedOverlappingBacking
+                rawOverlappingBacking.isNotBlank() &&
+                    it != rawOverlappingBacking
             }
             .orEmpty()
-        val romaFallback = roma.normalized()
-            .takeIf {
-                normalizedTranslation.isBlank() &&
-                    normalizedBacking.isBlank() &&
-                    it != normalizedMain
-            }
+        val rawRoma = roma.normalized()
+            .takeUnless { it == normalizedMain }
             .orEmpty()
-        val hasDisplayedTranslation = normalizedTranslation.isNotBlank() ||
-            normalizedBackingTranslation.isNotBlank() ||
-            romaFallback.isNotBlank()
+
+        var finalTranslation = ""
+        var finalBackingTranslation = ""
+        var finalOverlappingTranslation = ""
+        var finalOverlappingBackingTranslation = ""
+
+        when (translationDisplayMode) {
+            RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_TRANSLATION -> {
+                finalTranslation = rawTranslation
+                finalBackingTranslation = rawBackingTranslation
+                finalOverlappingTranslation = rawOverlappingTranslation
+                finalOverlappingBackingTranslation = rawOverlappingBackingTranslation
+                if (finalTranslation.isBlank() && translationFallback && rawRoma.isNotBlank() && rawBacking.isBlank()) {
+                    finalTranslation = rawRoma
+                }
+            }
+            RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_PRONUNCIATION -> {
+                finalTranslation = if (rawRoma.isNotBlank() && rawBacking.isBlank()) rawRoma else ""
+                if (finalTranslation.isBlank() && translationFallback) {
+                    finalTranslation = rawTranslation
+                    finalBackingTranslation = rawBackingTranslation
+                    finalOverlappingTranslation = rawOverlappingTranslation
+                    finalOverlappingBackingTranslation = rawOverlappingBackingTranslation
+                }
+            }
+        }
+
+        val hasDisplayedTranslation = finalTranslation.isNotBlank() ||
+            finalBackingTranslation.isNotBlank()
         val normalizedNext = next.normalized()
             .takeIf {
                 showNext &&
@@ -337,13 +390,13 @@ internal object AodMediaLyricPolicy {
             .orEmpty()
         return AodLyricContent(
             main = normalizedMain,
-            translation = normalizedTranslation.ifBlank { romaFallback },
-            backing = normalizedBacking,
-            backingTranslation = normalizedBackingTranslation,
-            overlappingMain = normalizedOverlappingMain,
-            overlappingTranslation = normalizedOverlappingTranslation,
-            overlappingBacking = normalizedOverlappingBacking,
-            overlappingBackingTranslation = normalizedOverlappingBackingTranslation,
+            translation = finalTranslation,
+            backing = rawBacking,
+            backingTranslation = finalBackingTranslation,
+            overlappingMain = rawOverlappingMain,
+            overlappingTranslation = finalOverlappingTranslation,
+            overlappingBacking = rawOverlappingBacking,
+            overlappingBackingTranslation = finalOverlappingBackingTranslation,
             next = normalizedNext,
             mainAlignment = lyricAlignment(
                 duetLyrics = duetLyrics,
@@ -356,7 +409,7 @@ internal object AodMediaLyricPolicy {
                 duetLyrics = duetLyrics,
                 centerNonDuetSong = centerNonDuetSong,
                 alignedRight = backingAlignedRight,
-                groupVocals = mainGroupVocals,
+                groupVocals = false,
                 centerGroupVocals = centerGroupVocals,
             ),
             overlappingAlignment = lyricAlignment(
@@ -382,6 +435,56 @@ internal object AodMediaLyricPolicy {
             ),
         )
     }
+
+    fun assembleContent(
+        main: String?,
+        translation: String?,
+        backing: String?,
+        backingTranslation: String?,
+        roma: String?,
+        overlappingMain: String? = null,
+        overlappingTranslation: String? = null,
+        overlappingBacking: String? = null,
+        overlappingBackingTranslation: String? = null,
+        next: String? = null,
+        showNext: Boolean = false,
+        mainAlignedRight: Boolean = false,
+        backingAlignedRight: Boolean = mainAlignedRight,
+        overlappingAlignedRight: Boolean = mainAlignedRight,
+        overlappingBackingAlignedRight: Boolean = overlappingAlignedRight,
+        mainGroupVocals: Boolean = false,
+        nextAlignedRight: Boolean = false,
+        nextGroupVocals: Boolean = false,
+        duetLyrics: Boolean = RootConstants.DEFAULT_HOOK_AOD_DUET_LYRICS,
+        centerNonDuetSong: Boolean = RootConstants.DEFAULT_HOOK_AOD_CENTER_NON_DUET_SONG,
+        centerGroupVocals: Boolean = RootConstants.DEFAULT_HOOK_AOD_CENTER_GROUP_VOCALS,
+        translationDisplay: Boolean,
+    ): AodLyricContent = assembleContent(
+        main = main,
+        translation = translation,
+        backing = backing,
+        backingTranslation = backingTranslation,
+        roma = roma,
+        overlappingMain = overlappingMain,
+        overlappingTranslation = overlappingTranslation,
+        overlappingBacking = overlappingBacking,
+        overlappingBackingTranslation = overlappingBackingTranslation,
+        next = next,
+        showNext = showNext,
+        mainAlignedRight = mainAlignedRight,
+        backingAlignedRight = backingAlignedRight,
+        overlappingAlignedRight = overlappingAlignedRight,
+        overlappingBackingAlignedRight = overlappingBackingAlignedRight,
+        mainGroupVocals = mainGroupVocals,
+        nextAlignedRight = nextAlignedRight,
+        nextGroupVocals = nextGroupVocals,
+        duetLyrics = duetLyrics,
+        centerNonDuetSong = centerNonDuetSong,
+        centerGroupVocals = centerGroupVocals,
+        translationDisplayMode = if (translationDisplay) RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_TRANSLATION
+        else RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_OFF,
+        translationFallback = false,
+    )
 
     fun orderedLyricRows(swapTranslation: Boolean): List<AodLyricRow> =
         if (swapTranslation) {
@@ -2492,7 +2595,8 @@ object NotificationMediaAodLyricHooker {
             centerNonDuetSong = style.centerNonDuetSong &&
                 LyriconDataBridge.currentSong?.lyrics.orEmpty().none { it.isAlignedRight },
             centerGroupVocals = style.centerGroupVocals,
-            translationDisplay = style.translationDisplay,
+            translationDisplayMode = style.translationDisplayMode,
+            translationFallback = style.translationFallback,
         )
     }
 
@@ -2587,10 +2691,15 @@ object NotificationMediaAodLyricHooker {
         pauseStyle = readAodPauseStyle(
             RootConstants.KEY_HOOK_LOCK_SCREEN_AOD_PAUSE_STYLE
         ),
-        translationDisplay = prefs?.getBoolean(
-            RootConstants.KEY_HOOK_LOCK_SCREEN_AOD_TRANSLATION_DISPLAY,
-            RootConstants.DEFAULT_HOOK_AOD_TRANSLATION_DISPLAY,
-        ) ?: RootConstants.DEFAULT_HOOK_AOD_TRANSLATION_DISPLAY,
+        translationDisplayMode = AodMediaLyricPolicy.readTranslationPronunciationMode(
+            prefs = prefs,
+            key = RootConstants.KEY_HOOK_LOCK_SCREEN_AOD_TRANSLATION_DISPLAY,
+            defaultValue = RootConstants.DEFAULT_HOOK_AOD_TRANSLATION_DISPLAY_MODE,
+        ),
+        translationFallback = prefs?.getBoolean(
+            RootConstants.KEY_HOOK_LOCK_SCREEN_AOD_TRANSLATION_FALLBACK,
+            RootConstants.DEFAULT_HOOK_AOD_TRANSLATION_FALLBACK,
+        ) ?: RootConstants.DEFAULT_HOOK_AOD_TRANSLATION_FALLBACK,
         swapTranslation = prefs?.getBoolean(
             RootConstants.KEY_HOOK_LOCK_SCREEN_AOD_SWAP_TRANSLATION,
             RootConstants.DEFAULT_HOOK_AOD_SWAP_TRANSLATION,
@@ -2645,10 +2754,15 @@ object NotificationMediaAodLyricHooker {
         pauseStyle = readAodPauseStyle(
             RootConstants.KEY_HOOK_CLASSIC_AOD_PAUSE_STYLE
         ),
-        translationDisplay = prefs?.getBoolean(
-            RootConstants.KEY_HOOK_CLASSIC_AOD_TRANSLATION_DISPLAY,
-            RootConstants.DEFAULT_HOOK_AOD_TRANSLATION_DISPLAY,
-        ) ?: RootConstants.DEFAULT_HOOK_AOD_TRANSLATION_DISPLAY,
+        translationDisplayMode = AodMediaLyricPolicy.readTranslationPronunciationMode(
+            prefs = prefs,
+            key = RootConstants.KEY_HOOK_CLASSIC_AOD_TRANSLATION_DISPLAY,
+            defaultValue = RootConstants.DEFAULT_HOOK_AOD_TRANSLATION_DISPLAY_MODE,
+        ),
+        translationFallback = prefs?.getBoolean(
+            RootConstants.KEY_HOOK_CLASSIC_AOD_TRANSLATION_FALLBACK,
+            RootConstants.DEFAULT_HOOK_AOD_TRANSLATION_FALLBACK,
+        ) ?: RootConstants.DEFAULT_HOOK_AOD_TRANSLATION_FALLBACK,
         swapTranslation = prefs?.getBoolean(
             RootConstants.KEY_HOOK_CLASSIC_AOD_SWAP_TRANSLATION,
             RootConstants.DEFAULT_HOOK_AOD_SWAP_TRANSLATION,

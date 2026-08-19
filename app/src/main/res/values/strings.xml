@@ -218,8 +218,10 @@
     <string name="provider_status_available">可下载 v%1$s</string>
     <string name="provider_status_unavailable">暂不可用</string>
     <string name="provider_status_migrating">正在迁移，暂未发布</string>
+    <string name="provider_status_needs_repair">需修复 · 文件缺失或损坏 (v%1$s)</string>
     <string name="provider_action_download">下载</string>
     <string name="provider_action_update">更新</string>
+    <string name="provider_action_repair">修复插件</string>
     <string name="provider_remove">移除插件</string>
     <string name="provider_remove_success">插件已移除</string>
     <string name="provider_remove_failed">插件移除失败：%1$s</string>
@@ -230,8 +232,11 @@
     <string name="provider_add_success_system_ui">插件已添加，请重启系统界面</string>
     <string name="provider_update_success">插件更新成功，请重启%1$s与系统界面</string>
     <string name="provider_update_success_system_ui">插件更新成功，请重启系统界面</string>
+    <string name="provider_repair_success">插件已修复，请重启%1$s与系统界面</string>
+    <string name="provider_repair_success_system_ui">插件已修复，请重启系统界面</string>
     <string name="provider_add_failed">插件添加失败：%1$s</string>
     <string name="provider_update_failed">插件更新失败：%1$s</string>
+    <string name="provider_repair_failed">插件修复失败：%1$s</string>
     <string name="provider_change_applied">更改已生效，请重启%1$s与系统界面</string>
     <string name="provider_change_applied_system_ui">更改已生效，请重启系统界面</string>
     <string name="provider_error_network">网络请求失败，请检查网络连接后重试</string>
@@ -381,6 +386,11 @@
     <string name="title_translation">翻译</string>
     <string name="label_custom_font_path">填写字体文件的完整路径</string>
     <string name="title_translation_display">翻译显示</string>
+    <string name="title_translation_pronunciation_display">翻译/发音显示</string>
+    <string name="option_translation_pronunciation_off">不开启</string>
+    <string name="option_translation_pronunciation_translation">翻译</string>
+    <string name="option_translation_pronunciation_pronunciation">发音</string>
+    <string name="title_translation_pronunciation_fallback">无翻译/发音时显示另一个</string>
     <string name="title_translation_only">仅显示翻译</string>
     <string name="title_swap_translation">原词翻译对调位置</string>
     <string name="title_next_lyric_line">显示下一句歌词</string>

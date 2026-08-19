@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright 2026 Proify, Tomakino, juren233
  * Licensed under the Apache License, Version 2.0
  * http://www.apache.org/licenses/LICENSE-2.0
@@ -6,6 +6,7 @@
 
 package com.juren233.hyperlyricsenhanced.lyric.view
 
+import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.common.lyric.LyricMetadataKeys
 import com.juren233.hyperlyricsenhanced.lyric.model.LyricLine
 import com.juren233.hyperlyricsenhanced.lyric.model.interfaces.IRichLyricLine
@@ -52,20 +53,52 @@ internal fun canAnimateNextLinePromotion(
     lineAdvanced = lineAdvanced
 ) && attached && mainHeight > 0 && secondaryHeight > 0
 
+private enum class SecondaryChoice {
+    Translation,
+    Roma,
+}
+
 internal class LyricLineAssembler(
-    private var displayTranslation: Boolean = true,
-    private var displayRoma: Boolean = true,
+    private var displayMode: Int = RootConstants.DEFAULT_HOOK_TRANSLATION_PRONUNCIATION_DISPLAY,
+    private var fallback: Boolean = RootConstants.DEFAULT_HOOK_TRANSLATION_PRONUNCIATION_FALLBACK,
+    private var hideSecondaryContent: Boolean = false,
     private var enableRelativeProgress: Boolean = false,
     private var enableRelativeHighlight: Boolean = false,
 ) {
     private val wordBuilder = RelativeWordBuilder()
 
-    fun updateFlags(displayTranslation: Boolean, displayRoma: Boolean,
-                    enableRelativeProgress: Boolean, enableRelativeHighlight: Boolean) {
-        this.displayTranslation = displayTranslation
-        this.displayRoma = displayRoma
+    fun updateFlags(
+        displayMode: Int,
+        fallback: Boolean,
+        hideSecondaryContent: Boolean,
+        enableRelativeProgress: Boolean,
+        enableRelativeHighlight: Boolean
+    ) {
+        this.displayMode = displayMode
+        this.fallback = fallback
+        this.hideSecondaryContent = hideSecondaryContent
         this.enableRelativeProgress = enableRelativeProgress
         this.enableRelativeHighlight = enableRelativeHighlight
+    }
+
+    fun updateFlags(
+        displayTranslation: Boolean,
+        displayRoma: Boolean,
+        enableRelativeProgress: Boolean,
+        enableRelativeHighlight: Boolean
+    ) {
+        val mode = when {
+            displayTranslation -> RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_TRANSLATION
+            displayRoma -> RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_PRONUNCIATION
+            else -> RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_OFF
+        }
+        updateFlags(
+            displayMode = mode,
+            fallback = false,
+            hideSecondaryContent = mode == RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_OFF,
+            enableRelativeProgress = enableRelativeProgress,
+            enableRelativeHighlight = enableRelativeHighlight
+        )
     }
 
     data class MainResult(val line: LyricLine, val isScrollOnly: Boolean)
@@ -114,8 +147,26 @@ internal class LyricLineAssembler(
                 ) ?: source.isAlignedRight
             }
 
+            val hasSecondary = !source.secondary.isNullOrBlank() || !source.secondaryWords.isNullOrEmpty()
+            val hasTranslation = !source.translation.isNullOrBlank() || !source.translationWords.isNullOrEmpty()
+            val hasRoma = !source.roma.isNullOrBlank()
+
+            val effectiveSecondary = if (hideSecondaryContent) null else when (displayMode) {
+                RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_TRANSLATION -> when {
+                    hasTranslation -> SecondaryChoice.Translation
+                    fallback && hasRoma -> SecondaryChoice.Roma
+                    else -> null
+                }
+                RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_PRONUNCIATION -> when {
+                    hasRoma -> SecondaryChoice.Roma
+                    fallback && hasTranslation -> SecondaryChoice.Translation
+                    else -> null
+                }
+                else -> null
+            }
+
             when {
-                !source.secondary.isNullOrBlank() || !source.secondaryWords.isNullOrEmpty() -> {
+                hasSecondary -> {
                     text = source.secondary
                     if (isNextLinePreview) {
                         // 下一句只是预览文本，不能继承当前行时间轴或生成相对时间轴。
@@ -126,14 +177,13 @@ internal class LyricLineAssembler(
                         generated = words !== source.secondaryWords
                     }
                 }
-                displayTranslation && (!source.translation.isNullOrBlank()
-                        || !source.translationWords.isNullOrEmpty()) -> {
+                effectiveSecondary == SecondaryChoice.Translation -> {
                     text = source.translation
                     words = wordBuilder.build(source, source.translation, source.translationWords)
                     metadata = lyricMetadataOf("translation" to "true")
                     generated = words !== source.translationWords
                 }
-                displayRoma -> {
+                effectiveSecondary == SecondaryChoice.Roma -> {
                     text = source.roma
                     words = wordBuilder.build(source, source.roma, null)
                     metadata = lyricMetadataOf("roma" to "true")

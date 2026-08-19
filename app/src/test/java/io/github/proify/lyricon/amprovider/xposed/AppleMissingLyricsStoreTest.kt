@@ -845,4 +845,30 @@ class AppleMissingLyricsStoreTest {
         assertEquals(93, store.translationMatchPercentage("match-stats", "NE"))
         assertNull(store.translationMatchPercentage("match-stats", "QM"))
     }
+
+    @Test
+    fun `updatePlaybackIdentity clears stale content when switching to a different song`() {
+        val store = AppleMissingLyricsStore()
+        val firstIdentity = AppleMissingLyricsPlaybackIdentity(
+            contentSongId = "song-A",
+            adamId = 111L,
+            queueId = 222L,
+        )
+        val secondIdentity = AppleMissingLyricsPlaybackIdentity(
+            contentSongId = "song-B",
+            adamId = 333L,
+            queueId = 444L,
+        )
+        store.update(Song(id = "song-A", lyrics = listOf(line(0L, 1_000L, "第一首"))))
+        store.updatePlaybackIdentity(firstIdentity)
+        assertTrue(store.hasContent("song-A"))
+        assertEquals("song-A", store.contentSongId())
+
+        store.updatePlaybackIdentity(secondIdentity)
+        assertFalse(store.hasContent("song-A"))
+        assertFalse(store.hasContent("song-B"))
+        assertNull(store.contentSongId())
+        assertEquals(0, store.lines("song-A").size)
+        assertEquals(0, store.lines("song-B").size)
+    }
 }

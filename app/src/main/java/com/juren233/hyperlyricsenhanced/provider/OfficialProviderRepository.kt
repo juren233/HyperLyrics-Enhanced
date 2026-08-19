@@ -41,10 +41,11 @@ data class OfficialProviderItem(
     val installedVersionCode: Int,
     val installedVersionName: String?,
     val enabled: Boolean,
+    val needsRepair: Boolean = false,
 ) {
     val installed: Boolean get() = installedVersionCode > 0
     val updateAvailable: Boolean
-        get() = installed && (catalog.versionCode ?: 0) > installedVersionCode
+        get() = installed && !needsRepair && (catalog.versionCode ?: 0) > installedVersionCode
 }
 
 data class OfficialProviderUiState(
@@ -84,13 +85,16 @@ object OfficialProviderRepository {
                 )
                 if (installedVersionCode <= 0) return@mapNotNull null
 
+                val installedManifest = OfficialProviderInstaller.readInstalledManifest(
+                    context = context,
+                    pluginId = definition.id,
+                    versionCode = installedVersionCode,
+                )
                 val versionNameKey = OfficialProviderCatalog.installedVersionNameKey(definition.id)
-                val installedVersionName = PrefsBridge.getString(versionNameKey)
-                    ?: OfficialProviderInstaller.readInstalledManifest(
-                        context = context,
-                        pluginId = definition.id,
-                        versionCode = installedVersionCode,
-                    )?.versionName?.also { PrefsBridge.putString(versionNameKey, it) }
+                val storedVersionName = PrefsBridge.getString(versionNameKey)
+                val installedVersionName = installedManifest?.versionName
+                    ?: storedVersionName
+                    ?: installedManifest?.versionName?.also { PrefsBridge.putString(versionNameKey, it) }
 
                 OfficialProviderItem(
                     catalog = ProviderCatalogEntry(
@@ -105,11 +109,12 @@ object OfficialProviderRepository {
                         OfficialProviderCatalog.enabledKey(definition.id),
                         false,
                     ),
+                    needsRepair = installedManifest == null,
                 )
             }
         }
 
-    suspend fun loadItems(): List<OfficialProviderItem> {
+    suspend fun loadItems(context: Context? = null): List<OfficialProviderItem> {
         val catalogBytes = fetch(CATALOG_URL, MAX_CATALOG_BYTES)
         val signatureText = fetch(CATALOG_SIGNATURE_URL, 4096)
             .toString(Charsets.UTF_8)
@@ -142,10 +147,20 @@ object OfficialProviderRepository {
                 OfficialProviderCatalog.installedVersionKey(definition.id),
                 0,
             )
+            val installedManifest = if (installedVersionCode > 0 && context != null) {
+                OfficialProviderInstaller.readInstalledManifest(
+                    context = context,
+                    pluginId = definition.id,
+                    versionCode = installedVersionCode,
+                )
+            } else {
+                null
+            }
             val storedVersionName = PrefsBridge.getString(
                 OfficialProviderCatalog.installedVersionNameKey(definition.id),
             )
-            val installedVersionName = storedVersionName
+            val installedVersionName = installedManifest?.versionName
+                ?: storedVersionName
                 ?: entry.versionName?.takeIf { installedVersionCode == entry.versionCode }
             if (storedVersionName == null && installedVersionName != null) {
                 PrefsBridge.putString(
@@ -153,6 +168,7 @@ object OfficialProviderRepository {
                     installedVersionName,
                 )
             }
+            val needsRepair = installedVersionCode > 0 && context != null && installedManifest == null
             OfficialProviderItem(
                 catalog = entry,
                 installedVersionCode = installedVersionCode,
@@ -161,6 +177,7 @@ object OfficialProviderRepository {
                     OfficialProviderCatalog.enabledKey(definition.id),
                     false,
                 ),
+                needsRepair = needsRepair,
             )
         }
     }
@@ -182,6 +199,20 @@ object OfficialProviderRepository {
         require(installed.pluginId == entry.id) { "下载的 Provider 与目录不一致" }
         require(installed.versionCode == entry.versionCode) { "Provider 版本与目录不一致" }
         return installed
+    }
+
+    suspend fun repair(
+        context: Context,
+        item: OfficialProviderItem,
+    ): ProviderPackManifest {
+        val entry = if (item.catalog.available && item.catalog.assetUrl != null) {
+            item.catalog
+        } else {
+            val items = loadItems(context)
+            items.firstOrNull { it.catalog.id == item.catalog.id }?.catalog
+                ?: throw IllegalStateException("未在官方目录中找到该插件")
+        }
+        return downloadAndInstall(context, item.copy(catalog = entry))
     }
 
     fun setEnabled(pluginId: String, enabled: Boolean) {

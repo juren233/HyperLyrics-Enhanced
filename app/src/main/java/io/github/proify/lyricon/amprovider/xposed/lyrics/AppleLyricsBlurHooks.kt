@@ -294,7 +294,14 @@ internal class AppleLyricsBlurHooks(
                 true
             }
         }
-        if (becameSuspended) clearAppleLyricsBlurForRecycler(recyclerViewAsView)
+        if (becameSuspended) {
+            if (BuildConfig.DEBUG) {
+                ProviderLogger.debug(
+                    "[LyricsScrollDiag] suspendAppleLyricsBlurForScroll: recycler=${System.identityHashCode(recyclerViewAsView)}"
+                )
+            }
+            clearAppleLyricsBlurForRecycler(recyclerViewAsView)
+        }
     }
 
     private fun onAppleLyricsProgrammaticRecenterRequested(
@@ -364,19 +371,19 @@ internal class AppleLyricsBlurHooks(
             ) {
                 false
             } else {
-                completedTarget = targetPosition
-                state.pendingProgrammaticRecenterPosition = null
                 state.suspendedForScroll = false
-                state.settledAnchorTopY = null
-                state.lastActivePositions = activePositions
-                state.lastDiagnosticSignature = null
+                state.pendingProgrammaticRecenterPosition = null
+                completedTarget = targetPosition
                 true
             }
         }
-        if (completed && BuildConfig.DEBUG) {
-            ProviderLogger.diagnostic(
-                "Apple lyrics blur: programmatic_recenter_completed, " +
-                    "target=$completedTarget, active=${activePositions.sorted()}, " +
+        if (completed) {
+            scheduleAppleLyricsBlur(recyclerViewAsView)
+            ProviderLogger.debug(
+                "Apple Music 歌词滚动恢复完成: " +
+                    "target=${completedTarget ?: "none"}, " +
+                    "positioned=${positionedChildren.map { it.first }.sorted()}, " +
+                    "active=${activePositions.sorted()}, " +
                     "instrumental=${instrumentalPositions.sorted()}, " +
                     "writers=${writersCreditsPositions.sorted()}, " +
                     "focus=${focusPositions.sorted()}"
@@ -389,6 +396,11 @@ internal class AppleLyricsBlurHooks(
         recyclerView: Any?,
         scrollState: Int,
     ) {
+        if (BuildConfig.DEBUG) {
+            ProviderLogger.debug(
+                "[LyricsScrollDiag] onAppleLyricsScrollStateChanged: scrollState=$scrollState (idle=${scrollState == APPLE_LYRICS_SCROLL_STATE_IDLE})"
+            )
+        }
         if (scrollState != APPLE_LYRICS_SCROLL_STATE_IDLE) {
             suspendAppleLyricsBlurForScroll(recyclerView)
             return
@@ -1112,6 +1124,9 @@ internal class AppleLyricsBlurHooks(
         }.getOrDefault(false)
 
     private fun applyAppleLyricsBlur(view: View, mode: Int, radiusPx: Int) {
+        if (BuildConfig.DEBUG) {
+            ProviderLogger.debug("[LyricsScrollDiag] applyBlur: view=${view.javaClass.simpleName}@${System.identityHashCode(view)}, mode=$mode, radius=$radiusPx")
+        }
         appleLyricsBlurredViews.add(view)
         when (mode) {
             AppleLyricsBlurPolicy.NATIVE -> {
@@ -1153,6 +1168,9 @@ internal class AppleLyricsBlurHooks(
     }
 
     private fun clearAppleLyricsBlur(view: View) {
+        if (BuildConfig.DEBUG) {
+            ProviderLogger.debug("[LyricsScrollDiag] clearBlur: view=${view.javaClass.simpleName}@${System.identityHashCode(view)}")
+        }
         view.setRenderEffect(null)
         clearAppleLyricsHyperOsBlur(view)
     }

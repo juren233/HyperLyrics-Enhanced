@@ -6,6 +6,8 @@
 
 package io.github.proify.lyricon.amprovider.xposed
 
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -69,6 +71,52 @@ class AppleMusicIdentifierCentralizationTest {
             "修复后的成员名必须覆盖旧基线，而不是继续记录失效标识",
             source.indexOf("dexKitResolver?.repairRuntimeMembers(") <
                 source.lastIndexOf("dexKitResolver?.recordMethodBaseline("),
+        )
+    }
+
+    @Test
+    fun `Apple Music 6 5 2 profile overrides every target that changed from 6 5 1`() {
+        val version = AppleMusicVersion("6.5.2", 1_586L)
+        assertNotNull(AppleMusicHookProfiles.profileFor(version))
+
+        fun targets(hookPoint: AppleMusicHookPoint) =
+            AppleMusicHookProfiles.exactTargets(version, hookPoint)
+
+        val listenNowBuilder = targets(AppleMusicHookPoint.LISTEN_NOW_MODEL_BUILDER).single()
+        assertEquals("buildStandardSwoosh\$lambda\$35", listenNowBuilder.methodName)
+        assertEquals(
+            "com.apple.android.music.common.F0",
+            listenNowBuilder.parameterTypeNames?.get(2),
+        )
+
+        assertEquals(
+            "com.apple.android.music.common.L",
+            targets(AppleMusicHookPoint.LISTEN_NOW_ARTWORK_RESOLVER).single().className,
+        )
+
+        val libraryBuild = targets(AppleMusicHookPoint.LIBRARY_EPOXY_BUILD).single()
+        assertEquals("com.apple.android.music.library2.M", libraryBuild.parameterTypeNames?.first())
+
+        val composeObserve = targets(AppleMusicHookPoint.COMPOSE_OBSERVE_AS_STATE).single()
+        assertEquals("C1.w", composeObserve.className)
+        assertEquals("e", composeObserve.methodName)
+
+        assertEquals(
+            "z0.s0",
+            targets(AppleMusicHookPoint.COMPOSE_NEVER_EQUAL_POLICY).single().className,
+        )
+
+        val sourceMenu = targets(AppleMusicHookPoint.LYRICS_SOURCE_MENU_CLICK_LISTENER).single()
+        assertEquals("com.apple.android.music.player.fragment.d0", sourceMenu.className)
+        assertEquals("onClick", sourceMenu.methodName)
+        assertEquals(
+            "a",
+            sourceMenu.runtimeMemberNames[AppleMusicRuntimeMember.LYRICS_SOURCE_MENU_FRAGMENT_FIELD],
+        )
+
+        assertEquals(
+            "com.apple.android.music.player.e",
+            targets(AppleMusicHookPoint.IN_APP_GLOBAL_METADATA_DISPATCHER).single().className,
         )
     }
 }

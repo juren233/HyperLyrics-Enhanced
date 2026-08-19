@@ -31,6 +31,8 @@ object RootConstants {
         "key_hook_lock_screen_aod_pause_style"
     const val KEY_HOOK_LOCK_SCREEN_AOD_TRANSLATION_DISPLAY =
         "key_hook_lock_screen_aod_translation_display"
+    const val KEY_HOOK_LOCK_SCREEN_AOD_TRANSLATION_FALLBACK =
+        "key_hook_lock_screen_aod_translation_fallback"
     const val KEY_HOOK_LOCK_SCREEN_AOD_SWAP_TRANSLATION =
         "key_hook_lock_screen_aod_swap_translation"
     const val KEY_HOOK_LOCK_SCREEN_AOD_NEXT_SONG_PREVIEW =
@@ -57,6 +59,8 @@ object RootConstants {
         "key_hook_classic_aod_pause_style"
     const val KEY_HOOK_CLASSIC_AOD_TRANSLATION_DISPLAY =
         "key_hook_classic_aod_translation_display"
+    const val KEY_HOOK_CLASSIC_AOD_TRANSLATION_FALLBACK =
+        "key_hook_classic_aod_translation_fallback"
     const val KEY_HOOK_CLASSIC_AOD_SWAP_TRANSLATION =
         "key_hook_classic_aod_swap_translation"
     const val KEY_HOOK_CLASSIC_AOD_SONG_INFO_FORMAT =
@@ -179,7 +183,12 @@ object RootConstants {
     const val KEY_HOOK_SYLLABLE_HIGHLIGHT = "key_hook_syllable_highlight"
 
     // ================= TRANSLATION KEYS =================
+    const val TRANSLATION_PRONUNCIATION_DISPLAY_OFF = 0
+    const val TRANSLATION_PRONUNCIATION_DISPLAY_TRANSLATION = 1
+    const val TRANSLATION_PRONUNCIATION_DISPLAY_PRONUNCIATION = 2
+
     const val KEY_HOOK_TRANSLATION_DISPLAY = "key_hook_translation_display"
+    const val KEY_HOOK_TRANSLATION_FALLBACK = "key_hook_translation_fallback"
     const val KEY_HOOK_DISABLE_TRANSLATION = "key_hook_disable_translation"
     const val KEY_HOOK_TRANSLATION_ONLY = "key_hook_translation_only"
     const val KEY_HOOK_SWAP_TRANSLATION = "key_hook_swap_translation"
@@ -354,7 +363,10 @@ object RootConstants {
     const val AOD_PAUSE_STYLE_RESTORE = 0
     const val AOD_PAUSE_STYLE_KEEP_LYRICS = 1
     const val DEFAULT_HOOK_AOD_PAUSE_STYLE = AOD_PAUSE_STYLE_RESTORE
-    const val DEFAULT_HOOK_AOD_TRANSLATION_DISPLAY = true
+    const val DEFAULT_HOOK_AOD_TRANSLATION_DISPLAY = false
+    const val DEFAULT_HOOK_AOD_TRANSLATION_DISPLAY_MODE =
+        TRANSLATION_PRONUNCIATION_DISPLAY_OFF
+    const val DEFAULT_HOOK_AOD_TRANSLATION_FALLBACK = false
     const val DEFAULT_HOOK_AOD_SWAP_TRANSLATION = false
     const val DEFAULT_HOOK_AOD_NEXT_SONG_PREVIEW = true
     const val AOD_NEXT_SONG_PREVIEW_POSITION_LEFT = 0
@@ -488,7 +500,11 @@ object RootConstants {
     const val DEFAULT_HOOK_SYLLABLE_RELATIVE = true
     const val DEFAULT_HOOK_SYLLABLE_HIGHLIGHT = false
 
-    const val DEFAULT_HOOK_TRANSLATION_DISPLAY = true
+    const val DEFAULT_HOOK_TRANSLATION_PRONUNCIATION_DISPLAY =
+        TRANSLATION_PRONUNCIATION_DISPLAY_OFF
+    const val DEFAULT_HOOK_TRANSLATION_PRONUNCIATION_FALLBACK = false
+
+    const val DEFAULT_HOOK_TRANSLATION_DISPLAY = false
     const val DEFAULT_HOOK_DISABLE_TRANSLATION = false
     const val DEFAULT_HOOK_TRANSLATION_ONLY = false
     const val DEFAULT_HOOK_SWAP_TRANSLATION = false

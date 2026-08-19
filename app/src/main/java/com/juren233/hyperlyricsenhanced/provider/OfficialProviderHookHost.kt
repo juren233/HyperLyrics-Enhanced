@@ -28,6 +28,7 @@ import org.luckypray.dexkit.query.enums.StringMatchType
 import org.luckypray.dexkit.query.matchers.MethodMatcher
 import java.lang.reflect.Method
 import java.lang.reflect.Modifier
+import java.util.Collections
 import java.util.WeakHashMap
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
@@ -146,14 +147,78 @@ internal class OfficialProviderHookHost(
         null
     }
 
+    private val handledApplications = Collections.synchronizedSet(
+        Collections.newSetFromMap(WeakHashMap<Application, Boolean>()),
+    )
+    @Volatile
+    private var registeredApplicationCallback: OfficialProviderApplicationCallback? = null
+
+    private fun dispatchApplicationCreated(
+        application: Application,
+        callback: OfficialProviderApplicationCallback,
+        source: String,
+    ) {
+        if (application.packageName != packageName) return
+        if (!handledApplications.add(application)) return
+        runCatching { callback.onApplicationCreated(application) }
+            .onSuccess {
+                module.log(
+                    Log.INFO,
+                    tag,
+                    "官方 Provider 生命周期回调成功: package=$packageName source=$source app=${application::class.java.name}",
+                )
+            }
+            .onFailure { error ->
+                handledApplications.remove(application)
+                module.log(
+                    Log.ERROR,
+                    tag,
+                    "官方 Provider 生命周期回调失败: package=$packageName source=$source error=${error.message}",
+                    error,
+                )
+            }
+    }
+
+    private fun findCurrentApplication(): Application? = runCatching {
+        val activityThreadClass = Class.forName(
+            "android.app.ActivityThread",
+            false,
+            targetClassLoader,
+        )
+        val currentApplicationMethod = activityThreadClass.getDeclaredMethod("currentApplication")
+        currentApplicationMethod.invoke(null) as? Application
+    }.getOrNull()
+
+    fun ensureApplicationDispatched(source: String = "lazy_fallback") {
+        if (handledApplications.isNotEmpty()) return
+        val callback = registeredApplicationCallback ?: return
+        val app = findCurrentApplication() ?: return
+        dispatchApplicationCreated(app, callback, source)
+    }
+
     override fun hookApplication(callback: OfficialProviderApplicationCallback) {
-        val method = Instrumentation::class.java.getDeclaredMethod(
-            "callApplicationOnCreate",
-            Application::class.java,
-        )
-        module.hook(method).intercept(
-            ApplicationCreatedHooker(module, packageName, callback),
-        )
+        registeredApplicationCallback = callback
+        findCurrentApplication()?.let { app ->
+            dispatchApplicationCreated(app, callback, "current_application")
+        }
+
+        runCatching {
+            val method = Instrumentation::class.java.getDeclaredMethod(
+                "callApplicationOnCreate",
+                Application::class.java,
+            )
+            module.hook(method).intercept(
+                ApplicationCreatedHooker(this, callback),
+            )
+        }
+
+        runCatching {
+            val method = Application::class.java.getDeclaredMethod("onCreate")
+            module.hook(method).intercept(
+                ApplicationOnCreateHooker(this, callback),
+            )
+        }
+
         module.log(
             Log.INFO,
             tag,
@@ -180,6 +245,7 @@ internal class OfficialProviderHookHost(
         )
         module.hook(setPlaybackState).intercept(
             PlaybackStateHooker(
+                host = this,
                 module = module,
                 packageName = packageName,
                 processName = processName,
@@ -195,6 +261,7 @@ internal class OfficialProviderHookHost(
         )
         module.hook(setMetadata).intercept(
             MetadataHooker(
+                host = this,
                 module = module,
                 packageName = packageName,
                 callback = metadataCallback,
@@ -1087,41 +1154,35 @@ internal class OfficialProviderHookHost(
     }
 
     private class ApplicationCreatedHooker(
-        private val module: XposedModule,
-        private val expectedPackageName: String,
+        private val host: OfficialProviderHookHost,
         private val callback: OfficialProviderApplicationCallback,
     ) : XposedInterface.Hooker {
-        private val firstCallbackRecorded = AtomicBoolean(false)
-
         override fun intercept(chain: XposedInterface.Chain): Any? {
             val result = chain.proceed()
             val application = chain.args.firstOrNull() as? Application
-            if (application?.packageName == expectedPackageName) {
-                runCatching { callback.onApplicationCreated(application) }
-                    .onSuccess {
-                        if (firstCallbackRecorded.compareAndSet(false, true)) {
-                            module.log(
-                                Log.INFO,
-                                "OfficialProviderHookHost",
-                                "官方 Provider 生命周期 Hook 首次命中: " +
-                                    "package=$expectedPackageName",
-                            )
-                        }
-                    }
-                    .onFailure { error ->
-                        module.log(
-                            Log.ERROR,
-                            "OfficialProviderHookHost",
-                            "官方 Provider 生命周期回调失败: " +
-                                "package=$expectedPackageName error=${error.message}",
-                        )
-                    }
+            if (application != null) {
+                host.dispatchApplicationCreated(application, callback, "instrumentation")
+            }
+            return result
+        }
+    }
+
+    private class ApplicationOnCreateHooker(
+        private val host: OfficialProviderHookHost,
+        private val callback: OfficialProviderApplicationCallback,
+    ) : XposedInterface.Hooker {
+        override fun intercept(chain: XposedInterface.Chain): Any? {
+            val result = chain.proceed()
+            val application = chain.thisObject as? Application
+            if (application != null) {
+                host.dispatchApplicationCreated(application, callback, "application_on_create")
             }
             return result
         }
     }
 
     private class PlaybackStateHooker(
+        private val host: OfficialProviderHookHost,
         private val module: XposedModule,
         private val packageName: String,
         private val processName: String,
@@ -1134,6 +1195,7 @@ internal class OfficialProviderHookHost(
 
         override fun intercept(chain: XposedInterface.Chain): Any? {
             val result = chain.proceed()
+            host.ensureApplicationDispatched("media_session_playback_state")
             val state = chain.args.firstOrNull() as? PlaybackState
             val sequence = callbackSequence.incrementAndGet()
             deliverCurrentMetadataSnapshot(chain.thisObject as? MediaSession)
@@ -1229,6 +1291,7 @@ internal class OfficialProviderHookHost(
     }
 
     private class MetadataHooker(
+        private val host: OfficialProviderHookHost,
         private val module: XposedModule,
         private val packageName: String,
         private val callback: OfficialProviderMetadataCallback,
@@ -1238,6 +1301,7 @@ internal class OfficialProviderHookHost(
 
         override fun intercept(chain: XposedInterface.Chain): Any? {
             val result = chain.proceed()
+            host.ensureApplicationDispatched("media_session_metadata")
             val session = chain.thisObject
             metadataGate.recordExplicit(session)
             runCatching {

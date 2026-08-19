@@ -61,6 +61,7 @@ internal class AppleOnlineSourceMenuHooks(
     private val missingLyricsPronunciationSource: (String?) -> String?,
     private val requestOnlineSource: (Long, String, String, String) -> Boolean,
     private val debugValue: (Any?) -> String,
+    private val configuredOrderedSources: () -> List<String> = { DEFAULT_SOURCE_ORDER },
 ) {
     private var activeMenu: ActiveOnlineSourceMenu? = null
     private var activeLyricsSourceDialog: ActiveLyricsSourceDialog? = null
@@ -523,126 +524,143 @@ internal class AppleOnlineSourceMenuHooks(
             clipToOutline = true
         }
         val rows = linkedMapOf<String, LyricsSourceDialogRow>()
-        SOURCE_ORDER.forEachIndexed { index, source ->
-            val status = if (isLyricsSourceDialog) lyricsSourceStatus(songId, source) else null
-            val contentMatchPercentage = if (status == null) {
-                contentMatchPercentage(songId, contentType, source) ?: 0
-            } else {
-                null
-            }
-            val isSelected = source == selected
-            val pending = pendingSwitches[contentType]?.takeIf { it.songId == songId }
-            val isPending = pending?.targetSource == source
-            val selectable = pending == null && if (status != null) {
-                isMissingLyricsSourceSelectable(status, isSelected)
-            } else {
-                !isSelected
-            }
-            val row = LinearLayout(context).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = android.view.Gravity.CENTER_VERTICAL
-                minimumHeight = dp(context, 58)
-                setPadding(dp(context, 16), dp(context, 6), dp(context, 14), dp(context, 6))
-                isClickable = selectable
-                isFocusable = selectable
-                isEnabled = selectable
-                alpha = if (isPending || status == null || status.found) 1f else 0.52f
-                contentDescription = sourceMenuSourceName(source)
-            }
-            val textColumn = LinearLayout(context).apply {
-                orientation = LinearLayout.VERTICAL
-                gravity = android.view.Gravity.CENTER_VERTICAL
-                layoutParams = LinearLayout.LayoutParams(
-                    0,
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                    1f,
-                )
-            }
-            val rowTitle = TextView(context).apply {
-                text = sourceMenuSourceName(source)
-                textSize = 16f
-                setTextColor(if (isSelected) primaryColor else onSurfaceColor)
-                typeface = Typeface.create(
-                    Typeface.DEFAULT,
-                    if (isSelected) Typeface.BOLD else Typeface.NORMAL,
-                )
-            }
-            val rowCheck = TextView(context).apply {
-                text = if (isSelected) "✓" else ""
-                textSize = 19f
-                setTextColor(primaryColor)
-                typeface = Typeface.DEFAULT_BOLD
-                gravity = android.view.Gravity.CENTER
-                minWidth = dp(context, 24)
-                contentDescription = if (isSelected) "已选择" else null
-            }
-            val rowSubtitle = TextView(context).apply {
-                text = when {
-                    isPending -> "获取中…"
-                    status != null -> missingLyricsSourceStatusLabel(status)
-                    isSelected -> currentSourceSubtitle(
-                        contentType = contentType,
-                        percentage = contentMatchPercentage ?: 0,
-                    )
-                    else -> sourceMatchSubtitle(
-                        contentType = contentType,
-                        percentage = contentMatchPercentage ?: 0,
-                    )
-                }
-                textSize = 12.5f
-                setTextColor(onSurfaceVariantColor)
-                setPadding(0, dp(context, 1), 0, 0)
-            }
-            textColumn.addView(rowTitle)
-            textColumn.addView(rowSubtitle)
-            row.addView(textColumn)
-            row.addView(rowCheck)
-            row.setOnClickListener {
-                val currentStatus = if (isLyricsSourceDialog) {
-                    lyricsSourceStatus(songId, source)
-                } else {
-                    null
-                }
-                val currentlySelected = source == currentSource(songId, contentType)
-                val currentlySelectable = if (currentStatus != null) {
-                    isMissingLyricsSourceSelectable(currentStatus, currentlySelected)
-                } else {
-                    !currentlySelected
-                }
-                if (
-                    pendingSwitches[contentType] != null ||
-                    !currentlySelectable
-                ) {
-                    return@setOnClickListener
-                }
-                requestOnlineSourceSwitch(songId, contentType, source)
-            }
-            rows[source] = LyricsSourceDialogRow(
-                container = row,
-                title = rowTitle,
-                subtitle = rowSubtitle,
-                indicator = rowCheck,
-            )
+        val sourceOrder = configuredOrderedSources()
+        if (sourceOrder.isEmpty()) {
             group.addView(
-                row,
+                TextView(context).apply {
+                    text = "未启用任何在线来源"
+                    textSize = 14f
+                    setTextColor(onSurfaceVariantColor)
+                    gravity = android.view.Gravity.CENTER
+                    setPadding(dp(context, 16), dp(context, 24), dp(context, 16), dp(context, 24))
+                },
                 LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.WRAP_CONTENT,
                 ),
             )
-            if (index < SOURCE_ORDER.lastIndex) {
+        } else {
+            sourceOrder.forEachIndexed { index, source ->
+                val status = if (isLyricsSourceDialog) lyricsSourceStatus(songId, source) else null
+                val contentMatchPercentage = if (status == null) {
+                    contentMatchPercentage(songId, contentType, source) ?: 0
+                } else {
+                    null
+                }
+                val isSelected = source == selected
+                val pending = pendingSwitches[contentType]?.takeIf { it.songId == songId }
+                val isPending = pending?.targetSource == source
+                val selectable = pending == null && if (status != null) {
+                    isMissingLyricsSourceSelectable(status, isSelected)
+                } else {
+                    !isSelected
+                }
+                val row = LinearLayout(context).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = android.view.Gravity.CENTER_VERTICAL
+                    minimumHeight = dp(context, 58)
+                    setPadding(dp(context, 16), dp(context, 6), dp(context, 14), dp(context, 6))
+                    isClickable = selectable
+                    isFocusable = selectable
+                    isEnabled = selectable
+                    alpha = if (isPending || status == null || status.found) 1f else 0.52f
+                    contentDescription = sourceMenuSourceName(source)
+                }
+                val textColumn = LinearLayout(context).apply {
+                    orientation = LinearLayout.VERTICAL
+                    gravity = android.view.Gravity.CENTER_VERTICAL
+                    layoutParams = LinearLayout.LayoutParams(
+                        0,
+                        ViewGroup.LayoutParams.WRAP_CONTENT,
+                        1f,
+                    )
+                }
+                val rowTitle = TextView(context).apply {
+                    text = sourceMenuSourceName(source)
+                    textSize = 16f
+                    setTextColor(if (isSelected) primaryColor else onSurfaceColor)
+                    typeface = Typeface.create(
+                        Typeface.DEFAULT,
+                        if (isSelected) Typeface.BOLD else Typeface.NORMAL,
+                    )
+                }
+                val rowCheck = TextView(context).apply {
+                    text = if (isSelected) "✓" else ""
+                    textSize = 19f
+                    setTextColor(primaryColor)
+                    typeface = Typeface.DEFAULT_BOLD
+                    gravity = android.view.Gravity.CENTER
+                    minWidth = dp(context, 24)
+                    contentDescription = if (isSelected) "已选择" else null
+                }
+                val rowSubtitle = TextView(context).apply {
+                    text = when {
+                        isPending -> "获取中…"
+                        status != null -> missingLyricsSourceStatusLabel(status)
+                        isSelected -> currentSourceSubtitle(
+                            contentType = contentType,
+                            percentage = contentMatchPercentage ?: 0,
+                        )
+                        else -> sourceMatchSubtitle(
+                            contentType = contentType,
+                            percentage = contentMatchPercentage ?: 0,
+                        )
+                    }
+                    textSize = 12.5f
+                    setTextColor(onSurfaceVariantColor)
+                    setPadding(0, dp(context, 1), 0, 0)
+                }
+                textColumn.addView(rowTitle)
+                textColumn.addView(rowSubtitle)
+                row.addView(textColumn)
+                row.addView(rowCheck)
+                row.setOnClickListener {
+                    val currentStatus = if (isLyricsSourceDialog) {
+                        lyricsSourceStatus(songId, source)
+                    } else {
+                        null
+                    }
+                    val currentlySelected = source == currentSource(songId, contentType)
+                    val currentlySelectable = if (currentStatus != null) {
+                        isMissingLyricsSourceSelectable(currentStatus, currentlySelected)
+                    } else {
+                        !currentlySelected
+                    }
+                    if (
+                        pendingSwitches[contentType] != null ||
+                        !currentlySelectable
+                    ) {
+                        return@setOnClickListener
+                    }
+                    requestOnlineSourceSwitch(songId, contentType, source)
+                }
+                rows[source] = LyricsSourceDialogRow(
+                    container = row,
+                    title = rowTitle,
+                    subtitle = rowSubtitle,
+                    indicator = rowCheck,
+                )
                 group.addView(
-                    View(context).apply {
-                        setBackgroundColor(blendColors(groupColor, onSurfaceColor, 0.10f))
-                    },
+                    row,
                     LinearLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
-                        hairline(context),
-                    ).apply {
-                        marginStart = dp(context, 16)
-                        marginEnd = dp(context, 16)
-                    },
+                        ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ),
                 )
+                if (index < sourceOrder.lastIndex) {
+                    group.addView(
+                        View(context).apply {
+                            setBackgroundColor(blendColors(groupColor, onSurfaceColor, 0.10f))
+                        },
+                        LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            hairline(context),
+                        ).apply {
+                            marginStart = dp(context, 16)
+                            marginEnd = dp(context, 16)
+                        },
+                    )
+                }
             }
         }
         list.addView(
@@ -1141,6 +1159,7 @@ internal class AppleOnlineSourceMenuHooks(
         const val ONLINE_SOURCE_MENU_ITEM_TAG = "hyperlyrics_enhanced_online_lyrics_source"
         const val ONLINE_SOURCE_SWITCH_TIMEOUT_MS = 15_000L
         const val ONLINE_SOURCE_SWITCH_FAILURE_FEEDBACK_MS = 2_000L
-        val SOURCE_ORDER = listOf("NE", "QM", "KUWO", "KUGOU")
+        val DEFAULT_SOURCE_ORDER = listOf("NE", "QM", "KUWO", "KUGOU")
+        val SOURCE_ORDER = DEFAULT_SOURCE_ORDER
     }
 }

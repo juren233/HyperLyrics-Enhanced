@@ -363,7 +363,7 @@ class IslandSlotContentAssemblerTest {
         assertFalse(previewOptions.showTranslation)
         assertFalse(previewOptions.showRoma)
         assertTrue(translationOptions.showTranslation)
-        assertTrue(translationOptions.showRoma)
+        assertFalse(translationOptions.showRoma)
     }
 
     @Test
@@ -376,6 +376,46 @@ class IslandSlotContentAssemblerTest {
 
         assertFalse(options.showTranslation)
         assertFalse(options.showRoma)
+    }
+
+    @Test
+    fun `resolveLyricDisplayOptions and shouldUseNextLinePreview respect mode and fallback`() {
+        val lineNoTransHasRoma = RichLyricLine(text = "Line", translation = null, roma = "Roma")
+        val lineHasTransNoRoma = RichLyricLine(text = "Line", translation = "Trans", roma = null)
+
+        // Translation mode, no fallback -> no translation, so next line preview can be used
+        assertTrue(
+            IslandSlotContentAssembler.shouldUseNextLinePreview(
+                translationDisplayMode = RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_TRANSLATION,
+                translationFallback = false,
+                currentLine = lineNoTransHasRoma
+            )
+        )
+        // Translation mode, with fallback -> falls back to roma, so preview should NOT be used
+        assertFalse(
+            IslandSlotContentAssembler.shouldUseNextLinePreview(
+                translationDisplayMode = RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_TRANSLATION,
+                translationFallback = true,
+                currentLine = lineNoTransHasRoma
+            )
+        )
+
+        // Pronunciation mode, no fallback -> no roma, so preview can be used
+        assertTrue(
+            IslandSlotContentAssembler.shouldUseNextLinePreview(
+                translationDisplayMode = RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_PRONUNCIATION,
+                translationFallback = false,
+                currentLine = lineHasTransNoRoma
+            )
+        )
+        // Pronunciation mode, with fallback -> falls back to translation, so preview should NOT be used
+        assertFalse(
+            IslandSlotContentAssembler.shouldUseNextLinePreview(
+                translationDisplayMode = RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_PRONUNCIATION,
+                translationFallback = true,
+                currentLine = lineHasTransNoRoma
+            )
+        )
     }
 
     @Test

@@ -46,7 +46,8 @@ internal data class IslandSlotRuntimeConfig(
     val metadataMarqueeInfinite: Boolean,
     val syllableRelative: Boolean,
     val syllableHighlight: Boolean,
-    val translationDisplay: Boolean,
+    val translationDisplayMode: Int,
+    val translationFallback: Boolean,
     val translationOnly: Boolean,
     val swapTranslation: Boolean,
     val nextLyricLine: Boolean,
@@ -58,8 +59,11 @@ internal data class IslandSlotRuntimeConfig(
     val wordMotionCjkLift: Float,
     val wordMotionCjkWave: Float,
     val wordMotionLatinLift: Float,
-    val wordMotionLatinWave: Float
+    val wordMotionLatinWave: Float,
 ) {
+    val translationDisplay: Boolean
+        get() = translationDisplayMode != RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_OFF
+
     val isSplitMode: Boolean
         get() = activeMode == 1
 
@@ -88,7 +92,8 @@ internal data class IslandSlotRuntimeConfig(
         metadataMarqueeInfinite,
         syllableRelative,
         syllableHighlight,
-        translationDisplay,
+        translationDisplayMode,
+        translationFallback,
         translationOnly,
         swapTranslation,
         nextLyricLine,
@@ -327,7 +332,8 @@ internal data class IslandSlotRuntimeConfig(
                 metadataMarqueeInfinite = prefs.getBoolean(RootConstants.KEY_HOOK_MARQUEE_METADATA_INFINITE, RootConstants.DEFAULT_HOOK_MARQUEE_METADATA_INFINITE),
                 syllableRelative = prefs.getBoolean(RootConstants.KEY_HOOK_SYLLABLE_RELATIVE, RootConstants.DEFAULT_HOOK_SYLLABLE_RELATIVE),
                 syllableHighlight = prefs.getBoolean(RootConstants.KEY_HOOK_SYLLABLE_HIGHLIGHT, RootConstants.DEFAULT_HOOK_SYLLABLE_HIGHLIGHT),
-                translationDisplay = com.juren233.hyperlyricsenhanced.root.utils.TranslationHelper.isTranslationDisplayed(prefs),
+                translationDisplayMode = com.juren233.hyperlyricsenhanced.root.utils.TranslationHelper.getTranslationDisplayMode(prefs),
+                translationFallback = com.juren233.hyperlyricsenhanced.root.utils.TranslationHelper.isTranslationFallback(prefs),
                 translationOnly = prefs.getBoolean(RootConstants.KEY_HOOK_TRANSLATION_ONLY, RootConstants.DEFAULT_HOOK_TRANSLATION_ONLY),
                 swapTranslation = prefs.getBoolean(RootConstants.KEY_HOOK_SWAP_TRANSLATION, RootConstants.DEFAULT_HOOK_SWAP_TRANSLATION),
                 nextLyricLine = prefs.getBoolean(RootConstants.KEY_HOOK_NEXT_LYRIC_LINE, RootConstants.DEFAULT_HOOK_NEXT_LYRIC_LINE),

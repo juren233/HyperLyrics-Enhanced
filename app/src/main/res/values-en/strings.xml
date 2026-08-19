@@ -216,9 +216,10 @@
     <string name="provider_status_installed_disabled">Disabled · Version v%1$s</string>
     <string name="provider_status_available">Available: v%1$s</string>
     <string name="provider_status_unavailable">Temporarily unavailable</string>
-    <string name="provider_status_migrating">Migration in progress; not released yet</string>
+    <string name="provider_status_needs_repair">Needs repair · Missing or damaged file (v%1$s)</string>
     <string name="provider_action_download">Download</string>
     <string name="provider_action_update">Update</string>
+    <string name="provider_action_repair">Repair</string>
     <string name="provider_remove">Remove plugin</string>
     <string name="provider_remove_success">Plugin removed</string>
     <string name="provider_remove_failed">Failed to remove plugin: %1$s</string>
@@ -229,8 +230,11 @@
     <string name="provider_add_success_system_ui">Plugin added. Restart System UI.</string>
     <string name="provider_update_success">Plugin updated. Restart %1$s and System UI.</string>
     <string name="provider_update_success_system_ui">Plugin updated. Restart System UI.</string>
+    <string name="provider_repair_success">Plugin repaired. Restart %1$s and System UI.</string>
+    <string name="provider_repair_success_system_ui">Plugin repaired. Restart System UI.</string>
     <string name="provider_add_failed">Failed to add plugin: %1$s</string>
     <string name="provider_update_failed">Failed to update plugin: %1$s</string>
+    <string name="provider_repair_failed">Failed to repair plugin: %1$s</string>
     <string name="provider_change_applied">Change applied. Restart %1$s and System UI.</string>
     <string name="provider_change_applied_system_ui">Change applied. Restart System UI.</string>
     <string name="provider_error_network">Network request failed. Check your connection and try again.</string>
@@ -380,6 +384,11 @@
     <string name="title_translation">Translation</string>
     <string name="label_custom_font_path">Enter full path of the font file</string>
     <string name="title_translation_display">Show Translations</string>
+    <string name="title_translation_pronunciation_display">Translation / Pronunciation Display</string>
+    <string name="option_translation_pronunciation_off">Off</string>
+    <string name="option_translation_pronunciation_translation">Translation</string>
+    <string name="option_translation_pronunciation_pronunciation">Pronunciation</string>
+    <string name="title_translation_pronunciation_fallback">Show other when unavailable</string>
     <string name="title_translation_only">Translation Only</string>
     <string name="title_swap_translation">Swap Lyric and Translation</string>
     <string name="title_next_lyric_line">Show Next Lyric Line</string>

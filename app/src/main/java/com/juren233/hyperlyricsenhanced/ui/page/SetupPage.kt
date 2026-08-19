@@ -398,7 +398,7 @@ fun LyricSourceSelectionPage(
 
     LaunchedEffect(selectedSource) {
         if (selectedSource == "lyricon" && providerStateFlow.value.items.isEmpty()) {
-            refreshSetupProviders(providerStateFlow)
+            refreshSetupProviders(context, providerStateFlow)
         }
     }
 
@@ -559,7 +559,7 @@ fun LyricSourceSelectionPage(
                         actionText = stringResource(R.string.setup_provider_retry),
                         onClick = {
                             coroutineScope.launch {
-                                refreshSetupProviders(providerStateFlow)
+                                refreshSetupProviders(context, providerStateFlow)
                             }
                         },
                     )
@@ -678,10 +678,11 @@ private fun SetupProviderStateCard(
 }
 
 private suspend fun refreshSetupProviders(
+    context: Context,
     stateFlow: MutableStateFlow<OfficialProviderUiState>,
 ) {
     stateFlow.update { state -> state.copy(isLoading = true, error = null) }
-    runCatching { OfficialProviderRepository.loadItems() }
+    runCatching { OfficialProviderRepository.loadItems(context) }
         .onSuccess { items ->
             stateFlow.value = OfficialProviderUiState(items = items)
         }

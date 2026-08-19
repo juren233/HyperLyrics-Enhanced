@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright 2026 Proify, Tomakino, juren233
  * Licensed under the Apache License, Version 2.0
  * http://www.apache.org/licenses/LICENSE-2.0
@@ -15,6 +15,7 @@ import android.view.Gravity
 import android.widget.LinearLayout
 import androidx.core.graphics.withScale
 import androidx.core.view.forEach
+import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.lyric.model.interfaces.IRichLyricLine
 import com.juren233.hyperlyricsenhanced.lyric.view.line.SpaceGateLyricLineView
 
@@ -35,8 +36,12 @@ class SpaceGateRichLyricLineView(
     var renderScale = 1.0f
         private set
 
+    var displayMode: Int = RootConstants.DEFAULT_HOOK_TRANSLATION_PRONUNCIATION_DISPLAY
+    var fallback: Boolean = RootConstants.DEFAULT_HOOK_TRANSLATION_PRONUNCIATION_FALLBACK
+    var hideSecondaryContent: Boolean = false
+
     private val assembler = LyricLineAssembler(
-        displayTranslation, displayRoma,
+        displayMode, fallback, hideSecondaryContent,
         enableRelativeProgress, enableRelativeProgressHighlight
     )
 
@@ -134,14 +139,35 @@ class SpaceGateRichLyricLineView(
 
     fun notifyLineChanged() = refreshLines()
 
-    fun setDisplayOptions(showTranslation: Boolean, showRoma: Boolean) {
-        displayTranslation = showTranslation
-        displayRoma = showRoma
+    fun setDisplayOptions(
+        displayMode: Int,
+        fallback: Boolean,
+        hideSecondaryContent: Boolean = false
+    ) {
+        this.displayMode = displayMode
+        this.fallback = fallback
+        this.hideSecondaryContent = hideSecondaryContent
+        this.displayTranslation = displayMode == RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_TRANSLATION
+        this.displayRoma = displayMode == RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_PRONUNCIATION
         assembler.updateFlags(
-            displayTranslation,
-            displayRoma,
+            displayMode,
+            fallback,
+            hideSecondaryContent,
             enableRelativeProgress,
             enableRelativeProgressHighlight
+        )
+    }
+
+    fun setDisplayOptions(showTranslation: Boolean, showRoma: Boolean) {
+        val mode = when {
+            showTranslation -> RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_TRANSLATION
+            showRoma -> RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_PRONUNCIATION
+            else -> RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_OFF
+        }
+        setDisplayOptions(
+            displayMode = mode,
+            fallback = false,
+            hideSecondaryContent = mode == RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_OFF
         )
     }
 
@@ -194,7 +220,7 @@ class SpaceGateRichLyricLineView(
 
     fun setStyle(style: LyricViewStyle) {
         assembler.updateFlags(
-            displayTranslation, displayRoma,
+            displayMode, fallback, hideSecondaryContent,
             style.primary.relativeProgress, style.primary.relativeHighlight
         )
         enableRelativeProgress = style.primary.relativeProgress
@@ -290,7 +316,13 @@ class SpaceGateRichLyricLineView(
         val previousLine = oldLine
         oldLine = line
 
-        assembler.updateFlags(displayTranslation, displayRoma, enableRelativeProgress, enableRelativeProgressHighlight)
+        assembler.updateFlags(
+            displayMode,
+            fallback,
+            hideSecondaryContent,
+            enableRelativeProgress,
+            enableRelativeProgressHighlight
+        )
         val mainResult = assembler.buildMain(line)
         val secResult = assembler.buildSecondary(line)
 

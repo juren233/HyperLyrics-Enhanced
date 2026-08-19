@@ -426,7 +426,8 @@ class AodMediaLyricPolicyTest {
             translation = "主句翻译",
             backing = "Backing vocal",
             backingTranslation = "伴唱翻译",
-            roma = "Main lyric pronunciation"
+            roma = "Main lyric pronunciation",
+            translationDisplay = true,
         )
 
         assertEquals("Main lyric", content.main)
@@ -502,14 +503,18 @@ class AodMediaLyricPolicyTest {
             translation = null,
             backing = null,
             backingTranslation = null,
-            roma = "Main lyric pronunciation"
+            roma = "Main lyric pronunciation",
+            translationDisplayMode = RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_TRANSLATION,
+            translationFallback = true,
         )
         val withBacking = AodMediaLyricPolicy.assembleContent(
             main = "Main lyric",
             translation = null,
             backing = "Backing vocal",
             backingTranslation = null,
-            roma = "Main lyric pronunciation"
+            roma = "Main lyric pronunciation",
+            translationDisplayMode = RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_TRANSLATION,
+            translationFallback = true,
         )
 
         assertEquals("Main lyric pronunciation", withoutBacking.translation)
@@ -524,7 +529,8 @@ class AodMediaLyricPolicyTest {
             translation = "主句翻译",
             backing = null,
             backingTranslation = "伴唱翻译",
-            roma = null
+            roma = null,
+            translationDisplay = true,
         )
 
         assertEquals("", content.backing)
@@ -560,6 +566,7 @@ class AodMediaLyricPolicyTest {
             overlappingTranslation = "第二句翻译",
             overlappingBacking = "Second backing",
             overlappingBackingTranslation = "第二句伴唱翻译",
+            translationDisplay = true,
         )
 
         assertEquals("First", content.main)
@@ -768,6 +775,7 @@ class AodMediaLyricPolicyTest {
             roma = null,
             next = "Next",
             showNext = true,
+            translationDisplay = true,
         )
 
         assertEquals("Translation", content.translation)
@@ -784,6 +792,8 @@ class AodMediaLyricPolicyTest {
             roma = "Pronunciation",
             next = "Next",
             showNext = true,
+            translationDisplayMode = RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_TRANSLATION,
+            translationFallback = true,
         )
 
         assertEquals("Pronunciation", content.translation)
@@ -800,6 +810,7 @@ class AodMediaLyricPolicyTest {
             roma = null,
             next = "Next",
             showNext = true,
+            translationDisplay = true,
         )
 
         assertEquals("Backing translation", content.backingTranslation)
@@ -973,5 +984,74 @@ class AodMediaLyricPolicyTest {
             source.contains("headerHeightController?.view?.translationY") ||
                 source.contains("pinnedHeaderTop"),
         )
+    }
+
+    @Test
+    fun `assembleContent respects translation and pronunciation modes and fallback`() {
+        val lineBoth = AodMediaLyricPolicy.assembleContent(
+            main = "Main",
+            translation = "Trans",
+            backing = null,
+            backingTranslation = null,
+            roma = "Roma",
+            translationDisplayMode = RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_TRANSLATION,
+            translationFallback = false,
+        )
+        assertEquals("Trans", lineBoth.translation)
+
+        val lineNoTransNoFallback = AodMediaLyricPolicy.assembleContent(
+            main = "Main",
+            translation = null,
+            backing = null,
+            backingTranslation = null,
+            roma = "Roma",
+            translationDisplayMode = RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_TRANSLATION,
+            translationFallback = false,
+        )
+        assertEquals("", lineNoTransNoFallback.translation)
+
+        val lineNoTransWithFallback = AodMediaLyricPolicy.assembleContent(
+            main = "Main",
+            translation = null,
+            backing = null,
+            backingTranslation = null,
+            roma = "Roma",
+            translationDisplayMode = RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_TRANSLATION,
+            translationFallback = true,
+        )
+        assertEquals("Roma", lineNoTransWithFallback.translation)
+
+        val linePronunciationNoFallback = AodMediaLyricPolicy.assembleContent(
+            main = "Main",
+            translation = "Trans",
+            backing = null,
+            backingTranslation = null,
+            roma = null,
+            translationDisplayMode = RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_PRONUNCIATION,
+            translationFallback = false,
+        )
+        assertEquals("", linePronunciationNoFallback.translation)
+
+        val linePronunciationWithFallback = AodMediaLyricPolicy.assembleContent(
+            main = "Main",
+            translation = "Trans",
+            backing = null,
+            backingTranslation = null,
+            roma = null,
+            translationDisplayMode = RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_PRONUNCIATION,
+            translationFallback = true,
+        )
+        assertEquals("Trans", linePronunciationWithFallback.translation)
+
+        val lineOff = AodMediaLyricPolicy.assembleContent(
+            main = "Main",
+            translation = "Trans",
+            backing = null,
+            backingTranslation = null,
+            roma = "Roma",
+            translationDisplayMode = RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_OFF,
+            translationFallback = true,
+        )
+        assertEquals("", lineOff.translation)
     }
 }

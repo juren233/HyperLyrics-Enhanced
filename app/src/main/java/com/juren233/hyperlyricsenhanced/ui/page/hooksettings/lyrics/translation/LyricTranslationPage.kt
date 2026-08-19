@@ -44,8 +44,11 @@ fun LyricTranslationPage() {
             )
         )
     }
-    var translationDisplay by remember {
-        mutableStateOf(TranslationHelper.isTranslationDisplayed(prefs))
+    var translationDisplayMode by remember {
+        mutableIntStateOf(TranslationHelper.getTranslationDisplayMode(prefs))
+    }
+    var translationFallback by remember {
+        mutableStateOf(TranslationHelper.isTranslationFallback(prefs))
     }
     var translationOnly by remember {
         mutableStateOf(
@@ -79,10 +82,15 @@ fun LyricTranslationPage() {
                 islandContentLeft,
                 islandContentRight,
             ),
-            translationDisplay = translationDisplay,
-            onTranslationDisplayChange = {
-                translationDisplay = it
+            translationDisplayMode = translationDisplayMode,
+            onTranslationDisplayModeChange = {
+                translationDisplayMode = it
                 saveConfig(RootConstants.KEY_HOOK_TRANSLATION_DISPLAY, it)
+            },
+            translationFallback = translationFallback,
+            onTranslationFallbackChange = {
+                translationFallback = it
+                saveConfig(RootConstants.KEY_HOOK_TRANSLATION_FALLBACK, it)
             },
             translationOnly = translationOnly,
             onTranslationOnlyChange = {

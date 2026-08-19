@@ -316,4 +316,22 @@ class AppleLyricsPresentationPolicyTest {
         assertEquals(4..8, visibleAdapterRange(listOf(-1, 8, 4, 6)))
         assertNull(visibleAdapterRange(listOf(-1, -2)))
     }
+
+    @Test
+    fun `belongsToCurrentLyricsPage allows same song and queue transition`() {
+        assertTrue(
+            belongsToCurrentLyricsPage(
+                loadedSongId = "1720737136",
+                visibleSongId = "1720737136",
+                queueSongId = "1720737136",
+            )
+        )
+        assertTrue(
+            belongsToCurrentLyricsPage(
+                loadedSongId = "1720737136",
+                visibleSongId = "1768090627",
+                queueSongId = "1720737136",
+            )
+        )
+    }
 }

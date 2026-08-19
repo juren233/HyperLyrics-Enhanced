@@ -86,14 +86,31 @@ internal class AppleActionSheetMetadataHooks(
             collectionItemContract = itemContract
             val bindingClass = resolvedBinding.method.declaringClass
             val bindMethod = resolvedBinding.method
-            val itemField = generateSequence(bindingClass) { current -> current.superclass }
-                .flatMap { current -> current.declaredFields.asSequence() }
-                .singleOrNull { field ->
+            val itemFieldCandidates = generateSequence(bindingClass) { current ->
+                current.superclass
+            }.flatMap { current -> current.declaredFields.asSequence() }
+                .filter { field ->
                     !Modifier.isStatic(field.modifiers) &&
                         isCollectionItemViewField(field)
                 }
+                .toList()
+            val itemField = itemFieldCandidates.singleOrNull()
                 ?.apply { isAccessible = true }
-                ?: error("Action sheet CollectionItemView field unavailable")
+                ?: error(
+                    "Action sheet CollectionItemView field unavailable; " +
+                        if (BuildConfig.DEBUG) {
+                            "binding=${resolvedBinding.target.className}, " +
+                                "declaring=${bindingClass.name}, " +
+                                "itemClass=${collectionItemViewClass?.name}, " +
+                                "candidates=${itemFieldCandidates.joinToString { field ->
+                                    "${field.declaringClass.name}.${field.name}:" +
+                                        "${field.type.name}:static=" +
+                                        Modifier.isStatic(field.modifiers)
+                                }}"
+                        } else {
+                            "binding=${resolvedBinding.target.className}"
+                        }
+                )
             runtime.hookRegistrar.installHook(bindMethod, after = { chain, _ ->
                 val binding = chain.thisObject ?: return@installHook
                 val item = runCatching { itemField.get(binding) }.getOrNull()

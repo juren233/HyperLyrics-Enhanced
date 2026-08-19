@@ -46,8 +46,11 @@ internal object IslandSlotContentAssembler {
     )
 
     internal data class LyricDisplayOptions(
-        val showTranslation: Boolean,
-        val showRoma: Boolean
+        val displayMode: Int = RootConstants.DEFAULT_HOOK_TRANSLATION_PRONUNCIATION_DISPLAY,
+        val fallback: Boolean = RootConstants.DEFAULT_HOOK_TRANSLATION_PRONUNCIATION_FALLBACK,
+        val hideSecondaryContent: Boolean = false,
+        val showTranslation: Boolean = false,
+        val showRoma: Boolean = false
     )
 
     fun invalidate(view: View? = null) {
@@ -399,7 +402,7 @@ internal object IslandSlotContentAssembler {
         ) {
             return null
         }
-        if (!TranslationHelper.isTranslationDisplayed(prefs) ||
+        if (config.translationDisplayMode == RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_OFF ||
             TranslationHelper.isTranslationOnly(prefs) ||
             TranslationHelper.isSwapTranslation(prefs)
         ) {
@@ -502,11 +505,13 @@ internal object IslandSlotContentAssembler {
             )
         }
 
-        if (TranslationHelper.isTranslationDisplayed(prefs)) {
+        val mode = config?.translationDisplayMode ?: TranslationHelper.getTranslationDisplayMode(prefs)
+        val fallback = config?.translationFallback ?: TranslationHelper.isTranslationFallback(prefs)
+        if (mode != RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_OFF) {
             if (TranslationHelper.isTranslationOnly(prefs)) {
-                rawLine = TranslationHelper.applyTranslationOnly(rawLine)
+                rawLine = TranslationHelper.applyTranslationOnly(rawLine, mode, fallback)
             } else if (TranslationHelper.isSwapTranslation(prefs)) {
-                rawLine = TranslationHelper.swapTranslation(rawLine)
+                rawLine = TranslationHelper.swapTranslation(rawLine, mode, fallback)
             }
         }
         return rawLine
@@ -733,14 +738,47 @@ internal object IslandSlotContentAssembler {
         config: IslandSlotRuntimeConfig
     ) {
         val options = resolveLyricDisplayOptions(
-            translationDisplayed = TranslationHelper.isTranslationDisplayed(prefs),
+            translationDisplayMode = config.translationDisplayMode,
+            translationFallback = config.translationFallback,
             translationOnly = TranslationHelper.isTranslationOnly(prefs),
             nextLinePreview = isNextLinePreviewEnabled(prefs, config)
         )
         when (view) {
-            is RichLyricLineView -> view.setDisplayOptions(options.showTranslation, options.showRoma)
-            is SpaceGateRichLyricLineView -> view.setDisplayOptions(options.showTranslation, options.showRoma)
+            is RichLyricLineView -> view.setDisplayOptions(
+                options.displayMode,
+                options.fallback,
+                options.hideSecondaryContent
+            )
+            is SpaceGateRichLyricLineView -> view.setDisplayOptions(
+                options.displayMode,
+                options.fallback,
+                options.hideSecondaryContent
+            )
         }
+    }
+
+    internal fun resolveLyricDisplayOptions(
+        translationDisplayMode: Int,
+        translationFallback: Boolean,
+        translationOnly: Boolean,
+        nextLinePreview: Boolean
+    ): LyricDisplayOptions {
+        val hideSecondaryContent =
+            translationDisplayMode == RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_OFF || nextLinePreview
+        val showTranslation = !hideSecondaryContent &&
+            (translationDisplayMode == RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_TRANSLATION ||
+                (translationFallback && translationDisplayMode == RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_PRONUNCIATION))
+        val showRoma = !hideSecondaryContent && !translationOnly &&
+            (translationDisplayMode == RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_PRONUNCIATION ||
+                (translationFallback && translationDisplayMode == RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_TRANSLATION))
+
+        return LyricDisplayOptions(
+            displayMode = translationDisplayMode,
+            fallback = translationFallback,
+            hideSecondaryContent = hideSecondaryContent,
+            showTranslation = showTranslation,
+            showRoma = showRoma
+        )
     }
 
     internal fun resolveLyricDisplayOptions(
@@ -748,10 +786,13 @@ internal object IslandSlotContentAssembler {
         translationOnly: Boolean,
         nextLinePreview: Boolean
     ): LyricDisplayOptions {
-        val hideSecondaryContent = !translationDisplayed || nextLinePreview
-        return LyricDisplayOptions(
-            showTranslation = !hideSecondaryContent,
-            showRoma = !hideSecondaryContent && !translationOnly
+        val mode = if (translationDisplayed) RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_TRANSLATION
+        else RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_OFF
+        return resolveLyricDisplayOptions(
+            translationDisplayMode = mode,
+            translationFallback = false,
+            translationOnly = translationOnly,
+            nextLinePreview = nextLinePreview
         )
     }
 
@@ -917,20 +958,41 @@ internal object IslandSlotContentAssembler {
         if (LyriconDataBridge.isTextMode) return false
         val source = prefs.getString(RootConstants.KEY_HOOK_LYRIC_SOURCE, RootConstants.DEFAULT_HOOK_LYRIC_SOURCE)
         if (source != "lyricon" && source != "lyricinfo") return false
-        return shouldUseNextLinePreview(config.translationDisplay, currentLine)
+        return shouldUseNextLinePreview(
+            config.translationDisplayMode,
+            config.translationFallback,
+            currentLine
+        )
+    }
+
+    internal fun shouldUseNextLinePreview(
+        translationDisplayMode: Int,
+        translationFallback: Boolean,
+        currentLine: IRichLyricLine?
+    ): Boolean {
+        val hasSecondary = !currentLine?.secondary.isNullOrBlank() ||
+            !currentLine?.secondaryWords.isNullOrEmpty()
+        val hasTranslation = !currentLine?.translation.isNullOrBlank() ||
+            !currentLine?.translationWords.isNullOrEmpty()
+        val hasRoma = !currentLine?.roma.isNullOrBlank()
+
+        val hasDisplayedExtra = when (translationDisplayMode) {
+            RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_TRANSLATION ->
+                hasTranslation || (translationFallback && hasRoma)
+            RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_PRONUNCIATION ->
+                hasRoma || (translationFallback && hasTranslation)
+            else -> false
+        }
+        return !hasDisplayedExtra && !hasSecondary
     }
 
     internal fun shouldUseNextLinePreview(
         translationDisplayed: Boolean,
         currentLine: IRichLyricLine?
     ): Boolean {
-        val hasTranslation = translationDisplayed && (
-            !currentLine?.translation.isNullOrBlank() ||
-                !currentLine?.translationWords.isNullOrEmpty()
-            )
-        val hasSecondary = !currentLine?.secondary.isNullOrBlank() ||
-            !currentLine?.secondaryWords.isNullOrEmpty()
-        return !hasTranslation && !hasSecondary
+        val mode = if (translationDisplayed) RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_TRANSLATION
+        else RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_OFF
+        return shouldUseNextLinePreview(mode, false, currentLine)
     }
 
     private fun IRichLyricLine.withNextLinePreview(

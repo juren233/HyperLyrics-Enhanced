@@ -184,4 +184,62 @@ class LyricLineAssemblerTest {
             )
         )
     }
+
+    @Test
+    fun `assembler respects displayMode and fallback behavior`() {
+        val lineWithBoth = RichLyricLine(
+            text = "Main",
+            translation = "Translation",
+            roma = "Roma"
+        )
+        val lineWithRomaOnly = RichLyricLine(
+            text = "Main",
+            translation = null,
+            roma = "Roma"
+        )
+        val lineWithTransOnly = RichLyricLine(
+            text = "Main",
+            translation = "Translation",
+            roma = null
+        )
+
+        // Translation mode, fallback = false
+        val transNoFallback = LyricLineAssembler(
+            displayMode = com.juren233.hyperlyricsenhanced.common.RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_TRANSLATION,
+            fallback = false
+        )
+        assertEquals("Translation", transNoFallback.buildSecondary(lineWithBoth).line.text)
+        assertFalse(transNoFallback.buildSecondary(lineWithRomaOnly).alwaysShow)
+
+        // Translation mode, fallback = true
+        val transWithFallback = LyricLineAssembler(
+            displayMode = com.juren233.hyperlyricsenhanced.common.RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_TRANSLATION,
+            fallback = true
+        )
+        assertEquals("Translation", transWithFallback.buildSecondary(lineWithBoth).line.text)
+        assertEquals("Roma", transWithFallback.buildSecondary(lineWithRomaOnly).line.text)
+
+        // Pronunciation mode, fallback = false
+        val romaNoFallback = LyricLineAssembler(
+            displayMode = com.juren233.hyperlyricsenhanced.common.RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_PRONUNCIATION,
+            fallback = false
+        )
+        assertEquals("Roma", romaNoFallback.buildSecondary(lineWithBoth).line.text)
+        assertFalse(romaNoFallback.buildSecondary(lineWithTransOnly).alwaysShow)
+
+        // Pronunciation mode, fallback = true
+        val romaWithFallback = LyricLineAssembler(
+            displayMode = com.juren233.hyperlyricsenhanced.common.RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_PRONUNCIATION,
+            fallback = true
+        )
+        assertEquals("Roma", romaWithFallback.buildSecondary(lineWithBoth).line.text)
+        assertEquals("Translation", romaWithFallback.buildSecondary(lineWithTransOnly).line.text)
+
+        // Off mode
+        val offAssembler = LyricLineAssembler(
+            displayMode = com.juren233.hyperlyricsenhanced.common.RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_OFF,
+            fallback = true
+        )
+        assertFalse(offAssembler.buildSecondary(lineWithBoth).alwaysShow)
+    }
 }

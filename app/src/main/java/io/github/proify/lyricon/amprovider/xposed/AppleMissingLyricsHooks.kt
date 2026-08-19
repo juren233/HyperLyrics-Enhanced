@@ -791,22 +791,32 @@ internal class AppleMissingLyricsHooks(
 
     fun onNativeLyricsRequestStarted(songId: String?) {
         val resolvedSongId = songId?.takeIf(String::isNotBlank) ?: return
+        val queueSongId = currentPlaybackQueueMediaId()?.takeIf(String::isNotBlank)
+        val identity = store.playbackIdentity(queueSongId)
+        val contentSongId = when {
+            identity?.adamId?.toString() == resolvedSongId -> identity.contentSongId
+            queueSongId == resolvedSongId -> queueSongId
+            else -> resolvedSongId
+        }
         // 补充模型为了同步当前 PlaybackItem 也会再次调用 Apple ViewModel.loadLyrics；
         // 已经完成接管后的这类自触发调用不能重新把补充链锁回 loading。
-        if (resolvedSongId in acceptedSupplementSongIds) {
+        if (contentSongId in acceptedSupplementSongIds || resolvedSongId in acceptedSupplementSongIds) {
             if (BuildConfig.DEBUG) {
                 ProviderLogger.debug(
-                    "Apple Music 原生歌词请求忽略: id=$resolvedSongId, " +
+                    "Apple Music 原生歌词请求忽略: id=$contentSongId, " +
                         "reason=supplement_takeover_active"
                 )
             }
             return
         }
-        nativeTakeoverGate.onNativeRequestStarted(resolvedSongId)
+        nativeTakeoverGate.onNativeRequestStarted(contentSongId)
+        if (resolvedSongId != contentSongId) {
+            nativeTakeoverGate.onNativeRequestStarted(resolvedSongId)
+        }
         ProviderLogger.debug(
-            "Apple Music 原生歌词请求开始: id=$resolvedSongId"
+            "Apple Music 原生歌词请求开始: adamId=$resolvedSongId, contentId=$contentSongId"
         )
-        scheduleTakeoverRecheck(resolvedSongId)
+        scheduleTakeoverRecheck(contentSongId)
     }
 
     private fun recordNativeAvailability(
@@ -1022,6 +1032,9 @@ internal class AppleMissingLyricsHooks(
                 nativeLyricsContentIds.add(contentSongId)
             }
             nativeTakeoverGate.onNativeResult(contentSongId, hasLyrics = true)
+            if (songId != contentSongId) {
+                nativeTakeoverGate.onNativeResult(songId, hasLyrics = true)
+            }
             acceptedSupplementSongIds.remove(contentSongId)
             supplementAvailabilitySongIds.remove(contentSongId)
             scheduledTakeoverRechecks.remove(contentSongId)
@@ -1030,7 +1043,10 @@ internal class AppleMissingLyricsHooks(
             val acceptedEmptyResult = nativeTakeoverGate.onNativeResult(
                 songId = contentSongId,
                 hasLyrics = false,
-            )
+            ) || (songId != contentSongId && nativeTakeoverGate.onNativeResult(
+                songId = songId,
+                hasLyrics = false,
+            ))
             if (acceptedEmptyResult) {
                 ProviderLogger.debug(
                     "Apple Music 原生歌词请求完成: id=$contentSongId, result=empty"
@@ -1070,16 +1086,14 @@ internal class AppleMissingLyricsHooks(
         if (!isEnabled()) return
         val identity = capturePlaybackIdentity(item) ?: return
         nativeTakeoverGate.observe(identity.contentSongId)
-        val currentSongId = currentSupplementSongId()
-        if (currentSongId != null && identity.contentSongId != currentSongId) {
+        val queueSongId = currentPlaybackQueueMediaId()?.takeIf(String::isNotBlank)
+        if (queueSongId != null && identity.contentSongId != queueSongId) {
             ProviderLogger.debug(
-                "Apple Music 无歌词补充忽略非当前歌词页 loadLyrics: " +
-                    "itemId=${identity.contentSongId}, currentId=$currentSongId"
+                "Apple Music 无歌词补充 loadLyrics 条目与当前队列不同: " +
+                    "itemId=${identity.contentSongId}, queueId=$queueSongId"
             )
-            return
         }
-        // 页面打开时当前队列身份可能尚未发布；先恢复磁盘缓存，
-        // 保证 buildTimeRangeToLyricsMap 与可用性回调在同一帧内可用。
+        // 页面打开或切歌时先恢复磁盘缓存，保证 buildTimeRangeToLyricsMap 与可用性回调在同一帧内可用。
         restoreCachedSupplement(identity.contentSongId)
         maybeActivateSupplement(identity.contentSongId, trigger = "lyrics_item")
     }
@@ -1905,7 +1919,9 @@ internal class AppleMissingLyricsHooks(
 
     private fun supplementPointerForInjection(): Any? {
         if (!isEnabled()) return null
-        val songId = currentSupplementSongId() ?: return null
+        val songId = currentPlaybackQueueMediaId()?.takeIf(String::isNotBlank)
+            ?: currentSupplementSongId()
+            ?: return null
         if (songId !in acceptedSupplementSongIds) return null
         val identity = store.playbackIdentity(songId) ?: return null
         if (hasKnownNativeLyrics(songId, identity.adamId)) return null
@@ -1921,11 +1937,12 @@ internal class AppleMissingLyricsHooks(
      */
     private fun shouldExposeSupplementLyrics(item: Any?): Boolean {
         val enabled = isEnabled()
-        val queueSongId = currentSupplementSongId()
-        // 冷启动时队列身份可能尚未发布；播放页的 PlaybackItem 本身已经携带
-        // media ID，可作为磁盘缓存键和身份捕获的兜底。
+        val queueSongId = currentPlaybackQueueMediaId()?.takeIf(String::isNotBlank)
         val itemSongId = itemMediaId(item)?.takeIf(String::isNotBlank)
-        var songId = queueSongId ?: itemSongId
+        // 优先使用当前被查询条目的具体 media ID；当条目自身无法提取 media ID 时，
+        // 再使用当前队列歌曲 ID 或从 Adam ID 反推的临时身份。
+        // 避免在切歌时，因队列 ID 仍为上一首歌曲而误将上一首的补充歌词可用性判定给新歌曲。
+        var songId = itemSongId ?: queueSongId
         var provisionalIdentity: AppleMissingLyricsPlaybackIdentity? = null
         if (enabled && songId == null) {
             // 连 media ID getter 都不可用时，再从 Apple Song/PlaybackItem 的
@@ -1961,9 +1978,9 @@ internal class AppleMissingLyricsHooks(
         }
         val identity = if (enabled && songId != null && hasContent) {
             when {
-                // 队列身份已确认时，按钮可用性由当前队列歌曲决定；Apple 在这里
-                // 可能传入队列/历史列表里的其他 PlaybackItem，不能用它拒绝 override。
-                queueSongId != null -> store.playbackIdentity(queueSongId)
+                itemSongId != null && itemSongId == songId -> capturePlaybackIdentity(item)
+                    ?: store.playbackIdentity(itemSongId)
+                queueSongId != null && queueSongId == songId -> store.playbackIdentity(queueSongId)
                     ?: run {
                         if (itemSongId == queueSongId) {
                             capturePlaybackIdentity(item)
@@ -1982,7 +1999,7 @@ internal class AppleMissingLyricsHooks(
         )
         // 队列 ID 已确认时不再要求当前 hasLyrics() 的 PlaybackItem 身份匹配；
         // 队列 ID 缺失的兜底路径仍必须由捕获到的条目身份证明这是同一首歌。
-        val identityAvailable = queueSongId != null || identity?.contentSongId == songId
+        val identityAvailable = (queueSongId != null && queueSongId == songId) || identity?.contentSongId == songId
         val shouldExpose = songId != null && shouldExposeSupplementAvailability(
             enabled = enabled,
             hasSupplementContent = hasContent,

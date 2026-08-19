@@ -8,6 +8,10 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -17,6 +21,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -26,6 +31,7 @@ import androidx.core.content.ContextCompat
 import com.juren233.hyperlyricsenhanced.R
 import com.juren233.hyperlyricsenhanced.common.ClassicAodSongInfoConfig
 import com.juren233.hyperlyricsenhanced.common.RootConstants
+import com.juren233.hyperlyricsenhanced.root.mediacard.notification.AodMediaLyricPolicy
 import com.juren233.hyperlyricsenhanced.service.LiveLyricService
 import com.juren233.hyperlyricsenhanced.ui.component.NumberInputDialog
 import com.juren233.hyperlyricsenhanced.ui.component.SimpleDialog
@@ -52,6 +58,7 @@ private data class AodSettingsSpec(
     val centerGroupVocalsKey: String,
     val pauseStyleKey: String,
     val translationDisplayKey: String,
+    val translationFallbackKey: String,
     val swapTranslationKey: String,
     val nextSongPreviewKey: String,
     val nextSongPreviewPositionKey: String,
@@ -94,6 +101,8 @@ fun LockScreenAodSettingsPage() {
             pauseStyleKey = RootConstants.KEY_HOOK_LOCK_SCREEN_AOD_PAUSE_STYLE,
             translationDisplayKey =
                 RootConstants.KEY_HOOK_LOCK_SCREEN_AOD_TRANSLATION_DISPLAY,
+            translationFallbackKey =
+                RootConstants.KEY_HOOK_LOCK_SCREEN_AOD_TRANSLATION_FALLBACK,
             swapTranslationKey =
                 RootConstants.KEY_HOOK_LOCK_SCREEN_AOD_SWAP_TRANSLATION,
             nextSongPreviewKey =
@@ -126,6 +135,8 @@ fun ClassicAodSettingsPage() {
             pauseStyleKey = RootConstants.KEY_HOOK_CLASSIC_AOD_PAUSE_STYLE,
             translationDisplayKey =
                 RootConstants.KEY_HOOK_CLASSIC_AOD_TRANSLATION_DISPLAY,
+            translationFallbackKey =
+                RootConstants.KEY_HOOK_CLASSIC_AOD_TRANSLATION_FALLBACK,
             swapTranslationKey =
                 RootConstants.KEY_HOOK_CLASSIC_AOD_SWAP_TRANSLATION,
             nextSongPreviewKey = RootConstants.KEY_HOOK_CLASSIC_AOD_NEXT_SONG_PREVIEW,
@@ -294,11 +305,20 @@ private fun AodSettingsPage(spec: AodSettingsSpec) {
             )
         )
     }
-    var translationDisplay by remember(spec.translationDisplayKey) {
+    var translationDisplayMode by remember(spec.translationDisplayKey) {
+        mutableIntStateOf(
+            AodMediaLyricPolicy.readTranslationPronunciationMode(
+                prefs = prefs,
+                key = spec.translationDisplayKey,
+                defaultValue = RootConstants.DEFAULT_HOOK_AOD_TRANSLATION_DISPLAY_MODE,
+            )
+        )
+    }
+    var translationFallback by remember(spec.translationFallbackKey) {
         mutableStateOf(
             prefs.getBoolean(
-                spec.translationDisplayKey,
-                RootConstants.DEFAULT_HOOK_AOD_TRANSLATION_DISPLAY,
+                spec.translationFallbackKey,
+                RootConstants.DEFAULT_HOOK_AOD_TRANSLATION_FALLBACK,
             )
         )
     }
@@ -677,14 +697,33 @@ private fun AodSettingsPage(spec: AodSettingsSpec) {
                             saveConfig(spec.pauseStyleKey, it)
                         },
                     )
-                    SwitchPreference(
-                        title = stringResource(R.string.title_translation_display),
-                        checked = translationDisplay,
-                        onCheckedChange = {
-                            translationDisplay = it
+                    OverlayDropdownPreference(
+                        title = stringResource(R.string.title_translation_pronunciation_display),
+                        items = listOf(
+                            stringResource(R.string.option_translation_pronunciation_off),
+                            stringResource(R.string.option_translation_pronunciation_translation),
+                            stringResource(R.string.option_translation_pronunciation_pronunciation),
+                        ),
+                        selectedIndex = translationDisplayMode,
+                        onSelectedIndexChange = {
+                            translationDisplayMode = it
                             saveConfig(spec.translationDisplayKey, it)
                         },
                     )
+                    AnimatedVisibility(
+                        visible = translationDisplayMode != RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_OFF,
+                        enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
+                        exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
+                    ) {
+                        SwitchPreference(
+                            title = stringResource(R.string.title_translation_pronunciation_fallback),
+                            checked = translationFallback,
+                            onCheckedChange = {
+                                translationFallback = it
+                                saveConfig(spec.translationFallbackKey, it)
+                            },
+                        )
+                    }
                     SwitchPreference(
                         title = stringResource(R.string.title_swap_translation),
                         checked = swapTranslation,
@@ -692,7 +731,7 @@ private fun AodSettingsPage(spec: AodSettingsSpec) {
                             swapTranslation = it
                             saveConfig(spec.swapTranslationKey, it)
                         },
-                        enabled = translationDisplay,
+                        enabled = translationDisplayMode != RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_OFF,
                     )
                     SwitchPreference(
                         title = stringResource(R.string.title_aod_duet_lyrics),

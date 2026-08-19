@@ -196,4 +196,37 @@ class OfficialProviderCatalogTest {
             )
         )
     }
+
+    @Test
+    fun `OfficialProviderItem flags needsRepair correctly and suppresses updateAvailable when damaged`() {
+        val entry = ProviderCatalogEntry(
+            id = "qqmusic",
+            displayName = "QQ音乐",
+            targetPackages = listOf("com.tencent.qqmusic"),
+            available = true,
+            versionName = "1.0.10",
+            versionCode = 11,
+        )
+        val normalItem = OfficialProviderItem(
+            catalog = entry,
+            installedVersionCode = 10,
+            installedVersionName = "1.0.9",
+            enabled = true,
+            needsRepair = false,
+        )
+        assertTrue(normalItem.installed)
+        assertTrue(normalItem.updateAvailable)
+        assertFalse(normalItem.needsRepair)
+
+        val damagedItem = OfficialProviderItem(
+            catalog = entry,
+            installedVersionCode = 10,
+            installedVersionName = "1.0.9",
+            enabled = true,
+            needsRepair = true,
+        )
+        assertTrue(damagedItem.installed)
+        assertFalse(damagedItem.updateAvailable)
+        assertTrue(damagedItem.needsRepair)
+    }
 }

@@ -1,5 +1,6 @@
 package com.juren233.hyperlyricsenhanced.ui.page.hooksettings
 
+import android.content.Context
 import android.content.Intent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
@@ -113,9 +114,14 @@ fun LyricProviderPage() {
     val updateSuccessSystemUiMessage = stringResource(
         R.string.provider_update_success_system_ui,
     )
+    val repairSuccessFormat = stringResource(R.string.provider_repair_success)
+    val repairSuccessSystemUiMessage = stringResource(
+        R.string.provider_repair_success_system_ui,
+    )
     val removeSuccessMessage = stringResource(R.string.provider_remove_success)
     val unknownText = stringResource(R.string.unknown)
     val updateFailedFormat = stringResource(R.string.provider_update_failed)
+    val repairFailedFormat = stringResource(R.string.provider_repair_failed)
     val removeFailedFormat = stringResource(R.string.provider_remove_failed)
     val legacyProviderReleaseHome = stringResource(R.string.legacy_provider_release_home)
     val providerErrorTexts = rememberProviderErrorTexts()
@@ -190,6 +196,56 @@ fun LyricProviderPage() {
                     }
                     snackbarHostState.showSnackbar(
                         message = updateFailedFormat.replace(
+                            "%1\$s",
+                            localizeProviderError(error.message, providerErrorTexts, unknownText),
+                        ),
+                        duration = SnackbarDuration.Custom(3500L),
+                    )
+                }
+            }
+        }
+    }
+
+    val repairOfficialProvider: (OfficialProviderItem) -> Unit = { item ->
+        if (item.catalog.id !in officialUiStateFlow.value.busyPluginIds) {
+            officialUiStateFlow.update {
+                it.copy(busyPluginIds = it.busyPluginIds + item.catalog.id)
+            }
+            coroutineScope.launch {
+                runCatching {
+                    OfficialProviderRepository.repair(context, item)
+                }.onSuccess { manifest ->
+                    officialUiStateFlow.update { state ->
+                        state.copy(
+                            items = state.items.map { current ->
+                                if (current.catalog.id == item.catalog.id) {
+                                    current.copy(
+                                        installedVersionCode = manifest.versionCode,
+                                        installedVersionName = manifest.versionName,
+                                        enabled = true,
+                                        needsRepair = false,
+                                    )
+                                } else {
+                                    current
+                                }
+                            },
+                            busyPluginIds = state.busyPluginIds - item.catalog.id,
+                        )
+                    }
+                    snackbarHostState.showSnackbar(
+                        message = if (item.usesSystemMediaRuntime()) {
+                            repairSuccessSystemUiMessage
+                        } else {
+                            repairSuccessFormat.replace("%1\$s", item.catalog.displayName)
+                        },
+                        duration = SnackbarDuration.Custom(2500L),
+                    )
+                }.onFailure { error ->
+                    officialUiStateFlow.update {
+                        it.copy(busyPluginIds = it.busyPluginIds - item.catalog.id)
+                    }
+                    snackbarHostState.showSnackbar(
+                        message = repairFailedFormat.replace(
                             "%1\$s",
                             localizeProviderError(error.message, providerErrorTexts, unknownText),
                         ),
@@ -302,6 +358,7 @@ fun LyricProviderPage() {
                         expandedStates = expandedStates,
                         onOfficialEnabledChange = setOfficialProviderEnabled,
                         onUpdateOfficial = updateOfficialProvider,
+                        onRepairOfficial = repairOfficialProvider,
                         onRemoveOfficial = removeOfficialProvider,
                         legacyProviderReleaseHome = legacyProviderReleaseHome,
                     )
@@ -332,7 +389,7 @@ fun OfficialProviderDownloadPage() {
     val providerErrorTexts = rememberProviderErrorTexts()
 
     LaunchedEffect(Unit) {
-        refreshOfficialProviders(stateFlow)
+        refreshOfficialProviders(context, stateFlow)
     }
 
     val installProvider: (OfficialProviderItem) -> Unit = { item ->
@@ -341,7 +398,7 @@ fun OfficialProviderDownloadPage() {
             coroutineScope.launch {
                 runCatching {
                     OfficialProviderRepository.downloadAndInstall(context, item)
-                    refreshOfficialProviders(stateFlow)
+                    refreshOfficialProviders(context, stateFlow)
                 }.onSuccess {
                     snackbarHostState.showSnackbar(
                         message = if (item.usesSystemMediaRuntime()) {
@@ -397,7 +454,7 @@ fun OfficialProviderDownloadPage() {
                     coroutineScope.launch {
                         isManualRefreshing = true
                         try {
-                            refreshOfficialProviders(stateFlow)
+                            refreshOfficialProviders(context, stateFlow)
                         } finally {
                             isManualRefreshing = false
                         }
@@ -522,24 +579,27 @@ private suspend fun loadLocalProviderState(
             LyricProviderManager.loadProviders(context, providerUiStateFlow)
         }
         launch {
-            refreshInstalledProviderUpdates(officialUiStateFlow)
+            refreshInstalledProviderUpdates(context, officialUiStateFlow)
         }
     }
 }
 
 private suspend fun refreshInstalledProviderUpdates(
+    context: Context,
     stateFlow: MutableStateFlow<OfficialProviderUiState>,
 ) {
-    val remoteItems = runCatching { OfficialProviderRepository.loadItems() }.getOrNull() ?: return
+    val remoteItems = runCatching { OfficialProviderRepository.loadItems(context) }.getOrNull() ?: return
     val remoteById = remoteItems.associateBy { it.catalog.id }
     stateFlow.update { state ->
         state.copy(
             items = state.items.map { localItem ->
-                remoteById[localItem.catalog.id]?.copy(
+                val remoteItem = remoteById[localItem.catalog.id]
+                remoteItem?.copy(
                     installedVersionCode = localItem.installedVersionCode,
                     installedVersionName = localItem.installedVersionName
-                        ?: remoteById[localItem.catalog.id]?.installedVersionName,
+                        ?: remoteItem.installedVersionName,
                     enabled = localItem.enabled,
+                    needsRepair = localItem.needsRepair || remoteItem.needsRepair,
                 ) ?: localItem
             },
         )
@@ -587,6 +647,7 @@ private fun LazyListScope.providerSections(
     expandedStates: MutableMap<String, Boolean>,
     onOfficialEnabledChange: (OfficialProviderItem, Boolean) -> Unit,
     onUpdateOfficial: (OfficialProviderItem) -> Unit,
+    onRepairOfficial: (OfficialProviderItem) -> Unit,
     onRemoveOfficial: (OfficialProviderItem) -> Unit,
     legacyProviderReleaseHome: String,
 ) {
@@ -672,6 +733,10 @@ private fun LazyListScope.providerSections(
                             append(
                                 when {
                                     busy -> stringResource(R.string.provider_status_downloading)
+                                    item.needsRepair -> stringResource(
+                                        R.string.provider_status_needs_repair,
+                                        installedVersionName,
+                                    )
                                     item.enabled -> stringResource(
                                         R.string.provider_status_installed_enabled,
                                         installedVersionName,
@@ -706,6 +771,11 @@ private fun LazyListScope.providerSections(
                             delayKey = RootConstants.KEY_HOOK_LYRICON_PROVIDER_DELAY_PREFIX + packageName,
                             onUpdate = if (item.updateAvailable && !busy) {
                                 { onUpdateOfficial(item) }
+                            } else {
+                                null
+                            },
+                            onRepair = if (item.needsRepair && !busy) {
+                                { onRepairOfficial(item) }
                             } else {
                                 null
                             },
@@ -862,6 +932,7 @@ private fun ProviderDelayEditor(
     description: String? = null,
     tags: List<ModuleTag> = emptyList(),
     onUpdate: (() -> Unit)? = null,
+    onRepair: (() -> Unit)? = null,
     onRemove: (() -> Unit)?,
 ) {
     val editorState = if (state != null) {
@@ -923,7 +994,7 @@ private fun ProviderDelayEditor(
                 keyPoints = listOf(-5000f, -4000f, -3000f, -2000f, -1000f, 0f, 1000f, 2000f, 3000f, 4000f, 5000f),
                 hapticEffect = SliderDefaults.SliderHapticEffect.Step,
             )
-            if (onUpdate != null || onRemove != null) {
+            if (onUpdate != null || onRepair != null || onRemove != null) {
                 Spacer(modifier = Modifier.height(16.dp))
             }
             if (onUpdate != null) {
@@ -933,8 +1004,18 @@ private fun ProviderDelayEditor(
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
-            if (onRemove != null) {
+            if (onRepair != null) {
                 if (onUpdate != null) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+                TextButton(
+                    text = stringResource(R.string.provider_action_repair),
+                    onClick = onRepair,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            if (onRemove != null) {
+                if (onUpdate != null || onRepair != null) {
                     Spacer(modifier = Modifier.height(8.dp))
                 }
                 TextButton(
@@ -1050,11 +1131,12 @@ private fun OfficialProviderItem.usesSystemMediaRuntime(): Boolean =
     OfficialProviderCatalog.definitionForId(catalog.id)?.systemMediaRuntime == true
 
 private suspend fun refreshOfficialProviders(
+    context: Context,
     stateFlow: MutableStateFlow<OfficialProviderUiState>,
 ) {
     stateFlow.update { it.copy(isLoading = true, error = null) }
     runCatching {
-        OfficialProviderRepository.loadItems()
+        OfficialProviderRepository.loadItems(context)
     }.onSuccess { items ->
         stateFlow.update {
             it.copy(

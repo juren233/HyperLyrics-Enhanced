@@ -495,6 +495,11 @@ internal object AppleMusicProviderOrchestrator {
                     ) == true
                 },
                 debugValue = lyricsHooks::debugAppleLyricsValue,
+                configuredOrderedSources = {
+                    com.juren233.hyperlyricsenhanced.online.OnlineTranslationSourcePreferences
+                        .orderedSources(contentUiLanguagePrefs)
+                        .map { it.name }
+                },
             )
             queueMetadataHooks = AppleQueueMetadataHooks(
                 runtime = runtime,
@@ -2043,6 +2048,16 @@ internal object AppleMusicProviderOrchestrator {
                     missingLyricsHooks.onPreferenceChanged()
                 RootConstants.KEY_HOOK_ENABLE_AOD_LYRICS -> {
                     playbackHooks.onAodPreferenceChanged()
+                }
+                else -> {
+                    if (com.juren233.hyperlyricsenhanced.online.OnlineTranslationSourcePreferences.isSourcePreference(key)) {
+                        currentLyricsMenuSongId(
+                            playbackSongId = playbackMetadataCoordinator.currentPlaybackQueueMediaId(),
+                            visibleLyricsSongId = lyricsHooks.currentSongId(),
+                        )?.let { songId ->
+                            onlineSourceMenuHooks.refreshActiveMenu(songId)
+                        }
+                    }
                 }
             }
         }

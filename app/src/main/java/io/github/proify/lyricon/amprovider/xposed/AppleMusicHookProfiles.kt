@@ -459,6 +459,117 @@ internal object AppleMusicHookProfiles {
             stableLibrarySurfaceHookTargets() + stableLyricsHookTargets(),
     )
 
+    private val APPLE_MUSIC_6_5_2 = AppleMusicHookProfile(
+        id = "am-6.5.2-1586",
+        versionName = "6.5.2",
+        versionCodes = setOf(1586L),
+        hookTargets = mapOf(
+            // Verified from Apple Music 6.5.2 (1586) classes2.dex.
+            AppleMusicHookPoint.LISTEN_NOW_MODEL_BUILDER to listOf(
+                AppleMusicHookTarget(
+                    className =
+                        "com.apple.android.music.listennow.ListenNowEpoxyController",
+                    methodName = "buildStandardSwoosh\$lambda\$35",
+                    parameterCount = 5,
+                    parameterTypeNames = listOf(
+                        "com.apple.android.music.listennow.ListenNowEpoxyController",
+                        "com.apple.android.music.mediaapi.models.Recommendation",
+                        "com.apple.android.music.common.F0",
+                        "com.apple.android.music.mediaapi.models.MediaEntity",
+                        "java.util.List",
+                    ),
+                    returnTypeName = "com.airbnb.epoxy.l",
+                    isStatic = true,
+                ),
+            ),
+            // Verified from Apple Music 6.5.2 (1586) classes2.dex: common.L is the
+            // renamed artwork lookup resolver; common.J no longer declares t().
+            AppleMusicHookPoint.LISTEN_NOW_ARTWORK_RESOLVER to listOf(
+                AppleMusicHookTarget(
+                    className = "com.apple.android.music.common.L",
+                    methodName = "t",
+                    parameterCount = 1,
+                    parameterTypeNames = listOf(
+                        "com.apple.android.music.model.CollectionItemView"
+                    ),
+                    returnTypeName = "void",
+                ),
+            ),
+            // Verified from Apple Music 6.5.2 (1586) classes2.dex: the controller's
+            // real override has the concrete five-parameter signature; the inherited
+            // Object[] overload belongs to Typed5EpoxyController and must not be hooked.
+            AppleMusicHookPoint.LIBRARY_EPOXY_BUILD to listOf(
+                AppleMusicHookTarget(
+                    className =
+                        "com.apple.android.music.library2.LibraryMainContentEpoxyController",
+                    methodName = "buildModels",
+                    parameterCount = 5,
+                    parameterTypeNames = listOf(
+                        "com.apple.android.music.library2.M",
+                        "java.util.List",
+                        "java.util.List",
+                        "com.apple.android.music.library2.a",
+                        "x6.c",
+                    ),
+                    returnTypeName = "void",
+                ),
+            ),
+            // Verified from Apple Music 6.5.2 (1586) classes.dex: z0.s0 is the
+            // NeverEqualPolicy singleton (its a(Object,Object) always returns false);
+            // z0.v0 and z0.t0 no longer expose a static self-typed INSTANCE field.
+            AppleMusicHookPoint.COMPOSE_NEVER_EQUAL_POLICY to listOf(
+                AppleMusicHookTarget("z0.s0"),
+            ),
+            // Verified from Apple Music 6.5.2 (1586) classes.dex: C1.w.e(LiveData,
+            // Composer) returns the z0.p0 state, whose runtime instance z0.q1 keeps the
+            // same policy field b and getValue/setValue contract as C1.c.g on 6.5.1.
+            AppleMusicHookPoint.COMPOSE_OBSERVE_AS_STATE to listOf(
+                AppleMusicHookTarget(
+                    className = "C1.w",
+                    methodName = "e",
+                    parameterCount = 2,
+                    returnTypeName = "z0.p0",
+                    isStatic = true,
+                    runtimeMemberNames = mapOf(
+                        AppleMusicRuntimeMember.LIBRARY_COMPOSE_STATE_POLICY_FIELD to "b",
+                        AppleMusicRuntimeMember.LIBRARY_COMPOSE_STATE_GET_VALUE_METHOD to
+                            "getValue",
+                        AppleMusicRuntimeMember.LIBRARY_COMPOSE_STATE_SET_VALUE_METHOD to
+                            "setValue",
+                    ),
+                ),
+            ),
+            // Verified from Apple Music 6.5.2 (1586) classes2.dex: the lyrics
+            // translation/pronunciation popup is opened by player.fragment.d0#onClick.
+            // player.fragment.a0 still exists but no longer declares onClick, and the
+            // 6.5.0 fallback player.fragment.e0 is not the button used on this page.
+            AppleMusicHookPoint.LYRICS_SOURCE_MENU_CLICK_LISTENER to listOf(
+                AppleMusicHookTarget(
+                    className = "com.apple.android.music.player.fragment.d0",
+                    methodName = "onClick",
+                    parameterCount = 1,
+                    parameterTypeNames = listOf("android.view.View"),
+                    returnTypeName = "void",
+                    runtimeMemberNames = mapOf(
+                        AppleMusicRuntimeMember.LYRICS_SOURCE_MENU_FRAGMENT_FIELD to "a",
+                        AppleMusicRuntimeMember.LYRICS_SOURCE_MENU_FRAGMENT_CLASS to
+                            "com.apple.android.music.player.fragment.PlayerLyricsViewFragment",
+                    ),
+                ),
+            ),
+            // Verified from Apple Music 6.5.2 (1586) classes2.dex: the global metadata
+            // dispatcher moved from player.f to player.e.
+            AppleMusicHookPoint.IN_APP_GLOBAL_METADATA_DISPATCHER to listOf(
+                AppleMusicHookTarget(
+                    className = "com.apple.android.music.player.e",
+                    methodName = "onMediaMetadataChanged",
+                    parameterCount = 1,
+                    returnTypeName = "void",
+                ),
+            ),
+        ),
+    )
+
     private val APPLE_MUSIC_6_5_1 = AppleMusicHookProfile(
         id = "am-6.5.1-1583",
         versionName = "6.5.1",
@@ -654,6 +765,7 @@ internal object AppleMusicHookProfiles {
 
     /** 新版本档案必须放在前面，未知版本回退时优先尝试较新的目标。 */
     private val KNOWN_PROFILES = listOf(
+        APPLE_MUSIC_6_5_2,
         APPLE_MUSIC_6_5_1,
         APPLE_MUSIC_6_5_0,
     )

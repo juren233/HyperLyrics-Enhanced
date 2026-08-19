@@ -360,6 +360,10 @@ internal class AppleMissingLyricsStore {
     @Synchronized
     fun updatePlaybackIdentity(identity: AppleMissingLyricsPlaybackIdentity): Boolean {
         if (playbackIdentity == identity) return false
+        if (content != null && content?.songId != identity.contentSongId) {
+            content = null
+            contentRevision += 1
+        }
         clearNativeModelLocked()
         playbackIdentity = identity
         return true
