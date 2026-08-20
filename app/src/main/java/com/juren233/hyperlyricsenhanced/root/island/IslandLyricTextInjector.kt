@@ -96,6 +96,20 @@ internal object IslandLyricTextInjector {
             rootView.findViewWithTag<View>(IslandProbeUtils.RIGHT_TEST_VIEW_TAG) != null
     }
 
+    fun hasVisibleInjectedContent(rootView: ViewGroup): Boolean {
+        fun isVisible(tag: String): Boolean {
+            return rootView.findViewWithTag<View>(tag)
+                ?.visibility
+                ?.let { visibility -> visibility != View.GONE }
+                ?: false
+        }
+
+        return isVisible(IslandProbeUtils.LEFT_TEST_WRAPPER_TAG) ||
+            isVisible(IslandProbeUtils.RIGHT_TEST_WRAPPER_TAG) ||
+            isVisible(IslandProbeUtils.LEFT_TEST_VIEW_TAG) ||
+            isVisible(IslandProbeUtils.RIGHT_TEST_VIEW_TAG)
+    }
+
     fun refreshCurrentContent(rootView: ViewGroup, includeLyricSlots: Boolean = true, force: Boolean = false, suppressAnimation: Boolean = false): Boolean {
         val prefs = HookEntry.instance?.prefs ?: return false
         val config = IslandSlotRuntimeConfig.from(prefs)

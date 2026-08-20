@@ -48,12 +48,13 @@ internal object IslandViewRegistry {
         }
     }
 
-    fun unregister(view: ViewGroup) {
-        synchronized(lock) {
-            activeIslandPkgNames.remove(view)
+    fun unregister(view: ViewGroup): Boolean {
+        return synchronized(lock) {
+            val wasRegistered = activeIslandPkgNames.remove(view) != null
             injectedViewsByRoot.remove(view)
             publishedAttachedPkgNames.remove(view)
             view.removeOnAttachStateChangeListener(attachStateListener)
+            wasRegistered
         }
     }
 
