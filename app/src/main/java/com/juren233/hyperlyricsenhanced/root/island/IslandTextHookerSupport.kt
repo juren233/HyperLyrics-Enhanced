@@ -94,8 +94,22 @@ internal object IslandTextHookerSupport {
 
     /** Clears an island that is no longer a valid target and removes it from the registry. */
     fun hardClearInjectedIsland(viewGroup: ViewGroup, suppressRelayout: Boolean = false) {
-        IslandViewRegistry.unregister(viewGroup)
-        clearInjectedIsland(viewGroup, suppressRelayout)
+        // Charging and other native islands can update the same host repeatedly. Recalculate the
+        // host width only when this call actually retires media-island state or visible HLE views;
+        // otherwise every native update would restart the host's width/entry animation.
+        val hasVisibleInjectedContent = IslandLyricTextInjector.hasVisibleInjectedContent(viewGroup)
+        val wasRegisteredMediaIsland = IslandViewRegistry.unregister(viewGroup)
+        val decision = IslandHostCleanupPolicy.decide(
+            wasRegisteredMediaIsland = wasRegisteredMediaIsland,
+            hasVisibleInjectedContent = hasVisibleInjectedContent,
+            suppressRelayout = suppressRelayout,
+        )
+        if (!decision.shouldClear) return
+
+        clearInjectedIsland(
+            viewGroup = viewGroup,
+            suppressRelayout = !decision.shouldRelayout,
+        )
     }
 
     fun restoreAdapterModule(adapter: Any?, moduleType: String?, source: String) {
