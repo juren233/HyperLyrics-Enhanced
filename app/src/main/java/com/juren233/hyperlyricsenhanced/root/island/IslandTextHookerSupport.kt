@@ -54,6 +54,12 @@ internal object IslandTextHookerSupport {
         IslandLyricTextInjector.refreshCurrentContent(realView)
         realView.visibility = View.VISIBLE
         (callNoArgMethodResult(realView, "getBackgroundView") as? View)?.visibility = View.VISIBLE
+        realView.post {
+            IslandLyricTextInjector.resumeInjectedContentMotion(
+                realView,
+                BaseIslandRenderer.currentPlaybackActive(),
+            )
+        }
         if (changed) {
             IslandHostFacade.triggerSystemRelayout(realView)
         }

@@ -7,9 +7,24 @@ import android.os.Looper
 import android.view.View
 import android.view.animation.LinearInterpolator
 import android.widget.ImageView
+import com.juren233.hyperlyricsenhanced.BuildConfig
+import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import java.util.WeakHashMap
 
+internal data class IslandCoverPivot(
+    val x: Float,
+    val y: Float,
+)
+
+internal object IslandAlbumCoverRotationGeometry {
+    fun centeredPivot(width: Int, height: Int): IslandCoverPivot? {
+        if (width <= 0 || height <= 0) return null
+        return IslandCoverPivot(width / 2f, height / 2f)
+    }
+}
+
 internal object IslandAlbumCoverRotationController {
+    private const val TAG = "IslandAlbumCoverRotation"
     private const val ROTATION_DURATION_MS = 20_000L
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -21,7 +36,10 @@ internal object IslandAlbumCoverRotationController {
     private val attachStateListener = object : View.OnAttachStateChangeListener {
         override fun onViewAttachedToWindow(view: View) {
             val imageView = view as? ImageView ?: return
-            states[imageView]?.let { startIfNeeded(imageView, it) }
+            states[imageView]?.let {
+                ensureCenteredPivot(imageView)
+                startIfNeeded(imageView, it)
+            }
         }
 
         override fun onViewDetachedFromWindow(view: View) {
@@ -30,12 +48,21 @@ internal object IslandAlbumCoverRotationController {
         }
     }
 
+    private val layoutChangeListener = View.OnLayoutChangeListener { view, _, _, _, _, _, _, _, _ ->
+        val imageView = view as? ImageView ?: return@OnLayoutChangeListener
+        if (states.containsKey(imageView)) {
+            ensureCenteredPivot(imageView)
+        }
+    }
+
     fun attach(view: ImageView) {
         runOnMain {
             val state = states.getOrPut(view) {
                 view.addOnAttachStateChangeListener(attachStateListener)
+                view.addOnLayoutChangeListener(layoutChangeListener)
                 RotationState()
             }
+            ensureCenteredPivot(view)
             startIfNeeded(view, state)
         }
     }
@@ -44,6 +71,7 @@ internal object IslandAlbumCoverRotationController {
         runOnMain {
             val state = states.remove(view) ?: return@runOnMain
             view.removeOnAttachStateChangeListener(attachStateListener)
+            view.removeOnLayoutChangeListener(layoutChangeListener)
             stopAnimator(view, state, resetRotation = true)
         }
     }
@@ -66,6 +94,7 @@ internal object IslandAlbumCoverRotationController {
         runOnMain {
             states.toList().forEach { (view, state) ->
                 view.removeOnAttachStateChangeListener(attachStateListener)
+                view.removeOnLayoutChangeListener(layoutChangeListener)
                 stopAnimator(view, state, resetRotation = true)
             }
             states.clear()
@@ -74,6 +103,8 @@ internal object IslandAlbumCoverRotationController {
 
     private fun startIfNeeded(view: ImageView, state: RotationState) {
         if (!playbackActive || !view.isAttachedToWindow) return
+
+        ensureCenteredPivot(view)
 
         val existing = state.animator
         if (existing != null) {
@@ -103,6 +134,22 @@ internal object IslandAlbumCoverRotationController {
         state.animator?.cancel()
         state.animator = null
         if (resetRotation) view.rotation = 0f
+    }
+
+    private fun ensureCenteredPivot(view: ImageView) {
+        val width = view.width
+        val height = view.height
+        val pivot = IslandAlbumCoverRotationGeometry.centeredPivot(width, height) ?: return
+        if (view.pivotX == pivot.x && view.pivotY == pivot.y) return
+        view.pivotX = pivot.x
+        view.pivotY = pivot.y
+        if (BuildConfig.DEBUG) {
+            HookLogger.d(
+                TAG,
+                "旋转封面锚点已校正: view=${System.identityHashCode(view)}, " +
+                    "pivot=${pivot.x}x${pivot.y}, size=${width}x${height}",
+            )
+        }
     }
 
     private fun runOnMain(block: () -> Unit) {

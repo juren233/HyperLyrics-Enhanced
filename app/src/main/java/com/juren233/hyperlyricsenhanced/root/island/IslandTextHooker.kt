@@ -53,6 +53,18 @@ internal object IslandTextHooker {
 
         installFeature("fake view 过渡") {
             val fakeViewClass = cl.loadClass(FAKE_CONTENT_VIEW_CLASS)
+            val realContentViewClass = cl.loadClass(CONTENT_VIEW_CLASS)
+            fakeViewClass.declaredMethods
+                .filter {
+                    it.name == "onStateChanged" &&
+                        it.parameterTypes.contentEquals(arrayOf(realContentViewClass))
+                }
+                .forEach { method ->
+                    method.isAccessible = true
+                    module.deoptimize(method)
+                    module.hook(method).intercept(FakeIslandTransitionHooker.StateChangedHook())
+                    HookLogger.d(TAG, "已 Hook fake.onStateChanged: $method")
+                }
             fakeViewClass.declaredMethods
                 .filter { it.name == "onTrackingFakeViewStart" && it.parameterTypes.isEmpty() }
                 .forEach { method ->

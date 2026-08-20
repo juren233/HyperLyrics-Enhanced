@@ -65,6 +65,8 @@ object BaseIslandRenderer : IslandRenderer {
         return playbackActive || behavior != 0 || pauseTransitionGuard.nativeRestorePending
     }
 
+    fun currentPlaybackActive(): Boolean = playbackActive
+
     override fun refreshActiveIsland() {
         mainHandler.removeCallbacks(refreshRunnable)
         mainHandler.postDelayed(refreshRunnable, REFRESH_DEBOUNCE_MS)

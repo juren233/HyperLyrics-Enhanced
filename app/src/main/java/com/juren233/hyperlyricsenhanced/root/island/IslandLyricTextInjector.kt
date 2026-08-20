@@ -5,6 +5,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.common.media.MediaMetadataHelper
 import com.juren233.hyperlyricsenhanced.root.HookEntry
 import com.juren233.hyperlyricsenhanced.root.LyriconDataBridge
@@ -126,6 +127,70 @@ internal object IslandLyricTextInjector {
         if (config.rightMode == 7) {
             freezeLyricView(rootView.findViewWithTag(IslandProbeUtils.RIGHT_TEST_VIEW_TAG), position)
         }
+    }
+
+    fun resumeInjectedContentMotion(rootView: ViewGroup, playbackActive: Boolean) {
+        val prefs = HookEntry.instance?.prefs ?: return
+        val config = IslandSlotRuntimeConfig.from(prefs)
+        var resumed = 0
+        if (config.shouldInjectLeft) {
+            resumed += resumeSlotMotion(
+                rootView.findViewWithTag(IslandProbeUtils.LEFT_TEST_VIEW_TAG),
+                config.leftMode,
+                config,
+                playbackActive,
+            )
+        }
+        if (config.shouldInjectRight) {
+            resumed += resumeSlotMotion(
+                rootView.findViewWithTag(IslandProbeUtils.RIGHT_TEST_VIEW_TAG),
+                config.rightMode,
+                config,
+                playbackActive,
+            )
+        }
+        if (BuildConfig.DEBUG && resumed > 0) {
+            HookLogger.d(
+                TAG,
+                "真实岛内容动画已恢复: playbackActive=$playbackActive, targets=$resumed",
+            )
+        }
+    }
+
+    private fun resumeSlotMotion(
+        view: View?,
+        mode: Int,
+        config: IslandSlotRuntimeConfig,
+        playbackActive: Boolean,
+    ): Int {
+        when (view) {
+            is RichLyricLineView -> {
+                view.setPlaybackActive(playbackActive)
+                if (IslandContentMotionResumePolicy.shouldRequestMarquee(
+                        mode = mode,
+                        playbackActive = playbackActive,
+                        lyricMarqueeEnabled = config.lyricMarqueeEnabled,
+                        metadataMarqueeEnabled = config.metadataMarqueeEnabled,
+                    )
+                ) {
+                    view.requestStartMarquee()
+                }
+            }
+            is SpaceGateRichLyricLineView -> {
+                view.setPlaybackActive(playbackActive)
+                if (IslandContentMotionResumePolicy.shouldRequestMarquee(
+                        mode = mode,
+                        playbackActive = playbackActive,
+                        lyricMarqueeEnabled = config.lyricMarqueeEnabled,
+                        metadataMarqueeEnabled = config.metadataMarqueeEnabled,
+                    )
+                ) {
+                    view.requestStartMarquee()
+                }
+            }
+            else -> return 0
+        }
+        return 1
     }
 
     private fun freezeLyricView(view: View?, position: Long) {
@@ -413,5 +478,17 @@ internal object IslandLyricTextInjector {
             val child = container.getChildAt(i)
             child.visibility = if (child == keepView) View.VISIBLE else View.GONE
         }
+    }
+}
+
+internal object IslandContentMotionResumePolicy {
+    fun shouldRequestMarquee(
+        mode: Int,
+        playbackActive: Boolean,
+        lyricMarqueeEnabled: Boolean,
+        metadataMarqueeEnabled: Boolean,
+    ): Boolean {
+        if (!playbackActive) return false
+        return if (mode == 7) lyricMarqueeEnabled else mode in 1..6 && metadataMarqueeEnabled
     }
 }

@@ -512,6 +512,7 @@
     <string name="option_audio_cover_style_circle">Circular cover</string>
     <string name="option_audio_cover_style_rotating_circle">Rotating circular cover</string>
     <string name="option_audio_cover_style_app_icon">App icon</string>
+    <string name="option_audio_cover_style_gradient">Gradient cover</string>
     <string name="option_audio_cover_style_hidden">Hide cover</string>
     <string name="title_audio_rhythm">Audio Rhythm</string>
     <string name="title_audio_rhythm_cover_color">Audio rhythm cover color</string>

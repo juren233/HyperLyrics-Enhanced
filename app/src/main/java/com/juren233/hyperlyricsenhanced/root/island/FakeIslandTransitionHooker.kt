@@ -10,6 +10,26 @@ import io.github.libxposed.api.XposedInterface.Hooker
 
 internal object FakeIslandTransitionHooker {
 
+    class StateChangedHook : Hooker {
+        override fun intercept(chain: Chain): Any? {
+            val result = chain.proceed()
+
+            runCatching {
+                val fakeView = chain.thisObject as? ViewGroup ?: return@runCatching
+                val realView = chain.args.firstOrNull() as? View
+                IslandAlbumCoverStyleHooker.applyFakeTransitionCover(
+                    fakeView = fakeView,
+                    realView = realView,
+                    source = "after fake.onStateChanged",
+                )
+            }.onFailure { e ->
+                HookLogger.e(TAG, "fake 状态更新后同步渐变封面失败", e)
+            }
+
+            return result
+        }
+    }
+
     class TrackingStartHook : Hooker {
         override fun intercept(chain: Chain): Any? {
             val result = chain.proceed()
@@ -18,6 +38,10 @@ internal object FakeIslandTransitionHooker {
                 val fakeView = chain.thisObject as? ViewGroup ?: return@runCatching
                 IslandExpandedMediaAmbientFlowHooker.applyFakeTransitionTheme(fakeView)
                 val generation = FakeIslandTransitionState.ensureActive(fakeView)
+                IslandAlbumCoverStyleHooker.applyFakeTransitionCover(
+                    fakeView = fakeView,
+                    source = "after fake.onTrackingFakeViewStart",
+                )
                 IslandTextHookerSupport.prepareFrozenFakeIslandForTransition(fakeView, "after fake.onTrackingFakeViewStart")
                 fakeView.post {
                     if (FakeIslandTransitionState.isActive(fakeView, generation)) {
@@ -45,6 +69,10 @@ internal object FakeIslandTransitionHooker {
                 val fakeView = chain.thisObject as? ViewGroup ?: return@runCatching
                 IslandExpandedMediaAmbientFlowHooker.restoreFakeTransitionTheme(fakeView)
                 val generation = FakeIslandTransitionState.ensureActive(fakeView)
+                IslandAlbumCoverStyleHooker.applyFakeTransitionCover(
+                    fakeView = fakeView,
+                    source = "after fake.updateViewStateWhenOpenAnimStart",
+                )
                 IslandTextHookerSupport.prepareFrozenFakeIslandForTransition(fakeView, "after fake.updateViewStateWhenOpenAnimStart")
                 fakeView.post {
                     if (FakeIslandTransitionState.isActive(fakeView, generation)) {
@@ -67,6 +95,10 @@ internal object FakeIslandTransitionHooker {
                     val fakeView = chain.thisObject as? ViewGroup ?: return@runCatching
                     IslandExpandedMediaAmbientFlowHooker.restoreFakeTransitionTheme(fakeView)
                     FakeIslandTransitionState.ensureActive(fakeView)
+                    IslandAlbumCoverStyleHooker.applyFakeTransitionCover(
+                        fakeView = fakeView,
+                        source = "before fake.setVisibility(VISIBLE)",
+                    )
                     IslandTextHookerSupport.prepareFrozenFakeIslandForTransition(fakeView, "before fake.setVisibility(VISIBLE)")
                 }.onFailure { e ->
                 HookLogger.e(TAG, "过渡视图显示前冻结视图失败", e)
