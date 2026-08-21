@@ -210,6 +210,7 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ steps.gate.outputs.full_name }}
+          target_commitish: ${{ github.sha }}
           name: v${{ steps.gate.outputs.full_name }}
           body: ${{ steps.release_body.outputs.body }}
           draft: false
@@ -226,6 +227,7 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ steps.gate.outputs.full_name }}
+          target_commitish: ${{ github.sha }}
           name: v${{ steps.gate.outputs.full_name }}
           body: ${{ steps.release_body.outputs.body }}
           draft: false
