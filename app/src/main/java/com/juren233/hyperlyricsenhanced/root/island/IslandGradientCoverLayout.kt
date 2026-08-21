@@ -19,6 +19,13 @@ internal data class IslandGradientGeometryCandidate(
     val height: Int,
 )
 
+internal data class IslandCenterCropWindow(
+    val left: Float,
+    val top: Float,
+    val right: Float,
+    val bottom: Float,
+)
+
 internal object IslandGradientCoverRuntimeIdentifiers {
     // Verified from the original miui-systemui-plugin.apk DEX descriptors.
     const val FAKE_CONTENT_VIEW_CLASS =
@@ -29,16 +36,36 @@ internal object IslandGradientCoverRuntimeIdentifiers {
         "miui.systemui.dynamicisland.model.IslandContentViewHolder"
     const val SMALL_ISLAND_STATE_CLASS =
         "miui.systemui.dynamicisland.event.DynamicIslandState\$SmallIsland"
+    const val BIG_ISLAND_STATE_CLASS =
+        "miui.systemui.dynamicisland.event.DynamicIslandState\$BigIsland"
     const val FIND_AND_INIT_VIEWS_METHOD = "findAndInitViews"
 
     fun isSmallIslandState(className: String?): Boolean {
         return className == SMALL_ISLAND_STATE_CLASS
+    }
+
+    fun compactIslandRole(className: String?): Boolean? = when (className) {
+        SMALL_ISLAND_STATE_CLASS -> true
+        BIG_ISLAND_STATE_CLASS -> false
+        else -> null
     }
 }
 
 internal object IslandGradientCoverLayout {
     private const val GRADIENT_BAND_DP = 10f
     private const val GRADIENT_BAND_MAX_FRACTION = 0.32f
+    private const val DEFAULT_ICON_SIZE_DP = 24f
+    private const val EMBEDDED_TRANSITION_OVERLAP_DP = 3f
+    private const val EMBEDDED_TRANSITION_HOLD_DP = 6f
+    private const val EMBEDDED_TRANSITION_EXTENSION_DP = 72f
+    private const val EMBEDDED_TRANSITION_DIFFUSION_RADIUS_DP = 10f
+    private const val EMBEDDED_TRANSITION_DIFFUSION_HEIGHT_FRACTION = 0.26f
+    private const val EMBEDDED_TRANSITION_DIFFUSION_START_FRACTION = 0.45f
+    private const val EMBEDDED_TRANSITION_BLUR_RADIUS_X_DP = 2f
+    private const val EMBEDDED_TRANSITION_BLUR_RADIUS_Y_DP = 5f
+    private const val EMBEDDED_TRANSITION_BLUR_INSET_DP = 16f
+    private const val EMBEDDED_TRANSITION_BLUR_MIN_RAMP_DP = 12f
+    private const val EMBEDDED_TRANSITION_BLUR_EDGE_TAIL_DP = 8f
 
     fun resolve(
         moduleWidth: Int,
@@ -76,6 +103,185 @@ internal object IslandGradientCoverLayout {
             .coerceAtLeast(1)
         val gradientBandWidth = (GRADIENT_BAND_DP * density).roundToInt().coerceIn(1, maxBand)
         return gradientBandWidth.toFloat() / coverWidth
+    }
+
+    /**
+     * Resolve the ImageView's layout-space size. Drawable intrinsic pixels are deliberately
+     * excluded: album artwork is commonly 512 px while the host ImageView is a 24 dp icon.
+     * Using the bitmap size before the View is measured shrinks the first gradient frame.
+     */
+    fun resolveIconDimension(
+        actualSize: Int,
+        measuredSize: Int,
+        layoutParamSize: Int,
+        minimumSize: Int,
+        density: Float,
+    ): Int {
+        return actualSize.takeIf { it > 0 }
+            ?: measuredSize.takeIf { it > 0 }
+            ?: layoutParamSize.takeIf { it > 0 }
+            ?: minimumSize.takeIf { it > 0 }
+            ?: (DEFAULT_ICON_SIZE_DP * density).roundToInt().coerceAtLeast(1)
+    }
+
+    fun embeddedTransitionOverlap(coverWidth: Float, density: Float): Float {
+        if (coverWidth <= 0f || density <= 0f) return 0f
+        return minOf(EMBEDDED_TRANSITION_OVERLAP_DP * density, coverWidth / 5f)
+    }
+
+    fun embeddedTransitionBlurInset(coverWidth: Float, density: Float): Float {
+        if (coverWidth <= 0f || density <= 0f) return 0f
+        // Allow the requested 16dp inset to be effective on the 104px island instead of
+        // clipping it back to the old one-third-cover ceiling.
+        return minOf(EMBEDDED_TRANSITION_BLUR_INSET_DP * density, coverWidth / 2f)
+    }
+
+    fun embeddedTransitionMaxExtension(density: Float): Float {
+        if (density <= 0f) return 0f
+        return EMBEDDED_TRANSITION_EXTENSION_DP * density
+    }
+
+    fun embeddedTransitionHold(density: Float): Float {
+        if (density <= 0f) return 0f
+        return EMBEDDED_TRANSITION_HOLD_DP * density
+    }
+
+    fun embeddedTransitionVisibleExtension(availableWidth: Float, density: Float): Float {
+        return minOf(
+            embeddedTransitionMaxExtension(density),
+            availableWidth.coerceAtLeast(0f),
+        )
+    }
+
+    /**
+     * The edge-smear texture and shade caches must not depend on the animated host width. Canvas
+     * scales the fixed cache into the currently visible band, avoiding bitmap copies, pixel
+     * sampling, or diffusion reconstruction in every width-animation frame.
+     */
+    fun embeddedTransitionBitmapWidth(coverWidth: Float, density: Float): Int {
+        val width = embeddedTransitionBlurInset(coverWidth, density) +
+            embeddedTransitionMaxExtension(density)
+        return width.roundToInt().coerceAtLeast(1)
+    }
+
+    fun embeddedTransitionFeatherAlpha(position: Float, overlap: Float): Float {
+        if (overlap <= 0f) return 1f
+        return smootherStep((position / overlap).coerceIn(0f, 1f))
+    }
+
+    fun embeddedTransitionBlackMix(
+        position: Float,
+        totalWidth: Float,
+        overlap: Float,
+        hold: Float,
+    ): Float {
+        if (totalWidth <= 0f) return 1f
+        val fadeStart = (overlap + hold).coerceIn(0f, totalWidth)
+        if (fadeStart >= totalWidth) return if (position >= totalWidth) 1f else 0f
+        val progress = ((position - fadeStart) / (totalWidth - fadeStart)).coerceIn(0f, 1f)
+        return smootherStep(progress)
+    }
+
+    fun embeddedTransitionEdgeSourceX(
+        position: Float,
+        overlap: Float,
+        cropRight: Int,
+        sourceOverlap: Float,
+    ): Float {
+        val edgeX = cropRight - 1f
+        if (position >= overlap || overlap <= 0f) return edgeX
+        val progress = (position / overlap).coerceIn(0f, 1f)
+        return edgeX - sourceOverlap.coerceAtLeast(0f) * (1f - progress)
+    }
+
+    fun embeddedTransitionDiffusionRadius(
+        position: Float,
+        totalWidth: Float,
+        overlap: Float,
+        targetHeight: Int,
+        density: Float,
+    ): Float {
+        val diffusionStart = embeddedTransitionDiffusionStart(overlap)
+        if (totalWidth <= diffusionStart || targetHeight <= 0 || density <= 0f) return 0f
+        val progress = ((position - diffusionStart) / (totalWidth - diffusionStart))
+            .coerceIn(0f, 1f)
+        val maximum = minOf(
+            EMBEDDED_TRANSITION_DIFFUSION_RADIUS_DP * density,
+            targetHeight * EMBEDDED_TRANSITION_DIFFUSION_HEIGHT_FRACTION,
+        )
+        return maximum * smootherStep(progress)
+    }
+
+    fun embeddedTransitionDiffusionStart(overlap: Float): Float {
+        if (overlap <= 0f) return 0f
+        return overlap * EMBEDDED_TRANSITION_DIFFUSION_START_FRACTION
+    }
+
+    fun embeddedTransitionDiffusionBlend(position: Float, overlap: Float): Float {
+        if (overlap <= 0f) return 1f
+        val start = embeddedTransitionDiffusionStart(overlap)
+        if (overlap <= start) return 1f
+        return smootherStep(((position - start) / (overlap - start)).coerceIn(0f, 1f))
+    }
+
+    /** CPU blur radii used once while the fixed edge-smear cache is generated. */
+    fun embeddedTransitionBlurRadiusX(density: Float): Float {
+        if (density <= 0f) return 0f
+        return EMBEDDED_TRANSITION_BLUR_RADIUS_X_DP * density
+    }
+
+    fun embeddedTransitionBlurRadiusY(density: Float): Float {
+        if (density <= 0f) return 0f
+        return EMBEDDED_TRANSITION_BLUR_RADIUS_Y_DP * density
+    }
+
+    fun embeddedTransitionBlurProgress(
+        position: Float,
+        totalWidth: Float,
+        blurInset: Float,
+        density: Float,
+    ): Float {
+        if (totalWidth <= 0f || density <= 0f) return 0f
+        // The transition target begins inside the clear cover by `blurInset`; start the native
+        // blur there so the cover-to-diffusion seam is already softly blurred.
+        val start = 0f
+        // The target remains deeper inside the cover, but keep a longer tail after the real cover
+        // edge so the inner artwork is not over-blurred while the extension still becomes soft.
+        val ramp = maxOf(
+            EMBEDDED_TRANSITION_BLUR_MIN_RAMP_DP * density,
+            blurInset + EMBEDDED_TRANSITION_BLUR_EDGE_TAIL_DP * density,
+        )
+            .coerceAtLeast(1f)
+        val end = (start + ramp).coerceAtMost(totalWidth)
+        if (end <= start) return if (position >= start) 1f else 0f
+        return smootherStep((position - start) / (end - start))
+    }
+
+    private fun smootherStep(progress: Float): Float {
+        val t = progress.coerceIn(0f, 1f)
+        return t * t * t * (t * (t * 6f - 15f) + 10f)
+    }
+
+    fun centerCropWindow(
+        sourceWidth: Int,
+        sourceHeight: Int,
+        targetWidth: Float,
+        targetHeight: Float,
+    ): IslandCenterCropWindow? {
+        if (sourceWidth <= 0 || sourceHeight <= 0 || targetWidth <= 0f || targetHeight <= 0f) {
+            return null
+        }
+        val scale = maxOf(targetWidth / sourceWidth, targetHeight / sourceHeight)
+        val visibleWidth = targetWidth / scale
+        val visibleHeight = targetHeight / scale
+        val left = (sourceWidth - visibleWidth) / 2f
+        val top = (sourceHeight - visibleHeight) / 2f
+        return IslandCenterCropWindow(
+            left = left,
+            top = top,
+            right = left + visibleWidth,
+            bottom = top + visibleHeight,
+        )
     }
 
     fun selectGeometry(

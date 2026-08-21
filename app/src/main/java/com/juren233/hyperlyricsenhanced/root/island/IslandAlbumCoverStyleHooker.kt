@@ -22,6 +22,7 @@ import android.view.ViewGroup
 import android.view.ViewOutlineProvider
 import android.view.ViewTreeObserver
 import android.widget.ImageView
+import android.widget.TextView
 import androidx.core.graphics.createBitmap
 import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.common.RootConstants
@@ -30,6 +31,7 @@ import com.juren233.hyperlyricsenhanced.root.HookEntry
 import com.juren233.hyperlyricsenhanced.root.LyriconDataBridge
 import com.juren233.hyperlyricsenhanced.root.SystemUiEnhancementGate
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
+import com.juren233.hyperlyricsenhanced.lyric.view.line.LyricLineView
 import io.github.libxposed.api.XposedInterface.Chain
 import io.github.libxposed.api.XposedInterface.Hooker
 import io.github.libxposed.api.XposedModule
@@ -50,6 +52,9 @@ internal object IslandAlbumCoverStyleHooker {
     private const val CAPTURE_MAX_DIMENSION = 512
     private const val REQUIRED_STABLE_FRAMES = 3
     private const val MAX_OBSERVATION_FRAMES = 360
+    private const val LEFT_CONTENT_SHADOW_RADIUS_DP = 0.85f
+    private const val LEFT_CONTENT_SHADOW_DY_DP = 0.5f
+    private const val LEFT_CONTENT_SHADOW_ALPHA = 0x7C
     private val CAPTURE_DELAYS_MS = longArrayOf(0L, 120L, 500L, 1_500L)
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -61,7 +66,7 @@ internal object IslandAlbumCoverStyleHooker {
     private val gradientStates = WeakHashMap<ImageView, GradientCoverState>()
     private val fakeTransitionLogSignatures = WeakHashMap<ViewGroup, String>()
     private val artworkDiagnosticStates = WeakHashMap<ImageView, String>()
-    private val pendingLocalSnapshotRetries = WeakHashMap<View, Boolean>()
+    private val artworkIdentityByView = WeakHashMap<ImageView, ArtworkIdentity>()
     private val restoringNative = ThreadLocal<Boolean>()
     @Volatile
     private var cachedBigVisual: CoverVisualSnapshot? = null
@@ -183,6 +188,7 @@ internal object IslandAlbumCoverStyleHooker {
         }
     }
 
+
     fun refresh() {
         runOnMain {
             val holders = synchronized(trackedHolders) {
@@ -199,6 +205,7 @@ internal object IslandAlbumCoverStyleHooker {
 
     fun onPlaybackStateChanged(isPlaying: Boolean) {
         IslandAlbumCoverRotationController.setPlaybackActive(isPlaying)
+        EmbeddedIslandAlbumCoverController.setPlaybackActive(isPlaying)
     }
 
     fun applyFakeTransitionCover(
@@ -207,50 +214,53 @@ internal object IslandAlbumCoverStyleHooker {
         source: String,
     ) {
         if (currentStyle() != RootConstants.ISLAND_ALBUM_COVER_STYLE_GRADIENT) return
+        if (!isMediaFakeTransition(fakeView, realView)) return
+
+        val stateClass = resolveFakeTransitionStateClass(fakeView, realView)
+        val targetSmallIsland = IslandGradientCoverRuntimeIdentifiers.compactIslandRole(stateClass)
+            ?: return
         val targets = collectCoverImageViews(fakeView)
-        val targetSmallIsland = resolveFakeTransitionSmallIsland(fakeView, realView)
-        var changedCount = 0
-        var needsLayoutRetry = false
-        targets.forEach { (imageView, resourceName) ->
-            if (targetSmallIsland == null && resourceName == "island_fix_icon" &&
-                !hasNamedAncestor(imageView, fakeView, "small_container")
-            ) {
-                return@forEach
-            }
-            val smallIsland = targetSmallIsland == true ||
-                resourceName == "island_small_icon" ||
-                hasNamedAncestor(imageView, fakeView, "small_container")
-            val snapshot = if (smallIsland) {
-                resolveLocalSmallSnapshot(imageView, fakeView)
-            } else {
-                cachedBigVisual ?: resolveLocalBigSnapshot(imageView, fakeView)
-            }
-            if (snapshot == null) {
-                if (imageView.width <= 0 && imageView.measuredWidth <= 0 &&
-                    imageView.height <= 0 && imageView.measuredHeight <= 0
-                ) {
-                    needsLayoutRetry = true
-                }
-                return@forEach
-            }
-            synchronized(gradientStates) {
-                gradientStates[imageView]?.removePreDrawObserver()
-            }
-            if (applySnapshotToImage(imageView, fakeView, snapshot)) {
-                changedCount += 1
+        val selected = selectFakeCoverTarget(fakeView, targets, targetSmallIsland) ?: return
+        val imageView = selected.first
+        val resourceName = selected.second
+
+        val sharedIdentity = synchronized(artworkIdentityByView) {
+            artworkIdentityByView[imageView]
+                ?: targets.firstNotNullOfOrNull { (target, _) -> artworkIdentityByView[target] }
+        }
+        if (sharedIdentity != null) {
+            synchronized(artworkIdentityByView) {
+                artworkIdentityByView.putIfAbsent(imageView, sharedIdentity)
             }
         }
-        if (needsLayoutRetry && changedCount == 0 && targets.isNotEmpty()) {
-            scheduleLocalSnapshotRetry(
-                anchor = fakeView,
-                fakeView = fakeView,
-                realView = realView,
-                source = source,
-            )
+
+        ensureArtworkContinuity(imageView, "fake:$source")
+        val state = synchronized(gradientStates) {
+            gradientStates[imageView]
         }
+        state?.applyLeftContentTextShadow()
+        val embeddedHost = resolveFakeEmbeddedHost(imageView, fakeView, targetSmallIsland)
+        val embedded = embeddedHost != null &&
+            EmbeddedIslandAlbumCoverController.apply(embeddedHost, imageView, targetSmallIsland)
+        if (embedded) {
+            state?.removePreDrawObserver()
+            state?.restoreCoverVisuals()
+        } else {
+            EmbeddedIslandAlbumCoverController.restoreForSource(imageView)
+            state?.removePreDrawObserver()
+            state?.restoreCoverVisuals()
+        }
+
+        val realOwner = resolveFakeTransitionOwner(fakeView, realView)
+        val realEmbedded = syncRealTransitionCover(
+            realOwner = realOwner,
+            smallIsland = targetSmallIsland,
+            source = source,
+        )
+
         if (BuildConfig.DEBUG) {
-            val stateClass = resolveFakeTransitionStateClass(fakeView, realView)
-            val signature = "$source|$stateClass|$targetSmallIsland|${targets.size}|$changedCount"
+            val signature = "$source|$stateClass|$targetSmallIsland|${targets.size}|" +
+                "$resourceName|${System.identityHashCode(imageView)}|$embedded|$realEmbedded"
             val shouldLog = synchronized(fakeTransitionLogSignatures) {
                 if (fakeTransitionLogSignatures[fakeView] == signature) {
                     false
@@ -263,7 +273,9 @@ internal object IslandAlbumCoverStyleHooker {
                 HookLogger.d(
                     TAG,
                     "fake 渐变封面已同步: source=$source, state=$stateClass, " +
-                        "targetSmall=$targetSmallIsland, targets=${targets.size}, changed=$changedCount",
+                        "targetSmall=$targetSmallIsland, targets=${targets.size}, " +
+                        "selected=$resourceName@${System.identityHashCode(imageView)}, " +
+                        "embedded=$embedded, realEmbedded=$realEmbedded",
                 )
             }
         }
@@ -310,9 +322,10 @@ internal object IslandAlbumCoverStyleHooker {
         synchronized(artworkDiagnosticStates) {
             artworkDiagnosticStates.clear()
         }
-        synchronized(pendingLocalSnapshotRetries) {
-            pendingLocalSnapshotRetries.clear()
+        synchronized(artworkIdentityByView) {
+            artworkIdentityByView.clear()
         }
+        EmbeddedIslandAlbumCoverController.cleanup()
     }
 
     private fun applyStyle(
@@ -329,6 +342,17 @@ internal object IslandAlbumCoverStyleHooker {
 
         val fixIcon = targetField.get(holder) as? ImageView ?: return
         val style = currentStyle()
+        val artworkIdentity = resolveArtworkIdentity(fixIcon, dynamicIslandData)
+        synchronized(artworkIdentityByView) {
+            if (artworkIdentity == null) {
+                artworkIdentityByView.remove(fixIcon)
+            } else {
+                artworkIdentityByView[fixIcon] = artworkIdentity
+            }
+        }
+        if (style == RootConstants.ISLAND_ALBUM_COVER_STYLE_GRADIENT) {
+            ensureArtworkContinuity(fixIcon, "after $targetMethodName")
+        }
         logArtworkBindingState(fixIcon, targetMethodName, style)
         val fakeContentView = findFakeContentView(fixIcon)
         if (style != RootConstants.ISLAND_ALBUM_COVER_STYLE_GRADIENT || fakeContentView == null) {
@@ -368,6 +392,67 @@ internal object IslandAlbumCoverStyleHooker {
                     "fake=${fakeContentView != null}, observing=${state?.preDrawListener != null}",
             )
         }
+    }
+
+    private data class ArtworkIdentity(
+        val packageName: String,
+        val title: String,
+    )
+
+    private fun resolveArtworkIdentity(
+        fixIcon: ImageView,
+        dynamicIslandData: Any,
+    ): ArtworkIdentity? {
+        val packageName = IslandProbeUtils.extractMediaIslandInfo(dynamicIslandData)
+            ?.packageName
+            ?.takeIf(String::isNotBlank)
+            ?: return null
+        val token = MediaMetadataHelper.currentArtworkCaptureToken(
+            fixIcon.context,
+            packageName,
+        ) ?: return null
+        val lyricSong = LyriconDataBridge.currentSong
+        if (IslandSlotContentAssembler.shouldRejectArtworkForTitleMismatch(
+                lyricTitle = lyricSong?.name ?: LyriconDataBridge.currentSongName,
+                mediaTitle = token.title,
+                lyricArtist = lyricSong?.artist,
+                mediaArtist = token.artist,
+                mediaAlbum = token.album,
+            )
+        ) {
+            return null
+        }
+        return ArtworkIdentity(packageName = packageName, title = token.title)
+    }
+
+    private fun ensureArtworkContinuity(imageView: ImageView, source: String): Boolean {
+        if (imageView.drawable.hasUsableArtworkPixels()) return false
+        val identity = synchronized(artworkIdentityByView) {
+            artworkIdentityByView[imageView]
+        } ?: return false
+        val bitmap = MediaMetadataHelper.currentCachedArtwork(
+            context = imageView.context,
+            packageName = identity.packageName,
+            expectedTitle = identity.title,
+        ) ?: return false
+        imageView.setImageBitmap(bitmap)
+        if (BuildConfig.DEBUG) {
+            HookLogger.d(
+                TAG,
+                "渐变封面复用当前歌曲缓存: source=$source, package=${identity.packageName}, " +
+                    "title=${identity.title}, size=${bitmap.width}x${bitmap.height}",
+            )
+        }
+        return true
+    }
+
+    private fun Drawable?.hasUsableArtworkPixels(): Boolean {
+        val drawable = this ?: return false
+        if (drawable !is BitmapDrawable) {
+            return drawable.intrinsicWidth > 0 && drawable.intrinsicHeight > 0
+        }
+        val bitmap = drawable.bitmap ?: return false
+        return hasVisibleArtworkPixels(bitmap)
     }
 
     private fun scheduleNativeArtworkCapture(fixIcon: ImageView, dynamicIslandData: Any) {
@@ -492,9 +577,20 @@ internal object IslandAlbumCoverStyleHooker {
         val scaleY: Float,
         val translationX: Float,
         val translationY: Float,
+        val coverWidth: Int,
+        val coverHeight: Int,
         val smallIsland: Boolean,
         val gradientBandFraction: Float,
         val islandColor: Int,
+    )
+
+    private data class TextShadowTargetSnapshot(
+        val view: View,
+        val paint: Paint,
+        val radius: Float,
+        val dx: Float,
+        val dy: Float,
+        val color: Int,
     )
 
     private fun applyGradientCover(
@@ -510,32 +606,53 @@ internal object IslandAlbumCoverStyleHooker {
             gradientStates[fixIcon] = GradientCoverState.capture(fixIcon, iconContainer)
         }
         val state = gradientStates[fixIcon] ?: return
+        state.applyLeftContentTextShadow()
         if (fakeContentView != null) {
-            // Fake templates are populated several times in one transition. Their final
-            // role is known by fakeView.onStateChanged(realView), so never start a
-            // per-frame geometry observer while those templates are being rebuilt.
+            // Style the freshly rebound fake holder synchronously. setFixIcon returns on the
+            // UI thread before the next frame, so this closes the default-style exposure window.
             state.removePreDrawObserver()
+            applyFakeTransitionCover(
+                fakeView = fakeContentView,
+                source = "after fake holder bind",
+            )
             return
         }
-        val appliedCached = state.applyCachedVisual()
-        if (!appliedCached && state.appliedSmall == null) {
-            val localSnapshot = if (state.isSmallIslandState()) {
-                resolveLocalSmallSnapshot(fixIcon, fixIcon.rootView)
-            } else {
-                resolveLocalBigSnapshot(fixIcon, fixIcon.rootView)
-            }
-            if (localSnapshot != null) {
-                applySnapshotToImage(fixIcon, fixIcon.rootView, localSnapshot)
-            } else {
-                scheduleLocalSnapshotRetry(
-                    anchor = fixIcon,
-                    fakeView = null,
-                    realView = null,
-                    source = "real",
-                )
-            }
+
+        ensureArtworkContinuity(fixIcon, "real")
+        val smallIsland = state.isSmallIslandState()
+        val embeddedHost = if (smallIsland) {
+            (callViewGetter(holder, "getSmallContainer") as? ViewGroup)
+                ?: (state.module as? android.widget.FrameLayout)
+                    ?.takeIf(::isSmallIslandModule)
+        } else {
+            callViewGetter(holder, "getBigContainer") as? ViewGroup
         }
-        if (!appliedCached) {
+        if (embeddedHost != null &&
+            EmbeddedIslandAlbumCoverController.apply(embeddedHost, fixIcon, smallIsland)
+        ) {
+            // The embedded child now owns rendering. Restore the native ImageView's visual
+            // properties without changing its parent or measurement contract.
+            state.removePreDrawObserver()
+            state.restoreCoverVisuals()
+            return
+        }
+
+        if (smallIsland) {
+            // A cold small-island holder can expose its stable 104x104 module before
+            // getSmallContainer(). If neither embedded host works, keep native visuals; the old
+            // scale/translation fallback is the confirmed cause of the one-frame flash.
+            state.removePreDrawObserver()
+            state.restoreCoverVisuals()
+            return
+        }
+
+        val localSnapshot = resolveLocalBigSnapshot(fixIcon, fixIcon.rootView)
+        val snapshot = localSnapshot ?: cachedBigVisual
+        if (snapshot != null && !snapshot.smallIsland) {
+            state.applySnapshot(snapshot)
+            state.removePreDrawObserver()
+        } else {
+            // Fallback for a host revision whose content containers are not discoverable yet.
             state.scheduleLayout()
         }
     }
@@ -552,6 +669,8 @@ internal object IslandAlbumCoverStyleHooker {
 
     private fun restoreGradientState(state: GradientCoverState) {
         state.removePreDrawObserver()
+        state.restoreLeftContentTextShadow()
+        EmbeddedIslandAlbumCoverController.restoreForSource(state.fixIcon)
         state.iconContainer.translationX = state.originalIconContainerTranslationX
         state.iconContainer.translationY = state.originalIconContainerTranslationY
 
@@ -568,6 +687,7 @@ internal object IslandAlbumCoverStyleHooker {
             state.fixIcon.layoutParams = fixLp
         }
         state.restoreCoverVisuals()
+        state.fixIcon.visibility = state.originalFixIconVisibility
 
         state.iconContainer.setPadding(
             state.originalIconContainerPaddingLeft,
@@ -613,8 +733,8 @@ internal object IslandAlbumCoverStyleHooker {
             ?: return
         val moduleWidth = moduleView.width.takeIf { it > 0 } ?: moduleView.measuredWidth
         val moduleHeight = moduleView.height.takeIf { it > 0 } ?: moduleView.measuredHeight
-        val iconWidth = fixIcon.width.takeIf { it > 0 } ?: fixIcon.measuredWidth
-        val iconHeight = fixIcon.height.takeIf { it > 0 } ?: fixIcon.measuredHeight
+        val iconWidth = fixIcon.expectedLayoutWidth()
+        val iconHeight = fixIcon.expectedLayoutHeight()
         val iconLocation = fixIcon.baseLocationInWindow()
         val smallIsland = smallIslandOverride ?: isSmallIslandModule(moduleView)
         val islandWindowX = geometry.left.toFloat()
@@ -774,6 +894,46 @@ internal object IslandAlbumCoverStyleHooker {
         return (location[0] - translationX) to (location[1] - translationY)
     }
 
+    private fun View.baseLocationRelativeTo(root: View): Pair<Float, Float>? {
+        var x = 0f
+        var y = 0f
+        var current: View = this
+        while (current !== root) {
+            x += current.left
+            y += current.top
+            if (current !== this) {
+                x += current.translationX
+                y += current.translationY
+            }
+            current = current.parent as? View ?: return null
+        }
+        return x to y
+    }
+
+    private fun View.baseLocationFor(root: View): Pair<Float, Float> {
+        return baseLocationRelativeTo(root) ?: baseLocationInWindow()
+    }
+
+    private fun ImageView.expectedLayoutWidth(): Int {
+        return IslandGradientCoverLayout.resolveIconDimension(
+            actualSize = width,
+            measuredSize = measuredWidth,
+            layoutParamSize = layoutParams?.width ?: 0,
+            minimumSize = minimumWidth,
+            density = resources.displayMetrics.density,
+        )
+    }
+
+    private fun ImageView.expectedLayoutHeight(): Int {
+        return IslandGradientCoverLayout.resolveIconDimension(
+            actualSize = height,
+            measuredSize = measuredHeight,
+            layoutParamSize = layoutParams?.height ?: 0,
+            minimumSize = minimumHeight,
+            density = resources.displayMetrics.density,
+        )
+    }
+
     private fun applyInitializedTemplateGeometry(holder: Any) {
         if (currentStyle() != RootConstants.ISLAND_ALBUM_COVER_STYLE_GRADIENT) return
         val bigContainer = callViewGetter(holder, "getBigContainer") as? ViewGroup
@@ -798,15 +958,41 @@ internal object IslandAlbumCoverStyleHooker {
         val width = target.width.takeIf { it > 0 } ?: target.measuredWidth
         val height = target.height.takeIf { it > 0 } ?: target.measuredHeight
         if (!target.isAttachedToWindow || width <= 0 || height <= 0) return 0
-        val geometry = resolveInitializedContainerGeometry(target, width, height, smallIsland)
-            ?: return 0
-        var applied = 0
-        collectCoverImageViews(target).forEach { (imageView, _) ->
+
+        val trackedTargets = collectCoverImageViews(target).mapNotNull { (imageView, _) ->
             val state = synchronized(gradientStates) {
                 gradientStates[imageView]
-            } ?: return@forEach
-            if (imageView.width <= 0 && imageView.measuredWidth <= 0) return@forEach
-            if (imageView.height <= 0 && imageView.measuredHeight <= 0) return@forEach
+            } ?: return@mapNotNull null
+            imageView to state
+        }
+        if (trackedTargets.isEmpty()) return 0
+
+        var applied = 0
+        val embeddedViews = HashSet<ImageView>()
+        trackedTargets.forEach { (imageView, state) ->
+            state.applyLeftContentTextShadow()
+            if (EmbeddedIslandAlbumCoverController.apply(target, imageView, smallIsland)) {
+                state.removePreDrawObserver()
+                state.restoreCoverVisuals()
+                embeddedViews += imageView
+                applied += 1
+            }
+        }
+        if (embeddedViews.size == trackedTargets.size) return applied
+        if (smallIsland) {
+            trackedTargets.forEach { (imageView, state) ->
+                if (imageView !in embeddedViews) {
+                    state.removePreDrawObserver()
+                    state.restoreCoverVisuals()
+                }
+            }
+            return applied
+        }
+
+        val geometry = resolveInitializedContainerGeometry(target, width, height, smallIsland)
+            ?: return applied
+        trackedTargets.forEach { (imageView, state) ->
+            if (imageView in embeddedViews) return@forEach
             logArtworkBindingState(
                 imageView,
                 if (smallIsland) "final_small_container_before" else "final_big_container_before",
@@ -894,62 +1080,43 @@ internal object IslandAlbumCoverStyleHooker {
         }.getOrNull()
     }
 
-    private fun scheduleLocalSnapshotRetry(
-        anchor: View,
-        fakeView: ViewGroup?,
-        realView: View?,
-        source: String,
-    ) {
-        val shouldSchedule = synchronized(pendingLocalSnapshotRetries) {
-            if (pendingLocalSnapshotRetries[anchor] == true) {
-                false
-            } else {
-                pendingLocalSnapshotRetries[anchor] = true
-                true
-            }
-        }
-        if (!shouldSchedule) return
-        val observer = anchor.viewTreeObserver
-        val listener = object : ViewTreeObserver.OnGlobalLayoutListener {
-            override fun onGlobalLayout() {
-                anchor.viewTreeObserver.takeIf { it.isAlive }?.removeOnGlobalLayoutListener(this)
-                synchronized(pendingLocalSnapshotRetries) {
-                    pendingLocalSnapshotRetries.remove(anchor)
-                }
-                if (fakeView != null) {
-                    applyFakeTransitionCover(fakeView, realView, "$source(retry)")
-                } else {
-                    applyRealLocalSnapshotRetry(anchor as? ImageView ?: return)
-                }
-            }
-        }
-        observer.takeIf { it.isAlive }?.addOnGlobalLayoutListener(listener)
-    }
 
-    private fun applyRealLocalSnapshotRetry(fixIcon: ImageView) {
-        val state = synchronized(gradientStates) {
-            gradientStates[fixIcon]
-        } ?: return
-        if (state.appliedSmall != null) return
-        val snapshot = if (state.isSmallIslandState()) {
-            resolveLocalSmallSnapshot(fixIcon, fixIcon.rootView)
-        } else {
-            resolveLocalBigSnapshot(fixIcon, fixIcon.rootView)
-        }
-        if (snapshot == null) {
-            if (fixIcon.width <= 0 && fixIcon.measuredWidth <= 0 &&
-                fixIcon.height <= 0 && fixIcon.measuredHeight <= 0
-            ) {
-                scheduleLocalSnapshotRetry(
-                    anchor = fixIcon,
-                    fakeView = null,
-                    realView = null,
-                    source = "real",
+    private fun captureLeftContentTextTargets(module: View?): List<TextShadowTargetSnapshot> {
+        val moduleRoot = module as? ViewGroup ?: return emptyList()
+        val textRoot = IslandViewHelper.findViewByName(
+            moduleRoot,
+            "island_container_module_text",
+        ) ?: return emptyList()
+        val result = ArrayList<TextShadowTargetSnapshot>()
+        val queue = ArrayDeque<View>()
+        queue.add(textRoot)
+        while (queue.isNotEmpty()) {
+            val current = queue.removeFirst()
+            when (current) {
+                is TextView -> result += TextShadowTargetSnapshot(
+                    view = current,
+                    paint = current.paint,
+                    radius = current.paint.getShadowLayerRadius(),
+                    dx = current.paint.getShadowLayerDx(),
+                    dy = current.paint.getShadowLayerDy(),
+                    color = current.paint.getShadowLayerColor(),
+                )
+                is LyricLineView -> result += TextShadowTargetSnapshot(
+                    view = current,
+                    paint = current.textPaint,
+                    radius = current.textPaint.getShadowLayerRadius(),
+                    dx = current.textPaint.getShadowLayerDx(),
+                    dy = current.textPaint.getShadowLayerDy(),
+                    color = current.textPaint.getShadowLayerColor(),
                 )
             }
-            return
+            if (current is ViewGroup) {
+                for (index in 0 until current.childCount) {
+                    queue.addLast(current.getChildAt(index))
+                }
+            }
         }
-        applySnapshotToImage(fixIcon, fixIcon.rootView, snapshot)
+        return result.distinctBy { System.identityHashCode(it.view) }
     }
 
     private fun collectCoverImageViews(root: ViewGroup): List<Pair<ImageView, String>> {
@@ -997,12 +1164,82 @@ internal object IslandAlbumCoverStyleHooker {
         return null
     }
 
-    private fun resolveFakeTransitionStateClass(fakeView: ViewGroup, realView: View?): String? {
-        val owner = realView ?: runCatching {
+    private fun syncRealTransitionCover(
+        realOwner: View?,
+        smallIsland: Boolean,
+        source: String,
+    ): Boolean {
+        val root = realOwner as? ViewGroup ?: return false
+        val targets = collectCoverImageViews(root)
+        val selected = selectFakeCoverTarget(root, targets, smallIsland) ?: return false
+        val imageView = selected.first
+        val sharedIdentity = synchronized(artworkIdentityByView) {
+            artworkIdentityByView[imageView]
+                ?: targets.firstNotNullOfOrNull { (target, _) -> artworkIdentityByView[target] }
+        }
+        if (sharedIdentity != null) {
+            synchronized(artworkIdentityByView) {
+                artworkIdentityByView.putIfAbsent(imageView, sharedIdentity)
+            }
+        }
+        ensureArtworkContinuity(imageView, "real-state:$source")
+        val host = findNamedContainer(
+            root,
+            if (smallIsland) "small_container" else "big_container",
+        ) ?: return false
+        val embedded = EmbeddedIslandAlbumCoverController.apply(host, imageView, smallIsland)
+        if (embedded) {
+            synchronized(gradientStates) { gradientStates[imageView] }?.let { state ->
+                state.applyLeftContentTextShadow()
+                state.removePreDrawObserver()
+                state.restoreCoverVisuals()
+            }
+        }
+        return embedded
+    }
+
+    private fun resolveFakeEmbeddedHost(
+        imageView: ImageView,
+        fakeView: ViewGroup,
+        smallIsland: Boolean,
+    ): ViewGroup? {
+        // The fake hierarchy is rebuilt through Expanded/Big/Small stages. Only exact role
+        // containers are stable enough to host the cover; geometry-based ancestors were proven
+        // to select the wrong stage intermittently.
+        val names = if (smallIsland) {
+            arrayOf("small_container", "fake_small_container")
+        } else {
+            arrayOf("big_container", "fake_big_container")
+        }
+        return names.firstNotNullOfOrNull { name -> findNamedContainer(fakeView, name) }
+    }
+
+    private fun findNamedContainer(root: ViewGroup, name: String): ViewGroup? {
+        val direct = if (root.id != View.NO_ID) {
+            runCatching { root.resources.getResourceEntryName(root.id) == name }.getOrDefault(false)
+        } else {
+            false
+        }
+        if (direct) return root
+        return (IslandViewHelper.findViewByName(root, name) as? ViewGroup)
+    }
+
+    private fun resolveFakeTransitionOwner(fakeView: ViewGroup, realView: View?): View? {
+        return realView ?: runCatching {
             fakeView.javaClass.methods.firstOrNull {
                 it.name == "getRealView" && it.parameterTypes.isEmpty()
             }?.invoke(fakeView) as? View
         }.getOrNull()
+    }
+
+    private fun isMediaFakeTransition(fakeView: ViewGroup, realView: View?): Boolean {
+        val owner = resolveFakeTransitionOwner(fakeView, realView) ?: return false
+        val data = IslandProbeUtils.getCurrentIslandData(owner) ?: return false
+        return IslandProbeUtils.isMediaIsland(data)
+    }
+
+    private fun resolveFakeTransitionStateClass(fakeView: ViewGroup, realView: View?): String? {
+        val owner = resolveFakeTransitionOwner(fakeView, realView)
         val state = owner?.let { target ->
             runCatching {
                 target.javaClass.methods.firstOrNull {
@@ -1013,48 +1250,65 @@ internal object IslandAlbumCoverStyleHooker {
         return state?.javaClass?.name
     }
 
-    private fun resolveFakeTransitionSmallIsland(fakeView: ViewGroup, realView: View?): Boolean? {
-        val stateClass = resolveFakeTransitionStateClass(fakeView, realView) ?: return null
-        return IslandGradientCoverRuntimeIdentifiers.isSmallIslandState(stateClass)
+    private fun selectFakeCoverTarget(
+        fakeView: ViewGroup,
+        targets: List<Pair<ImageView, String>>,
+        smallIsland: Boolean,
+    ): Pair<ImageView, String>? {
+        return if (smallIsland) {
+            targets.firstOrNull { (imageView, resourceName) ->
+                resourceName == "island_small_icon" ||
+                    hasNamedAncestor(imageView, fakeView, "small_container") ||
+                    hasNamedAncestor(imageView, fakeView, "fake_small_container")
+            }
+        } else {
+            targets.firstOrNull { (imageView, resourceName) ->
+                resourceName == "island_fix_icon" &&
+                    !hasNamedAncestor(imageView, fakeView, "small_container") &&
+                    !hasNamedAncestor(imageView, fakeView, "fake_small_container")
+            }
+        }
     }
 
     private fun resolveLocalSmallSnapshot(imageView: ImageView, stop: View): CoverVisualSnapshot? {
-        val directParent = imageView.parent as? View ?: return null
-        var container = (directParent.parent as? View) ?: directParent
-        var current: View? = directParent
+        var namedAncestor: View? = null
+        var current = imageView.parent as? View
         while (current != null) {
             val name = if (current.id == View.NO_ID) null else {
                 runCatching { current.resources.getResourceEntryName(current.id) }.getOrNull()
             }
             if (name == "small_container") {
-                container = current
+                namedAncestor = current
                 break
             }
             if (current === stop) break
             current = current.parent as? View
         }
+        val globalContainer = (stop as? ViewGroup)?.let {
+            IslandViewHelper.findViewByName(it, "small_container")
+        }
+        val directParent = imageView.parent as? View
+        val container = namedAncestor
+            ?: globalContainer
+            ?: ((directParent?.parent as? View) ?: directParent)
+            ?: return null
         val width = container.width.takeIf { it > 0 } ?: container.measuredWidth
         val height = container.height.takeIf { it > 0 } ?: container.measuredHeight
-        val iconWidth = imageView.width.takeIf { it > 0 }
-            ?: imageView.measuredWidth.takeIf { it > 0 }
-            ?: imageView.drawable?.intrinsicWidth?.takeIf { it > 0 }
-            ?: 0
-        val iconHeight = imageView.height.takeIf { it > 0 }
-            ?: imageView.measuredHeight.takeIf { it > 0 }
-            ?: imageView.drawable?.intrinsicHeight?.takeIf { it > 0 }
-            ?: 0
         if (width <= 0 || height <= 0) return null
         val dimensionTolerance = maxOf(4, height / 10)
-        if (kotlin.math.abs(width - height) > dimensionTolerance) return null
+        if (abs(width - height) > dimensionTolerance) return null
         val diameter = minOf(width, height)
-        if (diameter <= 0 || iconWidth <= 0 || iconHeight <= 0) return null
-        val containerLocation = container.baseLocationInWindow()
-        val imageLocation = imageView.baseLocationInWindow()
+        val iconWidth = imageView.expectedLayoutWidth()
+        val iconHeight = imageView.expectedLayoutHeight()
+        val containerLocation = container.baseLocationFor(stop)
+        val imageLocation = imageView.baseLocationFor(stop)
         return CoverVisualSnapshot(
             scaleX = diameter.toFloat() / iconWidth,
             scaleY = diameter.toFloat() / iconHeight,
             translationX = containerLocation.first - imageLocation.first,
             translationY = containerLocation.second - imageLocation.second,
+            coverWidth = diameter,
+            coverHeight = diameter,
             smallIsland = true,
             gradientBandFraction = 0f,
             islandColor = Color.BLACK,
@@ -1062,30 +1316,31 @@ internal object IslandAlbumCoverStyleHooker {
     }
 
     private fun resolveLocalBigSnapshot(imageView: ImageView, stop: View): CoverVisualSnapshot? {
-        var container: View? = null
-        var current: View? = imageView.parent as? View
-        var nearestSized: View? = null
+        var namedAncestor: View? = null
+        var nearestWideContainer: View? = null
+        var current = imageView.parent as? View
         while (current != null) {
             val name = if (current.id == View.NO_ID) null else {
                 runCatching { current.resources.getResourceEntryName(current.id) }.getOrNull()
             }
             if (name == "big_container") {
-                container = current
+                namedAncestor = current
                 break
             }
-            if (nearestSized == null && current is ViewGroup) {
-                val w = current.width.takeIf { it > 0 } ?: current.measuredWidth
-                val h = current.height.takeIf { it > 0 } ?: current.measuredHeight
-                if (h in 60..200 && w > 0) nearestSized = current
+            if (nearestWideContainer == null && current is ViewGroup) {
+                val width = current.width.takeIf { it > 0 } ?: current.measuredWidth
+                val height = current.height.takeIf { it > 0 } ?: current.measuredHeight
+                if (height in 60..200 && width > height * 1.5f) {
+                    nearestWideContainer = current
+                }
             }
             if (current === stop) break
             current = current.parent as? View
         }
-        val host = container
-            ?: nearestSized
-            ?: (stop as? ViewGroup)?.let {
-                IslandViewHelper.findViewByName(it, "big_container")
-            }
+        val globalContainer = (stop as? ViewGroup)?.let {
+            IslandViewHelper.findViewByName(it, "big_container")
+        }
+        val host = namedAncestor ?: globalContainer ?: nearestWideContainer
         if (host == null) {
             if (BuildConfig.DEBUG) {
                 HookLogger.d(
@@ -1097,32 +1352,27 @@ internal object IslandAlbumCoverStyleHooker {
         }
         val width = host.width.takeIf { it > 0 } ?: host.measuredWidth
         val height = host.height.takeIf { it > 0 } ?: host.measuredHeight
-        val iconWidth = imageView.width.takeIf { it > 0 }
-            ?: imageView.measuredWidth.takeIf { it > 0 }
-            ?: imageView.drawable?.intrinsicWidth?.takeIf { it > 0 }
-            ?: 0
-        val iconHeight = imageView.height.takeIf { it > 0 }
-            ?: imageView.measuredHeight.takeIf { it > 0 }
-            ?: imageView.drawable?.intrinsicHeight?.takeIf { it > 0 }
-            ?: 0
-        if (width <= 0 || height <= 0 || iconWidth <= 0 || iconHeight <= 0) {
+        if (width <= height * 1.5f || height <= 0) {
             if (BuildConfig.DEBUG) {
                 HookLogger.d(
                     TAG,
-                    "大岛本地快照尺寸无效: host=${System.identityHashCode(host)}, " +
-                        "size=${width}x$height, icon=${iconWidth}x$iconHeight",
+                    "大岛本地快照尺寸无效: host=${System.identityHashCode(host)}, size=${width}x$height",
                 )
             }
             return null
         }
+        val iconWidth = imageView.expectedLayoutWidth()
+        val iconHeight = imageView.expectedLayoutHeight()
         val coverWidth = height
-        val containerLocation = host.baseLocationInWindow()
-        val imageLocation = imageView.baseLocationInWindow()
+        val containerLocation = host.baseLocationFor(stop)
+        val imageLocation = imageView.baseLocationFor(stop)
         return CoverVisualSnapshot(
             scaleX = coverWidth.toFloat() / iconWidth,
             scaleY = height.toFloat() / iconHeight,
             translationX = containerLocation.first - imageLocation.first,
             translationY = containerLocation.second - imageLocation.second,
+            coverWidth = coverWidth,
+            coverHeight = height,
             smallIsland = false,
             gradientBandFraction = IslandGradientCoverLayout.gradientBandFraction(
                 coverWidth = coverWidth,
@@ -1134,28 +1384,11 @@ internal object IslandAlbumCoverStyleHooker {
 
     private fun applySnapshotToImage(
         imageView: ImageView,
-        stop: View,
         snapshot: CoverVisualSnapshot,
     ): Boolean {
         var changed = false
-        var parent = imageView.parent as? ViewGroup
-        while (parent != null) {
-            if (parent.clipChildren) {
-                parent.clipChildren = false
-                changed = true
-            }
-            if (parent.clipToPadding) {
-                parent.clipToPadding = false
-                changed = true
-            }
-            if (parent === stop) break
-            parent = parent.parent as? ViewGroup
-        }
-        if (imageView.pivotX != 0f) {
+        if (!imageView.isPivotSet || imageView.pivotX != 0f || imageView.pivotY != 0f) {
             imageView.pivotX = 0f
-            changed = true
-        }
-        if (imageView.pivotY != 0f) {
             imageView.pivotY = 0f
             changed = true
         }
@@ -1356,6 +1589,8 @@ internal object IslandAlbumCoverStyleHooker {
         val originalFixIconTranslationY: Float,
         val originalFixIconPivotX: Float,
         val originalFixIconPivotY: Float,
+        val originalFixIconPivotSet: Boolean,
+        val originalFixIconVisibility: Int,
         val originalForeground: Drawable?,
         val originalOutlineProvider: ViewOutlineProvider?,
         val originalClipToOutline: Boolean,
@@ -1385,6 +1620,7 @@ internal object IslandAlbumCoverStyleHooker {
         val originalModuleClipToPadding: Boolean,
         val originalModuleParentClipChildren: Boolean,
         val originalModuleParentClipToPadding: Boolean,
+        val originalLeftContentTextShadows: MutableList<TextShadowTargetSnapshot>,
     ) {
         var preDrawListener: ViewTreeObserver.OnPreDrawListener? = null
         var observedRoot: View? = null
@@ -1459,56 +1695,71 @@ internal object IslandAlbumCoverStyleHooker {
             preDrawListener = null
         }
 
+        fun applyLeftContentTextShadow() {
+            val density = fixIcon.resources.displayMetrics.density
+            val targets = IslandAlbumCoverStyleHooker.captureLeftContentTextTargets(module)
+            targets.forEach { current ->
+                if (originalLeftContentTextShadows.none { it.view === current.view }) {
+                    originalLeftContentTextShadows += current
+                }
+                current.paint.setShadowLayer(
+                    LEFT_CONTENT_SHADOW_RADIUS_DP * density,
+                    0f,
+                    LEFT_CONTENT_SHADOW_DY_DP * density,
+                    Color.argb(LEFT_CONTENT_SHADOW_ALPHA, 0, 0, 0),
+                )
+                current.view.invalidate()
+            }
+        }
+
+        fun restoreLeftContentTextShadow() {
+            originalLeftContentTextShadows.forEach { original ->
+                if (original.radius > 0f) {
+                    original.paint.setShadowLayer(
+                        original.radius,
+                        original.dx,
+                        original.dy,
+                        original.color,
+                    )
+                } else {
+                    original.paint.clearShadowLayer()
+                }
+                original.view.invalidate()
+            }
+        }
+
         fun restoreCoverVisuals() {
             fixIcon.scaleType = originalScaleType
             fixIcon.scaleX = originalFixIconScaleX
             fixIcon.scaleY = originalFixIconScaleY
             fixIcon.translationX = originalFixIconTranslationX
             fixIcon.translationY = originalFixIconTranslationY
-            fixIcon.pivotX = originalFixIconPivotX
-            fixIcon.pivotY = originalFixIconPivotY
+            if (originalFixIconPivotSet) {
+                fixIcon.pivotX = originalFixIconPivotX
+                fixIcon.pivotY = originalFixIconPivotY
+            } else {
+                fixIcon.resetPivot()
+            }
             fixIcon.foreground = originalForeground
             fixIcon.outlineProvider = originalOutlineProvider
             fixIcon.clipToOutline = originalClipToOutline
             fixIcon.invalidateOutline()
         }
 
-        fun applyCachedVisual(): Boolean {
-            val moduleView = module ?: return false
-            val smallIsland = isSmallIslandModule(moduleView)
-            val snapshot = (if (smallIsland) cachedSmallVisual else cachedBigVisual)
-                ?: return false
-            if (snapshot.smallIsland != smallIsland) return false
-
-            (moduleView as? ViewGroup)?.clipChildren = false
-            (moduleView as? ViewGroup)?.clipToPadding = false
-            (moduleView.parent as? ViewGroup)?.clipChildren = false
-            (moduleView.parent as? ViewGroup)?.clipToPadding = false
+        fun applySnapshot(snapshot: CoverVisualSnapshot): Boolean {
+            (module as? ViewGroup)?.clipChildren = false
+            (module as? ViewGroup)?.clipToPadding = false
+            (moduleParent as? ViewGroup)?.clipChildren = false
+            (moduleParent as? ViewGroup)?.clipToPadding = false
             (iconContainer as? ViewGroup)?.clipChildren = false
 
-            fixIcon.pivotX = 0f
-            fixIcon.pivotY = 0f
-            fixIcon.scaleX = snapshot.scaleX
-            fixIcon.scaleY = snapshot.scaleY
-            fixIcon.translationX = snapshot.translationX
-            fixIcon.translationY = snapshot.translationY
-            fixIcon.scaleType = ImageView.ScaleType.CENTER_CROP
-            fixIcon.outlineProvider = if (smallIsland) circleOutlineProvider else leftRoundedCoverOutlineProvider
-            fixIcon.clipToOutline = true
-            fixIcon.foreground = if (smallIsland) {
-                null
-            } else {
-                RightEdgeGradientDrawable(snapshot.gradientBandFraction, snapshot.islandColor)
-            }
-            fixIcon.invalidateOutline()
-
-            val iconWidth = fixIcon.width.takeIf { it > 0 } ?: fixIcon.measuredWidth
-            val iconHeight = fixIcon.height.takeIf { it > 0 } ?: fixIcon.measuredHeight
-            appliedSmall = smallIsland
-            appliedCoverWidth = (iconWidth * snapshot.scaleX).roundToInt()
-            appliedCoverHeight = (iconHeight * snapshot.scaleY).roundToInt()
-            return true
+            val changed = applySnapshotToImage(fixIcon, snapshot)
+            appliedSmall = snapshot.smallIsland
+            appliedCoverWidth = snapshot.coverWidth
+            appliedCoverHeight = snapshot.coverHeight
+            return changed
         }
+
 
         fun isSmallIslandState(): Boolean {
             val moduleView = module ?: return false
@@ -1521,6 +1772,8 @@ internal object IslandAlbumCoverStyleHooker {
                 scaleY = placement.iconScaleY,
                 translationX = placement.iconTranslationX,
                 translationY = placement.iconTranslationY,
+                coverWidth = placement.coverWidth,
+                coverHeight = placement.coverHeight,
                 smallIsland = smallIsland,
                 gradientBandFraction = placement.gradientBandFraction,
                 islandColor = resolveIslandColor(fixIcon),
@@ -1532,8 +1785,8 @@ internal object IslandAlbumCoverStyleHooker {
             val moduleView = module ?: return null
             val moduleWidth = moduleView.width.takeIf { it > 0 } ?: moduleView.measuredWidth
             val moduleHeight = moduleView.height.takeIf { it > 0 } ?: moduleView.measuredHeight
-            val iconWidth = fixIcon.width.takeIf { it > 0 } ?: fixIcon.measuredWidth
-            val iconHeight = fixIcon.height.takeIf { it > 0 } ?: fixIcon.measuredHeight
+            val iconWidth = fixIcon.expectedLayoutWidth()
+            val iconHeight = fixIcon.expectedLayoutHeight()
             if (moduleWidth <= 0 || moduleHeight <= 0 || iconWidth <= 0 || iconHeight <= 0) {
                 logGeometryDiagnostic("invalid_sizes module=${moduleWidth}x${moduleHeight} icon=${iconWidth}x${iconHeight}")
                 return null
@@ -1663,6 +1916,8 @@ internal object IslandAlbumCoverStyleHooker {
                     originalFixIconTranslationY = fixIcon.translationY,
                     originalFixIconPivotX = fixIcon.pivotX,
                     originalFixIconPivotY = fixIcon.pivotY,
+                    originalFixIconPivotSet = fixIcon.isPivotSet,
+                    originalFixIconVisibility = fixIcon.visibility,
                     originalForeground = fixIcon.foreground,
                     originalOutlineProvider = fixIcon.outlineProvider,
                     originalClipToOutline = fixIcon.clipToOutline,
@@ -1692,6 +1947,9 @@ internal object IslandAlbumCoverStyleHooker {
                     originalModuleClipToPadding = (module as? ViewGroup)?.clipToPadding ?: true,
                     originalModuleParentClipChildren = (moduleParent as? ViewGroup)?.clipChildren ?: true,
                     originalModuleParentClipToPadding = (moduleParent as? ViewGroup)?.clipToPadding ?: true,
+                    originalLeftContentTextShadows =
+                        IslandAlbumCoverStyleHooker.captureLeftContentTextTargets(module)
+                            .toMutableList(),
                 )
             }
         }

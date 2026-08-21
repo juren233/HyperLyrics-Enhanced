@@ -6,6 +6,22 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class MediaArtworkIdentityTest {
+    @Test
+    fun cachedArtworkTitleMatchingIsStrictButWhitespaceAndCaseInsensitive() {
+        assertEquals(
+            true,
+            MediaMetadataHelper.artworkTitlesMatch("  Firework ", "firework"),
+        )
+        assertEquals(
+            false,
+            MediaMetadataHelper.artworkTitlesMatch("Firework", "Teenage Dream"),
+        )
+        assertEquals(
+            false,
+            MediaMetadataHelper.artworkTitlesMatch("", "Firework"),
+        )
+    }
+
 
     @Test
     fun `media id is authoritative across metadata localization changes`() {

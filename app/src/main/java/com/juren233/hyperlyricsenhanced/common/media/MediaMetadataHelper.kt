@@ -174,6 +174,28 @@ object MediaMetadataHelper {
         }.getOrNull()
     }
 
+    /**
+     * Return only the artwork cached for the currently active media identity.
+     * The title check prevents a rebuilt island from borrowing the previous track's cover
+     * while MediaSession and lyric callbacks are crossing during a track change.
+     */
+    fun currentCachedArtwork(
+        context: Context,
+        packageName: String,
+        expectedTitle: String?,
+    ): Bitmap? {
+        val expected = expectedTitle?.takeIf(String::isNotBlank) ?: return null
+        val token = currentArtworkCaptureToken(context, packageName) ?: return null
+        if (!artworkTitlesMatch(token.title, expected)) return null
+        return cachedArtwork(token.cacheKey)?.bitmap
+    }
+
+    internal fun artworkTitlesMatch(actualTitle: String, expectedTitle: String): Boolean {
+        val actual = normalizeArtworkIdentityText(actualTitle)
+        val expected = normalizeArtworkIdentityText(expectedTitle)
+        return actual.isNotEmpty() && expected.isNotEmpty() && actual == expected
+    }
+
     fun cacheCapturedArtwork(
         context: Context,
         token: ArtworkCaptureToken,

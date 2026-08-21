@@ -292,8 +292,14 @@ internal object IslandLyricTextInjector {
         val wrapper = container.findViewWithTag<View>("${viewTag}_WRAPPER") as? MaxWidthFrameLayout
             ?: return false
         val targetView = wrapper.findViewWithTag<View>(viewTag) ?: return false
+        val prefs = HookEntry.instance?.prefs ?: return false
+        val config = IslandSlotRuntimeConfig.from(prefs)
+        val widthPx = config.widthPx(rootView, parentName) ?: return false
 
-        var changed = false
+        // Apply user geometry before making the fake/real content visible. Otherwise MIUI can
+        // start its return animation with the default wrapper padding and the next refresh
+        // changes it again, producing a visible layout jump.
+        var changed = updateWrapper(wrapper, widthPx, config, parentName)
         wrapper.keepVisible = true
         if (container.visibility != View.VISIBLE) {
             container.visibility = View.VISIBLE
@@ -307,6 +313,7 @@ internal object IslandLyricTextInjector {
             targetView.visibility = View.VISIBLE
             changed = true
         }
+        changed = forceWrapperLayout(wrapper, container, widthPx) || changed
         hideNativeChildren(container, wrapper)
         return changed
     }
@@ -316,8 +323,13 @@ internal object IslandLyricTextInjector {
             ?: return false
         val targetView = wrapper.findViewWithTag<View>(viewTag) ?: return false
         val container = wrapper.parent as? ViewGroup ?: return false
+        val parentName = findIslandParentName(wrapper) ?: return false
+        val prefs = HookEntry.instance?.prefs ?: return false
+        val config = IslandSlotRuntimeConfig.from(prefs)
+        val widthPx = config.widthPx(rootView, parentName) ?: return false
 
-        var changed = false
+        // Same pre-visibility synchronization for module-level fake/real restores.
+        var changed = updateWrapper(wrapper, widthPx, config, parentName)
         wrapper.keepVisible = true
         if (container.visibility != View.VISIBLE) {
             container.visibility = View.VISIBLE
@@ -331,8 +343,27 @@ internal object IslandLyricTextInjector {
             targetView.visibility = View.VISIBLE
             changed = true
         }
+        changed = forceWrapperLayout(wrapper, container, widthPx) || changed
         hideNativeChildren(container, wrapper)
         return changed
+    }
+
+    private fun findIslandParentName(view: View): String? {
+        var current = view.parent as? View
+        while (current != null) {
+            val name = if (current.id != View.NO_ID) {
+                runCatching { current.resources.getResourceEntryName(current.id) }.getOrNull()
+            } else {
+                null
+            }
+            if (name == IslandProbeUtils.LEFT_PARENT_NAME ||
+                name == IslandProbeUtils.RIGHT_PARENT_NAME
+            ) {
+                return name
+            }
+            current = current.parent as? View
+        }
+        return null
     }
 
     private fun updateWrapper(wrapper: MaxWidthFrameLayout, widthPx: Int, config: IslandSlotRuntimeConfig, parentName: String): Boolean {

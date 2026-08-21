@@ -1,9 +1,70 @@
 package com.juren233.hyperlyricsenhanced.root.island
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class IslandGradientCoverLayoutTest {
+    @Test
+    fun centerCropWindowTracksTheVisibleRightEdgeColumn() {
+        assertEquals(
+            IslandCenterCropWindow(0f, 200f, 400f, 600f),
+            IslandGradientCoverLayout.centerCropWindow(
+                sourceWidth = 400,
+                sourceHeight = 800,
+                targetWidth = 104f,
+                targetHeight = 104f,
+            ),
+        )
+        assertEquals(
+            IslandCenterCropWindow(200f, 0f, 600f, 400f),
+            IslandGradientCoverLayout.centerCropWindow(
+                sourceWidth = 800,
+                sourceHeight = 400,
+                targetWidth = 104f,
+                targetHeight = 104f,
+            ),
+        )
+    }
+
+    @Test
+    fun unmeasuredCoverUsesHostIconDpInsteadOfArtworkPixels() {
+        assertEquals(
+            66,
+            IslandGradientCoverLayout.resolveIconDimension(
+                actualSize = 0,
+                measuredSize = 0,
+                layoutParamSize = 0,
+                minimumSize = 0,
+                density = 2.75f,
+            ),
+        )
+    }
+
+    @Test
+    fun measuredOrDeclaredIconSizeWinsOverTheDpFallback() {
+        assertEquals(
+            68,
+            IslandGradientCoverLayout.resolveIconDimension(
+                actualSize = 68,
+                measuredSize = 64,
+                layoutParamSize = 60,
+                minimumSize = 56,
+                density = 2.75f,
+            ),
+        )
+        assertEquals(
+            60,
+            IslandGradientCoverLayout.resolveIconDimension(
+                actualSize = 0,
+                measuredSize = 0,
+                layoutParamSize = 60,
+                minimumSize = 56,
+                density = 2.75f,
+            ),
+        )
+    }
+
     @Test
     fun rotatingCoverUsesItsMeasuredCenterAfterGradientPivotReset() {
         val pivot = requireNotNull(
@@ -27,6 +88,10 @@ class IslandGradientCoverLayoutTest {
             IslandGradientCoverRuntimeIdentifiers.SMALL_ISLAND_STATE_CLASS,
         )
         assertEquals(
+            "miui.systemui.dynamicisland.event.DynamicIslandState\$BigIsland",
+            IslandGradientCoverRuntimeIdentifiers.BIG_ISLAND_STATE_CLASS,
+        )
+        assertEquals(
             "miui.systemui.dynamicisland.window.content.DynamicIslandContentFakeView",
             IslandGradientCoverRuntimeIdentifiers.FAKE_CONTENT_VIEW_CLASS,
         )
@@ -46,6 +111,24 @@ class IslandGradientCoverLayoutTest {
             true,
             IslandGradientCoverRuntimeIdentifiers.isSmallIslandState(
                 "miui.systemui.dynamicisland.event.DynamicIslandState\$SmallIsland",
+            ),
+        )
+        assertEquals(
+            true,
+            IslandGradientCoverRuntimeIdentifiers.compactIslandRole(
+                "miui.systemui.dynamicisland.event.DynamicIslandState\$SmallIsland",
+            ),
+        )
+        assertEquals(
+            false,
+            IslandGradientCoverRuntimeIdentifiers.compactIslandRole(
+                "miui.systemui.dynamicisland.event.DynamicIslandState\$BigIsland",
+            ),
+        )
+        assertEquals(
+            null,
+            IslandGradientCoverRuntimeIdentifiers.compactIslandRole(
+                "miui.systemui.dynamicisland.event.DynamicIslandState\$AppExpanded",
             ),
         )
     }
@@ -241,4 +324,265 @@ class IslandGradientCoverLayoutTest {
             geometry,
         )
     }
+
+    @Test
+    fun embeddedTransitionCacheWidthDoesNotFollowAnimatedAvailableWidth() {
+        val density = 3f
+        val coverWidth = 104f
+        val cacheWidth = IslandGradientCoverLayout.embeddedTransitionBitmapWidth(
+            coverWidth = coverWidth,
+            density = density,
+        )
+
+        assertEquals(264, cacheWidth)
+        assertEquals(
+            12f,
+            IslandGradientCoverLayout.embeddedTransitionVisibleExtension(
+                availableWidth = 12f,
+                density = density,
+            ),
+        )
+        assertEquals(
+            216f,
+            IslandGradientCoverLayout.embeddedTransitionVisibleExtension(
+                availableWidth = 220f,
+                density = density,
+            ),
+        )
+        assertEquals(
+            cacheWidth,
+            IslandGradientCoverLayout.embeddedTransitionBitmapWidth(
+                coverWidth = coverWidth,
+                density = density,
+            ),
+        )
+    }
+
+    @Test
+    fun embeddedTransitionKeepsAFullStrengthPlatformBeforeSmootherFade() {
+        val overlap = 6f
+        val hold = 18f
+        val totalWidth = 137f
+        val fadeMidpoint = (overlap + hold + totalWidth) / 2f
+
+        assertEquals(
+            0f,
+            IslandGradientCoverLayout.embeddedTransitionBlackMix(
+                position = overlap + hold,
+                totalWidth = totalWidth,
+                overlap = overlap,
+                hold = hold,
+            ),
+            0.0001f,
+        )
+        assertEquals(
+            0.5f,
+            IslandGradientCoverLayout.embeddedTransitionBlackMix(
+                position = fadeMidpoint,
+                totalWidth = totalWidth,
+                overlap = overlap,
+                hold = hold,
+            ),
+            0.0001f,
+        )
+        assertEquals(
+            1f,
+            IslandGradientCoverLayout.embeddedTransitionBlackMix(
+                position = totalWidth,
+                totalWidth = totalWidth,
+                overlap = overlap,
+                hold = hold,
+            ),
+            0.0001f,
+        )
+    }
+
+    @Test
+    fun embeddedTransitionUsesAShortSmoothFeatherInsteadOfCoverWideDimming() {
+        assertEquals(
+            0f,
+            IslandGradientCoverLayout.embeddedTransitionFeatherAlpha(
+                position = 0f,
+                overlap = 6f,
+            ),
+            0.0001f,
+        )
+        assertEquals(
+            0.5f,
+            IslandGradientCoverLayout.embeddedTransitionFeatherAlpha(
+                position = 3f,
+                overlap = 6f,
+            ),
+            0.0001f,
+        )
+        assertEquals(
+            1f,
+            IslandGradientCoverLayout.embeddedTransitionFeatherAlpha(
+                position = 6f,
+                overlap = 6f,
+            ),
+            0.0001f,
+        )
+    }
+
+    @Test
+    fun embeddedTransitionUsesRealArtworkOnlyInsideOverlapThenClampsToTheLastColumn() {
+        val cropRight = 401
+        val sourceOverlap = 24f
+
+        assertEquals(
+            376f,
+            IslandGradientCoverLayout.embeddedTransitionEdgeSourceX(
+                position = 0f,
+                overlap = 6f,
+                cropRight = cropRight,
+                sourceOverlap = sourceOverlap,
+            ),
+            0.0001f,
+        )
+        assertEquals(
+            388f,
+            IslandGradientCoverLayout.embeddedTransitionEdgeSourceX(
+                position = 3f,
+                overlap = 6f,
+                cropRight = cropRight,
+                sourceOverlap = sourceOverlap,
+            ),
+            0.0001f,
+        )
+        assertEquals(
+            400f,
+            IslandGradientCoverLayout.embeddedTransitionEdgeSourceX(
+                position = 6f,
+                overlap = 6f,
+                cropRight = cropRight,
+                sourceOverlap = sourceOverlap,
+            ),
+            0.0001f,
+        )
+        assertEquals(
+            400f,
+            IslandGradientCoverLayout.embeddedTransitionEdgeSourceX(
+                position = 90f,
+                overlap = 6f,
+                cropRight = cropRight,
+                sourceOverlap = sourceOverlap,
+            ),
+            0.0001f,
+        )
+    }
+
+    @Test
+    fun embeddedTransitionDiffusionStartsAtZeroAndExpandsSmoothlyWithinHeightBound() {
+        val density = 3f
+        val totalWidth = 137f
+        val overlap = 6f
+        val blurInset = IslandGradientCoverLayout.embeddedTransitionBlurInset(104f, density)
+        val diffusionStart = IslandGradientCoverLayout.embeddedTransitionDiffusionStart(overlap)
+        val midpoint = (diffusionStart + totalWidth) / 2f
+
+        assertEquals(9f, IslandGradientCoverLayout.embeddedTransitionOverlap(104f, density))
+        assertEquals(48f, blurInset)
+        assertEquals(18f, IslandGradientCoverLayout.embeddedTransitionHold(density))
+        assertEquals(
+            0f,
+            IslandGradientCoverLayout.embeddedTransitionDiffusionRadius(
+                position = diffusionStart,
+                totalWidth = totalWidth,
+                overlap = overlap,
+                targetHeight = 104,
+                density = density,
+            ),
+            0.0001f,
+        )
+        assertEquals(2.7f, diffusionStart, 0.0001f)
+        assertEquals(
+            0f,
+            IslandGradientCoverLayout.embeddedTransitionDiffusionBlend(
+                position = diffusionStart,
+                overlap = overlap,
+            ),
+            0.0001f,
+        )
+        assertEquals(
+            1f,
+            IslandGradientCoverLayout.embeddedTransitionDiffusionBlend(
+                position = overlap,
+                overlap = overlap,
+            ),
+            0.0001f,
+        )
+        assertEquals(
+            13.52f,
+            IslandGradientCoverLayout.embeddedTransitionDiffusionRadius(
+                position = midpoint,
+                totalWidth = totalWidth,
+                overlap = overlap,
+                targetHeight = 104,
+                density = density,
+            ),
+            0.0001f,
+        )
+        assertEquals(
+            27.04f,
+            IslandGradientCoverLayout.embeddedTransitionDiffusionRadius(
+                position = totalWidth,
+                totalWidth = totalWidth,
+                overlap = overlap,
+                targetHeight = 104,
+                density = density,
+            ),
+            0.0001f,
+        )
+        assertEquals(
+            10.4f,
+            IslandGradientCoverLayout.embeddedTransitionDiffusionRadius(
+                position = totalWidth,
+                totalWidth = totalWidth,
+                overlap = overlap,
+                targetHeight = 40,
+                density = density,
+            ),
+            0.0001f,
+        )
+        assertEquals(6f, IslandGradientCoverLayout.embeddedTransitionBlurRadiusX(density), 0.0001f)
+        assertEquals(15f, IslandGradientCoverLayout.embeddedTransitionBlurRadiusY(density), 0.0001f)
+        assertEquals(
+            0f,
+            IslandGradientCoverLayout.embeddedTransitionBlurProgress(
+                position = 0f,
+                totalWidth = totalWidth,
+                blurInset = blurInset,
+                density = density,
+            ),
+            0.0001f,
+        )
+        assertTrue(
+            IslandGradientCoverLayout.embeddedTransitionBlurProgress(
+                position = overlap,
+                totalWidth = totalWidth,
+                blurInset = blurInset,
+                density = density,
+            ) > 0f
+        )
+        assertTrue(
+            IslandGradientCoverLayout.embeddedTransitionBlurProgress(
+                position = blurInset,
+                totalWidth = totalWidth,
+                blurInset = blurInset,
+                density = density,
+            ) > 0.7f
+        )
+        assertEquals(
+            1f,
+            IslandGradientCoverLayout.embeddedTransitionBlurProgress(
+                position = blurInset + 24f,
+                totalWidth = totalWidth,
+                blurInset = blurInset,
+                density = density,
+            ),
+            0.0001f,
+        )
+    }
+
 }
