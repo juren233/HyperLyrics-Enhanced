@@ -67,3 +67,10 @@
 # provider runtime and lyric models that Pack bytecode resolves through the core class loader.
 -keep class io.github.proify.lyricon.provider.** { *; }
 -keep class io.github.proify.lyricon.lyric.model.** { *; }
+
+# Lyricon registration and delivery cross process and class-loader boundaries through AIDL,
+# Binder descriptors, Parcelable models and broadcast receivers. The upstream AARs currently
+# ship empty consumer ProGuard rules, so preserve the Subscriber SDK and embedded Central as
+# one external runtime contract instead of allowing class merging or signature optimization.
+-keep class io.github.proify.lyricon.subscriber.** { *; }
+-keep class io.github.proify.lyricon.central.** { *; }
