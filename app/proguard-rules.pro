@@ -39,14 +39,21 @@
 # Stable ABI used by independently compiled official Provider Packs.
 -keep interface com.juren233.hyperlyricsenhanced.provider.OfficialProviderPlugin { *; }
 -keep interface com.juren233.hyperlyricsenhanced.provider.OfficialProviderHost { *; }
+-keep interface com.juren233.hyperlyricsenhanced.provider.OfficialProviderSystemMediaPlugin { *; }
+-keep interface com.juren233.hyperlyricsenhanced.provider.OfficialProviderSystemMediaHost { *; }
+-keep interface com.juren233.hyperlyricsenhanced.provider.OfficialProviderSystemMediaCallback { *; }
+-keep interface com.juren233.hyperlyricsenhanced.provider.OfficialProviderSystemMediaSubscription { *; }
 -keep interface com.juren233.hyperlyricsenhanced.provider.OfficialProviderApplicationCallback { *; }
 -keep interface com.juren233.hyperlyricsenhanced.provider.OfficialProviderPlaybackStateCallback { *; }
 -keep interface com.juren233.hyperlyricsenhanced.provider.OfficialProviderMetadataCallback { *; }
 -keep interface com.juren233.hyperlyricsenhanced.provider.OfficialProviderMethodCallback { *; }
 -keep interface com.juren233.hyperlyricsenhanced.provider.OfficialProviderMethodResultCallback { *; }
 -keep interface com.juren233.hyperlyricsenhanced.provider.OfficialProviderConstructorCallback { *; }
+-keep interface com.juren233.hyperlyricsenhanced.provider.OfficialProviderDexMethodsCallback { *; }
 -keep class com.juren233.hyperlyricsenhanced.provider.OfficialProviderMethodTarget { *; }
 -keep class com.juren233.hyperlyricsenhanced.provider.OfficialProviderConstructorTarget { *; }
+-keep class com.juren233.hyperlyricsenhanced.provider.OfficialProviderDexTypeSource { *; }
+-keep class com.juren233.hyperlyricsenhanced.provider.OfficialProviderDexTypeReference { *; }
 -keep class com.juren233.hyperlyricsenhanced.provider.OfficialProviderDexMethodQuery { *; }
 -keep class com.juren233.hyperlyricsenhanced.provider.OfficialProviderNextTrackFrame { *; }
 -keep class com.juren233.hyperlyricsenhanced.provider.OfficialProviderControlProtocol { *; }
