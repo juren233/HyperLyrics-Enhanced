@@ -62,3 +62,8 @@
 # InMemoryDexClassLoader whose parent is the core module. Kotlin Runtime is therefore part of
 # the external Pack ABI: Release R8 must not remove or rename classes that Pack bytecode calls.
 -keep class kotlin.** { *; }
+
+# Provider Packs also compile against the Lyricon Provider SDK as compileOnly. Preserve the
+# provider runtime and lyric models that Pack bytecode resolves through the core class loader.
+-keep class io.github.proify.lyricon.provider.** { *; }
+-keep class io.github.proify.lyricon.lyric.model.** { *; }

@@ -80,6 +80,16 @@ REQUIRED_KOTLIN_RUNTIME_CLASSES = (
     "kotlin.text.StringsKt",
 )
 
+REQUIRED_LYRICON_RUNTIME_CLASSES = (
+    "io.github.proify.lyricon.lyric.model.LyricWord",
+    "io.github.proify.lyricon.lyric.model.RichLyricLine",
+    "io.github.proify.lyricon.lyric.model.Song",
+    "io.github.proify.lyricon.provider.LyriconFactory",
+    "io.github.proify.lyricon.provider.LyriconProvider",
+    "io.github.proify.lyricon.provider.RemotePlayer",
+    "io.github.proify.lyricon.provider.service.RemoteService",
+)
+
 
 def find_apkanalyzer(explicit: str | None) -> str:
     candidates: list[Path] = []
@@ -137,6 +147,7 @@ def main() -> int:
     required = {
         *(f"{PROVIDER_PACKAGE}.{name}" for name in REQUIRED_PROVIDER_CLASSES),
         *REQUIRED_KOTLIN_RUNTIME_CLASSES,
+        *REQUIRED_LYRICON_RUNTIME_CLASSES,
     }
     missing = sorted(required - defined_classes)
     if missing:
