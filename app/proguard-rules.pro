@@ -57,3 +57,8 @@
 -keep class com.juren233.hyperlyricsenhanced.provider.OfficialProviderDexMethodQuery { *; }
 -keep class com.juren233.hyperlyricsenhanced.provider.OfficialProviderNextTrackFrame { *; }
 -keep class com.juren233.hyperlyricsenhanced.provider.OfficialProviderControlProtocol { *; }
+
+# Official Provider Packs compile against kotlin-stdlib as compileOnly and run inside an
+# InMemoryDexClassLoader whose parent is the core module. Kotlin Runtime is therefore part of
+# the external Pack ABI: Release R8 must not remove or rename classes that Pack bytecode calls.
+-keep class kotlin.** { *; }

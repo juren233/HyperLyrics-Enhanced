@@ -13,7 +13,7 @@ import sys
 
 
 PROVIDER_PACKAGE = "com.juren233.hyperlyricsenhanced.provider"
-REQUIRED_CLASSES = (
+REQUIRED_PROVIDER_CLASSES = (
     "OfficialProviderPlugin",
     "OfficialProviderHost",
     "OfficialProviderSystemMediaPlugin",
@@ -34,6 +34,50 @@ REQUIRED_CLASSES = (
     "OfficialProviderDexMethodQuery",
     "OfficialProviderNextTrackFrame",
     "OfficialProviderControlProtocol",
+)
+
+# Union of external kotlin-stdlib class references in the currently published official
+# Provider Packs. Packs declare kotlin-stdlib as compileOnly, so these names must resolve from
+# the minified core APK at runtime. Keep this list in sync when the Pack runtime ABI expands.
+REQUIRED_KOTLIN_RUNTIME_CLASSES = (
+    "kotlin.DeprecationLevel",
+    "kotlin.NoWhenBranchMatchedException",
+    "kotlin.Pair",
+    "kotlin.Result",
+    "kotlin.ResultKt",
+    "kotlin.TuplesKt",
+    "kotlin.Unit",
+    "kotlin.collections.ArraysKt",
+    "kotlin.collections.CollectionsKt",
+    "kotlin.collections.IntIterator",
+    "kotlin.collections.MapsKt",
+    "kotlin.collections.SetsKt",
+    "kotlin.comparisons.ComparisonsKt",
+    "kotlin.enums.EnumEntriesKt",
+    "kotlin.internal.ProgressionUtilKt",
+    "kotlin.io.ByteStreamsKt",
+    "kotlin.io.CloseableKt",
+    "kotlin.io.FilesKt",
+    "kotlin.io.TextStreamsKt",
+    "kotlin.jvm.functions.Function0",
+    "kotlin.jvm.functions.Function1",
+    "kotlin.jvm.functions.Function2",
+    "kotlin.jvm.internal.FunctionReferenceImpl",
+    "kotlin.jvm.internal.Intrinsics",
+    "kotlin.jvm.internal.PropertyReference1Impl",
+    "kotlin.jvm.internal.SpreadBuilder",
+    "kotlin.jvm.internal.StringCompanionObject",
+    "kotlin.math.MathKt",
+    "kotlin.ranges.IntRange",
+    "kotlin.ranges.RangesKt",
+    "kotlin.sequences.Sequence",
+    "kotlin.sequences.SequencesKt",
+    "kotlin.text.CharsKt",
+    "kotlin.text.Charsets",
+    "kotlin.text.MatchResult",
+    "kotlin.text.Regex",
+    "kotlin.text.RegexOption",
+    "kotlin.text.StringsKt",
 )
 
 
@@ -90,15 +134,18 @@ def main() -> int:
         print(f"Provider ABI 校验无法执行: {error}", file=sys.stderr)
         return 2
 
-    required = {f"{PROVIDER_PACKAGE}.{name}" for name in REQUIRED_CLASSES}
+    required = {
+        *(f"{PROVIDER_PACKAGE}.{name}" for name in REQUIRED_PROVIDER_CLASSES),
+        *REQUIRED_KOTLIN_RUNTIME_CLASSES,
+    }
     missing = sorted(required - defined_classes)
     if missing:
-        print("Provider ABI 校验失败，以下公开类在 APK 中缺少原始二进制名称：", file=sys.stderr)
+        print("Provider ABI 校验失败，以下宿主类在 APK 中缺少原始二进制名称：", file=sys.stderr)
         for class_name in missing:
             print(f"- {class_name}", file=sys.stderr)
         return 1
 
-    print(f"Provider ABI 校验通过：{len(required)} 个公开类均保留原始二进制名称")
+    print(f"Provider ABI 校验通过：{len(required)} 个宿主类均保留原始二进制名称")
     return 0
 
 
