@@ -16,6 +16,7 @@ import com.juren233.hyperlyricsenhanced.common.lyric.LyricMetadataKeys
 import com.juren233.hyperlyricsenhanced.common.lyric.OnlineTranslationContentPolicy
 import com.juren233.hyperlyricsenhanced.common.lyric.TraditionalLyricsSimplifier
 import com.juren233.hyperlyricsenhanced.common.media.MediaMetadataHelper
+import com.juren233.hyperlyricsenhanced.common.media.NextTrackMetadataCache
 import com.juren233.hyperlyricsenhanced.lyric.LrcLine
 import com.juren233.hyperlyricsenhanced.lyric.model.Song as LocalSong
 import com.juren233.hyperlyricsenhanced.lyric.model.lyricMetadataOf
@@ -3132,6 +3133,32 @@ class LyriconSource : LyricSource {
         }
 
         override fun onReceiveText(text: String?) {
+            val controlFrame = OfficialProviderSubscriberControlFrame.inspect(text)
+            if (controlFrame.consumed) {
+                val providerPackage = activeProviderPackageName
+                val playerPackage = activeCentralPlayerPackageName
+                val result = if (
+                    controlFrame.frame != null &&
+                    !providerPackage.isNullOrBlank() &&
+                    !playerPackage.isNullOrBlank()
+                ) {
+                    NextTrackMetadataCache.accept(
+                        providerPackageName = providerPackage,
+                        playerPackageName = playerPackage,
+                        frame = controlFrame.frame,
+                    ).name
+                } else {
+                    "FILTERED_WITHOUT_CACHE"
+                }
+                if (BuildConfig.DEBUG) {
+                    HookLogger.i(
+                        TAG,
+                        "外置 Central 控制帧已消费: result=$result, " +
+                            "provider=$providerPackage, player=$playerPackage",
+                    )
+                }
+                return
+            }
             if (!hasActiveCentralPlayer()) return
             if (centralAppleProviderActive && fallbackSongActive) return
             sink?.onPlainText(
