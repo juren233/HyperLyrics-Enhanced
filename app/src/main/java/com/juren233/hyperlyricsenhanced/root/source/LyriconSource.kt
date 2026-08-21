@@ -16,6 +16,7 @@ import com.juren233.hyperlyricsenhanced.common.lyric.LyricMetadataKeys
 import com.juren233.hyperlyricsenhanced.common.lyric.OnlineTranslationContentPolicy
 import com.juren233.hyperlyricsenhanced.common.lyric.TraditionalLyricsSimplifier
 import com.juren233.hyperlyricsenhanced.common.media.MediaMetadataHelper
+import com.juren233.hyperlyricsenhanced.common.media.NextTrackMetadataCache
 import com.juren233.hyperlyricsenhanced.lyric.LrcLine
 import com.juren233.hyperlyricsenhanced.lyric.model.Song as LocalSong
 import com.juren233.hyperlyricsenhanced.lyric.model.lyricMetadataOf
@@ -264,6 +265,7 @@ class LyriconSource : LyricSource {
     private var currentDirectAppleSongId: String? = null
     private var lastObservedMediaKey: String? = null
     private var lastMediaPlaybackState: Boolean? = null
+    private val centralPlaybackPositionWitness = CentralPlaybackPositionWitness()
     private var lastTimingDiagnosticAtMs = 0L
     private var lastTimingDiagnosticPosition = -1L
     private var lastTimingDiagnosticState: String? = null
@@ -360,6 +362,7 @@ class LyriconSource : LyricSource {
             appleDirectPositionReference = null
             currentDirectAppleSongId = null
             subscriber = null
+            centralPlaybackPositionWitness.reset()
             sink?.onStop()
             sink = null
         }
@@ -3000,6 +3003,7 @@ class LyriconSource : LyricSource {
                 reason = "central_provider_changed"
             )
             lastAdjustedPosition = 0L
+            centralPlaybackPositionWitness.onSinkStopped()
             sink?.onStop()
             centralAppleProviderActive =
                 playerPackageName == APPLE_MUSIC_PACKAGE
@@ -3064,6 +3068,7 @@ class LyriconSource : LyricSource {
                     fallbackSongActive = fallbackSongActive,
                 )
             ) return
+            centralPlaybackPositionWitness.onSinkPlaybackState(isPlaying)
             sink?.onPlaybackStateChanged(isPlaying)
         }
 
@@ -3071,6 +3076,16 @@ class LyriconSource : LyricSource {
             if (!hasActiveCentralPlayer()) {
                 logCentralPositionDiagnostic(position, null, "dropped_no_active_player")
                 return
+            }
+            if (isBuiltInAppleCentralProviderActive() &&
+                centralPlaybackPositionWitness.observeActivePosition(SystemClock.elapsedRealtime())
+            ) {
+                diagnostic(
+                    "stage=central_playback_recovered_from_position_witness, " +
+                        "position=$position, player=$activeCentralPlayerPackageName, " +
+                        "provider=$activeProviderPackageName",
+                )
+                sink?.onPlaybackStateChanged(true)
             }
             if (centralAppleProviderActive && fallbackSongActive) {
                 logCentralPositionDiagnostic(position, null, "dropped_apple_fallback_active")
@@ -3132,6 +3147,32 @@ class LyriconSource : LyricSource {
         }
 
         override fun onReceiveText(text: String?) {
+            val controlFrame = OfficialProviderSubscriberControlFrame.inspect(text)
+            if (controlFrame.consumed) {
+                val providerPackage = activeProviderPackageName
+                val playerPackage = activeCentralPlayerPackageName
+                val result = if (
+                    controlFrame.frame != null &&
+                    !providerPackage.isNullOrBlank() &&
+                    !playerPackage.isNullOrBlank()
+                ) {
+                    NextTrackMetadataCache.accept(
+                        providerPackageName = providerPackage,
+                        playerPackageName = playerPackage,
+                        frame = controlFrame.frame,
+                    ).name
+                } else {
+                    "FILTERED_WITHOUT_CACHE"
+                }
+                if (BuildConfig.DEBUG) {
+                    HookLogger.i(
+                        TAG,
+                        "外置 Central 控制帧已消费: result=$result, " +
+                            "provider=$providerPackage, player=$playerPackage",
+                    )
+                }
+                return
+            }
             if (!hasActiveCentralPlayer()) return
             if (centralAppleProviderActive && fallbackSongActive) return
             sink?.onPlainText(

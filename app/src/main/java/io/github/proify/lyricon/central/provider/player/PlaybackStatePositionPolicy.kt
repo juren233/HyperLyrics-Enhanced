@@ -7,6 +7,7 @@
 package io.github.proify.lyricon.central.provider.player
 
 import android.media.session.PlaybackState
+import io.github.proify.lyricon.provider.PlaybackStateActivityPolicy
 
 /**
  * Keeps playback activity separate from timeline advancement.
@@ -17,7 +18,7 @@ import android.media.session.PlaybackState
  */
 internal object PlaybackStatePositionPolicy {
     fun keepsSessionActive(state: Int): Boolean =
-        state == PlaybackState.STATE_PLAYING || state == PlaybackState.STATE_BUFFERING
+        PlaybackStateActivityPolicy.keepsSessionActive(state)
 
     fun advancesTimeline(state: Int): Boolean = state == PlaybackState.STATE_PLAYING
 

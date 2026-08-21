@@ -23,6 +23,7 @@ import com.juren233.hyperlyricsenhanced.IAppleMusicTranslationReceiver
 import io.github.proify.extensions.deflate
 import io.github.proify.extensions.json
 import io.github.proify.lyricon.lyric.model.Song
+import io.github.proify.lyricon.provider.PlaybackStateActivityPolicy
 import io.github.proify.lyricon.provider.RemotePlayer
 import kotlinx.serialization.encodeToString
 
@@ -275,7 +276,7 @@ internal class AppleDirectPlayer(
     }
 
     override fun setPlaybackState(state: PlaybackState?): Boolean =
-        setPlaybackState(state?.state == PlaybackState.STATE_PLAYING)
+        setPlaybackState(PlaybackStateActivityPolicy.keepsSessionActive(state?.state))
 
     private inline fun send(action: (IAppleMusicLyricBridge) -> Unit): Boolean {
         val target = bridge ?: return false

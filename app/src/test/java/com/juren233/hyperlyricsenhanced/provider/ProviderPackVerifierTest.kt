@@ -12,6 +12,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -27,6 +28,16 @@ class ProviderPackVerifierTest {
         )
 
         assertTrue(ProviderPackVerifier.verifyDetachedSignature(payload, signature))
+    }
+
+    @Test
+    fun rejectsModifiedEd25519Signature() {
+        val payload = "provider-verifier-test".toByteArray(Charsets.UTF_8)
+        val signature = Base64.getDecoder().decode(
+            "xmmdDnDBTwALsFLqQvtd4ZPUCkqzSmf0nHYb0U7788BRqCV55jjNFlTYABJvtcSmPAghJmGZP50nGVq2OPshCg==",
+        ).also { it[it.lastIndex] = (it.last().toInt() xor 1).toByte() }
+
+        assertFalse(ProviderPackVerifier.verifyDetachedSignature(payload, signature))
     }
 
     @Test

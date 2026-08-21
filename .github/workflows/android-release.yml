@@ -100,6 +100,14 @@ jobs:
               --build-cache -PciVersionName="$FULL_NAME"
           fi
 
+      - name: 校验 Release Provider ABI Verify Release Provider ABI
+        if: steps.gate.outputs.skip != 'true' && steps.gate.outputs.channel == 'stable'
+        run: |
+          set -euo pipefail
+          RELEASE_APK=$(find app/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' -print -quit)
+          test -n "$RELEASE_APK"
+          python3 scripts/verify_official_provider_abi.py "$RELEASE_APK"
+
       - name: 上传 PR 构建产物 Upload PR Artifacts
         if: github.event_name == 'pull_request' && steps.gate.outputs.skip == 'false'
         uses: actions/upload-artifact@v7
