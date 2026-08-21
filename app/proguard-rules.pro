@@ -33,8 +33,8 @@
 -keep class com.hchen.superlyricapi.* { *; }
 -dontwarn android.os.ServiceManager
 
-# Provider Pack Ed25519 verifier (Bouncy Castle lightweight primitives)
--keep class org.bouncycastle.crypto.** { *; }
+# Provider Pack verification calls Bouncy Castle Ed25519 through ordinary static references.
+# Let R8 retain only the reachable Ed25519 implementation instead of the whole crypto package.
 
 # Stable ABI used by independently compiled official Provider Packs.
 -keep interface com.juren233.hyperlyricsenhanced.provider.OfficialProviderPlugin { *; }

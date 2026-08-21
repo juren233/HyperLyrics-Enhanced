@@ -10,6 +10,7 @@ import re
 import shutil
 import subprocess
 import sys
+import zipfile
 
 
 PROVIDER_PACKAGE = "com.juren233.hyperlyricsenhanced.provider"
@@ -162,6 +163,12 @@ REQUIRED_LYRICON_CENTRAL_CLASSES = (
     "io.github.proify.lyricon.central.subscriber.SubscriberServiceBinder",
 )
 
+FORBIDDEN_UNUSED_BOUNCY_CASTLE_RESOURCES = (
+    "org/bouncycastle/pqc/crypto/picnic/lowmcL1.bin.properties",
+    "org/bouncycastle/pqc/crypto/picnic/lowmcL3.bin.properties",
+    "org/bouncycastle/pqc/crypto/picnic/lowmcL5.bin.properties",
+)
+
 
 def find_apkanalyzer(explicit: str | None) -> str:
     candidates: list[Path] = []
@@ -230,7 +237,21 @@ def main() -> int:
             print(f"- {class_name}", file=sys.stderr)
         return 1
 
-    print(f"Provider ABI 校验通过：{len(required)} 个宿主类均保留原始二进制名称")
+    with zipfile.ZipFile(args.apk) as apk_zip:
+        entries = set(apk_zip.namelist())
+    unused_resources = sorted(
+        set(FORBIDDEN_UNUSED_BOUNCY_CASTLE_RESOURCES).intersection(entries)
+    )
+    if unused_resources:
+        print("Release 瘦身校验失败，APK 仍包含未使用的 Bouncy Castle 资源：", file=sys.stderr)
+        for entry in unused_resources:
+            print(f"- {entry}", file=sys.stderr)
+        return 1
+
+    print(
+        f"Provider ABI 校验通过：{len(required)} 个宿主类均保留原始二进制名称，"
+        "未打包无关 Picnic 资源"
+    )
     return 0
 
 
