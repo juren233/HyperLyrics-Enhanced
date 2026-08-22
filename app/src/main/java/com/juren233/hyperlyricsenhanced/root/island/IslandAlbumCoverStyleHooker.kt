@@ -31,7 +31,7 @@ import com.juren233.hyperlyricsenhanced.root.HookEntry
 import com.juren233.hyperlyricsenhanced.root.LyriconDataBridge
 import com.juren233.hyperlyricsenhanced.root.SystemUiEnhancementGate
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
-import com.juren233.hyperlyricsenhanced.lyric.view.line.LyricLineView
+import com.juren233.hyperlyricsenhanced.lyric.view.line.LyricTextPaintOwner
 import io.github.libxposed.api.XposedInterface.Chain
 import io.github.libxposed.api.XposedInterface.Hooker
 import io.github.libxposed.api.XposedModule
@@ -200,6 +200,20 @@ internal object IslandAlbumCoverStyleHooker {
                 runCatching { accessor.setFixIconMethod.invoke(holder, data) }
                     .onFailure { HookLogger.e(TAG, "刷新超级岛封面样式失败", it) }
             }
+        }
+    }
+
+    fun refreshLeftContentTextShadows() {
+        runOnMain {
+            val states = synchronized(gradientStates) { gradientStates.values.toList() }
+            if (BuildConfig.DEBUG) {
+                HookLogger.i(
+                    TAG,
+                    "[GradientShadowDiag] refresh source=injected_targets, " +
+                        "gradientStates=${states.size}, style=${currentStyle()}",
+                )
+            }
+            states.forEach { it.applyLeftContentTextShadow(source = "injected_targets") }
         }
     }
 
@@ -1081,6 +1095,49 @@ internal object IslandAlbumCoverStyleHooker {
     }
 
 
+    private fun textShadowTargetDiagnostic(target: TextShadowTargetSnapshot): String {
+        val paint = target.paint
+        return "${viewDiagnostic(target.view)},paint@" +
+            "${System.identityHashCode(paint).toString(16)}," +
+            "shadow=${paint.getShadowLayerRadius()}/${paint.getShadowLayerDx()}/" +
+            "${paint.getShadowLayerDy()}/0x${paint.getShadowLayerColor().toUInt().toString(16)}"
+    }
+
+    private fun textShadowTreeDiagnostic(module: View?): String {
+        val moduleRoot = module as? ViewGroup ?: return "module=${viewDiagnostic(module)}"
+        val textRoot = IslandViewHelper.findViewByName(
+            moduleRoot,
+            IslandProbeUtils.TEXT_CONTAINER_NAME,
+        ) ?: return "module=${viewDiagnostic(moduleRoot)},textRoot=missing"
+        val entries = ArrayList<String>()
+        val queue = ArrayDeque<View>()
+        queue.add(textRoot)
+        while (queue.isNotEmpty() && entries.size < 24) {
+            val current = queue.removeFirst()
+            entries += viewDiagnostic(current)
+            if (current is ViewGroup) {
+                for (index in 0 until current.childCount) {
+                    queue.addLast(current.getChildAt(index))
+                }
+            }
+        }
+        return "module=${viewDiagnostic(moduleRoot)},tree=${entries.joinToString(";")}"
+    }
+
+    private fun viewDiagnostic(view: View?): String {
+        if (view == null) return "null"
+        val idName = if (view.id == View.NO_ID) {
+            "no-id"
+        } else {
+            runCatching { view.resources.getResourceEntryName(view.id) }.getOrNull()
+                ?: view.id.toString()
+        }
+        return "${view.javaClass.name}@${System.identityHashCode(view).toString(16)}" +
+            "(id=$idName,tag=${view.tag},attached=${view.isAttachedToWindow}," +
+            "visibility=${view.visibility},alpha=${view.alpha},layer=${view.layerType}," +
+            "hardware=${view.isHardwareAccelerated})"
+    }
+
     private fun captureLeftContentTextTargets(module: View?): List<TextShadowTargetSnapshot> {
         val moduleRoot = module as? ViewGroup ?: return emptyList()
         val textRoot = IslandViewHelper.findViewByName(
@@ -1101,14 +1158,16 @@ internal object IslandAlbumCoverStyleHooker {
                     dy = current.paint.getShadowLayerDy(),
                     color = current.paint.getShadowLayerColor(),
                 )
-                is LyricLineView -> result += TextShadowTargetSnapshot(
-                    view = current,
-                    paint = current.textPaint,
-                    radius = current.textPaint.getShadowLayerRadius(),
-                    dx = current.textPaint.getShadowLayerDx(),
-                    dy = current.textPaint.getShadowLayerDy(),
-                    color = current.textPaint.getShadowLayerColor(),
-                )
+                is LyricTextPaintOwner -> current.forEachDrawingTextPaint { paint ->
+                    result += TextShadowTargetSnapshot(
+                        view = current,
+                        paint = paint,
+                        radius = paint.getShadowLayerRadius(),
+                        dx = paint.getShadowLayerDx(),
+                        dy = paint.getShadowLayerDy(),
+                        color = paint.getShadowLayerColor(),
+                    )
+                }
             }
             if (current is ViewGroup) {
                 for (index in 0 until current.childCount) {
@@ -1116,7 +1175,7 @@ internal object IslandAlbumCoverStyleHooker {
                 }
             }
         }
-        return result.distinctBy { System.identityHashCode(it.view) }
+        return result.distinctBy { System.identityHashCode(it.paint) }
     }
 
     private fun collectCoverImageViews(root: ViewGroup): List<Pair<ImageView, String>> {
@@ -1632,6 +1691,8 @@ internal object IslandAlbumCoverStyleHooker {
         var appliedCoverHeight: Int = -1
         private var lastDiagnosticSignature: String? = null
         private var lastGeometryDiagnostic: String? = null
+        private var lastTextShadowDiagnostic: String? = null
+        private var lastTextShadowPostDiagnostic: String? = null
         private val loggedGeometryDiagnosticCategories = HashSet<String>()
 
         fun scheduleLayout() {
@@ -1695,11 +1756,18 @@ internal object IslandAlbumCoverStyleHooker {
             preDrawListener = null
         }
 
-        fun applyLeftContentTextShadow() {
+        fun applyLeftContentTextShadow(source: String = "cover") {
             val density = fixIcon.resources.displayMetrics.density
             val targets = IslandAlbumCoverStyleHooker.captureLeftContentTextTargets(module)
+            val before = if (BuildConfig.DEBUG) {
+                targets.joinToString(" | ") {
+                    IslandAlbumCoverStyleHooker.textShadowTargetDiagnostic(it)
+                }
+            } else {
+                ""
+            }
             targets.forEach { current ->
-                if (originalLeftContentTextShadows.none { it.view === current.view }) {
+                if (originalLeftContentTextShadows.none { it.paint === current.paint }) {
                     originalLeftContentTextShadows += current
                 }
                 current.paint.setShadowLayer(
@@ -1709,6 +1777,30 @@ internal object IslandAlbumCoverStyleHooker {
                     Color.argb(LEFT_CONTENT_SHADOW_ALPHA, 0, 0, 0),
                 )
                 current.view.invalidate()
+            }
+            if (BuildConfig.DEBUG) {
+                val after = targets.joinToString(" | ") {
+                    IslandAlbumCoverStyleHooker.textShadowTargetDiagnostic(it)
+                }
+                val diagnostic = "source=$source,state=${System.identityHashCode(this).toString(16)}," +
+                    "targetCount=${targets.size},before=[$before],after=[$after]," +
+                    IslandAlbumCoverStyleHooker.textShadowTreeDiagnostic(module)
+                if (diagnostic != lastTextShadowDiagnostic) {
+                    lastTextShadowDiagnostic = diagnostic
+                    HookLogger.i(TAG, "[GradientShadowDiag] apply $diagnostic")
+                }
+                fixIcon.post {
+                    val posted = targets.joinToString(" | ") {
+                        IslandAlbumCoverStyleHooker.textShadowTargetDiagnostic(it)
+                    }
+                    val postDiagnostic = "state=${System.identityHashCode(this).toString(16)}," +
+                        "targets=[$posted]," +
+                        IslandAlbumCoverStyleHooker.textShadowTreeDiagnostic(module)
+                    if (postDiagnostic != lastTextShadowPostDiagnostic) {
+                        lastTextShadowPostDiagnostic = postDiagnostic
+                        HookLogger.i(TAG, "[GradientShadowDiag] post $postDiagnostic")
+                    }
+                }
             }
         }
 

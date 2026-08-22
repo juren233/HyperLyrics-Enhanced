@@ -35,7 +35,7 @@ import com.juren233.hyperlyricsenhanced.lyric.view.sp
 import kotlin.math.ceil
 
 open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null) :
-    View(context, attrs), UpdatableColor {
+    View(context, attrs), UpdatableColor, LyricTextPaintOwner {
 
     init {
         isHorizontalFadingEdgeEnabled = true
@@ -48,7 +48,7 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
     var spaceGateEnabled = true
 
 
-    val textPaint: TextPaint = TextPaintX().apply { textSize = 24f.sp }
+    override val textPaint: TextPaint = TextPaintX().apply { textSize = 24f.sp }
 
     val model: LyricModel get() = _model
     private var _model: LyricModel = emptyLyricModel()
@@ -132,6 +132,13 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
     internal val lineState = LineState()
     internal val scrollRenderer = SpaceGateScrollTextRenderer()
     internal val syncRenderer = SpaceGateWordSyncRenderer(this)
+
+    override fun forEachDrawingTextPaint(action: (TextPaint) -> Unit) {
+        action(textPaint)
+        action(syncRenderer.bgPaint)
+        action(syncRenderer.hlPaint)
+    }
+
     private val animator = Animator()
 
     private var baseTypeface: Typeface = Typeface.DEFAULT

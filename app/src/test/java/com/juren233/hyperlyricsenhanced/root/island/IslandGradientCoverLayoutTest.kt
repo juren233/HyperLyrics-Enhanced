@@ -329,12 +329,40 @@ class IslandGradientCoverLayoutTest {
     fun embeddedTransitionCacheWidthDoesNotFollowAnimatedAvailableWidth() {
         val density = 3f
         val coverWidth = 104f
+        assertEquals(
+            9f,
+            IslandGradientCoverLayout.embeddedTransitionInset(
+                coverWidth = coverWidth,
+                density = density,
+            ),
+        )
+        assertEquals(
+            24f,
+            IslandGradientCoverLayout.embeddedTransitionBlurInset(
+                coverWidth = coverWidth,
+                density = density,
+            ),
+        )
+        assertEquals(
+            24f,
+            IslandGradientCoverLayout.embeddedTransitionCacheInset(
+                coverWidth = coverWidth,
+                density = density,
+            ),
+        )
+        assertEquals(
+            15f,
+            IslandGradientCoverLayout.embeddedTransitionRawCacheOffset(
+                transitionInset = 9f,
+                blurInset = 24f,
+            ),
+        )
         val cacheWidth = IslandGradientCoverLayout.embeddedTransitionBitmapWidth(
             coverWidth = coverWidth,
             density = density,
         )
 
-        assertEquals(264, cacheWidth)
+        assertEquals(240, cacheWidth)
         assertEquals(
             12f,
             IslandGradientCoverLayout.embeddedTransitionVisibleExtension(
@@ -477,13 +505,17 @@ class IslandGradientCoverLayoutTest {
         val density = 3f
         val totalWidth = 137f
         val overlap = 6f
+        val transitionInset = IslandGradientCoverLayout.embeddedTransitionInset(104f, density)
         val blurInset = IslandGradientCoverLayout.embeddedTransitionBlurInset(104f, density)
         val diffusionStart = IslandGradientCoverLayout.embeddedTransitionDiffusionStart(overlap)
         val midpoint = (diffusionStart + totalWidth) / 2f
 
         assertEquals(9f, IslandGradientCoverLayout.embeddedTransitionOverlap(104f, density))
-        assertEquals(48f, blurInset)
+        assertEquals(9f, transitionInset)
+        assertEquals(24f, blurInset)
         assertEquals(18f, IslandGradientCoverLayout.embeddedTransitionHold(density))
+        assertEquals(1f, IslandGradientCoverLayout.embeddedTransitionBlurEdgeAlpha())
+        assertEquals(0f, IslandGradientCoverLayout.embeddedTransitionBlurFullAfterEdge(density))
         assertEquals(
             0f,
             IslandGradientCoverLayout.embeddedTransitionDiffusionRadius(
@@ -557,26 +589,40 @@ class IslandGradientCoverLayoutTest {
             ),
             0.0001f,
         )
-        assertTrue(
+        assertEquals(
+            0.5f,
             IslandGradientCoverLayout.embeddedTransitionBlurProgress(
-                position = overlap,
+                position = blurInset / 2f,
                 totalWidth = totalWidth,
                 blurInset = blurInset,
                 density = density,
-            ) > 0f
+            ),
+            0.0001f,
         )
-        assertTrue(
+        assertEquals(
+            1f,
             IslandGradientCoverLayout.embeddedTransitionBlurProgress(
                 position = blurInset,
                 totalWidth = totalWidth,
                 blurInset = blurInset,
                 density = density,
-            ) > 0.7f
+            ),
+            0.0001f,
         )
         assertEquals(
             1f,
             IslandGradientCoverLayout.embeddedTransitionBlurProgress(
-                position = blurInset + 24f,
+                position = blurInset + 18f,
+                totalWidth = totalWidth,
+                blurInset = blurInset,
+                density = density,
+            ),
+            0.0001f,
+        )
+        assertEquals(
+            1f,
+            IslandGradientCoverLayout.embeddedTransitionBlurProgress(
+                position = blurInset + 36f,
                 totalWidth = totalWidth,
                 blurInset = blurInset,
                 density = density,

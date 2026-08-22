@@ -6,6 +6,7 @@ const {
     ISSUE_TIMEOUT_MESSAGE,
     PR_TIMEOUT_MESSAGE,
     evaluateInactivity,
+    hasLabel,
     issueCommentActivities,
     latestCommitTime,
     pullRequestActivities,
@@ -21,6 +22,12 @@ function daysAgo(days) {
 function comment(login, createdAt) {
     return { user: { login }, created_at: createdAt };
 }
+
+test('Issue 标签匹配兼容 GitHub 对象和字符串格式', () => {
+    assert.equal(hasLabel({ labels: [{ name: 'bug' }] }, 'bug'), true);
+    assert.equal(hasLabel({ labels: ['BUG'] }, 'bug'), true);
+    assert.equal(hasLabel({ labels: [{ name: 'enhancement' }] }, 'bug'), false);
+});
 
 test('Issue 在维护者最新评论满七天且发起人未回复时关闭', () => {
     const activities = issueCommentActivities([
@@ -167,8 +174,9 @@ test('完整流程会按留言、锁定、关闭的顺序处理符合条件的 I
     };
     const data = new Map([
         [endpoints.listForRepo, [
-            { number: 1, user: { login: 'reporter' } },
+            { number: 1, user: { login: 'reporter' }, labels: [{ name: 'bug' }] },
             { number: 2, user: { login: 'contributor' }, pull_request: {} },
+            { number: 3, user: { login: 'reporter' }, labels: [{ name: 'enhancement' }] },
         ]],
         [endpoints.listReviewComments, []],
         [endpoints.listReviews, []],

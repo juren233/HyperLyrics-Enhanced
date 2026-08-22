@@ -11,6 +11,18 @@ function normalizedLogin(login) {
     return login?.trim().toLowerCase() ?? '';
 }
 
+function normalizedLabel(label) {
+    if (typeof label === 'string') {
+        return label.trim().toLowerCase();
+    }
+    return label?.name?.trim().toLowerCase() ?? '';
+}
+
+function hasLabel(item, label) {
+    const expected = label.trim().toLowerCase();
+    return item.labels?.some((entry) => normalizedLabel(entry) === expected) ?? false;
+}
+
 function parsePositiveDays(name, value) {
     const days = Number.parseInt(value, 10);
     if (!Number.isSafeInteger(days) || days <= 0) {
@@ -201,6 +213,7 @@ async function closeAndLock({
 async function run({ github, context, core }) {
     const { owner, repo } = context.repo;
     const maintainerLogin = process.env.MAINTAINER_LOGIN?.trim() || owner;
+    const issueLabel = process.env.ISSUE_LABEL?.trim() || 'bug';
     const issueTimeoutDays = parsePositiveDays(
         'ISSUE_TIMEOUT_DAYS',
         process.env.ISSUE_TIMEOUT_DAYS ?? '7',
@@ -223,7 +236,7 @@ async function run({ github, context, core }) {
 
     core.info(
         `检查 ${openItems.length} 个开放项目；维护者=${maintainerLogin}，` +
-        `Issue=${issueTimeoutDays} 天，PR=${prTimeoutDays} 天。`,
+        `Issue=${issueTimeoutDays} 天（仅限标签=${issueLabel}），PR=${prTimeoutDays} 天。`,
     );
 
     for (const item of openItems) {
@@ -231,6 +244,11 @@ async function run({ github, context, core }) {
         const authorLogin = item.user?.login;
         const isPullRequest = Boolean(item.pull_request);
         const label = `${isPullRequest ? 'PR' : 'Issue'} #${number}`;
+
+        if (!isPullRequest && !hasLabel(item, issueLabel)) {
+            core.info(`${label}：不含 ${issueLabel} 标签，跳过。`);
+            continue;
+        }
 
         if (!authorLogin) {
             core.warning(`${label}：无法确认发起人，跳过。`);
@@ -332,6 +350,7 @@ module.exports.testables = {
     ISSUE_TIMEOUT_MESSAGE,
     PR_TIMEOUT_MESSAGE,
     evaluateInactivity,
+    hasLabel,
     issueCommentActivities,
     latestCommitTime,
     pullRequestActivities,

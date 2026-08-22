@@ -2,6 +2,7 @@ name: 缺陷反馈 (Bug Report)
 description: 提交 HyperLyrics Enhanced 在使用过程中遇到的 Bug 反馈 / Submit bug reports for HyperLyrics Enhanced
 title: "[BUG] <简短描述您遇到的问题 / Short description of the issue>"
 labels: ["bug"]
+assignees: ["juren233"]
 body:
   - type: markdown
     attributes:
@@ -16,15 +17,20 @@ body:
     attributes:
       label: 系统平台 / System Platform
       options:
+        - HyperOS 4
         - HyperOS 3
         - HyperOS 2
         - 其他安卓系统 (Other Android Systems)
     validations:
       required: true
   - type: input
-    id: system_platform_other
+    id: system_version
     attributes:
-      label: 具体系统平台说明 / Detailed System Platform Specification
+      label: 系统具体版本号 / Specific System Version
+      description: 请填写完整的系统版本号 / Please enter the full system version number
+      placeholder: "例如：OS3.0.303.0 / Example: OS3.0.303.0"
+    validations:
+      required: true
   - type: dropdown
     id: bug_aspect
     attributes:
@@ -43,6 +49,8 @@ body:
         - SuperLyric
         - LyricInfo
         - 其他（或未使用歌词源） (Other / No source used)
+    validations:
+      required: true
   - type: textarea
     id: description
     attributes:

@@ -63,9 +63,11 @@ internal object IslandGradientCoverLayout {
     private const val EMBEDDED_TRANSITION_DIFFUSION_START_FRACTION = 0.45f
     private const val EMBEDDED_TRANSITION_BLUR_RADIUS_X_DP = 2f
     private const val EMBEDDED_TRANSITION_BLUR_RADIUS_Y_DP = 5f
-    private const val EMBEDDED_TRANSITION_BLUR_INSET_DP = 16f
-    private const val EMBEDDED_TRANSITION_BLUR_MIN_RAMP_DP = 12f
-    private const val EMBEDDED_TRANSITION_BLUR_EDGE_TAIL_DP = 8f
+    private const val EMBEDDED_TRANSITION_INSET_DP = 3f
+    // The complete blur ramp lives inside the cover: 0% at 8dp inward, 100% at its edge.
+    private const val EMBEDDED_TRANSITION_BLUR_INSET_DP = 8f
+    private const val EMBEDDED_TRANSITION_BLUR_EDGE_ALPHA = 1f
+    private const val EMBEDDED_TRANSITION_BLUR_FULL_AFTER_EDGE_DP = 0f
 
     fun resolve(
         moduleWidth: Int,
@@ -129,11 +131,38 @@ internal object IslandGradientCoverLayout {
         return minOf(EMBEDDED_TRANSITION_OVERLAP_DP * density, coverWidth / 5f)
     }
 
+    fun embeddedTransitionInset(coverWidth: Float, density: Float): Float {
+        if (coverWidth <= 0f || density <= 0f) return 0f
+        // Keep only enough source texture inside the clear cover to hide the host background seam.
+        return minOf(EMBEDDED_TRANSITION_INSET_DP * density, coverWidth / 2f)
+    }
+
     fun embeddedTransitionBlurInset(coverWidth: Float, density: Float): Float {
         if (coverWidth <= 0f || density <= 0f) return 0f
-        // Allow the requested 16dp inset to be effective on the 104px island instead of
-        // clipping it back to the old one-third-cover ceiling.
         return minOf(EMBEDDED_TRANSITION_BLUR_INSET_DP * density, coverWidth / 2f)
+    }
+
+    fun embeddedTransitionCacheInset(coverWidth: Float, density: Float): Float {
+        return maxOf(
+            embeddedTransitionInset(coverWidth, density),
+            embeddedTransitionBlurInset(coverWidth, density),
+        )
+    }
+
+    fun embeddedTransitionRawCacheOffset(
+        transitionInset: Float,
+        blurInset: Float,
+    ): Float {
+        return (maxOf(transitionInset, blurInset) - transitionInset).coerceAtLeast(0f)
+    }
+
+    fun embeddedTransitionBlurEdgeAlpha(): Float {
+        return EMBEDDED_TRANSITION_BLUR_EDGE_ALPHA
+    }
+
+    fun embeddedTransitionBlurFullAfterEdge(density: Float): Float {
+        if (density <= 0f) return 0f
+        return EMBEDDED_TRANSITION_BLUR_FULL_AFTER_EDGE_DP * density
     }
 
     fun embeddedTransitionMaxExtension(density: Float): Float {
@@ -159,7 +188,7 @@ internal object IslandGradientCoverLayout {
      * sampling, or diffusion reconstruction in every width-animation frame.
      */
     fun embeddedTransitionBitmapWidth(coverWidth: Float, density: Float): Int {
-        val width = embeddedTransitionBlurInset(coverWidth, density) +
+        val width = embeddedTransitionCacheInset(coverWidth, density) +
             embeddedTransitionMaxExtension(density)
         return width.roundToInt().coerceAtLeast(1)
     }
@@ -242,19 +271,17 @@ internal object IslandGradientCoverLayout {
         density: Float,
     ): Float {
         if (totalWidth <= 0f || density <= 0f) return 0f
-        // The transition target begins inside the clear cover by `blurInset`; start the native
-        // blur there so the cover-to-diffusion seam is already softly blurred.
-        val start = 0f
-        // The target remains deeper inside the cover, but keep a longer tail after the real cover
-        // edge so the inner artwork is not over-blurred while the extension still becomes soft.
-        val ramp = maxOf(
-            EMBEDDED_TRANSITION_BLUR_MIN_RAMP_DP * density,
-            blurInset + EMBEDDED_TRANSITION_BLUR_EDGE_TAIL_DP * density,
-        )
-            .coerceAtLeast(1f)
-        val end = (start + ramp).coerceAtMost(totalWidth)
-        if (end <= start) return if (position >= start) 1f else 0f
-        return smootherStep((position - start) / (end - start))
+        val edge = blurInset.coerceIn(0f, totalWidth)
+        val edgeAlpha = embeddedTransitionBlurEdgeAlpha().coerceIn(0f, 1f)
+        if (edge > 0f && position <= edge) {
+            return edgeAlpha * smootherStep(position / edge)
+        }
+
+        val fullAfterEdge = embeddedTransitionBlurFullAfterEdge(density)
+            .coerceAtMost((totalWidth - edge).coerceAtLeast(0f))
+        if (fullAfterEdge <= 0f) return if (position >= edge) 1f else 0f
+        val afterEdge = smootherStep((position - edge) / fullAfterEdge)
+        return edgeAlpha + (1f - edgeAlpha) * afterEdge
     }
 
     private fun smootherStep(progress: Float): Float {

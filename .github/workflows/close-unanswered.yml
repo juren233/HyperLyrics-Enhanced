@@ -27,6 +27,7 @@ jobs:
         uses: actions/github-script@v9
         env:
           MAINTAINER_LOGIN: juren233
+          ISSUE_LABEL: bug
           ISSUE_TIMEOUT_DAYS: '7'
           PR_TIMEOUT_DAYS: '30'
         with:

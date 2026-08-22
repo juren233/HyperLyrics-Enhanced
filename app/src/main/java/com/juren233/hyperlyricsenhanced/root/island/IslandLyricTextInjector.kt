@@ -11,6 +11,7 @@ import com.juren233.hyperlyricsenhanced.root.HookEntry
 import com.juren233.hyperlyricsenhanced.root.LyriconDataBridge
 import com.juren233.hyperlyricsenhanced.lyric.view.RichLyricLineView
 import com.juren233.hyperlyricsenhanced.lyric.view.SpaceGateRichLyricLineView
+import com.juren233.hyperlyricsenhanced.lyric.view.line.LyricTextPaintOwner
 import com.juren233.hyperlyricsenhanced.root.island.view.MaxWidthFrameLayout
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 
@@ -46,7 +47,58 @@ internal object IslandLyricTextInjector {
 
         IslandHostFacade.applyHostSettings(rootView, prefs)
         IslandViewRegistry.refreshInjectedViews(rootView)
+        if (changed) {
+            IslandAlbumCoverStyleHooker.refreshLeftContentTextShadows()
+        }
+        if (BuildConfig.DEBUG && (changed || config.adjacentBackgroundTranslation)) {
+            logGradientShadowDiagnostic(rootView, config, changed, phase = "inject_return")
+            rootView.post {
+                logGradientShadowDiagnostic(rootView, config, changed, phase = "posted_after_content")
+            }
+        }
         return changed
+    }
+
+    private fun logGradientShadowDiagnostic(
+        rootView: ViewGroup,
+        config: IslandSlotRuntimeConfig,
+        changed: Boolean,
+        phase: String,
+    ) {
+        if (!BuildConfig.DEBUG) return
+        HookLogger.i(
+            TAG,
+            "[GradientShadowDiag] phase=$phase, changed=$changed, " +
+                "activeMode=${config.activeMode}, leftMode=${config.leftMode}, " +
+                "rightMode=${config.rightMode}, adjacent=${config.adjacentBackgroundTranslation}, " +
+                "supported=${config.supportsAdjacentBackgroundTranslation}, " +
+                "targetLeft=${config.adjacentTranslationTargetIsLeft}, " +
+                "left=${describeShadowSlot(rootView, IslandProbeUtils.LEFT_TEST_VIEW_TAG)}, " +
+                "right=${describeShadowSlot(rootView, IslandProbeUtils.RIGHT_TEST_VIEW_TAG)}",
+        )
+    }
+
+    private fun describeShadowSlot(rootView: ViewGroup, tag: String): String {
+        val target = rootView.findViewWithTag<View>(tag) ?: return "missing"
+        val paints = ArrayList<String>()
+        fun collect(view: View) {
+            if (view is LyricTextPaintOwner) {
+                view.forEachDrawingTextPaint { paint ->
+                    paints += "${view.javaClass.name}@${System.identityHashCode(view).toString(16)}" +
+                        "/paint@${System.identityHashCode(paint).toString(16)}" +
+                        "(attached=${view.isAttachedToWindow},visibility=${view.visibility}," +
+                        "shadow=${paint.getShadowLayerRadius()}/${paint.getShadowLayerDx()}/" +
+                        "${paint.getShadowLayerDy()}/0x${paint.getShadowLayerColor().toUInt().toString(16)})"
+                }
+            }
+            if (view is ViewGroup) {
+                for (index in 0 until view.childCount) collect(view.getChildAt(index))
+            }
+        }
+        collect(target)
+        return "${target.javaClass.name}@${System.identityHashCode(target).toString(16)}" +
+            "(attached=${target.isAttachedToWindow},visibility=${target.visibility}," +
+            "tag=${target.tag},paints=[${paints.joinToString(" | ")}])"
     }
 
     fun restoreExistingSlotsLightweight(rootView: ViewGroup): Boolean {

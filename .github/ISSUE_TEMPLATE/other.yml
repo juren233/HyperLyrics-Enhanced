@@ -2,6 +2,7 @@ name: 其它反馈 (Other)
 description: 提交其它类型的反馈或讨论 / Submit other feedback or discussion
 title: "[OTHER] <简短描述您的反馈主题 / Short description of the topic>"
 labels: ["discussion"]
+assignees: ["juren233"]
 body:
   - type: input
     id: topic
