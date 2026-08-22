@@ -162,7 +162,7 @@ test('自动回复文案保持为约定文本', () => {
     );
 });
 
-test('完整流程会按留言、锁定、关闭的顺序处理符合条件的 Issue 和 PR', async () => {
+test('完整流程只清理普通 bug Issue，跳过还在搓 Issue，并继续处理符合条件的 PR', async () => {
     const oldTime = new Date(Date.now() - 40 * DAY_MS).toISOString();
     const calls = [];
     const endpoints = {
@@ -177,6 +177,11 @@ test('完整流程会按留言、锁定、关闭的顺序处理符合条件的 I
             { number: 1, user: { login: 'reporter' }, labels: [{ name: 'bug' }] },
             { number: 2, user: { login: 'contributor' }, pull_request: {} },
             { number: 3, user: { login: 'reporter' }, labels: [{ name: 'enhancement' }] },
+            {
+                number: 4,
+                user: { login: 'reporter' },
+                labels: [{ name: 'bug' }, { name: '还在搓 / In Progress' }],
+            },
         ]],
         [endpoints.listReviewComments, []],
         [endpoints.listReviews, []],

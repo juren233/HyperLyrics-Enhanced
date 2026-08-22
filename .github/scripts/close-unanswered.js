@@ -214,6 +214,8 @@ async function run({ github, context, core }) {
     const { owner, repo } = context.repo;
     const maintainerLogin = process.env.MAINTAINER_LOGIN?.trim() || owner;
     const issueLabel = process.env.ISSUE_LABEL?.trim() || 'bug';
+    const issueExcludedLabel =
+        process.env.ISSUE_EXCLUDED_LABEL?.trim() || '还在搓 / In Progress';
     const issueTimeoutDays = parsePositiveDays(
         'ISSUE_TIMEOUT_DAYS',
         process.env.ISSUE_TIMEOUT_DAYS ?? '7',
@@ -236,7 +238,8 @@ async function run({ github, context, core }) {
 
     core.info(
         `检查 ${openItems.length} 个开放项目；维护者=${maintainerLogin}，` +
-        `Issue=${issueTimeoutDays} 天（仅限标签=${issueLabel}），PR=${prTimeoutDays} 天。`,
+        `Issue=${issueTimeoutDays} 天（仅限标签=${issueLabel}，` +
+        `排除标签=${issueExcludedLabel}），PR=${prTimeoutDays} 天。`,
     );
 
     for (const item of openItems) {
@@ -247,6 +250,10 @@ async function run({ github, context, core }) {
 
         if (!isPullRequest && !hasLabel(item, issueLabel)) {
             core.info(`${label}：不含 ${issueLabel} 标签，跳过。`);
+            continue;
+        }
+        if (!isPullRequest && hasLabel(item, issueExcludedLabel)) {
+            core.info(`${label}：含 ${issueExcludedLabel} 标签，跳过。`);
             continue;
         }
 
