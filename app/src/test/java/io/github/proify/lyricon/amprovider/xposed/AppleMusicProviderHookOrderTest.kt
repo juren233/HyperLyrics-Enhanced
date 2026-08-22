@@ -46,6 +46,7 @@ class AppleMusicProviderHookOrderTest {
             "hookMediaApiLocalization",
             "hookContentHttpLocalization",
             "hookExoMediaPlayer",
+            "hookAtmosVolumeDiagnostics",
             "hookMediaMetadataChange",
             "hookContentItemMetadata",
             "hookInAppLibraryEntities",
@@ -85,6 +86,7 @@ class AppleMusicProviderHookOrderTest {
         )
 
         val DEBUG_ONLY_HOOKS = setOf(
+            "hookAtmosVolumeDiagnostics",
             "hookDebugListenNowArtworkLifecycle",
             "hookVisibleMetadataDiagnostics",
             "hookAppleLyricsUiDiagnostics",

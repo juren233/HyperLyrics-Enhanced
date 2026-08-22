@@ -6,6 +6,7 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.util.TypedValue
 import com.juren233.hyperlyricsenhanced.common.RootConstants
+import com.juren233.hyperlyricsenhanced.root.island.IslandRuntimePreferenceReader
 import com.juren233.hyperlyricsenhanced.lyric.view.Highlight
 import com.juren233.hyperlyricsenhanced.lyric.view.LyricViewStyle
 import com.juren233.hyperlyricsenhanced.lyric.view.Marquee
@@ -38,6 +39,23 @@ object LyricStyleHelper {
     ) {
         val usesDefaultColors: Boolean
             get() = fallbackReason != null
+    }
+
+    internal data class CustomTextColorPalette(
+        val primary: IntArray,
+        val background: IntArray,
+        val highlight: IntArray,
+    )
+
+    internal fun customTextColorPalette(color: Int): CustomTextColorPalette {
+        val alpha = (color ushr 24) and 0xFF
+        val backgroundAlpha = alpha * 3 / 4
+        val backgroundColor = (backgroundAlpha shl 24) or (color and 0x00FFFFFF)
+        return CustomTextColorPalette(
+            primary = intArrayOf(color),
+            background = intArrayOf(backgroundColor),
+            highlight = intArrayOf(color),
+        )
     }
 
     internal data class StyleBuildResult(
@@ -114,8 +132,26 @@ object LyricStyleHelper {
         }
 
         // Determine text colors: use cover colors if enabled, otherwise white
-        val useCoverColor = prefs.getBoolean(RootConstants.KEY_HOOK_EXTRACT_COVER_TEXT_COLOR, RootConstants.DEFAULT_HOOK_EXTRACT_COVER_TEXT_COLOR)
-        val useCoverGradient = prefs.getBoolean(RootConstants.KEY_HOOK_EXTRACT_COVER_TEXT_GRADIENT, RootConstants.DEFAULT_HOOK_EXTRACT_COVER_TEXT_GRADIENT)
+        val useCustomColor = IslandRuntimePreferenceReader.getBoolean(
+            prefs,
+            RootConstants.KEY_HOOK_CUSTOM_TEXT_COLOR_ENABLED,
+            RootConstants.DEFAULT_HOOK_CUSTOM_TEXT_COLOR_ENABLED
+        )
+        val customTextColor = IslandRuntimePreferenceReader.getInt(
+            prefs,
+            RootConstants.KEY_HOOK_CUSTOM_TEXT_COLOR,
+            RootConstants.DEFAULT_HOOK_CUSTOM_TEXT_COLOR
+        )
+        val useCoverColor = IslandRuntimePreferenceReader.getBoolean(
+            prefs,
+            RootConstants.KEY_HOOK_EXTRACT_COVER_TEXT_COLOR,
+            RootConstants.DEFAULT_HOOK_EXTRACT_COVER_TEXT_COLOR
+        )
+        val useCoverGradient = IslandRuntimePreferenceReader.getBoolean(
+            prefs,
+            RootConstants.KEY_HOOK_EXTRACT_COVER_TEXT_GRADIENT,
+            RootConstants.DEFAULT_HOOK_EXTRACT_COVER_TEXT_GRADIENT
+        )
 
         val primaryColors: IntArray
         val bgColors: IntArray
@@ -123,8 +159,15 @@ object LyricStyleHelper {
         val resolvedPalette: CoverColorHelper.ResolvedPalette?
         val fallbackReason: FallbackReason?
 
-        if (useCoverColor) {
-            resolvedPalette = CoverColorHelper.resolveColors(
+        if (useCustomColor) {
+            val customPalette = customTextColorPalette(customTextColor)
+            resolvedPalette = null
+            primaryColors = customPalette.primary
+            bgColors = customPalette.background
+            hlColors = customPalette.highlight
+            fallbackReason = null
+        } else if (useCoverColor) {
+            resolvedPalette = CoverColorHelper.resolveTextColors(
                 bitmap = albumBitmap,
                 useGradient = useCoverGradient,
                 songKey = mediaColorKey
@@ -192,8 +235,8 @@ object LyricStyleHelper {
         return StyleBuildResult(
             style = style,
             colorResolution = ColorResolution(
-                useCoverColor = useCoverColor,
-                useCoverGradient = useCoverGradient,
+                useCoverColor = !useCustomColor && useCoverColor,
+                useCoverGradient = !useCustomColor && useCoverColor && useCoverGradient,
                 paletteSource = resolvedPalette?.source,
                 requestedKey = resolvedPalette?.requestedKey,
                 resolvedKey = resolvedPalette?.resolvedKey,

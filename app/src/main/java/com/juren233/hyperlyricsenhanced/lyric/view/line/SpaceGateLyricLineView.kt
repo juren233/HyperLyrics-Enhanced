@@ -132,11 +132,11 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
     internal val lineState = LineState()
     internal val scrollRenderer = SpaceGateScrollTextRenderer()
     internal val syncRenderer = SpaceGateWordSyncRenderer(this)
+    private val lineShadowRenderer = LineShadowRenderer()
 
     override fun forEachDrawingTextPaint(action: (TextPaint) -> Unit) {
+        // Host shadow parameters live only on textPaint. Word-sync color paints remain untouched.
         action(textPaint)
-        action(syncRenderer.bgPaint)
-        action(syncRenderer.hlPaint)
     }
 
     private val animator = Animator()
@@ -368,6 +368,7 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
         lineState.reset()
         scrollRenderer.reset(lineState)
         syncRenderer.reset(lineState)
+        lineShadowRenderer.clear()
         _model = emptyLyricModel()
         activeRenderer = scrollRenderer
         refreshSizes()
@@ -449,9 +450,31 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
                 siblingView?.postInvalidateOnAnimation()
             }
         } else {
+            drawShadowAndContent(canvas, availableWidth)
+        }
+    }
+
+    private fun drawShadowAndContent(canvas: Canvas, availableWidth: Int) {
+        lineShadowRenderer.draw(
+            canvas = canvas,
+            model = _model,
+            sourcePaint = textPaint,
+            typefaceSelector = currentTypefaceSelector,
+            fontSignature = currentFontSignature(),
+            viewWidth = availableWidth,
+            viewHeight = measuredHeight,
+            scrollOffset = lineState.scrollOffset,
+            centerIfPossible = centerIfPossible,
+            alignRight = alignRight,
+            ghostSpacing = ghostSpacing,
+        )
+        textPaint.withoutShadowLayer {
             activeRenderer.draw(canvas, _model, textPaint, lineState, availableWidth, measuredHeight)
         }
     }
+
+    private fun currentFontSignature(): Int =
+        31 * System.identityHashCode(baseTypeface) + System.identityHashCode(narrowTypeface)
 
     private fun findGateRoot(view: View): View? {
         var current: ViewParent? = view.parent

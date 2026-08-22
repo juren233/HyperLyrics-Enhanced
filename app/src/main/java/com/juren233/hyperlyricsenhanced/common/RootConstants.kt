@@ -221,10 +221,14 @@ object RootConstants {
     // ================= COLOR KEYS =================
     const val KEY_HOOK_EXTRACT_COVER_TEXT_COLOR = "key_hook_extract_cover_text_color"
     const val KEY_HOOK_EXTRACT_COVER_TEXT_GRADIENT = "key_hook_extract_cover_text_gradient"
+    const val KEY_HOOK_CUSTOM_TEXT_COLOR_ENABLED = "key_hook_custom_text_color_enabled"
+    const val KEY_HOOK_CUSTOM_TEXT_COLOR = "key_hook_custom_text_color"
     const val KEY_HOOK_ISLAND_GLOW_EXTRACT_COLOR = "key_hook_island_glow_extract_color"
     const val KEY_HOOK_ISLAND_PROGRESS_GLOW = "key_hook_island_progress_glow"
     const val KEY_HOOK_ISLAND_PROGRESS_STYLE = "key_hook_island_progress_style"
     const val KEY_HOOK_ISLAND_PROGRESS_GRADIENT = "key_hook_island_progress_gradient"
+    const val KEY_HOOK_ISLAND_PROGRESS_COLOR_MODE = "key_hook_island_progress_color_mode"
+    const val KEY_HOOK_ISLAND_PROGRESS_CUSTOM_COLOR = "key_hook_island_progress_custom_color"
 
     // ================= FONT KEYS =================
     const val KEY_HOOK_CUSTOM_FONT_PATH = "key_hook_custom_font_path"
@@ -270,6 +274,8 @@ object RootConstants {
         "key_hook_apple_music_restore_cjk_original_metadata"
     const val KEY_HOOK_APPLE_MUSIC_NOTIFICATION_OPEN_FULL_PLAYER =
         "key_hook_apple_music_notification_open_full_player"
+    const val KEY_HOOK_APPLE_MUSIC_VOLUME_BALANCE =
+        "key_hook_apple_music_volume_balance"
     const val KEY_HOOK_APPLE_MUSIC_SIMPLIFY_TRADITIONAL_LYRICS =
         "key_hook_apple_music_simplify_traditional_lyrics"
     const val KEY_HOOK_APPLE_MUSIC_NATIVE_ONLINE_TRANSLATION =
@@ -323,6 +329,7 @@ object RootConstants {
     const val DEFAULT_HOOK_APPLE_MUSIC_LOCALIZED_METADATA_CACHE = true
     const val DEFAULT_HOOK_APPLE_MUSIC_RESTORE_CJK_ORIGINAL_METADATA = false
     const val DEFAULT_HOOK_APPLE_MUSIC_NOTIFICATION_OPEN_FULL_PLAYER = false
+    const val DEFAULT_HOOK_APPLE_MUSIC_VOLUME_BALANCE = false
     const val DEFAULT_HOOK_APPLE_MUSIC_SIMPLIFY_TRADITIONAL_LYRICS = false
     const val DEFAULT_HOOK_APPLE_MUSIC_NATIVE_ONLINE_TRANSLATION = false
     const val DEFAULT_HOOK_APPLE_MUSIC_FILL_MISSING_LYRICS = false
@@ -544,9 +551,19 @@ object RootConstants {
     const val DEFAULT_HOOK_ADJACENT_BACKGROUND_TRANSLATION = false
     const val DEFAULT_HOOK_EXTRACT_COVER_TEXT_COLOR = false
     const val DEFAULT_HOOK_EXTRACT_COVER_TEXT_GRADIENT = false
+    const val DEFAULT_HOOK_CUSTOM_TEXT_COLOR_ENABLED = false
+    const val DEFAULT_HOOK_CUSTOM_TEXT_COLOR = -1
     const val DEFAULT_HOOK_ISLAND_GLOW_EXTRACT_COLOR = false
     const val DEFAULT_HOOK_ISLAND_PROGRESS_GLOW = false
     const val DEFAULT_HOOK_ISLAND_PROGRESS_GRADIENT = false
+    const val ISLAND_PROGRESS_COLOR_MODE_DISABLED = 0
+    const val ISLAND_PROGRESS_COLOR_MODE_SYSTEM_BLUE = 1
+    const val ISLAND_PROGRESS_COLOR_MODE_MONET = 2
+    const val ISLAND_PROGRESS_COLOR_MODE_COVER = 3
+    const val ISLAND_PROGRESS_COLOR_MODE_COVER_GRADIENT = 4
+    const val ISLAND_PROGRESS_COLOR_MODE_CUSTOM = 5
+    const val DEFAULT_HOOK_ISLAND_PROGRESS_COLOR_MODE = ISLAND_PROGRESS_COLOR_MODE_DISABLED
+    const val DEFAULT_HOOK_ISLAND_PROGRESS_CUSTOM_COLOR = 0xFF5B8CFF.toInt()
     const val ISLAND_PROGRESS_STYLE_TOP_CLOCKWISE = 0
     const val ISLAND_PROGRESS_STYLE_RIGHT_CLOCKWISE = 1
     const val ISLAND_PROGRESS_STYLE_BOTTOM_CLOCKWISE = 2

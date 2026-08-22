@@ -93,16 +93,7 @@ class RootApplication : Application() {
 
         private fun broadcastPreferenceChange(group: String, key: String, value: Any?) {
             if (group != UIConstants.PREF_NAME) return
-            if (key !in setOf(
-                    RootConstants.KEY_HOOK_LYRIC_MODE,
-                    RootConstants.KEY_HOOK_ISLAND_CONTENT_LEFT,
-                    RootConstants.KEY_HOOK_ISLAND_CONTENT_RIGHT,
-                    RootConstants.KEY_HOOK_ISLAND_LEFT_LYRIC_POSITION,
-                    RootConstants.KEY_HOOK_ISLAND_RIGHT_LYRIC_POSITION,
-                    RootConstants.KEY_HOOK_CENTER_LYRIC,
-                    RootConstants.KEY_HOOK_CENTER_GROUP_VOCALS,
-                )
-            ) return
+            if (!LivePreferenceRefreshPolicy.contains(key)) return
             val intent = Intent(RootConstants.ACTION_REMOTE_PREFERENCE_CHANGED)
                 .setPackage("com.android.systemui")
                 .putExtra(RootConstants.EXTRA_REMOTE_PREFERENCE_GROUP, group)

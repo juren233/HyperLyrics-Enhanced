@@ -11,11 +11,28 @@ import androidx.compose.ui.res.stringResource
 import com.juren233.hyperlyricsenhanced.R
 import com.juren233.hyperlyricsenhanced.common.IslandLyricPosition
 import com.juren233.hyperlyricsenhanced.common.RootConstants
+import com.juren233.hyperlyricsenhanced.ui.component.CustomFontColorPickerDialog
 import com.juren233.hyperlyricsenhanced.ui.component.NumberInputDialog
 import com.juren233.hyperlyricsenhanced.ui.component.TextInputDialog
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.common.XposedLyricSettingPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.common.rememberHookConfigSaver
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.common.rememberHookPrefs
+
+internal const val FONT_COLOR_MODE_DEFAULT = 0
+internal const val FONT_COLOR_MODE_COVER = 1
+internal const val FONT_COLOR_MODE_COVER_GRADIENT = 2
+internal const val FONT_COLOR_MODE_CUSTOM = 3
+
+internal fun resolveFontColorMode(
+    customEnabled: Boolean,
+    coverEnabled: Boolean,
+    coverGradient: Boolean,
+): Int = when {
+    customEnabled -> FONT_COLOR_MODE_CUSTOM
+    !coverEnabled -> FONT_COLOR_MODE_DEFAULT
+    coverGradient -> FONT_COLOR_MODE_COVER_GRADIENT
+    else -> FONT_COLOR_MODE_COVER
+}
 
 @Composable
 fun LyricDisplayPage() {
@@ -25,8 +42,37 @@ fun LyricDisplayPage() {
     var textSize by remember { mutableIntStateOf(prefs.getInt(RootConstants.KEY_HOOK_TEXT_SIZE, RootConstants.DEFAULT_HOOK_TEXT_SIZE)) }
     var textSizeRatio by remember { mutableFloatStateOf(prefs.getFloat(RootConstants.KEY_HOOK_TEXT_SIZE_RATIO, RootConstants.DEFAULT_HOOK_TEXT_SIZE_RATIO)) }
     var fadingEdge by remember { mutableIntStateOf(prefs.getInt(RootConstants.KEY_HOOK_FADING_EDGE_LENGTH, RootConstants.DEFAULT_HOOK_FADING_EDGE_LENGTH)) }
-    var extractCoverColor by remember { mutableStateOf(prefs.getBoolean(RootConstants.KEY_HOOK_EXTRACT_COVER_TEXT_COLOR, RootConstants.DEFAULT_HOOK_EXTRACT_COVER_TEXT_COLOR)) }
-    var extractCoverGradient by remember { mutableStateOf(prefs.getBoolean(RootConstants.KEY_HOOK_EXTRACT_COVER_TEXT_GRADIENT, RootConstants.DEFAULT_HOOK_EXTRACT_COVER_TEXT_GRADIENT)) }
+    var customFontColorEnabled by remember {
+        mutableStateOf(
+            prefs.getBoolean(
+                RootConstants.KEY_HOOK_CUSTOM_TEXT_COLOR_ENABLED,
+                RootConstants.DEFAULT_HOOK_CUSTOM_TEXT_COLOR_ENABLED
+            )
+        )
+    }
+    var customFontColor by remember {
+        mutableIntStateOf(
+            prefs.getInt(
+                RootConstants.KEY_HOOK_CUSTOM_TEXT_COLOR,
+                RootConstants.DEFAULT_HOOK_CUSTOM_TEXT_COLOR
+            )
+        )
+    }
+    var fontColorMode by remember {
+        mutableIntStateOf(
+            resolveFontColorMode(
+                customEnabled = customFontColorEnabled,
+                coverEnabled = prefs.getBoolean(
+                    RootConstants.KEY_HOOK_EXTRACT_COVER_TEXT_COLOR,
+                    RootConstants.DEFAULT_HOOK_EXTRACT_COVER_TEXT_COLOR
+                ),
+                coverGradient = prefs.getBoolean(
+                    RootConstants.KEY_HOOK_EXTRACT_COVER_TEXT_GRADIENT,
+                    RootConstants.DEFAULT_HOOK_EXTRACT_COVER_TEXT_GRADIENT
+                ),
+            )
+        )
+    }
     var customFontPath by remember { mutableStateOf(prefs.getString(RootConstants.KEY_HOOK_CUSTOM_FONT_PATH, null) ?: "") }
     var narrowLatinFont by remember {
         mutableStateOf(
@@ -83,6 +129,17 @@ fun LyricDisplayPage() {
     var showFadingEdgeDialog by remember { mutableStateOf(false) }
     var showFontPathDialog by remember { mutableStateOf(false) }
     var showFontWeightDialog by remember { mutableStateOf(false) }
+    var showCustomFontColorDialog by remember { mutableStateOf(false) }
+
+    CustomFontColorPickerDialog(
+        show = showCustomFontColorDialog,
+        initialColor = customFontColor,
+        onDismiss = { showCustomFontColorDialog = false },
+        onConfirm = { color ->
+            customFontColor = color
+            saveConfig(RootConstants.KEY_HOOK_CUSTOM_TEXT_COLOR, color)
+        },
+    )
 
     NumberInputDialog(
         show = showTextSizeDialog,
@@ -156,16 +213,36 @@ fun LyricDisplayPage() {
             onTextSizeRatioClick = { showTextSizeRatioDialog = true },
             fadingEdge = fadingEdge,
             onFadingEdgeClick = { showFadingEdgeDialog = true },
-            extractCoverColor = extractCoverColor,
-            onExtractCoverColorChange = {
-                extractCoverColor = it
-                saveConfig(RootConstants.KEY_HOOK_EXTRACT_COVER_TEXT_COLOR, it)
+            fontColorMode = fontColorMode,
+            onFontColorModeChange = { mode ->
+                fontColorMode = mode
+                when (mode) {
+                    FONT_COLOR_MODE_COVER -> {
+                        saveConfig(RootConstants.KEY_HOOK_EXTRACT_COVER_TEXT_GRADIENT, false)
+                        saveConfig(RootConstants.KEY_HOOK_EXTRACT_COVER_TEXT_COLOR, true)
+                        customFontColorEnabled = false
+                        saveConfig(RootConstants.KEY_HOOK_CUSTOM_TEXT_COLOR_ENABLED, false)
+                    }
+                    FONT_COLOR_MODE_COVER_GRADIENT -> {
+                        saveConfig(RootConstants.KEY_HOOK_EXTRACT_COVER_TEXT_GRADIENT, true)
+                        saveConfig(RootConstants.KEY_HOOK_EXTRACT_COVER_TEXT_COLOR, true)
+                        customFontColorEnabled = false
+                        saveConfig(RootConstants.KEY_HOOK_CUSTOM_TEXT_COLOR_ENABLED, false)
+                    }
+                    FONT_COLOR_MODE_CUSTOM -> {
+                        customFontColorEnabled = true
+                        saveConfig(RootConstants.KEY_HOOK_CUSTOM_TEXT_COLOR_ENABLED, true)
+                        saveConfig(RootConstants.KEY_HOOK_EXTRACT_COVER_TEXT_COLOR, false)
+                    }
+                    else -> {
+                        saveConfig(RootConstants.KEY_HOOK_EXTRACT_COVER_TEXT_COLOR, false)
+                        customFontColorEnabled = false
+                        saveConfig(RootConstants.KEY_HOOK_CUSTOM_TEXT_COLOR_ENABLED, false)
+                    }
+                }
             },
-            extractCoverGradient = extractCoverGradient,
-            onExtractCoverGradientChange = {
-                extractCoverGradient = it
-                saveConfig(RootConstants.KEY_HOOK_EXTRACT_COVER_TEXT_GRADIENT, it)
-            },
+            customFontColor = customFontColor,
+            onCustomFontColorClick = { showCustomFontColorDialog = true },
             customFontPath = customFontPath,
             onFontPathClick = { showFontPathDialog = true },
             fontWeight = fontWeight,

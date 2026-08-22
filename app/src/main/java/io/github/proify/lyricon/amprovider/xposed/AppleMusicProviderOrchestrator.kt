@@ -66,6 +66,7 @@ import io.github.proify.extensions.inflate
 import io.github.proify.extensions.json
 import io.github.proify.lyricon.amprovider.xposed.hooks.AppleContentLocalizationHooks
 import io.github.proify.lyricon.amprovider.xposed.hooks.AppleDebugNetworkHooks
+import io.github.proify.lyricon.amprovider.xposed.hooks.AppleAtmosVolumeDiagnostics
 import io.github.proify.lyricon.amprovider.xposed.hooks.AppleFrameworkMetadataHooks
 import io.github.proify.lyricon.amprovider.xposed.hooks.ApplePlaybackHooks
 import io.github.proify.lyricon.amprovider.xposed.hooks.FunctionalAppleMusicHookModule
@@ -128,6 +129,7 @@ internal object AppleMusicProviderOrchestrator {
         get() = runtime.hookRegistrar
     private lateinit var contentLocalizationHooks: AppleContentLocalizationHooks
     private lateinit var debugNetworkHooks: AppleDebugNetworkHooks
+    private lateinit var atmosphereVolumeDiagnostics: AppleAtmosVolumeDiagnostics
     private lateinit var frameworkMetadataHooks: AppleFrameworkMetadataHooks
     private lateinit var lyricsHooks: AppleLyricsSupplementHooks
     private lateinit var onlineSourceMenuHooks: AppleOnlineSourceMenuHooks
@@ -1919,7 +1921,14 @@ internal object AppleMusicProviderOrchestrator {
                 currentLyricsSongId = lyricsHooks::currentSongId,
                 queueItemMediaId = playbackMetadataCoordinator::queueItemMediaId,
                 refreshCurrentQueueItem = playbackMetadataCoordinator::refreshCurrentQueueItem,
+                isVolumeBalanceEnabled = {
+                    contentUiLanguagePrefs?.getBoolean(
+                        RootConstants.KEY_HOOK_APPLE_MUSIC_VOLUME_BALANCE,
+                        RootConstants.DEFAULT_HOOK_APPLE_MUSIC_VOLUME_BALANCE,
+                    ) ?: RootConstants.DEFAULT_HOOK_APPLE_MUSIC_VOLUME_BALANCE
+                },
             )
+            atmosphereVolumeDiagnostics = AppleAtmosVolumeDiagnostics(runtime)
             playbackMetadataHooks = ApplePlaybackMetadataHooks(
                 runtime = runtime,
                 playbackHooks = { playbackHooks },
@@ -2060,6 +2069,8 @@ internal object AppleMusicProviderOrchestrator {
                     lyricsHooks.refreshAppleLyricsBlurEffect()
                 RootConstants.KEY_HOOK_APPLE_MUSIC_FOLLOW_SYSTEM_FONT_WEIGHT ->
                     lyricsHooks.refreshAppleSystemFontWeight()
+                RootConstants.KEY_HOOK_APPLE_MUSIC_VOLUME_BALANCE ->
+                    playbackHooks.onVolumeBalancePreferenceChanged()
                 RootConstants.KEY_HOOK_APPLE_MUSIC_MATCH_ONLINE_TRANSLATION,
                 RootConstants.KEY_HOOK_APPLE_MUSIC_NATIVE_ONLINE_TRANSLATION -> {
                     if (!lyricsHooks.isNativeOnlineTranslationEnabled()) {
@@ -2199,6 +2210,11 @@ internal object AppleMusicProviderOrchestrator {
         FunctionalAppleMusicHookModule(
             "hookExoMediaPlayer",
             installer = { playbackHooks.installExoMediaPlayer() },
+        ),
+        FunctionalAppleMusicHookModule(
+            "hookAtmosVolumeDiagnostics",
+            debugOnly = true,
+            installer = { atmosphereVolumeDiagnostics.installHooks() },
         ),
         FunctionalAppleMusicHookModule(
             "hookMediaMetadataChange",

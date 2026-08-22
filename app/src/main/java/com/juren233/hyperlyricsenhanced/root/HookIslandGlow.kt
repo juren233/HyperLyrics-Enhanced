@@ -4,9 +4,11 @@ import android.annotation.SuppressLint
 import android.content.SharedPreferences
 import android.graphics.Bitmap
 import android.view.View
+import com.juren233.hyperlyricsenhanced.common.IslandProgressColorMode
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.common.media.MediaMetadataHelper
 import com.juren233.hyperlyricsenhanced.root.island.IslandProbeUtils
+import com.juren233.hyperlyricsenhanced.root.island.IslandRuntimePreferenceReader
 import com.juren233.hyperlyricsenhanced.root.utils.CoverColorHelper
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import io.github.libxposed.api.XposedInterface.Chain
@@ -80,7 +82,8 @@ object HookIslandGlow {
             if (!sharedPrefs.getBoolean(RootConstants.KEY_HOOK_ENABLE_SUPER_ISLAND, RootConstants.DEFAULT_HOOK_ENABLE_SUPER_ISLAND)) {
                 return@runCatching null
             }
-            if (!sharedPrefs.getBoolean(RootConstants.KEY_HOOK_ISLAND_GLOW_EXTRACT_COLOR, RootConstants.DEFAULT_HOOK_ISLAND_GLOW_EXTRACT_COLOR)) {
+            val colorMode = IslandRuntimePreferenceReader.getProgressColorMode(sharedPrefs)
+            if (!IslandProgressColorMode.usesCover(colorMode)) {
                 return@runCatching null
             }
 
@@ -108,14 +111,12 @@ object HookIslandGlow {
                 stableArtist = stableArtist,
                 diagnosticSource = "island_host_glow"
             )
-            val useGradient = sharedPrefs.getBoolean(
-                RootConstants.KEY_HOOK_EXTRACT_COVER_TEXT_GRADIENT,
-                RootConstants.DEFAULT_HOOK_EXTRACT_COVER_TEXT_GRADIENT
-            )
+            val useGradient = IslandProgressColorMode.usesCoverGradient(colorMode)
             val color = runCatching {
-                CoverColorHelper.extractColors(albumArt, useGradient, mediaColorKey)
-                    .second
-                    .firstOrNull()
+                CoverColorHelper.resolveTextColors(albumArt, useGradient, mediaColorKey)
+                    ?.colors
+                    ?.second
+                    ?.firstOrNull()
             }.getOrNull()
                 ?: CoverColorHelper.fallbackArtworkColor(albumArt)
                 ?: return@runCatching null
@@ -155,9 +156,8 @@ object HookIslandGlow {
     }
 
     fun updateMusicGlow(contentView: View?, @Suppress("UNUSED_PARAMETER") albumArt: Bitmap?, sharedPrefs: SharedPreferences) {
-        val enabled = sharedPrefs.getBoolean(
-            RootConstants.KEY_HOOK_ISLAND_GLOW_EXTRACT_COLOR,
-            RootConstants.DEFAULT_HOOK_ISLAND_GLOW_EXTRACT_COLOR
+        val enabled = IslandProgressColorMode.usesCover(
+            IslandRuntimePreferenceReader.getProgressColorMode(sharedPrefs)
         )
         if (!enabled) {
             clearViewHighlightColor(contentView)

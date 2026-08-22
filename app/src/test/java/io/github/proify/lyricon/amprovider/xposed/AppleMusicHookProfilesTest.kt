@@ -572,6 +572,12 @@ class AppleMusicHookProfilesTest {
             exo.runtimeMemberName(AppleMusicRuntimeMember.EXO_CURRENT_POSITION_METHOD),
         )
 
+        val audioSession = target(version, AppleMusicHookPoint.EXO_AUDIO_SESSION_ID)
+        assertEquals("com.apple.android.music.playback.player.ExoMediaPlayer", audioSession.className)
+        assertEquals("onAudioSessionId", audioSession.methodName)
+        assertEquals(listOf("int"), audioSession.parameterTypeNames)
+        assertEquals("void", audioSession.returnTypeName)
+
         val controller = target(
             version,
             AppleMusicHookPoint.LOCAL_MEDIA_PLAYER_CONTROLLER_STATE,
@@ -582,6 +588,28 @@ class AppleMusicHookProfilesTest {
         )
         assertEquals("onPlaybackStateChanged", controller.methodName)
         assertEquals(3, controller.parameterCount)
+
+        val audioVariant = target(
+            version,
+            AppleMusicHookPoint.LOCAL_MEDIA_PLAYER_AUDIO_VARIANT_CHANGED,
+        )
+        assertEquals(
+            "com.apple.android.music.playback.controller.LocalMediaPlayerController",
+            audioVariant.className,
+        )
+        assertEquals("onPlaybackAudioVariantChanged", audioVariant.methodName)
+        assertEquals(
+            listOf(
+                "com.apple.android.music.playback.player.MediaPlayer",
+                "int",
+                "long",
+                "com.google.android.exoplayer2.Format",
+                "com.google.android.exoplayer2.Format",
+            ),
+            audioVariant.parameterTypeNames,
+        )
+        assertEquals("void", audioVariant.returnTypeName)
+        assertAtmosDiagnosticTargets(version)
         assertEquals(
             mapOf(
                 AppleMusicRuntimeMember.PLAYBACK_PLAYER_CURRENT_ITEM_METHOD to "getCurrentItem",
@@ -792,6 +820,108 @@ class AppleMusicHookProfilesTest {
             ),
             mediaApiHolder.runtimeMemberNames,
         )
+    }
+
+    private fun assertAtmosDiagnosticTargets(version: AppleMusicVersion) {
+        val mediaCodecPeriod = target(
+            version,
+            AppleMusicHookPoint.DEBUG_ATMOS_MEDIA_CODEC_PERIOD_ID,
+        )
+        assertEquals(
+            "com.apple.android.music.playback.renderer.SVMediaCodecAudioRenderer",
+            mediaCodecPeriod.className,
+        )
+        assertEquals("invalidatePeriodId", mediaCodecPeriod.methodName)
+        assertEquals(
+            listOf("com.google.android.exoplayer2.source.SampleStream", "long"),
+            mediaCodecPeriod.parameterTypeNames,
+        )
+
+        val mediaCodecFormat = target(
+            version,
+            AppleMusicHookPoint.DEBUG_ATMOS_MEDIA_CODEC_INPUT_FORMAT,
+        )
+        assertEquals("onInputFormatChanged", mediaCodecFormat.methodName)
+        assertEquals(
+            listOf("com.google.android.exoplayer2.FormatHolder"),
+            mediaCodecFormat.parameterTypeNames,
+        )
+        assertEquals(
+            "format",
+            mediaCodecFormat.runtimeMemberName(
+                AppleMusicRuntimeMember.DEBUG_FORMAT_HOLDER_FORMAT_FIELD
+            ),
+        )
+        assertEquals(
+            "loudness",
+            mediaCodecFormat.runtimeMemberName(
+                AppleMusicRuntimeMember.DEBUG_FORMAT_LOUDNESS_FIELD
+            ),
+        )
+
+        val mediaCodecSession = target(
+            version,
+            AppleMusicHookPoint.DEBUG_ATMOS_MEDIA_CODEC_AUDIO_SESSION,
+        )
+        assertEquals(
+            "com.google.android.exoplayer2.audio.MediaCodecAudioRenderer",
+            mediaCodecSession.className,
+        )
+        assertEquals("onAudioSessionId", mediaCodecSession.methodName)
+
+        val mediaCodecOutput = target(
+            version,
+            AppleMusicHookPoint.DEBUG_ATMOS_MEDIA_CODEC_OUTPUT_BUFFER,
+        )
+        assertEquals("processOutputBuffer", mediaCodecOutput.methodName)
+        assertEquals(
+            listOf(
+                "long",
+                "long",
+                "android.media.MediaCodec",
+                "java.nio.ByteBuffer",
+                "int",
+                "int",
+                "long",
+                "boolean",
+                "boolean",
+                "com.google.android.exoplayer2.Format",
+            ),
+            mediaCodecOutput.parameterTypeNames,
+        )
+        assertEquals("boolean", mediaCodecOutput.returnTypeName)
+
+        val svPeriod = target(version, AppleMusicHookPoint.DEBUG_ATMOS_SV_AUDIO_PERIOD_ID)
+        assertEquals(
+            "com.apple.android.music.playback.renderer.SVAudioRendererV2",
+            svPeriod.className,
+        )
+        assertEquals("invalidatePeriodId", svPeriod.methodName)
+
+        val svStream = target(
+            version,
+            AppleMusicHookPoint.DEBUG_ATMOS_SV_AUDIO_STREAM_CHANGED,
+        )
+        assertEquals("onStreamChanged", svStream.methodName)
+        assertEquals(
+            listOf("[Lcom.google.android.exoplayer2.Format;", "long"),
+            svStream.parameterTypeNames,
+        )
+        assertEquals(
+            "codecs",
+            svStream.runtimeMemberName(AppleMusicRuntimeMember.DEBUG_FORMAT_CODECS_FIELD),
+        )
+
+        val svSession = target(version, AppleMusicHookPoint.DEBUG_ATMOS_SV_AUDIO_SESSION)
+        assertEquals("onAudioSessionId", svSession.methodName)
+        assertEquals(listOf("int"), svSession.parameterTypeNames)
+
+        val svFirstBuffer = target(
+            version,
+            AppleMusicHookPoint.DEBUG_ATMOS_SV_AUDIO_FIRST_BUFFER,
+        )
+        assertEquals("maybeNotifyFirstDecodedBuffer", svFirstBuffer.methodName)
+        assertEquals(emptyList<String>(), svFirstBuffer.parameterTypeNames)
     }
 
     private fun assertDebugNetworkTargets(version: AppleMusicVersion) {

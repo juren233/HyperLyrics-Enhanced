@@ -75,6 +75,14 @@ fun AppleMusicOptimizationPage() {
             )
         )
     }
+    var volumeBalance by remember {
+        mutableStateOf(
+            prefs.getBoolean(
+                RootConstants.KEY_HOOK_APPLE_MUSIC_VOLUME_BALANCE,
+                RootConstants.DEFAULT_HOOK_APPLE_MUSIC_VOLUME_BALANCE,
+            )
+        )
+    }
     var simplifyTraditionalLyrics by remember {
         mutableStateOf(
             prefs.getBoolean(
@@ -358,6 +366,18 @@ fun AppleMusicOptimizationPage() {
                     .padding(horizontal = 12.dp)
                     .fillMaxWidth()
             ) {
+                SwitchPreference(
+                    title = stringResource(R.string.title_apple_music_volume_balance),
+                    summary = stringResource(R.string.summary_apple_music_volume_balance),
+                    checked = volumeBalance,
+                    onCheckedChange = { enabled ->
+                        volumeBalance = enabled
+                        saveConfig(
+                            RootConstants.KEY_HOOK_APPLE_MUSIC_VOLUME_BALANCE,
+                            enabled,
+                        )
+                    },
+                )
                 SwitchPreference(
                     title = stringResource(
                         R.string.title_apple_music_notification_open_full_player

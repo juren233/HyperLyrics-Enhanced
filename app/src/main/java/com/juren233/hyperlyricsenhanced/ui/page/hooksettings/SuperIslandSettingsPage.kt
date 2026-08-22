@@ -2,6 +2,10 @@ package com.juren233.hyperlyricsenhanced.ui.page.hooksettings
 
 import android.content.Context
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import com.juren233.hyperlyricsenhanced.ui.component.NumberInputDialog
 import com.juren233.hyperlyricsenhanced.ui.component.PaddingInputDialog
 import androidx.compose.foundation.layout.Box
@@ -17,19 +21,24 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.edit
+import com.juren233.hyperlyricsenhanced.common.IslandProgressColorMode
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.common.UIConstants
 import com.juren233.hyperlyricsenhanced.common.PrefsBridge
+import com.juren233.hyperlyricsenhanced.ui.component.CustomFontColorPickerDialog
+import com.juren233.hyperlyricsenhanced.ui.component.CustomFontColorPreview
 import com.juren233.hyperlyricsenhanced.ui.navigation.LocalNavigator
 import com.juren233.hyperlyricsenhanced.ui.utils.BlurredBar
 import com.juren233.hyperlyricsenhanced.ui.utils.pageScrollModifiers
 import com.juren233.hyperlyricsenhanced.ui.utils.rememberBlurBackdrop
 import top.yukonga.miuix.kmp.basic.Card
+import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
@@ -145,9 +154,36 @@ fun SuperIslandSettingsPage() {
             )
         )
     }
-    var extractGlowColor by remember { mutableStateOf(prefs.getBoolean(RootConstants.KEY_HOOK_ISLAND_GLOW_EXTRACT_COLOR, RootConstants.DEFAULT_HOOK_ISLAND_GLOW_EXTRACT_COLOR)) }
-    var progressGlow by remember { mutableStateOf(prefs.getBoolean(RootConstants.KEY_HOOK_ISLAND_PROGRESS_GLOW, RootConstants.DEFAULT_HOOK_ISLAND_PROGRESS_GLOW)) }
-    var progressGradient by remember { mutableStateOf(prefs.getBoolean(RootConstants.KEY_HOOK_ISLAND_PROGRESS_GRADIENT, RootConstants.DEFAULT_HOOK_ISLAND_PROGRESS_GRADIENT)) }
+    var progressColorMode by remember {
+        mutableIntStateOf(
+            IslandProgressColorMode.resolve(
+                storedMode = prefs.getInt(
+                    RootConstants.KEY_HOOK_ISLAND_PROGRESS_COLOR_MODE,
+                    IslandProgressColorMode.UNSPECIFIED,
+                ),
+                legacyProgressEnabled = prefs.getBoolean(
+                    RootConstants.KEY_HOOK_ISLAND_PROGRESS_GLOW,
+                    RootConstants.DEFAULT_HOOK_ISLAND_PROGRESS_GLOW,
+                ),
+                legacyCoverEnabled = prefs.getBoolean(
+                    RootConstants.KEY_HOOK_ISLAND_GLOW_EXTRACT_COLOR,
+                    RootConstants.DEFAULT_HOOK_ISLAND_GLOW_EXTRACT_COLOR,
+                ),
+                legacyCoverGradient = prefs.getBoolean(
+                    RootConstants.KEY_HOOK_ISLAND_PROGRESS_GRADIENT,
+                    RootConstants.DEFAULT_HOOK_ISLAND_PROGRESS_GRADIENT,
+                ),
+            )
+        )
+    }
+    var progressCustomColor by remember {
+        mutableIntStateOf(
+            prefs.getInt(
+                RootConstants.KEY_HOOK_ISLAND_PROGRESS_CUSTOM_COLOR,
+                RootConstants.DEFAULT_HOOK_ISLAND_PROGRESS_CUSTOM_COLOR,
+            )
+        )
+    }
     var progressStyle by remember {
         mutableIntStateOf(
             prefs.getInt(
@@ -164,6 +200,7 @@ fun SuperIslandSettingsPage() {
     var showRightPaddingDialog by remember { mutableStateOf(false) }
     var showLeftContentWidthDialog by remember { mutableStateOf(false) }
     var showRightContentWidthDialog by remember { mutableStateOf(false) }
+    var showProgressCustomColorDialog by remember { mutableStateOf(false) }
 
     fun saveConfig(key: String, value: Any) {
         prefs.edit {
@@ -242,6 +279,16 @@ fun SuperIslandSettingsPage() {
             R.string.option_island_progress_bottom_bidirectional
         )
     }.map { stringResource(id = it) }
+    val progressColorModeOptions = remember {
+        listOf(
+            R.string.option_island_progress_disabled,
+            R.string.option_island_progress_system_blue,
+            R.string.option_island_progress_monet,
+            R.string.option_island_progress_cover,
+            R.string.option_island_progress_cover_gradient,
+            R.string.option_island_progress_custom,
+        )
+    }.map { stringResource(id = it) }
 
     val backdrop = rememberBlurBackdrop()
     val blurActive = backdrop != null
@@ -285,6 +332,15 @@ fun SuperIslandSettingsPage() {
         )
         PaddingInputDialog(show = showLeftPaddingDialog, title = stringResource(id = R.string.title_left_padding), initialLeft = leftPaddingLeft, initialRight = leftPaddingRight, onDismiss = { showLeftPaddingDialog = false }, onConfirm = { l, r -> leftPaddingLeft = l; leftPaddingRight = r; saveConfig(RootConstants.KEY_HOOK_ISLAND_LEFT_PADDING_LEFT, l); saveConfig(RootConstants.KEY_HOOK_ISLAND_LEFT_PADDING_RIGHT, r) })
         PaddingInputDialog(show = showRightPaddingDialog, title = stringResource(id = R.string.title_right_padding), initialLeft = rightPaddingLeft, initialRight = rightPaddingRight, onDismiss = { showRightPaddingDialog = false }, onConfirm = { l, r -> rightPaddingLeft = l; rightPaddingRight = r; saveConfig(RootConstants.KEY_HOOK_ISLAND_RIGHT_PADDING_LEFT, l); saveConfig(RootConstants.KEY_HOOK_ISLAND_RIGHT_PADDING_RIGHT, r) })
+        CustomFontColorPickerDialog(
+            show = showProgressCustomColorDialog,
+            initialColor = progressCustomColor,
+            onDismiss = { showProgressCustomColorDialog = false },
+            onConfirm = { color ->
+                progressCustomColor = color
+                saveConfig(RootConstants.KEY_HOOK_ISLAND_PROGRESS_CUSTOM_COLOR, color)
+            },
+        )
 
         val top = innerPadding.calculateTopPadding()
         val bottom = innerPadding.calculateBottomPadding()
@@ -369,6 +425,69 @@ fun SuperIslandSettingsPage() {
                                                 }
                                             )
                                         }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                item(key = "edge_glow") {
+                    Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
+                        Column {
+                            OverlayDropdownPreference(
+                                title = stringResource(id = R.string.title_island_progress_glow),
+                                items = progressColorModeOptions,
+                                selectedIndex = progressColorMode.coerceIn(
+                                    RootConstants.ISLAND_PROGRESS_COLOR_MODE_DISABLED,
+                                    RootConstants.ISLAND_PROGRESS_COLOR_MODE_CUSTOM,
+                                ),
+                                onSelectedIndexChange = { mode ->
+                                    progressColorMode = mode
+                                    saveConfig(RootConstants.KEY_HOOK_ISLAND_PROGRESS_COLOR_MODE, mode)
+                                    saveConfig(
+                                        RootConstants.KEY_HOOK_ISLAND_PROGRESS_GLOW,
+                                        IslandProgressColorMode.isEnabled(mode),
+                                    )
+                                    saveConfig(
+                                        RootConstants.KEY_HOOK_ISLAND_GLOW_EXTRACT_COLOR,
+                                        IslandProgressColorMode.usesCover(mode),
+                                    )
+                                    saveConfig(
+                                        RootConstants.KEY_HOOK_ISLAND_PROGRESS_GRADIENT,
+                                        IslandProgressColorMode.usesCoverGradient(mode),
+                                    )
+                                },
+                            )
+                            AnimatedVisibility(
+                                visible = IslandProgressColorMode.isEnabled(progressColorMode),
+                                enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
+                                exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
+                            ) {
+                                Column {
+                                    OverlayDropdownPreference(
+                                        title = stringResource(id = R.string.title_island_progress_style),
+                                        items = progressStyleOptions,
+                                        selectedIndex = progressStyle,
+                                        onSelectedIndexChange = {
+                                            progressStyle = it
+                                            saveConfig(
+                                                RootConstants.KEY_HOOK_ISLAND_PROGRESS_STYLE,
+                                                it
+                                            )
+                                        }
+                                    )
+                                    AnimatedVisibility(
+                                        visible = progressColorMode == RootConstants.ISLAND_PROGRESS_COLOR_MODE_CUSTOM,
+                                        enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
+                                        exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
+                                    ) {
+                                        BasicComponent(
+                                            title = stringResource(R.string.title_custom_font_color),
+                                            onClick = { showProgressCustomColorDialog = true },
+                                            endActions = {
+                                                CustomFontColorPreview(color = progressCustomColor)
+                                            },
+                                        )
                                     }
                                 }
                             }
@@ -514,53 +633,6 @@ fun SuperIslandSettingsPage() {
                                     )
                                 }
                             )
-                        }
-                    }
-                }
-                item(key = "edge_glow") {
-                    Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
-                        Column {
-                            SwitchPreference(
-                                title = stringResource(id = R.string.title_glow_cover_color),
-                                checked = extractGlowColor,
-                                onCheckedChange = { extractGlowColor = it; saveConfig(RootConstants.KEY_HOOK_ISLAND_GLOW_EXTRACT_COLOR, it) }
-                            )
-                            SwitchPreference(
-                                title = stringResource(id = R.string.title_island_progress_glow),
-                                checked = progressGlow,
-                                onCheckedChange = { progressGlow = it; saveConfig(RootConstants.KEY_HOOK_ISLAND_PROGRESS_GLOW, it) }
-                            )
-                            AnimatedVisibility(visible = progressGlow) {
-                                Column {
-                                    OverlayDropdownPreference(
-                                        title = stringResource(id = R.string.title_island_progress_style),
-                                        items = progressStyleOptions,
-                                        selectedIndex = progressStyle,
-                                        onSelectedIndexChange = {
-                                            progressStyle = it
-                                            saveConfig(
-                                                RootConstants.KEY_HOOK_ISLAND_PROGRESS_STYLE,
-                                                it
-                                            )
-                                        }
-                                    )
-                                    AnimatedVisibility(visible = extractGlowColor) {
-                                        Column {
-                                            SwitchPreference(
-                                                title = stringResource(id = R.string.title_island_progress_gradient),
-                                                checked = progressGradient,
-                                                onCheckedChange = {
-                                                    progressGradient = it
-                                                    saveConfig(
-                                                        RootConstants.KEY_HOOK_ISLAND_PROGRESS_GRADIENT,
-                                                        it
-                                                    )
-                                                }
-                                            )
-                                        }
-                                    }
-                                }
-                            }
                         }
                     }
                 }

@@ -56,6 +56,8 @@
     <string name="summary_apple_music_localized_metadata_cache">Uses very little storage for efficient performance. When disabled, song information must be fetched again after a cold start. Recommended.</string>
     <string name="title_apple_music_app_features">App Features</string>
     <string name="title_apple_music_app_display">App Display</string>
+    <string name="title_apple_music_volume_balance">Volume Balance</string>
+    <string name="summary_apple_music_volume_balance">Helps fix low Dolby Atmos volume</string>
     <string name="title_apple_music_notification_open_full_player">Open the player directly from media notifications</string>
     <string name="title_apple_music_simplify_traditional_lyrics">Convert Traditional Chinese lyrics to Simplified Chinese</string>
     <string name="title_apple_music_native_online_translation">Fill missing lyric translations and pronunciations</string>
@@ -435,8 +437,13 @@
     <string name="title_aod_duet_lyrics">Duet Lyrics</string>
     <string name="summary_aod_duet_lyrics">Centered when disabled</string>
     <string name="title_aod_center_non_duet_song">Center Non-Duet Songs</string>
-    <string name="title_extract_cover_color">Extract Cover Color</string>
-    <string name="title_extract_cover_gradient">Extract Cover Gradient</string>
+    <string name="title_font_color">Font Color</string>
+    <string name="option_font_color_default">Default</string>
+    <string name="option_font_color_cover">Cover Color</string>
+    <string name="option_font_color_cover_gradient">Cover Gradient</string>
+    <string name="option_font_color_custom">Custom</string>
+    <string name="title_custom_font_color">Custom Color</string>
+    <string name="summary_custom_font_color_picker">Adjust color and opacity</string>
     <string name="title_word_motion">Word Lift Animation</string>
     <string name="title_word_motion_cjk_lift">CJK Lift Coefficient</string>
     <string name="title_word_motion_cjk_wave">CJK Wavelength Coefficient</string>
@@ -558,6 +565,12 @@
     <string name="title_island_progress_glow">Edge glow progress bar</string>
     <string name="title_island_progress_style">Progress track style</string>
     <string name="title_island_progress_gradient">Edge glow progress cover gradient</string>
+    <string name="option_island_progress_disabled">Off</string>
+    <string name="option_island_progress_system_blue">System blue</string>
+    <string name="option_island_progress_monet">Monet color</string>
+    <string name="option_island_progress_cover">Cover color</string>
+    <string name="option_island_progress_cover_gradient">Cover gradient</string>
+    <string name="option_island_progress_custom">Custom</string>
     <string name="option_island_progress_top_clockwise">Top start (clockwise)</string>
     <string name="option_island_progress_right_clockwise">Right start (clockwise)</string>
     <string name="option_island_progress_bottom_clockwise">Bottom start (clockwise)</string>

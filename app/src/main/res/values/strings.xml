@@ -57,6 +57,8 @@
     <string name="summary_apple_music_localized_metadata_cache">极少量空间占用换取高效率性能，当关闭时冷启动后需重新抓取歌曲信息，推荐开启</string>
     <string name="title_apple_music_app_features">App功能</string>
     <string name="title_apple_music_app_display">App显示</string>
+    <string name="title_apple_music_volume_balance">音量平衡</string>
+    <string name="summary_apple_music_volume_balance">可解决Dolby Atmos音量小的问题</string>
     <string name="title_apple_music_notification_open_full_player">点击媒体通知直接跳转播放页</string>
     <string name="title_apple_music_simplify_traditional_lyrics">将繁体歌词转成简体</string>
     <string name="title_apple_music_native_online_translation">补全歌词翻译与发音</string>
@@ -437,8 +439,13 @@
     <string name="title_aod_duet_lyrics">对唱歌词</string>
     <string name="summary_aod_duet_lyrics">关闭时居中显示</string>
     <string name="title_aod_center_non_duet_song">非对唱歌曲恢复居中</string>
-    <string name="title_extract_cover_color">提取封面色</string>
-    <string name="title_extract_cover_gradient">提取封面渐变色</string>
+    <string name="title_font_color">字体颜色</string>
+    <string name="option_font_color_default">默认</string>
+    <string name="option_font_color_cover">封面色</string>
+    <string name="option_font_color_cover_gradient">封面渐变色</string>
+    <string name="option_font_color_custom">自定义</string>
+    <string name="title_custom_font_color">自定义颜色</string>
+    <string name="summary_custom_font_color_picker">调整颜色与透明度</string>
     <string name="title_word_motion">字词上浮动画</string>
     <string name="title_word_motion_cjk_lift">中日韩上浮系数</string>
     <string name="title_word_motion_cjk_wave">中日韩波长系数</string>
@@ -561,6 +568,12 @@
     <string name="title_island_progress_glow">边缘光效进度条</string>
     <string name="title_island_progress_style">进度轨道样式</string>
     <string name="title_island_progress_gradient">边缘光效进度条封面渐变色</string>
+    <string name="option_island_progress_disabled">不开启</string>
+    <string name="option_island_progress_system_blue">系统蓝色</string>
+    <string name="option_island_progress_monet">莫奈取色</string>
+    <string name="option_island_progress_cover">封面色</string>
+    <string name="option_island_progress_cover_gradient">封面渐变色</string>
+    <string name="option_island_progress_custom">自定义</string>
     <string name="option_island_progress_top_clockwise">上方起点（顺时针）</string>
     <string name="option_island_progress_right_clockwise">右侧起点（顺时针）</string>
     <string name="option_island_progress_bottom_clockwise">下方起点（顺时针）</string>

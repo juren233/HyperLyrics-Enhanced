@@ -56,6 +56,8 @@ internal data class IslandSlotRuntimeConfig(
     val adjacentBackgroundTranslation: Boolean,
     val extractCoverTextColor: Boolean,
     val extractCoverTextGradient: Boolean,
+    val customTextColorEnabled: Boolean,
+    val customTextColor: Int,
     val customFontPath: String,
     val narrowLatinFont: Boolean,
     val wordMotionEnabled: Boolean,
@@ -124,6 +126,8 @@ internal data class IslandSlotRuntimeConfig(
         nextSongPreviewWeight,
         extractCoverTextColor,
         extractCoverTextGradient,
+        customTextColorEnabled,
+        customTextColor,
         customFontPath,
         narrowLatinFont,
         wordMotionEnabled,
@@ -381,8 +385,26 @@ internal data class IslandSlotRuntimeConfig(
                 swapTranslation = prefs.getBoolean(RootConstants.KEY_HOOK_SWAP_TRANSLATION, RootConstants.DEFAULT_HOOK_SWAP_TRANSLATION),
                 nextLyricLine = prefs.getBoolean(RootConstants.KEY_HOOK_NEXT_LYRIC_LINE, RootConstants.DEFAULT_HOOK_NEXT_LYRIC_LINE),
                 adjacentBackgroundTranslation = prefs.getBoolean(RootConstants.KEY_HOOK_ADJACENT_BACKGROUND_TRANSLATION, RootConstants.DEFAULT_HOOK_ADJACENT_BACKGROUND_TRANSLATION),
-                extractCoverTextColor = prefs.getBoolean(RootConstants.KEY_HOOK_EXTRACT_COVER_TEXT_COLOR, RootConstants.DEFAULT_HOOK_EXTRACT_COVER_TEXT_COLOR),
-                extractCoverTextGradient = prefs.getBoolean(RootConstants.KEY_HOOK_EXTRACT_COVER_TEXT_GRADIENT, RootConstants.DEFAULT_HOOK_EXTRACT_COVER_TEXT_GRADIENT),
+                extractCoverTextColor = runtimeBoolean(
+                    prefs,
+                    RootConstants.KEY_HOOK_EXTRACT_COVER_TEXT_COLOR,
+                    RootConstants.DEFAULT_HOOK_EXTRACT_COVER_TEXT_COLOR
+                ),
+                extractCoverTextGradient = runtimeBoolean(
+                    prefs,
+                    RootConstants.KEY_HOOK_EXTRACT_COVER_TEXT_GRADIENT,
+                    RootConstants.DEFAULT_HOOK_EXTRACT_COVER_TEXT_GRADIENT
+                ),
+                customTextColorEnabled = runtimeBoolean(
+                    prefs,
+                    RootConstants.KEY_HOOK_CUSTOM_TEXT_COLOR_ENABLED,
+                    RootConstants.DEFAULT_HOOK_CUSTOM_TEXT_COLOR_ENABLED
+                ),
+                customTextColor = IslandRuntimePreferenceReader.getInt(
+                    prefs,
+                    RootConstants.KEY_HOOK_CUSTOM_TEXT_COLOR,
+                    RootConstants.DEFAULT_HOOK_CUSTOM_TEXT_COLOR
+                ),
                 customFontPath = prefs.getString(RootConstants.KEY_HOOK_CUSTOM_FONT_PATH, null).orEmpty(),
                 narrowLatinFont = prefs.getBoolean(
                     RootConstants.KEY_HOOK_NARROW_LATIN_FONT,
@@ -434,9 +456,6 @@ internal data class IslandSlotRuntimeConfig(
         prefs: SharedPreferences,
         key: String,
         default: Boolean
-    ): Boolean = IslandRuntimePreferenceOverrides.getBoolean(
-        key,
-        prefs.getBoolean(key, default)
-    )
+    ): Boolean = IslandRuntimePreferenceReader.getBoolean(prefs, key, default)
 }
 }

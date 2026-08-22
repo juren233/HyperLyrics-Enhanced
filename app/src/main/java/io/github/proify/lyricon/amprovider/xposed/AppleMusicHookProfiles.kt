@@ -27,7 +27,17 @@ internal enum class AppleMusicHookPoint {
     MEDIA_API_LOCALIZATION,
     CONTENT_HTTP_LOCALIZATION,
     EXO_MEDIA_PLAYER,
+    EXO_AUDIO_SESSION_ID,
     LOCAL_MEDIA_PLAYER_CONTROLLER_STATE,
+    LOCAL_MEDIA_PLAYER_AUDIO_VARIANT_CHANGED,
+    DEBUG_ATMOS_MEDIA_CODEC_PERIOD_ID,
+    DEBUG_ATMOS_MEDIA_CODEC_INPUT_FORMAT,
+    DEBUG_ATMOS_MEDIA_CODEC_AUDIO_SESSION,
+    DEBUG_ATMOS_MEDIA_CODEC_OUTPUT_BUFFER,
+    DEBUG_ATMOS_SV_AUDIO_PERIOD_ID,
+    DEBUG_ATMOS_SV_AUDIO_STREAM_CHANGED,
+    DEBUG_ATMOS_SV_AUDIO_SESSION,
+    DEBUG_ATMOS_SV_AUDIO_FIRST_BUFFER,
     LOCAL_MEDIA_PLAYER_METADATA_UPDATED,
     LOCAL_MEDIA_PLAYER_INDEX_CHANGED,
     LYRICS_NETWORK_REQUEST,
@@ -111,6 +121,13 @@ internal enum class AppleMusicRuntimeMember {
     EXO_STOP_METHOD,
     EXO_RELEASE_METHOD,
     EXO_CURRENT_POSITION_METHOD,
+    DEBUG_FORMAT_HOLDER_FORMAT_FIELD,
+    DEBUG_FORMAT_CODECS_FIELD,
+    DEBUG_FORMAT_SAMPLE_MIME_TYPE_FIELD,
+    DEBUG_FORMAT_LOUDNESS_FIELD,
+    DEBUG_FORMAT_CHANNEL_COUNT_FIELD,
+    DEBUG_FORMAT_SAMPLE_RATE_FIELD,
+    DEBUG_FORMAT_BITRATE_FIELD,
     PLAYBACK_PLAYER_CURRENT_ITEM_METHOD,
     PLAYBACK_QUEUE_ITEM_ITEM_METHOD,
     PLAYBACK_QUEUE_ITEM_ID_METHOD,
@@ -392,8 +409,12 @@ internal object AppleMusicHookProfiles {
                 contentHttpLocalizationTarget(),
             ),
             AppleMusicHookPoint.EXO_MEDIA_PLAYER to listOf(exoMediaPlayerTarget()),
+            AppleMusicHookPoint.EXO_AUDIO_SESSION_ID to listOf(exoAudioSessionIdTarget()),
             AppleMusicHookPoint.LOCAL_MEDIA_PLAYER_CONTROLLER_STATE to listOf(
                 localMediaPlayerControllerStateTarget(),
+            ),
+            AppleMusicHookPoint.LOCAL_MEDIA_PLAYER_AUDIO_VARIANT_CHANGED to listOf(
+                localMediaPlayerAudioVariantChangedTarget(),
             ),
             AppleMusicHookPoint.LOCAL_MEDIA_PLAYER_METADATA_UPDATED to listOf(
                 localMediaPlayerMetadataUpdatedTarget(),
@@ -460,7 +481,8 @@ internal object AppleMusicHookProfiles {
                 ),
             ),
         ) + stableMetadataSurfaceHookTargets() +
-            stableLibrarySurfaceHookTargets() + stableLyricsHookTargets(),
+            stableLibrarySurfaceHookTargets() + stableLyricsHookTargets() +
+            stableAtmosDiagnosticHookTargets(),
     )
 
     private val APPLE_MUSIC_6_5_2 = AppleMusicHookProfile(
@@ -468,6 +490,12 @@ internal object AppleMusicHookProfiles {
         versionName = "6.5.2",
         versionCodes = setOf(1586L),
         hookTargets = mapOf(
+            // Verified from Apple Music 6.5.2 (1586) classes2.dex. These playback
+            // callbacks retain the same exact descriptors as 6.5.0 and 6.5.1.
+            AppleMusicHookPoint.EXO_AUDIO_SESSION_ID to listOf(exoAudioSessionIdTarget()),
+            AppleMusicHookPoint.LOCAL_MEDIA_PLAYER_AUDIO_VARIANT_CHANGED to listOf(
+                localMediaPlayerAudioVariantChangedTarget(),
+            ),
             // Verified from Apple Music 6.5.2 (1586) classes2.dex.
             AppleMusicHookPoint.LISTEN_NOW_MODEL_BUILDER to listOf(
                 AppleMusicHookTarget(
@@ -571,7 +599,7 @@ internal object AppleMusicHookProfiles {
                     returnTypeName = "void",
                 ),
             ),
-        ),
+        ) + stableAtmosDiagnosticHookTargets(),
     )
 
     private val APPLE_MUSIC_6_5_1 = AppleMusicHookProfile(
@@ -586,8 +614,12 @@ internal object AppleMusicHookProfiles {
                 contentHttpLocalizationTarget(),
             ),
             AppleMusicHookPoint.EXO_MEDIA_PLAYER to listOf(exoMediaPlayerTarget()),
+            AppleMusicHookPoint.EXO_AUDIO_SESSION_ID to listOf(exoAudioSessionIdTarget()),
             AppleMusicHookPoint.LOCAL_MEDIA_PLAYER_CONTROLLER_STATE to listOf(
                 localMediaPlayerControllerStateTarget(),
+            ),
+            AppleMusicHookPoint.LOCAL_MEDIA_PLAYER_AUDIO_VARIANT_CHANGED to listOf(
+                localMediaPlayerAudioVariantChangedTarget(),
             ),
             AppleMusicHookPoint.LOCAL_MEDIA_PLAYER_METADATA_UPDATED to listOf(
                 localMediaPlayerMetadataUpdatedTarget(),
@@ -764,7 +796,8 @@ internal object AppleMusicHookProfiles {
                 ),
             ),
         ) + stableMetadataSurfaceHookTargets() +
-            stableLibrarySurfaceHookTargets() + stableLyricsHookTargets(),
+            stableLibrarySurfaceHookTargets() + stableLyricsHookTargets() +
+            stableAtmosDiagnosticHookTargets(),
     )
 
     /** 新版本档案必须放在前面，未知版本回退时优先尝试较新的目标。 */
@@ -1285,6 +1318,19 @@ internal object AppleMusicHookProfiles {
         ),
     )
 
+    /**
+     * Verified from the original classes2.dex of Apple Music 6.5.0 (1580),
+     * 6.5.1 (1583), and 6.5.2 (1586).
+     */
+    private fun exoAudioSessionIdTarget() = AppleMusicHookTarget(
+        className = "com.apple.android.music.playback.player.ExoMediaPlayer",
+        methodName = "onAudioSessionId",
+        parameterCount = 1,
+        parameterTypeNames = listOf("int"),
+        returnTypeName = "void",
+        isStatic = false,
+    )
+
     private fun localMediaPlayerControllerStateTarget() = AppleMusicHookTarget(
         className =
             "com.apple.android.music.playback.controller.LocalMediaPlayerController",
@@ -1304,6 +1350,155 @@ internal object AppleMusicHookProfiles {
                 "getPersistentId",
         ),
     )
+
+    /**
+     * Original DEX evidence for Apple Music 6.5.0-6.5.2 shows that variant 4 is
+     * TRACK_VARIANTS_DOLBY_ATMOS and this callback carries the exact active player.
+     */
+    private fun localMediaPlayerAudioVariantChangedTarget() = AppleMusicHookTarget(
+        className =
+            "com.apple.android.music.playback.controller.LocalMediaPlayerController",
+        methodName = "onPlaybackAudioVariantChanged",
+        parameterCount = 5,
+        parameterTypeNames = listOf(
+            "com.apple.android.music.playback.player.MediaPlayer",
+            "int",
+            "long",
+            "com.google.android.exoplayer2.Format",
+            "com.google.android.exoplayer2.Format",
+        ),
+        returnTypeName = "void",
+        isStatic = false,
+        runtimeMemberNames = debugAtmosFormatRuntimeMembers(includeHolder = false),
+    )
+
+    /**
+     * Diagnostic-only playback targets verified from the original classes.dex/classes2.dex of
+     * Apple Music 6.5.0 (1580), 6.5.1 (1583), and 6.5.2 (1586).
+     */
+    private fun stableAtmosDiagnosticHookTargets(): Map<
+        AppleMusicHookPoint,
+        List<AppleMusicHookTarget>,
+    > = mapOf(
+        AppleMusicHookPoint.DEBUG_ATMOS_MEDIA_CODEC_PERIOD_ID to listOf(
+            AppleMusicHookTarget(
+                className =
+                    "com.apple.android.music.playback.renderer.SVMediaCodecAudioRenderer",
+                methodName = "invalidatePeriodId",
+                parameterCount = 2,
+                parameterTypeNames = listOf(
+                    "com.google.android.exoplayer2.source.SampleStream",
+                    "long",
+                ),
+                returnTypeName = "void",
+                isStatic = false,
+            ),
+        ),
+        AppleMusicHookPoint.DEBUG_ATMOS_MEDIA_CODEC_INPUT_FORMAT to listOf(
+            AppleMusicHookTarget(
+                className =
+                    "com.apple.android.music.playback.renderer.SVMediaCodecAudioRenderer",
+                methodName = "onInputFormatChanged",
+                parameterCount = 1,
+                parameterTypeNames = listOf("com.google.android.exoplayer2.FormatHolder"),
+                returnTypeName = "void",
+                isStatic = false,
+                runtimeMemberNames = debugAtmosFormatRuntimeMembers(includeHolder = true),
+            ),
+        ),
+        AppleMusicHookPoint.DEBUG_ATMOS_MEDIA_CODEC_AUDIO_SESSION to listOf(
+            AppleMusicHookTarget(
+                className = "com.google.android.exoplayer2.audio.MediaCodecAudioRenderer",
+                methodName = "onAudioSessionId",
+                parameterCount = 1,
+                parameterTypeNames = listOf("int"),
+                returnTypeName = "void",
+                isStatic = false,
+            ),
+        ),
+        AppleMusicHookPoint.DEBUG_ATMOS_MEDIA_CODEC_OUTPUT_BUFFER to listOf(
+            AppleMusicHookTarget(
+                className = "com.google.android.exoplayer2.audio.MediaCodecAudioRenderer",
+                methodName = "processOutputBuffer",
+                parameterCount = 10,
+                parameterTypeNames = listOf(
+                    "long",
+                    "long",
+                    "android.media.MediaCodec",
+                    "java.nio.ByteBuffer",
+                    "int",
+                    "int",
+                    "long",
+                    "boolean",
+                    "boolean",
+                    "com.google.android.exoplayer2.Format",
+                ),
+                returnTypeName = "boolean",
+                isStatic = false,
+            ),
+        ),
+        AppleMusicHookPoint.DEBUG_ATMOS_SV_AUDIO_PERIOD_ID to listOf(
+            AppleMusicHookTarget(
+                className = "com.apple.android.music.playback.renderer.SVAudioRendererV2",
+                methodName = "invalidatePeriodId",
+                parameterCount = 2,
+                parameterTypeNames = listOf(
+                    "com.google.android.exoplayer2.source.SampleStream",
+                    "long",
+                ),
+                returnTypeName = "void",
+                isStatic = false,
+            ),
+        ),
+        AppleMusicHookPoint.DEBUG_ATMOS_SV_AUDIO_STREAM_CHANGED to listOf(
+            AppleMusicHookTarget(
+                className = "com.apple.android.music.playback.renderer.SVAudioRendererV2",
+                methodName = "onStreamChanged",
+                parameterCount = 2,
+                parameterTypeNames = listOf(
+                    "[Lcom.google.android.exoplayer2.Format;",
+                    "long",
+                ),
+                returnTypeName = "void",
+                isStatic = false,
+                runtimeMemberNames = debugAtmosFormatRuntimeMembers(includeHolder = false),
+            ),
+        ),
+        AppleMusicHookPoint.DEBUG_ATMOS_SV_AUDIO_SESSION to listOf(
+            AppleMusicHookTarget(
+                className = "com.apple.android.music.playback.renderer.SVAudioRendererV2",
+                methodName = "onAudioSessionId",
+                parameterCount = 1,
+                parameterTypeNames = listOf("int"),
+                returnTypeName = "void",
+                isStatic = false,
+            ),
+        ),
+        AppleMusicHookPoint.DEBUG_ATMOS_SV_AUDIO_FIRST_BUFFER to listOf(
+            AppleMusicHookTarget(
+                className = "com.apple.android.music.playback.renderer.SVAudioRendererV2",
+                methodName = "maybeNotifyFirstDecodedBuffer",
+                parameterCount = 0,
+                parameterTypeNames = emptyList(),
+                returnTypeName = "void",
+                isStatic = false,
+            ),
+        ),
+    )
+
+    private fun debugAtmosFormatRuntimeMembers(
+        includeHolder: Boolean,
+    ): Map<AppleMusicRuntimeMember, String> = buildMap {
+        if (includeHolder) {
+            put(AppleMusicRuntimeMember.DEBUG_FORMAT_HOLDER_FORMAT_FIELD, "format")
+        }
+        put(AppleMusicRuntimeMember.DEBUG_FORMAT_CODECS_FIELD, "codecs")
+        put(AppleMusicRuntimeMember.DEBUG_FORMAT_SAMPLE_MIME_TYPE_FIELD, "sampleMimeType")
+        put(AppleMusicRuntimeMember.DEBUG_FORMAT_LOUDNESS_FIELD, "loudness")
+        put(AppleMusicRuntimeMember.DEBUG_FORMAT_CHANNEL_COUNT_FIELD, "channelCount")
+        put(AppleMusicRuntimeMember.DEBUG_FORMAT_SAMPLE_RATE_FIELD, "sampleRate")
+        put(AppleMusicRuntimeMember.DEBUG_FORMAT_BITRATE_FIELD, "bitrate")
+    }
 
     /** Preserves the pre-refactor name/count-only lookup without tightening its signature. */
     private fun localMediaPlayerMetadataUpdatedTarget() = AppleMusicHookTarget(
@@ -1985,7 +2180,17 @@ internal class AppleMusicHookResolver(
 
             AppleMusicHookPoint.CONTENT_HTTP_LOCALIZATION,
             AppleMusicHookPoint.EXO_MEDIA_PLAYER,
+            AppleMusicHookPoint.EXO_AUDIO_SESSION_ID,
             AppleMusicHookPoint.LOCAL_MEDIA_PLAYER_CONTROLLER_STATE,
+            AppleMusicHookPoint.LOCAL_MEDIA_PLAYER_AUDIO_VARIANT_CHANGED,
+            AppleMusicHookPoint.DEBUG_ATMOS_MEDIA_CODEC_PERIOD_ID,
+            AppleMusicHookPoint.DEBUG_ATMOS_MEDIA_CODEC_INPUT_FORMAT,
+            AppleMusicHookPoint.DEBUG_ATMOS_MEDIA_CODEC_AUDIO_SESSION,
+            AppleMusicHookPoint.DEBUG_ATMOS_MEDIA_CODEC_OUTPUT_BUFFER,
+            AppleMusicHookPoint.DEBUG_ATMOS_SV_AUDIO_PERIOD_ID,
+            AppleMusicHookPoint.DEBUG_ATMOS_SV_AUDIO_STREAM_CHANGED,
+            AppleMusicHookPoint.DEBUG_ATMOS_SV_AUDIO_SESSION,
+            AppleMusicHookPoint.DEBUG_ATMOS_SV_AUDIO_FIRST_BUFFER,
             AppleMusicHookPoint.LOCAL_MEDIA_PLAYER_METADATA_UPDATED,
             AppleMusicHookPoint.LOCAL_MEDIA_PLAYER_INDEX_CHANGED,
             AppleMusicHookPoint.LYRICS_NETWORK_REQUEST,

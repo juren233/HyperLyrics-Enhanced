@@ -61,4 +61,46 @@ class CoverColorHelperTest {
             CoverColorHelper.sampledArtworkColor(8, 8) { _, _ -> 0x00FFFFFF }
         )
     }
+
+    @Test
+    fun `gradient palette keeps at most three distinct colors`() {
+        val colors = intArrayOf(
+            0xFFFF0000.toInt(),
+            0xFF00FF00.toInt(),
+            0xFF0000FF.toInt(),
+            0xFFFFFF00.toInt(),
+        )
+
+        val indices = CoverColorHelper.smoothGradientColorIndices(colors)
+
+        assertEquals(3, indices.size)
+        assertEquals(3, indices.map(colors::get).distinct().size)
+    }
+
+    @Test
+    fun `gradient palette removes repeated colors`() {
+        val colors = intArrayOf(
+            0xFFFF0000.toInt(),
+            0xFF0000FF.toInt(),
+            0xFFFF0000.toInt(),
+        )
+
+        val indices = CoverColorHelper.smoothGradientColorIndices(colors)
+
+        assertEquals(listOf(colors[0], colors[1]), indices.map(colors::get))
+    }
+
+    @Test
+    fun `three color gradient follows one smooth path`() {
+        val colors = intArrayOf(
+            0xFF000000.toInt(),
+            0xFFFFFFFF.toInt(),
+            0xFF808080.toInt(),
+        )
+
+        val indices = CoverColorHelper.smoothGradientColorIndices(colors)
+
+        assertEquals(listOf(0, 2, 1), indices.toList())
+    }
+
 }

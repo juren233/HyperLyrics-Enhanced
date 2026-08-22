@@ -5,6 +5,8 @@ import com.juren233.hyperlyricsenhanced.common.color.ColorExtractor
 
 object CoverColorHelper {
 
+    private const val MAX_TEXT_GRADIENT_COLORS = 3
+
     internal enum class PaletteSource {
         ARTWORK_ACTIVE_CACHE,
         ARTWORK_KEYED_CACHE,
@@ -146,6 +148,19 @@ object CoverColorHelper {
         )
     }
 
+    internal fun resolveTextColors(
+        bitmap: Bitmap?,
+        useGradient: Boolean,
+        songKey: String? = null
+    ): ResolvedPalette? {
+        val resolved = resolveColors(bitmap, useGradient, songKey) ?: return null
+        if (!useGradient) return resolved
+        val indices = smoothGradientColorIndices(resolved.colors.second)
+        val lightColors = IntArray(indices.size) { position -> resolved.colors.first[indices[position]] }
+        val darkColors = IntArray(indices.size) { position -> resolved.colors.second[indices[position]] }
+        return resolved.copy(colors = Pair(lightColors, darkColors))
+    }
+
     private fun resolveArtworkColors(
         bitmap: Bitmap,
         useGradient: Boolean,
@@ -223,6 +238,62 @@ object CoverColorHelper {
             resolvedKey = key,
             artworkSignature = artworkSignature.hashCode()
         )
+    }
+
+    /**
+     * Keep at most three distinct dominant colors and arrange them as one continuous path.
+     * The renderer maps this array once from the beginning to the end of the full text width.
+     */
+    internal fun smoothGradientColorIndices(colors: IntArray): IntArray {
+        val candidates = ArrayList<Int>(MAX_TEXT_GRADIENT_COLORS)
+        for (index in colors.indices) {
+            if (candidates.none { colors[it] == colors[index] }) {
+                candidates += index
+                if (candidates.size == MAX_TEXT_GRADIENT_COLORS) break
+            }
+        }
+        if (candidates.size <= 2) return candidates.toIntArray()
+
+        val permutations = arrayOf(
+            intArrayOf(0, 1, 2),
+            intArrayOf(0, 2, 1),
+            intArrayOf(1, 0, 2),
+            intArrayOf(1, 2, 0),
+            intArrayOf(2, 0, 1),
+            intArrayOf(2, 1, 0),
+        )
+        var best = permutations.first()
+        var bestScore = gradientPathScore(colors, candidates, best)
+        for (permutation in permutations.drop(1)) {
+            val score = gradientPathScore(colors, candidates, permutation)
+            val startsEarlier = candidates[permutation[0]] < candidates[best[0]]
+            if (score < bestScore || score == bestScore && startsEarlier) {
+                best = permutation
+                bestScore = score
+            }
+        }
+        return IntArray(best.size) { position -> candidates[best[position]] }
+    }
+
+    private fun gradientPathScore(
+        colors: IntArray,
+        candidates: List<Int>,
+        permutation: IntArray
+    ): Long {
+        return weightedRgbDistanceSquared(
+            colors[candidates[permutation[0]]],
+            colors[candidates[permutation[1]]]
+        ) + weightedRgbDistanceSquared(
+            colors[candidates[permutation[1]]],
+            colors[candidates[permutation[2]]]
+        )
+    }
+
+    private fun weightedRgbDistanceSquared(first: Int, second: Int): Long {
+        val red = ((first ushr 16) and 0xFF) - ((second ushr 16) and 0xFF)
+        val green = ((first ushr 8) and 0xFF) - ((second ushr 8) and 0xFF)
+        val blue = (first and 0xFF) - (second and 0xFF)
+        return 2L * red * red + 4L * green * green + 3L * blue * blue
     }
 
     fun getCachedColors(): Pair<IntArray, IntArray>? {

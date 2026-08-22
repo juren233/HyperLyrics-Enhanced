@@ -1,14 +1,21 @@
 package com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.display
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.juren233.hyperlyricsenhanced.R
+import com.juren233.hyperlyricsenhanced.ui.component.CustomFontColorPreview
+import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text
@@ -24,10 +31,10 @@ fun LazyListScope.lyricDisplaySections(
     onTextSizeRatioClick: () -> Unit,
     fadingEdge: Int,
     onFadingEdgeClick: () -> Unit,
-    extractCoverColor: Boolean,
-    onExtractCoverColorChange: (Boolean) -> Unit,
-    extractCoverGradient: Boolean,
-    onExtractCoverGradientChange: (Boolean) -> Unit,
+    fontColorMode: Int,
+    onFontColorModeChange: (Int) -> Unit,
+    customFontColor: Int,
+    onCustomFontColorClick: () -> Unit,
     customFontPath: String,
     onFontPathClick: () -> Unit,
     fontWeight: Int,
@@ -110,19 +117,30 @@ fun LazyListScope.lyricDisplaySections(
             }
             Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
                 Column {
-                    SwitchPreference(
-                        title = stringResource(id = R.string.title_extract_cover_color),
-                        checked = extractCoverColor,
-                        onCheckedChange = onExtractCoverColorChange
+                    val fontColorOptions = listOf(
+                        stringResource(id = R.string.option_font_color_default),
+                        stringResource(id = R.string.option_font_color_cover),
+                        stringResource(id = R.string.option_font_color_cover_gradient),
+                        stringResource(id = R.string.option_font_color_custom),
                     )
-                    AnimatedVisibility(visible = extractCoverColor) {
-                        Column {
-                            SwitchPreference(
-                                title = stringResource(id = R.string.title_extract_cover_gradient),
-                                checked = extractCoverGradient,
-                                onCheckedChange = onExtractCoverGradientChange
-                            )
-                        }
+                    OverlayDropdownPreference(
+                        title = stringResource(id = R.string.title_font_color),
+                        items = fontColorOptions,
+                        selectedIndex = fontColorMode.coerceIn(0, fontColorOptions.lastIndex),
+                        onSelectedIndexChange = onFontColorModeChange
+                    )
+                    AnimatedVisibility(
+                        visible = fontColorMode == FONT_COLOR_MODE_CUSTOM,
+                        enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
+                        exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
+                    ) {
+                        BasicComponent(
+                            title = stringResource(R.string.title_custom_font_color),
+                            onClick = onCustomFontColorClick,
+                            endActions = {
+                                CustomFontColorPreview(color = customFontColor)
+                            },
+                        )
                     }
                 }
             }
