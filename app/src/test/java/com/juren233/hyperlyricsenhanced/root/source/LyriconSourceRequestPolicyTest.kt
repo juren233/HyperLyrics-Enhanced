@@ -5,6 +5,20 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class LyriconSourceRequestPolicyTest {
+    @Test
+    fun `automatic LunaBeat match may replace confirmed Apple native lyrics`() {
+        assertTrue(
+            acceptsAppleOnlineLyricResult(
+                generation = 4,
+                currentGeneration = 4,
+                sameTrack = true,
+                currentNativeLyrics = true,
+                currentSongHasNativeLyrics = true,
+                manualSourceSwitch = false,
+                automaticLunaBeatOverride = true,
+            )
+        )
+    }
 
     @Test
     fun `automatic result is rejected after native lyrics become current`() {

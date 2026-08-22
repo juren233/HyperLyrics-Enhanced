@@ -62,6 +62,7 @@ internal class AppleOnlineSourceMenuHooks(
     private val requestOnlineSource: (Long, String, String, String) -> Boolean,
     private val debugValue: (Any?) -> String,
     private val configuredOrderedSources: () -> List<String> = { DEFAULT_SOURCE_ORDER },
+    private val availableLyricsSources: (String?) -> List<String> = { emptyList() },
 ) {
     private var activeMenu: ActiveOnlineSourceMenu? = null
     private var activeLyricsSourceDialog: ActiveLyricsSourceDialog? = null
@@ -524,7 +525,11 @@ internal class AppleOnlineSourceMenuHooks(
             clipToOutline = true
         }
         val rows = linkedMapOf<String, LyricsSourceDialogRow>()
-        val sourceOrder = configuredOrderedSources()
+        val sourceOrder = if (isLyricsSourceDialog) {
+            availableLyricsSources(songId)
+        } else {
+            configuredOrderedSources()
+        }
         if (sourceOrder.isEmpty()) {
             group.addView(
                 TextView(context).apply {
@@ -713,10 +718,19 @@ internal class AppleOnlineSourceMenuHooks(
     private fun lyricsSourceStatus(
         songId: String,
         source: String,
-    ): AppleMissingLyricsSourceStatus = missingLyricsSourceInfo(songId)
-        ?.statuses
-        ?.firstOrNull { it.source == source }
-        ?: AppleMissingLyricsSourceStatus(source, searched = false, found = false)
+    ): AppleMissingLyricsSourceStatus {
+        if (source == APPLE_NATIVE_SOURCE) {
+            return AppleMissingLyricsSourceStatus(
+                source = source,
+                searched = true,
+                found = true,
+            )
+        }
+        return missingLyricsSourceInfo(songId)
+            ?.statuses
+            ?.firstOrNull { it.source == source }
+            ?: AppleMissingLyricsSourceStatus(source, searched = false, found = false)
+    }
 
     private fun refreshActiveLyricsSourceDialog(songId: String) {
         val active = activeLyricsSourceDialog ?: return
@@ -883,6 +897,8 @@ internal class AppleOnlineSourceMenuHooks(
     }
 
     private fun sourceMenuSourceName(source: String): String = when (source) {
+        APPLE_NATIVE_SOURCE -> "Apple Music 原生歌词"
+        LUNA_BEAT_SOURCE -> "LunaBeat TTML歌词站"
         "NE" -> "网易云音乐"
         "QM" -> "QQ音乐"
         "KUWO" -> "酷我音乐"
@@ -1159,6 +1175,8 @@ internal class AppleOnlineSourceMenuHooks(
         const val ONLINE_SOURCE_MENU_ITEM_TAG = "hyperlyrics_enhanced_online_lyrics_source"
         const val ONLINE_SOURCE_SWITCH_TIMEOUT_MS = 15_000L
         const val ONLINE_SOURCE_SWITCH_FAILURE_FEEDBACK_MS = 2_000L
+        const val APPLE_NATIVE_SOURCE = "APPLE"
+        const val LUNA_BEAT_SOURCE = "LB"
         val DEFAULT_SOURCE_ORDER = listOf("NE", "QM", "KUWO", "KUGOU")
         val SOURCE_ORDER = DEFAULT_SOURCE_ORDER
     }

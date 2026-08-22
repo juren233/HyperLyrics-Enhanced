@@ -175,4 +175,59 @@ class AppleMissingLyricsSongMapperTest {
         assertEquals("译句", mapped.lyrics!![0].translation)
         assertEquals("NE", mapped.metadata?.getString(LyricMetadataKeys.APPLE_MISSING_LYRICS_SOURCE))
     }
+    @Test
+    fun `LunaBeat map preserves source spaces timing and raw TTML metadata`() {
+        val rawTtml = "<tt><p><span>I've</span> <span>said</span></p></tt>"
+        val mapped = AppleMissingLyricsSongMapper.map(
+            baseSong = Song(id = "123", name = "歌", duration = 5_000L),
+            wordLines = listOf(
+                LyricsLine(
+                    start = 1_000L,
+                    end = 2_877L,
+                    words = listOf(
+                        word(1_000L, 1_400L, "I've "),
+                        word(1_400L, 1_800L, "said "),
+                        word(1_800L, 2_100L, "it "),
+                        word(2_100L, 2_877L, "all"),
+                    ),
+                )
+            ),
+            lrcLines = listOf(LrcLine(1_000L, "I've said it all")),
+            sourceInfo = AppleMissingLyricsSourceInfo("LB", emptyList()),
+            rawAppleTtml = rawTtml,
+            sourceLyricId = "hub-id",
+            sourceLyricSha256 = "A".repeat(64),
+        ) ?: error("expected mapped song")
+
+        val line = mapped.lyrics!!.single()
+        assertEquals("I've said it all", line.text)
+        assertEquals("I've said it all", line.words!!.joinToString("") { it.text.orEmpty() })
+        assertEquals(2_877L, line.end)
+        assertEquals(rawTtml, mapped.metadata?.getString(LyricMetadataKeys.LUNA_BEAT_RAW_TTML))
+        assertEquals("hub-id", mapped.metadata?.getString(LyricMetadataKeys.LUNA_BEAT_HUB_ID))
+        assertEquals("a".repeat(64), mapped.metadata?.getString(LyricMetadataKeys.LUNA_BEAT_TTML_SHA256))
+    }
+
+    @Test
+    fun `non LunaBeat map removes stale raw TTML metadata`() {
+        val mapped = AppleMissingLyricsSongMapper.map(
+            baseSong = Song(
+                id = "123",
+                duration = 5_000L,
+                metadata = lyricMetadataOf(
+                    LyricMetadataKeys.LUNA_BEAT_RAW_TTML to "stale",
+                    LyricMetadataKeys.LUNA_BEAT_HUB_ID to "stale-id",
+                    LyricMetadataKeys.LUNA_BEAT_TTML_SHA256 to "f".repeat(64),
+                ),
+            ),
+            wordLines = listOf(line(0L, listOf(word(0L, 1_000L, "普通歌词")))),
+            lrcLines = null,
+            sourceInfo = AppleMissingLyricsSourceInfo("NE", emptyList()),
+        ) ?: error("expected mapped song")
+
+        assertNull(mapped.metadata?.getString(LyricMetadataKeys.LUNA_BEAT_RAW_TTML))
+        assertNull(mapped.metadata?.getString(LyricMetadataKeys.LUNA_BEAT_HUB_ID))
+        assertNull(mapped.metadata?.getString(LyricMetadataKeys.LUNA_BEAT_TTML_SHA256))
+    }
+
 }

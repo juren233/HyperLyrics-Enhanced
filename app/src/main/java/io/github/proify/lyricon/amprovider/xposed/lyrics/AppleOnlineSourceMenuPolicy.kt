@@ -39,10 +39,19 @@ internal fun sourceMenuLabel(
     contentType: String,
     status: OnlineSourceMenuStatus = OnlineSourceMenuStatus.STABLE,
 ): String {
+    if (
+        source == "APPLE" &&
+        contentType == "lyrics" &&
+        status == OnlineSourceMenuStatus.STABLE
+    ) {
+        return "原生歌词"
+    }
     val sourceLabel = when (source) {
         "QM" -> "QQ"
         "KUWO" -> "酷我"
         "KUGOU" -> "酷狗"
+        "LB" -> "LB"
+        "APPLE" -> "Apple Music原生"
         else -> "网易"
     }
     val contentLabel = when (contentType) {
@@ -70,6 +79,7 @@ internal fun missingLyricsSourceMenuLabel(source: String?): String =
  */
 internal fun missingLyricsSourceStatusLabel(status: AppleMissingLyricsSourceStatus): String =
     when {
+        status.source == "APPLE" -> "Apple Music 原生歌词"
         status.searched && status.found ->
             "${if (status.wordTimed) "逐字歌词" else "逐行歌词"} · " +
                 "${status.lineCount} 句"
@@ -80,7 +90,7 @@ internal fun missingLyricsSourceStatusLabel(status: AppleMissingLyricsSourceStat
 internal fun isMissingLyricsSourceSelectable(
     status: AppleMissingLyricsSourceStatus,
     selected: Boolean,
-): Boolean = status.searched && status.found && !selected
+): Boolean = !selected && (!status.searched || status.found)
 
 internal fun currentLyricsMenuSongId(
     playbackSongId: String?,

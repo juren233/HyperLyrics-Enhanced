@@ -84,6 +84,35 @@ class LyriconSourceMetadataTest {
     }
 
     @Test
+    fun `authoritative LunaBeat selection keeps word lyrics when native lyrics arrive late`() {
+        val lunaBeat = Song(
+            id = "1395620514",
+            metadata = lyricMetadataOf(
+                LyricMetadataKeys.APPLE_MISSING_LYRICS_SUPPLEMENT to "true",
+                LyricMetadataKeys.APPLE_MISSING_LYRICS_SOURCE to "LB",
+            ),
+            lyrics = listOf(RichLyricLine(begin = 0L, end = 1_000L, text = "LB逐字歌词")),
+        )
+        val native = Song(
+            id = "1395620514",
+            metadata = lyricMetadataOf(
+                LyricMetadataKeys.APPLE_LYRICS_CACHE_SOURCE to "apple",
+                LyricMetadataKeys.APPLE_NATIVE_LYRICS_CONFIRMED to "true",
+            ),
+            lyrics = listOf(RichLyricLine(begin = 0L, end = 1_000L, text = "原生歌词")),
+        )
+
+        val merged = mergeMissingLyricsSupplementMetadata(
+            previousSong = lunaBeat,
+            incomingSong = native,
+            sameTrack = true,
+            authoritativeSource = "LB",
+        )
+
+        assertEquals(lunaBeat, merged)
+    }
+
+    @Test
     fun `native metadata is not overwritten when incoming model is already supplement`() {
         val incoming = Song(
             id = "1",

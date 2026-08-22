@@ -14,6 +14,7 @@ import com.juren233.hyperlyricsenhanced.common.lyric.AppleMissingLyricsSourceMet
 import com.juren233.hyperlyricsenhanced.common.lyric.LyricMetadataKeys
 import com.juren233.hyperlyricsenhanced.common.lyric.OnlineTranslationMatchStat
 import com.juren233.hyperlyricsenhanced.common.lyric.OnlineTranslationMatchStatsCodec
+import java.security.MessageDigest
 
 internal data class AppleMissingLyricsWord(
     val begin: Long,
@@ -43,6 +44,16 @@ internal enum class AppleMissingLyricsUpdateKind {
     LYRICS,
 }
 
+internal enum class AppleMissingLyricsNativeTtmlKind {
+    LUNA_BEAT_RAW,
+    GENERATED,
+}
+
+internal data class AppleMissingLyricsNativeTtml(
+    val content: String,
+    val kind: AppleMissingLyricsNativeTtmlKind,
+)
+
 internal data class AppleMissingLyricsUpdateResult(
     val kind: AppleMissingLyricsUpdateKind,
 ) {
@@ -64,6 +75,9 @@ internal class AppleMissingLyricsStore {
         val durationMs: Long,
         val lines: List<AppleMissingLyricsLine>,
         val sourceInfo: AppleMissingLyricsSourceInfo?,
+        val rawAppleTtml: String?,
+        val sourceLyricId: String?,
+        val sourceLyricSha256: String?,
         val translationSource: String?,
         val pronunciationSource: String?,
         val translationMatchStats: Map<String, OnlineTranslationMatchStat>,
@@ -104,21 +118,61 @@ internal class AppleMissingLyricsStore {
             ?: return AppleMissingLyricsUpdateResult(AppleMissingLyricsUpdateKind.INVALID)
         val previousContent = content?.takeIf { it.songId == songId }
         val previousLines = previousContent?.lines
+        val sourceInfo = AppleMissingLyricsSourceMetadata.decode(
+            selectedSource = song.metadata?.getString(LyricMetadataKeys.APPLE_MISSING_LYRICS_SOURCE),
+            encodedStatuses = song.metadata
+                ?.getString(LyricMetadataKeys.APPLE_MISSING_LYRICS_SOURCE_STATUSES),
+        )
+        val isLunaBeat = sourceInfo?.selectedSource == "LB"
+        val rawAppleTtml = validatedLunaBeatRawTtml(song, previousContent, isLunaBeat)
+        val sourceLyricId = if (rawAppleTtml != null) {
+            song.metadata?.getString(LyricMetadataKeys.LUNA_BEAT_HUB_ID)
+                ?: previousContent?.sourceLyricId
+        } else {
+            null
+        }
+        val sourceLyricSha256 = if (rawAppleTtml != null) {
+            song.metadata?.getString(LyricMetadataKeys.LUNA_BEAT_TTML_SHA256)
+                ?.lowercase()
+                ?: previousContent?.sourceLyricSha256
+        } else {
+            null
+        }
         val lines = song.lyrics.orEmpty().mapNotNull { line ->
-            // Apple 原生歌词的行首/行尾不能携带布局空白；中日韩歌词连行内空白也去掉。
-            val trimmedText = line.text?.trim().orEmpty()
-            val containsCjk = containsCjk(trimmedText)
-            val text = if (containsCjk) removeWhitespace(trimmedText) else trimmedText
-            if (text.isEmpty() || line.begin < 0L || line.end <= line.begin) {
+            val sourceText = line.text.orEmpty()
+            val text = if (isLunaBeat) {
+                sourceText
+            } else {
+                val trimmedText = sourceText.trim()
+                if (containsCjk(trimmedText)) removeWhitespace(trimmedText) else trimmedText
+            }
+            if (text.isBlank() || line.begin < 0L || line.end <= line.begin) {
                 return@mapNotNull null
+            }
+            val words = if (isLunaBeat) {
+                line.words.orEmpty().mapNotNull { word ->
+                    val wordText = word.text.orEmpty()
+                    if (wordText.isEmpty() || word.begin < 0L || word.end <= word.begin) {
+                        null
+                    } else {
+                        AppleMissingLyricsWord(word.begin, word.end, wordText)
+                    }
+                }
+            } else {
+                val containsCjk = containsCjk(text)
+                normalizeWords(line, text, containsCjk).let { normalizedWords ->
+                    if (isFullLinePseudoWord(line, text, normalizedWords)) {
+                        emptyList()
+                    } else {
+                        normalizedWords
+                    }
+                }
             }
             AppleMissingLyricsLine(
                 begin = line.begin,
                 end = line.end,
                 text = text,
-                words = normalizeWords(line, text, containsCjk).let { words ->
-                    if (isFullLinePseudoWord(line, text, words)) emptyList() else words
-                },
+                words = words,
                 translation = line.translation?.trim()?.takeIf(String::isNotEmpty)
                     ?: matchingPreviousTranslation(previousLines, line.begin, line.end, text),
             )
@@ -130,11 +184,10 @@ internal class AppleMissingLyricsStore {
             songId = songId,
             durationMs = song.duration.coerceAtLeast(lines.last().end),
             lines = lines,
-            sourceInfo = AppleMissingLyricsSourceMetadata.decode(
-                selectedSource = song.metadata?.getString(LyricMetadataKeys.APPLE_MISSING_LYRICS_SOURCE),
-                encodedStatuses = song.metadata
-                    ?.getString(LyricMetadataKeys.APPLE_MISSING_LYRICS_SOURCE_STATUSES),
-            ),
+            sourceInfo = sourceInfo,
+            rawAppleTtml = rawAppleTtml,
+            sourceLyricId = sourceLyricId,
+            sourceLyricSha256 = sourceLyricSha256,
             translationSource = song.metadata
                 ?.getString(LyricMetadataKeys.ONLINE_TRANSLATION_SOURCE)
                 ?: previousContent?.translationSource,
@@ -156,6 +209,7 @@ internal class AppleMissingLyricsStore {
         val lyricsChanged = current == null ||
             current.songId != updated.songId ||
             current.durationMs != updated.durationMs ||
+            current.rawAppleTtml != updated.rawAppleTtml ||
             current.lines.map { it.copy(translation = null) } !=
                 updated.lines.map { it.copy(translation = null) }
         val translationChanged = current != null &&
@@ -199,6 +253,28 @@ internal class AppleMissingLyricsStore {
         }
         return AppleMissingLyricsUpdateResult(AppleMissingLyricsUpdateKind.LYRICS)
     }
+
+    private fun validatedLunaBeatRawTtml(
+        song: Song,
+        previousContent: Content?,
+        isLunaBeat: Boolean,
+    ): String? {
+        if (!isLunaBeat) return null
+        val incomingRaw = song.metadata?.getString(LyricMetadataKeys.LUNA_BEAT_RAW_TTML)
+        if (incomingRaw == null) return previousContent?.rawAppleTtml
+        if (incomingRaw.isEmpty()) return null
+        val expectedSha256 = song.metadata
+            ?.getString(LyricMetadataKeys.LUNA_BEAT_TTML_SHA256)
+            ?.lowercase()
+            ?: return null
+        if (!expectedSha256.matches(Regex("[0-9a-f]{64}"))) return null
+        return incomingRaw.takeIf { sha256(it.toByteArray(Charsets.UTF_8)) == expectedSha256 }
+    }
+
+    private fun sha256(bytes: ByteArray): String = MessageDigest
+        .getInstance("SHA-256")
+        .digest(bytes)
+        .joinToString("") { "%02x".format(it.toInt() and 0xff) }
 
     /**
      * 歌词来源切换的载荷只携带主歌词/逐字时间轴，不携带翻译。翻译由独立在线翻译
@@ -487,6 +563,22 @@ internal class AppleMissingLyricsStore {
         return content?.takeIf { it.songId == songId }?.durationMs ?: 0L
     }
 
+    fun nativeTtml(songId: String?): AppleMissingLyricsNativeTtml? {
+        if (songId.isNullOrBlank()) return null
+        val current = content?.takeIf { it.songId == songId } ?: return null
+        current.rawAppleTtml?.let { rawTtml ->
+            return AppleMissingLyricsNativeTtml(
+                content = rawTtml,
+                kind = AppleMissingLyricsNativeTtmlKind.LUNA_BEAT_RAW,
+            )
+        }
+        if (current.lines.isEmpty()) return null
+        return AppleMissingLyricsNativeTtml(
+            content = AppleMissingLyricsTtml.build(current.lines, current.durationMs),
+            kind = AppleMissingLyricsNativeTtmlKind.GENERATED,
+        )
+    }
+
     fun hasContent(songId: String?): Boolean = lines(songId).isNotEmpty()
 
     /** 当前 Store 正在服务的歌曲 ID；无内容时为 null。 */
@@ -539,7 +631,9 @@ internal class AppleMissingLyricsStore {
         "lines=${lines.size},words=${lines.sumOf { it.words.size }}," +
             "base=${lines.baseFingerprint()},word=${lines.wordFingerprint()}," +
             "translation=${lines.translationFingerprint()},duration=$durationMs," +
-            "source=${sourceInfo.hashCode()},translationSource=${translationSource.hashCode()}," +
+            "source=${sourceInfo.hashCode()},rawTtml=${rawAppleTtml?.length ?: 0}," +
+            "sourceLyricId=${sourceLyricId.hashCode()},sha=${sourceLyricSha256.hashCode()}," +
+            "translationSource=${translationSource.hashCode()}," +
             "pronunciationSource=${pronunciationSource.hashCode()}"
 
     private fun List<AppleMissingLyricsLine>.baseFingerprint(): Int {

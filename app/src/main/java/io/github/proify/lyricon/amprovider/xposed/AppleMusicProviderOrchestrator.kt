@@ -500,6 +500,29 @@ internal object AppleMusicProviderOrchestrator {
                         .orderedSources(contentUiLanguagePrefs)
                         .map { it.name }
                 },
+                availableLyricsSources = { songId ->
+                    if (::missingLyricsHooks.isInitialized) {
+                        val available = missingLyricsHooks.availableLyricsSources(songId)
+                        if ("APPLE" in available) {
+                            available
+                        } else if (
+                            contentUiLanguagePrefs?.getBoolean(
+                                RootConstants.KEY_HOOK_APPLE_MUSIC_FILL_MISSING_LYRICS,
+                                RootConstants.DEFAULT_HOOK_APPLE_MUSIC_FILL_MISSING_LYRICS,
+                            ) != true
+                        ) {
+                            available
+                        } else {
+                            (available +
+                                com.juren233.hyperlyricsenhanced.online.OnlineTranslationSourcePreferences
+                                    .orderedSources(contentUiLanguagePrefs)
+                                    .map { it.name })
+                                .distinct()
+                        }
+                    } else {
+                        emptyList()
+                    }
+                },
             )
             queueMetadataHooks = AppleQueueMetadataHooks(
                 runtime = runtime,
@@ -2044,7 +2067,8 @@ internal object AppleMusicProviderOrchestrator {
                         lyricsHooks.refreshAppleLyricsSupplementPresentation()
                     }
                 }
-                RootConstants.KEY_HOOK_APPLE_MUSIC_FILL_MISSING_LYRICS ->
+                RootConstants.KEY_HOOK_APPLE_MUSIC_FILL_MISSING_LYRICS,
+                RootConstants.KEY_HOOK_APPLE_MUSIC_LUNABEAT_WORD_LYRICS ->
                     missingLyricsHooks.onPreferenceChanged()
                 RootConstants.KEY_HOOK_ENABLE_AOD_LYRICS -> {
                     playbackHooks.onAodPreferenceChanged()
@@ -2090,7 +2114,32 @@ internal object AppleMusicProviderOrchestrator {
             onOnlineTranslationCleared = lyricsHooks::clearNativeOnlineTranslation,
             onMissingLyricsSupplementReceived = lyricsHooks::receiveMissingLyricsSupplement,
             onMissingLyricsSupplementCleared = missingLyricsHooks::clearSupplement,
-            onOnlineTranslationSourceSwitchResult = onlineSourceMenuHooks::receiveSourceSwitchResult,
+            onOnlineTranslationSourceSwitchResult =
+                { requestId, songId, contentType, requestedSource, actualSource, successful ->
+                    var effectiveActualSource = actualSource
+                    var effectiveSuccessful = successful
+                    if (contentType == "lyrics") {
+                        val appliedSource = missingLyricsHooks.onLyricsSourceSelectionChanged(
+                            songId = songId,
+                            source = actualSource,
+                            successful = successful,
+                        )
+                        if (successful && appliedSource != null) {
+                            effectiveActualSource = appliedSource
+                            if (requestedSource != null && appliedSource != requestedSource) {
+                                effectiveSuccessful = false
+                            }
+                        }
+                    }
+                    onlineSourceMenuHooks.receiveSourceSwitchResult(
+                        requestId,
+                        songId,
+                        contentType,
+                        requestedSource,
+                        effectiveActualSource,
+                        effectiveSuccessful,
+                    )
+                },
         ).also { it.start() }
         this.directPlayer = directPlayer
         val helper = runCatching {

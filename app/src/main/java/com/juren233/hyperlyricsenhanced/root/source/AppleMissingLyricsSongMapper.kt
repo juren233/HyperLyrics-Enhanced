@@ -38,9 +38,13 @@ internal object AppleMissingLyricsSongMapper {
         wordLines: List<LyricsLine>?,
         lrcLines: List<LrcLine>?,
         sourceInfo: AppleMissingLyricsSourceInfo?,
+        rawAppleTtml: String? = null,
+        sourceLyricId: String? = null,
+        sourceLyricSha256: String? = null,
     ): Song? {
         val inputLines = wordLines.orEmpty()
         val fetchedTranslationLines = lrcLines.orEmpty()
+        val preserveSourceWhitespace = sourceInfo?.selectedSource == "LB"
         val previousTranslationLines = baseSong.lyrics.orEmpty()
         val normalizedLines = inputLines
             .asSequence()
@@ -60,12 +64,23 @@ internal object AppleMissingLyricsSongMapper {
                         text = word.text,
                     )
                 }
-                val text = words.joinToString("") { it.text.orEmpty() }.trim()
+                val sourceLineText = fetchedTranslationLines
+                    .firstOrNull { it.startTimeMs == line.start }
+                    ?.content
+                    ?.takeIf(String::isNotBlank)
+                val joinedWordText = words.joinToString("") { it.text.orEmpty() }
+                val text = (sourceLineText ?: joinedWordText).let { value ->
+                    if (preserveSourceWhitespace) value else value.trim()
+                }
                 val nextStart = normalizedLines
                     .getOrNull(index + 1)
                     ?.start
                     ?.takeIf { it > line.start }
-                val end = nextStart
+                val end = if (preserveSourceWhitespace) {
+                    line.end.takeIf { it > line.start }
+                } else {
+                    null
+                } ?: nextStart
                     ?: baseSong.duration.takeIf { it > line.start }
                     ?: (line.start + DEFAULT_LAST_LINE_DURATION_MS)
                 RichLyricLine(
@@ -101,7 +116,7 @@ internal object AppleMissingLyricsSongMapper {
                     begin = line.startTimeMs,
                     end = end,
                     duration = end - line.startTimeMs,
-                    text = line.content.trim(),
+                    text = if (preserveSourceWhitespace) line.content else line.content.trim(),
                     words = emptyList(),
                     translation = line.translation?.trim()?.takeIf(String::isNotEmpty)
                         ?: findTranslation(
@@ -115,8 +130,15 @@ internal object AppleMissingLyricsSongMapper {
         }
         if (richLines.isEmpty()) return null
 
+        val lunaBeatMetadataKeys = setOf(
+            LyricMetadataKeys.LUNA_BEAT_RAW_TTML,
+            LyricMetadataKeys.LUNA_BEAT_HUB_ID,
+            LyricMetadataKeys.LUNA_BEAT_TTML_SHA256,
+        )
         val metadataPairs = buildList<Pair<String, String?>> {
-            addAll(baseSong.metadata.orEmpty().entries.map { it.key to it.value })
+            addAll(baseSong.metadata.orEmpty().entries
+                .filterNot { it.key in lunaBeatMetadataKeys }
+                .map { it.key to it.value })
             add(LyricMetadataKeys.APPLE_MISSING_LYRICS_SUPPLEMENT to "true")
             sourceInfo?.selectedSource?.let {
                 add(LyricMetadataKeys.APPLE_MISSING_LYRICS_SOURCE to it)
@@ -124,6 +146,15 @@ internal object AppleMissingLyricsSongMapper {
             sourceInfo?.statuses?.let {
                 AppleMissingLyricsSourceMetadata.encodeStatuses(it)?.let { encoded ->
                     add(LyricMetadataKeys.APPLE_MISSING_LYRICS_SOURCE_STATUSES to encoded)
+                }
+            }
+            if (sourceInfo?.selectedSource == "LB" && !rawAppleTtml.isNullOrEmpty()) {
+                add(LyricMetadataKeys.LUNA_BEAT_RAW_TTML to rawAppleTtml)
+                sourceLyricId?.takeIf(String::isNotBlank)?.let {
+                    add(LyricMetadataKeys.LUNA_BEAT_HUB_ID to it)
+                }
+                sourceLyricSha256?.takeIf(String::isNotBlank)?.let {
+                    add(LyricMetadataKeys.LUNA_BEAT_TTML_SHA256 to it.lowercase())
                 }
             }
         }

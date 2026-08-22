@@ -63,6 +63,8 @@
     <string name="title_apple_music_fill_missing_lyrics">Fill lyrics for songs without lyrics</string>
     <string name="summary_apple_music_fill_missing_lyrics">Configure sources in the third-party online source settings</string>
     <string name="title_apple_music_hide_mandarin_pinyin">Hide pinyin for Mandarin songs</string>
+    <string name="title_apple_music_lunabeat_word_lyrics">Use an open-source lyric repository to convert selected lyrics to word timing</string>
+    <string name="summary_apple_music_lunabeat_word_lyrics">Lyrics provided by LunaBeat TTML Lyrics, experimental</string>
     <string name="title_apple_music_lyrics_blur_effect">Lyrics blur effect</string>
     <string name="option_apple_music_lyrics_blur_effect_off">Off</string>
     <string name="option_apple_music_lyrics_blur_effect_native">Native blur</string>

@@ -64,6 +64,8 @@
     <string name="title_apple_music_fill_missing_lyrics">为无歌词的歌曲补充歌词</string>
     <string name="summary_apple_music_fill_missing_lyrics">来源请在三方在线源配置中设置</string>
     <string name="title_apple_music_hide_mandarin_pinyin">不显示国语歌拼音</string>
+    <string name="title_apple_music_lunabeat_word_lyrics">使用开源仓库歌词源对部分逐行歌词转换为逐字歌词</string>
+    <string name="summary_apple_music_lunabeat_word_lyrics">由 LunaBeat TTML 歌词站提供歌词，实验性功能</string>
     <string name="title_apple_music_lyrics_blur_effect">歌词模糊效果</string>
     <string name="option_apple_music_lyrics_blur_effect_off">不开启</string>
     <string name="option_apple_music_lyrics_blur_effect_native">原生模糊</string>

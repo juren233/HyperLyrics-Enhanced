@@ -42,6 +42,9 @@ object OnlineLyricTargeter {
         val nearMiss: NearMissCandidate? = null,
         val sourceStatuses: List<AppleMissingLyricsSourceStatus> = emptyList(),
         val selectedSource: Source? = null,
+        val rawAppleTtml: String? = null,
+        val sourceLyricId: String? = null,
+        val sourceLyricSha256: String? = null,
     )
 
     suspend fun fetchBestLyric(
@@ -866,6 +869,7 @@ object OnlineLyricTargeter {
             Source.QM -> listOf(Source.QM, Source.NE)
             Source.KUWO -> listOf(Source.KUWO, Source.NE, Source.QM)
             Source.KUGOU -> listOf(Source.KUGOU, Source.NE, Source.QM)
+            Source.LB -> listOf(Source.LB)
             null -> when (pkgName) {
                 "com.netease.cloudmusic" -> listOf(Source.NE, Source.QM)
                 "com.tencent.qqmusic", "com.tencent.qqmusicpad" ->

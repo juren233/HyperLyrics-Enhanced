@@ -278,6 +278,8 @@ object RootConstants {
         "key_hook_apple_music_fill_missing_lyrics"
     const val KEY_HOOK_APPLE_MUSIC_HIDE_MANDARIN_PINYIN =
         "key_hook_apple_music_hide_mandarin_pinyin"
+    const val KEY_HOOK_APPLE_MUSIC_LUNABEAT_WORD_LYRICS =
+        "key_hook_apple_music_lunabeat_word_lyrics"
     const val KEY_HOOK_APPLE_MUSIC_LYRICS_BLUR_EFFECT =
         "key_hook_apple_music_lyrics_blur_effect"
     const val KEY_HOOK_APPLE_MUSIC_NATIVE_LYRICS_BLUR_MIN_RADIUS_DP =
@@ -325,6 +327,7 @@ object RootConstants {
     const val DEFAULT_HOOK_APPLE_MUSIC_NATIVE_ONLINE_TRANSLATION = false
     const val DEFAULT_HOOK_APPLE_MUSIC_FILL_MISSING_LYRICS = false
     const val DEFAULT_HOOK_APPLE_MUSIC_HIDE_MANDARIN_PINYIN = false
+    const val DEFAULT_HOOK_APPLE_MUSIC_LUNABEAT_WORD_LYRICS = false
     const val APPLE_MUSIC_LYRICS_BLUR_EFFECT_OFF = 0
     const val APPLE_MUSIC_LYRICS_BLUR_EFFECT_NATIVE = 1
     const val APPLE_MUSIC_LYRICS_BLUR_EFFECT_ADVANCED_MATERIAL = 2

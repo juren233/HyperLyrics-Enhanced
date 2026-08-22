@@ -8,6 +8,7 @@ enum class Source {
     NE,
     KUWO,
     KUGOU,
+    LB,
 }
 
 @Parcelize

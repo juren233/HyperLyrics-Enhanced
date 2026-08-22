@@ -258,6 +258,9 @@ object PlaybackManager {
                 LyricMetadataKeys.APPLE_MISSING_LYRICS_SUPPLEMENT,
                 LyricMetadataKeys.APPLE_MISSING_LYRICS_SOURCE,
                 LyricMetadataKeys.APPLE_MISSING_LYRICS_SOURCE_STATUSES,
+                LyricMetadataKeys.LUNA_BEAT_RAW_TTML,
+                LyricMetadataKeys.LUNA_BEAT_HUB_ID,
+                LyricMetadataKeys.LUNA_BEAT_TTML_SHA256,
                 LyricMetadataKeys.ONLINE_TRANSLATION_SOURCE,
                 LyricMetadataKeys.ONLINE_PRONUNCIATION_SOURCE,
             ).forEach { key ->
@@ -433,6 +436,9 @@ object PlaybackManager {
             listOf(
                 LyricMetadataKeys.APPLE_MISSING_LYRICS_SOURCE,
                 LyricMetadataKeys.APPLE_MISSING_LYRICS_SOURCE_STATUSES,
+                LyricMetadataKeys.LUNA_BEAT_RAW_TTML,
+                LyricMetadataKeys.LUNA_BEAT_HUB_ID,
+                LyricMetadataKeys.LUNA_BEAT_TTML_SHA256,
             ).forEach { key ->
                 val value = song.metadata?.getString(key)
                     ?: persistedMetadata?.getString(key)

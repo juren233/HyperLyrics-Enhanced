@@ -3615,7 +3615,8 @@ internal class AppleLyricsSupplementHooks(
 
     private fun hasAnyOnlineTranslation(songId: String?): Boolean =
         (isNativeOnlineTranslationEnabled() && nativeOnlineTranslationStore.hasTranslation(songId)) ||
-            missingLyricsSupplement().hasTranslation(songId)
+            missingLyricsSupplement().hasTranslation(songId) ||
+            missingLyricsSupplement().hasLunaBeatSource(songId)
 
     private fun onlinePronunciationForNativeLine(line: Any?): String? {
         if (line == null || !isNativeOnlineTranslationEnabled()) return null

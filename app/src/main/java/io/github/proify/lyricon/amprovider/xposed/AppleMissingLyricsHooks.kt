@@ -30,8 +30,8 @@ import java.util.concurrent.atomic.AtomicBoolean
  *    参数，把补充歌词的 SongInfo 塞进 Apple Music 自己的歌词显示链路，
  *    由原生适配器完成滚动、逐字点亮、模糊与样式渲染。
  *
- * 歌曲原生歌词存在时绝不注入：I2 收到真实原生 SongInfo 时保持原样，
- * 且曾为同一歌曲构建过原生歌词的歌曲会被永久排除。
+ * 普通三方补充只服务无原生歌词歌曲；启用 LunaBeat 实验来源并精确命中逐字
+ * TTML 时，可在保留 Apple 原生模型的同时临时切换两者。
  */
 /**
  * 选择 PlaybackItem 的 Adam ID；队列 MediaItem 没有歌词专用 ID 时，使用已验证的媒体 ID。
@@ -77,6 +77,75 @@ internal fun shouldRunSupplementActivationSideEffects(
     trigger: String,
     newlyAccepted: Boolean,
 ): Boolean = newlyAccepted || trigger != "source_menu_query"
+
+/**
+ * 歌词页恢复可见时，普通补充仍需 Apple 原生歌词不存在；当前明确选择且符合资格的
+ * LunaBeat 则必须重新呈现，否则切歌期间在未 resumed Fragment 上完成的首次注入会留下
+ * 上一首歌曲的 Adapter。
+ */
+internal fun shouldPresentSupplementOnLyricsPageResume(
+    hasKnownNativeLyrics: Boolean,
+    shouldPreferLunaBeat: Boolean,
+): Boolean = !hasKnownNativeLyrics || shouldPreferLunaBeat
+
+internal enum class AppleLyricsSourcePresentationAction {
+    PRESENT_LUNA_BEAT,
+    BUILD_LUNA_BEAT,
+    PRESENT_APPLE_NATIVE,
+    REFRESH_ONLY,
+}
+
+internal fun appleLyricsSourcePresentationAction(
+    source: String,
+    hasLunaBeatPointer: Boolean,
+    hasAppleNativePointer: Boolean,
+): AppleLyricsSourcePresentationAction = when (source) {
+    "LB" -> if (hasLunaBeatPointer) {
+        AppleLyricsSourcePresentationAction.PRESENT_LUNA_BEAT
+    } else {
+        AppleLyricsSourcePresentationAction.BUILD_LUNA_BEAT
+    }
+    "APPLE" -> if (hasAppleNativePointer) {
+        AppleLyricsSourcePresentationAction.PRESENT_APPLE_NATIVE
+    } else {
+        AppleLyricsSourcePresentationAction.REFRESH_ONLY
+    }
+    else -> AppleLyricsSourcePresentationAction.REFRESH_ONLY
+}
+
+internal data class AppleNativeLyricsTimingStats(
+    val lineCount: Int,
+    val wordTimedLineCount: Int,
+) {
+    val isWordTimed: Boolean
+        get() = wordTimedLineCount > 0
+}
+
+internal fun shouldUseLunaBeatOverAppleNativeLyrics(
+    nativeStats: AppleNativeLyricsTimingStats?,
+    lunaBeatLineCount: Int,
+): Boolean {
+    if (nativeStats == null || !nativeStats.isWordTimed) return true
+    if (nativeStats.lineCount <= 0 || lunaBeatLineCount <= 0) return true
+    return nativeStats.lineCount != lunaBeatLineCount
+}
+
+internal fun shouldRetainLunaBeatAlternativeAfterNativePresentation(
+    lunaBeatEnabled: Boolean,
+    storedSourceInfo: AppleMissingLyricsSourceInfo?,
+): Boolean = lunaBeatEnabled && storedSourceInfo?.statuses.orEmpty().any {
+    it.source == "LB" && it.found && it.wordTimed
+}
+
+internal fun shouldShowStoredSupplementSourceMenu(
+    normalSupplementMenu: Boolean,
+    lunaBeatEnabled: Boolean,
+    storedSourceInfo: AppleMissingLyricsSourceInfo?,
+): Boolean = normalSupplementMenu ||
+    shouldRetainLunaBeatAlternativeAfterNativePresentation(
+        lunaBeatEnabled = lunaBeatEnabled,
+        storedSourceInfo = storedSourceInfo,
+    )
 
 /**
  * 三方候选的按钮可用性与最终呈现接管必须相互独立。
@@ -338,6 +407,11 @@ internal class AppleMissingLyricsHooks(
     private companion object {
         const val MAX_REMEMBERED_NATIVE_LYRICS_SONG_IDS = 512
         const val RESUME_REFRESH_DELAY_MS = 400L
+
+        object SourceName {
+            const val APPLE_NATIVE = "APPLE"
+            const val LUNA_BEAT = "LB"
+        }
     }
 
     private val mainHandler: Handler
@@ -393,6 +467,13 @@ internal class AppleMissingLyricsHooks(
         ConcurrentHashMap<String, Boolean>()
     )
     private val scheduledTakeoverRechecks = ConcurrentHashMap<String, Long>()
+    private val manualLyricsSourceSelections = ConcurrentHashMap<String, String>()
+    private val appleNativeLyricsPointers = ConcurrentHashMap<String, Any>()
+    private val appleNativeLyricsTimingStats =
+        ConcurrentHashMap<String, AppleNativeLyricsTimingStats>()
+
+    @Volatile
+    private var manualSelectionPlaybackSongId: String? = null
 
     @Volatile
     private var pendingNativeBuildKey: NativeBuildKey? = null
@@ -756,7 +837,13 @@ internal class AppleMissingLyricsHooks(
     private fun maybeRequestInjectedPresentation(fragment: Any? = null) {
         if (!isEnabled()) return
         val songId = currentSupplementSongId() ?: return
-        if (hasKnownNativeLyrics(songId)) return
+        if (!shouldPresentSupplementOnLyricsPageResume(
+                hasKnownNativeLyrics = hasKnownNativeLyrics(songId),
+                shouldPreferLunaBeat = shouldPreferLunaBeat(songId),
+            )
+        ) {
+            return
+        }
         // 冷启动时补充载荷可能晚于页面 onResume；先用磁盘缓存满足本次呈现请求。
         restoreCachedSupplement(songId)
         nativeTakeoverGate.onSupplementPresentationRequested(songId)
@@ -774,10 +861,18 @@ internal class AppleMissingLyricsHooks(
         requestPresentationRefresh(pointer, fragment, currentPlaybackItem(songId))
     }
 
-    fun isEnabled(): Boolean =
+    fun isEnabled(): Boolean = isFillMissingLyricsEnabled() || isLunaBeatWordLyricsEnabled()
+
+    private fun isFillMissingLyricsEnabled(): Boolean =
         preferences()?.getBoolean(
             RootConstants.KEY_HOOK_APPLE_MUSIC_FILL_MISSING_LYRICS,
             RootConstants.DEFAULT_HOOK_APPLE_MUSIC_FILL_MISSING_LYRICS,
+        ) == true
+
+    private fun isLunaBeatWordLyricsEnabled(): Boolean =
+        preferences()?.getBoolean(
+            RootConstants.KEY_HOOK_APPLE_MUSIC_LUNABEAT_WORD_LYRICS,
+            RootConstants.DEFAULT_HOOK_APPLE_MUSIC_LUNABEAT_WORD_LYRICS,
         ) == true
 
     /**
@@ -853,7 +948,9 @@ internal class AppleMissingLyricsHooks(
     }
 
     private fun takeoverDecision(songId: String): AppleNativeLyricsTakeoverDecision =
-        if (hasKnownNativeLyrics(songId)) {
+        if (shouldPreferLunaBeat(songId)) {
+            AppleNativeLyricsTakeoverDecision(true, "lunabeat_selected")
+        } else if (hasKnownNativeLyrics(songId)) {
             AppleNativeLyricsTakeoverDecision(false, "native_lyrics_present")
         } else {
             nativeTakeoverGate.decision(songId)
@@ -949,7 +1046,163 @@ internal class AppleMissingLyricsHooks(
 
     fun sourceInfo(songId: String?): AppleMissingLyricsSourceInfo? {
         songId?.takeIf(String::isNotBlank)?.let(::restoreCachedSupplement)
-        return store.sourceInfo(resolveSupplementContentId(songId))
+        val resolvedSongId = resolveStoredSupplementContentId(songId)
+        val info = store.sourceInfo(resolvedSongId) ?: return null
+        val selected = resolvedSongId?.let(manualLyricsSourceSelections::get)
+            ?: info.selectedSource
+        return info.copy(selectedSource = selected)
+    }
+
+    fun availableLyricsSources(songId: String?): List<String> {
+        val contentSongId = songId?.takeIf(String::isNotBlank) ?: return emptyList()
+        val info = sourceInfo(contentSongId) ?: return emptyList()
+        val lunaBeatAvailable = hasLunaBeatSource(contentSongId)
+        val foundSources = info.statuses
+            .filter { status ->
+                status.found && (status.source != SourceName.LUNA_BEAT || lunaBeatAvailable)
+            }
+            .mapTo(linkedSetOf()) { it.source }
+        if (SourceName.LUNA_BEAT in foundSources && hasKnownNativeLyrics(contentSongId)) {
+            return listOf(SourceName.APPLE_NATIVE, SourceName.LUNA_BEAT)
+        }
+        return buildList {
+            if (hasKnownNativeLyrics(contentSongId)) add(SourceName.APPLE_NATIVE)
+            addAll(info.statuses.map { it.source }.distinct())
+        }
+    }
+
+    fun hasLunaBeatSource(songId: String?): Boolean {
+        val contentSongId = resolveStoredSupplementContentId(songId) ?: return false
+        val info = store.sourceInfo(contentSongId) ?: return false
+        return isLunaBeatEligibleForSong(contentSongId, info)
+    }
+
+    private fun isLunaBeatEligibleForSong(
+        songId: String,
+        sourceInfo: AppleMissingLyricsSourceInfo? = store.sourceInfo(songId),
+        lineCountOverride: Int? = null,
+    ): Boolean {
+        if (!isLunaBeatWordLyricsEnabled()) return false
+        val status = sourceInfo?.statuses.orEmpty().firstOrNull {
+            it.source == SourceName.LUNA_BEAT && it.found && it.wordTimed
+        }
+        val lunaBeatLineCount = lineCountOverride ?: status?.lineCount ?: return false
+        return shouldUseLunaBeatOverAppleNativeLyrics(
+            nativeStats = nativeLyricsTimingStats(songId),
+            lunaBeatLineCount = lunaBeatLineCount,
+        )
+    }
+
+    private fun eligibleLunaBeatSourceInfo(
+        songId: String,
+        sourceInfo: AppleMissingLyricsSourceInfo?,
+    ): AppleMissingLyricsSourceInfo? = sourceInfo?.takeIf {
+        isLunaBeatEligibleForSong(songId, it)
+    }
+
+    private fun nativeLyricsTimingStats(songId: String): AppleNativeLyricsTimingStats? {
+        appleNativeLyricsTimingStats[songId]?.let { return it }
+        val identity = store.playbackIdentity(songId)
+        return identity?.adamId?.toString()?.let(appleNativeLyricsTimingStats::get)
+    }
+
+    private fun isLunaBeatSupplement(song: Song): Boolean =
+        song.metadata
+            ?.getString(com.juren233.hyperlyricsenhanced.common.lyric.LyricMetadataKeys.APPLE_MISSING_LYRICS_SOURCE) ==
+            SourceName.LUNA_BEAT
+
+    private fun shouldPreferLunaBeat(songId: String?): Boolean {
+        val contentSongId = songId?.takeIf(String::isNotBlank) ?: return false
+        if (!isLunaBeatWordLyricsEnabled() || !store.hasContent(contentSongId)) return false
+        val selectedSource = manualLyricsSourceSelections[contentSongId]
+            ?: store.sourceInfo(contentSongId)?.selectedSource
+        return selectedSource == SourceName.LUNA_BEAT &&
+            isLunaBeatEligibleForSong(contentSongId)
+    }
+
+    fun onLyricsSourceSelectionChanged(
+        songId: String?,
+        source: String?,
+        successful: Boolean,
+    ): String? {
+        val contentSongId = songId?.takeIf(String::isNotBlank) ?: return null
+        if (!successful || source !in setOf(SourceName.APPLE_NATIVE, SourceName.LUNA_BEAT)) {
+            return null
+        }
+        val effectiveSource = if (
+            source == SourceName.LUNA_BEAT && !isLunaBeatEligibleForSong(contentSongId)
+        ) {
+            if (BuildConfig.DEBUG) {
+                ProviderLogger.diagnostic(
+                    "Apple Music LunaBeat 来源切换被原生逐字歌词拒绝: id=$contentSongId"
+                )
+            }
+            SourceName.APPLE_NATIVE
+        } else {
+            requireNotNull(source)
+        }
+        manualLyricsSourceSelections[contentSongId] = effectiveSource
+
+        val lunaBeatPointer = store.nativeSongInfoPointer(contentSongId)
+        val appleNativePointer = appleNativeLyricsPointers[contentSongId]
+            ?.takeIf { readNativeLineCount(it) > 0 }
+        val action = appleLyricsSourcePresentationAction(
+            source = effectiveSource,
+            hasLunaBeatPointer = lunaBeatPointer != null,
+            hasAppleNativePointer = appleNativePointer != null,
+        )
+        when (action) {
+            AppleLyricsSourcePresentationAction.PRESENT_LUNA_BEAT -> {
+                acceptedSupplementSongIds.add(contentSongId)
+                requestLyricsSourcePresentation(
+                    songId = contentSongId,
+                    source = SourceName.LUNA_BEAT,
+                    pointer = requireNotNull(lunaBeatPointer),
+                )
+            }
+            AppleLyricsSourcePresentationAction.BUILD_LUNA_BEAT -> {
+                acceptedSupplementSongIds.add(contentSongId)
+                scheduleNativeLyricsModel(contentSongId)
+            }
+            AppleLyricsSourcePresentationAction.PRESENT_APPLE_NATIVE -> {
+                requestLyricsSourcePresentation(
+                    songId = contentSongId,
+                    source = SourceName.APPLE_NATIVE,
+                    pointer = requireNotNull(appleNativePointer),
+                )
+            }
+            AppleLyricsSourcePresentationAction.REFRESH_ONLY -> {
+                if (BuildConfig.DEBUG) {
+                    ProviderLogger.debug(
+                        "Apple Music 歌词来源呈现仅刷新播放页: " +
+                            "id=$contentSongId, source=$effectiveSource, reason=target_pointer_missing"
+                    )
+                }
+            }
+        }
+        refreshNowPlaying(contentSongId)
+        return effectiveSource
+    }
+
+    private fun requestLyricsSourcePresentation(
+        songId: String,
+        source: String,
+        pointer: Any,
+    ) {
+        val pointerIdentity = "${pointer.javaClass.name}@${System.identityHashCode(pointer)}"
+        AppleSourceSwitchPerformanceDiagnostics.stageForSong(
+            songId = songId,
+            stage = "lyrics_source_presentation_refresh_requested",
+            details = "source=$source,pointer=$pointerIdentity,address=${nativePointerAddress(pointer)}",
+        )
+        if (BuildConfig.DEBUG) {
+            ProviderLogger.diagnostic(
+                "Apple Music 歌词来源显式呈现刷新: " +
+                    "id=$songId, source=$source, pointer=$pointerIdentity, " +
+                    "address=${nativePointerAddress(pointer)}"
+            )
+        }
+        requestPresentationRefresh(pointer, null, currentPlaybackItem(songId))
     }
 
     /**
@@ -962,7 +1215,7 @@ internal class AppleMissingLyricsHooks(
         val contentSongId = songId?.takeIf(String::isNotBlank)
             ?: return "song=none"
         restoreCachedSupplement(contentSongId)
-        val resolvedSongId = resolveSupplementContentId(contentSongId)
+        val resolvedSongId = resolveStoredSupplementContentId(contentSongId)
         val lines = store.lines(resolvedSongId)
         val info = store.sourceInfo(resolvedSongId)
         val wordLines = lines.count { it.words.size >= 2 }
@@ -989,15 +1242,37 @@ internal class AppleMissingLyricsHooks(
         // 冷启动时来源菜单可能先于可用性回调查询 Store；此处同样允许磁盘恢复。
         restoreCachedSupplement(contentSongId)
         maybeActivateSupplement(contentSongId, trigger = "source_menu_query")
-        val resolvedSongId = resolveSupplementContentId(contentSongId) ?: return false
-        return shouldShowMissingLyricsSourceMenu(
-            hasSupplementContent = store.hasContent(resolvedSongId),
-            hasKnownNativeLyrics = hasKnownNativeLyrics(resolvedSongId),
+        val storedSongId = resolveStoredSupplementContentId(contentSongId) ?: return false
+        val activeSongId = resolveSupplementContentId(contentSongId)
+        val normalSupplementMenu = activeSongId?.let { activeId ->
+            shouldShowMissingLyricsSourceMenu(
+                hasSupplementContent = store.hasContent(activeId),
+                hasKnownNativeLyrics = hasKnownNativeLyrics(activeId),
+            )
+        } == true
+        return shouldShowStoredSupplementSourceMenu(
+            normalSupplementMenu = normalSupplementMenu,
+            lunaBeatEnabled = isLunaBeatWordLyricsEnabled(),
+            storedSourceInfo = eligibleLunaBeatSourceInfo(
+                songId = storedSongId,
+                sourceInfo = store.sourceInfo(storedSongId),
+            ),
         )
     }
 
     private fun resolveSupplementContentId(songId: String?): String? =
         songId?.takeIf { it in acceptedSupplementSongIds && store.hasContent(it) }
+
+    private fun resolveStoredSupplementContentId(songId: String?): String? {
+        val requestedSongId = songId?.takeIf(String::isNotBlank) ?: return null
+        if (store.hasContent(requestedSongId)) return requestedSongId
+        val storedSongId = store.contentSongId()?.takeIf(store::hasContent) ?: return null
+        val identity = store.playbackIdentity(storedSongId)
+        return storedSongId.takeIf {
+            identity?.adamId?.toString() == requestedSongId ||
+                identity?.queueId?.toString() == requestedSongId
+        }
+    }
 
     /** 判断指针是否为补充歌词生成的原生模型（不应被记为 Apple 原生歌词）。 */
     fun isSupplementPointer(pointer: Any?): Boolean =
@@ -1035,10 +1310,35 @@ internal class AppleMissingLyricsHooks(
             if (songId != contentSongId) {
                 nativeTakeoverGate.onNativeResult(songId, hasLyrics = true)
             }
-            acceptedSupplementSongIds.remove(contentSongId)
-            supplementAvailabilitySongIds.remove(contentSongId)
-            scheduledTakeoverRechecks.remove(contentSongId)
-            discardSupplementForConfirmedNativeLyrics(contentSongId)
+            if (shouldPreferLunaBeat(contentSongId)) {
+                acceptedSupplementSongIds.add(contentSongId)
+                scheduleNativeLyricsModel(contentSongId)
+                mainHandler.post { refreshNowPlaying(contentSongId) }
+            } else {
+                val storedSourceInfo = eligibleLunaBeatSourceInfo(
+                    songId = contentSongId,
+                    sourceInfo = store.sourceInfo(contentSongId),
+                )
+                val retainLunaBeatAlternative =
+                    shouldRetainLunaBeatAlternativeAfterNativePresentation(
+                        lunaBeatEnabled = isLunaBeatWordLyricsEnabled(),
+                        storedSourceInfo = storedSourceInfo,
+                    )
+                acceptedSupplementSongIds.remove(contentSongId)
+                supplementAvailabilitySongIds.remove(contentSongId)
+                scheduledTakeoverRechecks.remove(contentSongId)
+                if (retainLunaBeatAlternative) {
+                    if (BuildConfig.DEBUG) {
+                        ProviderLogger.diagnostic(
+                            "Apple Music 原生歌词已呈现，保留 LunaBeat 备选: " +
+                                "id=$contentSongId, selected=${manualLyricsSourceSelections[contentSongId]}, " +
+                                "stored=$storedSourceInfo"
+                        )
+                    }
+                } else {
+                    discardSupplementForConfirmedNativeLyrics(contentSongId)
+                }
+            }
         } else {
             val acceptedEmptyResult = nativeTakeoverGate.onNativeResult(
                 songId = contentSongId,
@@ -1104,6 +1404,12 @@ internal class AppleMissingLyricsHooks(
      */
     fun onCurrentPlaybackItem(contentSongId: String, item: Any?, queueId: Long) {
         if (!isEnabled() || contentSongId.isBlank()) return
+        if (manualSelectionPlaybackSongId != contentSongId) {
+            manualLyricsSourceSelections.clear()
+            appleNativeLyricsPointers.keys.removeAll { it != contentSongId }
+            appleNativeLyricsTimingStats.keys.removeAll { it != contentSongId }
+            manualSelectionPlaybackSongId = contentSongId
+        }
         nativeTakeoverGate.observe(contentSongId)
         scheduleTakeoverRecheck(contentSongId)
         restoreCachedSupplement(contentSongId)
@@ -1136,6 +1442,21 @@ internal class AppleMissingLyricsHooks(
         val receiveStartedAtNanos = SystemClock.elapsedRealtimeNanos()
         val incomingLines = song.lyrics.orEmpty()
         val incomingWordLines = incomingLines.count { it.words.orEmpty().size >= 2 }
+        val lunaBeatSupplement = isLunaBeatSupplement(song) &&
+            isLunaBeatEligibleForSong(
+                songId = songId,
+                sourceInfo = song.metadata?.let { metadata ->
+                    com.juren233.hyperlyricsenhanced.common.lyric.AppleMissingLyricsSourceMetadata.decode(
+                        selectedSource = metadata.getString(
+                            com.juren233.hyperlyricsenhanced.common.lyric.LyricMetadataKeys.APPLE_MISSING_LYRICS_SOURCE
+                        ),
+                        encodedStatuses = metadata.getString(
+                            com.juren233.hyperlyricsenhanced.common.lyric.LyricMetadataKeys.APPLE_MISSING_LYRICS_SOURCE_STATUSES
+                        ),
+                    )
+                },
+                lineCountOverride = incomingLines.size,
+            )
         AppleSourceSwitchPerformanceDiagnostics.stageForSong(
             songId = songId,
             stage = "supplement_store_receive_started",
@@ -1149,13 +1470,16 @@ internal class AppleMissingLyricsHooks(
             details = "wordLines=$incomingWordLines,thread=${Thread.currentThread().name}",
         )
         nativeTakeoverGate.observe(songId)
-        if (hasKnownNativeLyrics(songId)) {
+        if (hasKnownNativeLyrics(songId) && !lunaBeatSupplement) {
             ProviderLogger.info(
                 "Apple Music 无歌词补充被原生歌词拒绝: id=$songId, " +
                     "reason=native_lyrics_present"
             )
             discardSupplementForConfirmedNativeLyrics(songId)
             return
+        }
+        if (lunaBeatSupplement) {
+            acceptedSupplementSongIds.add(songId)
         }
         val hadContent = store.hasContent(songId)
         val revisionBefore = store.revision()
@@ -1316,7 +1640,24 @@ internal class AppleMissingLyricsHooks(
             )
             return
         }
-        if (hasKnownNativeLyrics(songId)) {
+        val cachedIsLunaBeat = cached.metadata
+            ?.getString(com.juren233.hyperlyricsenhanced.common.lyric.LyricMetadataKeys.APPLE_MISSING_LYRICS_SOURCE) ==
+            SourceName.LUNA_BEAT
+        val cachedLunaBeatEligible = cachedIsLunaBeat && isLunaBeatEligibleForSong(
+            songId = songId,
+            sourceInfo = cached.metadata?.let { metadata ->
+                com.juren233.hyperlyricsenhanced.common.lyric.AppleMissingLyricsSourceMetadata.decode(
+                    selectedSource = metadata.getString(
+                        com.juren233.hyperlyricsenhanced.common.lyric.LyricMetadataKeys.APPLE_MISSING_LYRICS_SOURCE
+                    ),
+                    encodedStatuses = metadata.getString(
+                        com.juren233.hyperlyricsenhanced.common.lyric.LyricMetadataKeys.APPLE_MISSING_LYRICS_SOURCE_STATUSES
+                    ),
+                )
+            },
+            lineCountOverride = cached.lyrics.orEmpty().size,
+        )
+        if (hasKnownNativeLyrics(songId) && !cachedLunaBeatEligible) {
             DiskSongManager.deleteMissingLyrics(songId)
             ProviderLogger.debug(
                 "Apple Music 无歌词补充磁盘缓存被原生歌词拒绝: id=$songId"
@@ -1325,6 +1666,7 @@ internal class AppleMissingLyricsHooks(
         }
         nativeTakeoverGate.observe(songId)
         if (!store.update(cached)) return
+        if (cachedLunaBeatEligible) acceptedSupplementSongIds.add(songId)
         ProviderLogger.info(
             "Apple Music 无歌词补充已从磁盘恢复: id=$songId, " +
                 "lines=${cached.lyrics.orEmpty().size}"
@@ -1335,8 +1677,20 @@ internal class AppleMissingLyricsHooks(
     fun onPreferenceChanged() {
         attemptedDiskRestoreSongIds.clear()
         restoreAttemptContentSongId = null
+        val currentSongId = currentPlaybackQueueMediaId()
+        val currentIsLunaBeat = store.sourceInfo(store.contentSongId())
+            ?.selectedSource == SourceName.LUNA_BEAT
+        if (!isLunaBeatWordLyricsEnabled() && currentIsLunaBeat) {
+            currentSongId?.let {
+                manualLyricsSourceSelections.remove(it)
+                acceptedSupplementSongIds.remove(it)
+                supplementAvailabilitySongIds.remove(it)
+            }
+            if (store.clear()) refreshNowPlaying(currentSongId)
+            return
+        }
         if (!isEnabled()) {
-            val songId = currentPlaybackQueueMediaId()
+            val songId = currentSongId
             songId?.let {
                 acceptedSupplementSongIds.remove(it)
                 supplementAvailabilitySongIds.remove(it)
@@ -1453,7 +1807,7 @@ internal class AppleMissingLyricsHooks(
         if (!isEnabled() || key.contentRevision != store.revision()) return
         if (songId !in acceptedSupplementSongIds) return
         if (!store.isCurrentIdentity(identity)) return
-        if (hasKnownNativeLyrics(songId, identity.adamId)) {
+        if (hasKnownNativeLyrics(songId, identity.adamId) && !shouldPreferLunaBeat(songId)) {
             ProviderLogger.debug(
                 "Apple Music 无歌词补充跳过原生模型构建: reason=native_lyrics_present"
             )
@@ -1463,13 +1817,18 @@ internal class AppleMissingLyricsHooks(
         val lines = store.lines(songId)
         if (lines.isEmpty()) return
         val ttmlStartedAtNanos = SystemClock.elapsedRealtimeNanos()
-        val ttml = AppleMissingLyricsTtml.build(lines, store.durationMs(songId))
+        val nativeTtml = store.nativeTtml(songId) ?: return
+        val ttml = nativeTtml.content
         AppleSourceSwitchPerformanceDiagnostics.record(
             songId = songId,
-            event = "ttml_build",
+            event = if (nativeTtml.kind == AppleMissingLyricsNativeTtmlKind.LUNA_BEAT_RAW) {
+                "raw_ttml_selected"
+            } else {
+                "ttml_build"
+            },
             durationNanos = SystemClock.elapsedRealtimeNanos() - ttmlStartedAtNanos,
             units = lines.size.toLong(),
-            details = "bytes=${ttml.length}",
+            details = "bytes=${ttml.length},kind=${nativeTtml.kind}",
         )
         val parseStartedAtNanos = SystemClock.elapsedRealtimeNanos()
         val pointer = nativeBuildScope.within {
@@ -1842,6 +2201,91 @@ internal class AppleMissingLyricsHooks(
         return totalLines
     }
 
+    private fun readNativeWordTimedLineCount(pointer: Any): Int {
+        val songNative = runCatching {
+            AppleReflection.call(
+                pointer,
+                lyricsNativeTarget.runtimeMemberName(
+                    AppleMusicRuntimeMember.LYRICS_NATIVE_POINTER_GET_METHOD
+                ),
+            )
+        }.getOrNull() ?: return -1
+        val sections = runCatching {
+            AppleReflection.call(
+                songNative,
+                lyricsNativeTarget.runtimeMemberName(
+                    AppleMusicRuntimeMember.LYRICS_NATIVE_SONG_SECTIONS_METHOD
+                ),
+            )
+        }.getOrNull() ?: return -1
+        val sectionCount = nativeVectorSize(sections)
+        if (sectionCount < 0) return -1
+        var wordTimedLines = 0
+        for (sectionIndex in 0 until sectionCount.coerceAtMost(16)) {
+            val section = nativeVectorNativeItem(sections, sectionIndex) ?: continue
+            val linesVector = runCatching {
+                AppleReflection.call(
+                    section,
+                    lyricsNativeTarget.runtimeMemberName(
+                        AppleMusicRuntimeMember.LYRICS_NATIVE_SECTION_LINES_METHOD
+                    ),
+                )
+            }.getOrNull() ?: continue
+            val lineCount = nativeVectorSize(linesVector)
+            if (lineCount <= 0) continue
+            for (lineIndex in 0 until lineCount.coerceAtMost(512)) {
+                val line = nativeVectorNativeItem(linesVector, lineIndex) ?: continue
+                val wordsVector = runCatching {
+                    AppleReflection.call(
+                        line,
+                        lyricsNativeTarget.runtimeMemberName(
+                            AppleMusicRuntimeMember.LYRICS_NATIVE_WORDS_METHOD
+                        ),
+                    )
+                }.getOrNull() ?: continue
+                if (nativeVectorSize(wordsVector) > 0) wordTimedLines += 1
+            }
+        }
+        return wordTimedLines
+    }
+
+    private fun nativeVectorSize(vector: Any): Int = runCatching {
+        (AppleReflection.call(
+            vector,
+            lyricsNativeTarget.runtimeMemberName(
+                AppleMusicRuntimeMember.LYRICS_NATIVE_VECTOR_SIZE_METHOD
+            ),
+        ) as? Number)?.toInt()
+    }.getOrNull() ?: -1
+
+    private fun nativeVectorNativeItem(vector: Any, index: Int): Any? {
+        val pointer = runCatching {
+            AppleReflection.call(
+                vector,
+                lyricsNativeTarget.runtimeMemberName(
+                    AppleMusicRuntimeMember.LYRICS_NATIVE_VECTOR_GET_METHOD
+                ),
+                index.toLong(),
+            )
+        }.recoverCatching {
+            AppleReflection.call(
+                vector,
+                lyricsNativeTarget.runtimeMemberName(
+                    AppleMusicRuntimeMember.LYRICS_NATIVE_VECTOR_GET_METHOD
+                ),
+                index,
+            )
+        }.getOrNull() ?: return null
+        return runCatching {
+            AppleReflection.call(
+                pointer,
+                lyricsNativeTarget.runtimeMemberName(
+                    AppleMusicRuntimeMember.LYRICS_NATIVE_POINTER_GET_METHOD
+                ),
+            )
+        }.getOrNull()
+    }
+
     private fun readNativeWordCount(pointer: Any): Int {
         val firstLine = firstNativeLine(pointer) ?: return -1
         val wordsVector = runCatching {
@@ -1887,28 +2331,61 @@ internal class AppleMissingLyricsHooks(
             ?: currentPlaybackQueueMediaId()?.takeIf(String::isNotBlank)
             ?: return
         val lineCount = pointer?.let(::readNativeLineCount) ?: 0
+        val wordTimedLineCount = pointer?.let(::readNativeWordTimedLineCount) ?: 0
+        if (lineCount > 0 && wordTimedLineCount >= 0) {
+            val stats = AppleNativeLyricsTimingStats(
+                lineCount = lineCount,
+                wordTimedLineCount = wordTimedLineCount,
+            )
+            if (appleNativeLyricsTimingStats.size >= MAX_REMEMBERED_NATIVE_LYRICS_SONG_IDS) {
+                appleNativeLyricsTimingStats.clear()
+            }
+            appleNativeLyricsTimingStats[songId] = stats
+            val queueSongId = currentPlaybackQueueMediaId()?.takeIf(String::isNotBlank)
+            val identity = store.playbackIdentity(queueSongId)
+            val contentSongId = when {
+                identity?.adamId?.toString() == songId -> identity.contentSongId
+                queueSongId == songId -> queueSongId
+                else -> songId
+            }
+            appleNativeLyricsTimingStats[contentSongId] = stats
+        }
         onNativeLyricsState(songId = songId, hasLines = lineCount > 0)
         if (BuildConfig.DEBUG) {
             ProviderLogger.diagnostic(
                 "Apple Music 原生歌词主结果: id=$songId, lines=$lineCount, " +
-                    "pointer=${pointer != null}"
+                    "wordTimedLines=$wordTimedLineCount, pointer=${pointer != null}"
             )
         }
     }
 
     /**
      * 原生歌词模型入参改写（I2 结果消费与 buildTimeRangeToLyricsMap 共用）：
-     * 当 Apple 传入的 SongInfo 没有原生歌词内容时，改为当前歌曲已完成身份校验的
-     * 补充模型；Apple 原生歌词存在时保持原样。
+     * 普通补充仅在 Apple 没有原生歌词时改写；LunaBeat 被选中时允许用其逐字模型
+     * 替换 Apple 原生模型，并保留原生指针供用户临时切回。
      */
     private fun rewriteNativeModelArgs(chain: Chain): Array<Any?>? {
         if (chain.args.isEmpty()) return null
         val originalPointer = chain.args.firstOrNull()
-        if (isSupplementPointer(originalPointer)) return null
+        val songId = currentPlaybackQueueMediaId()?.takeIf(String::isNotBlank)
+            ?: currentSupplementSongId()
+        if (isSupplementPointer(originalPointer)) {
+            if (shouldPreferLunaBeat(songId)) return null
+            val nativePointer = songId?.let(appleNativeLyricsPointers::get)
+                ?.takeIf { readNativeLineCount(it) > 0 }
+                ?: return null
+            ProviderLogger.debug(
+                "Apple Music 歌词来源临时切回原生模型: id=$songId, pointer=$nativePointer"
+            )
+            return arrayOf(nativePointer)
+        }
         val hasNativeLyrics = originalPointer != null &&
             readNativeLineCount(originalPointer) > 0
-        // Apple 已有原生歌词内容时绝不注入。
-        if (hasNativeLyrics) return null
+        if (hasNativeLyrics && !songId.isNullOrBlank()) {
+            appleNativeLyricsPointers[songId] = requireNotNull(originalPointer)
+        }
+        // LunaBeat 被临时选择时允许替换 Apple 原生模型；其他补充来源仍只服务无歌词歌曲。
+        if (hasNativeLyrics && !shouldPreferLunaBeat(songId)) return null
         val supplementPointer = supplementPointerForInjection() ?: return null
         ProviderLogger.debug(
             "Apple Music 无歌词补充注入原生模型: " +
@@ -1924,7 +2401,7 @@ internal class AppleMissingLyricsHooks(
             ?: return null
         if (songId !in acceptedSupplementSongIds) return null
         val identity = store.playbackIdentity(songId) ?: return null
-        if (hasKnownNativeLyrics(songId, identity.adamId)) return null
+        if (hasKnownNativeLyrics(songId, identity.adamId) && !shouldPreferLunaBeat(songId)) return null
         val pointer = store.nativeSongInfoPointer(songId) ?: return null
         if (!store.hasContent(songId)) return null
         return pointer

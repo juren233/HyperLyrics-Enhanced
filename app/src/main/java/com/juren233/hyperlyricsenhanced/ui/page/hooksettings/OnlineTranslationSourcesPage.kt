@@ -637,6 +637,7 @@ private fun Source.displayName(): String = when (this) {
     Source.QM -> stringResource(R.string.source_qq_music)
     Source.KUWO -> stringResource(R.string.source_kuwo_music)
     Source.KUGOU -> stringResource(R.string.source_kugou_music)
+    Source.LB -> "LunaBeat TTML"
 }
 
 private data class TranslationApp(

@@ -107,6 +107,14 @@ fun AppleMusicOptimizationPage() {
             )
         )
     }
+    var lunaBeatWordLyrics by remember {
+        mutableStateOf(
+            prefs.getBoolean(
+                RootConstants.KEY_HOOK_APPLE_MUSIC_LUNABEAT_WORD_LYRICS,
+                RootConstants.DEFAULT_HOOK_APPLE_MUSIC_LUNABEAT_WORD_LYRICS,
+            )
+        )
+    }
     var lyricsBlurEffect by remember {
         mutableIntStateOf(
             prefs.getInt(
@@ -404,6 +412,22 @@ fun AppleMusicOptimizationPage() {
                         hideMandarinPinyin = enabled
                         saveConfig(
                             RootConstants.KEY_HOOK_APPLE_MUSIC_HIDE_MANDARIN_PINYIN,
+                            enabled,
+                        )
+                    },
+                )
+                SwitchPreference(
+                    title = stringResource(
+                        R.string.title_apple_music_lunabeat_word_lyrics
+                    ),
+                    summary = stringResource(
+                        R.string.summary_apple_music_lunabeat_word_lyrics
+                    ),
+                    checked = lunaBeatWordLyrics,
+                    onCheckedChange = { enabled ->
+                        lunaBeatWordLyrics = enabled
+                        saveConfig(
+                            RootConstants.KEY_HOOK_APPLE_MUSIC_LUNABEAT_WORD_LYRICS,
                             enabled,
                         )
                     },

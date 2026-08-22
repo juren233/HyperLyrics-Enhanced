@@ -24,6 +24,8 @@ class AppleOnlineSourceMenuPolicyTest {
         assertEquals("QQ歌词", sourceMenuLabel("QM", "lyrics"))
         assertEquals("酷我歌词", sourceMenuLabel("KUWO", "lyrics"))
         assertEquals("酷狗歌词", sourceMenuLabel("KUGOU", "lyrics"))
+        assertEquals("LB歌词", sourceMenuLabel("LB", "lyrics"))
+        assertEquals("原生歌词", sourceMenuLabel("APPLE", "lyrics"))
     }
 
     @Test
@@ -52,6 +54,22 @@ class AppleOnlineSourceMenuPolicyTest {
             currentLyricsMenuSongId(
                 playbackSongId = " ",
                 visibleLyricsSongId = "1440818674",
+            ),
+        )
+    }
+
+    @Test
+    fun `source dialog keeps the full Apple Music native lyrics label`() {
+        assertEquals(
+            "Apple Music 原生歌词",
+            missingLyricsSourceStatusLabel(
+                AppleMissingLyricsSourceStatus(
+                    source = "APPLE",
+                    searched = true,
+                    found = true,
+                    wordTimed = true,
+                    lineCount = 1,
+                )
             ),
         )
     }
@@ -98,8 +116,10 @@ class AppleOnlineSourceMenuPolicyTest {
     fun `only a found unselected source is selectable`() {
         val found = AppleMissingLyricsSourceStatus("NE", searched = true, found = true)
         val missing = AppleMissingLyricsSourceStatus("QM", searched = true, found = false)
+        val onDemand = AppleMissingLyricsSourceStatus("LB", searched = false, found = false)
         assertEquals(true, isMissingLyricsSourceSelectable(found, selected = false))
         assertEquals(false, isMissingLyricsSourceSelectable(found, selected = true))
         assertEquals(false, isMissingLyricsSourceSelectable(missing, selected = false))
+        assertEquals(true, isMissingLyricsSourceSelectable(onDemand, selected = false))
     }
 }

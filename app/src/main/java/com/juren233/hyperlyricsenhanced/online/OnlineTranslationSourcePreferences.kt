@@ -74,6 +74,7 @@ object OnlineTranslationSourcePreferences {
         Source.QM -> RootConstants.KEY_HOOK_ONLINE_TRANSLATION_SOURCE_QQ
         Source.KUWO -> RootConstants.KEY_HOOK_ONLINE_TRANSLATION_SOURCE_KUWO
         Source.KUGOU -> RootConstants.KEY_HOOK_ONLINE_TRANSLATION_SOURCE_KUGOU
+        Source.LB -> RootConstants.KEY_HOOK_APPLE_MUSIC_LUNABEAT_WORD_LYRICS
     }
 
     fun sourceDefaultEnabled(source: Source): Boolean = when (source) {
@@ -81,6 +82,7 @@ object OnlineTranslationSourcePreferences {
         Source.QM -> RootConstants.DEFAULT_HOOK_ONLINE_TRANSLATION_SOURCE_QQ
         Source.KUWO -> RootConstants.DEFAULT_HOOK_ONLINE_TRANSLATION_SOURCE_KUWO
         Source.KUGOU -> RootConstants.DEFAULT_HOOK_ONLINE_TRANSLATION_SOURCE_KUGOU
+        Source.LB -> RootConstants.DEFAULT_HOOK_APPLE_MUSIC_LUNABEAT_WORD_LYRICS
     }
 
     fun isSourceEnabled(prefs: SharedPreferences?, source: Source): Boolean =
