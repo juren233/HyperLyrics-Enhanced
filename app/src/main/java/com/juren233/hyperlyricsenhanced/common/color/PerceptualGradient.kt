@@ -10,6 +10,7 @@ import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
+import kotlin.math.exp
 import kotlin.math.hypot
 import kotlin.math.pow
 import kotlin.math.roundToInt
@@ -30,6 +31,28 @@ object PerceptualGradient {
     }
 
     internal fun oklchChroma(color: Int): Double = Oklch.fromArgb(color).chroma
+
+    /** Soft-knee chroma compression that preserves OKLCH lightness, hue, and alpha. */
+    internal fun compressChroma(
+        color: Int,
+        threshold: Double,
+        limit: Double,
+    ): Int {
+        require(threshold >= 0.0) { "threshold must be non-negative" }
+        require(limit > threshold) { "limit must be greater than threshold" }
+        val source = Oklch.fromArgb(color)
+        if (source.chroma <= threshold) return color
+
+        val compressionRange = limit - threshold
+        val compressedChroma = threshold + compressionRange *
+            (1.0 - exp(-(source.chroma - threshold) / compressionRange))
+        return gamutMap(
+            lightness = source.lightness,
+            chroma = compressedChroma,
+            hue = source.hue,
+            alpha = source.alpha,
+        ).argb
+    }
 
     internal fun oklabDistance(first: Int, second: Int): Double {
         val a = Oklab.fromArgb(first)

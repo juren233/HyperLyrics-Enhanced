@@ -6,6 +6,7 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.util.TypedValue
 import com.juren233.hyperlyricsenhanced.common.RootConstants
+import com.juren233.hyperlyricsenhanced.common.color.CoverTextGradientPaletteOptimizer
 import com.juren233.hyperlyricsenhanced.root.island.IslandRuntimePreferenceReader
 import com.juren233.hyperlyricsenhanced.lyric.view.Highlight
 import com.juren233.hyperlyricsenhanced.lyric.view.LyricViewStyle
@@ -189,7 +190,11 @@ object LyricStyleHelper {
                 songKey = mediaColorKey
             )
             if (resolvedPalette != null) {
-                val darkColors = resolvedPalette.colors.second
+                val darkColors = if (useCoverGradient) {
+                    CoverTextGradientPaletteOptimizer.optimize(resolvedPalette.colors.second)
+                } else {
+                    resolvedPalette.colors.second
+                }
                 val translucentDarkColors = darkColors.map { Color.argb(191, Color.red(it), Color.green(it), Color.blue(it)) }.toIntArray()
                 primaryColors = darkColors   // 无逐字/标题 -> 封面颜色
                 bgColors = translucentDarkColors // 未唱到 -> 封面颜色(75%透明度)
