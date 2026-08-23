@@ -58,6 +58,7 @@ internal data class IslandSlotRuntimeConfig(
     val extractCoverTextGradient: Boolean,
     val customTextColorEnabled: Boolean,
     val customTextColor: Int,
+    val monetTextColorEnabled: Boolean,
     val customFontPath: String,
     val narrowLatinFont: Boolean,
     val wordMotionEnabled: Boolean,
@@ -128,6 +129,7 @@ internal data class IslandSlotRuntimeConfig(
         extractCoverTextGradient,
         customTextColorEnabled,
         customTextColor,
+        monetTextColorEnabled,
         customFontPath,
         narrowLatinFont,
         wordMotionEnabled,
@@ -404,6 +406,11 @@ internal data class IslandSlotRuntimeConfig(
                     prefs,
                     RootConstants.KEY_HOOK_CUSTOM_TEXT_COLOR,
                     RootConstants.DEFAULT_HOOK_CUSTOM_TEXT_COLOR
+                ),
+                monetTextColorEnabled = runtimeBoolean(
+                    prefs,
+                    RootConstants.KEY_HOOK_MONET_TEXT_COLOR,
+                    RootConstants.DEFAULT_HOOK_MONET_TEXT_COLOR
                 ),
                 customFontPath = prefs.getString(RootConstants.KEY_HOOK_CUSTOM_FONT_PATH, null).orEmpty(),
                 narrowLatinFont = prefs.getBoolean(

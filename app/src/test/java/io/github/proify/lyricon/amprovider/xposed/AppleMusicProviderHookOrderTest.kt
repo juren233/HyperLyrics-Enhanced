@@ -7,7 +7,9 @@
 package io.github.proify.lyricon.amprovider.xposed
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 
 class AppleMusicProviderHookOrderTest {
 
@@ -20,6 +22,33 @@ class AppleMusicProviderHookOrderTest {
         assertEquals(
             PROTECTED_HOOK_ORDER.filterNot(DEBUG_ONLY_HOOKS::contains),
             AppleMusicProvider.hookModuleIdsForBuild(debug = false),
+        )
+    }
+
+    @Test
+    fun `Apple Music remote preference listener keeps a strong owner reference`() {
+        val relativeSourcePath =
+            "src/main/java/io/github/proify/lyricon/amprovider/xposed/" +
+                "AppleMusicProviderOrchestrator.kt"
+        val sourceFile = listOf(File("app/$relativeSourcePath"), File(relativeSourcePath))
+            .first(File::isFile)
+        val source = sourceFile.readText()
+        val listenerField = "private var contentUiLanguagePreferenceListener:"
+        val listenerAssignment = "contentUiLanguagePreferenceListener = listener"
+        val listenerRegistration = "prefs.registerOnSharedPreferenceChangeListener(listener)"
+
+        assertTrue(
+            "Remote SharedPreferences listeners are weakly held and need a strong field owner",
+            source.contains(listenerField) && source.contains(listenerAssignment),
+        )
+        assertTrue(
+            "The strong listener reference must be assigned before registration",
+            source.indexOf(listenerAssignment) in 0 until source.indexOf(listenerRegistration),
+        )
+        assertTrue(
+            "Volume balance changes must emit a runtime diagnostic before reconciliation",
+            source.contains("event=preference_changed") &&
+                source.contains("playbackHooks.onVolumeBalancePreferenceChanged()"),
         )
     }
 

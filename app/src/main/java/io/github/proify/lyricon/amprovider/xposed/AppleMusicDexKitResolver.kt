@@ -31,6 +31,18 @@ internal class AppleMusicDexKitResolver(
     private val classLoader: ClassLoader,
     private val nativeLibraryDir: String,
 ) {
+    private val runtimeCacheScope: String by lazy {
+        val packageInfo = application.packageManager.getPackageInfo(application.packageName, 0)
+        val sourceFile = File(application.applicationInfo.sourceDir)
+        AppleMusicDexKitCachePolicy.runtimeScope(
+            versionCode = packageInfo.longVersionCode,
+            lastUpdateTime = packageInfo.lastUpdateTime,
+            sourceLength = sourceFile.length(),
+            sourceLastModified = sourceFile.lastModified(),
+        )
+    }
+    private val rejectionRegistry = AppleMusicDexKitRejectionRegistry()
+
     /**
      * Record the identifiers that were actually resolved by the exact profile.
      * This is deliberately persisted independently of the APK version.  When a
@@ -119,22 +131,43 @@ internal class AppleMusicDexKitResolver(
     fun resolveClasses(
         hookPoint: AppleMusicHookPoint,
         templates: List<AppleMusicHookTarget>,
+        validator: (AppleMusicHookTarget, Class<*>) -> Boolean,
     ): List<ResolvedAppleMusicHookClass> {
         val preferences = preferences()
         val matches = templates.mapNotNull { template ->
             val shape = decodeClassShape(
                 preferences.getString(classBaselineKey(hookPoint, template.className), null),
-            ) ?: return@mapNotNull null
+            )
+            if (shape == null && !AppleMusicHookContracts.canRepairClassWithoutBaseline(hookPoint)) {
+                return@mapNotNull null
+            }
             val cacheKey = classCacheKey(hookPoint, template.className)
             val cachedClass = preferences.getString(cacheKey, null)
                 ?.let { name -> runCatching { classLoader.loadClass(name) }.getOrNull() }
-                ?.takeIf { shape.matches(it) }
+                ?.takeIf { clazz -> !isClassRejected(hookPoint, template.className, clazz.name) }
+                ?.takeIf { clazz -> shape == null || shape.matches(clazz) }
+                ?.takeIf { clazz -> validator(template, clazz) }
+            if (preferences.contains(cacheKey) && cachedClass == null) {
+                preferences.edit().remove(cacheKey).apply()
+                ProviderLogger.diagnostic(
+                    "Apple Music DexKit 类缓存失效: hook=$hookPoint " +
+                        "template=${template.className}",
+                )
+            }
             val source = if (cachedClass != null) {
                 DexResolutionSource.CACHE
             } else {
                 DexResolutionSource.DEXKIT
             }
-            val clazz = cachedClass ?: findClasses(template, shape).singleOrNull()?.also {
+            val candidates = if (cachedClass == null) {
+                findClasses(template, shape) { clazz ->
+                    !isClassRejected(hookPoint, template.className, clazz.name) &&
+                        validator(template, clazz)
+                }
+            } else {
+                emptyList()
+            }
+            val clazz = cachedClass ?: selectClassCandidate(template, shape, candidates)?.also {
                 preferences.edit().putString(cacheKey, it.name).apply()
             } ?: run {
                 preferences.edit().remove(cacheKey).apply()
@@ -142,7 +175,6 @@ internal class AppleMusicDexKitResolver(
             }
             val repaired = repairTarget(hookPoint, template, clazz, template.className)
             val repairedTarget = repaired.copy(className = clazz.name)
-            recordBaseline(hookPoint, repairedTarget, clazz, template.className)
             AppleMusicDexKitWatchdog.resolvedClass(
                 hookPoint = hookPoint,
                 templateClassName = template.className,
@@ -155,23 +187,48 @@ internal class AppleMusicDexKitResolver(
                 target = repairedTarget,
                 clazz = clazz,
                 compatibilityFallback = true,
+                baselineClassName = template.className,
             )
         }
-        return matches.distinctBy { it.clazz.name }
+        return matches.distinctBy { resolved -> resolved.clazz.name }
     }
+
+    fun rejectClassResolution(
+        hookPoint: AppleMusicHookPoint,
+        templateClassName: String,
+        actualClassName: String,
+        reason: String,
+    ) {
+        rejectionRegistry.reject(hookPoint, templateClassName, actualClassName)
+        preferences().edit().remove(classCacheKey(hookPoint, templateClassName)).apply()
+        ProviderLogger.error(
+            "Apple Music DexKit 类目标已定向失效: hook=$hookPoint, " +
+                "template=$templateClassName, target=$actualClassName, reason=$reason"
+        )
+    }
+
+    fun isClassRejected(
+        hookPoint: AppleMusicHookPoint,
+        templateClassName: String,
+        actualClassName: String,
+    ): Boolean = rejectionRegistry.contains(hookPoint, templateClassName, actualClassName)
 
     fun resolveMethod(
         hookPoint: AppleMusicHookPoint,
         templates: List<AppleMusicHookTarget>,
         validator: (AppleMusicHookTarget, Method) -> Boolean,
     ): ResolvedAppleMusicHookMethod? {
-        val packageInfo = application.packageManager.getPackageInfo(application.packageName, 0)
         val preferences = application.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
-        val cacheKey = "${packageInfo.longVersionCode}:${packageInfo.lastUpdateTime}:$hookPoint"
+        val cacheKey = AppleMusicDexKitCachePolicy.methodCacheKey(runtimeCacheScope, hookPoint)
         decode(preferences.getString(cacheKey, null))?.let { cached ->
             val template = bestTemplate(templates, cached)
             val method = runCatching { cached.toMethod(classLoader) }.getOrNull()
-            if (template != null && method != null && validator(template, method)) {
+            if (
+                template != null &&
+                method != null &&
+                !rejectionRegistry.containsMethod(hookPoint, template.className, method) &&
+                validator(template, method)
+            ) {
                 val repairedTarget = repairTarget(
                     hookPoint = hookPoint,
                     target = template.forResolvedMethod(method),
@@ -181,7 +238,6 @@ internal class AppleMusicDexKitResolver(
                 ProviderLogger.info(
                     "Apple Music DexKit 缓存命中: hook=$hookPoint target=${cached.describe()}",
                 )
-                recordMethodBaseline(hookPoint, repairedTarget, method, template.className)
                 AppleMusicDexKitWatchdog.resolvedMethod(
                     hookPoint = hookPoint,
                     runtimeCacheKey = cacheKey,
@@ -193,6 +249,7 @@ internal class AppleMusicDexKitResolver(
                     target = repairedTarget,
                     method = method,
                     compatibilityFallback = true,
+                    baselineClassName = template.className,
                 )
             }
             preferences.edit().remove(cacheKey).apply()
@@ -207,7 +264,10 @@ internal class AppleMusicDexKitResolver(
             val template = bestTemplate(templates, descriptor) ?: return@mapNotNull null
             val method = runCatching { descriptor.toMethod(classLoader) }.getOrNull()
                 ?: return@mapNotNull null
-            method.takeIf { validator(template, it) }?.let { template to it }
+            method.takeIf {
+                !rejectionRegistry.containsMethod(hookPoint, template.className, it) &&
+                    validator(template, it)
+            }?.let { template to it }
         }.distinctBy { (_, method) -> method.toGenericString() }
 
         val disambiguated = disambiguateMatches(matches)
@@ -231,7 +291,6 @@ internal class AppleMusicDexKitResolver(
             clazz = method.declaringClass,
             baselineClassName = template.className,
         )
-        recordMethodBaseline(hookPoint, repairedTarget, method, template.className)
         AppleMusicDexKitWatchdog.resolvedMethod(
             hookPoint = hookPoint,
             runtimeCacheKey = cacheKey,
@@ -244,6 +303,23 @@ internal class AppleMusicDexKitResolver(
             method = method.apply { isAccessible = true },
             compatibilityFallback = true,
             contractReason = "dexkit_resolved",
+            baselineClassName = template.className,
+        )
+    }
+
+    fun rejectMethodResolution(
+        hookPoint: AppleMusicHookPoint,
+        templateClassName: String,
+        method: Method,
+        reason: String,
+    ) {
+        rejectionRegistry.rejectMethod(hookPoint, templateClassName, method)
+        preferences().edit().remove(
+            AppleMusicDexKitCachePolicy.methodCacheKey(runtimeCacheScope, hookPoint),
+        ).apply()
+        ProviderLogger.error(
+            "Apple Music DexKit 方法目标已定向失效: hook=$hookPoint, " +
+                "template=$templateClassName, target=${method.toGenericString()}, reason=$reason",
         )
     }
 
@@ -279,26 +355,63 @@ internal class AppleMusicDexKitResolver(
 
     private fun findClasses(
         template: AppleMusicHookTarget,
-        shape: ClassShape,
+        shape: ClassShape?,
+        semanticFilter: (Class<*>) -> Boolean = { true },
     ): List<Class<*>> {
         ensureDexKitLoaded()
         val bridge = dexKitBridge()
         fun query(packagePrefix: String?): List<Class<*>> {
             val finder = FindClass().apply {
                 packagePrefix?.takeIf(String::isNotBlank)?.let { searchPackages(it) }
-                matcher {
-                    fieldCount(shape.fieldCountRange.first, shape.fieldCountRange.last)
-                    methodCount(shape.methodCountRange.first, shape.methodCountRange.last)
-                    interfaceCount(shape.interfaceCountRange.first, shape.interfaceCountRange.last)
-                    shape.stableFieldTypes.keys.take(3).forEach { addFieldForType(it) }
+                shape?.let { seed ->
+                    matcher {
+                        fieldCount(seed.fieldCountRange.first, seed.fieldCountRange.last)
+                        methodCount(seed.methodCountRange.first, seed.methodCountRange.last)
+                        interfaceCount(seed.interfaceCountRange.first, seed.interfaceCountRange.last)
+                        seed.stableFieldTypes.keys.take(3).forEach { addFieldForType(it) }
+                    }
                 }
             }
             return bridge.findClass(finder).mapNotNull { data ->
                 runCatching { data.getInstance(classLoader) }.getOrNull()
-            }.filter(shape::matches)
+            }.filter { clazz -> shape == null || shape.matches(clazz) }
+                .filter(semanticFilter)
         }
         val packagePrefix = template.className.substringBeforeLast('.', "")
         return query(packagePrefix).ifEmpty { query(null) }.distinctBy(Class<*>::getName)
+    }
+
+    private fun selectClassCandidate(
+        template: AppleMusicHookTarget,
+        shape: ClassShape?,
+        candidates: List<Class<*>>,
+    ): Class<*>? {
+        if (candidates.isEmpty()) return null
+        if (candidates.size == 1) return candidates.single()
+        val templatePackage = template.className.substringBeforeLast('.', "")
+        val scored = candidates.map { clazz ->
+            var score = shape?.similarityScore(clazz) ?: 0
+            if (clazz.name == template.className) score += 1_000
+            if (templatePackage.isNotBlank() &&
+                clazz.name.substringBeforeLast('.', "") == templatePackage
+            ) {
+                score += 200
+            }
+            clazz to score
+        }.sortedByDescending { (_, score) -> score }
+        val selectedName = AppleMusicDexKitCachePolicy.selectUniqueBest(
+            scored.map { (clazz, score) -> clazz.name to score },
+        )
+        return if (selectedName != null) {
+            scored.first { (clazz, _) -> clazz.name == selectedName }.first
+        } else {
+            ProviderLogger.diagnostic(
+                "Apple Music DexKit 类查询存在同分歧义: template=${template.className}, " +
+                    "score=${scored.first().second}, candidates=" +
+                    scored.take(6).joinToString { (clazz, score) -> "${clazz.name}:$score" },
+            )
+            null
+        }
     }
 
     private fun findCandidatesViaClassSearch(
@@ -386,7 +499,7 @@ internal class AppleMusicDexKitResolver(
             }
 
             val scopedResults = if (packagePrefix.isNotBlank()) executeQuery(packagePrefix) else emptyList()
-            if (scopedResults.isNotEmpty()) scopedResults else executeQuery(null)
+            (scopedResults + executeQuery(null)).distinct()
         }.flatten().distinct()
     }
 
@@ -536,6 +649,26 @@ internal class AppleMusicDexKitResolver(
             return stableMethodShapes.all { (shape, count) -> (methodCounts[shape] ?: 0) >= count }
         }
 
+        fun similarityScore(clazz: Class<*>): Int {
+            val fields = clazz.declaredFields.toList()
+            val methods = clazz.declaredMethods.filterNot { it.isSynthetic && it.name == "\$values" }
+            var score = 200
+            score -= kotlin.math.abs(fields.size - fieldCount) * 6
+            score -= kotlin.math.abs(methods.size - methodCount) * 4
+            score -= kotlin.math.abs(clazz.interfaces.size - interfaceCount) * 12
+            val fieldCounts = fields.mapNotNull { it.type.name.takeIf(::isStableRuntimeType) }
+                .groupingBy { it }
+                .eachCount()
+            stableFieldTypes.forEach { (type, count) ->
+                score += minOf(fieldCounts[type] ?: 0, count) * 8
+            }
+            val methodCounts = methods.map(::methodShape).groupingBy { it }.eachCount()
+            stableMethodShapes.forEach { (shape, count) ->
+                score += minOf(methodCounts[shape] ?: 0, count) * 5
+            }
+            return score
+        }
+
         companion object {
             fun from(clazz: Class<*>): ClassShape {
                 val fields = clazz.declaredFields.toList()
@@ -637,31 +770,44 @@ internal class AppleMusicDexKitResolver(
     }
 
     private fun classBaselineKey(hookPoint: AppleMusicHookPoint, className: String): String =
-        "baseline-class:${hookPoint.name}:${className.encoded()}"
+        AppleMusicDexKitCachePolicy.trustedClassBaselineKey(hookPoint, className)
 
     private fun classReferenceBaselineKey(
         hookPoint: AppleMusicHookPoint,
         className: String,
         member: AppleMusicRuntimeMember,
-    ): String = "baseline-class-ref:${hookPoint.name}:${className.encoded()}:${member.name}"
+    ): String = AppleMusicDexKitCachePolicy.trustedClassReferenceBaselineKey(
+        hookPoint,
+        className,
+        member,
+    )
 
     private fun memberBaselineKey(
         hookPoint: AppleMusicHookPoint,
         className: String,
         member: AppleMusicRuntimeMember,
-    ): String = "baseline-member:${hookPoint.name}:${className.encoded()}:${member.name}"
+    ): String = AppleMusicDexKitCachePolicy.trustedMemberBaselineKey(
+        hookPoint,
+        className,
+        member,
+    )
 
     private fun classCacheKey(hookPoint: AppleMusicHookPoint, className: String): String =
-        "cache-class:${hookPoint.name}:${className.encoded()}"
+        AppleMusicDexKitCachePolicy.classCacheKey(runtimeCacheScope, hookPoint, className)
 
     private fun classReferenceCacheKey(
         hookPoint: AppleMusicHookPoint,
         className: String,
         member: AppleMusicRuntimeMember,
-    ): String = "cache-class-ref:${hookPoint.name}:${className.encoded()}:${member.name}"
+    ): String = AppleMusicDexKitCachePolicy.classReferenceCacheKey(
+        runtimeCacheScope,
+        hookPoint,
+        className,
+        member,
+    )
 
     private fun hookMethodBaselineKey(hookPoint: AppleMusicHookPoint, className: String): String =
-        "baseline-hook-method:${hookPoint.name}:${className.encoded()}"
+        AppleMusicDexKitCachePolicy.trustedHookMethodBaselineKey(hookPoint, className)
 
     private fun encodeClassShape(value: ClassShape): String = listOf(
         value.fieldCount,
@@ -780,7 +926,7 @@ internal class AppleMusicDexKitResolver(
     }
 
     private companion object {
-        const val PREFERENCES = "hle_apple_music_dex_methods_v1"
+        const val PREFERENCES = "hle_apple_music_dex_methods_v2"
         const val TWO_GIB_BYTES = 2L * 1024L * 1024L * 1024L
         const val COUNT_TOLERANCE = 4
         val dexKitLoadLock = Any()

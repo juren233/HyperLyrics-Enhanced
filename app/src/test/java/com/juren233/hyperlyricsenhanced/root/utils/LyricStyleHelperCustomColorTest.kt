@@ -27,4 +27,13 @@ class LyricStyleHelperCustomColorTest {
         assertArrayEquals(intArrayOf(0xBF80C0FF.toInt()), palette.background)
         assertArrayEquals(intArrayOf(0xFF80C0FF.toInt()), palette.highlight)
     }
+
+    @Test
+    fun `monet font color uses the same readable unplayed alpha policy`() {
+        val palette = LyricStyleHelper.monetTextColorPalette(0xFF80C0FF.toInt())
+
+        assertArrayEquals(intArrayOf(0xFF80C0FF.toInt()), palette.primary)
+        assertArrayEquals(intArrayOf(0xBF80C0FF.toInt()), palette.background)
+        assertArrayEquals(intArrayOf(0xFF80C0FF.toInt()), palette.highlight)
+    }
 }

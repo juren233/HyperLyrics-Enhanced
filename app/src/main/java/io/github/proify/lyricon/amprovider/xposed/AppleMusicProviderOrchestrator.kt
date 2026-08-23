@@ -157,6 +157,8 @@ internal object AppleMusicProviderOrchestrator {
     private lateinit var lyricRequester: LyricRequester
     private lateinit var internalCatalogResolver: AppleInternalCatalogResolver
     private var contentUiLanguagePrefs: android.content.SharedPreferences? = null
+    private var contentUiLanguagePreferenceListener:
+        android.content.SharedPreferences.OnSharedPreferenceChangeListener? = null
     private val metadataOverrideStore = AppleMetadataOverrideStore()
     private val inAppMetadataRegistry = AppleInAppMetadataRegistry()
     private lateinit var inAppMetadataApplier: AppleInAppMetadataApplier
@@ -2069,8 +2071,18 @@ internal object AppleMusicProviderOrchestrator {
                     lyricsHooks.refreshAppleLyricsBlurEffect()
                 RootConstants.KEY_HOOK_APPLE_MUSIC_FOLLOW_SYSTEM_FONT_WEIGHT ->
                     lyricsHooks.refreshAppleSystemFontWeight()
-                RootConstants.KEY_HOOK_APPLE_MUSIC_VOLUME_BALANCE ->
+                RootConstants.KEY_HOOK_APPLE_MUSIC_VOLUME_BALANCE -> {
+                    val enabled = changed.getBoolean(
+                        key,
+                        RootConstants.DEFAULT_HOOK_APPLE_MUSIC_VOLUME_BALANCE,
+                    )
+                    ProviderLogger.info(
+                        "[AtmosVolumeDiag] event=preference_changed," +
+                            "elapsedMs=${android.os.SystemClock.elapsedRealtime()}," +
+                            "enabled=$enabled"
+                    )
                     playbackHooks.onVolumeBalancePreferenceChanged()
+                }
                 RootConstants.KEY_HOOK_APPLE_MUSIC_MATCH_ONLINE_TRANSLATION,
                 RootConstants.KEY_HOOK_APPLE_MUSIC_NATIVE_ONLINE_TRANSLATION -> {
                     if (!lyricsHooks.isNativeOnlineTranslationEnabled()) {
@@ -2096,7 +2108,12 @@ internal object AppleMusicProviderOrchestrator {
                 }
             }
         }
+        contentUiLanguagePreferenceListener = listener
         prefs.registerOnSharedPreferenceChangeListener(listener)
+        ProviderLogger.diagnostic(
+            "[AtmosVolumeDiag] event=preference_listener_registered," +
+                "listener=${System.identityHashCode(listener)}"
+        )
     }
 
     private fun applyConfiguredContentUiLanguage(

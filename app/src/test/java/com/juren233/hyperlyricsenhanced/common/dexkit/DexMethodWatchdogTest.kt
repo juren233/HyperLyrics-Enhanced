@@ -40,6 +40,30 @@ class DexMethodWatchdogTest {
         assertEquals(1L, snapshot.validationCount)
     }
 
+
+    @Test
+    fun `records hook installation failure without turning it into timeout`() {
+        val events = mutableListOf<DexWatchdogEvent>()
+        val watchdog = DexMethodWatchdog(events::add)
+        watchdog.register("method", "runtime-method")
+        watchdog.resolved(
+            cacheKey = "method",
+            source = DexResolutionSource.CACHE,
+            cacheWritten = false,
+            target = "example.Target#method():void",
+        )
+        watchdog.hookInstallFailed(
+            cacheKey = "method",
+            target = "example.Target#method():void",
+            detail = "IllegalStateException: invalid target",
+        )
+        watchdog.timeout("method")
+
+        assertTrue(events.any { it.stage == "hookInstallFailed" })
+        assertFalse(events.any { it.stage == "timeout" })
+        assertEquals("failed", events.first { it.stage == "hookInstallFailed" }.result)
+    }
+
     @Test
     fun `distinguishes unused target from callback without business validation`() {
         val events = mutableListOf<DexWatchdogEvent>()

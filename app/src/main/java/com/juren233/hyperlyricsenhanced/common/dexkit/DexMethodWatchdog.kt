@@ -82,6 +82,17 @@ internal class DexMethodWatchdog(
         state.event(stage = "hookInstalled", result = "success")
     }
 
+    fun hookInstallFailed(cacheKey: String, target: String, detail: String?) =
+        update(cacheKey) { state ->
+            state.target = target
+            state.timeoutRecorded = true
+            state.event(
+                stage = "hookInstallFailed",
+                result = "failed",
+                detail = detail,
+            )
+        }
+
     fun callback(cacheKey: String) = update(cacheKey) { state ->
         state.callbackCount += 1L
         if (state.callbackCount == 1L) {

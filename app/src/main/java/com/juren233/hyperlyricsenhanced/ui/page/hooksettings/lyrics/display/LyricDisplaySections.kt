@@ -119,6 +119,7 @@ fun LazyListScope.lyricDisplaySections(
                 Column {
                     val fontColorOptions = listOf(
                         stringResource(id = R.string.option_font_color_default),
+                        stringResource(id = R.string.option_font_color_monet),
                         stringResource(id = R.string.option_font_color_cover),
                         stringResource(id = R.string.option_font_color_cover_gradient),
                         stringResource(id = R.string.option_font_color_custom),

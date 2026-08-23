@@ -56,8 +56,8 @@
     <string name="summary_apple_music_localized_metadata_cache">Uses very little storage for efficient performance. When disabled, song information must be fetched again after a cold start. Recommended.</string>
     <string name="title_apple_music_app_features">App Features</string>
     <string name="title_apple_music_app_display">App Display</string>
-    <string name="title_apple_music_volume_balance">Volume Balance</string>
-    <string name="summary_apple_music_volume_balance">Helps fix low Dolby Atmos volume</string>
+    <string name="title_apple_music_volume_balance">Dynamically Boost Dolby Atmos Speaker Volume</string>
+    <string name="summary_apple_music_volume_balance">Enable “Sound Check” in Apple Music settings for better results</string>
     <string name="title_apple_music_notification_open_full_player">Open the player directly from media notifications</string>
     <string name="title_apple_music_simplify_traditional_lyrics">Convert Traditional Chinese lyrics to Simplified Chinese</string>
     <string name="title_apple_music_native_online_translation">Fill missing lyric translations and pronunciations</string>
@@ -439,6 +439,7 @@
     <string name="title_aod_center_non_duet_song">Center Non-Duet Songs</string>
     <string name="title_font_color">Font Color</string>
     <string name="option_font_color_default">Default</string>
+    <string name="option_font_color_monet">Monet color</string>
     <string name="option_font_color_cover">Cover Color</string>
     <string name="option_font_color_cover_gradient">Cover Gradient</string>
     <string name="option_font_color_custom">Custom</string>

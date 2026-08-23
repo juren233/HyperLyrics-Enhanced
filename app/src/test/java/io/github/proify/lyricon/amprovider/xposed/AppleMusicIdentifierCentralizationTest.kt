@@ -7,6 +7,7 @@
 package io.github.proify.lyricon.amprovider.xposed
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -54,7 +55,7 @@ class AppleMusicIdentifierCentralizationTest {
     }
 
     @Test
-    fun `resolver repairs nested runtime members before refreshing baselines`() {
+    fun `resolver repairs members but refreshes trusted baselines only for exact targets`() {
         val relativeSourcePath =
             "src/main/java/io/github/proify/lyricon/amprovider/xposed/AppleMusicHookProfiles.kt"
         val sourceFile = listOf(File("app/$relativeSourcePath"), File(relativeSourcePath))
@@ -63,15 +64,40 @@ class AppleMusicIdentifierCentralizationTest {
 
         assertTrue(
             "精确类或方法仍可加载时，也必须先修复内部混淆成员",
-            source.contains("repairAndRecordClass(") &&
-                source.contains("repairAndRecordMethod(") &&
+            source.contains("private fun repairClass(") &&
+                source.contains("private fun repairMethod(") &&
                 source.contains("dexKitResolver?.repairRuntimeMembers("),
         )
         assertTrue(
-            "修复后的成员名必须覆盖旧基线，而不是继续记录失效标识",
+            "只有精确档案结果可以刷新跨版本可信基线",
+            source.contains("recordTrustedBaseline") &&
+                source.contains("if (recordTrustedBaseline)") &&
             source.indexOf("dexKitResolver?.repairRuntimeMembers(") <
                 source.lastIndexOf("dexKitResolver?.recordMethodBaseline("),
         )
+    }
+
+    @Test
+    fun `DexKit fallback cannot overwrite trusted cross version baselines`() {
+        val relativeSourcePath =
+            "src/main/java/io/github/proify/lyricon/amprovider/xposed/AppleMusicDexKitResolver.kt"
+        val sourceFile = listOf(File("app/$relativeSourcePath"), File(relativeSourcePath))
+            .first(File::isFile)
+        val source = sourceFile.readText()
+        val classResolution = source.substring(
+            source.indexOf("fun resolveClasses("),
+            source.indexOf("fun resolveMethod("),
+        )
+        val methodResolution = source.substring(
+            source.indexOf("fun resolveMethod("),
+            source.indexOf("private fun disambiguateMatches("),
+        )
+
+        assertFalse(classResolution.contains("recordBaseline("))
+        assertFalse(methodResolution.contains("recordMethodBaseline("))
+        assertTrue(source.contains("hle_apple_music_dex_methods_v2"))
+        assertTrue(source.contains("AppleMusicDexKitCachePolicy.methodCacheKey"))
+        assertTrue(source.contains("AppleMusicDexKitCachePolicy.classCacheKey"))
     }
 
     @Test
@@ -100,6 +126,19 @@ class AppleMusicIdentifierCentralizationTest {
         val composeObserve = targets(AppleMusicHookPoint.COMPOSE_OBSERVE_AS_STATE).single()
         assertEquals("C1.w", composeObserve.className)
         assertEquals("e", composeObserve.methodName)
+        assertEquals(
+            listOf("androidx.lifecycle.G", "z0.n"),
+            composeObserve.parameterTypeNames,
+        )
+
+        assertEquals(
+            listOf("z1.q", "z1.i"),
+            targets(AppleMusicHookPoint.COMPOSE_TEXT_LAYOUT).map { it.className },
+        )
+        assertEquals(
+            "com.apple.android.music.utils.j1\$a",
+            targets(AppleMusicHookPoint.APPLE_TEXT_STYLE_UTILS).single().className,
+        )
 
         assertEquals(
             "z0.s0",

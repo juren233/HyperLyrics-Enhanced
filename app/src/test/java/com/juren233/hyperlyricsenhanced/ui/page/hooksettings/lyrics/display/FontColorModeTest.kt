@@ -11,11 +11,26 @@ import org.junit.Test
 
 class FontColorModeTest {
     @Test
-    fun `custom mode takes precedence over legacy cover switches`() {
+    fun `custom mode takes precedence over monet and legacy cover switches`() {
         assertEquals(
             FONT_COLOR_MODE_CUSTOM,
             resolveFontColorMode(
                 customEnabled = true,
+                monetEnabled = true,
+                coverEnabled = true,
+                coverGradient = true,
+            )
+        )
+    }
+
+    @Test
+    fun `monet mode is the second option and takes precedence over cover colors`() {
+        assertEquals(1, FONT_COLOR_MODE_MONET)
+        assertEquals(
+            FONT_COLOR_MODE_MONET,
+            resolveFontColorMode(
+                customEnabled = false,
+                monetEnabled = true,
                 coverEnabled = true,
                 coverGradient = true,
             )
@@ -24,8 +39,8 @@ class FontColorModeTest {
 
     @Test
     fun `legacy switches still restore existing user selections`() {
-        assertEquals(FONT_COLOR_MODE_DEFAULT, resolveFontColorMode(false, false, true))
-        assertEquals(FONT_COLOR_MODE_COVER, resolveFontColorMode(false, true, false))
-        assertEquals(FONT_COLOR_MODE_COVER_GRADIENT, resolveFontColorMode(false, true, true))
+        assertEquals(FONT_COLOR_MODE_DEFAULT, resolveFontColorMode(false, false, false, true))
+        assertEquals(FONT_COLOR_MODE_COVER, resolveFontColorMode(false, false, true, false))
+        assertEquals(FONT_COLOR_MODE_COVER_GRADIENT, resolveFontColorMode(false, false, true, true))
     }
 }

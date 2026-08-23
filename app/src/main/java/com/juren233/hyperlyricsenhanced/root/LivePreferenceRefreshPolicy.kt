@@ -22,6 +22,7 @@ internal object LivePreferenceRefreshPolicy {
         RootConstants.KEY_HOOK_EXTRACT_COVER_TEXT_GRADIENT,
         RootConstants.KEY_HOOK_CUSTOM_TEXT_COLOR_ENABLED,
         RootConstants.KEY_HOOK_CUSTOM_TEXT_COLOR,
+        RootConstants.KEY_HOOK_MONET_TEXT_COLOR,
         RootConstants.KEY_HOOK_ISLAND_PROGRESS_COLOR_MODE,
         RootConstants.KEY_HOOK_ISLAND_PROGRESS_CUSTOM_COLOR,
     )

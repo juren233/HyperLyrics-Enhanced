@@ -34,6 +34,11 @@ class LivePreferenceRefreshPolicyTest {
                 RootConstants.KEY_HOOK_CUSTOM_TEXT_COLOR
             )
         )
+        assertTrue(
+            LivePreferenceRefreshPolicy.contains(
+                RootConstants.KEY_HOOK_MONET_TEXT_COLOR
+            )
+        )
     }
 
     @Test

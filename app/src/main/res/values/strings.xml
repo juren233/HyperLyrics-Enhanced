@@ -57,8 +57,8 @@
     <string name="summary_apple_music_localized_metadata_cache">极少量空间占用换取高效率性能，当关闭时冷启动后需重新抓取歌曲信息，推荐开启</string>
     <string name="title_apple_music_app_features">App功能</string>
     <string name="title_apple_music_app_display">App显示</string>
-    <string name="title_apple_music_volume_balance">音量平衡</string>
-    <string name="summary_apple_music_volume_balance">可解决Dolby Atmos音量小的问题</string>
+    <string name="title_apple_music_volume_balance">动态提升Dolby Atmos外放音量</string>
+    <string name="summary_apple_music_volume_balance">开启Apple Music设置内“音量平衡”听感更佳</string>
     <string name="title_apple_music_notification_open_full_player">点击媒体通知直接跳转播放页</string>
     <string name="title_apple_music_simplify_traditional_lyrics">将繁体歌词转成简体</string>
     <string name="title_apple_music_native_online_translation">补全歌词翻译与发音</string>
@@ -441,6 +441,7 @@
     <string name="title_aod_center_non_duet_song">非对唱歌曲恢复居中</string>
     <string name="title_font_color">字体颜色</string>
     <string name="option_font_color_default">默认</string>
+    <string name="option_font_color_monet">莫奈取色</string>
     <string name="option_font_color_cover">封面色</string>
     <string name="option_font_color_cover_gradient">封面渐变色</string>
     <string name="option_font_color_custom">自定义</string>

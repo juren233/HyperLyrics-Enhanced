@@ -6,6 +6,10 @@
 
 package io.github.proify.lyricon.amprovider.xposed
 
+import android.content.Context
+import android.graphics.Typeface
+import android.text.TextPaint
+import android.util.AttributeSet
 import java.lang.reflect.Field
 import java.lang.reflect.Method
 import java.lang.reflect.Modifier
@@ -207,6 +211,111 @@ internal class RequireReturnType(
     }
 }
 
+internal enum class AppleComposeTextLayoutRole {
+    ANY,
+    PRIMARY,
+    INTRINSICS,
+}
+
+/**
+ * Semantic class contract for Compose's Android text-layout bridge.
+ *
+ * The obfuscated class name is deliberately ignored. The target must expose a constructor whose
+ * text and paint inputs can be rewritten before Android creates StaticLayout/BoringLayout.
+ */
+internal class RequireComposeTextLayoutClass(
+    private val role: AppleComposeTextLayoutRole = AppleComposeTextLayoutRole.ANY,
+) : AppleMusicHookContract {
+    override fun validate(context: HookContractContext): ContractResult {
+        val clazz = context.clazz ?: context.method?.declaringClass
+            ?: return ContractResult.Rejected("Class unavailable for Compose text layout check")
+        val matchingConstructors = clazz.declaredConstructors.filter { constructor ->
+            val parameters = constructor.parameterTypes
+            val hasCommonInputs = parameters.firstOrNull() == CharSequence::class.java &&
+                parameters.any(TextPaint::class.java::isAssignableFrom)
+            if (!hasCommonInputs) return@filter false
+            when (role) {
+                AppleComposeTextLayoutRole.ANY -> true
+                AppleComposeTextLayoutRole.PRIMARY -> parameters.size >= 8
+                AppleComposeTextLayoutRole.INTRINSICS ->
+                    parameters.size in 2..4 &&
+                        parameters.getOrNull(1)?.let(
+                            TextPaint::class.java::isAssignableFrom
+                        ) == true
+            }
+        }
+        return if (matchingConstructors.isNotEmpty()) {
+            ContractResult.Passed
+        } else {
+            ContractResult.Rejected(
+                "Class ${clazz.name} lacks ${role.name.lowercase()} " +
+                    "CharSequence/TextPaint constructor"
+            )
+        }
+    }
+}
+
+/** Semantic class contract for Apple's Compose typeface factory helper. */
+internal class RequireAppleTextStyleUtilsClass : AppleMusicHookContract {
+    override fun validate(context: HookContractContext): ContractResult {
+        val clazz = context.clazz ?: context.method?.declaringClass
+            ?: return ContractResult.Rejected("Class unavailable for Apple text style check")
+        val factory = clazz.declaredMethods.singleOrNull { method ->
+            Modifier.isStatic(method.modifiers) &&
+                method.returnType == Typeface::class.java &&
+                method.parameterCount == 4 &&
+                method.parameterTypes.getOrNull(0) == Context::class.java &&
+                method.parameterTypes.getOrNull(1) == AttributeSet::class.java
+        }
+        return if (factory != null) {
+            ContractResult.Passed
+        } else {
+            ContractResult.Rejected(
+                "Class ${clazz.name} lacks unique static Context/AttributeSet Typeface factory"
+            )
+        }
+    }
+}
+
+/**
+ * Accepts LiveData by behavior instead of one concrete obfuscated class name.
+ *
+ * AndroidX public lifecycle methods remain stable even when the bundled class changes from
+ * LiveData to a minified name such as G, so future pure renames can be repaired automatically.
+ */
+internal class RequireLifecycleObservableParameter(
+    private val index: Int,
+) : AppleMusicHookContract {
+    override fun validate(context: HookContractContext): ContractResult {
+        val method = context.method
+            ?: return ContractResult.Rejected("Method unavailable for lifecycle observable check")
+        val actual = method.parameterTypes.getOrNull(index)
+            ?: return ContractResult.Rejected(
+                "Method ${method.name} parameter index $index out of bounds"
+            )
+        val methods = generateSequence(actual) { current -> current.superclass }
+            .flatMap { current -> current.declaredMethods.asSequence() }
+            .toList()
+        val hasGetValue = methods.any { candidate ->
+            candidate.name == "getValue" && candidate.parameterCount == 0
+        }
+        val hasObserve = methods.any { candidate ->
+            (candidate.name == "observe" && candidate.parameterCount == 2) ||
+                (candidate.name == "observeForever" && candidate.parameterCount == 1)
+        }
+        val hasRemoveObserver = methods.any { candidate ->
+            candidate.name == "removeObserver" && candidate.parameterCount == 1
+        }
+        return if (hasGetValue && hasObserve && hasRemoveObserver) {
+            ContractResult.Passed
+        } else {
+            ContractResult.Rejected(
+                "Method ${method.name} param[$index] ${actual.name} lacks LiveData behavior"
+            )
+        }
+    }
+}
+
 /**
  * Apple Music 各 Hook 点预置语义契约注册表。
  */
@@ -228,8 +337,10 @@ internal object AppleMusicHookContracts {
         AppleMusicHookPoint.COMPOSE_NEVER_EQUAL_POLICY to RequireStaticSelfTypedSingleton(),
         AppleMusicHookPoint.COMPOSE_OBSERVE_AS_STATE to AllOfContract(
             RequireNonBridgeMethod(),
-            RequireParameterType(0, "androidx.lifecycle.LiveData"),
+            RequireLifecycleObservableParameter(0),
         ),
+        AppleMusicHookPoint.COMPOSE_TEXT_LAYOUT to RequireComposeTextLayoutClass(),
+        AppleMusicHookPoint.APPLE_TEXT_STYLE_UTILS to RequireAppleTextStyleUtilsClass(),
         AppleMusicHookPoint.LIBRARY_EPOXY_BUILD to AllOfContract(
             RequireNonBridgeMethod(),
             AppleMusicHookContract { context ->
@@ -298,6 +409,10 @@ internal object AppleMusicHookContracts {
 
     fun forHookPoint(hookPoint: AppleMusicHookPoint): AppleMusicHookContract? =
         DEFAULT_CONTRACTS[hookPoint]
+
+    fun canRepairClassWithoutBaseline(hookPoint: AppleMusicHookPoint): Boolean =
+        hookPoint == AppleMusicHookPoint.COMPOSE_TEXT_LAYOUT ||
+            hookPoint == AppleMusicHookPoint.APPLE_TEXT_STYLE_UTILS
 
     fun validate(context: HookContractContext): ContractResult {
         val targetContract = context.target.contract

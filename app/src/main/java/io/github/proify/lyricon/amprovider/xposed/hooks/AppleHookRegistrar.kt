@@ -78,12 +78,36 @@ internal class AppleHookRegistrar(
     ) = installHooker(executable, ArgumentRewriteHook(rewrite))
 
     private fun installHooker(executable: Executable, hooker: Hooker) {
-        runCatching { module.deoptimize(executable) }
         val moduleId = activeModuleId.get() ?: "unscoped"
-        module.hook(executable).intercept(
-            if (BuildConfig.DEBUG) callbackTracer.wrap(moduleId, executable, hooker) else hooker
-        )
-        AppleMusicDexKitWatchdog.hookInstalled(executable)
+        var current = executable
+        var retried = false
+        while (true) {
+            try {
+                runCatching { module.deoptimize(current) }
+                module.hook(current).intercept(
+                    if (BuildConfig.DEBUG) {
+                        callbackTracer.wrap(moduleId, current, hooker)
+                    } else {
+                        hooker
+                    },
+                )
+                AppleMusicDexKitWatchdog.hookInstalled(current)
+                return
+            } catch (failure: Throwable) {
+                val replacement = if (!retried) {
+                    AppleMusicDexKitWatchdog.hookInstallFailed(current, failure)
+                } else {
+                    null
+                }
+                if (replacement == null) throw failure
+                ProviderLogger.info(
+                    "Apple Music DexKit 方法安装失败后重试: " +
+                        "old=${current.toGenericString()}, new=${replacement.toGenericString()}",
+                )
+                current = replacement
+                retried = true
+            }
+        }
     }
 }
 

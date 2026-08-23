@@ -577,66 +577,127 @@ internal class AppleSystemFontHooks(
         installedHooks: MutableList<String>,
         failedHooks: MutableList<String>,
     ) {
-        runCatching {
-            val typefaceFactoryClass = hookResolver.resolveClasses(
+        var typefaceFactoryInstalled = false
+        var typefaceFactoryFailure: Throwable? = null
+        val attemptedTypefaceFactories = mutableSetOf<Pair<String, String>>()
+        for (attempt in 0..1) {
+            var rejectedAny = false
+            val candidates = hookResolver.resolveClasses(
                 AppleMusicHookPoint.APPLE_TEXT_STYLE_UTILS
-            ).firstOrNull()?.clazz
-                ?: error("Apple text style utils unavailable")
-            val typefaceFactoryMethod = typefaceFactoryClass.declaredMethods.first { method ->
-                Modifier.isStatic(method.modifiers) &&
-                    method.returnType == Typeface::class.java &&
-                    method.parameterTypes.size == 4 &&
-                    method.parameterTypes.firstOrNull() == android.content.Context::class.java
-            }.apply { isAccessible = true }
-            hookRegistrar.installResultOverrideHook(typefaceFactoryMethod) { _, original ->
-                (original as? Typeface)?.let(appleSystemFontManagedTypefaces::add)
-                original
+            )
+            for (resolved in candidates) {
+                val attemptKey = resolved.baselineClassName to resolved.clazz.name
+                if (!attemptedTypefaceFactories.add(attemptKey)) continue
+                val result = runCatching {
+                    val typefaceFactoryMethod = resolved.clazz.declaredMethods.single { method ->
+                        Modifier.isStatic(method.modifiers) &&
+                            method.returnType == Typeface::class.java &&
+                            method.parameterTypes.size == 4 &&
+                            method.parameterTypes.firstOrNull() == android.content.Context::class.java
+                    }.apply { isAccessible = true }
+                    hookRegistrar.installResultOverrideHook(typefaceFactoryMethod) { _, original ->
+                        (original as? Typeface)?.let(appleSystemFontManagedTypefaces::add)
+                        original
+                    }
+                    installedHooks += "ComposeTypefaceFactory.${typefaceFactoryMethod.name}"
+                }
+                if (result.isSuccess) {
+                    typefaceFactoryInstalled = true
+                    break
+                }
+                val throwable = result.exceptionOrNull() ?: continue
+                typefaceFactoryFailure = throwable
+                if (attempt == 0 && hookResolver.rejectClassResolution(
+                        hookPoint = AppleMusicHookPoint.APPLE_TEXT_STYLE_UTILS,
+                        resolved = resolved,
+                        reason = "${throwable.javaClass.simpleName}: ${throwable.message}",
+                    )
+                ) {
+                    rejectedAny = true
+                }
             }
-            installedHooks += "ComposeTypefaceFactory.${typefaceFactoryMethod.name}"
-        }.onFailure { throwable ->
-            failedHooks += "ComposeTypefaceFactory:${throwable.javaClass.simpleName}"
+            if (typefaceFactoryInstalled || !rejectedAny) break
+            ProviderLogger.info("Apple Compose Typeface DexKit 定向失效后重试")
+        }
+        if (!typefaceFactoryInstalled) {
+            failedHooks += "ComposeTypefaceFactory:" +
+                (typefaceFactoryFailure?.javaClass?.simpleName ?: "IllegalStateException")
         }
 
-        hookResolver.resolveClasses(AppleMusicHookPoint.COMPOSE_TEXT_LAYOUT)
-            .forEach { resolvedClass ->
-            val className = resolvedClass.target.className
-            runCatching {
-                val layoutClass = resolvedClass.clazz
-                val constructors = layoutClass.declaredConstructors.filter { constructor ->
-                    val parameterTypes = constructor.parameterTypes
-                    parameterTypes.firstOrNull() == CharSequence::class.java &&
-                        parameterTypes.any(TextPaint::class.java::isAssignableFrom)
-                }
-                check(constructors.isNotEmpty()) {
-                    "Compose text layout constructor unavailable: $className"
-                }
-                constructors.forEachIndexed { index, constructor ->
-                    constructor.isAccessible = true
-                    val paintIndex = constructor.parameterTypes.indexOfFirst(
-                        TextPaint::class.java::isAssignableFrom,
-                    )
-                    hookRegistrar.installArgumentRewriteHook(constructor) { chain ->
-                        if (appleSystemFontApplyGuard.isActive) {
-                            return@installArgumentRewriteHook null
-                        }
-                        val text = chain.args.firstOrNull() as? CharSequence
-                            ?: return@installArgumentRewriteHook null
-                        val paint = chain.args.getOrNull(paintIndex) as? TextPaint
-                            ?: return@installArgumentRewriteHook null
-                        val rewritten = rewriteAppleSystemFontLayoutInput(
-                            text = text,
-                            paint = paint,
-                        ) ?: return@installArgumentRewriteHook null
-                        chain.args.toTypedArray().also { args ->
-                            args[0] = rewritten.text
-                            args[paintIndex] = rewritten.paint
-                        }
+        val attemptedLayouts = mutableSetOf<Pair<String, String>>()
+        val installedLayoutBaselines = mutableSetOf<String>()
+        val pendingFailures = linkedMapOf<String, Throwable>()
+        val rejectedFailures = linkedMapOf<String, Throwable>()
+        for (attempt in 0..1) {
+            var rejectedAny = false
+            val candidates = hookResolver.resolveClasses(AppleMusicHookPoint.COMPOSE_TEXT_LAYOUT)
+            candidates.forEach { resolvedClass ->
+                val attemptKey = resolvedClass.baselineClassName to resolvedClass.clazz.name
+                if (!attemptedLayouts.add(attemptKey)) return@forEach
+                val result = runCatching {
+                    val layoutClass = resolvedClass.clazz
+                    val constructors = layoutClass.declaredConstructors.filter { constructor ->
+                        val parameterTypes = constructor.parameterTypes
+                        parameterTypes.firstOrNull() == CharSequence::class.java &&
+                            parameterTypes.any(TextPaint::class.java::isAssignableFrom)
                     }
-                    installedHooks += "ComposeTextLayout.$className#$index"
+                    check(constructors.isNotEmpty()) {
+                        "Compose text layout constructor unavailable: ${layoutClass.name}"
+                    }
+                    constructors.forEachIndexed { index, constructor ->
+                        constructor.isAccessible = true
+                        val paintIndex = constructor.parameterTypes.indexOfFirst(
+                            TextPaint::class.java::isAssignableFrom,
+                        )
+                        hookRegistrar.installArgumentRewriteHook(constructor) { chain ->
+                            if (appleSystemFontApplyGuard.isActive) {
+                                return@installArgumentRewriteHook null
+                            }
+                            val text = chain.args.firstOrNull() as? CharSequence
+                                ?: return@installArgumentRewriteHook null
+                            val paint = chain.args.getOrNull(paintIndex) as? TextPaint
+                                ?: return@installArgumentRewriteHook null
+                            val rewritten = rewriteAppleSystemFontLayoutInput(
+                                text = text,
+                                paint = paint,
+                            ) ?: return@installArgumentRewriteHook null
+                            chain.args.toTypedArray().also { args ->
+                                args[0] = rewritten.text
+                                args[paintIndex] = rewritten.paint
+                            }
+                        }
+                        installedHooks += "ComposeTextLayout.${layoutClass.name}#$index"
+                    }
                 }
-            }.onFailure { throwable ->
-                failedHooks += "$className:${throwable.javaClass.simpleName}"
+                if (result.isSuccess) {
+                    installedLayoutBaselines += resolvedClass.baselineClassName
+                    pendingFailures.remove(resolvedClass.baselineClassName)
+                    rejectedFailures.remove(resolvedClass.baselineClassName)
+                    return@forEach
+                }
+                val throwable = result.exceptionOrNull() ?: return@forEach
+                if (attempt == 0 && hookResolver.rejectClassResolution(
+                        hookPoint = AppleMusicHookPoint.COMPOSE_TEXT_LAYOUT,
+                        resolved = resolvedClass,
+                        reason = "${throwable.javaClass.simpleName}: ${throwable.message}",
+                    )
+                ) {
+                    rejectedAny = true
+                    rejectedFailures[resolvedClass.baselineClassName] = throwable
+                } else {
+                    pendingFailures[resolvedClass.baselineClassName] = throwable
+                }
             }
+            if (!rejectedAny) break
+            ProviderLogger.info("Apple Compose TextLayout DexKit 定向失效后重试")
+        }
+        rejectedFailures.forEach { (baselineClassName, throwable) ->
+            if (baselineClassName !in installedLayoutBaselines) {
+                pendingFailures.putIfAbsent(baselineClassName, throwable)
+            }
+        }
+        pendingFailures.forEach { (baselineClassName, throwable) ->
+            failedHooks += "$baselineClassName:${throwable.javaClass.simpleName}"
         }
     }
 

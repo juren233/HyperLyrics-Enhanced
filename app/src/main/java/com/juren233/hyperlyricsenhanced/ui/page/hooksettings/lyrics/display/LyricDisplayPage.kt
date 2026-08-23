@@ -19,16 +19,19 @@ import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.common.remem
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.common.rememberHookPrefs
 
 internal const val FONT_COLOR_MODE_DEFAULT = 0
-internal const val FONT_COLOR_MODE_COVER = 1
-internal const val FONT_COLOR_MODE_COVER_GRADIENT = 2
-internal const val FONT_COLOR_MODE_CUSTOM = 3
+internal const val FONT_COLOR_MODE_MONET = 1
+internal const val FONT_COLOR_MODE_COVER = 2
+internal const val FONT_COLOR_MODE_COVER_GRADIENT = 3
+internal const val FONT_COLOR_MODE_CUSTOM = 4
 
 internal fun resolveFontColorMode(
     customEnabled: Boolean,
+    monetEnabled: Boolean,
     coverEnabled: Boolean,
     coverGradient: Boolean,
 ): Int = when {
     customEnabled -> FONT_COLOR_MODE_CUSTOM
+    monetEnabled -> FONT_COLOR_MODE_MONET
     !coverEnabled -> FONT_COLOR_MODE_DEFAULT
     coverGradient -> FONT_COLOR_MODE_COVER_GRADIENT
     else -> FONT_COLOR_MODE_COVER
@@ -58,10 +61,19 @@ fun LyricDisplayPage() {
             )
         )
     }
+    var monetFontColorEnabled by remember {
+        mutableStateOf(
+            prefs.getBoolean(
+                RootConstants.KEY_HOOK_MONET_TEXT_COLOR,
+                RootConstants.DEFAULT_HOOK_MONET_TEXT_COLOR
+            )
+        )
+    }
     var fontColorMode by remember {
         mutableIntStateOf(
             resolveFontColorMode(
                 customEnabled = customFontColorEnabled,
+                monetEnabled = monetFontColorEnabled,
                 coverEnabled = prefs.getBoolean(
                     RootConstants.KEY_HOOK_EXTRACT_COVER_TEXT_COLOR,
                     RootConstants.DEFAULT_HOOK_EXTRACT_COVER_TEXT_COLOR
@@ -217,25 +229,42 @@ fun LyricDisplayPage() {
             onFontColorModeChange = { mode ->
                 fontColorMode = mode
                 when (mode) {
+                    FONT_COLOR_MODE_MONET -> {
+                        monetFontColorEnabled = true
+                        saveConfig(RootConstants.KEY_HOOK_MONET_TEXT_COLOR, true)
+                        saveConfig(RootConstants.KEY_HOOK_EXTRACT_COVER_TEXT_COLOR, false)
+                        saveConfig(RootConstants.KEY_HOOK_EXTRACT_COVER_TEXT_GRADIENT, false)
+                        customFontColorEnabled = false
+                        saveConfig(RootConstants.KEY_HOOK_CUSTOM_TEXT_COLOR_ENABLED, false)
+                    }
                     FONT_COLOR_MODE_COVER -> {
+                        monetFontColorEnabled = false
+                        saveConfig(RootConstants.KEY_HOOK_MONET_TEXT_COLOR, false)
                         saveConfig(RootConstants.KEY_HOOK_EXTRACT_COVER_TEXT_GRADIENT, false)
                         saveConfig(RootConstants.KEY_HOOK_EXTRACT_COVER_TEXT_COLOR, true)
                         customFontColorEnabled = false
                         saveConfig(RootConstants.KEY_HOOK_CUSTOM_TEXT_COLOR_ENABLED, false)
                     }
                     FONT_COLOR_MODE_COVER_GRADIENT -> {
+                        monetFontColorEnabled = false
+                        saveConfig(RootConstants.KEY_HOOK_MONET_TEXT_COLOR, false)
                         saveConfig(RootConstants.KEY_HOOK_EXTRACT_COVER_TEXT_GRADIENT, true)
                         saveConfig(RootConstants.KEY_HOOK_EXTRACT_COVER_TEXT_COLOR, true)
                         customFontColorEnabled = false
                         saveConfig(RootConstants.KEY_HOOK_CUSTOM_TEXT_COLOR_ENABLED, false)
                     }
                     FONT_COLOR_MODE_CUSTOM -> {
+                        monetFontColorEnabled = false
+                        saveConfig(RootConstants.KEY_HOOK_MONET_TEXT_COLOR, false)
                         customFontColorEnabled = true
                         saveConfig(RootConstants.KEY_HOOK_CUSTOM_TEXT_COLOR_ENABLED, true)
                         saveConfig(RootConstants.KEY_HOOK_EXTRACT_COVER_TEXT_COLOR, false)
                     }
                     else -> {
+                        monetFontColorEnabled = false
+                        saveConfig(RootConstants.KEY_HOOK_MONET_TEXT_COLOR, false)
                         saveConfig(RootConstants.KEY_HOOK_EXTRACT_COVER_TEXT_COLOR, false)
+                        saveConfig(RootConstants.KEY_HOOK_EXTRACT_COVER_TEXT_GRADIENT, false)
                         customFontColorEnabled = false
                         saveConfig(RootConstants.KEY_HOOK_CUSTOM_TEXT_COLOR_ENABLED, false)
                     }

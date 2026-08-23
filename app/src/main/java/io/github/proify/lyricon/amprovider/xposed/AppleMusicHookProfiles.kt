@@ -30,6 +30,9 @@ internal enum class AppleMusicHookPoint {
     EXO_AUDIO_SESSION_ID,
     LOCAL_MEDIA_PLAYER_CONTROLLER_STATE,
     LOCAL_MEDIA_PLAYER_AUDIO_VARIANT_CHANGED,
+    ATMOS_TRACK_LOUDNESS_METADATA,
+    ATMOS_FORMAT_COPY_WITH_LOUDNESS,
+    ATMOS_FORMAT_COPY_WITH_MANIFEST_INFO,
     DEBUG_ATMOS_MEDIA_CODEC_PERIOD_ID,
     DEBUG_ATMOS_MEDIA_CODEC_INPUT_FORMAT,
     DEBUG_ATMOS_MEDIA_CODEC_AUDIO_SESSION,
@@ -128,6 +131,17 @@ internal enum class AppleMusicRuntimeMember {
     DEBUG_FORMAT_CHANNEL_COUNT_FIELD,
     DEBUG_FORMAT_SAMPLE_RATE_FIELD,
     DEBUG_FORMAT_BITRATE_FIELD,
+    ATMOS_LUDT_TRACK_LOUDNESS_INFO_FIELD,
+    ATMOS_LUDT_LOUDNESS_FIELD,
+    ATMOS_LUDT_TRUE_PEAK_FIELD,
+    ATMOS_LUDT_SAMPLE_PEAK_FIELD,
+    ATMOS_FORMAT_ID_FIELD,
+    ATMOS_FORMAT_CODECS_FIELD,
+    ATMOS_FORMAT_SAMPLE_MIME_TYPE_FIELD,
+    ATMOS_FORMAT_LOUDNESS_FIELD,
+    ATMOS_FORMAT_CHANNEL_COUNT_FIELD,
+    ATMOS_FORMAT_SAMPLE_RATE_FIELD,
+    ATMOS_FORMAT_BITRATE_FIELD,
     PLAYBACK_PLAYER_CURRENT_ITEM_METHOD,
     PLAYBACK_QUEUE_ITEM_ITEM_METHOD,
     PLAYBACK_QUEUE_ITEM_ID_METHOD,
@@ -392,9 +406,9 @@ internal data class AppleMusicHookProfile(
 /**
  * Apple Music 混淆版本档案的唯一维护入口。
  *
- * 后续版本更新流程：反编译新版 APK，确认每个 [AppleMusicHookPoint] 的目标类和方法，
- * 然后在 [KNOWN_PROFILES] 前部新增一份档案。未知版本会按“较新档案优先”的顺序尝试
- * 已知候选，但只有通过对应方法签名校验的目标才会被采用。
+ * 精确档案是已验证版本的快速路径和 DexKit 可信语义种子。未知版本先按“较新档案优先”
+ * 尝试兼容目标，再由 DexKit 依据描述符、调用锚点和语义契约自动修复。只有 Apple 改变
+ * 实际业务结构、现有契约无法唯一识别时，才需要新增或调整人工档案。
  */
 internal object AppleMusicHookProfiles {
     private val APPLE_MUSIC_6_5_0 = AppleMusicHookProfile(
@@ -544,6 +558,43 @@ internal object AppleMusicHookProfiles {
                         "x6.c",
                     ),
                     returnTypeName = "void",
+                    // Raw classes2.dex evidence: the concrete buildModels method invokes these
+                    // stable semantic helpers, while the Object[] bridge only invokes buildModels.
+                    requiredInvokedMethodNames = listOf(
+                        "buildPageTitleModel",
+                        "buildBannerModel",
+                        "getModelCountBuiltSoFar",
+                    ),
+                    requiredCallerMethodNames = listOf("buildModels"),
+                ),
+            ),
+            // Verified from the original Apple Music 6.5.2 (1586) classes.dex.
+            // z1.q and z1.i are the two text-layout classes whose constructors begin with
+            // CharSequence and receive TextPaint. The older z1.k/z1.s/z1.l/z1.t names either
+            // have unrelated shapes or no longer exist in this APK.
+            AppleMusicHookPoint.COMPOSE_TEXT_LAYOUT to listOf(
+                AppleMusicHookTarget(
+                    className = "z1.q",
+                    contract = RequireComposeTextLayoutClass(
+                        AppleComposeTextLayoutRole.PRIMARY,
+                    ),
+                ),
+                AppleMusicHookTarget(
+                    className = "z1.i",
+                    contract = RequireComposeTextLayoutClass(
+                        AppleComposeTextLayoutRole.INTRINSICS,
+                    ),
+                ),
+            ),
+            // Verified from the original Apple Music 6.5.2 (1586) classes.dex. The binary
+            // class is j1$a; i1$a is the 6.5.1 identifier and must not be used as the exact
+            // target for this version.
+            AppleMusicHookPoint.APPLE_TEXT_STYLE_UTILS to listOf(
+                AppleMusicHookTarget(
+                    className = "com.apple.android.music.utils.j1\$a",
+                    runtimeMemberNames = mapOf(
+                        AppleMusicRuntimeMember.APPLE_TEXT_STYLE_EXPLICIT_TITLE_METHOD to "c",
+                    ),
                 ),
             ),
             // Verified from Apple Music 6.5.2 (1586) classes.dex: z0.s0 is the
@@ -552,16 +603,25 @@ internal object AppleMusicHookProfiles {
             AppleMusicHookPoint.COMPOSE_NEVER_EQUAL_POLICY to listOf(
                 AppleMusicHookTarget("z0.s0"),
             ),
-            // Verified from Apple Music 6.5.2 (1586) classes.dex: C1.w.e(LiveData,
-            // Composer) returns the z0.p0 state, whose runtime instance z0.q1 keeps the
-            // same policy field b and getValue/setValue contract as C1.c.g on 6.5.1.
+            // Verified from the original Apple Music 6.5.2 (1586) DEX descriptor rather than
+            // a decompiler display alias: C1.w.e(androidx.lifecycle.G, z0.n) returns z0.p0.
+            // Its runtime state keeps the same policy field b and getValue/setValue contract
+            // as the previous version's observe-as-state path.
             AppleMusicHookPoint.COMPOSE_OBSERVE_AS_STATE to listOf(
                 AppleMusicHookTarget(
                     className = "C1.w",
                     methodName = "e",
                     parameterCount = 2,
+                    parameterTypeNames = listOf(
+                        "androidx.lifecycle.G",
+                        "z0.n",
+                    ),
                     returnTypeName = "z0.p0",
                     isStatic = true,
+                    requiredInvokedMethodNames = listOf(
+                        "getValue",
+                        "isInitialized",
+                    ),
                     runtimeMemberNames = mapOf(
                         AppleMusicRuntimeMember.LIBRARY_COMPOSE_STATE_POLICY_FIELD to "b",
                         AppleMusicRuntimeMember.LIBRARY_COMPOSE_STATE_GET_VALUE_METHOD to
@@ -599,7 +659,7 @@ internal object AppleMusicHookProfiles {
                     returnTypeName = "void",
                 ),
             ),
-        ) + stableAtmosDiagnosticHookTargets(),
+        ) + stableAtmosDiagnosticHookTargets() + atmosLoudnessMetadataHookTargets(),
     )
 
     private val APPLE_MUSIC_6_5_1 = AppleMusicHookProfile(
@@ -1486,6 +1546,78 @@ internal object AppleMusicHookProfiles {
         ),
     )
 
+    /**
+     * Verified from Apple Music 6.5.2 (1586) original DEX descriptors, not JADX aliases:
+     *
+     * - Lcom/google/android/exoplayer2/extractor/mp4/AtomParsers$LudtData;
+     *   .getTrackLoudness:()F
+     * - Lcom/google/android/exoplayer2/Format;
+     *   .copyWithLoudness:(F)Lcom/google/android/exoplayer2/Format;
+     * - Lcom/google/android/exoplayer2/Format;
+     *   .copyWithManifestFormatInfo:(Lcom/google/android/exoplayer2/Format;)
+     *   Lcom/google/android/exoplayer2/Format;
+     */
+    private fun atmosLoudnessMetadataHookTargets() = mapOf(
+        AppleMusicHookPoint.ATMOS_TRACK_LOUDNESS_METADATA to listOf(
+            AppleMusicHookTarget(
+                className = "com.google.android.exoplayer2.extractor.mp4." +
+                    "AtomParsers\$LudtData",
+                methodName = "getTrackLoudness",
+                parameterCount = 0,
+                parameterTypeNames = emptyList(),
+                returnTypeName = "float",
+                isStatic = false,
+                runtimeMemberNames = mapOf(
+                    AppleMusicRuntimeMember.ATMOS_LUDT_TRACK_LOUDNESS_INFO_FIELD to
+                        "trackLoudnessInfo",
+                    AppleMusicRuntimeMember.ATMOS_LUDT_LOUDNESS_FIELD to "loudness",
+                    AppleMusicRuntimeMember.ATMOS_LUDT_TRUE_PEAK_FIELD to "truePeak",
+                    AppleMusicRuntimeMember.ATMOS_LUDT_SAMPLE_PEAK_FIELD to "samplePeak",
+                ),
+            ),
+        ),
+        AppleMusicHookPoint.ATMOS_FORMAT_COPY_WITH_LOUDNESS to listOf(
+            AppleMusicHookTarget(
+                className = "com.google.android.exoplayer2.Format",
+                methodName = "copyWithLoudness",
+                parameterCount = 1,
+                parameterTypeNames = listOf("float"),
+                returnTypeName = "com.google.android.exoplayer2.Format",
+                isStatic = false,
+                runtimeMemberNames = mapOf(
+                    AppleMusicRuntimeMember.ATMOS_FORMAT_ID_FIELD to "id",
+                    AppleMusicRuntimeMember.ATMOS_FORMAT_CODECS_FIELD to "codecs",
+                    AppleMusicRuntimeMember.ATMOS_FORMAT_SAMPLE_MIME_TYPE_FIELD to
+                        "sampleMimeType",
+                    AppleMusicRuntimeMember.ATMOS_FORMAT_LOUDNESS_FIELD to "loudness",
+                    AppleMusicRuntimeMember.ATMOS_FORMAT_CHANNEL_COUNT_FIELD to "channelCount",
+                    AppleMusicRuntimeMember.ATMOS_FORMAT_SAMPLE_RATE_FIELD to "sampleRate",
+                    AppleMusicRuntimeMember.ATMOS_FORMAT_BITRATE_FIELD to "bitrate",
+                ),
+            ),
+        ),
+        AppleMusicHookPoint.ATMOS_FORMAT_COPY_WITH_MANIFEST_INFO to listOf(
+            AppleMusicHookTarget(
+                className = "com.google.android.exoplayer2.Format",
+                methodName = "copyWithManifestFormatInfo",
+                parameterCount = 1,
+                parameterTypeNames = listOf("com.google.android.exoplayer2.Format"),
+                returnTypeName = "com.google.android.exoplayer2.Format",
+                isStatic = false,
+                runtimeMemberNames = mapOf(
+                    AppleMusicRuntimeMember.ATMOS_FORMAT_ID_FIELD to "id",
+                    AppleMusicRuntimeMember.ATMOS_FORMAT_CODECS_FIELD to "codecs",
+                    AppleMusicRuntimeMember.ATMOS_FORMAT_SAMPLE_MIME_TYPE_FIELD to
+                        "sampleMimeType",
+                    AppleMusicRuntimeMember.ATMOS_FORMAT_LOUDNESS_FIELD to "loudness",
+                    AppleMusicRuntimeMember.ATMOS_FORMAT_CHANNEL_COUNT_FIELD to "channelCount",
+                    AppleMusicRuntimeMember.ATMOS_FORMAT_SAMPLE_RATE_FIELD to "sampleRate",
+                    AppleMusicRuntimeMember.ATMOS_FORMAT_BITRATE_FIELD to "bitrate",
+                ),
+            ),
+        ),
+    )
+
     private fun debugAtmosFormatRuntimeMembers(
         includeHolder: Boolean,
     ): Map<AppleMusicRuntimeMember, String> = buildMap {
@@ -1855,6 +1987,7 @@ internal data class ResolvedAppleMusicHookClass(
     val clazz: Class<*>,
     val compatibilityFallback: Boolean,
     val contractReason: String? = null,
+    val baselineClassName: String = target.className,
 )
 
 internal data class ResolvedAppleMusicHookMethod(
@@ -1862,6 +1995,7 @@ internal data class ResolvedAppleMusicHookMethod(
     val method: Method,
     val compatibilityFallback: Boolean,
     val contractReason: String? = null,
+    val baselineClassName: String = target.className,
 )
 
 /** 统一负责按 Apple Music 版本加载并校验混淆 Hook 目标。 */
@@ -1909,26 +2043,48 @@ internal class AppleMusicHookResolver(
         val exactTargets = AppleMusicHookProfiles.exactTargets(version, hookPoint)
         val exactClasses = exactTargets.mapNotNull { target ->
             loadClass(hookPoint, target, compatibilityFallback = false)
-                ?.let { resolved -> repairAndRecordClass(hookPoint, resolved, target.className) }
+                ?.let { resolved ->
+                    repairClass(
+                        hookPoint = hookPoint,
+                        resolved = resolved,
+                        baselineClassName = target.className,
+                        recordTrustedBaseline = true,
+                    )
+                }
         }
         val resolved = LinkedHashMap<String, ResolvedAppleMusicHookClass>()
-        exactClasses.forEach { resolved.putIfAbsent(it.clazz.name, it) }
+        exactClasses.forEach { item ->
+            resolved.putIfAbsent(item.clazz.name, item)
+        }
+        if (exactClasses.isNotEmpty()) {
+            return resolved.values.toList()
+        }
 
         val compatibilityClasses = AppleMusicHookProfiles.candidates(version, hookPoint)
             .filterNot { target -> exactClasses.any { it.target.className == target.className } }
             .mapNotNull { target -> loadClass(hookPoint, target, compatibilityFallback = true) }
-            .map { resolved ->
-                repairAndRecordClass(hookPoint, resolved, resolved.target.className)
+            .map { item ->
+                repairClass(
+                    hookPoint = hookPoint,
+                    resolved = item,
+                    baselineClassName = item.baselineClassName,
+                    recordTrustedBaseline = false,
+                )
             }
-        compatibilityClasses.forEach { resolved.putIfAbsent(it.clazz.name, it) }
+        compatibilityClasses.forEach { item ->
+            resolved.putIfAbsent(item.clazz.name, item)
+        }
 
         val dexKitClasses = dexKitResolver?.resolveClasses(
-            hookPoint,
-            AppleMusicHookProfiles.candidates(version, hookPoint).filterNot { target ->
-                resolved.values.any { it.target.className == target.className }
+            hookPoint = hookPoint,
+            templates = AppleMusicHookProfiles.candidates(version, hookPoint).filterNot { target ->
+                resolved.values.any { it.baselineClassName == target.className }
             },
+            validator = { target, clazz -> classContractPasses(hookPoint, target, clazz) },
         ).orEmpty()
-        dexKitClasses.forEach { resolved.putIfAbsent(it.clazz.name, it) }
+        dexKitClasses.forEach { item ->
+            resolved.putIfAbsent(item.clazz.name, item)
+        }
         if (resolved.isNotEmpty()) return resolved.values.toList()
 
         return resolveDexKitMethod(hookPoint)?.let { resolved ->
@@ -1938,6 +2094,7 @@ internal class AppleMusicHookResolver(
                     clazz = resolved.method.declaringClass,
                     compatibilityFallback = true,
                     contractReason = resolved.contractReason,
+                    baselineClassName = resolved.target.className,
                 ),
             )
         }.orEmpty()
@@ -1967,18 +2124,24 @@ internal class AppleMusicHookResolver(
                 failures += "${target.className}:contract:${contractResult.reason}"
                 return@forEach
             }
-            return repairAndRecordClass(
+            return repairClass(
                 hookPoint = hookPoint,
-                baselineClassName = target.className,
                 resolved = ResolvedAppleMusicHookClass(
                     target = target,
                     clazz = clazz,
                     compatibilityFallback = target !in exactTargets,
                     contractReason = if (target !in exactTargets) "contract_passed" else null,
+                    baselineClassName = target.className,
                 ),
+                baselineClassName = target.className,
+                recordTrustedBaseline = target in exactTargets,
             )
         }
-        dexKitResolver?.resolveClasses(hookPoint, AppleMusicHookProfiles.candidates(version, hookPoint))
+        dexKitResolver?.resolveClasses(
+            hookPoint = hookPoint,
+            templates = AppleMusicHookProfiles.candidates(version, hookPoint),
+            validator = { target, clazz -> classContractPasses(hookPoint, target, clazz) },
+        )
             ?.firstOrNull()
             ?.let { return it }
         resolveDexKitMethod(hookPoint)?.let { resolved ->
@@ -1987,6 +2150,7 @@ internal class AppleMusicHookResolver(
                 clazz = resolved.method.declaringClass,
                 compatibilityFallback = true,
                 contractReason = resolved.contractReason,
+                baselineClassName = resolved.target.className,
             )
         }
         throw ClassNotFoundException(
@@ -2027,9 +2191,10 @@ internal class AppleMusicHookResolver(
                     failures += "${target.className}#${method.name}:contract:${contractResult.reason}"
                     return@forEach
                 }
-                return repairAndRecordMethod(
+                return repairMethod(
                     hookPoint = hookPoint,
                     baselineClassName = target.className,
+                    recordTrustedBaseline = target in exactTargets,
                     resolved = ResolvedAppleMusicHookMethod(
                         target = target,
                         method = method,
@@ -2057,7 +2222,7 @@ internal class AppleMusicHookResolver(
     ): ResolvedAppleMusicHookMethod? {
         val candidates = AppleMusicHookProfiles.candidates(version, hookPoint)
         if (candidates.none { it.methodName != null || it.parameterCount != null }) return null
-        return dexKitResolver?.resolveMethod(
+        val resolved = dexKitResolver?.resolveMethod(
             hookPoint = hookPoint,
             templates = candidates,
             validator = { template, method ->
@@ -2086,13 +2251,46 @@ internal class AppleMusicHookResolver(
                 )
                 contractResult is ContractResult.Passed
             },
+        ) ?: return null
+
+        AppleMusicDexKitWatchdog.registerMethodRecovery(
+            executable = resolved.method,
+            invalidate = { reason ->
+                dexKitResolver.rejectMethodResolution(
+                    hookPoint = hookPoint,
+                    templateClassName = resolved.baselineClassName,
+                    method = resolved.method,
+                    reason = reason,
+                )
+            },
+            retry = {
+                resolveDexKitMethod(hookPoint)?.method
+            },
         )
+        return resolved
     }
 
-    private fun repairAndRecordClass(
+    fun rejectClassResolution(
+        hookPoint: AppleMusicHookPoint,
+        resolved: ResolvedAppleMusicHookClass,
+        reason: String,
+    ): Boolean {
+        if (!resolved.compatibilityFallback) return false
+        val resolver = dexKitResolver ?: return false
+        resolver.rejectClassResolution(
+            hookPoint = hookPoint,
+            templateClassName = resolved.baselineClassName,
+            actualClassName = resolved.clazz.name,
+            reason = reason,
+        )
+        return true
+    }
+
+    private fun repairClass(
         hookPoint: AppleMusicHookPoint,
         resolved: ResolvedAppleMusicHookClass,
         baselineClassName: String,
+        recordTrustedBaseline: Boolean,
     ): ResolvedAppleMusicHookClass {
         val repairedTarget = dexKitResolver?.repairRuntimeMembers(
             hookPoint = hookPoint,
@@ -2100,19 +2298,25 @@ internal class AppleMusicHookResolver(
             clazz = resolved.clazz,
             baselineClassName = baselineClassName,
         ) ?: resolved.target
-        dexKitResolver?.recordBaseline(
-            hookPoint = hookPoint,
+        if (recordTrustedBaseline) {
+            dexKitResolver?.recordBaseline(
+                hookPoint = hookPoint,
+                target = repairedTarget,
+                clazz = resolved.clazz,
+                baselineClassName = baselineClassName,
+            )
+        }
+        return resolved.copy(
             target = repairedTarget,
-            clazz = resolved.clazz,
             baselineClassName = baselineClassName,
         )
-        return resolved.copy(target = repairedTarget)
     }
 
-    private fun repairAndRecordMethod(
+    private fun repairMethod(
         hookPoint: AppleMusicHookPoint,
         resolved: ResolvedAppleMusicHookMethod,
         baselineClassName: String,
+        recordTrustedBaseline: Boolean,
     ): ResolvedAppleMusicHookMethod {
         val repairedTarget = dexKitResolver?.repairRuntimeMembers(
             hookPoint = hookPoint,
@@ -2120,12 +2324,14 @@ internal class AppleMusicHookResolver(
             clazz = resolved.method.declaringClass,
             baselineClassName = baselineClassName,
         ) ?: resolved.target
-        dexKitResolver?.recordMethodBaseline(
-            hookPoint = hookPoint,
-            target = repairedTarget,
-            method = resolved.method,
-            baselineClassName = baselineClassName,
-        )
+        if (recordTrustedBaseline) {
+            dexKitResolver?.recordMethodBaseline(
+                hookPoint = hookPoint,
+                target = repairedTarget,
+                method = resolved.method,
+                baselineClassName = baselineClassName,
+            )
+        }
         return resolved.copy(target = repairedTarget)
     }
 
@@ -2135,6 +2341,11 @@ internal class AppleMusicHookResolver(
         compatibilityFallback: Boolean,
     ): ResolvedAppleMusicHookClass? = runCatching {
         val clazz = classLookup(target.className)
+        if (compatibilityFallback &&
+            dexKitResolver?.isClassRejected(hookPoint, target.className, clazz.name) == true
+        ) {
+            return null
+        }
         val contractResult = AppleMusicHookContracts.validate(
             HookContractContext(
                 hookPoint = hookPoint,
@@ -2151,8 +2362,24 @@ internal class AppleMusicHookResolver(
             clazz = clazz,
             compatibilityFallback = compatibilityFallback,
             contractReason = if (compatibilityFallback) "contract_passed" else null,
+            baselineClassName = target.className,
         )
     }.getOrNull()
+
+    private fun classContractPasses(
+        hookPoint: AppleMusicHookPoint,
+        target: AppleMusicHookTarget,
+        clazz: Class<*>,
+    ): Boolean = AppleMusicHookContracts.validate(
+        HookContractContext(
+            hookPoint = hookPoint,
+            target = target,
+            clazz = clazz,
+            method = null,
+            classLookup = classLookup,
+            dexKitResolver = dexKitResolver,
+        ),
+    ) is ContractResult.Passed
 
     private fun methodMatches(
         hookPoint: AppleMusicHookPoint,
@@ -2183,6 +2410,9 @@ internal class AppleMusicHookResolver(
             AppleMusicHookPoint.EXO_AUDIO_SESSION_ID,
             AppleMusicHookPoint.LOCAL_MEDIA_PLAYER_CONTROLLER_STATE,
             AppleMusicHookPoint.LOCAL_MEDIA_PLAYER_AUDIO_VARIANT_CHANGED,
+            AppleMusicHookPoint.ATMOS_TRACK_LOUDNESS_METADATA,
+            AppleMusicHookPoint.ATMOS_FORMAT_COPY_WITH_LOUDNESS,
+            AppleMusicHookPoint.ATMOS_FORMAT_COPY_WITH_MANIFEST_INFO,
             AppleMusicHookPoint.DEBUG_ATMOS_MEDIA_CODEC_PERIOD_ID,
             AppleMusicHookPoint.DEBUG_ATMOS_MEDIA_CODEC_INPUT_FORMAT,
             AppleMusicHookPoint.DEBUG_ATMOS_MEDIA_CODEC_AUDIO_SESSION,

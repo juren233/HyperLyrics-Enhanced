@@ -6,12 +6,16 @@
 
 package io.github.proify.lyricon.amprovider.xposed
 
+import android.content.Context
+import android.graphics.Typeface
+import android.text.TextPaint
+import android.util.AttributeSet
+import android.view.View
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.lang.reflect.Method
-import android.view.View
 
 class AppleMusicHookContractTest {
 
@@ -68,6 +72,65 @@ class AppleMusicHookContractTest {
         val dummy: String = "none"
 
         fun l() {}
+    }
+
+    class MockMinifiedLifecycleG {
+        fun getValue(): Any? = null
+
+        @Suppress("UNUSED_PARAMETER")
+        fun observe(owner: Any, observer: Any) = Unit
+
+        @Suppress("UNUSED_PARAMETER")
+        fun removeObserver(observer: Any) = Unit
+    }
+
+    class MockComposeObserve {
+        @Suppress("UNUSED_PARAMETER")
+        fun e(liveData: MockMinifiedLifecycleG, composer: Any): Any = Any()
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    class MockComposePrimaryLayout(
+        text: CharSequence,
+        width: Float,
+        paint: TextPaint,
+        p3: Int,
+        p4: Int,
+        p5: Int,
+        p6: Int,
+        p7: Int,
+    )
+
+    @Suppress("UNUSED_PARAMETER")
+    class MockComposeIntrinsicsLayout(
+        text: CharSequence,
+        paint: TextPaint,
+        direction: Int,
+    )
+
+    class MockComposeLayoutLookalike {
+        fun b(value: Int): Int = value
+    }
+
+    class MockAppleTextStyleUtils {
+        companion object {
+            @JvmStatic
+            @Suppress("UNUSED_PARAMETER")
+            fun j(
+                context: Context,
+                attrs: AttributeSet,
+                style: Any,
+                family: Any,
+            ): Typeface = throw UnsupportedOperationException("reflection-only fixture")
+        }
+    }
+
+    class MockAppleTextStyleLookalike {
+        companion object {
+            @JvmStatic
+            @Suppress("UNUSED_PARAMETER")
+            fun j(context: Context, attrs: AttributeSet, style: Any, family: Any): String = ""
+        }
     }
 
     // 模拟 Library Epoxy Controller 的两个 5 参重载
@@ -154,6 +217,88 @@ class AppleMusicHookContractTest {
         val resultV0 = contract.validate(contextV0)
         assertTrue(resultV0 is ContractResult.Rejected)
         assertTrue((resultV0 as ContractResult.Rejected).reason.contains("lacks static self-typed singleton"))
+    }
+
+    @Test
+    fun `compose observe contract accepts the 652 minified lifecycle G parameter`() {
+        val method = MockComposeObserve::class.java.getDeclaredMethod(
+            "e",
+            MockMinifiedLifecycleG::class.java,
+            Any::class.java,
+        )
+        val contract = AppleMusicHookContracts.forHookPoint(
+            AppleMusicHookPoint.COMPOSE_OBSERVE_AS_STATE,
+        ) ?: error("Contract missing")
+        val context = HookContractContext(
+            hookPoint = AppleMusicHookPoint.COMPOSE_OBSERVE_AS_STATE,
+            target = AppleMusicHookTarget(
+                className = "C1.w",
+                methodName = "e",
+                parameterCount = 2,
+            ),
+            clazz = MockComposeObserve::class.java,
+            method = method,
+            classLookup = { name ->
+                when (name) {
+                    "androidx.lifecycle.G" -> MockMinifiedLifecycleG::class.java
+                    else -> throw ClassNotFoundException(name)
+                }
+            },
+        )
+
+        assertTrue(contract.validate(context) is ContractResult.Passed)
+    }
+
+    @Test
+    fun `compose text layout contract accepts renamed semantic roles and rejects lookalike`() {
+        fun validate(
+            clazz: Class<*>,
+            role: AppleComposeTextLayoutRole,
+        ): ContractResult = AppleMusicHookContracts.validate(
+            HookContractContext(
+                hookPoint = AppleMusicHookPoint.COMPOSE_TEXT_LAYOUT,
+                target = AppleMusicHookTarget(
+                    className = clazz.name,
+                    contract = RequireComposeTextLayoutClass(role),
+                ),
+                clazz = clazz,
+                method = null,
+            ),
+        )
+
+        assertTrue(
+            validate(
+                MockComposePrimaryLayout::class.java,
+                AppleComposeTextLayoutRole.PRIMARY,
+            ) is ContractResult.Passed,
+        )
+        assertTrue(
+            validate(
+                MockComposeIntrinsicsLayout::class.java,
+                AppleComposeTextLayoutRole.INTRINSICS,
+            ) is ContractResult.Passed,
+        )
+        assertTrue(
+            validate(
+                MockComposeLayoutLookalike::class.java,
+                AppleComposeTextLayoutRole.ANY,
+            ) is ContractResult.Rejected,
+        )
+    }
+
+    @Test
+    fun `Apple text style semantic contract accepts renamed factory and rejects same-name lookalike`() {
+        fun validate(clazz: Class<*>): ContractResult = AppleMusicHookContracts.validate(
+            HookContractContext(
+                hookPoint = AppleMusicHookPoint.APPLE_TEXT_STYLE_UTILS,
+                target = AppleMusicHookTarget(className = clazz.name),
+                clazz = clazz,
+                method = null,
+            ),
+        )
+
+        assertTrue(validate(MockAppleTextStyleUtils::class.java) is ContractResult.Passed)
+        assertTrue(validate(MockAppleTextStyleLookalike::class.java) is ContractResult.Rejected)
     }
 
     @Test

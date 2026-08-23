@@ -131,6 +131,7 @@ class HookEntry : XposedModule() {
             RootConstants.KEY_HOOK_EXTRACT_COVER_TEXT_GRADIENT,
             RootConstants.KEY_HOOK_CUSTOM_TEXT_COLOR_ENABLED,
             RootConstants.KEY_HOOK_CUSTOM_TEXT_COLOR,
+            RootConstants.KEY_HOOK_MONET_TEXT_COLOR,
             RootConstants.KEY_HOOK_CUSTOM_FONT_PATH,
             RootConstants.KEY_HOOK_NARROW_LATIN_FONT,
             RootConstants.KEY_HOOK_WORD_MOTION_ENABLED,

@@ -12,6 +12,7 @@ import com.juren233.hyperlyricsenhanced.common.dexkit.DexResolutionSource
 import com.juren233.hyperlyricsenhanced.common.dexkit.DexWatchdogEvent
 import java.lang.reflect.Executable
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
@@ -35,6 +36,7 @@ internal object AppleMusicDexKitWatchdog {
     }
     private val executableKeys = ConcurrentHashMap<String, MutableSet<String>>()
     private val classKeys = ConcurrentHashMap<String, MutableSet<String>>()
+    private val methodRecoveries = ConcurrentHashMap<String, MethodRecovery>()
 
     fun resolvedMethod(
         hookPoint: AppleMusicHookPoint,
@@ -81,6 +83,42 @@ internal object AppleMusicDexKitWatchdog {
         }
     }
 
+    /**
+     * Method fallback recovery is registered only for DexKit-resolved methods.  The callback is
+     * deliberately one-shot per executable so an invalid candidate cannot cause a hook storm.
+     */
+    fun registerMethodRecovery(
+        executable: Executable,
+        invalidate: (String) -> Unit,
+        retry: () -> Executable?,
+    ) {
+        if (!BuildConfig.DEBUG) return
+        methodRecoveries[methodKey(executable)] = MethodRecovery(
+            invalidate = invalidate,
+            retry = retry,
+        )
+    }
+
+    /** Report an installation failure and, at most once, return a replacement method. */
+    fun hookInstallFailed(executable: Executable, error: Throwable): Executable? {
+        keysFor(executable).forEach { key ->
+            watchdog?.hookInstallFailed(
+                cacheKey = key,
+                target = executable.toGenericString(),
+                detail = "${error.javaClass.simpleName}: ${error.message}".take(MAX_DETAIL_LENGTH),
+            )
+        }
+        val recovery = methodRecoveries[methodKey(executable)] ?: return null
+        if (!recovery.attempted.compareAndSet(false, true)) return null
+        recovery.invalidate("hook_install_failed: ${error.javaClass.simpleName}: ${error.message}")
+        return runCatching { recovery.retry() }
+            .onFailure { throwable ->
+                ProviderLogger.error("Apple Music DexKit 方法自修复解析失败", throwable)
+            }
+            .getOrNull()
+            ?.takeIf { replacement -> methodKey(replacement) != methodKey(executable) }
+    }
+
     fun callback(executable: Executable) {
         keysFor(executable).forEach { key -> watchdog?.callback(key) }
     }
@@ -88,6 +126,11 @@ internal object AppleMusicDexKitWatchdog {
     fun validation(executable: Executable, valid: Boolean, detail: String?) {
         keysFor(executable).forEach { key ->
             watchdog?.validation(key, valid, detail?.take(MAX_DETAIL_LENGTH))
+        }
+        if (!valid) {
+            methodRecoveries[methodKey(executable)]
+                ?.takeIf { recovery -> recovery.invalidated.compareAndSet(false, true) }
+                ?.invalidate("first_invalid: ${detail.orEmpty()}")
         }
     }
 
@@ -112,6 +155,13 @@ internal object AppleMusicDexKitWatchdog {
         addAll(executableKeys[methodKey(executable)].orEmpty())
         addAll(classKeys[executable.declaringClass.name].orEmpty())
     }
+
+    private data class MethodRecovery(
+        val invalidate: (String) -> Unit,
+        val retry: () -> Executable?,
+        val attempted: AtomicBoolean = AtomicBoolean(false),
+        val invalidated: AtomicBoolean = AtomicBoolean(false),
+    )
 
     private fun methodKey(executable: Executable): String = executable.toGenericString()
 

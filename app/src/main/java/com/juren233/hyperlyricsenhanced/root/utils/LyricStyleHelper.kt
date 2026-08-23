@@ -26,6 +26,7 @@ object LyricStyleHelper {
     }
 
     internal data class ColorResolution(
+        val useMonetColor: Boolean,
         val useCoverColor: Boolean,
         val useCoverGradient: Boolean,
         val paletteSource: CoverColorHelper.PaletteSource?,
@@ -57,6 +58,9 @@ object LyricStyleHelper {
             highlight = intArrayOf(color),
         )
     }
+
+    internal fun monetTextColorPalette(color: Int): CustomTextColorPalette =
+        customTextColorPalette(color)
 
     internal data class StyleBuildResult(
         val style: LyricViewStyle,
@@ -142,6 +146,11 @@ object LyricStyleHelper {
             RootConstants.KEY_HOOK_CUSTOM_TEXT_COLOR,
             RootConstants.DEFAULT_HOOK_CUSTOM_TEXT_COLOR
         )
+        val useMonetColor = IslandRuntimePreferenceReader.getBoolean(
+            prefs,
+            RootConstants.KEY_HOOK_MONET_TEXT_COLOR,
+            RootConstants.DEFAULT_HOOK_MONET_TEXT_COLOR
+        )
         val useCoverColor = IslandRuntimePreferenceReader.getBoolean(
             prefs,
             RootConstants.KEY_HOOK_EXTRACT_COVER_TEXT_COLOR,
@@ -165,6 +174,13 @@ object LyricStyleHelper {
             primaryColors = customPalette.primary
             bgColors = customPalette.background
             hlColors = customPalette.highlight
+            fallbackReason = null
+        } else if (useMonetColor) {
+            val monetPalette = monetTextColorPalette(resolveMonetTextColor(res))
+            resolvedPalette = null
+            primaryColors = monetPalette.primary
+            bgColors = monetPalette.background
+            hlColors = monetPalette.highlight
             fallbackReason = null
         } else if (useCoverColor) {
             resolvedPalette = CoverColorHelper.resolveTextColors(
@@ -235,8 +251,9 @@ object LyricStyleHelper {
         return StyleBuildResult(
             style = style,
             colorResolution = ColorResolution(
-                useCoverColor = !useCustomColor && useCoverColor,
-                useCoverGradient = !useCustomColor && useCoverColor && useCoverGradient,
+                useMonetColor = !useCustomColor && useMonetColor,
+                useCoverColor = !useCustomColor && !useMonetColor && useCoverColor,
+                useCoverGradient = !useCustomColor && !useMonetColor && useCoverColor && useCoverGradient,
                 paletteSource = resolvedPalette?.source,
                 requestedKey = resolvedPalette?.requestedKey,
                 resolvedKey = resolvedPalette?.resolvedKey,
@@ -248,5 +265,9 @@ object LyricStyleHelper {
             )
         )
     }
+
+    private fun resolveMonetTextColor(res: Resources): Int = runCatching {
+        res.getColor(android.R.color.system_accent1_200, null)
+    }.getOrDefault(Color.WHITE)
 
 }

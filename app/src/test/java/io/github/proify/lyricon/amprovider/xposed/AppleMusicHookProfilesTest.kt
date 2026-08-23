@@ -6,6 +6,7 @@
 
 package io.github.proify.lyricon.amprovider.xposed
 
+import android.text.TextPaint
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -343,10 +344,15 @@ class AppleMusicHookProfilesTest {
             AppleMusicVersion("6.5.1", 1583L),
             AppleMusicHookPoint.COMPOSE_TEXT_LAYOUT,
         )
+        val targets652 = classNames(
+            AppleMusicVersion("6.5.2", 1586L),
+            AppleMusicHookPoint.COMPOSE_TEXT_LAYOUT,
+        )
 
         assertEquals(listOf("z1.l", "z1.t"), targets650)
         assertEquals(listOf("z1.k", "z1.s"), targets651)
-        assertTrue((targets650 + targets651).none { className ->
+        assertEquals(listOf("z1.q", "z1.i"), targets652)
+        assertTrue((targets650 + targets651 + targets652).none { className ->
             className.matches(Regex("p\\d+.*"))
         })
     }
@@ -376,6 +382,24 @@ class AppleMusicHookProfilesTest {
             classNames(version, AppleMusicHookPoint.COMPOSE_OBSERVE_AS_STATE),
         )
         assertEquals(
+            listOf("androidx.lifecycle.G", "z0.n"),
+            target(version, AppleMusicHookPoint.COMPOSE_OBSERVE_AS_STATE)
+                .parameterTypeNames,
+        )
+        assertEquals(
+            listOf("getValue", "isInitialized"),
+            target(version, AppleMusicHookPoint.COMPOSE_OBSERVE_AS_STATE)
+                .requiredInvokedMethodNames,
+        )
+        assertEquals(
+            listOf("z1.q", "z1.i"),
+            classNames(version, AppleMusicHookPoint.COMPOSE_TEXT_LAYOUT),
+        )
+        assertEquals(
+            listOf("com.apple.android.music.utils.j1\$a"),
+            classNames(version, AppleMusicHookPoint.APPLE_TEXT_STYLE_UTILS),
+        )
+        assertEquals(
             listOf("com.apple.android.music.common.L"),
             classNames(version, AppleMusicHookPoint.LISTEN_NOW_ARTWORK_RESOLVER),
         )
@@ -387,6 +411,7 @@ class AppleMusicHookProfilesTest {
             listOf("com.apple.android.music.library2.LibraryMainContentEpoxyController"),
             classNames(version, AppleMusicHookPoint.LIBRARY_EPOXY_BUILD),
         )
+        assertAtmosLoudnessMetadataTargets(version)
     }
 
     @Test
@@ -408,7 +433,11 @@ class AppleMusicHookProfilesTest {
             ).map(AppleMusicHookTarget::className),
         )
         assertEquals(
-            listOf("com.apple.android.music.utils.i1\$a", "com.apple.android.music.utils.l1\$a"),
+            listOf(
+                "com.apple.android.music.utils.j1\$a",
+                "com.apple.android.music.utils.i1\$a",
+                "com.apple.android.music.utils.l1\$a",
+            ),
             AppleMusicHookProfiles.candidates(
                 version,
                 AppleMusicHookPoint.APPLE_TEXT_STYLE_UTILS,
@@ -441,7 +470,7 @@ class AppleMusicHookProfilesTest {
             ).map(AppleMusicHookTarget::className),
         )
         assertEquals(
-            listOf("z1.k", "z1.s", "z1.l", "z1.t"),
+            listOf("z1.q", "z1.i", "z1.k", "z1.s", "z1.l", "z1.t"),
             AppleMusicHookProfiles.candidates(
                 version,
                 AppleMusicHookPoint.COMPOSE_TEXT_LAYOUT,
@@ -512,6 +541,26 @@ class AppleMusicHookProfilesTest {
         assertEquals("s8.F", resolved.target.className)
         assertEquals("c0", resolved.method.name)
         assertFalse(resolved.compatibilityFallback)
+    }
+
+    @Test
+    fun `class resolver does not mix older compatibility classes after exact classes resolve`() {
+        val classes = mapOf(
+            "z1.q" to ExactComposeLayoutPrimary::class.java,
+            "z1.i" to ExactComposeLayoutIntrinsics::class.java,
+            "z1.k" to LegacyComposeLayout::class.java,
+            "z1.s" to LegacyComposeLayout::class.java,
+            "z1.l" to LegacyComposeLayout::class.java,
+        )
+        val resolver = AppleMusicHookResolver(
+            version = AppleMusicVersion("6.5.2", 1586L),
+            classLookup = { name -> classes[name] ?: throw ClassNotFoundException(name) },
+        )
+
+        val resolved = resolver.resolveClasses(AppleMusicHookPoint.COMPOSE_TEXT_LAYOUT)
+
+        assertEquals(listOf("z1.q", "z1.i"), resolved.map { it.target.className })
+        assertTrue(resolved.all { !it.compatibilityFallback })
     }
 
     private fun classNames(
@@ -822,6 +871,66 @@ class AppleMusicHookProfilesTest {
         )
     }
 
+    private fun assertAtmosLoudnessMetadataTargets(version: AppleMusicVersion) {
+        val trackLoudness = target(
+            version,
+            AppleMusicHookPoint.ATMOS_TRACK_LOUDNESS_METADATA,
+        )
+        assertEquals(
+            "com.google.android.exoplayer2.extractor.mp4.AtomParsers\$LudtData",
+            trackLoudness.className,
+        )
+        assertEquals("getTrackLoudness", trackLoudness.methodName)
+        assertEquals(emptyList<String>(), trackLoudness.parameterTypeNames)
+        assertEquals("float", trackLoudness.returnTypeName)
+        assertFalse(trackLoudness.isStatic ?: true)
+        assertEquals(
+            "trackLoudnessInfo",
+            trackLoudness.runtimeMemberName(
+                AppleMusicRuntimeMember.ATMOS_LUDT_TRACK_LOUDNESS_INFO_FIELD
+            ),
+        )
+        assertEquals(
+            "truePeak",
+            trackLoudness.runtimeMemberName(
+                AppleMusicRuntimeMember.ATMOS_LUDT_TRUE_PEAK_FIELD
+            ),
+        )
+        assertEquals(
+            "samplePeak",
+            trackLoudness.runtimeMemberName(
+                AppleMusicRuntimeMember.ATMOS_LUDT_SAMPLE_PEAK_FIELD
+            ),
+        )
+
+        val formatCopy = target(
+            version,
+            AppleMusicHookPoint.ATMOS_FORMAT_COPY_WITH_LOUDNESS,
+        )
+        assertEquals("com.google.android.exoplayer2.Format", formatCopy.className)
+        assertEquals("copyWithLoudness", formatCopy.methodName)
+        assertEquals(listOf("float"), formatCopy.parameterTypeNames)
+        assertEquals("com.google.android.exoplayer2.Format", formatCopy.returnTypeName)
+        assertFalse(formatCopy.isStatic ?: true)
+        assertEquals(
+            "loudness",
+            formatCopy.runtimeMemberName(AppleMusicRuntimeMember.ATMOS_FORMAT_LOUDNESS_FIELD),
+        )
+
+        val manifestCopy = target(
+            version,
+            AppleMusicHookPoint.ATMOS_FORMAT_COPY_WITH_MANIFEST_INFO,
+        )
+        assertEquals("com.google.android.exoplayer2.Format", manifestCopy.className)
+        assertEquals("copyWithManifestFormatInfo", manifestCopy.methodName)
+        assertEquals(
+            listOf("com.google.android.exoplayer2.Format"),
+            manifestCopy.parameterTypeNames,
+        )
+        assertEquals("com.google.android.exoplayer2.Format", manifestCopy.returnTypeName)
+        assertFalse(manifestCopy.isStatic ?: true)
+    }
+
     private fun assertAtmosDiagnosticTargets(version: AppleMusicVersion) {
         val mediaCodecPeriod = target(
             version,
@@ -1053,6 +1162,13 @@ class AppleMusicHookProfilesTest {
         )
         assertEquals("buildModels", epoxy.methodName)
         assertEquals(5, epoxy.parameterCount)
+        if (version.versionCode == 1586L) {
+            assertEquals(
+                listOf("buildPageTitleModel", "buildBannerModel", "getModelCountBuiltSoFar"),
+                epoxy.requiredInvokedMethodNames,
+            )
+            assertEquals(listOf("buildModels"), epoxy.requiredCallerMethodNames)
+        }
 
         val compose = target(version, AppleMusicHookPoint.LIBRARY_COMPOSE_CONTENT)
         assertEquals(
@@ -1461,4 +1577,25 @@ class AppleMusicHookProfilesTest {
                 LinkedHashMap(params)
         }
     }
+
+    @Suppress("UNUSED_PARAMETER")
+    private class ExactComposeLayoutPrimary(
+        text: CharSequence,
+        width: Float,
+        paint: TextPaint,
+        p3: Int,
+        p4: Int,
+        p5: Int,
+        p6: Int,
+        p7: Int,
+    )
+
+    @Suppress("UNUSED_PARAMETER")
+    private class ExactComposeLayoutIntrinsics(
+        text: CharSequence,
+        paint: TextPaint,
+        direction: Int,
+    )
+
+    private class LegacyComposeLayout
 }
