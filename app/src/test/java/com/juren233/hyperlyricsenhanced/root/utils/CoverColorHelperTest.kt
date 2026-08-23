@@ -63,44 +63,42 @@ class CoverColorHelperTest {
     }
 
     @Test
-    fun `gradient palette keeps at most three distinct colors`() {
+    fun `gradient uses the dominant color and one representative endpoint`() {
         val colors = intArrayOf(
             0xFFFF0000.toInt(),
-            0xFF00FF00.toInt(),
+            0xFFFF0101.toInt(),
             0xFF0000FF.toInt(),
             0xFFFFFF00.toInt(),
         )
 
-        val indices = CoverColorHelper.smoothGradientColorIndices(colors)
+        val indices = CoverColorHelper.gradientEndpointIndices(colors)
 
-        assertEquals(3, indices.size)
-        assertEquals(3, indices.map(colors::get).distinct().size)
+        assertEquals(listOf(0, 2), indices.toList())
     }
 
     @Test
-    fun `gradient palette removes repeated colors`() {
+    fun `gradient endpoint selection removes repeated colors`() {
         val colors = intArrayOf(
+            0xFFFF0000.toInt(),
             0xFFFF0000.toInt(),
             0xFF0000FF.toInt(),
-            0xFFFF0000.toInt(),
         )
 
-        val indices = CoverColorHelper.smoothGradientColorIndices(colors)
+        val indices = CoverColorHelper.gradientEndpointIndices(colors)
 
-        assertEquals(listOf(colors[0], colors[1]), indices.map(colors::get))
+        assertEquals(listOf(0, 2), indices.toList())
     }
 
     @Test
-    fun `three color gradient follows one smooth path`() {
+    fun `single extracted color remains a single endpoint`() {
         val colors = intArrayOf(
-            0xFF000000.toInt(),
-            0xFFFFFFFF.toInt(),
-            0xFF808080.toInt(),
+            0xFF336699.toInt(),
+            0xFF336699.toInt(),
         )
 
-        val indices = CoverColorHelper.smoothGradientColorIndices(colors)
+        val indices = CoverColorHelper.gradientEndpointIndices(colors)
 
-        assertEquals(listOf(0, 2, 1), indices.toList())
+        assertEquals(listOf(0), indices.toList())
     }
 
 }
