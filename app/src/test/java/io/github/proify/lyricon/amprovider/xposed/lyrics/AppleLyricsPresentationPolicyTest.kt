@@ -12,6 +12,7 @@ import io.github.proify.lyricon.amprovider.xposed.selectLyricsViewModelPlaybackI
 import io.github.proify.lyricon.amprovider.xposed.selectAppleLyricsPlaybackAdapterPosition
 import io.github.proify.lyricon.amprovider.xposed.shouldKeepAppleLyricsScrollSnapshot
 import io.github.proify.lyricon.amprovider.xposed.shouldRouteAppleTranslationAsMissingSupplement
+import io.github.proify.lyricon.amprovider.xposed.shouldTreatModuleLyricsResultAsAppleNative
 import io.github.proify.lyricon.amprovider.xposed.selectAppleLyricsRestoreAnchor
 import io.github.proify.lyricon.amprovider.xposed.visibleAdapterRange
 import org.junit.Assert.assertEquals
@@ -334,4 +335,83 @@ class AppleLyricsPresentationPolicyTest {
             )
         )
     }
+
+    @Test
+    fun `module requester native result is accepted only for the current exact song`() {
+        assertTrue(
+            shouldTreatModuleLyricsResultAsAppleNative(
+                requestSource = "module",
+                requestedSongId = "6793935543",
+                resultSongId = "6793935543",
+                currentPlaybackSongId = "6793935543",
+                supplementPointer = false,
+                hasNativeLines = true,
+            )
+        )
+        assertTrue(
+            shouldTreatModuleLyricsResultAsAppleNative(
+                requestSource = "module",
+                requestedSongId = "6793935543",
+                resultSongId = "6793935543",
+                currentPlaybackSongId = null,
+                supplementPointer = false,
+                hasNativeLines = true,
+            )
+        )
+    }
+
+    @Test
+    fun `module requester supplement and stale results remain module content`() {
+        assertFalse(
+            shouldTreatModuleLyricsResultAsAppleNative(
+                requestSource = "module",
+                requestedSongId = "6793935543",
+                resultSongId = "6793935543",
+                currentPlaybackSongId = "6793935543",
+                supplementPointer = true,
+                hasNativeLines = true,
+            )
+        )
+        assertFalse(
+            shouldTreatModuleLyricsResultAsAppleNative(
+                requestSource = "module",
+                requestedSongId = "6793935543",
+                resultSongId = "1836426470",
+                currentPlaybackSongId = "1836426470",
+                supplementPointer = false,
+                hasNativeLines = true,
+            )
+        )
+        assertFalse(
+            shouldTreatModuleLyricsResultAsAppleNative(
+                requestSource = "module",
+                requestedSongId = "6793935543",
+                resultSongId = "6793935543",
+                currentPlaybackSongId = "1836426470",
+                supplementPointer = false,
+                hasNativeLines = true,
+            )
+        )
+        assertFalse(
+            shouldTreatModuleLyricsResultAsAppleNative(
+                requestSource = "module",
+                requestedSongId = "6793935543",
+                resultSongId = "6793935543",
+                currentPlaybackSongId = "6793935543",
+                supplementPointer = false,
+                hasNativeLines = false,
+            )
+        )
+        assertFalse(
+            shouldTreatModuleLyricsResultAsAppleNative(
+                requestSource = "apple",
+                requestedSongId = "6793935543",
+                resultSongId = "6793935543",
+                currentPlaybackSongId = "6793935543",
+                supplementPointer = false,
+                hasNativeLines = true,
+            )
+        )
+    }
+
 }

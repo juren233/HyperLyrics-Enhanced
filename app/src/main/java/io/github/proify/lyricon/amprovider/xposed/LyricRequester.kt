@@ -14,7 +14,13 @@ class LyricRequester internal constructor(
 ) {
     private var playerLyricsViewModel: Any? = null
 
+    @Volatile
+    private var requestedMediaId: String? = null
+
     fun ownsViewModel(instance: Any?): Boolean = instance === playerLyricsViewModel
+
+    fun requestedMediaId(instance: Any?): String? =
+        requestedMediaId.takeIf { ownsViewModel(instance) }
 
     /**
      * 欺骗 Apple Music 触发歌词下载
@@ -61,6 +67,7 @@ class LyricRequester internal constructor(
                     .newInstance(application)
             }
 
+            requestedMediaId = mediaId
             hookResolver.resolveMethod(AppleMusicHookPoint.LYRICS_VIEW_MODEL_LOAD).method.invoke(
                 requireNotNull(playerLyricsViewModel),
                 song,
