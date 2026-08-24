@@ -45,6 +45,27 @@ class LogExportStreamTest {
     }
 
     @Test
+    fun `debug export includes debug and higher severity app entries`() {
+        val input = """
+            07-27 12:00:00.001 D/App: debug
+            07-27 12:00:01.002 I/App: info
+            07-27 12:00:02.003 W/App: warning
+            07-27 12:00:03.004 E/App: error
+            07-27 12:00:04.005 C/App: crash
+        """.trimIndent() + "\n"
+        val output = StringWriter()
+
+        val count = LogExportStream.copyAppLogs(
+            reader = StringReader(input).buffered(),
+            selectedLevel = LOG_EXPORT_LEVEL_DEBUG,
+            writer = output,
+        )
+
+        assertEquals(5, count)
+        assertEquals(input, output.toString())
+    }
+
+    @Test
     fun `xposed export spills a large prefix and writes the complete matching block`() {
         val largeLine = "x".repeat(160 * 1024)
         val matchingBlock = buildString {
@@ -73,6 +94,37 @@ class LogExportStreamTest {
 
             assertEquals(1, count)
             assertEquals(matchingBlock + "\n", output.toString())
+            assertTrue(cacheDir.listFiles().orEmpty().isEmpty())
+        } finally {
+            cacheDir.listFiles().orEmpty().forEach { it.delete() }
+            cacheDir.delete()
+        }
+    }
+
+    @Test
+    fun `debug export includes debug and higher severity xposed blocks but excludes verbose`() {
+        val input = buildString {
+            listOf("D", "I", "W", "E", "C", "V").forEachIndexed { index, level ->
+                appendLine("2026-07-27T12:00:0$index.00$index 1000 $level/Xposed: $level entry")
+                appendLine("com.juren233.hyperlyricsenhanced.${level}Hook")
+            }
+        }
+        val cacheDir = Files.createTempDirectory("log-export-test").toFile()
+        val output = StringWriter()
+
+        try {
+            val count = LogExportStream.copyXposedLogs(
+                reader = StringReader(input).buffered(),
+                selectedLevel = LOG_EXPORT_LEVEL_DEBUG,
+                cacheDir = cacheDir,
+                writer = output,
+            )
+
+            assertEquals(5, count)
+            listOf("D", "I", "W", "E", "C").forEach { level ->
+                assertTrue(output.toString().contains("$level/Xposed: $level entry"))
+            }
+            assertTrue(!output.toString().contains("V/Xposed: V entry"))
             assertTrue(cacheDir.listFiles().orEmpty().isEmpty())
         } finally {
             cacheDir.listFiles().orEmpty().forEach { it.delete() }

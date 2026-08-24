@@ -6,9 +6,12 @@ import java.io.File
 import java.io.Writer
 import java.util.regex.Pattern
 
+internal const val LOG_EXPORT_LEVEL_DEBUG = "DEBUG"
+
 internal object LogExportStream {
     private const val MAX_PREFIX_MEMORY_CHARS = 128 * 1024
     private const val MODULE_IDENTIFIER = "hyperlyricsenhanced"
+    private val DEBUG_EXPORT_LEVELS = setOf("D", "I", "W", "E", "C")
     private val appHeaderRegex = Regex(
         """^(\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}) ([DIWEC])/(\S+): (.*)$"""
     )
@@ -24,7 +27,7 @@ internal object LogExportStream {
             val match = appHeaderRegex.find(line)
             if (match != null) {
                 val level = match.groupValues[2]
-                includeCurrentEntry = selectedLevel == "ALL" || selectedLevel == level
+                includeCurrentEntry = includesLevel(selectedLevel, level)
                 if (includeCurrentEntry) exportedEntries++
             }
             if (includeCurrentEntry) writer.appendLine(line)
@@ -60,7 +63,7 @@ internal object LogExportStream {
             blockStarted = true
             val levelMatcher = xposedLevelRegex.matcher(firstLine)
             val level = if (levelMatcher.find()) levelMatcher.group(1) ?: "I" else "I"
-            blockEligible = level != "V" && (selectedLevel == "ALL" || selectedLevel == level)
+            blockEligible = level != "V" && includesLevel(selectedLevel, level)
             if (blockEligible) pendingBlock = PendingBlock(cacheDir)
         }
 
@@ -91,6 +94,13 @@ internal object LogExportStream {
         }
         return exportedEntries
     }
+
+    private fun includesLevel(selectedLevel: String, entryLevel: String): Boolean =
+        when (selectedLevel) {
+            "ALL" -> true
+            LOG_EXPORT_LEVEL_DEBUG -> entryLevel in DEBUG_EXPORT_LEVELS
+            else -> selectedLevel == entryLevel
+        }
 
     private class PendingBlock(cacheDir: File) {
         private val memory = StringBuilder()

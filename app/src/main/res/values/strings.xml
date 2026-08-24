@@ -661,6 +661,15 @@
     <string name="format_log_read_failed">读取 LSPosed 日志失败: %1$s</string>
     <string name="export_header">========== HyperLyrics Enhanced 调试日志 ==========</string>
     <string name="format_export_time">导出时间: %1$s</string>
+    <string name="export_environment_title">环境信息</string>
+    <string name="format_export_device_model">手机型号: %1$s</string>
+    <string name="format_export_system_version">系统版本号: %1$s</string>
+    <string name="format_export_android_version">Android 版本号: %1$s</string>
+    <string name="format_export_current_music_app">当前音乐 App: %1$s</string>
+    <string name="format_export_music_app_version">音乐 App 版本号: %1$s</string>
+    <string name="format_export_music_app_install_source">安装来源: %1$s</string>
+    <string name="export_not_detected">未检测到</string>
+    <string name="export_unknown">未知</string>
 
     <string name="channel_name_live">实时通知歌词</string>
     <string name="channel_name_focus">焦点通知歌词</string>

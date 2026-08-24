@@ -657,6 +657,15 @@
     <string name="format_log_read_failed">Failed to read LSPosed logs: %1$s</string>
     <string name="export_header">========== HyperLyrics Enhanced Debug Logs ==========</string>
     <string name="format_export_time">Export Time: %1$s</string>
+    <string name="export_environment_title">Environment</string>
+    <string name="format_export_device_model">Device Model: %1$s</string>
+    <string name="format_export_system_version">System Version: %1$s</string>
+    <string name="format_export_android_version">Android Version: %1$s</string>
+    <string name="format_export_current_music_app">Current Music App: %1$s</string>
+    <string name="format_export_music_app_version">Music App Version: %1$s</string>
+    <string name="format_export_music_app_install_source">Install Source: %1$s</string>
+    <string name="export_not_detected">Not detected</string>
+    <string name="export_unknown">Unknown</string>
 
     <string name="channel_name_live">Live Update Notification Lyrics</string>
     <string name="channel_name_focus">Xiaomi Notification Spotlight Lyrics</string>
