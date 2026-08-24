@@ -32,6 +32,19 @@ object PerceptualGradient {
 
     internal fun oklchChroma(color: Int): Double = Oklch.fromArgb(color).chroma
 
+    internal fun oklchLightness(color: Int): Double = Oklch.fromArgb(color).lightness
+
+    internal fun shiftLightness(color: Int, delta: Double): Int {
+        val source = Oklch.fromArgb(color)
+        if (delta == 0.0) return color
+        return gamutMap(
+            lightness = (source.lightness + delta).coerceIn(0.0, 1.0),
+            chroma = source.chroma,
+            hue = source.hue,
+            alpha = source.alpha,
+        ).argb
+    }
+
     /** Soft-knee chroma compression that preserves OKLCH lightness, hue, and alpha. */
     internal fun compressChroma(
         color: Int,

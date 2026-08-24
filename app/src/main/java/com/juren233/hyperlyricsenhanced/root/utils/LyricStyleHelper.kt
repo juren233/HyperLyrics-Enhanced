@@ -6,6 +6,7 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.util.TypedValue
 import com.juren233.hyperlyricsenhanced.common.RootConstants
+import com.juren233.hyperlyricsenhanced.common.color.CoverGradientTextContrastOptimizer
 import com.juren233.hyperlyricsenhanced.common.color.CoverTextGradientPaletteOptimizer
 import com.juren233.hyperlyricsenhanced.root.island.IslandRuntimePreferenceReader
 import com.juren233.hyperlyricsenhanced.lyric.view.Highlight
@@ -34,6 +35,7 @@ object LyricStyleHelper {
         val requestedKey: String?,
         val resolvedKey: String?,
         val artworkSignature: Int?,
+        val contrastAdjustment: CoverGradientTextContrastOptimizer.Adjustment?,
         val fallbackReason: FallbackReason?,
         val primaryColors: IntArray,
         val backgroundColors: IntArray,
@@ -162,16 +164,29 @@ object LyricStyleHelper {
             RootConstants.KEY_HOOK_EXTRACT_COVER_TEXT_GRADIENT,
             RootConstants.DEFAULT_HOOK_EXTRACT_COVER_TEXT_GRADIENT
         )
+        val gradientCoverBackgroundActive =
+            IslandRuntimePreferenceReader.getBoolean(
+                prefs,
+                RootConstants.KEY_HOOK_ISLAND_LEFT_ALBUM,
+                RootConstants.DEFAULT_HOOK_ISLAND_LEFT_ALBUM,
+            ) &&
+                IslandRuntimePreferenceReader.getInt(
+                    prefs,
+                    RootConstants.KEY_HOOK_ISLAND_ALBUM_COVER_STYLE,
+                    RootConstants.DEFAULT_HOOK_ISLAND_ALBUM_COVER_STYLE,
+                ) == RootConstants.ISLAND_ALBUM_COVER_STYLE_GRADIENT
 
         val primaryColors: IntArray
         val bgColors: IntArray
         val hlColors: IntArray
         val resolvedPalette: CoverColorHelper.ResolvedPalette?
+        val contrastAdjustment: CoverGradientTextContrastOptimizer.Adjustment?
         val fallbackReason: FallbackReason?
 
         if (useCustomColor) {
             val customPalette = customTextColorPalette(customTextColor)
             resolvedPalette = null
+            contrastAdjustment = null
             primaryColors = customPalette.primary
             bgColors = customPalette.background
             hlColors = customPalette.highlight
@@ -179,6 +194,7 @@ object LyricStyleHelper {
         } else if (useMonetColor) {
             val monetPalette = monetTextColorPalette(resolveMonetTextColor(res))
             resolvedPalette = null
+            contrastAdjustment = null
             primaryColors = monetPalette.primary
             bgColors = monetPalette.background
             hlColors = monetPalette.highlight
@@ -190,17 +206,36 @@ object LyricStyleHelper {
                 songKey = mediaColorKey
             )
             if (resolvedPalette != null) {
-                val darkColors = if (useCoverGradient) {
+                val extractedTextColors = if (useCoverGradient) {
                     CoverTextGradientPaletteOptimizer.optimize(resolvedPalette.colors.second)
                 } else {
                     resolvedPalette.colors.second
                 }
+                contrastAdjustment = if (CoverGradientTextContrastOptimizer.shouldOptimize(
+                        useCustomColor = useCustomColor,
+                        useMonetColor = useMonetColor,
+                        useCoverColor = useCoverColor,
+                        gradientCoverBackgroundActive = gradientCoverBackgroundActive,
+                        hasArtwork = albumBitmap != null,
+                    ) && albumBitmap != null
+                ) {
+                    val backgroundAnchors =
+                        CoverGradientTextContrastOptimizer.sampleBackgroundAnchors(albumBitmap)
+                    CoverGradientTextContrastOptimizer.optimize(
+                        textColors = extractedTextColors,
+                        backgroundAnchors = backgroundAnchors,
+                    )
+                } else {
+                    null
+                }
+                val darkColors = contrastAdjustment?.colors ?: extractedTextColors
                 val translucentDarkColors = darkColors.map { Color.argb(191, Color.red(it), Color.green(it), Color.blue(it)) }.toIntArray()
                 primaryColors = darkColors   // 无逐字/标题 -> 封面颜色
                 bgColors = translucentDarkColors // 未唱到 -> 封面颜色(75%透明度)
                 hlColors = darkColors        // 已唱到 -> 封面颜色
                 fallbackReason = null
             } else {
+                contrastAdjustment = null
                 primaryColors = intArrayOf(Color.WHITE)
                 bgColors = intArrayOf(Color.argb(128, 255, 255, 255))
                 hlColors = intArrayOf(Color.WHITE)
@@ -208,6 +243,7 @@ object LyricStyleHelper {
             }
         } else {
             resolvedPalette = null
+            contrastAdjustment = null
             primaryColors = intArrayOf(Color.WHITE)
             bgColors = intArrayOf(Color.argb(128, 255, 255, 255))
             hlColors = intArrayOf(Color.WHITE)
@@ -263,6 +299,7 @@ object LyricStyleHelper {
                 requestedKey = resolvedPalette?.requestedKey,
                 resolvedKey = resolvedPalette?.resolvedKey,
                 artworkSignature = resolvedPalette?.artworkSignature,
+                contrastAdjustment = contrastAdjustment,
                 fallbackReason = fallbackReason,
                 primaryColors = primaryColors,
                 backgroundColors = bgColors,

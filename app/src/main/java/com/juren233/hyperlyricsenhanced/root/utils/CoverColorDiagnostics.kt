@@ -125,6 +125,14 @@ internal object CoverColorDiagnostics {
                 " requested=${key(resolution.requestedKey)}" +
                 " resolved=${key(resolution.resolvedKey)}" +
                 " artworkSignature=${resolution.artworkSignature?.toUInt()?.toString(16) ?: "none"}" +
+                " contrastApplied=${resolution.contrastAdjustment?.applied ?: false}" +
+                " contrastDelta=${resolution.contrastAdjustment?.lightnessDelta ?: 0.0}" +
+                " contrastBefore=${resolution.contrastAdjustment?.minimumContrastBefore ?: -1.0}" +
+                " contrastAfter=${resolution.contrastAdjustment?.minimumContrastAfter ?: -1.0}" +
+                " contrastDistance=${resolution.contrastAdjustment?.minimumDistanceBefore ?: -1.0}" +
+                " contrastPolicy=${resolution.contrastAdjustment?.directionPolicy?.name ?: "NONE"}" +
+                " contrastBackgroundLuma=${resolution.contrastAdjustment?.let { "${it.minimumBackgroundLuminance}..${it.maximumBackgroundLuminance}" } ?: "none"}" +
+                " contrastBackground=${colors(resolution.contrastAdjustment?.backgroundAnchors ?: intArrayOf())}" +
                 " primary=${colors(resolution.primaryColors)}" +
                 " background=${colors(resolution.backgroundColors)}" +
                 " highlight=${colors(resolution.highlightColors)}"
