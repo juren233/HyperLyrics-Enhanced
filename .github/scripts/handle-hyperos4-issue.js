@@ -2,7 +2,7 @@ const HYPEROS4_FIELD_LABEL = '系统平台 / System Platform';
 const HYPEROS4_FIELD_VALUE = 'HyperOS 4';
 const HYPEROS4_LABEL = '还在搓 / In Progress';
 const HYPEROS4_MESSAGE =
-    '不好意思，HyperOS4 目前未经正式测试，期间如遇到无法正常使用属于已知问题，预计8月底至9月初适配 HyperOS4，在此期间无法保证 HyperOS4 的使用体验，理解万岁🙏';
+    '不好意思，HyperOS4 目前未经正式测试，期间遇到部分使用异常属于待修复的已知问题，预计8月底至9月初适配 HyperOS4，在此期间无法保证 HyperOS4 的使用体验，理解万岁🙏';
 const HYPEROS4_MARKER = '<!-- hyperos4-compatibility-notice -->';
 
 function extractIssueFormAnswer(body, fieldLabel) {

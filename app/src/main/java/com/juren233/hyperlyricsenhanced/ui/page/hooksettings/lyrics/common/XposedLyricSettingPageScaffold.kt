@@ -66,6 +66,8 @@ internal fun rememberHookConfigSaver(prefs: SharedPreferences): (String, Any) ->
 internal fun XposedLyricSettingPage(
     title: String,
     subtitle: String = "",
+    outerPadding: PaddingValues = PaddingValues(),
+    showNavigationIcon: Boolean = true,
     content: LazyListScope.() -> Unit
 ) {
     val navigator = LocalNavigator.current
@@ -83,11 +85,13 @@ internal fun XposedLyricSettingPage(
                     subtitle = subtitle,
                     scrollBehavior = topAppBarScrollBehavior,
                     navigationIcon = {
-                        IconButton(onClick = { navigator.pop() }) {
-                            Icon(
-                                imageVector = MiuixIcons.Back,
-                                contentDescription = stringResource(id = R.string.back)
-                            )
+                        if (showNavigationIcon) {
+                            IconButton(onClick = { navigator.pop() }) {
+                                Icon(
+                                    imageVector = MiuixIcons.Back,
+                                    contentDescription = stringResource(id = R.string.back)
+                                )
+                            }
                         }
                     }
                 )
@@ -96,8 +100,20 @@ internal fun XposedLyricSettingPage(
     ) { padding ->
         val topPadding = padding.calculateTopPadding()
         val bottomPadding = padding.calculateBottomPadding()
-        val contentPadding = remember(topPadding, bottomPadding) {
-            PaddingValues(top = topPadding, start = 0.dp, end = 0.dp, bottom = bottomPadding + 16.dp)
+        val outerTopPadding = outerPadding.calculateTopPadding()
+        val outerBottomPadding = outerPadding.calculateBottomPadding()
+        val contentPadding = remember(
+            topPadding,
+            bottomPadding,
+            outerTopPadding,
+            outerBottomPadding,
+        ) {
+            PaddingValues(
+                top = topPadding + outerTopPadding,
+                start = 0.dp,
+                end = 0.dp,
+                bottom = bottomPadding + outerBottomPadding + 16.dp,
+            )
         }
         val lazyListState = rememberLazyListState()
 

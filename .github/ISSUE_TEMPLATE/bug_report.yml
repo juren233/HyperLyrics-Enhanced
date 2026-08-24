@@ -36,8 +36,12 @@ body:
     attributes:
       label: 问题属于哪一方面 / Which part does the bug relate to?
       options:
-        - 通知型歌词相关的 Bug (Notification Lyric related Bug)
-        - Xposed 模块相关的 Bug (Xposed module related Bug)
+        - 歌词显示相关（超级岛与AOD相同问题） (Lyric display related (same issue on Super Island and AOD))
+        - 超级岛相关 (Super Island related)
+        - 媒体通知卡片相关 (Media notification card related)
+        - 息屏功能相关 (Always-on Display related)
+        - Apple Music体验优化功能相关 (Apple Music experience optimization feature related)
+        - 通知型灵动岛歌词相关 (Notification-style Dynamic Island lyrics related)
     validations:
       required: true
   - type: dropdown
@@ -74,8 +78,8 @@ body:
     attributes:
       label: LSPosed 日志或 HyperLyrics Enhanced 日志 / LSPosed Logs or HyperLyrics Enhanced Logs
       description: |
-        请将从 LSPosed 管理器导出的日志文件，或应用内导出的日志文件以选择或拖动文件方式直接上传，或者在此处直接粘贴您的网盘分享链接。
-        Please upload the logs exported from LSPosed manager or from within the app by dragging/dropping, or paste your cloud drive sharing link here directly.
+        请上传从 LSPosed 管理器导出的日志文件，或应用内导出的 HyperLyrics Enhanced 日志文件。此处不接受日志截图或日志录屏，截图形式无法定位问题所在；日志请以文件形式提供，或直接粘贴网盘分享链接。
+        Please upload the log file exported from LSPosed Manager or HyperLyrics Enhanced. Log screenshots or screen recordings are not accepted because they cannot provide enough information to locate the issue; provide logs as files or paste a cloud-drive sharing link directly.
       placeholder: 拖拽上传文件，或在此直接粘贴网盘分享链接 (Drag & drop files here, or paste cloud drive link directly)
     validations:
       required: true
@@ -84,6 +88,6 @@ body:
     attributes:
       label: 截图 / 录屏 / 网盘链接 / Screenshots / Screen Recordings / Cloud Drive Links
       description: |
-        如果有的话，请将相关的错误截图或操作录屏拖入本框中上传，或者在此处直接粘贴您的网盘分享链接、屏幕录制分享链接。
-        If any, please drag & drop screenshots/recordings here, or paste cloud drive links / video sharing links directly.
+        如果有的话，请上传与问题相关的截图或操作录屏，或者直接粘贴网盘分享链接、屏幕录制分享链接。此处不接受日志类截图或录屏；日志请在上方以文件形式提供。
+        If available, please upload screenshots or screen recordings related to the issue, or paste cloud-drive / video-sharing links directly. Log screenshots or recordings are not accepted here; provide logs as files in the field above.
       placeholder: 拖拽上传文件，或在此直接粘贴网盘分享链接 (Drag & drop files here, or paste cloud drive link directly)

@@ -22,7 +22,7 @@ test('HyperOS 4 标签和自动回复文案保持为约定文本', () => {
     assert.equal(HYPEROS4_LABEL, '还在搓 / In Progress');
     assert.equal(
         HYPEROS4_MESSAGE,
-        '不好意思，HyperOS4 目前未经正式测试，期间如遇到无法正常使用属于已知问题，预计8月底至9月初适配 HyperOS4，在此期间无法保证 HyperOS4 的使用体验，理解万岁🙏',
+        '不好意思，HyperOS4 目前未经正式测试，期间遇到部分使用异常属于待修复的已知问题，预计8月底至9月初适配 HyperOS4，在此期间无法保证 HyperOS4 的使用体验，理解万岁🙏',
     );
 });
 

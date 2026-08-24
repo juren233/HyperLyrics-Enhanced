@@ -16,6 +16,7 @@
 
     <!-- ———————————————————————— MainPage ———————————————————————— -->
     <string name="home">Home</string>
+    <string name="apple_music_optimization_nav">AM Optimization</string>
     <string name="about">About</string>
     <string name="toast_permission_granted">Notification permission granted</string>
     <string name="toast_permission_denied">Notification permission denied</string>
@@ -29,15 +30,15 @@
     <string name="title_basic_features">Basic Features</string>
     <string name="title_lyric_settings">Lyric Settings</string>
     <string name="title_super_island_lyrics">HyperIsland Lyrics</string>
+    <string name="title_super_island_lyrics_config">HyperIsland Lyrics Configuration</string>
     <string name="summary_super_island_lyrics">Only supports HyperOS 3 devices with LSPosed v2.0 installed</string>
-    <string name="title_miui_systemui_enhancement">Xiaomi System UI enhancements</string>
-    <string name="summary_miui_systemui_enhancement">Customize HyperIsland lyrics and media card styles</string>
+    <string name="title_miui_systemui_enhancement">Xiaomi Super Island Lyrics</string>
+    <string name="summary_miui_systemui_enhancement">Show lyrics on Super Island during playback</string>
     <string name="title_super_island_config">Xiaomi HyperIsland Lyrics Custom Configuration</string>
     <string name="title_dynamic_island_lyrics">Notification Dynamic Island Lyrics</string>
     <string name="summary_dynamic_island_lyrics">Uses notifications for Dynamic Island lyric effects, suitable for non-rooted devices</string>
     <string name="title_aod_lyrics">Xiaomi AOD Lyrics</string>
     <string name="summary_aod_lyrics">Show lyrics on the always-on display during playback</string>
-    <string name="title_extra_features">Additional Features</string>
     <string name="title_lock_screen_aod">Lock Screen AOD</string>
     <string name="title_classic_aod">Classic AOD</string>
     <string name="title_dynamic_island_config">Notification Dynamic Island Lyrics Custom Configuration</string>
@@ -45,7 +46,6 @@
     <string name="title_remove_focus_whitelist">Unlock Notification Spotlight Whitelist</string>
     <string name="summary_remove_focus_whitelist">Do not use with similar features from other modules</string>
     <string name="title_remove_island_whitelist">Unlock Mini Window Whitelist</string>
-    <string name="title_apple_music_optimization">Apple Music Experience Optimization Features</string>
     <string name="title_apple_music_optimization_page">Apple Music Experience Optimization</string>
     <string name="summary_apple_music_optimization_page">May have unknown bugs, performance issues, version incompatibilities, and other problems</string>
     <string name="title_apple_music_app_content">App Content</string>
@@ -167,7 +167,7 @@
     <string name="title_custom_config">Custom Configuration</string>
     <string name="title_super_island">HyperIsland</string>
     <string name="subtitle_super_island">Takes effect after music paused or changed</string>
-    <string name="title_media_cards">Media cards</string>
+    <string name="title_media_cards">Media notification card</string>
     <string name="summary_media_cards">Requires restarting the system UI after update</string>
     <string name="title_notification_center_media_card">Notification center media card</string>
     <string name="title_media_card_background_theme">Card background color</string>

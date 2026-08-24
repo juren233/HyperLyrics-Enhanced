@@ -33,7 +33,6 @@ fun LazyListScope.homePageSections(
     onRemoveFocusWhitelistToggle: (Boolean) -> Unit,
     removeIslandWhitelist: Boolean,
     onRemoveIslandWhitelistToggle: (Boolean) -> Unit,
-    onAppleMusicOptimizationClick: () -> Unit,
     onAppSettingsClick: () -> Unit,
 ) {
     item(key = "enhanced_version_notice") {
@@ -70,12 +69,37 @@ fun LazyListScope.homePageSections(
                 AnimatedVisibility(visible = enableSuperIsland) {
                     Column {
                         ArrowPreference(
-                            title = stringResource(R.string.title_super_island_lyrics),
+                            title = stringResource(R.string.title_super_island_lyrics_config),
                             onClick = onSuperIslandConfigClick,
                         )
                         ArrowPreference(
                             title = stringResource(R.string.title_media_cards),
                             onClick = onMediaCardConfigClick,
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    item(key = "basic_features_content_aod_lyrics") {
+        Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
+            Column {
+                SwitchPreference(
+                    title = stringResource(R.string.title_aod_lyrics),
+                    summary = stringResource(R.string.summary_aod_lyrics),
+                    checked = enableAodLyrics,
+                    onCheckedChange = onAodLyricsToggle,
+                )
+                AnimatedVisibility(visible = enableAodLyrics) {
+                    Column {
+                        ArrowPreference(
+                            title = stringResource(R.string.title_lock_screen_aod),
+                            onClick = onLockScreenAodConfigClick,
+                        )
+                        ArrowPreference(
+                            title = stringResource(R.string.title_classic_aod),
+                            onClick = onClassicAodConfigClick,
                         )
                     }
                 }
@@ -102,50 +126,10 @@ fun LazyListScope.homePageSections(
         }
     }
 
-    item(key = "extra_features_title") {
-        SmallTitle(
-            text = stringResource(R.string.title_extra_features)
-        )
-    }
-
-    item(key = "extra_features_content_aod_lyrics") {
-        Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
-            Column {
-                SwitchPreference(
-                    title = stringResource(R.string.title_aod_lyrics),
-                    summary = stringResource(R.string.summary_aod_lyrics),
-                    checked = enableAodLyrics,
-                    onCheckedChange = onAodLyricsToggle,
-                )
-                AnimatedVisibility(visible = enableAodLyrics) {
-                    Column {
-                        ArrowPreference(
-                            title = stringResource(R.string.title_lock_screen_aod),
-                            onClick = onLockScreenAodConfigClick,
-                        )
-                        ArrowPreference(
-                            title = stringResource(R.string.title_classic_aod),
-                            onClick = onClassicAodConfigClick,
-                        )
-                    }
-                }
-            }
-        }
-    }
-
     item(key = "special_features_title") {
         SmallTitle(
             text = stringResource(R.string.title_special_features)
         )
-    }
-
-    item(key = "apple_music_optimization") {
-        Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
-            ArrowPreference(
-                title = stringResource(R.string.title_apple_music_optimization),
-                onClick = onAppleMusicOptimizationClick,
-            )
-        }
     }
 
     item(key = "special_features_content") {

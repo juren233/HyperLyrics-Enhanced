@@ -49,7 +49,6 @@ fun HomePage(
     onRemoveFocusWhitelistToggle: (Boolean) -> Unit,
     removeIslandWhitelist: Boolean,
     onRemoveIslandWhitelistToggle: (Boolean) -> Unit,
-    onAppleMusicOptimizationClick: () -> Unit,
     onAppSettingsClick: () -> Unit,
 ) {
     val backdrop = rememberBlurBackdrop()
@@ -114,7 +113,6 @@ fun HomePage(
                     onRemoveFocusWhitelistToggle = onRemoveFocusWhitelistToggle,
                     removeIslandWhitelist = removeIslandWhitelist,
                     onRemoveIslandWhitelistToggle = onRemoveIslandWhitelistToggle,
-                    onAppleMusicOptimizationClick = onAppleMusicOptimizationClick,
                     onAppSettingsClick = onAppSettingsClick,
                 )
             }

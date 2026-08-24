@@ -82,6 +82,7 @@ import com.juren233.hyperlyricsenhanced.ui.page.main.AboutHeroView
 import com.juren233.hyperlyricsenhanced.ui.page.main.AboutHeroVisualState
 import com.juren233.hyperlyricsenhanced.ui.page.main.AboutDebugLog
 import com.juren233.hyperlyricsenhanced.ui.page.main.HomePage
+import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.AppleMusicOptimizationPage
 import com.juren233.hyperlyricsenhanced.ui.page.main.OneTapRefreshCatalog
 import com.juren233.hyperlyricsenhanced.ui.page.main.OneTapRefreshDialog
 import com.juren233.hyperlyricsenhanced.ui.page.main.OneTapRefreshMusicApp
@@ -109,6 +110,7 @@ import top.yukonga.miuix.kmp.blur.textureBlur
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Close
 import top.yukonga.miuix.kmp.icon.extended.Info
+import top.yukonga.miuix.kmp.icon.extended.Music
 import top.yukonga.miuix.kmp.icon.extended.Ok
 import top.yukonga.miuix.kmp.icon.extended.Settings
 import top.yukonga.miuix.kmp.interfaces.ExperimentalScrollBarApi
@@ -130,7 +132,7 @@ fun MainPage() {
     val availableUpdate by UpdateData.availableUpdate.collectAsState()
 
     // --- pager ---
-    val pagerState = rememberPagerState(pageCount = { 2 })
+    val pagerState = rememberPagerState(pageCount = { 3 })
     val mainPagerState = rememberMainPagerState(pagerState)
     val pagerOverscrollEffect = rememberOverscrollEffect()
     val pagerOverscrollEvents = remember(pagerOverscrollEffect) {
@@ -409,11 +411,13 @@ fun MainPage() {
 
     // --- nav items ---
     val homeLabel = stringResource(R.string.home)
+    val appleMusicOptimizationLabel = stringResource(R.string.apple_music_optimization_nav)
     val aboutLabel = stringResource(R.string.about)
-    val navItems = remember(homeLabel, aboutLabel) {
+    val navItems = remember(homeLabel, appleMusicOptimizationLabel, aboutLabel) {
         listOf(
             NavigationItem(homeLabel, MiuixIcons.Settings),
-            NavigationItem(aboutLabel, MiuixIcons.Info)
+            NavigationItem(appleMusicOptimizationLabel, MiuixIcons.Music),
+            NavigationItem(aboutLabel, MiuixIcons.Info),
         )
     }
 
@@ -423,13 +427,17 @@ fun MainPage() {
     val outerBarColor = if (outerBlurActive) Color.Transparent else MiuixTheme.colorScheme.surface
     val appName = stringResource(R.string.app_name)
     val darkMode = isSystemInDarkTheme()
+    val aboutPageIndex = 2
     val aboutPageOffsetFraction =
-        (pagerState.currentPage - 1 + pagerState.currentPageOffsetFraction).coerceIn(-1f, 1f)
+        (pagerState.currentPage - aboutPageIndex + pagerState.currentPageOffsetFraction)
+            .coerceIn(-1f, 1f)
     val aboutPageInvolved = aboutPageOffsetFraction > -0.999f ||
-        pagerState.currentPage == 1 ||
-        pagerState.settledPage == 1 ||
-        pagerState.targetPage == 1
-    val aboutHeroEntryAlpha = if (pagerState.settledPage == 0 && aboutPageOffsetFraction < 0f) {
+        pagerState.currentPage == aboutPageIndex ||
+        pagerState.settledPage == aboutPageIndex ||
+        pagerState.targetPage == aboutPageIndex
+    val aboutHeroEntryAlpha = if (
+        pagerState.settledPage == aboutPageIndex - 1 && aboutPageOffsetFraction < 0f
+    ) {
         (1f + aboutPageOffsetFraction).coerceIn(0f, 1f)
     } else {
         1f
@@ -677,8 +685,12 @@ fun MainPage() {
                         onRemoveFocusWhitelistToggle = toggleRemoveFocusWhitelist,
                         removeIslandWhitelist = removeIslandWhitelist,
                         onRemoveIslandWhitelistToggle = toggleRemoveIslandWhitelist,
-                        onAppleMusicOptimizationClick = { navigator.navigate(Route.AppleMusicOptimization) },
                         onAppSettingsClick = { navigator.navigate(Route.Settings) },
+                    )
+                } else if (page == 1) {
+                    AppleMusicOptimizationPage(
+                        outerPadding = innerPadding,
+                        showNavigationIcon = false,
                     )
                 } else {
                     AboutPage(

@@ -1,6 +1,7 @@
 package com.juren233.hyperlyricsenhanced.ui.page.hooksettings
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
@@ -29,7 +30,10 @@ import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
-fun AppleMusicOptimizationPage() {
+fun AppleMusicOptimizationPage(
+    outerPadding: PaddingValues = PaddingValues(),
+    showNavigationIcon: Boolean = true,
+) {
     val prefs = rememberHookPrefs()
     val saveConfig = rememberHookConfigSaver(prefs)
     var contentUiLanguage by remember {
@@ -285,6 +289,8 @@ fun AppleMusicOptimizationPage() {
     XposedLyricSettingPage(
         title = stringResource(R.string.title_apple_music_optimization_page),
         subtitle = stringResource(R.string.summary_apple_music_optimization_page),
+        outerPadding = outerPadding,
+        showNavigationIcon = showNavigationIcon,
     ) {
         item(key = "app_content_title") {
             SmallTitle(text = stringResource(R.string.title_apple_music_app_content))
