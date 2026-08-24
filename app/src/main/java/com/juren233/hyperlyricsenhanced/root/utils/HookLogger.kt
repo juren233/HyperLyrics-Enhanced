@@ -2,7 +2,9 @@ package com.juren233.hyperlyricsenhanced.root.utils
 
 import android.content.SharedPreferences
 import android.util.Log
+import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.common.HyperLogger
+import com.juren233.hyperlyricsenhanced.common.LogLevelPolicy
 import com.juren233.hyperlyricsenhanced.common.UIConstants
 import io.github.libxposed.api.XposedModule
 
@@ -25,7 +27,8 @@ object HookLogger : HyperLogger {
     override fun d(tag: String, msg: String) {
         if (readLogLevel() < 1) return
         val finalMsg = format(tag, msg)
-        Log.d(TAG, finalMsg)
+        // Local JVM tests use Android stubs where Log.d throws; logging must never break logic.
+        runCatching { Log.d(TAG, finalMsg) }
         module?.log(Log.DEBUG, TAG, finalMsg)
     }
 
@@ -49,8 +52,14 @@ object HookLogger : HyperLogger {
 
     private fun readLogLevel(): Int {
         val prefs = resolveLogPrefs()
-        return prefs?.getInt(UIConstants.KEY_LOG_LEVEL, UIConstants.DEFAULT_LOG_LEVEL)
-            ?: UIConstants.DEFAULT_LOG_LEVEL
+        val storedLevel = prefs?.takeIf { it.contains(UIConstants.KEY_LOG_LEVEL) }
+            ?.getInt(UIConstants.KEY_LOG_LEVEL, UIConstants.DEFAULT_LOG_LEVEL)
+        val storedBuildKind = prefs?.getString(UIConstants.KEY_LOG_LEVEL_BUILD_KIND, null)
+        return LogLevelPolicy.effectiveLevel(
+            storedLevel = storedLevel,
+            storedBuildKind = storedBuildKind,
+            debugBuild = BuildConfig.DEBUG,
+        )
     }
 
     private fun resolveLogPrefs(): SharedPreferences? {

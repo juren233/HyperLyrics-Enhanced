@@ -1019,10 +1019,10 @@ object NotificationMediaAodLyricHooker {
             packageMatches = packageMatches,
             pauseStyle = textStyle.pauseStyle,
         )
-        updatePositionPolling()
-
-        if (!show) {
-            val reason = when {
+        val decisionReason = if (show) {
+            "policy_passed"
+        } else {
+            when {
                 !enabled -> "feature_disabled"
                 !state.fullAod && !interactive -> "waiting_full_aod"
                 !state.aodActive && interactive -> "screen_interactive"
@@ -1034,6 +1034,33 @@ object NotificationMediaAodLyricHooker {
                 !packageMatches -> "package_mismatch"
                 else -> "policy_rejected"
             }
+        }
+        AodEnvironmentDiagnostics.log(
+            context = player.context,
+            stage = "lockscreen_decision",
+            modulePrefs = prefs,
+            view = player,
+            runtime = AodRuntimeDiagnosticState(
+                surface = "lockscreen_media",
+                fullAod = state.fullAod,
+                playerShown = player.isShown,
+                playing = state.playing,
+                pauseStyle = textStyle.pauseStyle,
+                pauseAllowed = state.playing ||
+                    textStyle.pauseStyle == RootConstants.AOD_PAUSE_STYLE_KEEP_LYRICS,
+                hasContent = hasLyric,
+                packageMatches = packageMatches,
+                showDecision = show,
+                decisionReason = decisionReason,
+                overlayPresent = state.overlay != null,
+                overlayShown = state.overlay?.root?.isShown,
+            ),
+            dedupeKey = diagnosticKey,
+        )
+        updatePositionPolling()
+
+        if (!show) {
+            val reason = decisionReason
             DisplayDiagnosticLogger.log(
                 channel = "AOD_LOCK",
                 result = "hidden",
@@ -1068,6 +1095,26 @@ object NotificationMediaAodLyricHooker {
                 result = "skipped",
                 reason = "overlay_unavailable",
                 extra = "actions=${actions.size}",
+                dedupeKey = diagnosticKey,
+            )
+            AodEnvironmentDiagnostics.log(
+                context = player.context,
+                stage = "lockscreen_overlay",
+                modulePrefs = prefs,
+                view = player,
+                runtime = AodRuntimeDiagnosticState(
+                    surface = "lockscreen_media",
+                    fullAod = state.fullAod,
+                    playerShown = player.isShown,
+                    playing = state.playing,
+                    pauseStyle = textStyle.pauseStyle,
+                    hasContent = hasLyric,
+                    packageMatches = packageMatches,
+                    showDecision = false,
+                    decisionReason = "overlay_unavailable",
+                    overlayPresent = false,
+                    overlayShown = false,
+                ),
                 dedupeKey = diagnosticKey,
             )
             restoreActions(state)
@@ -1140,6 +1187,27 @@ object NotificationMediaAodLyricHooker {
                 overlay.root.bringToFront()
                 HookLogger.i(TAG, "锁屏 AOD 歌词已在原生控件隐藏完成后显示")
             }
+            AodEnvironmentDiagnostics.log(
+                context = player.context,
+                stage = "lockscreen_overlay_visible",
+                modulePrefs = prefs,
+                view = overlay.root,
+                runtime = AodRuntimeDiagnosticState(
+                    surface = "lockscreen_media",
+                    fullAod = state.fullAod,
+                    playerShown = player.isShown,
+                    playing = state.playing,
+                    pauseStyle = textStyle.pauseStyle,
+                    pauseAllowed = true,
+                    hasContent = hasLyric,
+                    packageMatches = packageMatches,
+                    showDecision = true,
+                    decisionReason = "overlay_visible",
+                    overlayPresent = true,
+                    overlayShown = overlay.root.isShown,
+                ),
+                dedupeKey = diagnosticKey,
+            )
             updateLockScreenCardHeight(
                 overlay,
                 forceRemeasure = contentChanged || styleChanged,
@@ -1227,9 +1295,10 @@ object NotificationMediaAodLyricHooker {
             pauseAllowed &&
             !fullAodActive &&
             hasContent
-
-        if (!show) {
-            val reason = when {
+        val decisionReason = if (show) {
+            "policy_passed"
+        } else {
+            when {
                 !enabled -> "feature_disabled"
                 !state.attached -> "view_detached"
                 !viewShown -> "view_hidden"
@@ -1239,6 +1308,30 @@ object NotificationMediaAodLyricHooker {
                 !hasContent -> "no_lyrics_or_song_info"
                 else -> "policy_rejected"
             }
+        }
+        AodEnvironmentDiagnostics.log(
+            context = view.context,
+            stage = "classic_decision",
+            modulePrefs = prefs,
+            view = view,
+            runtime = AodRuntimeDiagnosticState(
+                surface = "classic_aod_plugin",
+                fullAod = fullAodActive,
+                aodPanelShown = aodShown,
+                playing = state.playing,
+                pauseStyle = textStyle.pauseStyle,
+                pauseAllowed = pauseAllowed,
+                hasContent = hasContent,
+                showDecision = show,
+                decisionReason = decisionReason,
+                overlayPresent = state.overlay != null,
+                overlayShown = state.overlay?.root?.isShown,
+            ),
+            dedupeKey = diagnosticKey,
+        )
+
+        if (!show) {
+            val reason = decisionReason
             DisplayDiagnosticLogger.log(
                 channel = "AOD_CLASSIC",
                 result = "hidden",
@@ -1298,6 +1391,26 @@ object NotificationMediaAodLyricHooker {
         overlay.root.visibility = View.VISIBLE
         overlay.root.bringToFront()
         positionAodPluginOverlay(overlay)
+        AodEnvironmentDiagnostics.log(
+            context = view.context,
+            stage = "classic_overlay_visible",
+            modulePrefs = prefs,
+            view = overlay.root,
+            runtime = AodRuntimeDiagnosticState(
+                surface = "classic_aod_plugin",
+                fullAod = fullAodActive,
+                aodPanelShown = aodShown,
+                playing = state.playing,
+                pauseStyle = textStyle.pauseStyle,
+                pauseAllowed = pauseAllowed,
+                hasContent = hasContent,
+                showDecision = true,
+                decisionReason = "overlay_visible",
+                overlayPresent = true,
+                overlayShown = overlay.root.isShown,
+            ),
+            dedupeKey = diagnosticKey,
+        )
         DisplayDiagnosticLogger.log(
             channel = "AOD_CLASSIC",
             result = "shown",

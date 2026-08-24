@@ -60,7 +60,13 @@ object DisplayDiagnosticLogger {
             append(", textMode=").append(LyriconDataBridge.isTextMode)
             if (extra.isNotBlank()) append(", ").append(extra)
         }
-        HookLogger.d("DISPLAY_DIAG/$channel", details)
+        // AOD diagnosis must survive the default log level used by "export all logs".
+        // It remains Debug-build-only because this method returns above in Release builds.
+        if (channel == "AOD_LOCK" || channel == "AOD_CLASSIC") {
+            HookLogger.i("DISPLAY_DIAG/$channel", details)
+        } else {
+            HookLogger.d("DISPLAY_DIAG/$channel", details)
+        }
     }
 
     fun clear(channel: String? = null) {

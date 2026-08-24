@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import android.content.Intent
 import com.juren233.hyperlyricsenhanced.BuildConfig
+import com.juren233.hyperlyricsenhanced.common.LogLevelPolicy
 import com.juren233.hyperlyricsenhanced.common.PreferenceDiagnostics
 import com.juren233.hyperlyricsenhanced.common.PrefsBridge
 import com.juren233.hyperlyricsenhanced.common.RootConstants
@@ -21,6 +22,7 @@ class RootApplication : Application() {
         super.onCreate()
         LocaleUtils.clearLegacyPlatformLocale(this)
         AppUtils.initPredictiveBackGesture(this)
+        applyBuildDefaultLogLevel()
         LogManager.init(this)
         PrefsBridge.init(this)
         appContext = this
@@ -38,6 +40,21 @@ class RootApplication : Application() {
                 OfficialProviderScopeManager.onServiceDied()
             }
         })
+    }
+
+    private fun applyBuildDefaultLogLevel() {
+        val prefs = getSharedPreferences(UIConstants.PREF_NAME, Context.MODE_PRIVATE)
+        val currentBuildKind = LogLevelPolicy.buildKind(BuildConfig.DEBUG)
+        if (prefs.getString(UIConstants.KEY_LOG_LEVEL_BUILD_KIND, null) == currentBuildKind) {
+            return
+        }
+        prefs.edit()
+            .putInt(
+                UIConstants.KEY_LOG_LEVEL,
+                LogLevelPolicy.defaultLevel(BuildConfig.DEBUG),
+            )
+            .putString(UIConstants.KEY_LOG_LEVEL_BUILD_KIND, currentBuildKind)
+            .commit()
     }
 
     companion object {

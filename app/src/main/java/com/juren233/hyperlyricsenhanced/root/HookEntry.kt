@@ -19,6 +19,7 @@ import com.juren233.hyperlyricsenhanced.root.island.SystemUIHookRegistry
 import com.juren233.hyperlyricsenhanced.root.island.IslandWidthHooker
 import com.juren233.hyperlyricsenhanced.root.island.RealIslandHooker
 import com.juren233.hyperlyricsenhanced.root.mediacard.notification.NotificationMediaAmbientFlowHooker
+import com.juren233.hyperlyricsenhanced.root.mediacard.notification.AodEnvironmentDiagnostics
 import com.juren233.hyperlyricsenhanced.root.mediacard.notification.NotificationMediaAodLyricHooker
 import com.juren233.hyperlyricsenhanced.root.mediacard.notification.NotificationMediaCoverStyleHooker
 import com.juren233.hyperlyricsenhanced.root.mediacard.island.IslandExpandedMediaAmbientFlowHooker
@@ -410,6 +411,11 @@ class HookEntry : XposedModule() {
                 sourceManager?.start()
             }
             SystemUiScreenStateMonitor.initialize(app)
+            AodEnvironmentDiagnostics.log(
+                context = app,
+                stage = "systemui_init",
+                modulePrefs = prefs,
+            )
             ClassicAodFocusNotificationRecovery.ensureListenerCanRecover(app, prefs)
 
             prefListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->

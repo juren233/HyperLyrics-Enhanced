@@ -5,6 +5,7 @@ import android.util.Log
 import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.R
 import com.juren233.hyperlyricsenhanced.common.HyperLogger
+import com.juren233.hyperlyricsenhanced.common.LogLevelPolicy
 import com.juren233.hyperlyricsenhanced.ui.page.log.LogEntry
 import com.juren233.hyperlyricsenhanced.common.UIConstants
 import kotlinx.coroutines.Dispatchers
@@ -31,10 +32,6 @@ object LogManager : HyperLogger {
     private const val MAX_DISPLAY_ENTRIES = 2_000
     private const val MAX_XPOSED_SOURCE_BYTES = 16 * 1024 * 1024L
     private const val TRUNCATION_MARKER = "\n... [truncated]"
-
-    // 日志等级：0=一般(I+W+E), 1=调试(D+I+W+E)
-    private const val LEVEL_NORMAL = 0
-    private const val LEVEL_DEBUG = 1
 
     private val lock = ReentrantReadWriteLock()
     private val dateFormat = SimpleDateFormat("MM-dd HH:mm:ss.SSS", Locale.getDefault())
@@ -120,9 +117,19 @@ object LogManager : HyperLogger {
     }
 
     private fun shouldWrite(level: String): Boolean {
-        val prefs = appContext?.getSharedPreferences(UIConstants.PREF_NAME, Context.MODE_PRIVATE) ?: return true
-        val logLevel = prefs.getInt(UIConstants.KEY_LOG_LEVEL, UIConstants.DEFAULT_LOG_LEVEL)
-        if (logLevel == LEVEL_DEBUG) return true
+        val prefs = appContext?.getSharedPreferences(
+            UIConstants.PREF_NAME,
+            Context.MODE_PRIVATE,
+        ) ?: return true
+        val storedLevel = prefs.takeIf { it.contains(UIConstants.KEY_LOG_LEVEL) }
+            ?.getInt(UIConstants.KEY_LOG_LEVEL, UIConstants.DEFAULT_LOG_LEVEL)
+        val storedBuildKind = prefs.getString(UIConstants.KEY_LOG_LEVEL_BUILD_KIND, null)
+        val logLevel = LogLevelPolicy.effectiveLevel(
+            storedLevel = storedLevel,
+            storedBuildKind = storedBuildKind,
+            debugBuild = BuildConfig.DEBUG,
+        )
+        if (logLevel == LogLevelPolicy.LEVEL_DEBUG) return true
         return level == "I" || level == "W" || level == "E" || level == "C"
     }
 
