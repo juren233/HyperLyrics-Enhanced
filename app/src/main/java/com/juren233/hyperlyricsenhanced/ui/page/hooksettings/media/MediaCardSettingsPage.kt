@@ -1,8 +1,15 @@
 package com.juren233.hyperlyricsenhanced.ui.page.hooksettings.media
 
 import android.content.Context
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
@@ -11,6 +18,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -22,19 +30,24 @@ import com.juren233.hyperlyricsenhanced.common.PrefsBridge
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.common.UIConstants
 import com.juren233.hyperlyricsenhanced.ui.navigation.LocalNavigator
+import com.juren233.hyperlyricsenhanced.ui.navigation.Route
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.media.island.islandExpandedMediaCardSection
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.media.notification.notificationCenterMediaCardSection
 import com.juren233.hyperlyricsenhanced.ui.utils.BlurredBar
 import com.juren233.hyperlyricsenhanced.ui.utils.pageScrollModifiers
 import com.juren233.hyperlyricsenhanced.ui.utils.rememberBlurBackdrop
+import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
+import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
+import top.yukonga.miuix.kmp.preference.ArrowPreference
+import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
@@ -43,6 +56,14 @@ fun MediaCardSettingsPage() {
     val navigator = LocalNavigator.current
     val prefs = remember {
         context.getSharedPreferences(UIConstants.PREF_NAME, Context.MODE_PRIVATE)
+    }
+    var mediaCardLyricsEnabled by remember {
+        mutableStateOf(
+            prefs.getBoolean(
+                RootConstants.KEY_HOOK_ENABLE_MEDIA_CARD_LYRICS,
+                RootConstants.DEFAULT_HOOK_ENABLE_MEDIA_CARD_LYRICS
+            )
+        )
     }
     var notificationAmbientFlowMode by remember {
         mutableIntStateOf(
@@ -280,6 +301,43 @@ fun MediaCardSettingsPage() {
                 ),
                 contentPadding = contentPadding
             ) {
+                item(key = "media_card_lyrics") {
+                    SmallTitle(text = stringResource(R.string.title_media_card_lyrics))
+                    Card(
+                        modifier = Modifier
+                            .padding(horizontal = 12.dp)
+                            .padding(bottom = 12.dp)
+                            .fillMaxWidth()
+                    ) {
+                        SwitchPreference(
+                            title = stringResource(R.string.title_media_card_lyrics_display),
+                            checked = mediaCardLyricsEnabled,
+                            onCheckedChange = { enabled ->
+                                mediaCardLyricsEnabled = enabled
+                                prefs.edit {
+                                    putBoolean(
+                                        RootConstants.KEY_HOOK_ENABLE_MEDIA_CARD_LYRICS,
+                                        enabled
+                                    )
+                                }
+                                PrefsBridge.putBoolean(
+                                    RootConstants.KEY_HOOK_ENABLE_MEDIA_CARD_LYRICS,
+                                    enabled
+                                )
+                            }
+                        )
+                        AnimatedVisibility(
+                            visible = mediaCardLyricsEnabled,
+                            enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
+                            exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
+                        ) {
+                            ArrowPreference(
+                                title = stringResource(R.string.title_lyric_settings),
+                                onClick = { navigator.navigate(Route.MediaCardLyricSettings) }
+                            )
+                        }
+                    }
+                }
                 notificationCenterMediaCardSection(
                     cardTheme = notificationCardTheme,
                     onCardThemeChange = { theme ->

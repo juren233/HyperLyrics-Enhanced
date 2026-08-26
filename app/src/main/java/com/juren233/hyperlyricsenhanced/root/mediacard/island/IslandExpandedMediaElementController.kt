@@ -330,6 +330,8 @@ internal data class IslandExpandedMediaElements(
     val title: View,
     val artist: View,
     val actionsAnchor: View,
+    val actionViews: List<View>,
     val firstAction: View,
+    val seekBar: View,
     val player: View
 )

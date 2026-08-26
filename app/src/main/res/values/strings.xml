@@ -170,6 +170,9 @@
     <string name="subtitle_super_island">暂停或切换音乐后生效</string>
     <string name="title_media_cards">媒体通知卡片</string>
     <string name="summary_media_cards">更新后需重启系统界面</string>
+    <string name="title_media_card_lyrics">歌词</string>
+    <string name="title_media_card_lyrics_display">歌词显示</string>
+    <string name="title_media_card_lyric_blur">字体模糊</string>
     <string name="title_notification_center_media_card">通知中心媒体卡片</string>
     <string name="title_media_card_background_theme">卡片背景颜色</string>
     <string name="option_media_card_theme_follow_system">跟随系统</string>

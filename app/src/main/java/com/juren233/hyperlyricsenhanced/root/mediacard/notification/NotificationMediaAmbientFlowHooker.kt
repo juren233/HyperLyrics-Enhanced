@@ -9,10 +9,14 @@ import android.os.Handler
 import android.os.Looper
 import android.view.View
 import android.view.ViewGroup
+import android.view.ViewTreeObserver
+import android.widget.TextView
+import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.root.HookEntry
 import com.juren233.hyperlyricsenhanced.root.SystemUiEnhancementGate
 import com.juren233.hyperlyricsenhanced.root.mediacard.MediaAmbientFlowPalette
+import com.juren233.hyperlyricsenhanced.root.mediacard.MediaCardLyricOverlayController
 import com.juren233.hyperlyricsenhanced.root.mediacard.MediaAmbientFlowPaletteExtractor
 import com.juren233.hyperlyricsenhanced.root.mediacard.MediaArtworkSampler
 import com.juren233.hyperlyricsenhanced.root.mediacard.background.MediaFlowArtwork
@@ -47,6 +51,9 @@ object NotificationMediaAmbientFlowHooker {
     private val states = Collections.synchronizedMap(WeakHashMap<Any, ControllerState>())
     private val activeControllers = Collections.synchronizedSet(
         Collections.newSetFromMap(WeakHashMap<Any, Boolean>())
+    )
+    private val pendingLyricSyncs = Collections.synchronizedMap(
+        WeakHashMap<Any, PendingLyricSync>()
     )
     private val themeStates = Collections.synchronizedMap(WeakHashMap<Any, ControllerThemeState>())
     private val nativeApis = Collections.synchronizedMap(WeakHashMap<ClassLoader, NativeMusicBgApi>())
@@ -162,6 +169,8 @@ object NotificationMediaAmbientFlowHooker {
         colorExecutor.shutdownNow()
         NotificationMediaBackgroundController.releaseAll()
         val cleanup = Runnable {
+            controllers.forEach(::unbindLyricCard)
+            pendingLyricSyncs.clear()
             controllers.forEach(::restoreCardTheme)
             snapshot.values.forEach(::disposeState)
             themeStates.clear()
@@ -182,9 +191,12 @@ object NotificationMediaAmbientFlowHooker {
             if (!SystemUiEnhancementGate.isEnabled()) {
                 if (action == Action.DETACH) {
                     activeControllers.remove(controller)
+                    unbindLyricCard(controller)
                     removeView(controller, forgetState = true)
                     NotificationMediaBackgroundController.onDetach(controller)
                     restoreCardTheme(controller)
+                } else {
+                    unbindLyricCard(controller)
                 }
                 val result = chain.proceed()
                 if (action == Action.ATTACH || action == Action.BIND) {
@@ -194,6 +206,7 @@ object NotificationMediaAmbientFlowHooker {
             }
             if (action == Action.DETACH) {
                 activeControllers.remove(controller)
+                unbindLyricCard(controller)
                 removeView(controller, forgetState = true)
                 NotificationMediaBackgroundController.onDetach(controller)
                 restoreCardTheme(controller)
@@ -214,14 +227,17 @@ object NotificationMediaAmbientFlowHooker {
                     Action.ATTACH -> {
                         activeControllers.add(controller)
                         syncView(controller)
+                        startLyricCardSync(controller, readField(controller, "mediaData"))
                     }
                     Action.BIND -> {
                         activeControllers.add(controller)
+                        val mediaData = chain.args.firstOrNull()
                         NotificationMediaBackgroundController.onBind(
                             controller,
-                            chain.args.firstOrNull()
+                            mediaData
                         )
-                        bind(controller, chain.args.firstOrNull())
+                        bind(controller, mediaData)
+                        startLyricCardSync(controller, mediaData)
                     }
                     Action.DETACH -> Unit
                 }
@@ -257,6 +273,21 @@ object NotificationMediaAmbientFlowHooker {
             }
             return chain.proceed()
         }
+    }
+
+    fun refreshMediaCardLyrics() {
+        val refresh = Runnable {
+            val snapshot = synchronized(activeControllers) { activeControllers.toList() }
+            snapshot.forEach { controller ->
+                runCatching {
+                    startLyricCardSync(controller, readField(controller, "mediaData"))
+                }.onFailure {
+                    HookLogger.e(TAG, "刷新通知中心媒体卡片歌词失败", it)
+                }
+            }
+        }
+        if (Looper.myLooper() == Looper.getMainLooper()) refresh.run()
+        else Handler(Looper.getMainLooper()).post(refresh)
     }
 
     fun refreshCardTheme() {
@@ -319,6 +350,127 @@ object NotificationMediaAmbientFlowHooker {
             .onSuccess { themeApis[classLoader] = it }
             .onFailure { HookLogger.w(TAG, "通知中心媒体主题接口不可用: reason=${it.message}") }
             .getOrNull()
+    }
+
+    private fun startLyricCardSync(controller: Any, mediaData: Any?) {
+        removePendingLyricSync(controller)
+        scheduleLyricCardSync(controller, mediaData)
+    }
+
+    private fun scheduleLyricCardSync(controller: Any, mediaData: Any?) {
+        if (!isMediaCardLyricsEnabled()) {
+            unbindLyricCard(controller)
+            return
+        }
+        val holder = readField(controller, "holder") ?: return
+        val player = readField(holder, "player") as? ViewGroup ?: return
+        val visible = player.isAttachedToWindow &&
+            player.windowVisibility == View.VISIBLE &&
+            player.isShown
+        if (!visible) {
+            ensurePendingLyricSync(controller, player, mediaData)
+            return
+        }
+        removePendingLyricSync(controller)
+
+        val actions = (0..4).mapNotNull { index ->
+            readField(holder, "action$index") as? View
+        }
+        val progress = readField(holder, "seekBar") as? View
+        val elapsedTime = readField(holder, "elapsedTimeView") as? View
+        val totalTime = readField(holder, "totalTimeView") as? View
+        val title = readField(holder, "titleText") as? TextView
+        if (actions.isEmpty() || progress == null || title == null) {
+            ensurePendingLyricSync(controller, player, mediaData)
+            if (BuildConfig.DEBUG) {
+                HookLogger.d(
+                    TAG,
+                    "通知中心媒体卡片控件尚未完整绑定，等待宿主下一次绘制: " +
+                        "actions=${actions.size}, progress=${progress != null}, " +
+                        "title=${title != null}, ${describePlayer(player)}",
+                )
+            }
+            return
+        }
+        val data = mediaData ?: readField(controller, "mediaData")
+        MediaCardLyricOverlayController.bindNotificationCard(
+            player = player,
+            album = readField(holder, "albumView") as? View,
+            actions = actions,
+            progress = progress,
+            elapsedTime = elapsedTime,
+            totalTime = totalTime,
+            title = title,
+            packageName = data?.let { readField(it, "packageName") as? String },
+            background = readField(holder, "mediaBg") as? View,
+            outer = player.parent as? View,
+        )
+        if (BuildConfig.DEBUG) {
+            HookLogger.i(
+                TAG,
+                "通知中心媒体卡片歌词绑定成功: ${describePlayer(player)}, " +
+                    "parent=${player.parent?.javaClass?.name}, " +
+                    "package=${data?.let { readField(it, "packageName") as? String }.orEmpty()}",
+            )
+        }
+    }
+
+    private fun ensurePendingLyricSync(
+        controller: Any,
+        player: ViewGroup,
+        mediaData: Any?,
+    ) {
+        val existing = pendingLyricSyncs[controller]
+        if (existing?.player === player) return
+        existing?.let { pending ->
+            pending.player.viewTreeObserver.takeIf { it.isAlive }
+                ?.removeOnPreDrawListener(pending.listener)
+        }
+        lateinit var listener: ViewTreeObserver.OnPreDrawListener
+        listener = ViewTreeObserver.OnPreDrawListener {
+            if (!player.isAttachedToWindow) {
+                removePendingLyricSync(controller)
+                true
+            } else {
+                scheduleLyricCardSync(controller, mediaData)
+                true
+            }
+        }
+        pendingLyricSyncs[controller] = PendingLyricSync(player, listener)
+        if (player.viewTreeObserver.isAlive) {
+            player.viewTreeObserver.addOnPreDrawListener(listener)
+            if (BuildConfig.DEBUG) {
+                HookLogger.d(
+                    TAG,
+                    "已安装通知中心媒体卡片可见性/绘制等待器: ${describePlayer(player)}",
+                )
+            }
+        } else {
+            player.post {
+                scheduleLyricCardSync(controller, mediaData)
+            }
+        }
+    }
+
+    private fun removePendingLyricSync(controller: Any) {
+        val pending = pendingLyricSyncs.remove(controller) ?: return
+        pending.player.viewTreeObserver.takeIf { it.isAlive }
+            ?.removeOnPreDrawListener(pending.listener)
+    }
+
+    private fun describePlayer(player: View): String =
+        "player=${player.javaClass.simpleName}@${System.identityHashCode(player).toString(16)}, " +
+            "attached=${player.isAttachedToWindow}, shown=${player.isShown}, " +
+            "windowVisibility=${player.windowVisibility}, " +
+            "size=${player.width}x${player.height}, " +
+            "visibility=${player.visibility}"
+
+    private fun unbindLyricCard(controller: Any, immediate: Boolean = false) {
+        removePendingLyricSync(controller)
+        val holder = readField(controller, "holder") ?: return
+        (readField(holder, "player") as? ViewGroup)?.let {
+            MediaCardLyricOverlayController.unbind(it, immediate = immediate)
+        }
     }
 
     private fun syncView(controller: Any) {
@@ -615,6 +767,14 @@ object NotificationMediaAmbientFlowHooker {
         return emptyList()
     }
 
+    private fun isMediaCardLyricsEnabled(): Boolean {
+        if (!SystemUiEnhancementGate.isEnabled()) return false
+        return prefs?.getBoolean(
+            RootConstants.KEY_HOOK_ENABLE_MEDIA_CARD_LYRICS,
+            RootConstants.DEFAULT_HOOK_ENABLE_MEDIA_CARD_LYRICS
+        ) ?: RootConstants.DEFAULT_HOOK_ENABLE_MEDIA_CARD_LYRICS
+    }
+
     private fun currentMode(): Int {
         if (!SystemUiEnhancementGate.isEnabled()) {
             return RootConstants.NOTIFICATION_MEDIA_AMBIENT_FLOW_MODE_DISABLED
@@ -653,6 +813,11 @@ object NotificationMediaAmbientFlowHooker {
             RootConstants.MEDIA_CARD_THEME_ALWAYS_DARK
         ) ?: RootConstants.DEFAULT_HOOK_NOTIFICATION_MEDIA_CARD_THEME
     }
+
+    private data class PendingLyricSync(
+        val player: ViewGroup,
+        val listener: ViewTreeObserver.OnPreDrawListener,
+    )
 
     private data class ControllerState(
         var view: View? = null,

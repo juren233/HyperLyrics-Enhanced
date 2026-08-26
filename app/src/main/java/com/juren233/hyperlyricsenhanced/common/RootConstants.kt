@@ -122,6 +122,40 @@ object RootConstants {
         "key_hook_island_next_song_preview_position"
     const val KEY_HOOK_ISLAND_NEXT_SONG_PREVIEW_WEIGHT =
         "key_hook_island_next_song_preview_weight"
+    const val KEY_HOOK_ENABLE_MEDIA_CARD_LYRICS =
+        "key_hook_enable_media_card_lyrics"
+    const val KEY_HOOK_MEDIA_CARD_LYRIC_MAIN_TEXT_SIZE =
+        "key_hook_media_card_lyric_main_text_size"
+    const val KEY_HOOK_MEDIA_CARD_LYRIC_BACKING_TEXT_SIZE =
+        "key_hook_media_card_lyric_backing_text_size"
+    const val KEY_HOOK_MEDIA_CARD_LYRIC_TRANSLATION_TEXT_SIZE =
+        "key_hook_media_card_lyric_translation_text_size"
+    const val KEY_HOOK_MEDIA_CARD_LYRIC_TRANSLATION_DISPLAY =
+        "key_hook_media_card_lyric_translation_display"
+    const val KEY_HOOK_MEDIA_CARD_LYRIC_TRANSLATION_FALLBACK =
+        "key_hook_media_card_lyric_translation_fallback"
+    const val KEY_HOOK_MEDIA_CARD_LYRIC_SWAP_TRANSLATION =
+        "key_hook_media_card_lyric_swap_translation"
+    const val KEY_HOOK_MEDIA_CARD_LYRIC_DUET_LYRICS =
+        "key_hook_media_card_lyric_duet_lyrics"
+    const val KEY_HOOK_MEDIA_CARD_LYRIC_CENTER_NON_DUET_SONG =
+        "key_hook_media_card_lyric_center_non_duet_song"
+    const val KEY_HOOK_MEDIA_CARD_LYRIC_CENTER_GROUP_VOCALS =
+        "key_hook_media_card_lyric_center_group_vocals"
+    const val KEY_HOOK_MEDIA_CARD_LYRIC_NEXT_SONG_PREVIEW =
+        "key_hook_media_card_lyric_next_song_preview"
+    const val KEY_HOOK_MEDIA_CARD_LYRIC_NEXT_SONG_PREVIEW_POSITION =
+        "key_hook_media_card_lyric_next_song_preview_position"
+    const val KEY_HOOK_MEDIA_CARD_LYRIC_BLUR_EFFECT =
+        "key_hook_media_card_lyric_blur_effect"
+    const val KEY_HOOK_MEDIA_CARD_LYRIC_NATIVE_BLUR_MIN_RADIUS_DP =
+        "key_hook_media_card_lyric_native_blur_min_radius_dp"
+    const val KEY_HOOK_MEDIA_CARD_LYRIC_NATIVE_BLUR_MAX_RADIUS_DP =
+        "key_hook_media_card_lyric_native_blur_max_radius_dp"
+    const val KEY_HOOK_MEDIA_CARD_LYRIC_ADVANCED_BLUR_MIN_RADIUS_PX =
+        "key_hook_media_card_lyric_advanced_blur_min_radius_px"
+    const val KEY_HOOK_MEDIA_CARD_LYRIC_ADVANCED_BLUR_MAX_RADIUS_PX =
+        "key_hook_media_card_lyric_advanced_blur_max_radius_px"
     const val KEY_HOOK_NOTIFICATION_MEDIA_AMBIENT_FLOW_MODE =
         "key_hook_notification_media_ambient_flow_mode"
     const val KEY_HOOK_ISLAND_EXPANDED_MEDIA_AMBIENT_FLOW_MODE =
@@ -443,6 +477,47 @@ object RootConstants {
     const val DEFAULT_HOOK_ISLAND_NEXT_SONG_PREVIEW_WEIGHT =
         ISLAND_NEXT_SONG_PREVIEW_WEIGHT_TOP
     const val ISLAND_NEXT_SONG_HALF_PREVIEW_DURATION_MS = 5_000L
+    const val DEFAULT_HOOK_ENABLE_MEDIA_CARD_LYRICS = false
+    const val DEFAULT_HOOK_MEDIA_CARD_LYRIC_MAIN_TEXT_SIZE =
+        DEFAULT_HOOK_LOCK_SCREEN_AOD_MAIN_TEXT_SIZE
+    const val DEFAULT_HOOK_MEDIA_CARD_LYRIC_BACKING_TEXT_SIZE =
+        DEFAULT_HOOK_LOCK_SCREEN_AOD_BACKING_TEXT_SIZE
+    const val DEFAULT_HOOK_MEDIA_CARD_LYRIC_TRANSLATION_TEXT_SIZE =
+        DEFAULT_HOOK_LOCK_SCREEN_AOD_TRANSLATION_TEXT_SIZE
+    const val DEFAULT_HOOK_MEDIA_CARD_LYRIC_TRANSLATION_DISPLAY_MODE =
+        TRANSLATION_PRONUNCIATION_DISPLAY_OFF
+    const val DEFAULT_HOOK_MEDIA_CARD_LYRIC_TRANSLATION_FALLBACK = false
+    const val DEFAULT_HOOK_MEDIA_CARD_LYRIC_SWAP_TRANSLATION = false
+    const val DEFAULT_HOOK_MEDIA_CARD_LYRIC_DUET_LYRICS = false
+    const val DEFAULT_HOOK_MEDIA_CARD_LYRIC_CENTER_NON_DUET_SONG = false
+    const val DEFAULT_HOOK_MEDIA_CARD_LYRIC_CENTER_GROUP_VOCALS = false
+    const val DEFAULT_HOOK_MEDIA_CARD_LYRIC_NEXT_SONG_PREVIEW = true
+    const val MEDIA_CARD_LYRIC_NEXT_SONG_PREVIEW_POSITION_LEFT = 0
+    const val MEDIA_CARD_LYRIC_NEXT_SONG_PREVIEW_POSITION_CENTER = 1
+    const val MEDIA_CARD_LYRIC_NEXT_SONG_PREVIEW_POSITION_RIGHT = 2
+    const val DEFAULT_HOOK_MEDIA_CARD_LYRIC_NEXT_SONG_PREVIEW_POSITION =
+        MEDIA_CARD_LYRIC_NEXT_SONG_PREVIEW_POSITION_CENTER
+    const val MEDIA_CARD_LYRIC_BLUR_EFFECT_OFF = APPLE_MUSIC_LYRICS_BLUR_EFFECT_OFF
+    const val MEDIA_CARD_LYRIC_BLUR_EFFECT_NATIVE = APPLE_MUSIC_LYRICS_BLUR_EFFECT_NATIVE
+    const val MEDIA_CARD_LYRIC_BLUR_EFFECT_ADVANCED_MATERIAL =
+        APPLE_MUSIC_LYRICS_BLUR_EFFECT_ADVANCED_MATERIAL
+    const val DEFAULT_HOOK_MEDIA_CARD_LYRIC_BLUR_EFFECT = MEDIA_CARD_LYRIC_BLUR_EFFECT_OFF
+    const val DEFAULT_HOOK_MEDIA_CARD_LYRIC_NATIVE_BLUR_MIN_RADIUS_DP =
+        DEFAULT_HOOK_APPLE_MUSIC_NATIVE_LYRICS_BLUR_MIN_RADIUS_DP
+    const val DEFAULT_HOOK_MEDIA_CARD_LYRIC_NATIVE_BLUR_MAX_RADIUS_DP =
+        DEFAULT_HOOK_APPLE_MUSIC_NATIVE_LYRICS_BLUR_MAX_RADIUS_DP
+    const val MIN_HOOK_MEDIA_CARD_LYRIC_NATIVE_BLUR_RADIUS_DP =
+        MIN_HOOK_APPLE_MUSIC_NATIVE_LYRICS_BLUR_RADIUS_DP
+    const val MAX_HOOK_MEDIA_CARD_LYRIC_NATIVE_BLUR_RADIUS_DP =
+        MAX_HOOK_APPLE_MUSIC_NATIVE_LYRICS_BLUR_RADIUS_DP
+    const val DEFAULT_HOOK_MEDIA_CARD_LYRIC_ADVANCED_BLUR_MIN_RADIUS_PX =
+        DEFAULT_HOOK_APPLE_MUSIC_ADVANCED_LYRICS_BLUR_MIN_RADIUS_PX
+    const val DEFAULT_HOOK_MEDIA_CARD_LYRIC_ADVANCED_BLUR_MAX_RADIUS_PX =
+        DEFAULT_HOOK_APPLE_MUSIC_ADVANCED_LYRICS_BLUR_MAX_RADIUS_PX
+    const val MIN_HOOK_MEDIA_CARD_LYRIC_ADVANCED_BLUR_RADIUS_PX =
+        MIN_HOOK_APPLE_MUSIC_ADVANCED_LYRICS_BLUR_RADIUS_PX
+    const val MAX_HOOK_MEDIA_CARD_LYRIC_ADVANCED_BLUR_RADIUS_PX =
+        MAX_HOOK_APPLE_MUSIC_ADVANCED_LYRICS_BLUR_RADIUS_PX
     const val NOTIFICATION_MEDIA_AMBIENT_FLOW_MODE_DISABLED = 0
     const val NOTIFICATION_MEDIA_AMBIENT_FLOW_MODE_DYNAMIC = 1
     const val NOTIFICATION_MEDIA_AMBIENT_FLOW_MODE_COVER_COLOR = 2

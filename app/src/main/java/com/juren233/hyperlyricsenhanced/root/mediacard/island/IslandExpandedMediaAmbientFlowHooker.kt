@@ -20,6 +20,7 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.TextView
+import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.root.HookEntry
 import com.juren233.hyperlyricsenhanced.root.SystemUiEnhancementGate
@@ -28,6 +29,7 @@ import com.juren233.hyperlyricsenhanced.root.island.IslandProbeUtils
 import com.juren233.hyperlyricsenhanced.root.mediacard.MediaAmbientFlowPalette
 import com.juren233.hyperlyricsenhanced.root.mediacard.MediaAmbientFlowPaletteExtractor
 import com.juren233.hyperlyricsenhanced.root.mediacard.MediaArtworkSampler
+import com.juren233.hyperlyricsenhanced.root.mediacard.MediaCardLyricOverlayController
 import com.juren233.hyperlyricsenhanced.root.mediacard.background.MediaFlowArtwork
 import com.juren233.hyperlyricsenhanced.root.mediacard.background.MediaFlowBackgroundView
 import com.juren233.hyperlyricsenhanced.root.mediacard.background.MediaFlowOverlayLayout
@@ -60,6 +62,8 @@ object IslandExpandedMediaAmbientFlowHooker {
         "miuix.miuixbasewidget.widget.HyperProgressSeekBar\$1"
     private const val BASE_CONTENT_VIEW_CLASS =
         "miui.systemui.dynamicisland.window.content.DynamicIslandBaseContentView"
+    private const val DYNAMIC_ISLAND_DATA_CLASS =
+        "com.android.systemui.plugins.miui.dynamicisland.DynamicIslandData"
     private const val FAKE_CONTENT_VIEW_CLASS =
         "miui.systemui.dynamicisland.window.content.DynamicIslandContentFakeView"
     private const val EXPANDED_VIEW_CLASS =
@@ -158,6 +162,13 @@ object IslandExpandedMediaAmbientFlowHooker {
             SEEK_BAR_HEAD_ALPHA_LISTENER_CLASS ->
                 method.name == "onUpdate" && method.parameterCount == 2
 
+            BASE_CONTENT_VIEW_CLASS ->
+                method.name == "updateExpandedSize" &&
+                    method.parameterCount == 3 &&
+                    method.parameterTypes[0] == Int::class.javaPrimitiveType &&
+                    method.parameterTypes[1] == Int::class.javaPrimitiveType &&
+                    method.parameterTypes[2].name == DYNAMIC_ISLAND_DATA_CLASS
+
             else -> false
         }
     }
@@ -179,7 +190,35 @@ object IslandExpandedMediaAmbientFlowHooker {
 
             MUSIC_BG_VIEW_CLASS -> PlaybackStartHook()
             SEEK_BAR_HEAD_ALPHA_LISTENER_CLASS -> HeadGlowUpdateHook()
+            BASE_CONTENT_VIEW_CLASS -> ExpandedSizeHook()
             else -> null
+        }
+    }
+
+    private class ExpandedSizeHook : Hooker {
+        override fun intercept(chain: Chain): Any? {
+            val result = chain.proceed()
+            val owner = chain.thisObject as? View ?: return result
+            if (!isMediaCardLyricsEnabled()) return result
+            val api = nativeApi ?: return result
+            val binder = findBinderForContentOwner(owner, api) ?: return result
+            val data = chain.args.getOrNull(2) ?: return result
+            val targetHeight = MediaCardLyricOverlayController.applyExpandedViewport(
+                owner = owner,
+                views = api.getExpandedDataViews(data),
+            ) ?: return result
+            api.setExpandedViewHeight(owner, targetHeight)
+            if (BuildConfig.DEBUG) {
+                HookLogger.i(
+                    TAG,
+                    "展开态媒体 viewport 高度已在 SystemUI updateExpandedSize 后重设: " +
+                        "owner=${owner.javaClass.name}, target=$targetHeight, " +
+                        "views=${api.getExpandedDataViews(data).joinToString { view ->
+                            "${view.javaClass.simpleName}:${view.layoutParams?.height}"
+                        }}",
+                )
+            }
+            return result
         }
     }
 
@@ -245,17 +284,23 @@ object IslandExpandedMediaAmbientFlowHooker {
                         activeBinders.add(binder)
                         applyAppearance(binder, allowCoverColor = false)
                         applyMediaElements(binder)
+                        applyMediaCardLyrics(binder)
                     }
                     Action.BIND -> {
                         activeBinders.add(binder)
                         applyAppearance(binder, allowCoverColor = true)
                         applyMediaElements(binder)
+                        applyMediaCardLyrics(binder)
                     }
                     Action.ALBUM -> {
                         applyAppearance(binder, allowCoverColor = true)
                         applyMediaElements(binder)
+                        applyMediaCardLyrics(binder)
                     }
-                    Action.SEAMLESS -> applyMediaElements(binder)
+                    Action.SEAMLESS -> {
+                        applyMediaElements(binder)
+                        applyMediaCardLyrics(binder)
+                    }
                     Action.DETACH -> Unit
                 }
                 if (action != Action.DETACH) {
@@ -622,6 +667,18 @@ object IslandExpandedMediaAmbientFlowHooker {
         applyLightExpandedBackground(api, target)
     }
 
+    fun refreshMediaCardLyrics() {
+        val refresh = Runnable {
+            val snapshot = synchronized(activeBinders) { activeBinders.toList() }
+            snapshot.forEach { binder ->
+                runCatching { applyMediaCardLyrics(binder) }
+                    .onFailure { HookLogger.e(TAG, "刷新展开态媒体卡片歌词失败", it) }
+            }
+        }
+        if (Looper.myLooper() == Looper.getMainLooper()) refresh.run()
+        else Handler(Looper.getMainLooper()).post(refresh)
+    }
+
     fun refreshMediaElements() {
         val refresh = Runnable {
             val snapshot = synchronized(activeBinders) { activeBinders.toList() }
@@ -772,7 +829,35 @@ object IslandExpandedMediaAmbientFlowHooker {
     private fun restoreMediaElements(binder: Any) {
         val api = nativeApi ?: return
         api.getHolders(binder).forEach { holder ->
-            IslandExpandedMediaElementController.restore(api.getMediaElements(holder))
+            val elements = api.getMediaElements(holder)
+            IslandExpandedMediaElementController.restore(elements)
+            (elements.player as? ViewGroup)?.let(MediaCardLyricOverlayController::unbind)
+        }
+    }
+
+    private fun applyMediaCardLyrics(binder: Any) {
+        val api = nativeApi ?: return
+        if (!isMediaCardLyricsEnabled()) {
+            api.getHolders(binder).forEach { holder ->
+                (api.getMediaElements(holder).player as? ViewGroup)
+                    ?.let(MediaCardLyricOverlayController::unbind)
+            }
+            return
+        }
+        val packageName = api.getPackageName(binder)
+        val backgroundHosts = api.getBackgroundHosts(binder)
+        api.getHolders(binder).forEach { holder ->
+            val elements = api.getMediaElements(holder)
+            val title = elements.title as? TextView ?: return@forEach
+            val backgroundHost = backgroundHosts.firstOrNull { it.holder === holder }
+            MediaCardLyricOverlayController.bindExpandedIslandCard(
+                elements = elements,
+                title = title,
+                packageName = packageName,
+                outer = backgroundHost?.target?.expandedView,
+                background = backgroundHost?.target?.customBackgroundView,
+                owner = backgroundHost?.target?.owner,
+            )
         }
     }
 
@@ -1053,6 +1138,14 @@ object IslandExpandedMediaAmbientFlowHooker {
         return false
     }
 
+    private fun isMediaCardLyricsEnabled(): Boolean {
+        if (!SystemUiEnhancementGate.isEnabled()) return false
+        return prefs?.getBoolean(
+            RootConstants.KEY_HOOK_ENABLE_MEDIA_CARD_LYRICS,
+            RootConstants.DEFAULT_HOOK_ENABLE_MEDIA_CARD_LYRICS
+        ) ?: RootConstants.DEFAULT_HOOK_ENABLE_MEDIA_CARD_LYRICS
+    }
+
     private fun currentMode(): Int {
         if (!SystemUiEnhancementGate.isEnabled()) {
             return RootConstants.ISLAND_EXPANDED_MEDIA_AMBIENT_FLOW_MODE_DEFAULT
@@ -1221,7 +1314,10 @@ object IslandExpandedMediaAmbientFlowHooker {
         private val setSeekBarBackgroundMethod: Method,
         private val pauseMethod: Method,
         private val setGradientColorMethod: Method,
-        private val getPaletteColorMethod: Method
+        private val getPaletteColorMethod: Method,
+        private val dynamicIslandDataViewMethod: Method,
+        private val dynamicIslandDataFakeViewMethod: Method,
+        private val setExpandedViewHeightMethod: Method,
     ) : IslandExpandedMediaBackgroundApi {
         private val expandedBackgroundMethods = Collections.synchronizedMap(
             WeakHashMap<ClassLoader, ExpandedBackgroundMethods>()
@@ -1239,6 +1335,15 @@ object IslandExpandedMediaAmbientFlowHooker {
         fun getMusicBgView(holder: Any): View = mediaBgViewField.get(holder) as View
 
         fun getPlayer(holder: Any): View = playerField.get(holder) as View
+
+        fun getExpandedDataViews(data: Any): List<View> = listOfNotNull(
+            dynamicIslandDataViewMethod.invoke(data) as? View,
+            dynamicIslandDataFakeViewMethod.invoke(data) as? View,
+        ).distinct()
+
+        fun setExpandedViewHeight(owner: Any, height: Int) {
+            setExpandedViewHeightMethod.invoke(owner, height)
+        }
 
         fun getMediaElements(holder: Any): IslandExpandedMediaElements {
             val player = getPlayer(holder)
@@ -1258,7 +1363,9 @@ object IslandExpandedMediaAmbientFlowHooker {
                 title = titleTextField.get(holder) as View,
                 artist = artistTextField.get(holder) as View,
                 actionsAnchor = requireNotNull(player.findViewById(actionsId)),
+                actionViews = actions,
                 firstAction = actions.first(),
+                seekBar = getSeekBar(holder),
                 player = player
             )
         }
@@ -1555,6 +1662,8 @@ object IslandExpandedMediaAmbientFlowHooker {
                 val mediaDataClass = classLoader.loadClass(
                     "com.android.systemui.media.controls.shared.model.MediaData"
                 )
+                val baseContentViewClass = classLoader.loadClass(BASE_CONTENT_VIEW_CLASS)
+                val dynamicIslandDataClass = classLoader.loadClass(DYNAMIC_ISLAND_DATA_CLASS)
                 val miPaletteClass = classLoader.loadClass("miuix.mipalette.MiPalette")
                 miPaletteClass.declaredMethods.firstOrNull { method ->
                     method.name == "init" && method.parameterCount == 0
@@ -1593,6 +1702,12 @@ object IslandExpandedMediaAmbientFlowHooker {
                 val headAlphaUpdate = headAlphaListenerClass.declaredMethods.single {
                     it.name == "onUpdate" && it.parameterCount == 2
                 }.apply { isAccessible = true }
+                val updateExpandedSize = baseContentViewClass.getDeclaredMethod(
+                    "updateExpandedSize",
+                    Int::class.javaPrimitiveType,
+                    Int::class.javaPrimitiveType,
+                    dynamicIslandDataClass,
+                ).apply { isAccessible = true }
 
                 return NativeApi(
                     hookMethods = listOf(
@@ -1606,7 +1721,8 @@ object IslandExpandedMediaAmbientFlowHooker {
                         }.apply { isAccessible = true },
                         start,
                         resume,
-                        headAlphaUpdate
+                        headAlphaUpdate,
+                        updateExpandedSize,
                     ),
                     holderField = binderClass.getDeclaredField("holder").apply {
                         isAccessible = true
@@ -1699,7 +1815,19 @@ object IslandExpandedMediaAmbientFlowHooker {
                         Int::class.javaPrimitiveType,
                         IntArray::class.java
                     ).apply { isAccessible = true },
-                    getPaletteColorMethod = getPaletteColor
+                    getPaletteColorMethod = getPaletteColor,
+                    dynamicIslandDataViewMethod = dynamicIslandDataClass
+                        .getDeclaredMethod("getView")
+                        .apply { isAccessible = true },
+                    dynamicIslandDataFakeViewMethod = dynamicIslandDataClass
+                        .getDeclaredMethod("getFakeView")
+                        .apply { isAccessible = true },
+                    setExpandedViewHeightMethod = baseContentViewClass
+                        .getDeclaredMethod(
+                            "setExpandedViewHeight",
+                            Int::class.javaPrimitiveType,
+                        )
+                        .apply { isAccessible = true },
                 )
             }
         }

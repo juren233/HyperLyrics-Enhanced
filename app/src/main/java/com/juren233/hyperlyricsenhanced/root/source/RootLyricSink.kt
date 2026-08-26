@@ -11,6 +11,7 @@ import com.juren233.hyperlyricsenhanced.online.OnlineTranslationSourcePreference
 import com.juren233.hyperlyricsenhanced.root.island.IslandSlotContentAssembler
 import com.juren233.hyperlyricsenhanced.root.island.renderer.IslandRenderer
 import com.juren233.hyperlyricsenhanced.root.mediacard.notification.NotificationMediaAodLyricHooker
+import com.juren233.hyperlyricsenhanced.root.mediacard.MediaCardLyricOverlayController
 import com.juren233.hyperlyricsenhanced.root.aitrans.AITranslator
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import com.juren233.hyperlyricsenhanced.common.RootConstants
@@ -113,6 +114,7 @@ class RootLyricSink(
             LyriconDataBridge.updateLyricLine(line)
             renderer.updateLyricLine()
             NotificationMediaAodLyricHooker.onLyricChanged()
+            MediaCardLyricOverlayController.refreshAll()
         }
     }
 
@@ -121,6 +123,7 @@ class RootLyricSink(
         LyriconDataBridge.updateLyric(text)
         renderer.updateLyricLine()
         NotificationMediaAodLyricHooker.onLyricChanged()
+        MediaCardLyricOverlayController.refreshAll()
     }
 
     override fun onStop() {
@@ -133,6 +136,7 @@ class RootLyricSink(
         renderer.clearAllViews()
         LyriconDataBridge.clearState()
         NotificationMediaAodLyricHooker.onLyricChanged()
+        MediaCardLyricOverlayController.refreshAll()
     }
 
     override fun onMetadata(title: String?, artist: String?, album: String?, publisher: String?) {
@@ -142,6 +146,7 @@ class RootLyricSink(
         }
         IslandSlotContentAssembler.invalidate()
         renderer.refreshActiveIsland()
+        MediaCardLyricOverlayController.refreshAll()
     }
 
     override fun onPlaybackStateChanged(isPlaying: Boolean) {
@@ -150,6 +155,7 @@ class RootLyricSink(
         if (!isPlaying) cancelPendingPositionDispatch()
         renderer.onPlaybackStateChanged(isPlaying)
         NotificationMediaAodLyricHooker.onPlaybackStateChanged(isPlaying)
+        MediaCardLyricOverlayController.refreshAll()
     }
 
     override fun onPositionChanged(position: Long) {
@@ -164,6 +170,7 @@ class RootLyricSink(
         if (lyricChanged) {
             renderer.updateLyricLine()
             NotificationMediaAodLyricHooker.onLyricChanged()
+            MediaCardLyricOverlayController.refreshAll()
         }
         if (playbackActive) {
             dispatchPositionThrottled(position)
@@ -197,6 +204,7 @@ class RootLyricSink(
         if (lyricChanged) {
             renderer.updateLyricLine()
             NotificationMediaAodLyricHooker.onLyricChanged()
+            MediaCardLyricOverlayController.refreshAll()
         }
         renderer.seekTo(position)
     }

@@ -23,6 +23,7 @@ import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.LyricSettingsPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.OnlineTranslationSourcesPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.AppleMusicOptimizationPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.SuperIslandSettingsPage
+import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.media.MediaCardLyricSettingsPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.media.MediaCardSettingsPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.aod.ClassicAodSettingsPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.aod.LockScreenAodSettingsPage
@@ -65,6 +66,7 @@ fun AppNavigation(startRoute: Route) {
                 entry<Route.LyricTranslation> { LyricTranslationPage() }
                 entry<Route.SuperIslandSettings> { SuperIslandSettingsPage() }
                 entry<Route.MediaCardSettings> { MediaCardSettingsPage() }
+                entry<Route.MediaCardLyricSettings> { MediaCardLyricSettingsPage() }
                 entry<Route.LockScreenAodSettings> { LockScreenAodSettingsPage() }
                 entry<Route.ClassicAodSettings> { ClassicAodSettingsPage() }
                 entry<Route.DynamicIslandNotification> { DynamicIslandNotificationPage() }

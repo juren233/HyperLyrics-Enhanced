@@ -42,6 +42,8 @@ sealed interface Route : NavKey {
     @Serializable
     data object MediaCardSettings : Route
     @Serializable
+    data object MediaCardLyricSettings : Route
+    @Serializable
     data object LockScreenAodSettings : Route
     @Serializable
     data object ClassicAodSettings : Route

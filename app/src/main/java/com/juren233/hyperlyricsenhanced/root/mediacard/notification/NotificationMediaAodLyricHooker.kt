@@ -35,6 +35,7 @@ import com.juren233.hyperlyricsenhanced.lyric.view.SongPreprocessor
 import com.juren233.hyperlyricsenhanced.root.ClassicAodFocusNotificationRecovery
 import com.juren233.hyperlyricsenhanced.root.HookEntry
 import com.juren233.hyperlyricsenhanced.root.LyriconDataBridge
+import com.juren233.hyperlyricsenhanced.root.mediacard.MediaCardLyricOverlayController
 import com.juren233.hyperlyricsenhanced.root.utils.DisplayDiagnosticLogger
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import io.github.libxposed.api.XposedInterface.Chain
@@ -852,12 +853,30 @@ object NotificationMediaAodLyricHooker {
                     state.holder = api.getHolder(controller)
                     state.mediaData = api.getMediaData(controller)
                     state.playing = resolvePlaying(api, controller, state.mediaData)
+                    val player = runCatching { api.getPlayer(state.holder ?: return@runCatching null) }
+                        .getOrNull()
+                    if (state.fullAod) {
+                        player?.let {
+                            MediaCardLyricOverlayController.setNotificationCardAodActive(
+                                player = it,
+                                active = true,
+                            )
+                        }
+                    }
                     HookLogger.i(
                         TAG,
                         "全屏息屏状态: active=${state.fullAod}, playing=${state.playing}, " +
                             "modulePlaying=${LyriconDataBridge.currentPlaybackState}"
                     )
                     safeApply(controller, state)
+                    if (!state.fullAod) {
+                        player?.let {
+                            MediaCardLyricOverlayController.setNotificationCardAodActive(
+                                player = it,
+                                active = false,
+                            )
+                        }
+                    }
                     if (state.fullAod) {
                         (state.holder as? View)?.context?.let {
                             ClassicAodFocusNotificationRecovery.requestAppRefresh(

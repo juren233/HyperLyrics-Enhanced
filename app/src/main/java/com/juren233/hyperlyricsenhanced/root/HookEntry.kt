@@ -23,6 +23,7 @@ import com.juren233.hyperlyricsenhanced.root.mediacard.notification.AodEnvironme
 import com.juren233.hyperlyricsenhanced.root.mediacard.notification.NotificationMediaAodLyricHooker
 import com.juren233.hyperlyricsenhanced.root.mediacard.notification.NotificationMediaCoverStyleHooker
 import com.juren233.hyperlyricsenhanced.root.mediacard.island.IslandExpandedMediaAmbientFlowHooker
+import com.juren233.hyperlyricsenhanced.root.mediacard.MediaCardLyricOverlayController
 import com.juren233.hyperlyricsenhanced.root.mediacard.notification.background.MediaBackgroundRendererPool
 import com.juren233.hyperlyricsenhanced.root.island.renderer.BaseIslandRenderer
 import com.juren233.hyperlyricsenhanced.root.lyricon.central.EmbeddedLyriconCentralController
@@ -190,6 +191,7 @@ class HookEntry : XposedModule() {
         NotificationMediaCoverStyleHooker.releaseAll()
         NotificationMediaAmbientFlowHooker.releaseAll()
         NotificationMediaAodLyricHooker.releaseAll()
+        MediaCardLyricOverlayController.releaseAll()
         IslandProgressGlowController.clearAll()
         MediaBackgroundRendererPool.releaseAll()
         BaseIslandRenderer.clearAllViews()
@@ -553,6 +555,13 @@ class HookEntry : XposedModule() {
                             BaseIslandRenderer.refreshActiveIsland()
                         }
                     }
+                    in MEDIA_CARD_LYRIC_RUNTIME_REFRESH_KEYS -> {
+                        android.os.Handler(android.os.Looper.getMainLooper()).post {
+                            NotificationMediaAmbientFlowHooker.refreshMediaCardLyrics()
+                            IslandExpandedMediaAmbientFlowHooker.refreshMediaCardLyrics()
+                            MediaCardLyricOverlayController.refreshAll()
+                        }
+                    }
                     RootConstants.KEY_HOOK_NOTIFICATION_MEDIA_CARD_THEME -> {
                         android.os.Handler(android.os.Looper.getMainLooper()).post {
                             NotificationMediaAmbientFlowHooker.refreshCardTheme()
@@ -684,6 +693,26 @@ class HookEntry : XposedModule() {
         lyricInfoSource = null
         runtimeApp = null
     }
+
+    private val MEDIA_CARD_LYRIC_RUNTIME_REFRESH_KEYS = setOf(
+        RootConstants.KEY_HOOK_ENABLE_MEDIA_CARD_LYRICS,
+        RootConstants.KEY_HOOK_MEDIA_CARD_LYRIC_MAIN_TEXT_SIZE,
+        RootConstants.KEY_HOOK_MEDIA_CARD_LYRIC_BACKING_TEXT_SIZE,
+        RootConstants.KEY_HOOK_MEDIA_CARD_LYRIC_TRANSLATION_TEXT_SIZE,
+        RootConstants.KEY_HOOK_MEDIA_CARD_LYRIC_TRANSLATION_DISPLAY,
+        RootConstants.KEY_HOOK_MEDIA_CARD_LYRIC_TRANSLATION_FALLBACK,
+        RootConstants.KEY_HOOK_MEDIA_CARD_LYRIC_SWAP_TRANSLATION,
+        RootConstants.KEY_HOOK_MEDIA_CARD_LYRIC_DUET_LYRICS,
+        RootConstants.KEY_HOOK_MEDIA_CARD_LYRIC_CENTER_NON_DUET_SONG,
+        RootConstants.KEY_HOOK_MEDIA_CARD_LYRIC_CENTER_GROUP_VOCALS,
+        RootConstants.KEY_HOOK_MEDIA_CARD_LYRIC_NEXT_SONG_PREVIEW,
+        RootConstants.KEY_HOOK_MEDIA_CARD_LYRIC_NEXT_SONG_PREVIEW_POSITION,
+        RootConstants.KEY_HOOK_MEDIA_CARD_LYRIC_BLUR_EFFECT,
+        RootConstants.KEY_HOOK_MEDIA_CARD_LYRIC_NATIVE_BLUR_MIN_RADIUS_DP,
+        RootConstants.KEY_HOOK_MEDIA_CARD_LYRIC_NATIVE_BLUR_MAX_RADIUS_DP,
+        RootConstants.KEY_HOOK_MEDIA_CARD_LYRIC_ADVANCED_BLUR_MIN_RADIUS_PX,
+        RootConstants.KEY_HOOK_MEDIA_CARD_LYRIC_ADVANCED_BLUR_MAX_RADIUS_PX,
+    )
 
     private fun registerPreferenceBroadcastReceiver(app: Application) {
         preferenceBroadcastReceiver?.let { receiver ->

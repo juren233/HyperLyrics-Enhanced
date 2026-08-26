@@ -38,6 +38,9 @@ object LyriconDataBridge : StateResetter {
     var currentNextLyricLine: IRichLyricLine? = null
 
     @Volatile
+    var currentNextNextLyricLine: IRichLyricLine? = null
+
+    @Volatile
     private var currentUnmergedLyricLine: IRichLyricLine? = null
 
     @Volatile
@@ -88,6 +91,7 @@ object LyriconDataBridge : StateResetter {
         currentLyric = null
         currentLyricLine = null
         currentNextLyricLine = null
+        currentNextNextLyricLine = null
         currentUnmergedLyricLine = null
         currentPosition = 0L
         playbackPositionEstimator.reset()
@@ -233,6 +237,7 @@ object LyriconDataBridge : StateResetter {
 
         currentLyricLine = displayLine
         currentNextLyricLine = interlude?.next ?: foundLine?.next
+        currentNextNextLyricLine = interlude?.next?.next ?: foundLine?.next?.next
         val newText = displayLine?.text ?: currentLyric ?: ""
         val changed = displayLine !== previousLine || newText != currentLyric
 
@@ -264,6 +269,7 @@ object LyriconDataBridge : StateResetter {
         }
         currentUnmergedLyricLine = currentLyricLine
         currentNextLyricLine = null
+        currentNextNextLyricLine = null
     }
 
     fun updateLyricLine(line: IRichLyricLine) {
@@ -297,6 +303,7 @@ object LyriconDataBridge : StateResetter {
         currentUnmergedLyricLine = line
         currentNextLyricLine = preparedLine?.next
         currentLyric = currentLyricLine?.text
+        currentNextNextLyricLine = preparedLine?.next?.next
         DisplayDiagnosticLogger.log(
             channel = "BRIDGE",
             result = "accepted",
@@ -310,6 +317,7 @@ object LyriconDataBridge : StateResetter {
         currentLyric = null
         currentLyricLine = null
         currentNextLyricLine = null
+        currentNextNextLyricLine = null
         currentUnmergedLyricLine = null
         currentInterludeType = null
         currentInterlude = null
