@@ -458,6 +458,16 @@ object NotificationMediaAmbientFlowHooker {
             ?.removeOnPreDrawListener(pending.listener)
     }
 
+    fun onNativeFullAodExitComplete(controller: Any) {
+        val holder = readField(controller, "holder") ?: return
+        val player = readField(holder, "player") as? ViewGroup ?: return
+        MediaCardLyricOverlayController.setNotificationCardAodActive(
+            player = player,
+            active = false,
+        )
+    }
+
+
     private fun describePlayer(player: View): String =
         "player=${player.javaClass.simpleName}@${System.identityHashCode(player).toString(16)}, " +
             "attached=${player.isAttachedToWindow}, shown=${player.isShown}, " +
