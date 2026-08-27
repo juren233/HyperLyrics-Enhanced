@@ -10,6 +10,130 @@ import java.io.File
 
 class AodMediaLyricPolicyTest {
     @Test
+    fun `defers full AOD state callbacks until the matching native transition completes`() {
+        assertTrue(
+            AodMediaLyricPolicy.shouldDeferNativeFullAodState(
+                nativeTransitionTargetFullAod = true,
+                requestedFullAod = true,
+            )
+        )
+        assertTrue(
+            AodMediaLyricPolicy.shouldDeferNativeFullAodState(
+                nativeTransitionTargetFullAod = false,
+                requestedFullAod = false,
+            )
+        )
+        assertFalse(
+            AodMediaLyricPolicy.shouldDeferNativeFullAodState(
+                nativeTransitionTargetFullAod = true,
+                requestedFullAod = false,
+            )
+        )
+        assertFalse(
+            AodMediaLyricPolicy.shouldDeferNativeFullAodState(
+                nativeTransitionTargetFullAod = null,
+                requestedFullAod = true,
+            )
+        )
+    }
+
+    @Test
+    fun `defers a pre-native full AOD exit callback`() {
+        assertTrue(
+            AodMediaLyricPolicy.shouldDeferPreNativeFullAodExit(
+                currentFullAod = true,
+                requestedFullAod = false,
+                nativeTransitionTargetFullAod = null,
+            )
+        )
+        assertFalse(
+            AodMediaLyricPolicy.shouldDeferPreNativeFullAodExit(
+                currentFullAod = false,
+                requestedFullAod = false,
+                nativeTransitionTargetFullAod = null,
+            )
+        )
+        assertFalse(
+            AodMediaLyricPolicy.shouldDeferPreNativeFullAodExit(
+                currentFullAod = true,
+                requestedFullAod = true,
+                nativeTransitionTargetFullAod = null,
+            )
+        )
+        assertFalse(
+            AodMediaLyricPolicy.shouldDeferPreNativeFullAodExit(
+                currentFullAod = true,
+                requestedFullAod = false,
+                nativeTransitionTargetFullAod = false,
+            )
+        )
+    }
+
+    @Test
+    fun `restores paused native actions only for restore-native pause style`() {
+        assertTrue(
+            AodMediaLyricPolicy.shouldRestorePausedNativeActions(
+                targetFullAod = true,
+                playing = false,
+                pauseStyle = RootConstants.AOD_PAUSE_STYLE_RESTORE,
+            )
+        )
+        assertFalse(
+            AodMediaLyricPolicy.shouldRestorePausedNativeActions(
+                targetFullAod = true,
+                playing = false,
+                pauseStyle = RootConstants.AOD_PAUSE_STYLE_KEEP_LYRICS,
+            )
+        )
+        assertFalse(
+            AodMediaLyricPolicy.shouldRestorePausedNativeActions(
+                targetFullAod = true,
+                playing = true,
+                pauseStyle = RootConstants.AOD_PAUSE_STYLE_RESTORE,
+            )
+        )
+        assertFalse(
+            AodMediaLyricPolicy.shouldRestorePausedNativeActions(
+                targetFullAod = false,
+                playing = false,
+                pauseStyle = RootConstants.AOD_PAUSE_STYLE_RESTORE,
+            )
+        )
+    }
+
+    @Test
+    fun `retains native transition lyrics for playing or keep-lyrics pause style`() {
+        assertTrue(
+            AodMediaLyricPolicy.shouldRetainNativeFullAodLyrics(
+                targetFullAod = true,
+                playing = true,
+                pauseStyle = RootConstants.AOD_PAUSE_STYLE_RESTORE,
+            )
+        )
+        assertTrue(
+            AodMediaLyricPolicy.shouldRetainNativeFullAodLyrics(
+                targetFullAod = true,
+                playing = false,
+                pauseStyle = RootConstants.AOD_PAUSE_STYLE_KEEP_LYRICS,
+            )
+        )
+        assertFalse(
+            AodMediaLyricPolicy.shouldRetainNativeFullAodLyrics(
+                targetFullAod = true,
+                playing = false,
+                pauseStyle = RootConstants.AOD_PAUSE_STYLE_RESTORE,
+            )
+        )
+        assertFalse(
+            AodMediaLyricPolicy.shouldRetainNativeFullAodLyrics(
+                targetFullAod = false,
+                playing = true,
+                pauseStyle = RootConstants.AOD_PAUSE_STYLE_RESTORE,
+            )
+        )
+    }
+
+    @Test
     fun `shows next song preview from the final lyric start`() {
         assertFalse(
             AodMediaLyricPolicy.shouldShowNextSongPreview(

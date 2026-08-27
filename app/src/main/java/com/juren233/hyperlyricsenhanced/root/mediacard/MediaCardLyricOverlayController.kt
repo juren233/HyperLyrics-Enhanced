@@ -175,8 +175,21 @@ internal object MediaCardLyricOverlayController {
         }
     }
 
-    fun beginNotificationFullAodTransition(player: ViewGroup) {
-        runOnMain { states[player]?.beginNativeFullAodTransition() }
+    fun beginNotificationFullAodTransition(
+        player: ViewGroup,
+        targetFullAod: Boolean,
+        retainLyrics: Boolean,
+    ) {
+        runOnMain {
+            // Keep late bind/pre-draw callbacks suspended as well; otherwise a
+            // rebinding controller could recreate the lyric root while native
+            // full AOD is already changing the card height.
+            notificationCardAodSuspensions[player] = true
+            states[player]?.beginNativeFullAodTransition(
+                targetFullAod = targetFullAod,
+                retainLyrics = retainLyrics,
+            )
+        }
     }
 
     fun applyNotificationFullAodTransition(
@@ -235,19 +248,6 @@ internal object MediaCardLyricOverlayController {
             player.requestLayout()
             baseline.background?.view?.requestLayout()
             baseline.header?.view?.requestLayout()
-        }
-    }
-
-    /**
-     * After native full-AOD has completed, release dimensions written by the
-     * notification lyric card when the AOD policy hides lyrics (for example,
-     * the paused + restore-native case). This must run after the native
-     * transition, not at onBegin, so SystemUI remains the sole owner of the
-     * full-AOD height without exposing a default-height intermediate frame.
-     */
-    fun restoreNotificationCardForNativeFullAod(player: ViewGroup) {
-        runOnMain {
-            states[player]?.restoreNotificationCardBaselineForNativeAodIfNeeded()
         }
     }
 
@@ -1789,24 +1789,62 @@ internal object MediaCardLyricOverlayController {
         private fun lerp(start: Int, end: Int, fraction: Float): Int =
             (start + (end - start) * fraction).roundToInt()
 
-        fun beginNativeFullAodTransition() {
+        fun beginNativeFullAodTransition(
+            targetFullAod: Boolean,
+            retainLyrics: Boolean,
+        ) {
             if (surface != Surface.NOTIFICATION_CENTER) return
             // Freeze notification-card lyric data and height refreshes for the
-            // entire native transition. Keep the current root visible so the
-            // native fraction can transform it continuously into the AOD style.
+            // entire native transition. The notification lyric root belongs to
+            // the lock-screen card, not to the native full-AOD card. In the
+            // pause style that restores native controls, hide it before
+            // SystemUI measures the transition; the keep-lyrics/playing paths
+            // retain it for the native lyric visual until the final state.
             suspendedForLockScreenAod = true
             cancelPreviewRefresh()
             root?.resetFullAodTransitionScale()
+            if (targetFullAod && !retainLyrics) {
+                root?.visibility = View.GONE
+            }
             nativeFullAodTransitionActive = true
             heightAnimator?.let { animator ->
                 heightAnimator = null
                 animator.cancel()
             }
-            // Keep the notification lyric root in the current card during the
-            // native transition. The native AOD hook owns the parent height; the
-            // root itself is transformed by the same native fraction, so moving
-            // it or restoring the notification baseline here would create the
-            // default-height intermediate frame we are explicitly avoiding.
+
+            // Hand the card dimensions back to SystemUI at the native
+            // onBegin boundary. Restoring only LayoutParams/minimumHeight is
+            // intentional: restoring MediaHeaderHeightController's actual
+            // height here would create the lock-screen default-height frame
+            // that the native transition is supposed to animate away from.
+            backgroundConstraints?.restore()
+            restoreView(player, originalPlayerLayoutHeight, originalPlayerMinimumHeight)
+            background?.takeIf { it !== player }?.let {
+                restoreView(it, originalBackgroundLayoutHeight, originalBackgroundMinimumHeight)
+            }
+            if (outer !== player) {
+                outer?.let { restoreView(it, originalOuterLayoutHeight, originalOuterMinimumHeight) }
+            }
+            restoreActionLayout()
+            targetPlayerHeight = null
+            targetBackgroundHeight = null
+            targetOuterHeight = null
+            stableNotificationRootHeight = null
+            targetNotificationRootHeight = null
+            notificationProgressGapPx = 0
+            nativeFullAodHeightApplied = null
+            player.requestLayout()
+            background?.requestLayout()
+            outer?.requestLayout()
+            if (BuildConfig.DEBUG) {
+                HookLogger.i(
+                    TAG,
+                    "AOD_CARD_OWNER handoff_notification_card_to_native: " +
+                        "player=${player.height}/${player.layoutParams?.height}, " +
+                        "background=${background?.height}/${background?.layoutParams?.height}, " +
+                        "outer=${outer?.height}/${outer?.layoutParams?.height}",
+                )
+            }
         }
 
         fun transitionToAod() {
@@ -1889,18 +1927,6 @@ internal object MediaCardLyricOverlayController {
             }
         }
 
-        fun restoreNotificationCardBaselineForNativeAodIfNeeded() {
-            val hasOverrides = nativeFullAodHeightApplied != null ||
-                targetPlayerHeight != null ||
-                targetBackgroundHeight != null ||
-                targetOuterHeight != null ||
-                heightAnimator != null ||
-                backgroundConstraints?.isPinned() == true ||
-                root?.visibility == View.VISIBLE
-            if (!hasOverrides) return
-            restoreNotificationCardBaselineForNativeAod()
-        }
-
         private fun restoreNotificationCardBaselineForNativeAod() {
             heightAnimator?.let { animator ->
                 heightAnimator = null
@@ -1948,7 +1974,12 @@ internal object MediaCardLyricOverlayController {
             targetCardHeight: Int?,
         ) {
             if (surface != Surface.NOTIFICATION_CENTER) return
-            if (!nativeFullAodTransitionActive) beginNativeFullAodTransition()
+            if (!nativeFullAodTransitionActive) {
+                beginNativeFullAodTransition(
+                    targetFullAod = true,
+                    retainLyrics = true,
+                )
+            }
             root?.takeIf { it.visibility == View.VISIBLE }?.let { lyricRoot ->
                 lyricRoot.alpha = transitionAlpha.coerceIn(0f, 1f)
                 lyricRoot.applyTransitionTextColor(textColor)
