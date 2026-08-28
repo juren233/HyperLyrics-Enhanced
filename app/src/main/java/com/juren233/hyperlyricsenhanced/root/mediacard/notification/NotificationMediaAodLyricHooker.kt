@@ -11,6 +11,7 @@ import android.content.SharedPreferences
 import android.graphics.Color
 import android.media.session.MediaController
 import android.media.session.PlaybackState
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
@@ -37,7 +38,13 @@ import com.juren233.hyperlyricsenhanced.root.ClassicAodFocusNotificationRecovery
 import com.juren233.hyperlyricsenhanced.root.HookEntry
 import com.juren233.hyperlyricsenhanced.root.LyriconDataBridge
 import com.juren233.hyperlyricsenhanced.root.mediacard.MediaCardAodViewSizeBaseline
+import com.juren233.hyperlyricsenhanced.root.mediacard.MediaCardFullAodTransitionMode
 import com.juren233.hyperlyricsenhanced.root.mediacard.MediaCardLyricOverlayController
+import com.juren233.hyperlyricsenhanced.root.mediacard.host.NativeHeightLease
+import com.juren233.hyperlyricsenhanced.root.mediacard.host.SystemUiMediaCapabilityKind
+import com.juren233.hyperlyricsenhanced.root.mediacard.host.SystemUiMediaHostAdapter
+import com.juren233.hyperlyricsenhanced.root.mediacard.host.SystemUiMediaProfile
+import com.juren233.hyperlyricsenhanced.root.mediacard.transition.MediaCardTransitionToken
 import com.juren233.hyperlyricsenhanced.root.utils.DisplayDiagnosticLogger
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import io.github.libxposed.api.XposedInterface.Chain
@@ -166,6 +173,17 @@ internal object AodMediaLyricPolicy {
     ): Boolean = targetFullAod &&
         (playing || pauseStyle == RootConstants.AOD_PAUSE_STYLE_KEEP_LYRICS)
 
+    fun notificationFullAodTransitionMode(
+        targetFullAod: Boolean,
+        playing: Boolean,
+        pauseStyle: Int,
+    ): MediaCardFullAodTransitionMode = when {
+        !targetFullAod || playing -> MediaCardFullAodTransitionMode.DEFAULT
+        pauseStyle == RootConstants.AOD_PAUSE_STYLE_KEEP_LYRICS ->
+            MediaCardFullAodTransitionMode.PAUSED_KEEP_LYRICS
+        else -> MediaCardFullAodTransitionMode.PAUSED_RESTORE_NATIVE
+    }
+
     fun shouldShowNextSongPreview(
         enabled: Boolean,
         positionMs: Long,
@@ -285,6 +303,20 @@ internal object AodMediaLyricPolicy {
         nativeCardHeight = nativeCardHeight,
         lyricBottom = lyricBottom,
         bottomPadding = bottomPadding,
+    )
+
+    /**
+     * Preserve the media card's native bottom inset when lyrics are appended.
+     * The inset is measured from the actual cover/content bottom instead of
+     * assuming the lock-screen notification is anchored to a fixed clock.
+     */
+    fun lockScreenContentBottomGap(
+        nativeCardHeight: Int,
+        contentBottom: Int,
+        minimumGap: Int,
+    ): Int = maxOf(
+        minimumGap.coerceAtLeast(0),
+        nativeCardHeight.coerceAtLeast(0) - contentBottom.coerceAtLeast(0),
     )
 
     fun lockScreenBackgroundTargetHeight(
@@ -629,7 +661,9 @@ internal object AodMediaLyricPolicy {
 }
 
 internal object AodNativeTransitionIdentifiers {
-    // Verified from the original classes2.dex in HyperOS 3.0.301.0.WOCCNXM.
+    // Runtime hook identifiers are consumed only through the verified OS4 Host
+    // Adapter profile. HyperOS 3 remains fail-closed until an independent raw
+    // DEX artifact is re-established; do not add guessed aliases here.
     const val LISTENER_CLASS =
         "com.android.systemui.statusbar.notification.fullaod." +
             "NotifiFullAodController\$FullAodTransitionListener"
@@ -638,6 +672,7 @@ internal object AodNativeTransitionIdentifiers {
     const val ON_BEGIN = "onBegin"
     const val ON_UPDATE = "onUpdate"
     const val ON_COMPLETE = "onComplete"
+    const val ON_CANCEL = "onCancel"
     const val OWNER_FIELD = "this\$0"
     const val FRACTION_FIELD = "mCurrentFraction"
     const val ENABLE_FULL_AOD_FIELD = "mEnableFullAod"
@@ -695,8 +730,9 @@ object NotificationMediaAodLyricHooker {
         WeakHashMap<Any, AodPluginState>()
     )
     private val nativeApis = Collections.synchronizedMap(WeakHashMap<ClassLoader, NativeApi>())
+    /** Verified Host Adapter bindings, scoped to the concrete SystemUI loader. */
     private val nativeTransitionApis = Collections.synchronizedMap(
-        WeakHashMap<ClassLoader, NativeFullAodTransitionApi>()
+        WeakHashMap<ClassLoader, SystemUiMediaHostAdapter.Binding>()
     )
     private val aodPluginApis = Collections.synchronizedMap(
         WeakHashMap<ClassLoader, AodPluginApi>()
@@ -714,9 +750,32 @@ object NotificationMediaAodLyricHooker {
     private val nativeTransitionMetrics = Collections.synchronizedMap(
         WeakHashMap<ViewGroup, NativeFullAodTransitionMetrics>()
     )
+    /**
+     * C owns no height override in Round 5. The target height is intentionally
+     * not sourced from the legacy AOD metrics path; Round 6 must add a scoped
+     * Host/Session height commit API before a lease can be acquired safely.
+     */
+    private val nativeTransitionHeightLeases = Collections.synchronizedMap(
+        WeakHashMap<Any, NativeHeightLease>()
+    )
     private val completedNativeTransitionTargetHeights = Collections.synchronizedMap(
         WeakHashMap<ViewGroup, Int>()
     )
+    private val nativeTransitionContexts = Collections.synchronizedMap(
+        WeakHashMap<Any, NativeTransitionContext>()
+    )
+    private var screenInteractiveDesired = true
+
+    private data class NativeTransitionContext(
+        val classLoader: ClassLoader,
+        val listenerIdentity: Int,
+        val targetFullAod: Boolean,
+        val ownerIdentity: Int,
+        val generation: Long,
+        val tokensByPlayer: LinkedHashMap<ViewGroup, MediaCardTransitionToken> = LinkedHashMap(),
+        val controllersByPlayer: LinkedHashMap<ViewGroup, Any> = LinkedHashMap(),
+    )
+
     private val positionPollRunnable = object : Runnable {
         override fun run() {
             positionPollScheduled = false
@@ -811,22 +870,26 @@ object NotificationMediaAodLyricHooker {
                 }
             }
         var nativeTransitionHookCount = 0
-        val transitionApi = runCatching { NativeFullAodTransitionApi.create(classLoader) }
-            .onFailure { HookLogger.e(TAG, "初始化原生 full AOD 歌词转场接口失败", it) }
-            .getOrNull()
-        transitionApi?.let { api ->
-            api.hookMethods.forEach { method ->
+        val transitionApi = resolveNativeTransitionApi(classLoader)
+        transitionApi?.let { binding ->
+            val transitionMethods = listOf(
+                "transition.onBegin",
+                "transition.onUpdate",
+                "transition.onComplete",
+                "transition.onCancel",
+            ).mapNotNull(binding::method)
+            transitionMethods.forEach { method ->
                 runCatching {
                     xposedModule.deoptimize(method)
                     handles += xposedModule.hook(method)
-                        .intercept(NativeFullAodTransitionHook(method.name, api))
+                        .intercept(NativeFullAodTransitionHook(method.name, binding))
                     nativeTransitionHookCount++
                 }.onFailure {
                     HookLogger.e(TAG, "安装原生 full AOD 歌词转场 Hook 失败: method=${method.name}", it)
                 }
             }
-            if (nativeTransitionHookCount == api.hookMethods.size) {
-                nativeTransitionApis[classLoader] = api
+            if (nativeTransitionHookCount == transitionMethods.size && transitionMethods.isNotEmpty()) {
+                nativeTransitionApis[classLoader] = binding
             }
         }
         if (controllerHookCount != api.hookMethods.size) {
@@ -840,7 +903,9 @@ object NotificationMediaAodLyricHooker {
                     "息屏歌词 Hook 已初始化: methods=$controllerHookCount, " +
                     "dozeConstructors=$dozeConstructorHookCount, " +
                     "headerVisibility=$headerVisibilityHookCount, " +
-                    "nativeTransition=$nativeTransitionHookCount"
+                    "nativeTransition=$nativeTransitionHookCount, " +
+                    "build=${systemUiBuildLabel()}, " +
+                    "loader=${classLoaderIdentity(classLoader)}"
             )
         }
     }
@@ -896,16 +961,8 @@ object NotificationMediaAodLyricHooker {
                 "onFullAodStateChanged" -> method.parameterCount == 1
                 else -> false
             }
-            AodNativeTransitionIdentifiers.LISTENER_CLASS -> when (method.name) {
-                AodNativeTransitionIdentifiers.ON_BEGIN,
-                AodNativeTransitionIdentifiers.ON_COMPLETE -> method.parameterTypes.contentEquals(
-                    arrayOf(Any::class.java)
-                )
-                AodNativeTransitionIdentifiers.ON_UPDATE -> method.parameterTypes.contentEquals(
-                    arrayOf(Any::class.java, Collection::class.java)
-                )
-                else -> false
-            }
+            AodNativeTransitionIdentifiers.LISTENER_CLASS ->
+                isVerifiedTransitionMethod(method)
             AOD_PLUGIN_VIEW_CLASS -> when (method.name) {
                 "makeNormalPanel", "onAttachedToWindow", "onDetachedFromWindow",
                 "onUpdatePositionTimer" -> method.parameterCount == 0
@@ -916,14 +973,32 @@ object NotificationMediaAodLyricHooker {
         }
     }
 
+    private fun isVerifiedTransitionMethod(method: Method): Boolean {
+        if (method.declaringClass.name != AodNativeTransitionIdentifiers.LISTENER_CLASS) {
+            return false
+        }
+        val binding = resolveNativeTransitionApi(method.declaringClass.classLoader) ?: return false
+        return listOf(
+            "transition.onBegin",
+            "transition.onUpdate",
+            "transition.onComplete",
+            "transition.onCancel",
+        ).mapNotNull(binding::method).any { candidate ->
+            candidate.name == method.name &&
+                SystemUiMediaHostAdapter.methodDescriptor(candidate) ==
+                SystemUiMediaHostAdapter.methodDescriptor(method)
+        }
+    }
+
     fun hookerFor(executable: Executable): Hooker? {
         val method = executable as? Method ?: return null
         if (!isTargetMethod(method)) return null
         return when (method.declaringClass.name) {
             VIEW_CONTROLLER_CLASS -> ControllerHook(method.name)
             AodNativeTransitionIdentifiers.LISTENER_CLASS -> {
-                val api = resolveNativeTransitionApi(method.declaringClass.classLoader) ?: return null
-                NativeFullAodTransitionHook(method.name, api)
+                val binding = resolveNativeTransitionApi(method.declaringClass.classLoader)
+                    ?: return null
+                NativeFullAodTransitionHook(method.name, binding)
             }
             AOD_PLUGIN_VIEW_CLASS -> AodPluginHook(method.name)
             else -> null
@@ -968,9 +1043,12 @@ object NotificationMediaAodLyricHooker {
             removeAodPluginOverlay(it)
         }
         aodPluginStates.clear()
+        restoreNativeTransitionHeightLeases()
+        nativeTransitionContexts.clear()
         nativeApis.clear()
         nativeTransitionMetrics.clear()
         completedNativeTransitionTargetHeights.clear()
+        nativeTransitionContexts.clear()
         nativeTransitionPendingTargetFullAod = null
         nativeTransitionTargetFullAod = null
         aodPluginApis.clear()
@@ -979,21 +1057,75 @@ object NotificationMediaAodLyricHooker {
         positionPollScheduled = false
     }
 
-    fun hideLockScreenOverlays() = runOnMain {
-        synchronized(states) { states.values.toList() }.forEach { state ->
-            val overlay = state.overlay ?: return@forEach
-            if (overlay.root.isShown) {
-                hideLockScreenOverlay(overlay)
-                HookLogger.i(TAG, "亮屏事件已隐藏锁屏 AOD 歌词覆盖层")
-            }
+    private fun restoreNativeTransitionHeightLeases() {
+        val leases = synchronized(nativeTransitionHeightLeases) {
+            nativeTransitionHeightLeases.entries.toList()
         }
+        leases.forEach { (_, lease) ->
+            runCatching { lease.close() }
+                .onFailure { HookLogger.w(TAG, "释放原生高度租约失败", it) }
+        }
+        nativeTransitionHeightLeases.clear()
     }
+
+    /**
+     * Screen broadcasts are intent events, not a second visibility state machine.
+     * The native Full-AOD callback remains the only owner allowed to commit the
+     * media-card transition. In particular, ACTION_SCREEN_ON must not hide the
+     * unified root synchronously.
+     */
+    fun onScreenInteractiveChanged(interactive: Boolean) = runOnMain {
+        screenInteractiveDesired = interactive
+        val activeTransitions = synchronized(nativeTransitionContexts) {
+            nativeTransitionContexts.size
+        }
+        if (BuildConfig.DEBUG) {
+            HookLogger.i(
+                TAG,
+                "event=screen_interactive_changed desiredInteractive=$interactive " +
+                    "activeNativeTransitions=$activeTransitions",
+            )
+        }
+        if (activeTransitions > 0) {
+            if (BuildConfig.DEBUG) {
+                HookLogger.i(
+                    TAG,
+                    "屏幕事件仅记录 desired state，等待 native transition commit; " +
+                        "interactive=$interactive",
+                )
+            }
+            return@runOnMain
+        }
+        // No media-card View is hidden here. A later controller/native callback
+        // or the normal refresh path owns the actual presentation decision.
+        if (interactive) refresh()
+    }
+
+    /** @deprecated Use [onScreenInteractiveChanged]; retained for old callers. */
+    @Deprecated("Screen broadcasts must publish desired state, not hide a root")
+    fun hideLockScreenOverlays() = onScreenInteractiveChanged(true)
 
     private class ControllerHook(private val methodName: String) : Hooker {
         override fun intercept(chain: Chain): Any? {
             val controller = chain.thisObject ?: return chain.proceed()
             val api = resolveApi(controller.javaClass.classLoader) ?: return chain.proceed()
             val state = states.getOrPut(controller) { ControllerState() }
+            val previousPlayer = state.holder?.let { holder ->
+                runCatching { api.getPlayer(holder) }.getOrNull()
+            }
+            if (methodName == "detach") {
+                abortContextsForController(controller, "controller_detach")
+            }
+            val hostBinding = resolveNativeTransitionApi(controller.javaClass.classLoader)
+            if (BuildConfig.DEBUG) {
+                HookLogger.i(
+                    TAG,
+                    "event=controller_${methodName} controller=${identity(controller)} " +
+                        "player=${identity(previousPlayer)} " +
+                        "loader=${classLoaderIdentity(controller.javaClass.classLoader)} " +
+                        "host=${hostBinding?.profile?.os ?: "disabled"}",
+                )
+            }
             val deferFullAodRebind = methodName == "bindMediaData" &&
                 (state.fullAod ||
                     nativeTransitionTargetFullAod != null ||
@@ -1029,6 +1161,22 @@ object NotificationMediaAodLyricHooker {
                         "overlayShown=${state.overlay?.root?.isShown}, " +
                         "actionsRestored=${!state.fullAod}",
                 )
+            }
+            val reboundPlayer = api.getHolder(controller)?.let { holder ->
+                runCatching { api.getPlayer(holder) }.getOrNull()
+            }
+            if (
+                (methodName == "attach" || methodName == "bindMediaData") &&
+                previousPlayer != null && reboundPlayer != null && previousPlayer !== reboundPlayer
+            ) {
+                abortContextsForController(controller, "player_rebound")
+                if (BuildConfig.DEBUG) {
+                    HookLogger.i(
+                        TAG,
+                        "event=controller_rebind oldPlayer=${identity(previousPlayer)} " +
+                            "newPlayer=${identity(reboundPlayer)} controller=${identity(controller)}",
+                    )
+                }
             }
             when (methodName) {
                 "attach" -> {
@@ -1243,50 +1391,60 @@ object NotificationMediaAodLyricHooker {
         }
     }
 
+    /**
+     * Starts one B session per concrete player that belongs to this native listener.
+     * The native listener is passed through unchanged so the token can distinguish
+     * a SystemUI transition from a later listener instance after reload/rebind.
+     *
+     * Legacy AOD metrics are retained only for secondary-line styling. They are not
+     * allowed to become the new card-height authority in Round 5.
+     */
     private fun prepareNativeFullAodTransition(
-        api: NativeFullAodTransitionApi,
+        binding: SystemUiMediaHostAdapter.Binding,
         listener: Any,
-    ): Int? {
-        val targetFullAod = api.targetFullAod(listener)
-        var targetHeight = 0
+        context: NativeTransitionContext,
+    ) {
+        val frame = binding.readTransitionFrame(listener)
+        val targetFullAod = frame?.targetFullAod ?: context.targetFullAod
         synchronized(states) { states.entries.toList() }.forEach { (controller, state) ->
-            val nativeApi = resolveApi(controller.javaClass.classLoader)
-                ?: return@forEach
+            if (controller.javaClass.classLoader !== context.classLoader) return@forEach
+            val nativeApi = resolveApi(controller.javaClass.classLoader) ?: return@forEach
             val holder = state.holder
                 ?: nativeApi.getHolder(controller)
                 ?: return@forEach
-            val player = nativeApi.getPlayer(holder)
-            if (targetFullAod) {
+            val player = runCatching { nativeApi.getPlayer(holder) }.getOrNull()
+                ?: return@forEach
+            val transitionMetrics = if (targetFullAod) {
                 createNativeFullAodTransitionMetrics(
                     api = nativeApi,
                     controller = controller,
                     holder = holder,
                     state = state,
-                )?.let { metrics ->
-                    nativeTransitionMetrics[player] = metrics
-                    targetHeight = maxOf(targetHeight, metrics.targetCardHeight)
-                }
-                // In the paused + restore-native mode the native AOD card
-                // should carry the original actions into the compact position.
-                // Restore their visibility before native onBegin, while the
-                // original ConstraintLayout relations are restored by the card
-                // controller handoff below. Keep the actions hidden for playing
-                // and keep-lyrics modes; those modes must not overlap lyrics.
-                if (
-                    AodMediaLyricPolicy.shouldRestorePausedNativeActions(
-                        targetFullAod = targetFullAod,
-                        playing = state.playing,
-                        pauseStyle = lockScreenAodTextStyle().pauseStyle,
-                    )
-                ) {
-                    restoreActions(state)
-                }
+                )?.also { metrics -> nativeTransitionMetrics[player] = metrics }
+            } else {
+                null
+            }
+            val pauseStyle = lockScreenAodTextStyle().pauseStyle
+            val transitionMode = AodMediaLyricPolicy.notificationFullAodTransitionMode(
+                targetFullAod = targetFullAod,
+                playing = state.playing,
+                pauseStyle = pauseStyle,
+            )
+            if (targetFullAod && AodMediaLyricPolicy.shouldRestorePausedNativeActions(
+                    targetFullAod = true,
+                    playing = state.playing,
+                    pauseStyle = pauseStyle,
+                )
+            ) {
+                restoreActions(state)
             }
             val retainLyrics = AodMediaLyricPolicy.shouldRetainNativeFullAodLyrics(
                 targetFullAod = targetFullAod,
                 playing = state.playing,
-                pauseStyle = lockScreenAodTextStyle().pauseStyle,
+                pauseStyle = pauseStyle,
             )
+            // The legacy overlay is never a second rendered root during a native
+            // transition. Classic AOD remains on its independent plugin path.
             beginNativeFullAodTransition(
                 overlay = state.overlay,
                 targetFullAod = targetFullAod,
@@ -1295,17 +1453,43 @@ object NotificationMediaAodLyricHooker {
             MediaCardLyricOverlayController.beginNotificationFullAodTransition(
                 player = player,
                 targetFullAod = targetFullAod,
-                retainLyrics = retainLyrics,
+                mode = transitionMode,
+                keepSecondLyric = transitionMetrics?.nextTextSizeSp != null,
+                listener = listener,
+            )
+            MediaCardLyricOverlayController.activeNotificationTransitionToken(player)?.let { token ->
+                state.unifiedRootHandoff = true
+                context.tokensByPlayer[player] = token
+                context.controllersByPlayer[player] = controller
+                debugNativeEvent(
+                    event = "begin",
+                    listener = listener,
+                    controller = controller,
+                    player = player,
+                    token = token,
+                    detail = "target=$targetFullAod;legacyHeightSource=blocked",
+                )
+            } ?: debugNativeEvent(
+                event = "begin_rejected",
+                listener = listener,
+                controller = controller,
+                player = player,
+                detail = "controller_active_token_missing",
             )
         }
-        return targetHeight.takeIf { it > 0 }
+        if (context.tokensByPlayer.isEmpty()) {
+            debugNativeEvent(
+                event = "begin_rejected",
+                listener = listener,
+                detail = "no_player_session_bound",
+            )
+        }
     }
 
     /**
      * Release only dimensions previously written by the lock-screen lyric
      * overlay. The native FullAodTransitionListener owns the actual header
-     * height; restoring that reflective field here would create the visible
-     * lock-screen default-height frame before native AOD reaches its target.
+     * height. Round 5 deliberately performs no legacy height-list override.
      */
     private fun beginNativeFullAodTransition(
         overlay: LyricOverlay?,
@@ -1320,9 +1504,10 @@ object NotificationMediaAodLyricHooker {
         }
         cancelNativeBackgroundHeightSync(overlay)
         overlay.backgroundConstraints?.restore()
-        if (targetFullAod && !retainLyrics) {
-            overlay.root.visibility = View.GONE
-        }
+        // Never render the legacy lock-screen root beside UnifiedMediaLyricRoot.
+        // The retain flag is kept for the old call contract but cannot re-enable
+        // a second root in the unified transition.
+        overlay.root.visibility = View.GONE
         restoreViewSize(overlay.playerSize)
         if (overlay.backgroundSize.view !== overlay.player) {
             restoreViewSize(overlay.backgroundSize)
@@ -1336,11 +1521,11 @@ object NotificationMediaAodLyricHooker {
         if (BuildConfig.DEBUG) {
             HookLogger.i(
                 TAG,
-                "AOD_CARD_OWNER handoff_lockscreen_overlay_to_native: " +
+                "AOD_CARD_OWNER handoff_legacy_root_hidden: " +
+                    "target=$targetFullAod, retainIgnored=$retainLyrics, " +
                     "player=${overlay.player.height}/${overlay.player.layoutParams?.height}, " +
                     "background=${overlay.backgroundSize.view.height}/" +
-                    "${overlay.backgroundSize.view.layoutParams?.height}, " +
-                    overlay.headerHeightController?.actualHeightSnapshot().orEmpty(),
+                    "${overlay.backgroundSize.view.layoutParams?.height}",
             )
         }
     }
@@ -1392,111 +1577,246 @@ object NotificationMediaAodLyricHooker {
 
     private class NativeFullAodTransitionHook(
         private val methodName: String,
-        private val api: NativeFullAodTransitionApi,
+        private val binding: SystemUiMediaHostAdapter.Binding,
     ) : Hooker {
         override fun intercept(chain: Chain): Any? {
             val listener = chain.thisObject ?: return chain.proceed()
-            var heightListSnapshot: IntArray? = null
-            if (methodName == AodNativeTransitionIdentifiers.ON_BEGIN) {
-                nativeTransitionGeneration += 1L
-                nativeTransitionPendingTargetFullAod = null
-                nativeTransitionTargetFullAod = api.targetFullAod(listener)
-                nativeTransitionLastLogBucket = -1
-                nativeTransitionMetrics.clear()
-                completedNativeTransitionTargetHeights.clear()
-                prepareNativeFullAodTransition(api, listener)?.let { targetHeight ->
-                    heightListSnapshot = api.overrideTargetHeight(listener, targetHeight)
-                }
+            val loader = listener.javaClass.classLoader ?: return chain.proceed()
+            if (loader !== binding.classLoader) {
+                debugNativeEvent(
+                    event = "callback_rejected",
+                    listener = listener,
+                    detail = "class_loader_mismatch",
+                )
+                return chain.proceed()
             }
             val result = try {
                 chain.proceed()
-            } finally {
-                heightListSnapshot?.let { snapshot ->
-                    api.restoreTargetHeight(listener, snapshot)
+            } catch (error: Throwable) {
+                if (
+                    methodName == AodNativeTransitionIdentifiers.ON_BEGIN ||
+                    methodName == AodNativeTransitionIdentifiers.ON_CANCEL ||
+                    methodName == AodNativeTransitionIdentifiers.ON_COMPLETE
+                ) {
+                    finishNativeContext(listener, accepted = false, detail = "callback_throw")
                 }
+                throw error
             }
-            runCatching {
-                when (methodName) {
+            runOnMain {
+                runCatching {
+                    when (methodName) {
                     AodNativeTransitionIdentifiers.ON_BEGIN -> {
-                        if (BuildConfig.DEBUG) {
-                            HookLogger.i(
-                                TAG,
-                                "原生 full AOD 歌词转场开始: " +
-                                    "targetFullAod=$nativeTransitionTargetFullAod, " +
-                                    "targetHeight=${
-                                        nativeTransitionMetrics.values.maxOfOrNull {
-                                            it.targetCardHeight
-                                        }
-                                    }",
+                        nativeTransitionGeneration += 1L
+                        nativeTransitionPendingTargetFullAod = null
+                        nativeTransitionTargetFullAod = binding.readTransitionFrame(listener)
+                            ?.targetFullAod
+                        nativeTransitionLastLogBucket = -1
+                        nativeTransitionMetrics.clear()
+                        completedNativeTransitionTargetHeights.clear()
+                        // A listener replacement supersedes only the same native
+                        // owner. A different owner/player keeps its own transition;
+                        // a different loader is treated as SystemUI reload.
+                        val ownerIdentity = nativeOwnerIdentity(binding, listener)
+                        finishSupersededNativeContexts(
+                            listener = listener,
+                            classLoader = binding.classLoader,
+                            ownerIdentity = ownerIdentity,
+                            detail = "superseded_by_new_listener",
+                        )
+                        val frame = binding.readTransitionFrame(listener)
+                        val target = frame?.targetFullAod
+                        if (target == null) {
+                            debugNativeEvent(
+                                event = "begin_rejected",
+                                listener = listener,
+                                detail = "host_transition_frame_unavailable",
                             )
+                        } else {
+                            val context = NativeTransitionContext(
+                                classLoader = binding.classLoader,
+                                listenerIdentity = System.identityHashCode(listener),
+                                targetFullAod = target,
+                                ownerIdentity = ownerIdentity,
+                                generation = nativeTransitionGeneration,
+                            )
+                            synchronized(nativeTransitionContexts) {
+                                nativeTransitionContexts[listener] = context
+                            }
+                            prepareNativeFullAodTransition(binding, listener, context)
+                            if (BuildConfig.DEBUG) {
+                                HookLogger.i(
+                                    TAG,
+                                    "原生 full AOD 歌词转场开始: " +
+                                        "targetFullAod=$target, generation=${context.generation}, " +
+                                        "listener=${identity(listener)}, loader=${classLoaderIdentity(loader)}",
+                                )
+                            }
                         }
                     }
                     AodNativeTransitionIdentifiers.ON_UPDATE -> {
-                        val fraction = api.fraction(listener).coerceIn(0f, 1f)
-                        val transitionAlpha =
-                            AodMediaLyricPolicy.nativeFullAodTransitionAlpha(fraction)
-                        syncLyricsToNativeFullAodTransition(
-                            transitionAlpha = transitionAlpha,
-                            fraction = fraction,
-                            targetFullAod = api.targetFullAod(listener),
-                        )
+                        val context = synchronized(nativeTransitionContexts) {
+                            nativeTransitionContexts[listener]
+                        }
+                        if (context == null) {
+                            debugNativeEvent(
+                                event = "update_rejected",
+                                listener = listener,
+                                detail = "no_active_listener_context",
+                            )
+                        } else {
+                            val frame = binding.readTransitionFrame(listener)
+                            val fraction = frame?.fraction
+                            if (frame == null || fraction == null) {
+                                debugNativeEvent(
+                                    event = "update_rejected",
+                                    listener = listener,
+                                    detail = "host_transition_frame_unavailable",
+                                )
+                            } else {
+                                syncLyricsToNativeFullAodTransition(
+                                    transitionAlpha = AodMediaLyricPolicy.nativeFullAodTransitionAlpha(fraction),
+                                    fraction = fraction,
+                                    targetFullAod = frame.targetFullAod ?: context.targetFullAod,
+                                    context = context,
+                                    listener = listener,
+                                )
+                            }
+                        }
                     }
                     AodNativeTransitionIdentifiers.ON_COMPLETE -> {
-                        val targetFullAod = api.targetFullAod(listener)
-                        val generation = nativeTransitionGeneration
-                        if (targetFullAod) {
-                            synchronized(nativeTransitionMetrics) {
-                                nativeTransitionMetrics.forEach { (player, metrics) ->
-                                    completedNativeTransitionTargetHeights[player] =
-                                        metrics.targetCardHeight
-                                }
-                            }
-                        }
-                        // The native callback is the commit point for the whole
-                        // card. Apply the final AOD policy exactly once here,
-                        // after native has finished its height animation. A later
-                        // onFullAodStateChanged callback only records the same
-                        // state and is ignored, so it cannot restore the
-                        // notification default/progress height a second time.
-                        MediaCardLyricOverlayController.finishNotificationFullAodTransition()
-                        synchronized(states) { states.entries.toList() }.forEach { (controller, state) ->
-                            val nativeApi = resolveApi(controller.javaClass.classLoader)
-                                ?: return@forEach
-                            state.fullAod = targetFullAod
-                            state.holder = nativeApi.getHolder(controller) ?: state.holder
-                            state.mediaData = nativeApi.getMediaData(controller)
-                            state.playing = resolvePlaying(nativeApi, controller, state.mediaData)
-                            val player = state.holder?.let(nativeApi::getPlayer)
-                            val targetHeight = player?.let { currentPlayer ->
-                                nativeTransitionMetrics[currentPlayer]?.targetCardHeight
-                            }
-                            applyFullAodState(
-                                controller = controller,
-                                state = state,
-                                api = nativeApi,
-                                finalizedGeneration = generation,
-                                finalizedTargetHeight = targetHeight,
-                            )
-                        }
-                        if (BuildConfig.DEBUG) {
-                            HookLogger.i(
-                                TAG,
-                                "原生 full AOD 歌词转场完成: " +
-                                    "targetFullAod=$targetFullAod, generation=$generation",
-                            )
-                        }
-                        nativeTransitionTargetFullAod = null
-                        nativeTransitionPendingTargetFullAod = null
-                        nativeTransitionLastLogBucket = -1
-                        nativeTransitionMetrics.clear()
+                        finishNativeContext(listener, accepted = true, detail = "complete")
                     }
+                    AodNativeTransitionIdentifiers.ON_CANCEL -> {
+                        // Cancel is not completion. It restores the session's
+                        // pre-transition stable side and releases only resources
+                        // belonging to this listener context.
+                        finishNativeContext(listener, accepted = true, detail = "cancel")
+                    }
+                    }
+                }.onFailure { error ->
+                    HookLogger.e(TAG, "同步原生 full AOD 歌词转场失败: method=$methodName", error)
                 }
-            }.onFailure { error ->
-                HookLogger.e(TAG, "同步原生 full AOD 歌词转场失败: method=$methodName", error)
             }
             return result
         }
     }
+
+    private fun finishNativeContext(
+        listener: Any,
+        accepted: Boolean,
+        detail: String,
+    ) {
+        val context = synchronized(nativeTransitionContexts) {
+            nativeTransitionContexts.remove(listener)
+        } ?: run {
+            debugNativeEvent(
+                event = "${detail}_rejected",
+                listener = listener,
+                detail = "stale_or_missing_context",
+            )
+            return
+        }
+        val tokenEntries = context.tokensByPlayer.entries.toList()
+        tokenEntries.forEach { (player, token) ->
+            if (accepted) {
+                if (detail == "complete") {
+                    // The B Controller cannot yet accept a scoped completion;
+                    // use no global finish path and expose this contract gap in
+                    // the trace for Round 6. We must not synthesize a complete.
+                    debugNativeEvent(
+                        event = "complete_blocked",
+                        listener = listener,
+                        controller = context.controllersByPlayer[player],
+                        player = player,
+                        token = token,
+                        detail = "B_API_requires_scoped_complete;no_global_finish",
+                    )
+                } else {
+                    MediaCardLyricOverlayController.cancelNotificationFullAodTransition(
+                        player = player,
+                        transitionToken = token,
+                    )
+                    debugNativeEvent(
+                        event = "cancel",
+                        listener = listener,
+                        controller = context.controllersByPlayer[player],
+                        player = player,
+                        token = token,
+                        detail = "mapped_to_cancel;complete_not_synthesized",
+                    )
+                }
+            } else {
+                MediaCardLyricOverlayController.cancelNotificationFullAodTransition(
+                    player = player,
+                    transitionToken = token,
+                )
+                debugNativeEvent(
+                    event = "cancel",
+                    listener = listener,
+                    controller = context.controllersByPlayer[player],
+                    player = player,
+                    token = token,
+                    detail = "callback_throw_recovery",
+                )
+            }
+        }
+        if (BuildConfig.DEBUG) {
+            HookLogger.i(
+                TAG,
+                "native transition context closed: listener=${identity(listener)}, " +
+                    "generation=${context.generation}, detail=$detail, " +
+                    "players=${tokenEntries.size}, accepted=$accepted",
+            )
+        }
+        if (nativeTransitionContexts.isEmpty()) {
+            nativeTransitionTargetFullAod = null
+            nativeTransitionPendingTargetFullAod = null
+            nativeTransitionLastLogBucket = -1
+            nativeTransitionMetrics.clear()
+            completedNativeTransitionTargetHeights.clear()
+        }
+    }
+
+    private fun abortContextsForController(controller: Any, detail: String) {
+        val affected = synchronized(nativeTransitionContexts) {
+            nativeTransitionContexts.entries
+                .filter { (_, context) -> context.controllersByPlayer.values.any { it === controller } }
+                .map { it.key }
+        }
+        affected.forEach { listener -> finishNativeContext(listener, accepted = false, detail = detail) }
+    }
+
+    private fun nativeOwnerIdentity(
+        binding: SystemUiMediaHostAdapter.Binding,
+        listener: Any,
+    ): Int = binding.field("transition.owner")?.let { field ->
+        runCatching { field.get(listener) }
+            .getOrNull()
+            ?.let(System::identityHashCode)
+            ?: 0
+    } ?: 0
+
+    private fun finishSupersededNativeContexts(
+        listener: Any,
+        classLoader: ClassLoader,
+        ownerIdentity: Int,
+        detail: String,
+    ) {
+        val stale = synchronized(nativeTransitionContexts) {
+            nativeTransitionContexts.entries
+                .filter { (activeListener, context) ->
+                    activeListener !== listener &&
+                        (context.classLoader !== classLoader ||
+                            (ownerIdentity != 0 && context.ownerIdentity == ownerIdentity))
+                }
+                .map { it.key }
+        }
+        stale.forEach { activeListener ->
+            finishNativeContext(activeListener, accepted = false, detail = detail)
+        }
+    }
+
+
 
     private class HeaderVisibilityHook : Hooker {
         override fun intercept(chain: Chain): Any? {
@@ -1698,6 +2018,30 @@ object NotificationMediaAodLyricHooker {
             dedupeKey = diagnosticKey,
         )
         updatePositionPolling()
+        val actions = api.getActions(holder)
+
+        if (state.unifiedRootHandoff) {
+            // Once the notification card has entered the unified-root contract,
+            // this legacy lock-screen overlay is never recreated. The same
+            // attached root is refreshed by B; Classic AOD remains a separate
+            // AODView path and is not part of this state.
+            MediaCardLyricOverlayController.setNotificationCardAodActive(
+                player = player,
+                active = state.fullAod,
+            )
+            if (!state.fullAod) {
+                MediaCardLyricOverlayController.refreshAll()
+            }
+            if (BuildConfig.DEBUG) {
+                HookLogger.i(
+                    TAG,
+                    "event=legacy_lock_root_suppressed unifiedRootHandoff=" +
+                        "true controller=${identity(controller)} player=${identity(player)} " +
+                        "fullAod=${state.fullAod}",
+                )
+            }
+            return
+        }
 
         if (!show) {
             val keepCurrentAodFrame = state.fullAod &&
@@ -1727,6 +2071,25 @@ object NotificationMediaAodLyricHooker {
                 dedupeKey = diagnosticKey,
             )
             restoreActions(state)
+            if (
+                state.fullAod &&
+                AodMediaLyricPolicy.shouldRestorePausedNativeActions(
+                    targetFullAod = true,
+                    playing = state.playing,
+                    pauseStyle = textStyle.pauseStyle,
+                )
+            ) {
+                // The restore-native pause style keeps the native controls in
+                // the final AOD card. Native/SystemUI can clear the snapshot
+                // while committing the style, so make the intended visibility
+                // explicit instead of depending on a previous callback.
+                actions.forEach { action ->
+                    if (action.visibility != View.GONE) {
+                        action.visibility = View.VISIBLE
+                        action.alpha = 1f
+                    }
+                }
+            }
             state.overlay?.let { overlay ->
                 val leavingFullAod = !state.fullAod && overlay.fullAodActive
                 hideLockScreenOverlay(
@@ -1783,12 +2146,33 @@ object NotificationMediaAodLyricHooker {
             return
         }
 
-        val actions = api.getActions(holder)
+        if (state.fullAod) {
+            // The notification-center lyric bridge and the lock-screen AOD
+            // renderer are alternative content roots for the same player.  A
+            // non-native callback can still reach applyState, so enforce the
+            // handoff here as well as at native onComplete.
+            MediaCardLyricOverlayController.completeNotificationCardToAodTransition(
+                player = player,
+                detachNotificationRoot = true,
+            )
+        }
         if (state.actionVisibilities.isEmpty()) {
             actions.forEach { state.actionVisibilities[it] = it.visibility }
         }
+        val keepPausedRestoreActions = AodMediaLyricPolicy.shouldRestorePausedNativeActions(
+            targetFullAod = state.fullAod,
+            playing = state.playing,
+            pauseStyle = textStyle.pauseStyle,
+        )
         actions.forEach { action ->
-            if (action.visibility == View.VISIBLE) action.visibility = View.INVISIBLE
+            if (keepPausedRestoreActions) {
+                if (action.visibility != View.GONE) {
+                    action.visibility = View.VISIBLE
+                    action.alpha = 1f
+                }
+            } else if (action.visibility == View.VISIBLE) {
+                action.visibility = View.INVISIBLE
+            }
         }
 
         val overlay = state.overlay ?: createOverlay(api, holder, actions).also {
@@ -1824,6 +2208,16 @@ object NotificationMediaAodLyricHooker {
             )
             restoreActions(state)
             return
+        }
+        if (BuildConfig.DEBUG) {
+            HookLogger.i(
+                TAG,
+                "AOD_ROOT_OWNER lockscreen_root_ready: " +
+                    "root=0x${System.identityHashCode(overlay.root).toString(16)}, " +
+                    "parent=${overlay.root.parent?.javaClass?.simpleName}, " +
+                    "playerChildren=${player.childCount}, " +
+                    "fullAod=${state.fullAod}, playing=${state.playing}",
+            )
         }
         val contentChanged = overlay.main.text.toString() != content.main ||
             overlay.translation.text.toString() != content.translation ||
@@ -1882,8 +2276,9 @@ object NotificationMediaAodLyricHooker {
             }
             overlay.initialFullAodHeightPending = true
         }
+        val rootWasShown = overlay.root.isShown
         overlay.fullAodActive = state.fullAod
-        overlay.root.alpha = 1f
+        overlay.root.alpha = if (rootWasShown) 1f else 0f
         if (overlay.root.visibility == View.GONE) {
             overlay.root.visibility = View.INVISIBLE
         }
@@ -1896,8 +2291,13 @@ object NotificationMediaAodLyricHooker {
                 )
                 overlay.root.visibility = View.VISIBLE
                 overlay.root.bringToFront()
+                if (!rootWasShown) {
+                    animateLockScreenOverlayIn(overlay)
+                }
                 HookLogger.i(TAG, "锁屏 AOD 歌词已在原生控件隐藏完成后显示")
             }
+            // The bridge root was detached before this AOD root was created;
+            // this call only clears any legacy pending overlay handoff.
             MediaCardLyricOverlayController.completeNotificationCardToAodTransition(player)
             AodEnvironmentDiagnostics.log(
                 context = player.context,
@@ -2874,8 +3274,17 @@ object NotificationMediaAodLyricHooker {
         ) as ViewGroup.LayoutParams
         paramsClass.getField("startToStart").setInt(params, 0)
         paramsClass.getField("endToEnd").setInt(params, 0)
-        paramsClass.getField("topToBottom").setInt(params, metadataAnchor.id)
-        (params as ViewGroup.MarginLayoutParams).topMargin = (
+        // Keep the AOD lyric root in the player's local coordinate space. The
+        // OS4 notification is below a user-sized clock, so a descendant
+        // topToBottom chain can be re-solved against a moving parent during
+        // the lock-screen/AOD handoff and expose the root above the card.
+        paramsClass.getField("topToTop").setInt(params, 0)
+        paramsClass.getField("topToBottom").setInt(params, -1)
+        val anchorBottom = AodMediaLyricPolicy.contentAnchorBottom(
+            albumBottom = metadataAnchor.bottom,
+            artistBottom = metadataAnchor.bottom,
+        )
+        (params as ViewGroup.MarginLayoutParams).topMargin = anchorBottom + (
             LOCK_SCREEN_AOD_TOP_GAP_DP * player.resources.displayMetrics.density
             ).toInt()
         params
@@ -2905,36 +3314,36 @@ object NotificationMediaAodLyricHooker {
         transitionAlpha: Float,
         fraction: Float,
         targetFullAod: Boolean,
+        context: NativeTransitionContext,
+        listener: Any,
     ) = runOnMain {
         var sampleMainColor: Int? = null
         var sampleTranslationColor: Int? = null
         var samplePlayerAlpha: Float? = null
         var sampleNextTextSizeSp: Float? = null
-        var sampleTargetCardHeight: Int? = null
-        synchronized(states) { states.entries.toList() }.forEach { (controller, state) ->
+        context.controllersByPlayer.entries.toList().forEach { (player, controller) ->
+            val token = context.tokensByPlayer[player] ?: return@forEach
+            val state = synchronized(states) { states[controller] } ?: return@forEach
             val nativeApi = resolveApi(controller.javaClass.classLoader) ?: return@forEach
             val holder = state.holder ?: nativeApi.getHolder(controller) ?: return@forEach
-            val player = nativeApi.getPlayer(holder)
+            val currentPlayer = runCatching { nativeApi.getPlayer(holder) }.getOrNull()
+                ?: return@forEach
+            if (currentPlayer !== player) {
+                debugNativeEvent(
+                    event = "update_rejected",
+                    listener = listener,
+                    controller = controller,
+                    player = currentPlayer,
+                    token = token,
+                    detail = "player_rebound_after_begin",
+                )
+                return@forEach
+            }
             val mainColor = nativeApi.getTitleText(holder).currentTextColor
             val translationColor = nativeApi.getArtistText(holder).currentTextColor
-            val transitionMetrics = if (targetFullAod) {
-                nativeTransitionMetrics[player]
-                    ?: createNativeFullAodTransitionMetrics(
-                        api = nativeApi,
-                        controller = controller,
-                        holder = holder,
-                        state = state,
-                    )?.also { metrics ->
-                        nativeTransitionMetrics[player] = metrics
-                    }
-            } else {
-                null
-            }
-            if (targetFullAod && fraction >= 0.98f) {
-                transitionMetrics?.targetCardHeight?.let { targetHeight ->
-                    completedNativeTransitionTargetHeights[player] = targetHeight
-                }
-            }
+            val transitionMetrics = nativeTransitionMetrics[player]
+            // B's public API has no scoped height-lease commit operation. Do not
+            // pass the legacy AOD metrics height into FramePlan as a substitute.
             MediaCardLyricOverlayController.applyNotificationFullAodTransition(
                 player = player,
                 transitionAlpha = transitionAlpha,
@@ -2948,28 +3357,26 @@ object NotificationMediaAodLyricHooker {
                 targetSecondLineTextSizeSp = transitionMetrics?.nextTextSizeSp,
                 targetSecondLineTopOffsetPx = transitionMetrics?.nextTopOffsetPx,
                 targetSecondLineAlpha = transitionMetrics?.nextTextAlpha,
-                targetCardHeight = transitionMetrics?.targetCardHeight,
+                targetCardHeight = null,
+                targetSecondLineVisible = transitionMetrics?.nextTextSizeSp != null,
+                transitionToken = token,
             )
-            state.overlay?.takeIf { it.root.visibility != View.GONE }?.let { overlay ->
-                overlay.appliedTextStyle?.let { style ->
-                    applyLockScreenOverlayColors(
-                        overlay = overlay,
-                        style = style,
-                        mainColor = mainColor,
-                        translationColor = translationColor,
-                    )
-                }
-                overlay.root.alpha = transitionAlpha
-            }
+            debugNativeEvent(
+                event = "update",
+                listener = listener,
+                controller = controller,
+                player = player,
+                token = token,
+                fraction = fraction,
+                detail = "target=$targetFullAod;heightCommit=blocked_until_round6",
+            )
             if (sampleMainColor == null) {
                 sampleMainColor = mainColor
                 sampleTranslationColor = translationColor
                 samplePlayerAlpha = player.alpha
                 sampleNextTextSizeSp = transitionMetrics?.nextTextSizeSp
-                sampleTargetCardHeight = transitionMetrics?.targetCardHeight
             }
         }
-
         if (BuildConfig.DEBUG) {
             if (!didLogNativeTransitionFirstHit) {
                 didLogNativeTransitionFirstHit = true
@@ -2986,11 +3393,7 @@ object NotificationMediaAodLyricHooker {
                         "mainColor=${sampleMainColor?.let { "0x%08X".format(it) } ?: "none"}, " +
                         "translationColor=${sampleTranslationColor?.let { "0x%08X".format(it) } ?: "none"}, " +
                         "playerAlpha=${samplePlayerAlpha ?: Float.NaN}, " +
-                        "nextTextSizeSp=$sampleNextTextSizeSp, " +
-                        "nextTextAlpha=${nativeTransitionMetrics.values.firstOrNull()?.nextTextAlpha}, " +
-                        "nextUsesBackingStyle=${nativeTransitionMetrics.values.firstOrNull()?.nextUsesBackingStyle}, " +
-                        "nextTopOffsetPx=${nativeTransitionMetrics.values.firstOrNull()?.nextTopOffsetPx}, " +
-                        "targetCardHeight=$sampleTargetCardHeight",
+                        "nextTextSizeSp=$sampleNextTextSizeSp, heightCommit=blocked",
                 )
             }
         }
@@ -3069,13 +3472,19 @@ object NotificationMediaAodLyricHooker {
             null
         }
         val topGap = (LOCK_SCREEN_AOD_TOP_GAP_DP * density).roundToInt()
-        val bottomGap = (LOCK_SCREEN_AOD_BOTTOM_GAP_DP * density).roundToInt()
+        val minimumBottomGap = (LOCK_SCREEN_AOD_BOTTOM_GAP_DP * density).roundToInt()
+        val contentAnchorBottom = AodMediaLyricPolicy.contentAnchorBottom(
+            albumBottom = album.bottom,
+            artistBottom = artist.bottom,
+        )
+        val bottomGap = AodMediaLyricPolicy.lockScreenContentBottomGap(
+            nativeCardHeight = nativeCardHeight,
+            contentBottom = contentAnchorBottom,
+            minimumGap = minimumBottomGap,
+        )
         val targetCardHeight = if (contentHeight != null) {
             val lyricTop = AodMediaLyricPolicy.lockScreenLyricTop(
-                anchorBottom = AodMediaLyricPolicy.contentAnchorBottom(
-                    albumBottom = album.bottom,
-                    artistBottom = artist.bottom,
-                ),
+                anchorBottom = contentAnchorBottom,
                 topGap = topGap,
             )
             AodMediaLyricPolicy.lockScreenTargetCardHeight(
@@ -3271,12 +3680,38 @@ object NotificationMediaAodLyricHooker {
         releaseNativeHeight: Boolean = false,
     ) {
         MediaCardLyricOverlayController.completeNotificationCardToAodTransition(overlay.player)
+        overlay.rootPresentationAnimator?.let {
+            overlay.rootPresentationAnimator = null
+            it.cancel()
+        }
         overlay.root.alpha = 1f
         overlay.fullAodActive = false
         overlay.root.visibility = View.GONE
         if (releaseNativeHeight) {
             releaseNativeAodHeight(overlay)
         }
+    }
+
+    private fun animateLockScreenOverlayIn(overlay: LyricOverlay) {
+        overlay.rootPresentationAnimator?.cancel()
+        val animator = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = LOCK_SCREEN_AOD_HEIGHT_ANIMATION_MS
+            interpolator = DecelerateInterpolator()
+            addUpdateListener { update ->
+                if (overlay.rootPresentationAnimator !== this) return@addUpdateListener
+                overlay.root.alpha = update.animatedValue as Float
+            }
+            addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) {
+                    if (overlay.rootPresentationAnimator === this@apply) {
+                        overlay.rootPresentationAnimator = null
+                        overlay.root.alpha = 1f
+                    }
+                }
+            })
+        }
+        overlay.rootPresentationAnimator = animator
+        animator.start()
     }
 
     /**
@@ -3408,7 +3843,7 @@ object NotificationMediaAodLyricHooker {
 
         val density = overlay.root.resources.displayMetrics.density
         val topGap = (LOCK_SCREEN_AOD_TOP_GAP_DP * density).toInt()
-        val bottomGap = (LOCK_SCREEN_AOD_BOTTOM_GAP_DP * density).toInt()
+        val minimumBottomGap = (LOCK_SCREEN_AOD_BOTTOM_GAP_DP * density).toInt()
         val nativeCardHeight = AodMediaLyricPolicy.lockScreenNativeCardHeight(
             fullAod = overlay.fullAodActive,
             fullAodBaseHeight = overlay.backgroundSize.baseHeight,
@@ -3423,8 +3858,13 @@ object NotificationMediaAodLyricHooker {
             anchorBottom = anchorBottom,
             topGap = topGap
         )
+        val bottomGap = AodMediaLyricPolicy.lockScreenContentBottomGap(
+            nativeCardHeight = nativeCardHeight,
+            contentBottom = anchorBottom,
+            minimumGap = minimumBottomGap,
+        )
         val params = overlay.root.layoutParams as? ViewGroup.MarginLayoutParams
-        val targetTopMargin = lyricTop - overlay.album.bottom
+        val targetTopMargin = lyricTop
         if (params != null && params.topMargin != targetTopMargin) {
             params.topMargin = targetTopMargin
             overlay.root.layoutParams = params
@@ -4573,15 +5013,113 @@ object NotificationMediaAodLyricHooker {
 
     private fun resolveNativeTransitionApi(
         classLoader: ClassLoader?,
-    ): NativeFullAodTransitionApi? {
+    ): SystemUiMediaHostAdapter.Binding? {
         classLoader ?: return null
         nativeTransitionApis[classLoader]?.let { return it }
-        return runCatching { NativeFullAodTransitionApi.create(classLoader) }
-            .onSuccess { nativeTransitionApis[classLoader] = it }
-            .onFailure {
-                HookLogger.w(TAG, "原生 full AOD 歌词转场接口不可用: reason=${it.message}")
+        val buildLabel = systemUiBuildLabel()
+        val adapter = SystemUiMediaHostAdapter.forBuild(buildLabel, classLoader)
+        if (adapter == null) {
+            if (BuildConfig.DEBUG) {
+                HookLogger.w(
+                    TAG,
+                    "跳过原生 full AOD Host: reason=unknown_build, " +
+                        "build=${buildLabel ?: "unknown"}, loader=${classLoaderIdentity(classLoader)}",
+                )
             }
-            .getOrNull()
+            return null
+        }
+        val capability = adapter.capability(classLoader)
+        if (!capability.supports(SystemUiMediaCapabilityKind.FULL_AOD_CALLBACK)) {
+            if (BuildConfig.DEBUG) {
+                HookLogger.w(
+                    TAG,
+                    "跳过原生 full AOD Host: reason=" +
+                        (capability.reason(SystemUiMediaCapabilityKind.FULL_AOD_CALLBACK)
+                            ?: "callback_capability_unavailable") +
+                        ", profile=${capability.profile?.os}, " +
+                        "build=${buildLabel ?: "unknown"}, loader=${classLoaderIdentity(classLoader)}",
+                )
+            }
+            return null
+        }
+        val binding = adapter.binding(classLoader) ?: return null
+        val required = listOf(
+            "transition.onBegin",
+            "transition.onUpdate",
+            "transition.onComplete",
+            "transition.onCancel",
+        )
+        if (required.any { binding.method(it) == null }) {
+            if (BuildConfig.DEBUG) {
+                HookLogger.w(TAG, "跳过原生 full AOD Host: reason=required_descriptor_missing")
+            }
+            return null
+        }
+        nativeTransitionApis[classLoader] = binding
+        if (BuildConfig.DEBUG) {
+            HookLogger.i(
+                TAG,
+                "原生 full AOD Host 已绑定: profile=${binding.profile.os}, " +
+                    "build=${buildLabel ?: "unknown"}, loader=${classLoaderIdentity(classLoader)}, " +
+                    "capability=${capability.supported}",
+            )
+        }
+        return binding
+    }
+
+    private fun systemUiBuildLabel(): String? {
+        val candidates = listOf(
+            runCatching { Build.DISPLAY }.getOrNull(),
+            runCatching { Build.VERSION.INCREMENTAL }.getOrNull(),
+            readSystemProperty("ro.miui.ui.version.name"),
+        )
+        return candidates.firstOrNull {
+            !it.isNullOrBlank() && SystemUiMediaProfile.forBuild(it) != null
+        } ?: candidates.firstOrNull { !it.isNullOrBlank() }
+    }
+
+    private fun readSystemProperty(key: String): String? = runCatching {
+        Runtime.getRuntime().exec(arrayOf("getprop", key)).inputStream
+            .bufferedReader()
+            .use { it.readLine()?.trim()?.takeIf(String::isNotEmpty) }
+    }.getOrNull()
+
+    private fun classLoaderIdentity(loader: ClassLoader?): String =
+        loader?.let { "${it.javaClass.name}@${System.identityHashCode(it)}" } ?: "null"
+
+    private fun identity(value: Any?): String =
+        value?.let { "${it.javaClass.name}@${System.identityHashCode(it)}" } ?: "null"
+
+    private fun debugNativeEvent(
+        event: String,
+        listener: Any,
+        controller: Any? = null,
+        player: ViewGroup? = null,
+        token: MediaCardTransitionToken? = null,
+        fraction: Float? = null,
+        detail: String? = null,
+    ) {
+        if (!BuildConfig.DEBUG) return
+        val childSummary = player?.let { host ->
+            (0 until host.childCount).joinToString(",") { index ->
+                val child = host.getChildAt(index)
+                "${child.javaClass.simpleName}@${System.identityHashCode(child)}"
+            }
+        } ?: "none"
+        HookLogger.i(
+            TAG,
+            "event=$event listener=${identity(listener)} " +
+                "controller=${identity(controller)} player=${identity(player)} " +
+                "loader=${classLoaderIdentity(listener.javaClass.classLoader)} " +
+                "session=${token?.sessionId ?: "none"} epoch=${token?.epoch ?: "none"} " +
+                "tokenTarget=${token?.targetFullAod ?: "none"} " +
+                "tokenController=${token?.identity?.controllerIdentity ?: "none"} " +
+                "tokenPlayer=${token?.identity?.playerIdentity ?: "none"} " +
+                "fraction=${fraction ?: "none"} rootChildren=$childSummary " +
+                "activeNativeContexts=${synchronized(nativeTransitionContexts) { nativeTransitionContexts.size }} " +
+                "leases=${synchronized(nativeTransitionHeightLeases) { nativeTransitionHeightLeases.size }} " +
+                "detail=${detail ?: "none"}",
+        )
     }
 
     private fun resolveAodPluginApi(classLoader: ClassLoader?): AodPluginApi? {
@@ -4936,6 +5474,7 @@ object NotificationMediaAodLyricHooker {
         var appliedNextAlignment: AodLyricAlignment? = null,
         var lastHeightDriftKey: String? = null,
         var fullAodActive: Boolean = false,
+        var rootPresentationAnimator: ValueAnimator? = null,
         var heightAnimator: ValueAnimator? = null,
         var fullAodHeightFloor: Int? = null,
         var initialFullAodHeightPending: Boolean = true,
@@ -5094,6 +5633,7 @@ object NotificationMediaAodLyricHooker {
         var aodActive: Boolean = false,
         var playing: Boolean = false,
         var overlay: LyricOverlay? = null,
+        var unifiedRootHandoff: Boolean = false,
         var mediaDataRebindGeneration: Int = 0,
         var mediaDataRebindGraceUntilUptimeMs: Long = 0L,
         var lastFinalizedNativeTransitionGeneration: Long? = null,
@@ -5250,77 +5790,6 @@ object NotificationMediaAodLyricHooker {
                     ).accessible(),
                     mediaDataIsPlayingField = mediaDataClass.getDeclaredField("isPlaying").accessible(),
                     mediaDataPackageNameField = mediaDataClass.getDeclaredField("packageName").accessible()
-                )
-            }
-
-            private fun <T : java.lang.reflect.AccessibleObject> T.accessible(): T = apply {
-                isAccessible = true
-            }
-        }
-    }
-
-    private class NativeFullAodTransitionApi private constructor(
-        val hookMethods: List<Method>,
-        private val ownerField: Field,
-        private val fractionField: Field,
-        private val enableFullAodField: Field,
-        private val heightListField: Field,
-    ) {
-        fun fraction(listener: Any): Float =
-            fractionField.getFloat(ownerField.get(listener))
-
-        fun targetFullAod(listener: Any): Boolean =
-            enableFullAodField.getBoolean(ownerField.get(listener))
-
-        fun overrideTargetHeight(listener: Any, targetHeight: Int): IntArray? {
-            val owner = ownerField.get(listener) ?: return null
-            val heightList = heightListField.get(owner) as? IntArray ?: return null
-            if (heightList.size < 2 || targetHeight <= 0) return null
-            val snapshot = heightList.copyOf()
-            heightList[1] = targetHeight
-            return snapshot
-        }
-
-        fun restoreTargetHeight(listener: Any, snapshot: IntArray) {
-            val owner = ownerField.get(listener) ?: return
-            val heightList = heightListField.get(owner) as? IntArray ?: return
-            snapshot.copyInto(heightList, endIndex = minOf(snapshot.size, heightList.size))
-        }
-
-        companion object {
-            fun create(classLoader: ClassLoader): NativeFullAodTransitionApi {
-                val listenerClass = classLoader.loadClass(
-                    AodNativeTransitionIdentifiers.LISTENER_CLASS
-                )
-                val controllerClass = classLoader.loadClass(
-                    AodNativeTransitionIdentifiers.CONTROLLER_CLASS
-                )
-                val begin = listenerClass.getDeclaredMethod(
-                    AodNativeTransitionIdentifiers.ON_BEGIN,
-                    Any::class.java,
-                ).accessible()
-                val update = listenerClass.getDeclaredMethod(
-                    AodNativeTransitionIdentifiers.ON_UPDATE,
-                    Any::class.java,
-                    Collection::class.java,
-                ).accessible()
-                val complete = listenerClass.getDeclaredMethod(
-                    AodNativeTransitionIdentifiers.ON_COMPLETE,
-                    Any::class.java,
-                ).accessible()
-                return NativeFullAodTransitionApi(
-                    hookMethods = listOf(begin, update, complete),
-                    ownerField = listenerClass.getDeclaredField(
-                        AodNativeTransitionIdentifiers.OWNER_FIELD
-                    ).accessible(),
-                    fractionField = controllerClass.getDeclaredField(
-                        AodNativeTransitionIdentifiers.FRACTION_FIELD
-                    ).accessible(),
-                    enableFullAodField = controllerClass.getDeclaredField(
-                        AodNativeTransitionIdentifiers.ENABLE_FULL_AOD_FIELD
-                    ).accessible(),
-                    heightListField = controllerClass.getDeclaredField("mHeightList")
-                        .accessible(),
                 )
             }
 
