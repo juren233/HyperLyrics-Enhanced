@@ -10,6 +10,8 @@ import com.juren233.hyperlyricsenhanced.lyric.model.LyricWord
 import com.juren233.hyperlyricsenhanced.lyric.model.Song
 import com.juren233.hyperlyricsenhanced.lyric.model.interfaces.IRichLyricLine
 import java.io.Closeable
+import java.util.Collections
+import java.util.LinkedHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 
 /**
@@ -20,13 +22,47 @@ import java.util.concurrent.CopyOnWriteArrayList
  * callbacks are being delivered. A presentation consumer must be able to retain a
  * snapshot for the whole native transition without observing a half-written model.
  */
-data class MediaLyricWordSnapshot(
+class MediaLyricWordSnapshot(
     val beginMs: Long,
     val endMs: Long,
     val durationMs: Long,
     val text: String,
-    val metadata: Map<String, String?> = emptyMap(),
+    metadata: Map<String, String?> = emptyMap(),
 ) {
+    val metadata: Map<String, String?> = immutableMap(metadata)
+
+    operator fun component1(): Long = beginMs
+    operator fun component2(): Long = endMs
+    operator fun component3(): Long = durationMs
+    operator fun component4(): String = text
+    operator fun component5(): Map<String, String?> = metadata
+
+    fun copy(
+        beginMs: Long = this.beginMs,
+        endMs: Long = this.endMs,
+        durationMs: Long = this.durationMs,
+        text: String = this.text,
+        metadata: Map<String, String?> = this.metadata,
+    ): MediaLyricWordSnapshot = MediaLyricWordSnapshot(
+        beginMs = beginMs,
+        endMs = endMs,
+        durationMs = durationMs,
+        text = text,
+        metadata = metadata,
+    )
+
+    override fun equals(other: Any?): Boolean = other is MediaLyricWordSnapshot &&
+        beginMs == other.beginMs &&
+        endMs == other.endMs &&
+        durationMs == other.durationMs &&
+        text == other.text &&
+        metadata == other.metadata
+
+    override fun hashCode(): Int = listOf(beginMs, endMs, durationMs, text, metadata).hashCode()
+
+    override fun toString(): String = "MediaLyricWordSnapshot(" +
+        "beginMs=$beginMs, endMs=$endMs, durationMs=$durationMs, text=$text, metadata=$metadata)"
+
     companion object {
         fun from(word: LyricWord): MediaLyricWordSnapshot = MediaLyricWordSnapshot(
             beginMs = word.begin,
@@ -38,7 +74,7 @@ data class MediaLyricWordSnapshot(
     }
 }
 
-data class MediaLyricLineSnapshot(
+class MediaLyricLineSnapshot(
     val beginMs: Long,
     val endMs: Long,
     val durationMs: Long,
@@ -47,15 +83,99 @@ data class MediaLyricLineSnapshot(
     val translation: String,
     val roma: String,
     val alignedRight: Boolean,
-    val metadata: Map<String, String?> = emptyMap(),
-    val words: List<MediaLyricWordSnapshot> = emptyList(),
-    val secondaryWords: List<MediaLyricWordSnapshot> = emptyList(),
-    val translationWords: List<MediaLyricWordSnapshot> = emptyList(),
+    metadata: Map<String, String?> = emptyMap(),
+    words: List<MediaLyricWordSnapshot> = emptyList(),
+    secondaryWords: List<MediaLyricWordSnapshot> = emptyList(),
+    translationWords: List<MediaLyricWordSnapshot> = emptyList(),
 ) {
+    val metadata: Map<String, String?> = immutableMap(metadata)
+    val words: List<MediaLyricWordSnapshot> = immutableList(words)
+    val secondaryWords: List<MediaLyricWordSnapshot> = immutableList(secondaryWords)
+    val translationWords: List<MediaLyricWordSnapshot> = immutableList(translationWords)
+
+    operator fun component1(): Long = beginMs
+    operator fun component2(): Long = endMs
+    operator fun component3(): Long = durationMs
+    operator fun component4(): String = text
+    operator fun component5(): String = secondary
+    operator fun component6(): String = translation
+    operator fun component7(): String = roma
+    operator fun component8(): Boolean = alignedRight
+    operator fun component9(): Map<String, String?> = metadata
+    operator fun component10(): List<MediaLyricWordSnapshot> = words
+    operator fun component11(): List<MediaLyricWordSnapshot> = secondaryWords
+    operator fun component12(): List<MediaLyricWordSnapshot> = translationWords
+
     val isBlank: Boolean
-        get() = text.isBlank() && secondary.isBlank() && translation.isBlank() && roma.isBlank()
+        get() = text.isBlank() && secondary.isBlank() && translation.isBlank() && roma.isBlank() &&
+            words.none { it.text.isNotBlank() } &&
+            secondaryWords.none { it.text.isNotBlank() } &&
+            translationWords.none { it.text.isNotBlank() }
 
     fun metadataValue(key: String): String? = metadata[key]
+
+    fun copy(
+        beginMs: Long = this.beginMs,
+        endMs: Long = this.endMs,
+        durationMs: Long = this.durationMs,
+        text: String = this.text,
+        secondary: String = this.secondary,
+        translation: String = this.translation,
+        roma: String = this.roma,
+        alignedRight: Boolean = this.alignedRight,
+        metadata: Map<String, String?> = this.metadata,
+        words: List<MediaLyricWordSnapshot> = this.words,
+        secondaryWords: List<MediaLyricWordSnapshot> = this.secondaryWords,
+        translationWords: List<MediaLyricWordSnapshot> = this.translationWords,
+    ): MediaLyricLineSnapshot = MediaLyricLineSnapshot(
+        beginMs = beginMs,
+        endMs = endMs,
+        durationMs = durationMs,
+        text = text,
+        secondary = secondary,
+        translation = translation,
+        roma = roma,
+        alignedRight = alignedRight,
+        metadata = metadata,
+        words = words,
+        secondaryWords = secondaryWords,
+        translationWords = translationWords,
+    )
+
+    override fun equals(other: Any?): Boolean = other is MediaLyricLineSnapshot &&
+        beginMs == other.beginMs &&
+        endMs == other.endMs &&
+        durationMs == other.durationMs &&
+        text == other.text &&
+        secondary == other.secondary &&
+        translation == other.translation &&
+        roma == other.roma &&
+        alignedRight == other.alignedRight &&
+        metadata == other.metadata &&
+        words == other.words &&
+        secondaryWords == other.secondaryWords &&
+        translationWords == other.translationWords
+
+    override fun hashCode(): Int = listOf(
+        beginMs,
+        endMs,
+        durationMs,
+        text,
+        secondary,
+        translation,
+        roma,
+        alignedRight,
+        metadata,
+        words,
+        secondaryWords,
+        translationWords,
+    ).hashCode()
+
+    override fun toString(): String = "MediaLyricLineSnapshot(" +
+        "beginMs=$beginMs, endMs=$endMs, durationMs=$durationMs, text=$text, " +
+        "secondary=$secondary, translation=$translation, roma=$roma, alignedRight=$alignedRight, " +
+        "metadata=$metadata, words=$words, secondaryWords=$secondaryWords, " +
+        "translationWords=$translationWords)"
 
     companion object {
         fun from(line: IRichLyricLine?): MediaLyricLineSnapshot? = line?.let {
@@ -76,6 +196,12 @@ data class MediaLyricLineSnapshot(
         }
     }
 }
+
+private fun immutableMap(source: Map<String, String?>): Map<String, String?> =
+    Collections.unmodifiableMap(LinkedHashMap(source))
+
+private fun <T> immutableList(source: List<T>): List<T> =
+    Collections.unmodifiableList(ArrayList(source))
 
 data class MediaLyricSongIdentity(
     val id: String?,

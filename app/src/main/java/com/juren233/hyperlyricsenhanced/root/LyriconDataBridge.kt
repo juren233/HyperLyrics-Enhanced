@@ -177,8 +177,13 @@ object LyriconDataBridge : StateResetter {
     }
 
     @Synchronized
-    fun updatePosition(position: Long): Boolean {
-        playbackPositionEstimator.update(position, monotonicTimeMs())
+    fun updatePosition(position: Long, playbackState: Boolean? = null): Boolean {
+        val now = monotonicTimeMs()
+        playbackPositionEstimator.update(position, now)
+        if (playbackState != null) {
+            currentPlaybackState = playbackState
+            playbackPositionEstimator.setPlaying(playbackState, now)
+        }
         val changed = applyPosition(position)
         publishMediaLyricSnapshot()
         return changed
@@ -331,6 +336,7 @@ object LyriconDataBridge : StateResetter {
         currentNextLyricLine = preparedLine?.next
         currentLyric = currentLyricLine?.text
         currentNextNextLyricLine = preparedLine?.next?.next
+        publishMediaLyricSnapshot()
         DisplayDiagnosticLogger.log(
             channel = "BRIDGE",
             result = "accepted",

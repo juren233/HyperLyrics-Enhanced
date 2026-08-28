@@ -44,18 +44,14 @@ object LyricPresentationAssembler {
         config: LyricPresentationConfig,
         blurDistance: Int,
     ): LyricPresentationGroupModel {
-        if (line == null) return LyricPresentationGroupModel(group, emptyList())
-
-        val content = ContentParts.from(line, config)
-        val lines = orderedSlots(config.swapTranslation).mapNotNull { slot ->
-            val text = content.text(slot) ?: return@mapNotNull null
-            val role = content.role(slot) ?: return@mapNotNull null
+        val content = line?.let { ContentParts.from(it, config) } ?: ContentParts.empty()
+        val lines = orderedSlots(config.swapTranslation).map { slot ->
             val alignment = content.alignment(slot, snapshot, config)
             LyricPresentationLine(
                 group = group,
                 slot = slot,
-                role = role,
-                text = text,
+                role = content.role(slot),
+                text = content.text(slot).orEmpty(),
                 alignment = alignment,
                 blurDistance = blurDistance,
             )
@@ -121,7 +117,7 @@ object LyricPresentationAssembler {
             return value.trim().takeIf { it.isNotBlank() }
         }
 
-        fun role(slot: LyricPresentationSlot): LyricPresentationRole? = when (slot) {
+        fun role(slot: LyricPresentationSlot): LyricPresentationRole = when (slot) {
             LyricPresentationSlot.MAIN,
             LyricPresentationSlot.OVERLAPPING_MAIN -> LyricPresentationRole.MAIN
             LyricPresentationSlot.TRANSLATION,
@@ -164,6 +160,23 @@ object LyricPresentationAssembler {
         }
 
         companion object {
+            fun empty(): ContentParts = ContentParts(
+                main = "",
+                translation = "",
+                backing = "",
+                backingTranslation = "",
+                overlappingMain = "",
+                overlappingTranslation = "",
+                overlappingBacking = "",
+                overlappingBackingTranslation = "",
+                next = "",
+                mainAlignment = false,
+                backingAlignment = false,
+                overlappingAlignment = false,
+                overlappingBackingAlignment = false,
+                groupVocals = false,
+            )
+
             fun from(
                 line: MediaLyricLineSnapshot,
                 config: LyricPresentationConfig,

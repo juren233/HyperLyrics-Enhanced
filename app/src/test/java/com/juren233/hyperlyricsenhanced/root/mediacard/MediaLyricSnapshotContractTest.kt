@@ -19,6 +19,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -54,6 +55,88 @@ class MediaLyricSnapshotContractTest {
         assertEquals(true, snapshot.isPlaying)
         assertEquals("Second", snapshot.current?.text)
         assertTrue(snapshot.sequence >= 1L)
+    }
+
+
+    @Test
+    fun `accepted callback line publishes the new lyric snapshot`() {
+        LyriconDataBridge.updateSong(
+            Song(
+                id = "song-callback",
+                name = "Callback",
+                artist = "Artist",
+                lyrics = listOf(RichLyricLine(begin = 0, end = 1_000, text = "Prepared")),
+            ),
+        )
+        val before = MediaLyricSnapshotStore.global.current().sequence
+
+        LyriconDataBridge.updateLyricLine(
+            RichLyricLine(begin = 0, end = 1_000, text = "Prepared"),
+        )
+
+        val after = MediaLyricSnapshotStore.global.current()
+        assertTrue(after.sequence > before)
+        assertEquals("Prepared", after.current?.text)
+    }
+
+    @Test
+    fun `position and playback state can be published as one atomic snapshot`() {
+        val received = mutableListOf<MediaLyricSnapshot>()
+        val subscription = MediaLyricSnapshotStore.global.subscribe(received::add)
+        try {
+            received.clear()
+            LyriconDataBridge.updateSong(
+                Song(
+                    id = "song-position",
+                    name = "Position",
+                    artist = "Artist",
+                    lyrics = listOf(RichLyricLine(begin = 0, end = 2_000, text = "Line")),
+                ),
+            )
+            received.clear()
+
+            LyriconDataBridge.updatePosition(800L, playbackState = true)
+
+            assertEquals(1, received.size)
+            assertEquals(800L, received.single().positionMs)
+            assertEquals(true, received.single().isPlaying)
+        } finally {
+            subscription.close()
+        }
+    }
+
+    @Test
+    fun `snapshot copies mutable input collections and exposes read-only views`() {
+        val metadata = mutableMapOf<String, String?>("source" to "provider")
+        val words = mutableListOf(MediaLyricWordSnapshot(0L, 500L, 500L, "word"))
+        val line = MediaLyricLineSnapshot(
+            beginMs = 0L,
+            endMs = 1_000L,
+            durationMs = 1_000L,
+            text = "line",
+            secondary = "",
+            translation = "",
+            roma = "",
+            alignedRight = false,
+            metadata = metadata,
+            words = words,
+        )
+
+        metadata["source"] = "mutated"
+        words.clear()
+
+        assertEquals("provider", line.metadata["source"])
+        assertEquals(1, line.words.size)
+        assertThrows(UnsupportedOperationException::class.java) {
+            @Suppress("UNCHECKED_CAST")
+            (line.metadata as MutableMap<String, String?>)["blocked"] = "yes"
+        }
+        assertThrows(UnsupportedOperationException::class.java) {
+            @Suppress("UNCHECKED_CAST")
+            (line.words as MutableList<MediaLyricWordSnapshot>).add(
+                MediaLyricWordSnapshot(0L, 1L, 1L, "blocked"),
+            )
+        }
     }
 
     @Test
@@ -137,14 +220,17 @@ class MediaLyricSnapshotContractTest {
 
         assertEquals(first, second)
         assertEquals(3, first.groups.size)
+        assertEquals(9, first.groups.first().lines.size)
         assertEquals(
             listOf(
                 LyricPresentationSlot.MAIN,
                 LyricPresentationSlot.TRANSLATION,
                 LyricPresentationSlot.BACKING,
             ),
-            first.groups.first().lines.map { it.slot },
+            first.groups.first().lines.filter { it.isVisible }.map { it.slot },
         )
+        assertEquals(9, first.groups[1].lines.size)
+        assertEquals(listOf("Next"), first.groups[1].lines.filter { it.isVisible }.map { it.text })
         assertEquals(LyricPresentationAlignment.RIGHT, first.groups.first().lines.first().alignment)
     }
 
@@ -178,8 +264,9 @@ class MediaLyricSnapshotContractTest {
         )
         assertEquals(
             listOf("Primary", "Secondary", "次译"),
-            model.groups.single().lines.map { it.text },
+            model.groups.single().lines.filter { it.isVisible }.map { it.text },
         )
+        assertEquals(9, model.groups.single().lines.size)
     }
 
     @Test
@@ -205,6 +292,8 @@ class MediaLyricSnapshotContractTest {
             },
         )
         assertEquals(SystemUiMediaProfile.OS3, SystemUiMediaProfile.forBuild("3.0.301.0.WOCCNXM"))
+        assertFalse(SystemUiMediaProfile.OS3.binaryVerified)
+        assertTrue(SystemUiMediaProfile.OS3.evidence.startsWith("UNRESOLVED:"))
         assertEquals(SystemUiMediaProfile.OS4, SystemUiMediaProfile.forBuild("OS4.0.0.6.XOCCNXM"))
         assertEquals(null, SystemUiMediaProfile.forBuild("unknown-system"))
     }
@@ -218,12 +307,19 @@ class MediaLyricSnapshotContractTest {
         val first = adapter.capability(firstLoader)
         val second = adapter.capability(secondLoader)
         val unknown = SystemUiMediaHostAdapter.forBuild("unknown-system", firstLoader)
+        val os3 = requireNotNull(
+            SystemUiMediaHostAdapter.forBuild("3.0.301.0.WOCCNXM", firstLoader),
+        )
 
         assertFalse(first.supports(SystemUiMediaCapabilityKind.MEDIA_CONTROLLER_LIFECYCLE))
         assertFalse(first.supports(SystemUiMediaCapabilityKind.FULL_AOD_CALLBACK))
         assertNotNull(first.reason(SystemUiMediaCapabilityKind.FULL_AOD_CALLBACK))
         assertNotEquals(first.classLoaderIdentity, second.classLoaderIdentity)
         assertEquals(null, unknown)
+        assertFalse(os3.capability(firstLoader).enabled)
+        assertEquals("profile_not_binary_verified", os3.capability(firstLoader).reason(
+            SystemUiMediaCapabilityKind.FULL_AOD_CALLBACK,
+        ))
         assertEquals(null, adapter.binding(null))
     }
 

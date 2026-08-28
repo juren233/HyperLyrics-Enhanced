@@ -165,8 +165,10 @@ class RootLyricSink(
         }
         logPositionDiagnostic(position, "accepted")
         lastReceivedPosition = position
-        val lyricChanged = LyriconDataBridge.updatePosition(position)
-        LyriconDataBridge.updatePlaybackState(playbackActive)
+        val lyricChanged = LyriconDataBridge.updatePosition(
+            position,
+            playbackState = playbackActive,
+        )
         if (lyricChanged) {
             renderer.updateLyricLine()
             NotificationMediaAodLyricHooker.onLyricChanged()
@@ -199,8 +201,10 @@ class RootLyricSink(
         lastDispatchedPosition = position
         lastPositionDispatchTimeMs = SystemClock.uptimeMillis()
 
-        val lyricChanged = LyriconDataBridge.updatePosition(position)
-        LyriconDataBridge.updatePlaybackState(playbackActive)
+        val lyricChanged = LyriconDataBridge.updatePosition(
+            position,
+            playbackState = playbackActive,
+        )
         if (lyricChanged) {
             renderer.updateLyricLine()
             NotificationMediaAodLyricHooker.onLyricChanged()

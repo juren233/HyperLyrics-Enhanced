@@ -75,6 +75,7 @@ data class SystemUiMediaProfile(
             os: SystemUiMediaOs,
             builds: Set<String>,
             evidence: String,
+            binaryVerified: Boolean,
         ): SystemUiMediaProfile {
             val classes = mapOf(
                 SystemUiMediaTarget.VIEW_CONTROLLER to MEDIA_VIEW_CONTROLLER_CLASS,
@@ -185,18 +186,20 @@ data class SystemUiMediaProfile(
                 methods = methods,
                 fields = fields,
                 evidence = evidence,
-                binaryVerified = true,
+                binaryVerified = binaryVerified,
             )
         }
 
         /**
-         * Verified from the original HyperOS 3.0.301.0 DEX. Do not replace these
-         * descriptors with names emitted by JADX/JADX-like decompilers.
+         * Descriptor shape retained for audit comparison only. No independent original
+         * OS3 DEX artifact is present in this worktree, so this profile is disabled and
+         * must not be used for runtime hooks until that evidence is re-established.
          */
         val OS3: SystemUiMediaProfile = profile(
             os = SystemUiMediaOs.HYPEROS_3,
             builds = setOf("3.0.301.0", "HyperOS 3.0.301.0"),
-            evidence = "original binary evidence: HyperOS 3.0.301.0 SystemUI DEX",
+            evidence = "UNRESOLVED: no independent original HyperOS 3.0.301.0 DEX artifact in this worktree",
+            binaryVerified = false,
         )
 
         /**
@@ -208,6 +211,7 @@ data class SystemUiMediaProfile(
             os = SystemUiMediaOs.HYPEROS_4,
             builds = setOf("OS4.0.0.6", "OS4.0.0.6.XOCCNXM"),
             evidence = "workspace/systemui-recapture-os4.0.0.6-20260827/meta/targets + dexdump",
+            binaryVerified = true,
         )
 
         fun forBuild(buildLabel: String?): SystemUiMediaProfile? = when {

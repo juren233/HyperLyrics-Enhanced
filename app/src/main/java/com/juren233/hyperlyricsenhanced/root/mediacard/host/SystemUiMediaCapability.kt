@@ -6,6 +6,7 @@
 
 package com.juren233.hyperlyricsenhanced.root.mediacard.host
 
+import java.lang.ref.WeakReference
 import java.lang.reflect.Field
 import java.lang.reflect.Method
 
@@ -71,13 +72,20 @@ internal class ReflectiveNativeHeightLease(
     private val lock = Any()
     private var closed = false
 
-    override val originalHeights: IntArray = synchronized(lock) {
+    val isClosed: Boolean
+        get() = synchronized(lock) { closed }
+
+    private val initialHeights: IntArray = synchronized(lock) {
         readHeights()
     }
 
+    override val originalHeights: IntArray
+        get() = synchronized(lock) { initialHeights.copyOf() }
+
     override fun setTargetHeight(index: Int, height: Int): Boolean = synchronized(lock) {
-        if (closed || index !in originalHeights.indices) return false
+        if (closed || index !in initialHeights.indices) return false
         val values = readHeights()
+        if (index !in values.indices) return false
         values[index] = height.coerceAtLeast(0)
         runCatching { heightListField.set(owner, values) }.isSuccess
     }
@@ -85,7 +93,7 @@ internal class ReflectiveNativeHeightLease(
     override fun restore(): Boolean = synchronized(lock) {
         if (closed) return true
         val restored = runCatching {
-            heightListField.set(owner, originalHeights.copyOf())
+            heightListField.set(owner, initialHeights.copyOf())
         }.isSuccess
         if (restored) closed = true
         restored

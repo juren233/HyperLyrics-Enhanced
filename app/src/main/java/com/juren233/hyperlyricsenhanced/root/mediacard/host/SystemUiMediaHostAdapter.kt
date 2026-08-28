@@ -6,6 +6,7 @@
 
 package com.juren233.hyperlyricsenhanced.root.mediacard.host
 
+import java.lang.ref.WeakReference
 import java.lang.reflect.Field
 import java.lang.reflect.Method
 
@@ -216,6 +217,9 @@ class SystemUiMediaHostAdapter(
         val methods: Map<String, Method>,
         val fields: Map<String, Field>,
     ) {
+        private val activeHeightLeases =
+            java.util.WeakHashMap<Any, WeakReference<ReflectiveNativeHeightLease>>()
+
         fun method(key: String): Method? = methods[key]
 
         fun field(key: String): Field? = fields[key]
@@ -224,12 +228,13 @@ class SystemUiMediaHostAdapter(
             if (listener.javaClass.classLoader !== classLoader) return null
             val owner = fields["transition.owner"]?.let { runCatching { it.get(listener) }.getOrNull() }
                 ?: return null
+            if (owner.javaClass.classLoader !== classLoader) return null
             val fraction = fields["transition.fraction"]?.let {
                 runCatching { it.getFloat(owner) }.getOrNull()
-            }
+            }?.takeIf { it.isFinite() && it in 0f..1f } ?: return null
             val target = fields["transition.enableFullAod"]?.let {
                 runCatching { it.getBoolean(owner) }.getOrNull()
-            }
+            } ?: return null
             return SystemUiMediaTransitionFrame(targetFullAod = target, fraction = fraction)
         }
 
@@ -240,7 +245,18 @@ class SystemUiMediaHostAdapter(
                 ?: return null
             val heightField = fields["transition.heightList"] ?: return null
             if (heightField.declaringClass !== owner.javaClass) return null
-            return ReflectiveNativeHeightLease(classLoader, heightField, owner)
+            synchronized(activeHeightLeases) {
+                val existing = activeHeightLeases[owner]?.get()
+                if (existing != null && !existing.isClosed) return null
+                val lease = ReflectiveNativeHeightLease(
+                    classLoader = classLoader,
+                    heightListField = heightField,
+                    owner = owner,
+                )
+                if (lease.originalHeights.isEmpty()) return null
+                activeHeightLeases[owner] = WeakReference(lease)
+                return lease
+            }
         }
     }
 }
