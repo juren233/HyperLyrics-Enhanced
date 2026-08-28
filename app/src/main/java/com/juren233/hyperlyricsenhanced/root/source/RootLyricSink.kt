@@ -140,7 +140,7 @@ class RootLyricSink(
     }
 
     override fun onMetadata(title: String?, artist: String?, album: String?, publisher: String?) {
-        if (title != null) LyriconDataBridge.currentSongName = title
+        LyriconDataBridge.updateMetadataTitle(title)
         if (!publisher.isNullOrEmpty()) {
             LyriconDataBridge.updateLyricPackage(publisher)
         }
