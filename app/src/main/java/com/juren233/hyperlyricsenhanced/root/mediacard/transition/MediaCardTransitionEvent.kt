@@ -14,10 +14,15 @@ internal data class MediaCardControllerIdentity(
     val controllerIdentity: Int,
     val playerIdentity: Int,
 ) {
+    init {
+        require(controllerIdentity != 0) { "controller identity must be provided" }
+        require(playerIdentity != 0) { "player identity must be provided" }
+    }
+
     companion object {
-        fun of(controller: Any?, player: Any): MediaCardControllerIdentity =
+        fun of(controller: Any, player: Any): MediaCardControllerIdentity =
             MediaCardControllerIdentity(
-                controllerIdentity = controller?.let(System::identityHashCode) ?: 0,
+                controllerIdentity = System.identityHashCode(controller),
                 playerIdentity = System.identityHashCode(player),
             )
     }
@@ -60,8 +65,9 @@ internal data class MediaCardTransitionResult(
 )
 
 /**
- * Session-scoped transition authority. It deliberately has no global target state:
- * every callback must carry the token produced by the same player session.
+ * Session-scoped transition authority. Every mutating callback must carry the exact
+ * token returned by begin. Replacing a transition creates a new epoch without first
+ * restoring an old endpoint, which is what makes a fast reversal visually continuous.
  */
 internal class MediaCardTransitionCoordinator(
     val identity: MediaCardControllerIdentity,
@@ -87,26 +93,29 @@ internal class MediaCardTransitionCoordinator(
     }
 
     fun attachHeightLease(value: NativeHeightLease?) {
+        if (lease === value) return
         lease?.close()
         lease = value
     }
 
     fun begin(
-        listener: Any?,
+        listener: Any,
         targetFullAod: Boolean,
-        mode: MediaCardFullAodTransitionMode,
+        @Suppress("UNUSED_PARAMETER") mode: MediaCardFullAodTransitionMode,
         snapshotSequence: Long,
     ): MediaCardTransitionResult {
-        val listenerIdentity = listener?.let(System::identityHashCode) ?: identity.playerIdentity
         epoch += 1L
         val token = MediaCardTransitionToken(
             sessionId = ++nextSessionId,
             epoch = epoch,
-            listenerIdentity = listenerIdentity,
+            listenerIdentity = System.identityHashCode(listener),
             identity = identity,
             targetFullAod = targetFullAod,
             snapshotSequence = snapshotSequence,
         )
+        // Deliberately do not release the height lease here. A new begin can be a
+        // reversal of the currently running native transaction and must retain its
+        // host ownership until complete/cancel/detach.
         activeToken = token
         frozenSnapshotSequence = snapshotSequence
         lastFraction = 0f
@@ -115,18 +124,15 @@ internal class MediaCardTransitionCoordinator(
         } else {
             MediaCardSessionState.TRANSITIONING_TO_NOTIFICATION
         }
-        return result(true, MediaCardTransitionCallback.BEGIN)
-            .copy(token = token)
+        return result(true, MediaCardTransitionCallback.BEGIN).copy(token = token)
     }
 
-    fun update(token: MediaCardTransitionToken?, fraction: Float): MediaCardTransitionResult {
+    fun update(token: MediaCardTransitionToken, fraction: Float): MediaCardTransitionResult {
         val check = validate(token, MediaCardTransitionCallback.UPDATE)
         if (!check.accepted) return check
         if (!fraction.isFinite() || fraction !in 0f..1f) {
             return result(false, MediaCardTransitionCallback.UPDATE, "fraction_out_of_range")
         }
-        // Native callbacks are the only clock. A late frame from the same token
-        // is rejected instead of rewinding the already rendered native frame.
         if (fraction < lastFraction) {
             return result(false, MediaCardTransitionCallback.UPDATE, "fraction_rewound")
         }
@@ -134,7 +140,7 @@ internal class MediaCardTransitionCoordinator(
         return result(true, MediaCardTransitionCallback.UPDATE)
     }
 
-    fun complete(token: MediaCardTransitionToken?): MediaCardTransitionResult {
+    fun complete(token: MediaCardTransitionToken): MediaCardTransitionResult {
         val check = validate(token, MediaCardTransitionCallback.COMPLETE)
         if (!check.accepted) return check
         val completedToken = requireNotNull(activeToken)
@@ -153,7 +159,7 @@ internal class MediaCardTransitionCoordinator(
         )
     }
 
-    fun cancel(token: MediaCardTransitionToken?): MediaCardTransitionResult {
+    fun cancel(token: MediaCardTransitionToken): MediaCardTransitionResult {
         val check = validate(token, MediaCardTransitionCallback.CANCEL)
         if (!check.accepted) return check
         val cancelledToken = requireNotNull(activeToken)
@@ -182,7 +188,8 @@ internal class MediaCardTransitionCoordinator(
         )
     }
 
-    fun recover(snapshotSequence: Long, stableFullAod: Boolean): MediaCardTransitionResult {
+    /** Invalidates callbacks after a host subtree/controller rebind without clearing content. */
+    fun rebind(snapshotSequence: Long, stableFullAod: Boolean): MediaCardTransitionResult {
         activeToken = null
         epoch += 1L
         lastFraction = if (stableFullAod) 1f else 0f
@@ -198,22 +205,23 @@ internal class MediaCardTransitionCoordinator(
         )
     }
 
+    /** Explicit recovery API; unlike begin it is never used for fast reversal. */
+    fun recover(snapshotSequence: Long, stableFullAod: Boolean): MediaCardTransitionResult =
+        rebind(snapshotSequence, stableFullAod)
+
     fun activeToken(): MediaCardTransitionToken? = activeToken
 
     fun lastFraction(): Float = lastFraction
 
     private fun validate(
-        token: MediaCardTransitionToken?,
+        token: MediaCardTransitionToken,
         callback: MediaCardTransitionCallback,
     ): MediaCardTransitionResult {
         val active = activeToken
         if (active == null) {
             return result(false, callback, "no_active_transition")
         }
-        if (token == null) {
-            return result(false, callback, "token_missing")
-        }
-        if (token != active) {
+        if (token !== active) {
             return result(false, callback, "stale_token")
         }
         if (token.identity != identity) {

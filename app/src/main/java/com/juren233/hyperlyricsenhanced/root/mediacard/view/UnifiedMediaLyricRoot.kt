@@ -132,51 +132,86 @@ internal class UnifiedMediaLyricRoot(
     }
 
     fun applyFrame(plan: MediaCardFramePlan) {
+        var layoutDirty = false
         alpha = plan.rootAlpha.coerceIn(0f, 1f)
         translationY = plan.rootTranslationY
         scaleY = plan.rootScaleY.coerceAtLeast(0f)
         groupContainers.forEachIndexed { index, group ->
             val groupAlpha = plan.groupAlphas.getOrElse(index) { 0f }.coerceIn(0f, 1f)
             group.alpha = groupAlpha
-            if (group.visibility == VISIBLE || groupAlpha > 0f) {
-                group.visibility = if (hasText(index)) VISIBLE else GONE
+            val desiredVisibility = if (hasText(index) &&
+                (!plan.stableAfterCommit || groupAlpha > 0.001f)
+            ) VISIBLE else GONE
+            if (group.visibility != desiredVisibility) {
+                group.visibility = desiredVisibility
+                layoutDirty = true
             }
         }
         val previewAlpha = if (plan.targetFullAod) 1f - plan.fraction else plan.fraction
         previewRow.alpha = previewAlpha.coerceIn(0f, 1f)
-        if (plan.secondaryTextSizeSp != null) {
-            val secondary = firstVisibleRow(LyricPresentationGroup.NEXT)
-            secondary?.setTextSize(TypedValue.COMPLEX_UNIT_SP, plan.secondaryTextSizeSp)
+        val previewVisibility = if (plan.stableAfterCommit && previewAlpha <= 0.001f) GONE
+        else if (currentPreview != null) VISIBLE else GONE
+        if (previewRow.visibility != previewVisibility) {
+            previewRow.visibility = previewVisibility
+            layoutDirty = true
         }
-        if (plan.secondaryTopOffsetPx != null) {
-            val secondary = firstVisibleRow(LyricPresentationGroup.NEXT)
-            val progress = if (plan.targetFullAod) plan.fraction else 1f - plan.fraction
-            secondary?.translationY = plan.secondaryTopOffsetPx * progress
+        val secondary = firstVisibleRow(LyricPresentationGroup.NEXT)
+        plan.secondaryTextSizeSp?.let { size ->
+            val oldSize = secondary?.textSize
+            secondary?.setTextSize(TypedValue.COMPLEX_UNIT_SP, size)
+            if (oldSize != null && oldSize != secondary.textSize) layoutDirty = true
         }
-        if (plan.secondaryAlpha != null) {
-            firstVisibleRow(LyricPresentationGroup.NEXT)?.alpha =
-                (plan.secondaryAlpha / 255f).coerceIn(0f, 1f)
-        }
+        secondary?.translationY = plan.secondaryTranslationY
+        plan.resolvedSecondaryAlpha?.let { secondary?.alpha = it.coerceIn(0f, 1f) }
         if (!plan.secondaryVisible) {
             groupContainers.getOrNull(LyricPresentationGroup.NEXT.ordinal)?.alpha = 0f
         }
-        requestLayout()
+        if (plan.stableAfterCommit && !plan.lyricVisible) {
+            // Keep the single root attached for the next native transition, but
+            // remove it from drawing/layout only after the terminal frame.
+            if (visibility != INVISIBLE) {
+                visibility = INVISIBLE
+                layoutDirty = true
+            }
+        } else if (visibility != VISIBLE) {
+            visibility = VISIBLE
+            layoutDirty = true
+        }
+        if (layoutDirty) requestLayout() else invalidate()
     }
 
     fun resetToStable() {
+        visibility = VISIBLE
         alpha = 1f
         translationY = 0f
         scaleY = 1f
-        groupContainers.forEach { it.alpha = 1f }
-        rowViews.values.flatMap { it.values }.forEach {
-            it.alpha = 1f
-            it.translationY = 0f
+        groupContainers.forEachIndexed { index, group ->
+            group.alpha = 1f
+            group.visibility = if (hasText(index)) VISIBLE else GONE
+        }
+        rowViews.values.flatMap { it.values }.forEach { row ->
+            row.alpha = 1f
+            row.translationY = 0f
+            row.setTextSize(TypedValue.COMPLEX_UNIT_SP, textSizeSp(roleByRow[row], currentConfig))
         }
         previewRow.alpha = 1f
+        previewRow.visibility = if (currentPreview != null) VISIBLE else GONE
+        previewRow.setTextSize(TypedValue.COMPLEX_UNIT_SP, translationTextSizeSp)
         requestLayout()
     }
 
     fun measuredContentHeight(): Int = measuredHeight.takeIf { it > 0 } ?: height
+
+    fun visibleSecondaryTextSizeSp(): Float? = firstVisibleRow(LyricPresentationGroup.NEXT)
+        ?.let {
+            val oneSp = TypedValue.applyDimension(
+                TypedValue.COMPLEX_UNIT_SP,
+                1f,
+                resources.displayMetrics,
+            )
+            it.textSize / oneSp
+        }
+        ?.takeIf { it > 0f }
 
     fun slotCount(): Int = LyricPresentationGroup.values().sumOf { group ->
         rowViews.getValue(group).size

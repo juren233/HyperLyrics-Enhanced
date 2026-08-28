@@ -10,7 +10,6 @@ import com.juren233.hyperlyricsenhanced.root.mediacard.MediaCardFullAodTransitio
 import com.juren233.hyperlyricsenhanced.root.mediacard.host.NativeHeightLease
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -26,8 +25,7 @@ class MediaCardTransitionCoordinatorTest {
             targetFullAod = true,
             mode = MediaCardFullAodTransitionMode.DEFAULT,
             snapshotSequence = 1L,
-        ).token
-        assertNotNull(first)
+        ).token!!
         assertTrue(coordinator.update(first, 0.5f).accepted)
         assertFalse(coordinator.update(first, 0.4f).accepted)
         assertEquals(0.5f, coordinator.lastFraction(), 0.0001f)
@@ -37,8 +35,7 @@ class MediaCardTransitionCoordinatorTest {
             targetFullAod = false,
             mode = MediaCardFullAodTransitionMode.DEFAULT,
             snapshotSequence = 2L,
-        ).token
-        assertNotNull(second)
+        ).token!!
         assertFalse(coordinator.update(first, 0.8f).accepted)
         assertTrue(coordinator.update(second, 0.1f).accepted)
         assertEquals(MediaCardSessionState.TRANSITIONING_TO_NOTIFICATION, coordinator.state)

@@ -81,18 +81,28 @@ internal class GeometryResolver {
      * The card target is derived from the measured lyric root and the actual host
      * insets, never from screen coordinates or an OS-specific fixed card height.
      */
-    fun targetCardHeight(
+    fun requiredBottom(
         geometry: MediaCardGeometrySnapshot,
         lyricHeight: Int,
         topInset: Int = 0,
         bottomInset: Int = geometry.safeBottomInset,
     ): Int? {
         if (!geometry.valid || lyricHeight <= 0) return null
-        val contentStart = geometry.lyricTop + topInset.coerceAtLeast(0)
-        val requiredBottom = contentStart + lyricHeight + bottomInset.coerceAtLeast(0)
-        val extra = (requiredBottom - geometry.cardBottom).coerceAtLeast(0)
-        return (geometry.playerHeight + extra).takeIf { it > 0 }
+        val lyricTop = geometry.lyricTop + topInset.coerceAtLeast(0)
+        val lyricBottom = lyricTop + lyricHeight + bottomInset.coerceAtLeast(0)
+        // The target is an absolute player-local bottom. Never add a player
+        // height to an already absolute top coordinate.
+        return max(geometry.contentBottom, lyricBottom)
     }
+
+    fun targetCardHeight(
+        geometry: MediaCardGeometrySnapshot,
+        lyricHeight: Int,
+        topInset: Int = 0,
+        bottomInset: Int = geometry.safeBottomInset,
+    ): Int? = requiredBottom(geometry, lyricHeight, topInset, bottomInset)
+        ?.coerceAtLeast(geometry.playerHeight)
+        ?.takeIf { it > 0 }
 
     fun localBounds(view: View, ancestor: View): LocalViewBounds? {
         var current: View? = view

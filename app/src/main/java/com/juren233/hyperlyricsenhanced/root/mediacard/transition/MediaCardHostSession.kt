@@ -27,8 +27,8 @@ internal class MediaCardHostSession(
         private set
 
     fun attach(presentation: LyricPresentationModel?): MediaCardTransitionResult {
-        stablePresentation = presentation
-        return coordinator.attach(presentation?.snapshotSequence ?: 0L)
+        presentation?.let { stablePresentation = it }
+        return coordinator.attach(presentation?.snapshotSequence ?: stablePresentation?.snapshotSequence ?: 0L)
     }
 
     fun attachHeightLease(lease: NativeHeightLease?) {
@@ -39,23 +39,31 @@ internal class MediaCardHostSession(
         val active = coordinator.activeToken()
         if (active != null) {
             if (presentation.snapshotSequence < active.snapshotSequence) return false
-            pendingPresentation = presentation
+            val pending = pendingPresentation
+            if (pending == null || presentation.snapshotSequence >= pending.snapshotSequence) {
+                pendingPresentation = presentation
+            }
             return true
         }
         if (presentation.snapshotSequence < (stablePresentation?.snapshotSequence ?: -1L)) {
             return false
         }
         stablePresentation = presentation
+        pendingPresentation = null
         return true
     }
 
     fun begin(
-        listener: Any?,
+        listener: Any,
         targetFullAod: Boolean,
         mode: MediaCardFullAodTransitionMode,
     ): MediaCardTransitionResult {
-        frozenPresentation = stablePresentation ?: pendingPresentation
-        pendingPresentation = null
+        // A reversal must continue to display the already committed model. Do not
+        // clear pending content: it belongs to a newer song/translation generation
+        // and is committed only after the new transaction reaches its target.
+        if (frozenPresentation == null) {
+            frozenPresentation = stablePresentation ?: pendingPresentation
+        }
         return coordinator.begin(
             listener = listener,
             targetFullAod = targetFullAod,
@@ -64,20 +72,27 @@ internal class MediaCardHostSession(
         )
     }
 
-    fun complete(token: MediaCardTransitionToken?): MediaCardTransitionResult {
+    fun complete(token: MediaCardTransitionToken): MediaCardTransitionResult {
         val result = coordinator.complete(token)
         if (result.accepted) {
-            stablePresentation = pendingPresentation ?: frozenPresentation ?: stablePresentation
+            val candidates = listOfNotNull(stablePresentation, frozenPresentation, pendingPresentation)
+            stablePresentation = candidates.maxByOrNull { it.snapshotSequence }
             pendingPresentation = null
             frozenPresentation = null
         }
         return result
     }
 
-    fun cancel(token: MediaCardTransitionToken?): MediaCardTransitionResult {
+    fun cancel(token: MediaCardTransitionToken): MediaCardTransitionResult {
         val result = coordinator.cancel(token)
         if (result.accepted) {
-            pendingPresentation = null
+            // Keep a newer pending snapshot for the next stable refresh. A native
+            // cancel must restore the current visual side without losing late data.
+            if ((pendingPresentation?.snapshotSequence ?: -1L) <=
+                (stablePresentation?.snapshotSequence ?: -1L)
+            ) {
+                pendingPresentation = null
+            }
             frozenPresentation = null
         }
         return result
@@ -91,8 +106,11 @@ internal class MediaCardHostSession(
         return result
     }
 
-    fun recover(stableFullAod: Boolean): MediaCardTransitionResult = coordinator.recover(
-        snapshotSequence = stablePresentation?.snapshotSequence ?: 0L,
+    /** Invalidates host callbacks while retaining content across a view rebind. */
+    fun rebind(stableFullAod: Boolean): MediaCardTransitionResult = coordinator.rebind(
+        snapshotSequence = stablePresentation?.snapshotSequence ?: frozenPresentation?.snapshotSequence ?: 0L,
         stableFullAod = stableFullAod,
     )
+
+    fun recover(stableFullAod: Boolean): MediaCardTransitionResult = rebind(stableFullAod)
 }

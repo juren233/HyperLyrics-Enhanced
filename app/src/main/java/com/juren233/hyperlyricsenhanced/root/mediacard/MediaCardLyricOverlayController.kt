@@ -6,7 +6,6 @@
 
 package com.juren233.hyperlyricsenhanced.root.mediacard
 
-import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.view.Choreographer
@@ -29,7 +28,8 @@ import com.juren233.hyperlyricsenhanced.root.mediacard.host.NativeHeightLease
 import com.juren233.hyperlyricsenhanced.root.mediacard.transition.MediaCardControllerIdentity
 import com.juren233.hyperlyricsenhanced.root.mediacard.transition.MediaCardFramePlan
 import com.juren233.hyperlyricsenhanced.root.mediacard.transition.MediaCardHostSession
-import com.juren233.hyperlyricsenhanced.root.mediacard.transition.MediaCardSessionState
+import com.juren233.hyperlyricsenhanced.root.mediacard.transition.MediaCardHostBinding
+import com.juren233.hyperlyricsenhanced.root.mediacard.transition.RootLayoutParamsFactory
 import com.juren233.hyperlyricsenhanced.root.mediacard.transition.MediaCardTransitionToken
 import com.juren233.hyperlyricsenhanced.root.mediacard.view.UnifiedMediaLyricRoot
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
@@ -94,7 +94,13 @@ internal object MediaCardLyricOverlayController {
     private var refreshScheduled = false
     private var refreshFrameCallback: Choreographer.FrameCallback? = null
 
+    /**
+     * Strict notification-card entry. A concrete SystemUI controller and a verified
+     * HostBinding are mandatory; this prevents a player-only session from accepting
+     * callbacks after controller replacement or SystemUI reload.
+     */
     fun bindNotificationCard(
+        controller: Any,
         player: ViewGroup,
         album: View?,
         actions: List<View>,
@@ -103,10 +109,12 @@ internal object MediaCardLyricOverlayController {
         totalTime: View? = null,
         title: TextView,
         packageName: String?,
+        hostBinding: MediaCardHostBinding,
         background: View? = null,
         outer: View? = null,
     ) {
         bind(
+            controller = controller,
             player = player,
             anchor = album,
             controls = actions.filter { it.visibility != View.GONE }
@@ -121,7 +129,67 @@ internal object MediaCardLyricOverlayController {
             background = background,
             outer = outer ?: player.parent as? View,
             expandedOwner = null,
+            hostBinding = hostBinding,
         )
+    }
+
+    /**
+     * Rebinds a live player to a concrete controller and verified HostBinding. The
+     * old session is invalidated before the new identity is accepted.
+     */
+    fun rebindControllerIdentity(
+        controller: Any,
+        player: ViewGroup,
+        hostBinding: MediaCardHostBinding,
+    ): Boolean = runOnMainResult {
+        if (!hostBinding.isCompatibleWith(player)) return@runOnMainResult false
+        val existing = states[player]
+        if (existing != null && existing.controller !== controller) {
+            existing.restore(immediate = true)
+            states.remove(player)
+        }
+        true
+    } ?: false
+
+    /**
+     * Creates the B-side host binding from an already verified Agent A binding.
+     * No descriptor lookup occurs here; the caller remains responsible for choosing
+     * the exact profile/loader and for supplying an evidence-backed height index.
+     */
+    fun createHostBinding(
+        binding: com.juren233.hyperlyricsenhanced.root.mediacard.host.SystemUiMediaHostAdapter.Binding,
+        rootLayoutParamsFactory: RootLayoutParamsFactory,
+        nativeHeightIndex: Int? = null,
+        verifiedNativeTargetHeightFactory: ((ViewGroup, Boolean) -> Int?)? = null,
+    ): MediaCardHostBinding? = MediaCardHostBinding.fromVerifiedBinding(
+        binding = binding,
+        rootLayoutParamsFactory = rootLayoutParamsFactory,
+        nativeHeightIndex = nativeHeightIndex,
+        verifiedNativeTargetHeightFactory = verifiedNativeTargetHeightFactory,
+    )
+
+    /**
+     * Legacy player-only notification entry. It is intentionally fail-closed: the
+     * old signature cannot establish controller identity or verified host binding.
+     * Round 7 must migrate the caller to the strict overload above.
+     */
+    @Deprecated(
+        message = "Pass controller and MediaCardHostBinding; player-only binding is unsafe",
+        level = DeprecationLevel.WARNING,
+    )
+    fun bindNotificationCard(
+        player: ViewGroup,
+        album: View?,
+        actions: List<View>,
+        progress: View,
+        elapsedTime: View? = null,
+        totalTime: View? = null,
+        title: TextView,
+        packageName: String?,
+        background: View? = null,
+        outer: View? = null,
+    ) {
+        HookLogger.w(TAG, "拒绝 legacy notification bind: controller_or_host_binding_missing")
     }
 
     fun bindExpandedIslandCard(
@@ -136,7 +204,11 @@ internal object MediaCardLyricOverlayController {
             HookLogger.w(TAG, "展开态媒体卡片歌词跳过: player_not_view_group")
             return
         }
+        // Expanded Island has no Full-AOD native callback. Its concrete owner (or
+        // the player when no owner object exists) still gives the per-surface session
+        // a non-zero identity without borrowing notification/AOD state.
         bind(
+            controller = owner ?: player,
             player = player,
             anchor = elements.albumView,
             controls = elements.actionsAnchor,
@@ -150,6 +222,7 @@ internal object MediaCardLyricOverlayController {
             background = background,
             outer = outer ?: player.parent as? View,
             expandedOwner = owner,
+            hostBinding = null,
         )
     }
 
@@ -159,27 +232,70 @@ internal object MediaCardLyricOverlayController {
         }
     }
 
-    /** Kept as a no-op handoff: the unified root is never moved to an overlay. */
+    /** Kept as a desired-state marker; it never completes or hides a live session. */
     fun transitionNotificationCardToAod(player: ViewGroup) {
-        runOnMain {
-            states[player]?.markAodStable(true)
-        }
+        runOnMain { states[player]?.markAodDesired(true) }
     }
 
+    /** Attach a lease only when the caller has an evidence-backed mHeightList index. */
+    fun attachNotificationNativeHeightLease(
+        player: ViewGroup,
+        lease: NativeHeightLease,
+        nativeHeightIndex: Int,
+    ) {
+        runOnMain { states[player]?.attachHeightLease(lease, nativeHeightIndex) }
+    }
+
+    /** Uses the evidence-backed index carried by the strict HostBinding. */
+    fun attachVerifiedNotificationNativeHeightLease(
+        player: ViewGroup,
+        lease: NativeHeightLease,
+    ): Boolean = runOnMainResult {
+        val state = states[player] ?: return@runOnMainResult false
+        val index = state.hostBinding?.nativeHeightIndex ?: return@runOnMainResult false
+        state.attachHeightLease(lease, index)
+        true
+    } ?: false
+
+    /**
+     * Legacy lease entry is fail-closed because an index-less lease cannot be safely
+     * committed to mHeightList. It is retained only for source compatibility.
+     */
+    @Deprecated(
+        message = "Pass the verified mHeightList index",
+        level = DeprecationLevel.WARNING,
+    )
     fun attachNotificationNativeHeightLease(player: ViewGroup, lease: NativeHeightLease?) {
-        runOnMain { states[player]?.attachHeightLease(lease) }
+        HookLogger.w(TAG, "拒绝 index-less native height lease: mHeightList_index_missing")
+        lease?.close()
     }
 
+    fun beginNotificationFullAodTransition(
+        controller: Any,
+        player: ViewGroup,
+        targetFullAod: Boolean,
+        mode: MediaCardFullAodTransitionMode,
+        keepSecondLyric: Boolean,
+        listener: Any,
+    ): MediaCardTransitionToken? = runOnMainResult {
+        states[player]?.takeIf { it.controller === controller }
+            ?.beginTransition(targetFullAod, mode, keepSecondLyric, listener)
+    }
+
+    /** Legacy player-only begin cannot create a safe session and is fail-closed. */
+    @Deprecated(
+        message = "Pass controller and non-null listener",
+        level = DeprecationLevel.WARNING,
+    )
     fun beginNotificationFullAodTransition(
         player: ViewGroup,
         targetFullAod: Boolean,
         mode: MediaCardFullAodTransitionMode,
         keepSecondLyric: Boolean,
-        listener: Any? = player,
-    ) {
-        runOnMain {
-            states[player]?.beginTransition(targetFullAod, mode, keepSecondLyric, listener)
-        }
+        listener: Any? = null,
+    ): MediaCardTransitionToken? {
+        HookLogger.w(TAG, "拒绝 legacy transition begin: controller_or_listener_missing")
+        return null
     }
 
     fun applyNotificationFullAodTransition(
@@ -193,53 +309,63 @@ internal object MediaCardLyricOverlayController {
         targetSecondLineAlpha: Int?,
         targetCardHeight: Int?,
         targetSecondLineVisible: Boolean,
-        transitionToken: MediaCardTransitionToken? = null,
-    ) {
-        runOnMain {
-            states[player]?.applyTransition(
-                fraction = fraction,
-                suppliedToken = transitionToken,
-                mainColor = textColor,
-                secondaryColor = secondaryTargetColor,
-                targetSecondLineTextSizeSp = targetSecondLineTextSizeSp,
-                targetSecondLineTopOffsetPx = targetSecondLineTopOffsetPx,
-                targetSecondLineAlpha = targetSecondLineAlpha,
-                targetCardHeight = targetCardHeight,
-                targetSecondLineVisible = targetSecondLineVisible,
-            )
-        }
-    }
+        transitionToken: MediaCardTransitionToken,
+    ): Boolean = runOnMainResult {
+        states[player]?.applyTransition(
+            fraction = fraction,
+            suppliedToken = transitionToken,
+            mainColor = textColor,
+            secondaryColor = secondaryTargetColor,
+            targetSecondLineTextSizeSp = targetSecondLineTextSizeSp,
+            targetSecondLineTopOffsetPx = targetSecondLineTopOffsetPx,
+            targetSecondLineAlpha = targetSecondLineAlpha,
+            targetCardHeight = targetCardHeight,
+            targetSecondLineVisible = targetSecondLineVisible,
+        ) == true
+    } ?: false
 
     fun activeNotificationTransitionToken(player: ViewGroup): MediaCardTransitionToken? =
         states[player]?.activeToken()
 
     fun cancelNotificationFullAodTransition(
         player: ViewGroup,
-        transitionToken: MediaCardTransitionToken? = null,
-    ) {
-        runOnMain { states[player]?.cancelTransition(transitionToken) }
-    }
+        transitionToken: MediaCardTransitionToken,
+    ): Boolean = runOnMainResult { states[player]?.cancelTransition(transitionToken) == true } ?: false
 
+    fun completeNotificationFullAodTransition(
+        player: ViewGroup,
+        transitionToken: MediaCardTransitionToken,
+    ): Boolean = runOnMainResult { states[player]?.completeTransition(transitionToken) == true } ?: false
+
+    /**
+     * Deprecated global completion is deliberately inert. A callback without its
+     * player/token must never settle another card's session.
+     */
+    @Deprecated(
+        message = "Use completeNotificationFullAodTransition(player, token)",
+        level = DeprecationLevel.WARNING,
+    )
     fun finishNotificationFullAodTransition(targetFullAod: Boolean) {
-        runOnMain {
-            synchronized(states) { states.values.toList() }.forEach { state ->
-                state.finishTransition(targetFullAod)
-            }
-        }
+        HookLogger.w(TAG, "拒绝 legacy global transition finish: scoped_token_missing target=$targetFullAod")
     }
 
     /**
-     * The old API allowed the notification root to be detached and replaced by an
-     * AOD root. That operation is intentionally ignored; both surfaces consume the
-     * same attached root and the flag is retained only for binary/source callers.
+     * Legacy root-handoff entry is also inert. The unified root remains attached and
+     * completion is performed only by the scoped token API.
      */
+    @Deprecated(
+        message = "Use completeNotificationFullAodTransition(player, token)",
+        level = DeprecationLevel.WARNING,
+    )
     fun completeNotificationCardToAodTransition(
         player: ViewGroup,
         detachNotificationRoot: Boolean = false,
     ) {
-        runOnMain {
-            states[player]?.completeHandoff(detachNotificationRoot)
-        }
+        HookLogger.w(
+            TAG,
+            "忽略 legacy root handoff: scoped_token_missing detach=$detachNotificationRoot " +
+                "player=${System.identityHashCode(player)}",
+        )
     }
 
     fun pendingNotificationToAodBaseline(player: ViewGroup): MediaCardAodTransitionBaseline? =
@@ -307,6 +433,7 @@ internal object MediaCardLyricOverlayController {
     }
 
     private fun bind(
+        controller: Any,
         player: ViewGroup,
         anchor: View?,
         controls: View?,
@@ -320,9 +447,21 @@ internal object MediaCardLyricOverlayController {
         background: View?,
         outer: View?,
         expandedOwner: View?,
+        hostBinding: MediaCardHostBinding?,
     ) {
+        if (surface == Surface.NOTIFICATION_CENTER &&
+            (hostBinding == null || !hostBinding.isCompatibleWith(player))
+        ) {
+            HookLogger.w(TAG, "拒绝 notification bind: verified_host_binding_missing_or_mismatched")
+            return
+        }
         runOnMain {
-            val state = states[player] ?: State(player).also { states[player] = it }
+            val existing = states[player]
+            if (existing != null && existing.controller !== controller) {
+                existing.restore(immediate = true)
+                states.remove(player)
+            }
+            val state = states[player] ?: State(player, controller).also { states[player] = it }
             state.bindReferences(
                 anchor = anchor,
                 controls = controls,
@@ -336,6 +475,7 @@ internal object MediaCardLyricOverlayController {
                 background = background,
                 outer = outer,
                 expandedOwner = expandedOwner,
+                hostBinding = hostBinding,
             )
             state.refresh()
         }
@@ -357,40 +497,6 @@ internal object MediaCardLyricOverlayController {
             centerNonDuetSong = config.centerNonDuetSong,
             centerGroupVocals = config.centerGroupVocals,
         )
-
-    private fun createRootLayoutParams(player: ViewGroup, anchor: View?): ViewGroup.LayoutParams {
-        val calculatedTopMargin = localBottom(anchor, player) + dp(TOP_GAP_DP, player)
-        return runCatching {
-            val loader = player.javaClass.classLoader ?: return@runCatching null
-            val paramsClass = loader.loadClass(
-                "androidx.constraintlayout.widget.ConstraintLayout\$LayoutParams",
-            )
-            val params = paramsClass.getConstructor(
-                Int::class.javaPrimitiveType,
-                Int::class.javaPrimitiveType,
-            ).newInstance(0, ViewGroup.LayoutParams.WRAP_CONTENT) as ViewGroup.LayoutParams
-            setInt(params, "startToStart", 0)
-            setInt(params, "endToEnd", 0)
-            setInt(params, "topToTop", 0)
-            setInt(params, "topToBottom", -1)
-            (params as? ViewGroup.MarginLayoutParams)?.apply {
-                this.topMargin = calculatedTopMargin
-                leftMargin = 0
-                rightMargin = 0
-                setMarginStart(0)
-                setMarginEnd(0)
-            }
-            params
-        }.getOrNull() ?: FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-            Gravity.TOP,
-        ).apply { topMargin = calculatedTopMargin }
-    }
-
-    private fun setInt(params: ViewGroup.LayoutParams, name: String, value: Int) {
-        runCatching { params.javaClass.getField(name).setInt(params, value) }
-    }
 
     private fun localBottom(view: View?, ancestor: View): Int =
         view?.let { localBounds(it, ancestor)?.bottom } ?: 0
@@ -424,6 +530,14 @@ internal object MediaCardLyricOverlayController {
         if (Looper.myLooper() == Looper.getMainLooper()) block() else mainHandler.post(block)
     }
 
+    private fun <T> runOnMainResult(block: () -> T): T? {
+        if (Looper.myLooper() == Looper.getMainLooper()) return block()
+        // Cross-thread callers cannot safely receive a synchronous state result.
+        // They must use the native callback's main-thread dispatch boundary.
+        mainHandler.post { block() }
+        return null
+    }
+
     private data class Bounds(val left: Int, val top: Int, val right: Int, val bottom: Int)
 
     private enum class Surface {
@@ -431,7 +545,10 @@ internal object MediaCardLyricOverlayController {
         EXPANDED_ISLAND,
     }
 
-    private class State(private val player: ViewGroup) {
+    private class State(
+        private val player: ViewGroup,
+        val controller: Any,
+    ) {
         var anchor: View? = null
         var controls: View? = null
         var actionViews: List<View> = emptyList()
@@ -444,15 +561,22 @@ internal object MediaCardLyricOverlayController {
         var background: View? = null
         var outer: View? = null
         var expandedOwner: View? = null
+        var hostBinding: MediaCardHostBinding? = null
         var root: UnifiedMediaLyricRoot? = null
         var baseline: MediaCardAodTransitionBaseline? = null
         var targetCardHeight: Int? = null
         private var outerBaseHeight: Int? = null
         private var outerOriginalLayoutHeight: Int? = null
         private var outerOriginalMinimumHeight: Int? = null
+        private var nativeHeightLease: NativeHeightLease? = null
+        private var nativeHeightIndex: Int? = null
+        private var lastFrame: MediaCardFramePlan? = null
+        private var lastGeometry: MediaCardGeometrySnapshot? = null
+        private var transitionStartFrame: MediaCardFramePlan? = null
+        private var transitionTargetFrame: MediaCardFramePlan? = null
 
         private val session = MediaCardHostSession(
-            MediaCardControllerIdentity.of(controller = null, player = player),
+            MediaCardControllerIdentity.of(controller = controller, player = player),
         )
         private val expandedBases = IdentityHashMap<View, Int>()
         private val originalAlphas = IdentityHashMap<View, Float>()
@@ -483,6 +607,11 @@ internal object MediaCardLyricOverlayController {
             if (states[player] === this && !suspendedForAod) refresh()
         }
 
+        private fun sameHostBinding(next: MediaCardHostBinding?): Boolean = when {
+            hostBinding == null && next == null -> true
+            else -> hostBinding?.isEquivalentTo(next) == true
+        }
+
         fun bindReferences(
             anchor: View?,
             controls: View?,
@@ -496,19 +625,31 @@ internal object MediaCardLyricOverlayController {
             background: View?,
             outer: View?,
             expandedOwner: View?,
+            hostBinding: MediaCardHostBinding?,
         ) {
             val changedHost = this.packageName != packageName || this.surface != surface ||
                 this.background !== background || this.outer !== outer ||
-                this.expandedOwner !== expandedOwner || this.anchor !== anchor
-            if (changedHost && root != null && session.coordinator.activeToken() == null) {
-                removeRoot()
-                session.detach()
-                session.attach(null)
+                this.expandedOwner !== expandedOwner || this.anchor !== anchor ||
+                !sameHostBinding(hostBinding)
+            if (changedHost) {
+                val hadActiveTransition = session.coordinator.activeToken() != null
+                if (hadActiveTransition) {
+                    removePreDraw()
+                    session.rebind(stableFullAod)
+                    transitionToken = null
+                    transitionStartFrame = null
+                    transitionTargetFrame = null
+                } else if (root != null) {
+                    session.detach()
+                    session.attach(null)
+                }
+                if (root != null) removeRoot()
                 baseline = null
                 outerBaseHeight = null
                 outerOriginalLayoutHeight = null
                 outerOriginalMinimumHeight = null
                 lastModelKey = null
+                lastConfig = null
             }
             this.anchor = anchor
             this.controls = controls
@@ -522,6 +663,7 @@ internal object MediaCardLyricOverlayController {
             this.background = background
             this.outer = outer
             this.expandedOwner = expandedOwner
+            this.hostBinding = hostBinding
             captureBaselineIfNeeded()
             ensureRoot()
             actionViews.forEach { view ->
@@ -626,7 +768,19 @@ internal object MediaCardLyricOverlayController {
             return text to alignment
         }
 
-        fun attachHeightLease(lease: NativeHeightLease?) {
+        fun attachHeightLease(lease: NativeHeightLease?, index: Int?) {
+            if (lease == null || index == null || index < 0) {
+                debug("拒绝 native height lease: owner_or_index_missing")
+                lease?.close()
+                return
+            }
+            if (session.coordinator.activeToken() != null && nativeHeightLease !== lease) {
+                debug("拒绝替换 active native height lease: transition_active")
+                lease.close()
+                return
+            }
+            nativeHeightLease = lease
+            nativeHeightIndex = index
             session.attachHeightLease(lease)
         }
 
@@ -634,16 +788,25 @@ internal object MediaCardLyricOverlayController {
             targetFullAod: Boolean,
             mode: MediaCardFullAodTransitionMode,
             keepSecondLyric: Boolean,
-            listener: Any?,
-        ) {
-            if (root == null) ensureRoot()
-            captureBaselineIfNeeded()
-            if (session.coordinator.activeToken() != null) {
-                session.coordinator.recover(
-                    snapshotSequence = session.stablePresentation?.snapshotSequence ?: 0L,
-                    stableFullAod = stableFullAod,
-                )
+            listener: Any,
+        ): MediaCardTransitionToken? {
+            ensureRoot()
+            if (root == null) {
+                debug("拒绝开始媒体转场: unified_root_unavailable")
+                return null
             }
+            captureBaselineIfNeeded()
+            val previousFrame = lastFrame ?: MediaCardFramePlan.stable(
+                targetFullAod = stableFullAod,
+                mode = transitionMode,
+                cardHeight = nativeHeight ?: measuredHeight(player),
+                keepSecondLyric = transitionKeepSecond,
+            )
+            val wasActive = session.coordinator.activeToken() != null
+            // Always interpolate from the last rendered frame. For a stable begin
+            // this is the stable endpoint; for a reversal it is the non-endpoint
+            // frame already on screen. Both paths therefore share one commit model.
+            transitionStartFrame = previousFrame
             transitionMode = mode
             transitionKeepSecond = keepSecondLyric
             val result = session.begin(
@@ -651,172 +814,167 @@ internal object MediaCardLyricOverlayController {
                 targetFullAod = targetFullAod,
                 mode = mode,
             )
-            transitionToken = result.token
+            val token = result.token ?: return null
+            transitionToken = token
             transitionFraction = 0f
-            transitionTargetHeight = if (targetFullAod) null else baseline?.player?.baseHeight
+            transitionTargetHeight = resolveTargetCardHeight(targetFullAod)
+            transitionTargetFrame = MediaCardFramePlan.stable(
+                targetFullAod = targetFullAod,
+                mode = mode,
+                cardHeight = transitionTargetHeight,
+                keepSecondLyric = keepSecondLyric,
+            )
             transitionSecondSize = null
             transitionSecondOffset = null
             transitionSecondAlpha = null
             transitionSecondVisible = keepSecondLyric
             installPreDraw()
+            syncRootLayoutToGeometry()
             root?.visibility = View.VISIBLE
-            applyFrame(
-                FramePlanFactory.create(
-                    fraction = 0f,
-                    targetFullAod = targetFullAod,
-                    mode = mode,
-                    geometry = geometry(),
-                    targetCardHeight = transitionTargetHeight,
-                    keepSecondLyric = keepSecondLyric,
-                    secondaryTextSizeSp = null,
-                    secondaryTopOffsetPx = null,
-                    secondaryAlpha = null,
-                    secondaryVisible = keepSecondLyric,
-                ),
+            applyFrame(makeFrame(0f, null))
+            debug(
+                "transition_begin token=${token.sessionId}/${token.epoch} target=${token.targetFullAod} " +
+                    "reverse=$wasActive startFraction=${previousFrame.fraction} targetHeight=$transitionTargetHeight",
             )
+            return token
         }
 
         fun activeToken(): MediaCardTransitionToken? = transitionToken
 
         fun applyTransition(
             fraction: Float,
-            suppliedToken: MediaCardTransitionToken?,
+            suppliedToken: MediaCardTransitionToken,
             mainColor: Int,
             secondaryColor: Int,
             targetSecondLineTextSizeSp: Float?,
             targetSecondLineTopOffsetPx: Int?,
             targetSecondLineAlpha: Int?,
-            targetCardHeight: Int?,
+            @Suppress("UNUSED_PARAMETER") targetCardHeight: Int?,
             targetSecondLineVisible: Boolean,
-        ) {
-            val token = transitionToken ?: return
-            val result = session.coordinator.update(suppliedToken ?: token, fraction)
+        ): Boolean {
+            val token = transitionToken ?: return false
+            val result = session.coordinator.update(suppliedToken, fraction)
             if (!result.accepted) {
                 debug("拒绝过期媒体转场帧: reason=${result.reason}")
-                return
+                return false
             }
             transitionFraction = fraction.coerceIn(0f, 1f)
-            transitionTargetHeight = targetCardHeight ?: transitionTargetHeight
             transitionSecondSize = targetSecondLineTextSizeSp
             transitionSecondOffset = targetSecondLineTopOffsetPx
             transitionSecondAlpha = targetSecondLineAlpha
             transitionSecondVisible = targetSecondLineVisible
             transitionMainColor = mainColor
             transitionSecondaryColor = secondaryColor
-            val frame = FramePlanFactory.create(
-                fraction = transitionFraction,
-                targetFullAod = token.targetFullAod,
-                mode = transitionMode,
-                geometry = geometry(),
-                targetCardHeight = transitionTargetHeight,
-                keepSecondLyric = transitionKeepSecond,
-                secondaryTextSizeSp = transitionSecondSize,
-                secondaryTopOffsetPx = transitionSecondOffset,
-                secondaryAlpha = transitionSecondAlpha,
-                secondaryVisible = transitionSecondVisible,
-            )
-            applyFrame(frame)
+            syncRootLayoutToGeometry()
+            if (transitionTargetHeight == null) {
+                transitionTargetHeight = resolveTargetCardHeight(token.targetFullAod)
+                transitionTargetFrame = MediaCardFramePlan.stable(
+                    targetFullAod = token.targetFullAod,
+                    mode = transitionMode,
+                    cardHeight = transitionTargetHeight,
+                    keepSecondLyric = transitionKeepSecond,
+                )
+            }
+            applyFrame(makeFrame(transitionFraction, transitionTargetStyle()))
+            return true
         }
 
-        fun cancelTransition(suppliedToken: MediaCardTransitionToken? = null) {
-            val token = transitionToken ?: return
-            if (suppliedToken != null && suppliedToken != token) {
+        fun cancelTransition(token: MediaCardTransitionToken): Boolean {
+            if (transitionToken !== token) {
                 debug("拒绝过期媒体转场取消: reason=stale_token")
-                return
+                return false
             }
             val result = session.cancel(token)
             if (!result.accepted) {
                 debug("拒绝过期媒体转场取消: reason=${result.reason}")
-                return
+                return false
             }
             removePreDraw()
             transitionToken = null
             stableFullAod = !token.targetFullAod
             suspendedForAod = stableFullAod
             transitionTargetHeight = null
-            if (stableFullAod) {
-                val plan = MediaCardFramePlan.stable(
-                    targetFullAod = true,
-                    mode = transitionMode,
-                    cardHeight = nativeHeight,
-                    keepSecondLyric = transitionKeepSecond,
-                )
-                applyFrame(plan)
-            } else {
+            transitionStartFrame = null
+            transitionTargetFrame = null
+            nativeHeightLease = null
+            nativeHeightIndex = null
+            val recovery = MediaCardFramePlan.stable(
+                targetFullAod = stableFullAod,
+                mode = transitionMode,
+                cardHeight = if (stableFullAod) nativeHeight else resolveTargetCardHeight(false),
+                keepSecondLyric = transitionKeepSecond,
+            )
+            applyFrame(recovery)
+            if (!stableFullAod) {
                 restoreAllNativeVisuals()
-                root?.resetToStable()
                 suspendedForAod = false
                 refresh()
             }
+            return true
         }
 
-        fun finishTransition(targetFullAod: Boolean) {
-            val token = transitionToken
-            if (token == null) {
-                stableFullAod = targetFullAod
-                suspendedForAod = targetFullAod
-                return
+        fun completeTransition(token: MediaCardTransitionToken): Boolean {
+            if (transitionToken !== token) {
+                debug("拒绝过期媒体转场完成: reason=stale_token")
+                return false
             }
+            val finalHeight = transitionTargetHeight ?: resolveTargetCardHeight(token.targetFullAod)
             val final = MediaCardFramePlan.stable(
-                targetFullAod = targetFullAod,
+                targetFullAod = token.targetFullAod,
                 mode = transitionMode,
-                cardHeight = if (targetFullAod) transitionTargetHeight else baseline?.player?.baseHeight,
+                cardHeight = finalHeight,
                 keepSecondLyric = transitionKeepSecond,
             )
+            // The final frame is committed while the lease is still owned by this
+            // session. complete() then restores/releases the native snapshot.
             applyFrame(final)
             val result = session.complete(token)
             if (!result.accepted) {
                 debug("拒绝过期媒体转场完成: reason=${result.reason}")
-                return
+                return false
             }
             removePreDraw()
             transitionToken = null
-            stableFullAod = targetFullAod
-            suspendedForAod = targetFullAod
-            nativeHeight = if (targetFullAod) transitionTargetHeight else null
-            if (targetFullAod) {
-                root?.visibility = View.VISIBLE
-                root?.alpha = final.rootAlpha
-                restoreOrFadeActions(final.actionsAlpha)
+            transitionStartFrame = null
+            transitionTargetFrame = null
+            transitionTargetHeight = null
+            nativeHeightLease = null
+            nativeHeightIndex = null
+            stableFullAod = token.targetFullAod
+            suspendedForAod = token.targetFullAod
+            nativeHeight = if (token.targetFullAod) finalHeight else null
+            if (token.targetFullAod) {
+                root?.visibility = if (final.lyricVisible) View.VISIBLE else View.INVISIBLE
             } else {
                 suspendedForAod = false
-                root?.resetToStable()
                 restoreAllNativeVisuals()
                 refresh()
             }
+            debug(
+                "transition_complete token=${token.sessionId}/${token.epoch} " +
+                    "target=${token.targetFullAod} height=$finalHeight leaseReleased=${result.releaseHeightLease}",
+            )
+            return true
         }
 
-        fun completeHandoff(detachRequested: Boolean) {
-            if (detachRequested) {
-                debug("忽略 detachNotificationRoot 请求: unified_root_contract")
-            }
-            stableFullAod = true
-            suspendedForAod = true
-            root?.visibility = View.VISIBLE
-        }
-
-        fun markAodStable(active: Boolean) {
+        /** Desired-state compatibility entry; it never settles an active token. */
+        fun markAodDesired(active: Boolean) {
+            if (session.coordinator.activeToken() != null) return
             stableFullAod = active
             suspendedForAod = active
-            root?.visibility = View.VISIBLE
+            root?.visibility = if (active) View.VISIBLE else root?.visibility ?: View.VISIBLE
             if (!active) refresh()
         }
 
-        fun setAodActive(active: Boolean) {
-            suspendedForAod = active
-            stableFullAod = active
-            root?.visibility = View.VISIBLE
-            if (!active) refresh()
-        }
+        fun setAodActive(active: Boolean) = markAodDesired(active)
 
         fun applyAuthoritativeNativeHeight(height: Int) {
             if (height <= 0) return
+            // This legacy path has no verified lease/index and therefore cannot write
+            // any host LayoutParams. It only records an observed native value.
             nativeHeight = height
             targetCardHeight = height
-            // The native host remains the height authority. This method only mirrors
-            // the explicitly supplied host value for the fallback callback path.
-            setLayoutHeight(player, height)
-            player.requestLayout()
+            debug("记录 native height=$height;未写入 player 因 lease/index 缺失")
         }
 
         fun applyExpandedViewport(views: List<View>): Int? {
@@ -858,6 +1016,8 @@ internal object MediaCardLyricOverlayController {
             }
             nativeHeight = null
             targetCardHeight = null
+            nativeHeightLease = null
+            nativeHeightIndex = null
             player.requestLayout()
         }
 
@@ -867,6 +1027,10 @@ internal object MediaCardLyricOverlayController {
             transitionToken?.let { session.cancel(it) }
             transitionToken = null
             session.detach()
+            nativeHeightLease = null
+            nativeHeightIndex = null
+            transitionStartFrame = null
+            transitionTargetFrame = null
             restoreAllNativeVisuals()
             baseline?.let { value ->
                 restoreBaseline(value.player)
@@ -883,13 +1047,39 @@ internal object MediaCardLyricOverlayController {
         }
 
         private fun ensureRoot() {
-            if (root != null) return
-            val created = UnifiedMediaLyricRoot(player.context)
-            created.layoutParams = createRootLayoutParams(player, anchor)
-            created.visibility = View.GONE
+            val current = root
+            if (current != null && current.parent === player) {
+                syncRootLayoutToGeometry()
+                return
+            }
+            if (current != null) {
+                rootLayoutListener?.let(current::removeOnLayoutChangeListener)
+                (current.parent as? ViewGroup)?.removeView(current)
+                rootLayoutListener = null
+                root = null
+                // A host subtree rebind invalidates native callbacks. Preserve the
+                // content model, release the old lease, and require a new begin.
+                removePreDraw()
+                session.rebind(stableFullAod)
+                nativeHeightLease = null
+                nativeHeightIndex = null
+                transitionToken = null
+                transitionStartFrame = null
+                transitionTargetFrame = null
+                transitionTargetHeight = null
+            }
+            val params = createRootLayoutParams() ?: run {
+                debug("拒绝创建歌词 root: host_layout_params_unavailable")
+                return
+            }
+            val created = UnifiedMediaLyricRoot(player.context).apply {
+                layoutParams = params
+                visibility = View.GONE
+            }
             root = created
             player.addView(created)
             rootLayoutListener = View.OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+                syncRootLayoutToGeometry()
                 if (session.coordinator.activeToken() == null && !suspendedForAod) {
                     refreshBaselineIfNeeded()
                     reconcileStableHeight()
@@ -902,9 +1092,48 @@ internal object MediaCardLyricOverlayController {
         private fun removeRoot() {
             val current = root ?: return
             rootLayoutListener?.let(current::removeOnLayoutChangeListener)
-            if (current.parent === player) player.removeView(current)
+            (current.parent as? ViewGroup)?.removeView(current)
             rootLayoutListener = null
             root = null
+        }
+
+        private fun createRootLayoutParams(): ViewGroup.LayoutParams? {
+            val topGap = dp(TOP_GAP_DP, player)
+            hostBinding?.let { binding ->
+                if (!binding.isCompatibleWith(player)) return null
+                return binding.createRootLayoutParams(player, anchor, topGap)
+            }
+            if (surface != Surface.EXPANDED_ISLAND) return null
+            return FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                Gravity.TOP,
+            ).apply {
+                topMargin = localBottom(anchor, player) + topGap
+                leftMargin = 0
+                rightMargin = 0
+            }
+        }
+
+        private fun syncRootLayoutToGeometry() {
+            val currentRoot = root ?: return
+            if (currentRoot.parent !== player) {
+                ensureRoot()
+                return
+            }
+            val next = createRootLayoutParams() ?: return
+            val current = currentRoot.layoutParams
+            val currentMargins = current as? ViewGroup.MarginLayoutParams
+            val nextMargins = next as? ViewGroup.MarginLayoutParams
+            if (currentMargins != null && nextMargins != null &&
+                currentMargins.topMargin == nextMargins.topMargin &&
+                currentMargins.leftMargin == nextMargins.leftMargin &&
+                currentMargins.rightMargin == nextMargins.rightMargin &&
+                currentMargins.bottomMargin == nextMargins.bottomMargin &&
+                current.javaClass === next.javaClass
+            ) return
+            currentRoot.layoutParams = next
+            lastGeometry = geometry()
         }
 
         private fun refreshBaselineIfNeeded() {
@@ -937,17 +1166,7 @@ internal object MediaCardLyricOverlayController {
                 baseHeight = measuredHeight(view),
             )
 
-        private fun findHeader(view: View): View? {
-            if (view.javaClass.name.endsWith("MiuiMediaHeaderView")) return view
-            var found: View? = null
-            if (view is ViewGroup) {
-                for (index in 0 until view.childCount) {
-                    found = findHeader(view.getChildAt(index))
-                    if (found != null) break
-                }
-            }
-            return found
-        }
+        private fun findHeader(view: View): View? = hostBinding?.findHeader(view)
 
         private fun hideAndRestore() {
             if (session.coordinator.activeToken() != null) return
@@ -960,41 +1179,124 @@ internal object MediaCardLyricOverlayController {
             lastConfig = null
         }
 
+        private fun resolveTargetCardHeight(targetFullAod: Boolean): Int? {
+            if (targetFullAod) {
+                hostBinding?.verifiedNativeTargetHeight(player, true)?.let { return it }
+            }
+            val currentRoot = root ?: return null
+            val rootHeight = currentRoot.measuredContentHeight().takeIf { it > 0 } ?: return null
+            val currentGeometry = geometry()
+            val baseHeight = baseline?.player?.baseHeight ?: currentGeometry.playerHeight
+            val baseGeometry = currentGeometry.copy(
+                playerHeight = baseHeight,
+                cardBottom = baseHeight,
+            )
+            return geometryResolver.targetCardHeight(
+                geometry = baseGeometry,
+                lyricHeight = rootHeight,
+                topInset = dp(TOP_GAP_DP, player),
+                bottomInset = dp(ROOT_BOTTOM_GAP_DP, player),
+            )
+        }
+
+        private fun transitionTargetStyle(): MediaCardFramePlan =
+            (transitionTargetFrame ?: MediaCardFramePlan.stable(
+                targetFullAod = transitionToken?.targetFullAod == true,
+                mode = transitionMode,
+                cardHeight = transitionTargetHeight,
+                keepSecondLyric = transitionKeepSecond,
+            )).let { target ->
+                val alpha = transitionSecondAlpha?.let { (it / 255f).coerceIn(0f, 1f) }
+                target.copy(
+                    secondaryTextSizeSp = transitionSecondSize ?: target.secondaryTextSizeSp,
+                    secondaryTopOffsetPx = transitionSecondOffset ?: target.secondaryTopOffsetPx,
+                    secondaryTranslationY = transitionSecondOffset?.toFloat()
+                        ?: target.secondaryTranslationY,
+                    secondaryAlpha = transitionSecondAlpha ?: target.secondaryAlpha,
+                    resolvedSecondaryAlpha = alpha ?: target.resolvedSecondaryAlpha,
+                    secondaryVisible = transitionSecondVisible && target.secondaryVisible,
+                )
+            }
+
+        private fun makeFrame(
+            fraction: Float,
+            targetStyle: MediaCardFramePlan?,
+        ): MediaCardFramePlan {
+            val token = transitionToken ?: return lastFrame ?: MediaCardFramePlan.stable(
+                targetFullAod = stableFullAod,
+                mode = transitionMode,
+                cardHeight = targetCardHeight,
+                keepSecondLyric = transitionKeepSecond,
+            )
+            val target = targetStyle ?: transitionTargetStyle()
+            val start = transitionStartFrame
+            return if (start != null) {
+                MediaCardFramePlan.interpolateFrom(start, target, fraction)
+            } else {
+                FramePlanFactory.create(
+                    fraction = fraction,
+                    targetFullAod = token.targetFullAod,
+                    mode = transitionMode,
+                    geometry = geometry(),
+                    targetCardHeight = transitionTargetHeight,
+                    keepSecondLyric = transitionKeepSecond,
+                    secondaryTextSizeSp = transitionSecondSize,
+                    secondaryTopOffsetPx = transitionSecondOffset,
+                    secondaryAlpha = transitionSecondAlpha,
+                    secondaryVisible = transitionSecondVisible,
+                    startSecondaryTextSizeSp = root?.visibleSecondaryTextSizeSp(),
+                    startSecondaryAlpha = lastFrame?.resolvedSecondaryAlpha ?: 1f,
+                    startSecondaryTranslationY = lastFrame?.secondaryTranslationY ?: 0f,
+                )
+            }
+        }
+
         private fun reconcileStableHeight() {
+            if (session.coordinator.activeToken() != null || stableFullAod) return
             val currentRoot = root ?: return
             if (currentRoot.visibility != View.VISIBLE || !currentRoot.hasVisibleContent()) return
-            val base = baseline?.player?.baseHeight ?: return
             val geometry = geometry()
             val rootHeight = currentRoot.measuredContentHeight().takeIf { it > 0 } ?: return
-            val topInset = (currentRoot.layoutParams as? ViewGroup.MarginLayoutParams)?.topMargin
-                ?: dp(TOP_GAP_DP, player)
-            val bottomInset = baseline?.let { original ->
-                (original.player.baseHeight - geometry.contentBottom).coerceAtLeast(0)
-            } ?: dp(ROOT_BOTTOM_GAP_DP, player)
-            val target = maxOf(base, base + rootHeight + topInset + bottomInset)
+            val target = resolveTargetCardHeight(false) ?: return
+            val base = baseline?.player?.baseHeight ?: geometry.playerHeight
             targetCardHeight = target
             val delta = target - base
             setLayoutHeight(player, target)
-            if (background !== player) background?.let { setLayoutHeight(it, (baseline?.background?.baseHeight ?: measuredHeight(it)) + delta) }
-            if (outer !== null && outer !== player) outer?.let {
-                setLayoutHeight(it, (outerBaseHeight ?: measuredHeight(it)) + delta)
+            if (background !== player) {
+                val backgroundBase = baseline?.background?.baseHeight ?: measuredHeight(background ?: player)
+                background?.let { setLayoutHeight(it, backgroundBase + delta) }
+            }
+            if (outer != null && outer !== player) {
+                setLayoutHeight(outer!!, (outerBaseHeight ?: measuredHeight(outer!!)) + delta)
             }
             player.requestLayout()
             background?.requestLayout()
             outer?.requestLayout()
+            debug(
+                "stable_height target=$target base=$base rootTop=${geometry.lyricTop + dp(TOP_GAP_DP, player)} " +
+                    "rootHeight=$rootHeight contentBottom=${geometry.contentBottom}",
+            )
         }
 
-        private fun geometry(): MediaCardGeometrySnapshot = geometryResolver.resolve(
-            player = player,
-            anchor = anchor,
-            controls = controls,
-            progress = progress,
-            actions = actionViews,
-        )
+        private fun geometry(): MediaCardGeometrySnapshot {
+            val value = geometryResolver.resolve(
+                player = player,
+                anchor = anchor,
+                controls = controls,
+                progress = progress,
+                actions = actionViews,
+            )
+            lastGeometry = value
+            return value
+        }
 
         private fun applyFrame(frame: MediaCardFramePlan) {
             val currentRoot = root ?: return
-            currentRoot.visibility = View.VISIBLE
+            if (currentRoot.parent !== player) {
+                ensureRoot()
+                return
+            }
+            syncRootLayoutToGeometry()
             currentRoot.applyTextColors(
                 mainColor = transitionMainColor ?: 0xFFFFFFFF.toInt(),
                 secondaryColor = transitionSecondaryColor ?: 0xFFFFFFFF.toInt(),
@@ -1004,11 +1306,27 @@ internal object MediaCardLyricOverlayController {
             applyAlpha(elapsedTime, frame.elapsedAlpha)
             applyAlpha(totalTime, frame.totalAlpha)
             restoreOrFadeActions(frame.actionsAlpha)
+            frame.targetCardHeight?.let { height ->
+                targetCardHeight = height
+                val lease = nativeHeightLease
+                val index = nativeHeightIndex
+                if (session.coordinator.activeToken() != null) {
+                    if (lease != null && index != null) {
+                        val committed = runCatching { lease.setTargetHeight(index, height) }.getOrDefault(false)
+                        if (!committed) debug("native height commit rejected index=$index height=$height")
+                    } else {
+                        debug("native height commit blocked: verified_lease_or_index_missing height=$height")
+                    }
+                }
+            }
+            lastFrame = frame
+            lastGeometry = geometry()
             if (BuildConfig.DEBUG) {
                 debug(
                     "frame fraction=${frame.fraction}, targetFullAod=${frame.targetFullAod}, " +
                         "state=${session.coordinator.state}, rootAlpha=${frame.rootAlpha}, " +
-                        "actionsAlpha=${frame.actionsAlpha}, cardTarget=${frame.targetCardHeight}",
+                        "actionsAlpha=${frame.actionsAlpha}, cardTarget=${frame.targetCardHeight}, " +
+                        "stable=${frame.stableAfterCommit}, leaseIndex=${nativeHeightIndex}",
                 )
             }
         }

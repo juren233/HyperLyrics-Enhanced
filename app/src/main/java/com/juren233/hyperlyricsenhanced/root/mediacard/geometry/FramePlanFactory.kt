@@ -9,7 +9,6 @@ package com.juren233.hyperlyricsenhanced.root.mediacard.geometry
 import com.juren233.hyperlyricsenhanced.root.mediacard.MediaCardFullAodTransitionMode
 import com.juren233.hyperlyricsenhanced.root.mediacard.transition.MediaCardFramePlan
 
-/** Bridges host geometry/target metrics to the single native-fraction frame plan. */
 internal object FramePlanFactory {
     fun create(
         fraction: Float,
@@ -22,6 +21,9 @@ internal object FramePlanFactory {
         secondaryTopOffsetPx: Int?,
         secondaryAlpha: Int?,
         secondaryVisible: Boolean,
+        startSecondaryTextSizeSp: Float? = null,
+        startSecondaryAlpha: Float = 1f,
+        startSecondaryTranslationY: Float = 0f,
     ): MediaCardFramePlan = MediaCardFramePlan.interpolate(
         fraction = fraction,
         targetFullAod = targetFullAod,
@@ -33,5 +35,8 @@ internal object FramePlanFactory {
         secondaryTopOffsetPx = secondaryTopOffsetPx,
         secondaryAlpha = secondaryAlpha,
         secondaryVisible = secondaryVisible,
+        startSecondaryTextSizeSp = startSecondaryTextSizeSp,
+        startSecondaryAlpha = startSecondaryAlpha,
+        startSecondaryTranslationY = startSecondaryTranslationY,
     )
 }
