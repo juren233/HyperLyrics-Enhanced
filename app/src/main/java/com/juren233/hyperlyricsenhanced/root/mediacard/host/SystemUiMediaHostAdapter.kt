@@ -22,7 +22,7 @@ class SystemUiMediaHostAdapter(
     private val profile: SystemUiMediaProfile,
 ) {
     private val lock = Any()
-    private val bindings = java.util.WeakHashMap<ClassLoader, Binding>()
+    private val bindings = java.util.WeakHashMap<ClassLoader, WeakReference<Binding>>()
 
     fun capability(classLoader: ClassLoader?): SystemUiMediaCapability {
         if (classLoader == null) return SystemUiMediaCapability.disabled("class_loader_missing")
@@ -39,7 +39,10 @@ class SystemUiMediaHostAdapter(
     }
 
     private fun bindingFor(classLoader: ClassLoader): Binding = synchronized(lock) {
-        bindings[classLoader] ?: resolve(classLoader).also { bindings[classLoader] = it }
+        bindings[classLoader]?.get()?.let { return@synchronized it }
+        return@synchronized resolve(classLoader).also {
+            bindings[classLoader] = WeakReference(it)
+        }
     }
 
     private fun resolve(classLoader: ClassLoader): Binding {
@@ -57,6 +60,7 @@ class SystemUiMediaHostAdapter(
             val owner = runCatching {
                 classLoader.loadClass(descriptorToBinaryName(target.ownerDescriptor))
             }.getOrNull() ?: return@mapNotNull null
+            if (owner.classLoader !== classLoader) return@mapNotNull null
             val method = owner.declaredMethods.firstOrNull { candidate ->
                 candidate.name == target.name &&
                     methodDescriptor(candidate) == target.signature
@@ -68,6 +72,7 @@ class SystemUiMediaHostAdapter(
             val owner = runCatching {
                 classLoader.loadClass(descriptorToBinaryName(target.ownerDescriptor))
             }.getOrNull() ?: return@mapNotNull null
+            if (owner.classLoader !== classLoader) return@mapNotNull null
             val field = runCatching { owner.getDeclaredField(target.name) }.getOrNull()
             if (field != null && fieldDescriptor(field) == target.typeDescriptor) {
                 field.isAccessible = true

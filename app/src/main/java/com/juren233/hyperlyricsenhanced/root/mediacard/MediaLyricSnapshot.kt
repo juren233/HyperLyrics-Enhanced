@@ -386,9 +386,19 @@ class MediaLyricSnapshotStore(
     fun clear(): MediaLyricSnapshot = publish(MediaLyricSnapshotDraft.empty())
 
     fun subscribe(listener: (MediaLyricSnapshot) -> Unit): Closeable {
-        listeners += listener
-        listener(current())
-        return Closeable { listeners -= listener }
+        val deliveryLock = Any()
+        var lastDeliveredSequence = Long.MIN_VALUE
+        val guardedListener: (MediaLyricSnapshot) -> Unit = { snapshot ->
+            synchronized(deliveryLock) {
+                if (snapshot.sequence > lastDeliveredSequence) {
+                    lastDeliveredSequence = snapshot.sequence
+                    listener(snapshot)
+                }
+            }
+        }
+        listeners += guardedListener
+        guardedListener(current())
+        return Closeable { listeners -= guardedListener }
     }
 
     private fun notifyListeners(snapshot: MediaLyricSnapshot) {

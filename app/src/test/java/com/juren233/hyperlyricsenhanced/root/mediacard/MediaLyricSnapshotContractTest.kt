@@ -140,6 +140,29 @@ class MediaLyricSnapshotContractTest {
     }
 
     @Test
+    fun `presentation uses timed word content when line text is absent`() {
+        val snapshot = MediaLyricSnapshot(
+            sequence = 1L,
+            song = null,
+            packageName = "player",
+            positionMs = 0L,
+            isPlaying = true,
+            isTextMode = false,
+            songHasDuet = false,
+            current = line("", words = listOf(MediaLyricWordSnapshot(0L, 1L, 1L, "word"))),
+            next = null,
+            nextNext = null,
+        )
+
+        val model = LyricPresentationAssembler.assemble(
+            snapshot,
+            LyricPresentationConfig(duetLyrics = false),
+        )
+
+        assertEquals("word", model.groups.single().lines.first { it.isVisible }.text)
+    }
+
+    @Test
     fun `clear and song switch cannot retain the previous lyric generation`() {
         val store = MediaLyricSnapshotStore()
         val first = store.publish(
@@ -342,6 +365,7 @@ class MediaLyricSnapshotContractTest {
         secondary: String = "",
         alignedRight: Boolean = false,
         metadata: Map<String, String?> = emptyMap(),
+        words: List<MediaLyricWordSnapshot> = emptyList(),
     ): MediaLyricLineSnapshot = MediaLyricLineSnapshot(
         beginMs = 0,
         endMs = 1_000,
@@ -352,6 +376,7 @@ class MediaLyricSnapshotContractTest {
         roma = "",
         alignedRight = alignedRight,
         metadata = metadata,
+        words = words,
     )
 
     private class MissingClassLoader : ClassLoader(null) {

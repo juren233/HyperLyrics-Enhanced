@@ -182,14 +182,20 @@ object LyricPresentationAssembler {
                 config: LyricPresentationConfig,
             ): ContentParts {
                 val metadata = line.metadata
-                val normalizedMain = line.text.trim()
-                val rawTranslation = line.translation.trim().takeUnless { it == normalizedMain }.orEmpty()
+                val normalizedMain = line.text.trim().ifBlank {
+                    line.words.joinToString(separator = "") { it.text }.trim()
+                }
+                val rawTranslation = line.translation.trim().ifBlank {
+                    line.translationWords.joinToString(separator = "") { it.text }.trim()
+                }.takeUnless { it == normalizedMain }.orEmpty()
                 val overlapping = metadata[LyricMetadataKeys.OVERLAPPING_LYRICS_GROUP]
                     .toBoolean()
                 val rawBacking = (if (overlapping) {
                     metadata[LyricMetadataKeys.OVERLAPPING_PRIMARY_BACKING]
                 } else {
-                    line.secondary
+                    line.secondary.ifBlank {
+                        line.secondaryWords.joinToString(separator = "") { it.text }
+                    }
                 }).orEmpty().trim().takeUnless { it == normalizedMain }.orEmpty()
                 val rawBackingTranslation = (if (overlapping) {
                     metadata[LyricMetadataKeys.OVERLAPPING_PRIMARY_BACKING_TRANSLATION]
