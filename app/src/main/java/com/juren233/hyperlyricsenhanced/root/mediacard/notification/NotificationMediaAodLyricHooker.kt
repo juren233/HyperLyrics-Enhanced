@@ -44,6 +44,7 @@ import com.juren233.hyperlyricsenhanced.root.mediacard.host.NativeHeightLease
 import com.juren233.hyperlyricsenhanced.root.mediacard.host.SystemUiMediaCapabilityKind
 import com.juren233.hyperlyricsenhanced.root.mediacard.host.SystemUiMediaHostAdapter
 import com.juren233.hyperlyricsenhanced.root.mediacard.host.SystemUiMediaProfile
+import com.juren233.hyperlyricsenhanced.root.mediacard.transition.MediaCardHostBinding
 import com.juren233.hyperlyricsenhanced.root.mediacard.transition.MediaCardTransitionToken
 import com.juren233.hyperlyricsenhanced.root.utils.DisplayDiagnosticLogger
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
@@ -814,6 +815,156 @@ object NotificationMediaAodLyricHooker {
         module = xposedModule
     }
 
+    /**
+     * Resolves and consumes the verified SystemUI host contract for one concrete
+     * notification media card. The returned binding is also the exact object that
+     * must be retained by the C-side controller state; a null result is deliberate
+     * fail-closed behavior for unknown builds, loaders, or descriptor drift.
+     */
+    internal fun bindStrictNotificationMediaCard(
+        controller: Any,
+        player: ViewGroup,
+        album: View?,
+        actions: List<View>,
+        progress: View?,
+        elapsedTime: View?,
+        totalTime: View?,
+        title: TextView,
+        packageName: String?,
+        background: View?,
+        outer: View?,
+    ): MediaCardHostBinding? {
+        if (!isEnabled()) {
+            if (BuildConfig.DEBUG) HookLogger.i(TAG, "严格媒体卡片绑定跳过: feature_disabled")
+            return null
+        }
+        val progressView = progress ?: run {
+            if (BuildConfig.DEBUG) {
+                HookLogger.w(TAG, "拒绝严格媒体卡片绑定: seek_bar_missing player=${identity(player)}")
+            }
+            return null
+        }
+        val rootAnchor = album ?: title
+        val binding = createStrictNotificationHostBinding(player, rootAnchor) ?: return null
+        runCatching {
+            MediaCardLyricOverlayController.bindNotificationCard(
+                controller = controller,
+                player = player,
+                album = rootAnchor,
+                actions = actions,
+                progress = progressView,
+                elapsedTime = elapsedTime,
+                totalTime = totalTime,
+                title = title,
+                packageName = packageName,
+                hostBinding = binding,
+                background = background,
+                outer = outer,
+            )
+        }.onFailure {
+            HookLogger.e(
+                TAG,
+                "拒绝严格媒体卡片绑定: controller=${identity(controller)}, " +
+                    "player=${identity(player)}, reason=${it.message}",
+                it,
+            )
+            return null
+        }
+        if (BuildConfig.DEBUG) {
+            HookLogger.i(
+                TAG,
+                "event=strict_bind controller=${identity(controller)} " +
+                    "player=${identity(player)} loader=${classLoaderIdentity(player.javaClass.classLoader)} " +
+                    "profile=${binding.systemUiBinding.profile.os} capability=${binding.capability.supported}",
+            )
+        }
+        return binding
+    }
+
+    private fun createStrictNotificationHostBinding(
+        player: ViewGroup,
+        anchor: View?,
+    ): MediaCardHostBinding? {
+        val loader = player.javaClass.classLoader ?: run {
+            if (BuildConfig.DEBUG) HookLogger.w(TAG, "严格媒体卡片绑定失败: class_loader_missing")
+            return null
+        }
+        val binding = resolveNativeTransitionApi(loader) ?: return null
+        val required = listOf(
+            SystemUiMediaCapabilityKind.MEDIA_CONTROLLER_LIFECYCLE,
+            SystemUiMediaCapabilityKind.MEDIA_HEADER_GEOMETRY,
+            SystemUiMediaCapabilityKind.FULL_AOD_CALLBACK,
+        )
+        val missing = required.filterNot(binding.capability::supports)
+        if (missing.isNotEmpty()) {
+            if (BuildConfig.DEBUG) {
+                HookLogger.w(
+                    TAG,
+                    "严格媒体卡片绑定失败: capability_missing=${missing.joinToString()} " +
+                        "loader=${classLoaderIdentity(loader)}",
+                )
+            }
+            return null
+        }
+        val rootFactory: (ViewGroup, View?, Int) -> ViewGroup.LayoutParams? =
+            { parent, rootAnchor, topGapPx ->
+                rootAnchor?.let { createConstraintLayoutParams(parent, it, topGapPx) }
+            }
+        return MediaCardLyricOverlayController.createHostBinding(
+            binding = binding,
+            rootLayoutParamsFactory = rootFactory,
+            // The raw OS4 descriptor proves mHeightList exists, but it does not
+            // prove the media-player-to-index mapping. Never guess an index.
+            nativeHeightIndex = null,
+            verifiedNativeTargetHeightFactory = null,
+        )
+    }
+
+    private fun retireStaleSystemUiSessions(currentClassLoader: ClassLoader) {
+        val staleListeners = synchronized(nativeTransitionContexts) {
+            nativeTransitionContexts.entries
+                .filter { (_, context) -> context.classLoader !== currentClassLoader }
+                .map { it.key }
+        }
+        staleListeners.forEach { listener ->
+            finishNativeContext(
+                listener = listener,
+                accepted = false,
+                detail = "systemui_reload",
+            )
+        }
+        val staleControllers = synchronized(states) {
+            states.entries
+                .filter { (controller, _) ->
+                    controller.javaClass.classLoader !== currentClassLoader
+                }
+                .toList()
+        }
+        staleControllers.forEach { (controller, state) ->
+            state.overlay?.let { overlay ->
+                hideLockScreenOverlay(overlay, releaseNativeHeight = true)
+                removeOverlay(state)
+            }
+            val player = state.holder?.let { holder ->
+                resolveApi(controller.javaClass.classLoader)
+                    ?.getPlayer(holder)
+            }
+            player?.let { MediaCardLyricOverlayController.unbind(it, immediate = true) }
+            synchronized(states) {
+                if (states[controller] === state) states.remove(controller)
+            }
+            DisplayDiagnosticLogger.clear("AOD_LOCK")
+            if (BuildConfig.DEBUG) {
+                HookLogger.i(
+                    TAG,
+                    "event=systemui_reload_session_retired controller=${identity(controller)} " +
+                        "player=${identity(player)} oldLoader=${classLoaderIdentity(controller.javaClass.classLoader)} " +
+                        "newLoader=${classLoaderIdentity(currentClassLoader)}",
+                )
+            }
+        }
+    }
+
     fun hook(xposedModule: XposedModule, classLoader: ClassLoader) {
         initialize(xposedModule)
         if (!hookedClassLoaders.add(classLoader)) return
@@ -823,6 +974,7 @@ object NotificationMediaAodLyricHooker {
             HookLogger.w(TAG, "跳过息屏歌词 Hook: reason=native_api_unavailable")
             return
         }
+        retireStaleSystemUiSessions(classLoader)
         val handles = mutableListOf<HookHandle>()
         var controllerHookCount = 0
         api.hookMethods.forEach { method ->
@@ -1034,9 +1186,16 @@ object NotificationMediaAodLyricHooker {
     }
 
     fun releaseAll() = runOnMain {
-        synchronized(states) { states.entries.toList() }.forEach { (_, state) ->
+        synchronized(states) { states.entries.toList() }.forEach { (controller, state) ->
             restoreActions(state)
+            state.holder?.let { holder ->
+                resolveApi(controller.javaClass.classLoader)
+                    ?.getPlayer(holder)
+                    ?.let { MediaCardLyricOverlayController.unbind(it, immediate = true) }
+            }
             removeOverlay(state)
+            state.hostBinding = null
+            state.unifiedRootHandoff = false
         }
         states.clear()
         synchronized(aodPluginStates) { aodPluginStates.values.toList() }.forEach {
@@ -1170,11 +1329,16 @@ object NotificationMediaAodLyricHooker {
                 previousPlayer != null && reboundPlayer != null && previousPlayer !== reboundPlayer
             ) {
                 abortContextsForController(controller, "player_rebound")
+                state.hostBinding = null
+                state.unifiedRootHandoff = false
+                state.overlay?.let { removeOverlay(state) }
+                MediaCardLyricOverlayController.unbind(previousPlayer, immediate = true)
                 if (BuildConfig.DEBUG) {
                     HookLogger.i(
                         TAG,
                         "event=controller_rebind oldPlayer=${identity(previousPlayer)} " +
-                            "newPlayer=${identity(reboundPlayer)} controller=${identity(controller)}",
+                            "newPlayer=${identity(reboundPlayer)} controller=${identity(controller)} " +
+                            "oldSessionReleased=true",
                     )
                 }
             }
@@ -1311,8 +1475,20 @@ object NotificationMediaAodLyricHooker {
                     }
                 }
                 "detach" -> {
+                    abortContextsForController(controller, "controller_detach")
+                    previousPlayer?.let { MediaCardLyricOverlayController.unbind(it, immediate = true) }
+                    state.overlay?.let { removeOverlay(state) }
+                    state.hostBinding = null
+                    state.unifiedRootHandoff = false
                     states.remove(controller)
                     DisplayDiagnosticLogger.clear("AOD_LOCK")
+                    if (BuildConfig.DEBUG) {
+                        HookLogger.i(
+                            TAG,
+                            "event=controller_detach_session_retired controller=${identity(controller)} " +
+                                "player=${identity(previousPlayer)}",
+                        )
+                    }
                 }
             }
             updatePositionPolling()
@@ -1325,7 +1501,6 @@ object NotificationMediaAodLyricHooker {
         state: ControllerState,
         api: NativeApi,
         finalizedGeneration: Long? = null,
-        finalizedTargetHeight: Int? = null,
     ) {
         val player = state.holder?.let(api::getPlayer)
         if (state.fullAod) {
@@ -1363,12 +1538,6 @@ object NotificationMediaAodLyricHooker {
                 )
             }
         }
-        if (
-            state.fullAod &&
-            (state.overlay == null || state.overlay?.root?.visibility == View.GONE)
-        ) {
-            player?.let(MediaCardLyricOverlayController::completeNotificationCardToAodTransition)
-        }
         if (state.fullAod) {
             (state.holder as? View)?.context?.let {
                 ClassicAodFocusNotificationRecovery.requestAppRefresh(
@@ -1384,10 +1553,6 @@ object NotificationMediaAodLyricHooker {
             state.mediaDataRebindGeneration++
             state.lastFinalizedNativeTransitionGeneration = generation
             state.lastFinalizedNativeTransitionTarget = state.fullAod
-            finishNativeFullAodTransition(
-                overlay = state.overlay,
-                targetHeight = finalizedTargetHeight,
-            )
         }
     }
 
@@ -1406,148 +1571,133 @@ object NotificationMediaAodLyricHooker {
     ) {
         val frame = binding.readTransitionFrame(listener)
         val targetFullAod = frame?.targetFullAod ?: context.targetFullAod
-        synchronized(states) { states.entries.toList() }.forEach { (controller, state) ->
-            if (controller.javaClass.classLoader !== context.classLoader) return@forEach
-            val nativeApi = resolveApi(controller.javaClass.classLoader) ?: return@forEach
-            val holder = state.holder
-                ?: nativeApi.getHolder(controller)
-                ?: return@forEach
-            val player = runCatching { nativeApi.getPlayer(holder) }.getOrNull()
-                ?: return@forEach
-            val transitionMetrics = if (targetFullAod) {
-                createNativeFullAodTransitionMetrics(
-                    api = nativeApi,
-                    controller = controller,
-                    holder = holder,
-                    state = state,
-                )?.also { metrics -> nativeTransitionMetrics[player] = metrics }
-            } else {
-                null
-            }
-            val pauseStyle = lockScreenAodTextStyle().pauseStyle
-            val transitionMode = AodMediaLyricPolicy.notificationFullAodTransitionMode(
-                targetFullAod = targetFullAod,
-                playing = state.playing,
-                pauseStyle = pauseStyle,
-            )
-            if (targetFullAod && AodMediaLyricPolicy.shouldRestorePausedNativeActions(
-                    targetFullAod = true,
-                    playing = state.playing,
-                    pauseStyle = pauseStyle,
-                )
-            ) {
-                restoreActions(state)
-            }
-            val retainLyrics = AodMediaLyricPolicy.shouldRetainNativeFullAodLyrics(
-                targetFullAod = targetFullAod,
-                playing = state.playing,
-                pauseStyle = pauseStyle,
-            )
-            // The legacy overlay is never a second rendered root during a native
-            // transition. Classic AOD remains on its independent plugin path.
-            beginNativeFullAodTransition(
-                overlay = state.overlay,
-                targetFullAod = targetFullAod,
-                retainLyrics = retainLyrics,
-            )
-            MediaCardLyricOverlayController.beginNotificationFullAodTransition(
-                player = player,
-                targetFullAod = targetFullAod,
-                mode = transitionMode,
-                keepSecondLyric = transitionMetrics?.nextTextSizeSp != null,
+        val candidates = synchronized(states) {
+            states.entries.toList()
+        }.filter { (controller, state) ->
+            if (controller.javaClass.classLoader !== context.classLoader) return@filter false
+            val nativeApi = resolveApi(controller.javaClass.classLoader) ?: return@filter false
+            val holder = state.holder ?: nativeApi.getHolder(controller) ?: return@filter false
+            runCatching {
+                val player = nativeApi.getPlayer(holder)
+                player.isAttachedToWindow && player.parent != null
+            }.getOrDefault(false)
+        }
+        if (candidates.size != 1) {
+            debugNativeEvent(
+                event = "begin_rejected",
                 listener = listener,
+                detail = if (candidates.isEmpty()) {
+                    "native_owner_to_player_mapping_unavailable"
+                } else {
+                    "native_owner_to_player_mapping_ambiguous:${candidates.size}"
+                },
             )
-            MediaCardLyricOverlayController.activeNotificationTransitionToken(player)?.let { token ->
-                state.unifiedRootHandoff = true
-                context.tokensByPlayer[player] = token
-                context.controllersByPlayer[player] = controller
-                debugNativeEvent(
-                    event = "begin",
-                    listener = listener,
-                    controller = controller,
-                    player = player,
-                    token = token,
-                    detail = "target=$targetFullAod;legacyHeightSource=blocked",
-                )
-            } ?: debugNativeEvent(
+            return
+        }
+        val (controller, state) = candidates.single()
+        val nativeApi = resolveApi(controller.javaClass.classLoader) ?: return
+        val holder = state.holder ?: nativeApi.getHolder(controller) ?: return
+        val player = runCatching { nativeApi.getPlayer(holder) }.getOrNull() ?: return
+        val transitionMetrics = if (targetFullAod) {
+            createNativeFullAodTransitionMetrics(
+                api = nativeApi,
+                controller = controller,
+                holder = holder,
+                state = state,
+            )?.also { metrics -> nativeTransitionMetrics[player] = metrics }
+        } else {
+            null
+        }
+        val pauseStyle = lockScreenAodTextStyle().pauseStyle
+        val transitionMode = AodMediaLyricPolicy.notificationFullAodTransitionMode(
+            targetFullAod = targetFullAod,
+            playing = state.playing,
+            pauseStyle = pauseStyle,
+        )
+        if (targetFullAod && AodMediaLyricPolicy.shouldRestorePausedNativeActions(
+                targetFullAod = true,
+                playing = state.playing,
+                pauseStyle = pauseStyle,
+            )
+        ) {
+            restoreActions(state)
+        }
+        // Remove any pre-refactor legacy root before the native callback starts.
+        // This cleanup happens before the native host owns the first transition
+        // frame, so it cannot compete with native height/layout writes.
+        state.overlay?.let { removeOverlay(state) }
+        // The strict B session is the sole media-card transition owner. The
+        // legacy notification-AOD overlay is never started here. Classic AOD
+        // remains on its independent AODView path.
+        val hostBinding = state.hostBinding
+            ?: bindStrictNotificationMediaCard(
+                controller = controller,
+                player = player,
+                album = nativeApi.getAlbumView(holder),
+                actions = nativeApi.getActions(holder),
+                progress = nativeApi.getSeekBar(holder),
+                elapsedTime = nativeApi.getElapsedTime(holder),
+                totalTime = nativeApi.getTotalTime(holder),
+                title = nativeApi.getTitleText(holder),
+                packageName = nativeApi.packageName(state.mediaData ?: nativeApi.getMediaData(controller)),
+                background = nativeApi.getMediaBackground(holder),
+                outer = player.parent as? View,
+            )
+        if (hostBinding == null) {
+            debugNativeEvent(
                 event = "begin_rejected",
                 listener = listener,
                 controller = controller,
                 player = player,
-                detail = "controller_active_token_missing",
+                detail = "strict_host_binding_unavailable",
             )
+            return
         }
+        state.hostBinding = hostBinding
+        state.unifiedRootHandoff = true
+        val token = MediaCardLyricOverlayController.beginNotificationFullAodTransition(
+            controller = controller,
+            player = player,
+            targetFullAod = targetFullAod,
+            mode = transitionMode,
+            keepSecondLyric = transitionMetrics?.nextTextSizeSp != null,
+            listener = listener,
+        )
+        token?.let { acceptedToken ->
+            context.tokensByPlayer[player] = acceptedToken
+            context.controllersByPlayer[player] = controller
+            debugNativeEvent(
+                event = "begin",
+                listener = listener,
+                controller = controller,
+                player = player,
+                token = acceptedToken,
+                detail = "target=$targetFullAod;nativeHeightIndex=unverified;lease=skipped",
+            )
+        } ?: debugNativeEvent(
+            event = "begin_rejected",
+            listener = listener,
+            controller = controller,
+            player = player,
+            detail = "controller_active_token_missing",
+        )
         if (context.tokensByPlayer.isEmpty()) {
+            synchronized(nativeTransitionContexts) {
+                if (nativeTransitionContexts[listener] === context) {
+                    nativeTransitionContexts.remove(listener)
+                }
+            }
+            if (synchronized(nativeTransitionContexts) { nativeTransitionContexts.isEmpty() }) {
+                nativeTransitionTargetFullAod = null
+                nativeTransitionPendingTargetFullAod = null
+                nativeTransitionLastLogBucket = -1
+                nativeTransitionMetrics.clear()
+                completedNativeTransitionTargetHeights.clear()
+            }
             debugNativeEvent(
                 event = "begin_rejected",
                 listener = listener,
                 detail = "no_player_session_bound",
-            )
-        }
-    }
-
-    /**
-     * Release only dimensions previously written by the lock-screen lyric
-     * overlay. The native FullAodTransitionListener owns the actual header
-     * height. Round 5 deliberately performs no legacy height-list override.
-     */
-    private fun beginNativeFullAodTransition(
-        overlay: LyricOverlay?,
-        targetFullAod: Boolean,
-        retainLyrics: Boolean,
-    ) {
-        overlay ?: return
-        overlay.nativeFullAodTransitionActive = true
-        overlay.heightAnimator?.let { animator ->
-            overlay.heightAnimator = null
-            animator.cancel()
-        }
-        cancelNativeBackgroundHeightSync(overlay)
-        overlay.backgroundConstraints?.restore()
-        // Never render the legacy lock-screen root beside UnifiedMediaLyricRoot.
-        // The retain flag is kept for the old call contract but cannot re-enable
-        // a second root in the unified transition.
-        overlay.root.visibility = View.GONE
-        restoreViewSize(overlay.playerSize)
-        if (overlay.backgroundSize.view !== overlay.player) {
-            restoreViewSize(overlay.backgroundSize)
-        }
-        overlay.appliedCardHeight = null
-        overlay.fullAodHeightFloor = null
-        overlay.initialFullAodHeightPending = false
-        overlay.player.requestLayout()
-        overlay.backgroundSize.view.requestLayout()
-        (overlay.player.parent as? View)?.requestLayout()
-        if (BuildConfig.DEBUG) {
-            HookLogger.i(
-                TAG,
-                "AOD_CARD_OWNER handoff_legacy_root_hidden: " +
-                    "target=$targetFullAod, retainIgnored=$retainLyrics, " +
-                    "player=${overlay.player.height}/${overlay.player.layoutParams?.height}, " +
-                    "background=${overlay.backgroundSize.view.height}/" +
-                    "${overlay.backgroundSize.view.layoutParams?.height}",
-            )
-        }
-    }
-
-    private fun finishNativeFullAodTransition(
-        overlay: LyricOverlay?,
-        targetHeight: Int?,
-    ) {
-        overlay ?: return
-        overlay.nativeFullAodTransitionActive = false
-        targetHeight?.takeIf { it > 0 }?.let { height ->
-            overlay.appliedCardHeight = height
-            overlay.initialFullAodHeightPending = false
-        }
-        if (BuildConfig.DEBUG) {
-            HookLogger.i(
-                TAG,
-                "AOD_CARD_OWNER native_transition_finished: " +
-                    "player=${overlay.player.height}/${overlay.player.layoutParams?.height}, " +
-                    "background=${overlay.backgroundSize.view.height}/" +
-                    "${overlay.backgroundSize.view.layoutParams?.height}, " +
-                    overlay.headerHeightController?.actualHeightSnapshot().orEmpty(),
             )
         }
     }
@@ -1606,16 +1756,9 @@ object NotificationMediaAodLyricHooker {
                 runCatching {
                     when (methodName) {
                     AodNativeTransitionIdentifiers.ON_BEGIN -> {
-                        nativeTransitionGeneration += 1L
-                        nativeTransitionPendingTargetFullAod = null
-                        nativeTransitionTargetFullAod = binding.readTransitionFrame(listener)
-                            ?.targetFullAod
-                        nativeTransitionLastLogBucket = -1
-                        nativeTransitionMetrics.clear()
-                        completedNativeTransitionTargetHeights.clear()
                         // A listener replacement supersedes only the same native
-                        // owner. A different owner/player keeps its own transition;
-                        // a different loader is treated as SystemUI reload.
+                        // owner. A different owner/player is rejected while another
+                        // context is active because C's screen-state gate is global.
                         val ownerIdentity = nativeOwnerIdentity(binding, listener)
                         finishSupersededNativeContexts(
                             listener = listener,
@@ -1623,6 +1766,23 @@ object NotificationMediaAodLyricHooker {
                             ownerIdentity = ownerIdentity,
                             detail = "superseded_by_new_listener",
                         )
+                        val foreignOwnerActive = synchronized(nativeTransitionContexts) {
+                            nativeTransitionContexts.any { (activeListener, activeContext) ->
+                                activeListener !== listener &&
+                                    activeContext.classLoader === binding.classLoader &&
+                                    ownerIdentity != 0 &&
+                                    activeContext.ownerIdentity != 0 &&
+                                    activeContext.ownerIdentity != ownerIdentity
+                            }
+                        }
+                        if (foreignOwnerActive) {
+                            debugNativeEvent(
+                                event = "begin_rejected",
+                                listener = listener,
+                                detail = "another_native_owner_transition_active",
+                            )
+                            return@runCatching
+                        }
                         val frame = binding.readTransitionFrame(listener)
                         val target = frame?.targetFullAod
                         if (target == null) {
@@ -1632,6 +1792,12 @@ object NotificationMediaAodLyricHooker {
                                 detail = "host_transition_frame_unavailable",
                             )
                         } else {
+                            nativeTransitionGeneration += 1L
+                            nativeTransitionPendingTargetFullAod = null
+                            nativeTransitionTargetFullAod = target
+                            nativeTransitionLastLogBucket = -1
+                            nativeTransitionMetrics.clear()
+                            completedNativeTransitionTargetHeights.clear()
                             val context = NativeTransitionContext(
                                 classLoader = binding.classLoader,
                                 listenerIdentity = System.identityHashCode(listener),
@@ -1672,11 +1838,18 @@ object NotificationMediaAodLyricHooker {
                                     listener = listener,
                                     detail = "host_transition_frame_unavailable",
                                 )
+                            } else if (frame.targetFullAod != context.targetFullAod) {
+                                debugNativeEvent(
+                                    event = "update_rejected",
+                                    listener = listener,
+                                    fraction = fraction,
+                                    detail = "target_changed_within_listener_context",
+                                )
                             } else {
                                 syncLyricsToNativeFullAodTransition(
                                     transitionAlpha = AodMediaLyricPolicy.nativeFullAodTransitionAlpha(fraction),
                                     fraction = fraction,
-                                    targetFullAod = frame.targetFullAod ?: context.targetFullAod,
+                                    targetFullAod = frame.targetFullAod,
                                     context = context,
                                     listener = listener,
                                 )
@@ -1718,46 +1891,49 @@ object NotificationMediaAodLyricHooker {
         }
         val tokenEntries = context.tokensByPlayer.entries.toList()
         tokenEntries.forEach { (player, token) ->
-            if (accepted) {
-                if (detail == "complete") {
-                    // The B Controller cannot yet accept a scoped completion;
-                    // use no global finish path and expose this contract gap in
-                    // the trace for Round 6. We must not synthesize a complete.
-                    debugNativeEvent(
-                        event = "complete_blocked",
-                        listener = listener,
-                        controller = context.controllersByPlayer[player],
-                        player = player,
-                        token = token,
-                        detail = "B_API_requires_scoped_complete;no_global_finish",
-                    )
-                } else {
-                    MediaCardLyricOverlayController.cancelNotificationFullAodTransition(
-                        player = player,
-                        transitionToken = token,
-                    )
-                    debugNativeEvent(
-                        event = "cancel",
-                        listener = listener,
-                        controller = context.controllersByPlayer[player],
-                        player = player,
-                        token = token,
-                        detail = "mapped_to_cancel;complete_not_synthesized",
-                    )
-                }
+            val controller = context.controllersByPlayer[player]
+            val terminalTarget = if (accepted && detail == "complete") {
+                context.targetFullAod
+            } else {
+                !context.targetFullAod
+            }
+            val terminalAccepted = if (accepted && detail == "complete") {
+                MediaCardLyricOverlayController.completeNotificationFullAodTransition(
+                    player = player,
+                    transitionToken = token,
+                )
             } else {
                 MediaCardLyricOverlayController.cancelNotificationFullAodTransition(
                     player = player,
                     transitionToken = token,
                 )
-                debugNativeEvent(
-                    event = "cancel",
-                    listener = listener,
-                    controller = context.controllersByPlayer[player],
-                    player = player,
-                    token = token,
-                    detail = "callback_throw_recovery",
-                )
+            }
+            debugNativeEvent(
+                event = if (accepted && detail == "complete") "complete" else "cancel",
+                listener = listener,
+                controller = controller,
+                player = player,
+                token = token,
+                detail = "mapped_to_scoped_terminal accepted=$terminalAccepted " +
+                    "stateTarget=$terminalTarget path=$detail",
+            )
+            if (terminalAccepted) {
+                controller?.let { currentController ->
+                    val state = synchronized(states) { states[currentController] }
+                    val api = resolveApi(currentController.javaClass.classLoader)
+                    if (state != null && api != null) {
+                        state.fullAod = terminalTarget
+                        state.holder = api.getHolder(currentController) ?: state.holder
+                        state.mediaData = api.getMediaData(currentController)
+                        state.playing = resolvePlaying(api, currentController, state.mediaData)
+                        applyFullAodState(
+                            controller = currentController,
+                            state = state,
+                            api = api,
+                            finalizedGeneration = context.generation,
+                        )
+                    }
+                }
             }
         }
         if (BuildConfig.DEBUG) {
@@ -2019,6 +2195,82 @@ object NotificationMediaAodLyricHooker {
         )
         updatePositionPolling()
         val actions = api.getActions(holder)
+        val strictEligible = enabled && packageMatches
+        if (!strictEligible && nativeTransitionTargetFullAod == null &&
+            nativeTransitionPendingTargetFullAod == null && state.unifiedRootHandoff
+        ) {
+            MediaCardLyricOverlayController.unbind(player, immediate = true)
+            state.hostBinding = null
+            state.unifiedRootHandoff = false
+        }
+        val strictBinding = if (strictEligible) {
+            bindStrictNotificationMediaCard(
+                controller = controller,
+                player = player,
+                album = api.getAlbumView(holder),
+                actions = actions,
+                progress = api.getSeekBar(holder),
+                elapsedTime = api.getElapsedTime(holder),
+                totalTime = api.getTotalTime(holder),
+                title = api.getTitleText(holder),
+                packageName = mediaPackage,
+                background = api.getMediaBackground(holder),
+                outer = player.parent as? View,
+            )
+        } else {
+            null
+        }
+        if (strictBinding != null) {
+            state.hostBinding = strictBinding
+            state.unifiedRootHandoff = true
+            state.overlay?.let { removeOverlay(state) }
+            MediaCardLyricOverlayController.setNotificationCardAodActive(
+                player = player,
+                active = state.fullAod,
+            )
+            if (BuildConfig.DEBUG) {
+                HookLogger.i(
+                    TAG,
+                    "event=unified_root_bound controller=${identity(controller)} " +
+                        "player=${identity(player)} fullAod=${state.fullAod} " +
+                        "nativeHeightIndex=unverified",
+                )
+            }
+            return
+        }
+        if (state.unifiedRootHandoff) {
+            // Keep an already-bound unified root alive during a transient host
+            // callback where the new binding cannot be resolved. Never fall back
+            // to the legacy lock-screen root after handoff.
+            MediaCardLyricOverlayController.setNotificationCardAodActive(
+                player = player,
+                active = state.fullAod,
+            )
+            if (BuildConfig.DEBUG) {
+                HookLogger.w(
+                    TAG,
+                    "strict host rebind unavailable after unified handoff: " +
+                        "controller=${identity(controller)} player=${identity(player)}",
+                )
+            }
+            return
+        }
+        if (state.fullAod || nativeTransitionTargetFullAod != null ||
+            nativeTransitionPendingTargetFullAod != null
+        ) {
+            // The full-AOD media path is fail-closed until a verified HostBinding
+            // exists. It must not recreate the old second root or write guessed
+            // height values when SystemUI identity/descriptor resolution is absent.
+            state.overlay?.let { removeOverlay(state) }
+            DisplayDiagnosticLogger.log(
+                channel = "AOD_LOCK",
+                result = "skipped",
+                reason = "strict_host_binding_unavailable",
+                extra = "controller=${identity(controller)}, player=${identity(player)}",
+                dedupeKey = diagnosticKey,
+            )
+            return
+        }
 
         if (state.unifiedRootHandoff) {
             // Once the notification card has entered the unified-root contract,
@@ -2151,10 +2403,6 @@ object NotificationMediaAodLyricHooker {
             // renderer are alternative content roots for the same player.  A
             // non-native callback can still reach applyState, so enforce the
             // handoff here as well as at native onComplete.
-            MediaCardLyricOverlayController.completeNotificationCardToAodTransition(
-                player = player,
-                detachNotificationRoot = true,
-            )
         }
         if (state.actionVisibilities.isEmpty()) {
             actions.forEach { state.actionVisibilities[it] = it.visibility }
@@ -2296,9 +2544,6 @@ object NotificationMediaAodLyricHooker {
                 }
                 HookLogger.i(TAG, "锁屏 AOD 歌词已在原生控件隐藏完成后显示")
             }
-            // The bridge root was detached before this AOD root was created;
-            // this call only clears any legacy pending overlay handoff.
-            MediaCardLyricOverlayController.completeNotificationCardToAodTransition(player)
             AodEnvironmentDiagnostics.log(
                 context = player.context,
                 stage = "lockscreen_overlay_visible",
@@ -3255,9 +3500,22 @@ object NotificationMediaAodLyricHooker {
         return overlay
     }
 
+    private fun localBottomInPlayer(view: View?, player: View): Int {
+        var current = view ?: return 0
+        var top = 0
+        while (current !== player) {
+            top += current.top
+            current = current.parent as? View ?: return 0
+        }
+        val height = view.height.takeIf { it > 0 } ?: view.measuredHeight
+        return top + height
+    }
+
     private fun createConstraintLayoutParams(
         player: ViewGroup,
-        metadataAnchor: View
+        metadataAnchor: View,
+        topGapPx: Int = (LOCK_SCREEN_AOD_TOP_GAP_DP *
+            player.resources.displayMetrics.density).roundToInt(),
     ): ViewGroup.LayoutParams? = runCatching {
         val loader = requireNotNull(player.javaClass.classLoader) {
             "ConstraintLayout class loader unavailable"
@@ -3280,13 +3538,8 @@ object NotificationMediaAodLyricHooker {
         // the lock-screen/AOD handoff and expose the root above the card.
         paramsClass.getField("topToTop").setInt(params, 0)
         paramsClass.getField("topToBottom").setInt(params, -1)
-        val anchorBottom = AodMediaLyricPolicy.contentAnchorBottom(
-            albumBottom = metadataAnchor.bottom,
-            artistBottom = metadataAnchor.bottom,
-        )
-        (params as ViewGroup.MarginLayoutParams).topMargin = anchorBottom + (
-            LOCK_SCREEN_AOD_TOP_GAP_DP * player.resources.displayMetrics.density
-            ).toInt()
+        val anchorBottom = localBottomInPlayer(metadataAnchor, player)
+        (params as ViewGroup.MarginLayoutParams).topMargin = anchorBottom + topGapPx
         params
     }.onFailure {
         HookLogger.e(TAG, "创建息屏歌词布局参数失败", it)
@@ -3368,7 +3621,7 @@ object NotificationMediaAodLyricHooker {
                 player = player,
                 token = token,
                 fraction = fraction,
-                detail = "target=$targetFullAod;heightCommit=blocked_until_round6",
+                detail = "target=$targetFullAod;heightCommit=skipped_index_unverified",
             )
             if (sampleMainColor == null) {
                 sampleMainColor = mainColor
@@ -3679,7 +3932,6 @@ object NotificationMediaAodLyricHooker {
         overlay: LyricOverlay,
         releaseNativeHeight: Boolean = false,
     ) {
-        MediaCardLyricOverlayController.completeNotificationCardToAodTransition(overlay.player)
         overlay.rootPresentationAnimator?.let {
             overlay.rootPresentationAnimator = null
             it.cancel()
@@ -5633,6 +5885,7 @@ object NotificationMediaAodLyricHooker {
         var aodActive: Boolean = false,
         var playing: Boolean = false,
         var overlay: LyricOverlay? = null,
+        var hostBinding: MediaCardHostBinding? = null,
         var unifiedRootHandoff: Boolean = false,
         var mediaDataRebindGeneration: Int = 0,
         var mediaDataRebindGraceUntilUptimeMs: Long = 0L,
@@ -5716,6 +5969,9 @@ object NotificationMediaAodLyricHooker {
         private val playerField: Field,
         private val mediaBackgroundField: Field?,
         private val albumViewField: Field?,
+        private val seekBarField: Field?,
+        private val elapsedTimeField: Field?,
+        private val totalTimeField: Field?,
         private val titleTextField: Field,
         private val artistTextField: Field,
         private val actionFields: List<Field>,
@@ -5730,6 +5986,12 @@ object NotificationMediaAodLyricHooker {
             runCatching { mediaBackgroundField?.get(holder) as? View }.getOrNull()
         fun getAlbumView(holder: Any): View? =
             runCatching { albumViewField?.get(holder) as? View }.getOrNull()
+        fun getSeekBar(holder: Any): View? =
+            runCatching { seekBarField?.get(holder) as? View }.getOrNull()
+        fun getElapsedTime(holder: Any): View? =
+            runCatching { elapsedTimeField?.get(holder) as? View }.getOrNull()
+        fun getTotalTime(holder: Any): View? =
+            runCatching { totalTimeField?.get(holder) as? View }.getOrNull()
         fun getTitleText(holder: Any): TextView = titleTextField.get(holder) as TextView
         fun getArtistText(holder: Any): TextView = artistTextField.get(holder) as TextView
         fun getActions(holder: Any): List<View> = actionFields.map { it.get(holder) as View }
@@ -5779,6 +6041,15 @@ object NotificationMediaAodLyricHooker {
                         ?.accessible(),
                     albumViewField = holderClass.declaredFields
                         .firstOrNull { it.name == "albumView" }
+                        ?.accessible(),
+                    seekBarField = holderClass.declaredFields
+                        .firstOrNull { it.name == "seekBar" }
+                        ?.accessible(),
+                    elapsedTimeField = holderClass.declaredFields
+                        .firstOrNull { it.name == "elapsedTimeView" }
+                        ?.accessible(),
+                    totalTimeField = holderClass.declaredFields
+                        .firstOrNull { it.name == "totalTimeView" }
                         ?.accessible(),
                     titleTextField = holderClass.getDeclaredField("titleText").accessible(),
                     artistTextField = holderClass.getDeclaredField("artistText").accessible(),
