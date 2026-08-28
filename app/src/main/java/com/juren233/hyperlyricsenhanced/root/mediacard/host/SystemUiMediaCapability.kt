@@ -6,7 +6,6 @@
 
 package com.juren233.hyperlyricsenhanced.root.mediacard.host
 
-import java.lang.ref.WeakReference
 import java.lang.reflect.Field
 import java.lang.reflect.Method
 
