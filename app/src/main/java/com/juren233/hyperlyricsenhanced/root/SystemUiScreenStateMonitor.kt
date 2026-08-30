@@ -25,12 +25,13 @@ internal object SystemUiScreenStateMonitor {
                     Intent.ACTION_SCREEN_ON -> {
                         HookLogger.d(TAG, "收到亮屏事件，刷新超级岛状态")
                         BaseIslandRenderer.onScreenInteractive()
-                        NotificationMediaAodLyricHooker.hideLockScreenOverlays()
+                        NotificationMediaAodLyricHooker.onScreenInteractiveChanged(true)
                     }
 
                     Intent.ACTION_SCREEN_OFF -> {
                         HookLogger.d(TAG, "收到息屏事件，取消超级岛亮屏恢复任务")
                         BaseIslandRenderer.onScreenNonInteractive()
+                        NotificationMediaAodLyricHooker.onScreenInteractiveChanged(false)
                     }
                 }
             }

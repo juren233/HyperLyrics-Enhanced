@@ -393,7 +393,8 @@ object NotificationMediaAmbientFlowHooker {
             return
         }
         val data = mediaData ?: readField(controller, "mediaData")
-        MediaCardLyricOverlayController.bindNotificationCard(
+        val hostBinding = NotificationMediaAodLyricHooker.bindStrictNotificationMediaCard(
+            controller = controller,
             player = player,
             album = readField(holder, "albumView") as? View,
             actions = actions,
@@ -405,6 +406,17 @@ object NotificationMediaAmbientFlowHooker {
             background = readField(holder, "mediaBg") as? View,
             outer = player.parent as? View,
         )
+        if (hostBinding == null) {
+            if (BuildConfig.DEBUG) {
+                HookLogger.w(
+                    TAG,
+                    "通知中心媒体卡片严格 HostBinding 不可用，保持 fail-closed: " +
+                        "controller=${System.identityHashCode(controller)}, " +
+                        "player=${System.identityHashCode(player)}",
+                )
+            }
+            return
+        }
         if (BuildConfig.DEBUG) {
             HookLogger.i(
                 TAG,

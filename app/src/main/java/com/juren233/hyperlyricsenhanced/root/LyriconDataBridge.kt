@@ -15,6 +15,10 @@ import com.juren233.hyperlyricsenhanced.lyric.view.TitleSlot
 import com.juren233.hyperlyricsenhanced.provider.OfficialProviderCatalog
 import com.juren233.hyperlyricsenhanced.root.utils.DisplayDiagnosticLogger
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
+import com.juren233.hyperlyricsenhanced.root.mediacard.MediaLyricSnapshotDraft
+import com.juren233.hyperlyricsenhanced.root.mediacard.MediaLyricSnapshotStore
+import com.juren233.hyperlyricsenhanced.root.mediacard.MediaLyricLineSnapshot
+import com.juren233.hyperlyricsenhanced.root.mediacard.MediaLyricSongIdentity
 
 object LyriconDataBridge : StateResetter {
 
@@ -67,9 +71,11 @@ object LyriconDataBridge : StateResetter {
     /** AI 翻译完成后的回调，由 LyriconSource 设置 */
     var onAiTranslationComplete: (() -> Unit)? = null
 
+    @Synchronized
     fun updateLyricPackage(packageName: String?) {
         activePackageName = packageName
         currentLyricPackageName = packageName
+        publishMediaLyricSnapshot()
         DisplayDiagnosticLogger.log(
             channel = "BRIDGE",
             result = if (packageName.isNullOrBlank()) "skipped" else "accepted",
@@ -83,6 +89,7 @@ object LyriconDataBridge : StateResetter {
     private var currentInterlude: InterludeTracker.Interlude? = null
     private var currentInterludeLine: IRichLyricLine? = null
 
+    @Synchronized
     fun updateSong(song: Song?) {
         HookLogger.d("LyriconDataBridge", "歌曲变更: ${song?.name}")
         isTextMode = false
@@ -108,6 +115,7 @@ object LyriconDataBridge : StateResetter {
             unmergedTimingNavigator = TimingNavigator(emptyArray())
             interludeTracker = InterludeTracker()
         }
+        publishMediaLyricSnapshot()
         DisplayDiagnosticLogger.log(
             channel = "BRIDGE",
             result = if (song == null) "cleared" else "accepted",
@@ -119,6 +127,7 @@ object LyriconDataBridge : StateResetter {
         )
     }
 
+    @Synchronized
     fun replaceSameSongContent(song: Song): Boolean {
         val previousSong = currentSong ?: return false
         if (!isSameSong(previousSong, song)) return false
@@ -129,6 +138,7 @@ object LyriconDataBridge : StateResetter {
         currentSongName = song.name
         prepareSong(song)
         versionCounter.incrementAndGet()
+        publishMediaLyricSnapshot()
         DisplayDiagnosticLogger.log(
             channel = "BRIDGE",
             result = "accepted",
@@ -137,9 +147,13 @@ object LyriconDataBridge : StateResetter {
         return true
     }
 
+    @Synchronized
     fun applyTranslation(translatedSong: Song) {
         currentSong = translatedSong
+        currentSongName = translatedSong.name
         prepareSong(translatedSong)
+        versionCounter.incrementAndGet()
+        publishMediaLyricSnapshot()
     }
 
     private fun prepareSong(song: Song) {
@@ -162,19 +176,34 @@ object LyriconDataBridge : StateResetter {
         interludeTracker = InterludeTracker(lines)
     }
 
-    fun updatePosition(position: Long): Boolean {
-        playbackPositionEstimator.update(position, monotonicTimeMs())
-        return applyPosition(position)
+    @Synchronized
+    fun updatePosition(position: Long, playbackState: Boolean? = null): Boolean {
+        val now = monotonicTimeMs()
+        playbackPositionEstimator.update(position, now)
+        if (playbackState != null) {
+            currentPlaybackState = playbackState
+            playbackPositionEstimator.setPlaying(playbackState, now)
+        }
+        val changed = applyPosition(position)
+        publishMediaLyricSnapshot()
+        return changed
     }
 
-    fun updateEstimatedPosition(position: Long): Boolean = applyPosition(position)
+    @Synchronized
+    fun updateEstimatedPosition(position: Long): Boolean {
+        val changed = applyPosition(position)
+        publishMediaLyricSnapshot()
+        return changed
+    }
 
     fun estimatedPosition(): Long? =
         playbackPositionEstimator.estimate(monotonicTimeMs())
 
+    @Synchronized
     fun updatePlaybackState(isPlaying: Boolean) {
         currentPlaybackState = isPlaying
         playbackPositionEstimator.setPlaying(isPlaying, monotonicTimeMs())
+        publishMediaLyricSnapshot()
         DisplayDiagnosticLogger.log(
             channel = "BRIDGE",
             result = "accepted",
@@ -252,6 +281,7 @@ object LyriconDataBridge : StateResetter {
         return changed
     }
 
+    @Synchronized
     fun updateLyric(text: String?) {
         isTextMode = true
         currentInterlude = null
@@ -270,8 +300,10 @@ object LyriconDataBridge : StateResetter {
         currentUnmergedLyricLine = currentLyricLine
         currentNextLyricLine = null
         currentNextNextLyricLine = null
+        publishMediaLyricSnapshot()
     }
 
+    @Synchronized
     fun updateLyricLine(line: IRichLyricLine) {
         isTextMode = false
         currentInterlude = null
@@ -304,6 +336,7 @@ object LyriconDataBridge : StateResetter {
         currentNextLyricLine = preparedLine?.next
         currentLyric = currentLyricLine?.text
         currentNextNextLyricLine = preparedLine?.next?.next
+        publishMediaLyricSnapshot()
         DisplayDiagnosticLogger.log(
             channel = "BRIDGE",
             result = "accepted",
@@ -311,6 +344,7 @@ object LyriconDataBridge : StateResetter {
         )
     }
 
+    @Synchronized
     override fun clearState() {
         currentSong = null
         currentSongName = null
@@ -331,9 +365,35 @@ object LyriconDataBridge : StateResetter {
         unmergedTimingNavigator = TimingNavigator(emptyArray())
         interludeTracker = InterludeTracker()
         playbackPositionEstimator.reset()
+        publishMediaLyricSnapshot()
         DisplayDiagnosticLogger.clear("BRIDGE")
 
         versionCounter.incrementAndGet()
+    }
+
+    @Synchronized
+    fun updateMetadataTitle(title: String?) {
+        if (title == null) return
+        currentSongName = title
+        publishMediaLyricSnapshot()
+    }
+
+    private fun publishMediaLyricSnapshot() {
+        MediaLyricSnapshotStore.global.publish(
+            MediaLyricSnapshotDraft(
+                song = MediaLyricSongIdentity.from(currentSong)?.copy(
+                    title = currentSongName ?: currentSong?.name,
+                ),
+                packageName = currentLyricPackageName,
+                positionMs = currentPosition,
+                isPlaying = currentPlaybackState,
+                isTextMode = isTextMode,
+                songHasDuet = currentSong?.lyrics.orEmpty().any { it.isAlignedRight },
+                current = MediaLyricLineSnapshot.from(currentLyricLine),
+                next = MediaLyricLineSnapshot.from(currentNextLyricLine),
+                nextNext = MediaLyricLineSnapshot.from(currentNextNextLyricLine),
+            )
+        )
     }
 
     private fun findPreparedLine(line: IRichLyricLine): TimedLine? {
