@@ -2,6 +2,7 @@ package com.juren233.hyperlyricsenhanced.root.mediacard.notification
 
 import android.view.Gravity
 import com.juren233.hyperlyricsenhanced.common.RootConstants
+import com.juren233.hyperlyricsenhanced.root.mediacard.MediaCardFullAodTransitionMode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -129,6 +130,42 @@ class AodMediaLyricPolicyTest {
                 targetFullAod = false,
                 playing = true,
                 pauseStyle = RootConstants.AOD_PAUSE_STYLE_RESTORE,
+            )
+        )
+    }
+
+    @Test
+    fun `selects distinct paused notification transition modes`() {
+        assertEquals(
+            MediaCardFullAodTransitionMode.PAUSED_RESTORE_NATIVE,
+            AodMediaLyricPolicy.notificationFullAodTransitionMode(
+                targetFullAod = true,
+                playing = false,
+                pauseStyle = RootConstants.AOD_PAUSE_STYLE_RESTORE,
+            )
+        )
+        assertEquals(
+            MediaCardFullAodTransitionMode.PAUSED_KEEP_LYRICS,
+            AodMediaLyricPolicy.notificationFullAodTransitionMode(
+                targetFullAod = true,
+                playing = false,
+                pauseStyle = RootConstants.AOD_PAUSE_STYLE_KEEP_LYRICS,
+            )
+        )
+        assertEquals(
+            MediaCardFullAodTransitionMode.DEFAULT,
+            AodMediaLyricPolicy.notificationFullAodTransitionMode(
+                targetFullAod = true,
+                playing = true,
+                pauseStyle = RootConstants.AOD_PAUSE_STYLE_RESTORE,
+            )
+        )
+        assertEquals(
+            MediaCardFullAodTransitionMode.DEFAULT,
+            AodMediaLyricPolicy.notificationFullAodTransitionMode(
+                targetFullAod = false,
+                playing = false,
+                pauseStyle = RootConstants.AOD_PAUSE_STYLE_KEEP_LYRICS,
             )
         )
     }
@@ -485,6 +522,70 @@ class AodMediaLyricPolicyTest {
                 nativeCardHeight = 138,
                 lyricBottom = lyricTop + 124,
                 bottomPadding = 21
+            )
+        )
+    }
+
+    @Test
+    fun `preserves the native cover to card bottom inset when lyrics are appended`() {
+        assertEquals(
+            219,
+            AodMediaLyricPolicy.lockScreenContentBottomGap(
+                nativeCardHeight = 429,
+                contentBottom = 210,
+                minimumGap = 63,
+            )
+        )
+        assertEquals(
+            63,
+            AodMediaLyricPolicy.lockScreenContentBottomGap(
+                nativeCardHeight = 429,
+                contentBottom = 390,
+                minimumGap = 63,
+            )
+        )
+    }
+
+    @Test
+    fun `settles native card height against the actual native owner`() {
+        assertTrue(
+            AodMediaLyricPolicy.isNativeCardHeightSettled(
+                currentHeight = 579,
+                targetHeight = 579,
+            )
+        )
+        assertTrue(
+            AodMediaLyricPolicy.isNativeCardHeightSettled(
+                currentHeight = 578,
+                targetHeight = 579,
+            )
+        )
+        assertFalse(
+            AodMediaLyricPolicy.isNativeCardHeightSettled(
+                currentHeight = 577,
+                targetHeight = 579,
+            )
+        )
+        assertFalse(
+            AodMediaLyricPolicy.isNativeCardHeightSettled(
+                currentHeight = 0,
+                targetHeight = 579,
+            )
+        )
+        // OS4 can report the native compact 429px frame at the full-AOD
+        // callback while the lyric-aware target is 477px.  That frame must
+        // remain pending so the caller requests the missing parent height
+        // instead of treating the target as already committed.
+        assertFalse(
+            AodMediaLyricPolicy.isNativeCardHeightSettled(
+                currentHeight = 429,
+                targetHeight = 477,
+            )
+        )
+        assertTrue(
+            AodMediaLyricPolicy.isNativeCardHeightSettled(
+                currentHeight = 477,
+                targetHeight = 477,
             )
         )
     }
@@ -1178,4 +1279,63 @@ class AodMediaLyricPolicyTest {
         )
         assertEquals("", lineOff.translation)
     }
+
+    @Test
+    fun `waits for parent bounds before applying a pending background target`() {
+        assertTrue(
+            AodMediaLyricPolicy.areNativeCardParentBoundsSettled(
+                targetHeight = 477,
+                headerHeight = 477,
+                playerHeight = 477,
+            )
+        )
+        assertFalse(
+            AodMediaLyricPolicy.areNativeCardParentBoundsSettled(
+                targetHeight = 477,
+                headerHeight = 477,
+                playerHeight = 582,
+            )
+        )
+    }
+
+    @Test
+    fun `does not treat header-only height as a settled native card`() {
+        assertFalse(
+            AodMediaLyricPolicy.areNativeCardBoundsSettled(
+                targetHeight = 429,
+                headerHeight = 429,
+                playerHeight = 582,
+                backgroundHeight = 429,
+            )
+        )
+        assertTrue(
+            AodMediaLyricPolicy.areNativeCardBoundsSettled(
+                targetHeight = 429,
+                headerHeight = 429,
+                playerHeight = 429,
+                backgroundHeight = 429,
+            )
+        )
+    }
+
+    @Test
+    fun `accepts one pixel native card layout tolerance`() {
+        assertTrue(
+            AodMediaLyricPolicy.areNativeCardBoundsSettled(
+                targetHeight = 477,
+                headerHeight = 476,
+                playerHeight = 477,
+                backgroundHeight = 478,
+            )
+        )
+        assertFalse(
+            AodMediaLyricPolicy.areNativeCardBoundsSettled(
+                targetHeight = 477,
+                headerHeight = 475,
+                playerHeight = 477,
+                backgroundHeight = 477,
+            )
+        )
+    }
+
 }

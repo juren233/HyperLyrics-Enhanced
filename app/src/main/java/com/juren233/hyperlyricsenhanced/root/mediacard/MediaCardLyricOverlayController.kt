@@ -54,6 +54,48 @@ internal data class MediaCardAodTransitionBaseline(
     val header: MediaCardAodViewSizeBaseline?,
 )
 
+internal enum class MediaCardFullAodTransitionMode {
+    DEFAULT,
+    PAUSED_RESTORE_NATIVE,
+    PAUSED_KEEP_LYRICS,
+}
+
+internal object MediaCardFullAodTransitionPolicy {
+    const val LEADING_CONTENT_END_FRACTION = 0.42f
+
+    fun leadingContentProgress(fraction: Float): Float {
+        val raw = (
+            fraction.coerceIn(0f, 1f) / LEADING_CONTENT_END_FRACTION
+            ).coerceIn(0f, 1f)
+        return 1f - (1f - raw) * (1f - raw)
+    }
+
+    fun shouldRetractWholeLyricRoot(mode: MediaCardFullAodTransitionMode): Boolean =
+        mode == MediaCardFullAodTransitionMode.PAUSED_RESTORE_NATIVE
+
+    fun shouldFadeActions(mode: MediaCardFullAodTransitionMode): Boolean =
+        mode != MediaCardFullAodTransitionMode.PAUSED_RESTORE_NATIVE
+}
+
+/**
+ * The notification lyric root is a persistent child of one media player. A
+ * content refresh must replace its rows in place; it must not be treated as a
+ * new presentation. The latter was causing every lyric update to restart the
+ * root's 0..1 presentation animation and produce the visible flicker in the
+ * device recording.
+ */
+internal object MediaCardNotificationLyricPresentationPolicy {
+    fun shouldStartPresentationGate(rootWasVisible: Boolean): Boolean = !rootWasVisible
+
+    fun shouldPreservePresentedRootForContentUpdate(
+        rootWasVisible: Boolean,
+        contentChanged: Boolean,
+    ): Boolean = rootWasVisible && contentChanged
+
+    fun shouldHideWhileGeometrySettles(presentationGateActive: Boolean): Boolean =
+        presentationGateActive
+}
+
 /**
  * Renders three lyric lines as a real child of the notification-center media card.
  * The whole card is increased in height to reserve the lyric region between the
@@ -178,7 +220,8 @@ internal object MediaCardLyricOverlayController {
     fun beginNotificationFullAodTransition(
         player: ViewGroup,
         targetFullAod: Boolean,
-        retainLyrics: Boolean,
+        mode: MediaCardFullAodTransitionMode,
+        keepSecondLyric: Boolean,
     ) {
         runOnMain {
             // Keep late bind/pre-draw callbacks suspended as well; otherwise a
@@ -187,7 +230,8 @@ internal object MediaCardLyricOverlayController {
             notificationCardAodSuspensions[player] = true
             states[player]?.beginNativeFullAodTransition(
                 targetFullAod = targetFullAod,
-                retainLyrics = retainLyrics,
+                mode = mode,
+                keepSecondLyric = keepSecondLyric,
             )
         }
     }
@@ -202,6 +246,7 @@ internal object MediaCardLyricOverlayController {
         targetSecondLineTopOffsetPx: Int?,
         targetSecondLineAlpha: Int?,
         targetCardHeight: Int?,
+        targetSecondLineVisible: Boolean,
     ) {
         runOnMain {
             states[player]?.applyNativeFullAodTransition(
@@ -213,20 +258,34 @@ internal object MediaCardLyricOverlayController {
                 targetSecondLineTopOffsetPx = targetSecondLineTopOffsetPx,
                 targetSecondLineAlpha = targetSecondLineAlpha,
                 targetCardHeight = targetCardHeight,
+                targetSecondLineVisible = targetSecondLineVisible,
             )
         }
     }
 
-    fun finishNotificationFullAodTransition() {
+    fun finishNotificationFullAodTransition(targetFullAod: Boolean) {
         runOnMain {
             synchronized(states) { states.values.toList() }.forEach { state ->
-                state.finishNativeFullAodTransition()
+                state.finishNativeFullAodTransition(targetFullAod)
             }
         }
     }
 
-    fun completeNotificationCardToAodTransition(player: ViewGroup) {
-        runOnMain { removePendingNotificationToAodRoot(player) }
+    fun completeNotificationCardToAodTransition(
+        player: ViewGroup,
+        detachNotificationRoot: Boolean = false,
+    ) {
+        runOnMain {
+            removePendingNotificationToAodRoot(player)
+            // The lock-screen AOD renderer is a different root from the
+            // notification-center lyric bridge.  Once the native transition
+            // has committed, leaving the bridge attached would make both
+            // renderers participate in the same player and produce the exact
+            // double-card/overlap frame seen in the device recording.
+            if (detachNotificationRoot) {
+                states[player]?.detachNotificationLyricRootForAod()
+            }
+        }
     }
 
     fun pendingNotificationToAodBaseline(
@@ -475,6 +534,7 @@ internal object MediaCardLyricOverlayController {
 
         state.ensureRoot()
         val root = state.root ?: return
+        val wasRootVisible = root.visibility == View.VISIBLE
         val renderContent = RenderContent(content = content, config = config)
         val contentChanged = state.beginContentUpdate(renderContent)
         root.bind(content, state.title, config)
@@ -483,14 +543,39 @@ internal object MediaCardLyricOverlayController {
         } else {
             null
         }
+        val shouldStartPresentationGate =
+            MediaCardNotificationLyricPresentationPolicy.shouldStartPresentationGate(
+                rootWasVisible = wasRootVisible,
+            )
+        if (shouldStartPresentationGate) {
+            // A newly attached root must wait for its first coherent layout.
+            // Existing roots stay presented while their text rows are replaced;
+            // the old contentChanged branch restarted the fade on every lyric
+            // update and was the direct source of the flicker.
+            root.alpha = 0f
+        } else if (
+            MediaCardNotificationLyricPresentationPolicy
+                .shouldPreservePresentedRootForContentUpdate(
+                    rootWasVisible = wasRootVisible,
+                    contentChanged = contentChanged,
+                )
+        ) {
+            // Intentionally preserve the current alpha, including an initial
+            // presentation that is already in progress. A content refresh does
+            // not own or restart the presentation lifecycle.
+        }
         root.visibility = View.VISIBLE
         root.bringToFront()
         state.applyLyricRegionLayout()
         state.applyHeightIfNeeded(premeasuredRootHeight)
+        state.scheduleNotificationRootPresentation(
+            forceHide = shouldStartPresentationGate,
+        )
         root.post {
             if (root.visibility == View.VISIBLE) {
-                state.applyLyricRegionLayout()
+                state.reconcileNotificationLayoutIfNeeded()
                 state.applyHeightIfNeeded()
+                state.scheduleNotificationRootPresentation(forceHide = false)
             }
         }
     }
@@ -549,8 +634,6 @@ internal object MediaCardLyricOverlayController {
         horizontalMargin: Int = 0,
         topGapDp: Float = TOP_GAP_DP,
     ): ViewGroup.LayoutParams? = runCatching {
-        val anchorId = anchor?.id?.takeIf { it != View.NO_ID && it != 0 }
-            ?: return@runCatching null
         val loader = requireNotNull(player.javaClass.classLoader)
         val paramsClass = loader.loadClass(
             "androidx.constraintlayout.widget.ConstraintLayout\$LayoutParams"
@@ -561,9 +644,16 @@ internal object MediaCardLyricOverlayController {
         ).newInstance(0, ViewGroup.LayoutParams.WRAP_CONTENT) as ViewGroup.LayoutParams
         paramsClass.getField("startToStart").setInt(params, 0)
         paramsClass.getField("endToEnd").setInt(params, 0)
-        paramsClass.getField("topToBottom").setInt(params, anchorId)
+        // OS4 places the notification below the user-configurable clock. Keep
+        // this lyric root anchored to the media player itself rather than to a
+        // descendant-to-descendant vertical chain. The local top margin is
+        // refreshed from the cover bounds after each player layout, so clock
+        // height/repositioning cannot pull the root outside its card.
+        paramsClass.getField("topToTop").setInt(params, 0)
+        paramsClass.getField("topToBottom").setInt(params, -1)
         (params as ViewGroup.MarginLayoutParams).apply {
-            topMargin = dp(topGapDp, player.resources.displayMetrics.density)
+            topMargin = localLayoutBottom(anchor, player) +
+                dp(topGapDp, player.resources.displayMetrics.density)
             // ConstraintLayout resolves the physical left/right margins for this
             // SystemUI layout. Set both physical and logical margins so the
             // measured bounds, not just the stored start/end fields, match.
@@ -818,6 +908,26 @@ internal object MediaCardLyricOverlayController {
         val baseline: MediaCardAodTransitionBaseline,
     )
 
+    private data class NativeAodVisualSnapshot(
+        val alpha: Float,
+        val scaleY: Float,
+        val pivotY: Float,
+    ) {
+        fun restore(view: View) {
+            view.alpha = alpha
+            view.scaleY = scaleY
+            view.pivotY = pivotY
+        }
+
+        companion object {
+            fun capture(view: View): NativeAodVisualSnapshot = NativeAodVisualSnapshot(
+                alpha = view.alpha,
+                scaleY = view.scaleY,
+                pivotY = view.pivotY,
+            )
+        }
+    }
+
     private class State(val player: ViewGroup) {
         var anchor: View? = null
         var controls: View? = null
@@ -858,9 +968,17 @@ internal object MediaCardLyricOverlayController {
         private var stableNotificationRootHeight: Int? = null
         private var targetNotificationRootHeight: Int? = null
         private var notificationProgressGapPx: Int = 0
+        private var notificationRootPresentationGateActive = false
+        private var notificationRootPresentationListener: ViewTreeObserver.OnPreDrawListener? = null
         private var lastRenderContent: RenderContent? = null
         private var nativeFullAodTransitionActive = false
+        private var nativeFullAodTransitionMode = MediaCardFullAodTransitionMode.DEFAULT
+        private var nativeFullAodKeepSecondLyric = false
+        private var nativeLeadingContentLastLogBucket = -1
         private var nativeFullAodHeightApplied: Int? = null
+        private val nativeFullAodVisualSnapshots = IdentityHashMap<View, NativeAodVisualSnapshot>()
+        private var nativeRetractRootOriginalLayoutHeight: Int? = null
+        private var nativeRetractRootStartHeight: Int? = null
         private var previewRefreshScheduled = false
         private val previewRefreshRunnable = Runnable {
             previewRefreshScheduled = false
@@ -893,8 +1011,11 @@ internal object MediaCardLyricOverlayController {
         fun suspendForLockScreenAod() {
             cancelPreviewRefresh()
             nativeFullAodTransitionActive = false
-            root?.resetFullAodTransitionScale()
-            root?.visibility = View.GONE
+            root?.let { lyricRoot ->
+                notificationRootPresentationGateActive = false
+                lyricRoot.visibility = View.GONE
+                restoreNativeFullAodVisualTransition(lyricRoot)
+            }
             // Restore only the child constraints changed by the notification
             // lyric feature. Leave all card heights to native full AOD.
             restoreActionLayout()
@@ -956,9 +1077,22 @@ internal object MediaCardLyricOverlayController {
             stableNotificationRootHeight = null
             targetNotificationRootHeight = null
             notificationProgressGapPx = 0
+            notificationRootPresentationGateActive = false
+            notificationRootPresentationListener?.let { listener ->
+                if (player.viewTreeObserver.isAlive) {
+                    player.viewTreeObserver.removeOnPreDrawListener(listener)
+                }
+            }
+            notificationRootPresentationListener = null
             lastRenderContent = null
             nativeFullAodTransitionActive = false
+            nativeFullAodTransitionMode = MediaCardFullAodTransitionMode.DEFAULT
+            nativeFullAodKeepSecondLyric = false
+            nativeLeadingContentLastLogBucket = -1
             nativeFullAodHeightApplied = null
+            nativeFullAodVisualSnapshots.clear()
+            nativeRetractRootOriginalLayoutHeight = null
+            nativeRetractRootStartHeight = null
             rootLayoutListener = null
             playerLayoutListener = null
             preDrawGeometryListener = null
@@ -1007,10 +1141,22 @@ internal object MediaCardLyricOverlayController {
                         ) {
                             scheduleDynamicRelayout()
                         }
+                        if (nextRoot.visibility == View.VISIBLE && !nativeFullAodTransitionActive) {
+                            reconcileNotificationLayoutIfNeeded()
+                            if (!isNotificationGeometrySettled()) {
+                                scheduleNotificationRootPresentation(forceHide = false)
+                            }
+                        }
                     }
                     nextRoot.addOnLayoutChangeListener(listener)
                     rootLayoutListener = listener
                     val playerListener = View.OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+                        if (nextRoot.visibility == View.VISIBLE && !nativeFullAodTransitionActive) {
+                            reconcileNotificationLayoutIfNeeded()
+                            if (!isNotificationGeometrySettled()) {
+                                scheduleNotificationRootPresentation(forceHide = false)
+                            }
+                        }
                         logNotificationGeometry("player_layout")
                         schedulePreDrawGeometryLog()
                     }
@@ -1022,6 +1168,191 @@ internal object MediaCardLyricOverlayController {
             }
             applyRootHorizontalMargin()
         }
+
+        private fun applyRootVerticalMargin() {
+            val rootView = root ?: return
+            if (surface != Surface.NOTIFICATION_CENTER) return
+            val params = rootView.layoutParams as? ViewGroup.MarginLayoutParams ?: return
+            val targetTopMargin = localLayoutBottom(anchor, player) + dp(
+                NOTIFICATION_LYRIC_TOP_GAP_DP,
+                player.resources.displayMetrics.density,
+            )
+            if (params.topMargin != targetTopMargin) {
+                params.topMargin = targetTopMargin
+                rootView.layoutParams = params
+            }
+        }
+
+
+        /**
+         * Keep notification lyrics out of the rendered frame until the player
+         * has solved the same local geometry that positions progress and native
+         * actions. During OS4 rebinds ConstraintLayout can expose the new lyric
+         * root one frame before those native children have been re-solved; an
+         * alpha gate prevents that transient overlap without inventing a
+         * second coordinate system or a fixed delay/position.
+         */
+        fun scheduleNotificationRootPresentation(forceHide: Boolean) {
+            if (surface != Surface.NOTIFICATION_CENTER || nativeFullAodTransitionActive) return
+            val rootView = root ?: return
+            if (forceHide && !notificationRootPresentationGateActive) {
+                notificationRootPresentationGateActive = true
+                rootView.alpha = 0f
+            } else if (forceHide) {
+                // Repeated layout callbacks during the same handoff are
+                // idempotent; they must not restart the presentation cycle.
+                rootView.alpha = 0f
+            }
+            reconcileNotificationLayoutIfNeeded()
+            if (isNotificationGeometrySettled()) {
+                notificationRootPresentationGateActive = false
+                notificationRootPresentationListener?.let { listener ->
+                    if (player.viewTreeObserver.isAlive) {
+                        player.viewTreeObserver.removeOnPreDrawListener(listener)
+                    }
+                }
+                notificationRootPresentationListener = null
+                // Commit lyric visibility in the same settled frame. A
+                // separate fade has its own lifecycle and was visibly lagging
+                // behind the card/root handoff in the 60 fps recordings.
+                rootView.alpha = 1f
+                return
+            }
+            if (notificationRootPresentationListener != null ||
+                !player.viewTreeObserver.isAlive
+            ) {
+                if (MediaCardNotificationLyricPresentationPolicy.shouldHideWhileGeometrySettles(
+                        notificationRootPresentationGateActive,
+                    )
+                ) {
+                    rootView.alpha = 0f
+                }
+                return
+            }
+            lateinit var listener: ViewTreeObserver.OnPreDrawListener
+            listener = ViewTreeObserver.OnPreDrawListener {
+                if (!player.viewTreeObserver.isAlive) {
+                    notificationRootPresentationListener = null
+                    return@OnPreDrawListener true
+                }
+                if (nativeFullAodTransitionActive) {
+                    player.viewTreeObserver.removeOnPreDrawListener(listener)
+                    if (notificationRootPresentationListener === listener) {
+                        notificationRootPresentationListener = null
+                    }
+                    return@OnPreDrawListener true
+                }
+                reconcileNotificationLayoutIfNeeded()
+                if (root !== rootView || rootView.visibility != View.VISIBLE) {
+                    player.viewTreeObserver.removeOnPreDrawListener(listener)
+                    if (notificationRootPresentationListener === listener) {
+                        notificationRootPresentationListener = null
+                    }
+                    return@OnPreDrawListener true
+                }
+                if (isNotificationGeometrySettled()) {
+                    player.viewTreeObserver.removeOnPreDrawListener(listener)
+                    if (notificationRootPresentationListener === listener) {
+                        notificationRootPresentationListener = null
+                    }
+                    notificationRootPresentationGateActive = false
+                    // Geometry and visibility share one frame owner: once
+                    // settled, reveal exactly once without a second animator.
+                    rootView.alpha = 1f
+                } else if (
+                    MediaCardNotificationLyricPresentationPolicy.shouldHideWhileGeometrySettles(
+                        notificationRootPresentationGateActive,
+                    )
+                ) {
+                    // Only a root that is already in a presentation handoff is
+                    // hidden. A visible root undergoing a text/card relayout is
+                    // kept on screen, so a layout pass cannot blink the lyrics.
+                    rootView.alpha = 0f
+                }
+                true
+            }
+            notificationRootPresentationListener = listener
+            player.viewTreeObserver.addOnPreDrawListener(listener)
+        }
+
+        private fun isNotificationGeometrySettled(): Boolean {
+            if (surface != Surface.NOTIFICATION_CENTER) return true
+            val rootView = root?.takeIf { it.visibility == View.VISIBLE } ?: return false
+            if (player.width <= 0 || player.height <= 0 || rootView.width <= 0) return false
+            val targetHeight = targetPlayerHeight
+            if (targetHeight != null && targetHeight > 0 && player.height < targetHeight) {
+                return false
+            }
+            if (rootView.top < 0 || rootView.bottom > player.height) return false
+
+            val progressView = progress
+            if (progressView?.visibility != View.GONE) {
+                if (progressView == null || progressView.top < rootView.bottom) return false
+                if (progressView.bottom > player.height) return false
+            }
+            val visibleActions = actionViews.filter { it.visibility == View.VISIBLE }
+            val actionAnchorBottom = if (progressView.visibility == View.GONE) {
+                rootView.bottom
+            } else {
+                progressView.bottom
+            }
+            if (visibleActions.any { action ->
+                    action.top < actionAnchorBottom || action.bottom > player.height
+                }) {
+                return false
+            }
+            return true
+        }
+
+        /**
+         * Reassert the existing player-local constraints only when SystemUI has
+         * replaced them during a rebind. Calling this unconditionally from an
+         * onLayout callback would request another layout forever.
+         */
+        fun reconcileNotificationLayoutIfNeeded() {
+            if (surface != Surface.NOTIFICATION_CENTER ||
+                nativeFullAodTransitionActive ||
+                root?.visibility != View.VISIBLE
+            ) {
+                return
+            }
+            val rootView = root ?: return
+            val rootId = rootView.id.takeIf { it != View.NO_ID && it != 0 } ?: return
+            val progressView = progress ?: return
+            val progressId = progressView.id.takeIf { it != View.NO_ID && it != 0 }
+            val density = progressView.resources.displayMetrics.density
+            val expectedProgressTop = notificationProgressGapPx.takeIf { it > 0 }
+                ?: dp(NOTIFICATION_PROGRESS_GAP_DP, density)
+            val progressParams = progressView.layoutParams
+            val progressNeedsLayout = progressParams == null ||
+                constraintInt(progressParams, "topToTop") != -1 ||
+                constraintInt(progressParams, "topToBottom") != rootId ||
+                constraintInt(progressParams, "bottomToTop") != -1 ||
+                constraintInt(progressParams, "bottomToBottom") != -1 ||
+                (progressParams as? ViewGroup.MarginLayoutParams)?.topMargin != expectedProgressTop
+            val actionsNeedLayout = progressId != null && actionViews.any { action ->
+                val params = action.layoutParams
+                val marginParams = params as? ViewGroup.MarginLayoutParams
+                params == null ||
+                    marginParams == null ||
+                    constraintInt(params, "topToTop") != -1 ||
+                    constraintInt(params, "topToBottom") != progressId ||
+                    constraintInt(params, "bottomToTop") != -1 ||
+                    constraintInt(params, "bottomToBottom") != 0 ||
+                    marginParams.topMargin != dp(NOTIFICATION_ACTION_TOP_GAP_DP, density) ||
+                    marginParams.bottomMargin != dp(NOTIFICATION_ACTION_BOTTOM_GAP_DP, density)
+            }
+            val rootParams = rootView.layoutParams as? ViewGroup.MarginLayoutParams
+            val rootNeedsVerticalMargin = rootParams != null &&
+                rootParams.topMargin != localLayoutBottom(anchor, player) +
+                dp(NOTIFICATION_LYRIC_TOP_GAP_DP, density)
+            if (progressNeedsLayout || actionsNeedLayout || rootNeedsVerticalMargin) {
+                applyLyricRegionLayout()
+            }
+        }
+
+        private fun constraintInt(params: ViewGroup.LayoutParams, name: String): Int? =
+            runCatching { params.javaClass.getField(name).getInt(params) }.getOrNull()
 
         fun beginContentUpdate(content: RenderContent): Boolean {
             val changed = lastRenderContent != content
@@ -1437,6 +1768,7 @@ internal object MediaCardLyricOverlayController {
                 applyActionLayout()
                 return
             }
+            applyRootVerticalMargin()
             val rootId = rootView.id.takeIf { it != View.NO_ID && it != 0 } ?: return
             val progressView = progress ?: return
             applyProgressLayout(
@@ -1789,27 +2121,212 @@ internal object MediaCardLyricOverlayController {
         private fun lerp(start: Int, end: Int, fraction: Float): Int =
             (start + (end - start) * fraction).roundToInt()
 
+        private fun prepareNativeFullAodVisualTransition() {
+            nativeFullAodVisualSnapshots.clear()
+            nativeRetractRootOriginalLayoutHeight = null
+            nativeRetractRootStartHeight = null
+
+            val lyricRoot = root?.takeIf { it.visibility == View.VISIBLE }
+            if (
+                lyricRoot != null &&
+                MediaCardFullAodTransitionPolicy.shouldRetractWholeLyricRoot(
+                    nativeFullAodTransitionMode,
+                )
+            ) {
+                nativeFullAodVisualSnapshots[lyricRoot] =
+                    NativeAodVisualSnapshot.capture(lyricRoot)
+                nativeRetractRootOriginalLayoutHeight = lyricRoot.layoutParams?.height
+                nativeRetractRootStartHeight = measuredHeight(lyricRoot).takeIf { it > 0 }
+                nativeRetractRootStartHeight?.let { resizeIfNeeded(lyricRoot, it) }
+            } else if (
+                lyricRoot != null &&
+                nativeFullAodTransitionMode ==
+                    MediaCardFullAodTransitionMode.PAUSED_KEEP_LYRICS
+            ) {
+                lyricRoot.prepareFullAodContentReduction(nativeFullAodKeepSecondLyric)
+            }
+
+            buildList {
+                addAll(listOfNotNull(progress, elapsedTime, totalTime))
+                if (
+                    MediaCardFullAodTransitionPolicy.shouldFadeActions(
+                        nativeFullAodTransitionMode,
+                    )
+                ) {
+                    addAll(actionViews)
+                }
+            }.distinct().forEach { view ->
+                nativeFullAodVisualSnapshots.putIfAbsent(
+                    view,
+                    NativeAodVisualSnapshot.capture(view),
+                )
+            }
+        }
+
+        private fun applyNativeLeadingContentTransition(fraction: Float) {
+            val progress = MediaCardFullAodTransitionPolicy.leadingContentProgress(fraction)
+            val remainingAlpha = 1f - progress
+            val lyricRoot = root?.takeIf { it.visibility == View.VISIBLE }
+
+            when (nativeFullAodTransitionMode) {
+                MediaCardFullAodTransitionMode.PAUSED_RESTORE_NATIVE -> {
+                    val snapshot = lyricRoot?.let(nativeFullAodVisualSnapshots::get)
+                    val startHeight = nativeRetractRootStartHeight
+                    if (lyricRoot != null && snapshot != null && startHeight != null) {
+                        resizeIfNeeded(lyricRoot, lerp(startHeight, 0, progress))
+                        lyricRoot.alpha = snapshot.alpha * remainingAlpha
+                        lyricRoot.requestLayout()
+                    }
+                }
+                MediaCardFullAodTransitionMode.PAUSED_KEEP_LYRICS -> {
+                    lyricRoot?.applyFullAodContentReduction(
+                        progress = progress,
+                        keepSecondLyric = nativeFullAodKeepSecondLyric,
+                    )
+                }
+                MediaCardFullAodTransitionMode.DEFAULT -> Unit
+            }
+
+            listOfNotNull(this.progress, elapsedTime, totalTime).distinct().forEach { view ->
+                nativeFullAodVisualSnapshots[view]?.let { snapshot ->
+                    view.alpha = snapshot.alpha * remainingAlpha
+                    if (view === this.progress) {
+                        view.pivotY = 0f
+                        view.scaleY = snapshot.scaleY * remainingAlpha.coerceAtLeast(0.01f)
+                    }
+                    view.invalidate()
+                }
+            }
+            if (
+                MediaCardFullAodTransitionPolicy.shouldFadeActions(
+                    nativeFullAodTransitionMode,
+                )
+            ) {
+                actionViews.forEach { action ->
+                    nativeFullAodVisualSnapshots[action]?.let { snapshot ->
+                        action.alpha = snapshot.alpha * remainingAlpha
+                        action.invalidate()
+                    }
+                }
+            }
+
+            if (BuildConfig.DEBUG) {
+                val bucket = (progress * 4f).toInt().coerceIn(0, 4)
+                if (bucket != nativeLeadingContentLastLogBucket) {
+                    nativeLeadingContentLastLogBucket = bucket
+                    HookLogger.i(
+                        TAG,
+                        "暂停态 full AOD 前导内容转场: " +
+                            "mode=$nativeFullAodTransitionMode, " +
+                            "fraction=${"%.3f".format(fraction)}, " +
+                            "leading=${"%.3f".format(progress)}, " +
+                            "root=${lyricRoot?.height}/${lyricRoot?.layoutParams?.height}/" +
+                            "${lyricRoot?.alpha}, progress=${this.progress?.visibility}/" +
+                            "${this.progress?.alpha}, actions=${actionViews.joinToString { action ->
+                                "${action.visibility}/${"%.2f".format(action.alpha)}/" +
+                                    "${action.top}"
+                            }}",
+                    )
+                }
+            }
+        }
+
+        private fun restoreNativeFullAodVisualTransition(lyricRoot: MediaCardLyricRoot?) {
+            nativeFullAodVisualSnapshots.forEach { (view, snapshot) -> snapshot.restore(view) }
+            nativeFullAodVisualSnapshots.clear()
+            lyricRoot?.let { rootView ->
+                nativeRetractRootOriginalLayoutHeight?.let { originalHeight ->
+                    val params = rootView.layoutParams
+                    if (params != null && params.height != originalHeight) {
+                        params.height = originalHeight
+                        rootView.layoutParams = params
+                    }
+                }
+                rootView.alpha = 1f
+                rootView.resetFullAodContentReduction()
+                rootView.resetFullAodTransitionScale()
+                title?.let { rootView.applyTransitionTextColor(it.currentTextColor) }
+                rootView.requestLayout()
+            }
+            nativeRetractRootOriginalLayoutHeight = null
+            nativeRetractRootStartHeight = null
+            nativeFullAodTransitionMode = MediaCardFullAodTransitionMode.DEFAULT
+            nativeFullAodKeepSecondLyric = false
+            nativeLeadingContentLastLogBucket = -1
+        }
+
+        /**
+         * Remove the notification-center lyric bridge before the separate
+         * lock-screen AOD lyric root is shown.  Do not restore the native child
+         * snapshots here: on the full-AOD entry path their final values are the
+         * intended compact-state values (for example, progress/time alpha=0).
+         * The snapshots stay in the State object and are restored when the
+         * native transition reverses.
+         */
+        fun detachNotificationLyricRootForAod() {
+            val bridgeRoot = root ?: return
+            val parent = bridgeRoot.parent as? ViewGroup
+            val rootDescription =
+                "0x${System.identityHashCode(bridgeRoot).toString(16)}" +
+                    "/${bridgeRoot.visibility}/${bridgeRoot.alpha}/" +
+                    "${bridgeRoot.left},${bridgeRoot.top}," +
+                    "${bridgeRoot.width}x${bridgeRoot.height}" +
+                    "/parent=${parent?.javaClass?.simpleName ?: "null"}"
+            rootLayoutListener?.let(bridgeRoot::removeOnLayoutChangeListener)
+            rootLayoutListener = null
+            notificationRootPresentationListener?.let { listener ->
+                if (player.viewTreeObserver.isAlive) {
+                    player.viewTreeObserver.removeOnPreDrawListener(listener)
+                }
+            }
+            notificationRootPresentationListener = null
+            parent?.removeView(bridgeRoot)
+            root = null
+            stableNotificationRootHeight = null
+            targetNotificationRootHeight = null
+            notificationProgressGapPx = 0
+            lastRenderContent = null
+            if (BuildConfig.DEBUG) {
+                HookLogger.i(
+                    TAG,
+                    "通知中心歌词桥接 root 已在 AOD 内容根接管前移除: " +
+                        "root=$rootDescription, " +
+                        "player=${player.height}/${player.layoutParams?.height}, " +
+                        "snapshotViews=${nativeFullAodVisualSnapshots.size}",
+                )
+            }
+        }
+
         fun beginNativeFullAodTransition(
             targetFullAod: Boolean,
-            retainLyrics: Boolean,
+            mode: MediaCardFullAodTransitionMode,
+            keepSecondLyric: Boolean,
         ) {
             if (surface != Surface.NOTIFICATION_CENTER) return
+            restoreNativeFullAodVisualTransition(root)
             // Freeze notification-card lyric data and height refreshes for the
-            // entire native transition. The notification lyric root belongs to
-            // the lock-screen card, not to the native full-AOD card. In the
-            // pause style that restores native controls, hide it before
-            // SystemUI measures the transition; the keep-lyrics/playing paths
-            // retain it for the native lyric visual until the final state.
+            // entire native transition. The notification lyric root remains the
+            // only visual bridge until native full AOD reaches its target; the
+            // paused modes stage its contents instead of swapping roots at
+            // onBegin.
             suspendedForLockScreenAod = true
             cancelPreviewRefresh()
             root?.resetFullAodTransitionScale()
-            if (targetFullAod && !retainLyrics) {
-                root?.visibility = View.GONE
-            }
             nativeFullAodTransitionActive = true
+            nativeFullAodTransitionMode = if (targetFullAod) {
+                mode
+            } else {
+                MediaCardFullAodTransitionMode.DEFAULT
+            }
+            nativeFullAodKeepSecondLyric = targetFullAod && keepSecondLyric
+            nativeLeadingContentLastLogBucket = -1
             heightAnimator?.let { animator ->
                 heightAnimator = null
                 animator.cancel()
+            }
+
+            if (targetFullAod) {
+                prepareNativeFullAodVisualTransition()
             }
 
             // Hand the card dimensions back to SystemUI at the native
@@ -1840,6 +2357,7 @@ internal object MediaCardLyricOverlayController {
                 HookLogger.i(
                     TAG,
                     "AOD_CARD_OWNER handoff_notification_card_to_native: " +
+                        "mode=$nativeFullAodTransitionMode, " +
                         "player=${player.height}/${player.layoutParams?.height}, " +
                         "background=${background?.height}/${background?.layoutParams?.height}, " +
                         "outer=${outer?.height}/${outer?.layoutParams?.height}",
@@ -1894,6 +2412,7 @@ internal object MediaCardLyricOverlayController {
         fun applyNativeFullAodHeight(nativeHeight: Int) {
             if (surface != Surface.NOTIFICATION_CENTER || nativeHeight <= 0) return
             if (nativeFullAodHeightApplied == nativeHeight) return
+            restoreNativeFullAodVisualTransition(root)
             heightAnimator?.let { animator ->
                 heightAnimator = null
                 animator.cancel()
@@ -1972,26 +2491,36 @@ internal object MediaCardLyricOverlayController {
             targetSecondLineTopOffsetPx: Int?,
             targetSecondLineAlpha: Int?,
             targetCardHeight: Int?,
+            targetSecondLineVisible: Boolean,
         ) {
             if (surface != Surface.NOTIFICATION_CENTER) return
             if (!nativeFullAodTransitionActive) {
                 beginNativeFullAodTransition(
                     targetFullAod = true,
-                    retainLyrics = true,
+                    mode = MediaCardFullAodTransitionMode.DEFAULT,
+                    keepSecondLyric = targetSecondLineVisible,
                 )
             }
             root?.takeIf { it.visibility == View.VISIBLE }?.let { lyricRoot ->
-                lyricRoot.alpha = transitionAlpha.coerceIn(0f, 1f)
-                lyricRoot.applyTransitionTextColor(textColor)
-                lyricRoot.applyFullAodSecondLineScale(
-                    fraction = fraction,
-                    targetTextSizeSp = targetSecondLineTextSizeSp,
-                    targetTopOffsetPx = targetSecondLineTopOffsetPx,
-                    sourceColor = textColor,
-                    targetColor = secondaryTargetColor,
-                    targetAlpha = targetSecondLineAlpha,
-                )
+                when (nativeFullAodTransitionMode) {
+                    MediaCardFullAodTransitionMode.PAUSED_RESTORE_NATIVE -> Unit
+                    MediaCardFullAodTransitionMode.PAUSED_KEEP_LYRICS,
+                    MediaCardFullAodTransitionMode.DEFAULT -> {
+                        lyricRoot.alpha = transitionAlpha.coerceIn(0f, 1f)
+                        lyricRoot.applyTransitionTextColor(textColor)
+                        lyricRoot.applyFullAodSecondLineScale(
+                            fraction = fraction,
+                            targetTextSizeSp = targetSecondLineTextSizeSp,
+                            targetTopOffsetPx = targetSecondLineTopOffsetPx,
+                            sourceColor = textColor,
+                            targetColor = secondaryTargetColor,
+                            targetAlpha = targetSecondLineAlpha,
+                        )
+                    }
+                }
             }
+            nativeFullAodKeepSecondLyric = targetSecondLineVisible
+            applyNativeLeadingContentTransition(fraction)
             if (BuildConfig.DEBUG && targetCardHeight != null) {
                 HookLogger.i(
                     TAG,
@@ -2003,13 +2532,17 @@ internal object MediaCardLyricOverlayController {
             }
         }
 
-        fun finishNativeFullAodTransition() {
+        fun finishNativeFullAodTransition(targetFullAod: Boolean) {
             if (surface != Surface.NOTIFICATION_CENTER) return
             nativeFullAodTransitionActive = false
-            root?.let { lyricRoot ->
-                lyricRoot.alpha = 1f
-                lyricRoot.resetFullAodTransitionScale()
-                title?.let { lyricRoot.applyTransitionTextColor(it.currentTextColor) }
+            if (targetFullAod) {
+                // Commit the single-visible-root handoff before
+                // NotificationMediaAodLyricHooker creates its lock-screen AOD
+                // root.  Keeping both roots in player is what caused the
+                // recorded overlapping lyrics/card heights.
+                detachNotificationLyricRootForAod()
+            } else {
+                restoreNativeFullAodVisualTransition(root)
             }
         }
 
@@ -2083,8 +2616,10 @@ internal object MediaCardLyricOverlayController {
 
         fun hideAndRestore(immediate: Boolean = false) {
             nativeFullAodTransitionActive = false
-            root?.resetFullAodTransitionScale()
+            restoreNativeFullAodVisualTransition(root)
+            notificationRootPresentationGateActive = false
             root?.visibility = View.GONE
+            root?.alpha = 1f
             root?.layoutParams?.let { params ->
                 if (params.height != ViewGroup.LayoutParams.WRAP_CONTENT) {
                     params.height = ViewGroup.LayoutParams.WRAP_CONTENT
@@ -2260,6 +2795,8 @@ internal object MediaCardLyricOverlayController {
         private val wrapLyrics: Boolean,
     ) : LinearLayout(context) {
         private val groupViews = List(3) { MediaCardLyricGroupView(context, wrapLyrics) }
+        private val fullAodReducedGroups = IdentityHashMap<MediaCardLyricGroupView, GroupSnapshot>()
+        private var fullAodReductionKeepSecondLyric: Boolean? = null
 
         init {
             if (wrapLyrics && id == View.NO_ID) {
@@ -2297,6 +2834,7 @@ internal object MediaCardLyricOverlayController {
             source: TextView?,
             config: MediaCardLyricConfig,
         ) {
+            resetFullAodContentReduction()
             val sourceColor = source?.currentTextColor ?: Color.WHITE
             groupViews.forEachIndexed { index, view ->
                 val group = content.groups.getOrNull(index)
@@ -2359,6 +2897,65 @@ internal object MediaCardLyricOverlayController {
             }
         }
 
+        fun prepareFullAodContentReduction(keepSecondLyric: Boolean) {
+            if (
+                fullAodReductionKeepSecondLyric == keepSecondLyric &&
+                fullAodReducedGroups.isNotEmpty()
+            ) return
+            resetFullAodContentReduction()
+            fullAodReductionKeepSecondLyric = keepSecondLyric
+            val firstReducedIndex = if (keepSecondLyric) 2 else 1
+            groupViews.drop(firstReducedIndex).forEach { group ->
+                val params = group.layoutParams ?: return@forEach
+                val startHeight = group.height.takeIf { it > 0 }
+                    ?: group.measuredHeight.takeIf { it > 0 }
+                    ?: return@forEach
+                fullAodReducedGroups[group] = GroupSnapshot(
+                    alpha = group.alpha,
+                    originalLayoutHeight = params.height,
+                    startHeight = startHeight,
+                )
+                if (params.height != startHeight) {
+                    params.height = startHeight
+                    group.layoutParams = params
+                }
+            }
+        }
+
+        fun applyFullAodContentReduction(
+            progress: Float,
+            keepSecondLyric: Boolean,
+        ) {
+            prepareFullAodContentReduction(keepSecondLyric)
+            val value = progress.coerceIn(0f, 1f)
+            fullAodReducedGroups.forEach { (group, snapshot) ->
+                val targetHeight = (
+                    snapshot.startHeight * (1f - value)
+                    ).roundToInt().coerceAtLeast(0)
+                val params = group.layoutParams
+                if (params != null && params.height != targetHeight) {
+                    params.height = targetHeight
+                    group.layoutParams = params
+                }
+                group.alpha = snapshot.alpha * (1f - value)
+                group.requestLayout()
+            }
+            requestLayout()
+        }
+
+        fun resetFullAodContentReduction() {
+            fullAodReducedGroups.forEach { (group, snapshot) ->
+                val params = group.layoutParams
+                if (params != null && params.height != snapshot.originalLayoutHeight) {
+                    params.height = snapshot.originalLayoutHeight
+                    group.layoutParams = params
+                }
+                group.alpha = snapshot.alpha
+            }
+            fullAodReducedGroups.clear()
+            fullAodReductionKeepSecondLyric = null
+        }
+
         fun measureWrappedContentHeight(availableWidth: Int): Int? {
             if (!wrapLyrics || availableWidth <= 0) return null
             val contentWidth = (
@@ -2389,6 +2986,12 @@ internal object MediaCardLyricOverlayController {
 
         private fun dp(value: Float): Int =
             (value * resources.displayMetrics.density).roundToInt()
+
+        private data class GroupSnapshot(
+            val alpha: Float,
+            val originalLayoutHeight: Int,
+            val startHeight: Int,
+        )
     }
 
     private class MediaCardLyricGroupView(
