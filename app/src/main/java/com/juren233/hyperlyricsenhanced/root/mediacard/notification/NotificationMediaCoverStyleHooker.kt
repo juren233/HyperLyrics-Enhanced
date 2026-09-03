@@ -27,9 +27,9 @@ import kotlin.math.roundToInt
 object NotificationMediaCoverStyleHooker {
     private const val TAG = "NotificationMediaCoverStyleHooker"
     private const val VIEW_CONTROLLER_CLASS =
-        "com.android.systemui.statusbar.notification.mediacontrol.MiuiMediaViewControllerImpl"
+        NotificationMediaHookMethodProfile.VIEW_CONTROLLER_CLASS
     private const val LAYOUT_CONTROLLER_CLASS =
-        "com.android.systemui.statusbar.notification.mediacontrol.MiuiMediaNotificationControllerImpl"
+        NotificationMediaHookMethodProfile.LAYOUT_CONTROLLER_CLASS
     private const val HOLDER_CLASS =
         "com.android.systemui.statusbar.notification.mediacontrol.MiuiMediaViewHolder"
     private const val MEDIA_DATA_CLASS =
@@ -97,7 +97,10 @@ object NotificationMediaCoverStyleHooker {
             hookedClassLoaders.remove(classLoader)
             HookLogger.w(TAG, "通知中心媒体封面 Hook 安装不完整")
         } else {
-            HookLogger.i(TAG, "通知中心媒体封面 Hook 已初始化: methods=${handles.size}")
+            HookLogger.i(
+                TAG,
+                "通知中心媒体封面 Hook 已初始化: methods=${api.hookMethods.joinToString { it.name }}"
+            )
         }
     }
 
@@ -108,10 +111,37 @@ object NotificationMediaCoverStyleHooker {
                 "detach" -> method.parameterCount == 0
                 else -> false
             }
-            LAYOUT_CONTROLLER_CLASS ->
-                method.name == "loadLayout\$1" && method.parameterCount == 0
+            LAYOUT_CONTROLLER_CLASS -> isLayoutRefreshMethod(method)
             else -> false
         }
+    }
+
+    private fun isLayoutRefreshMethod(method: Method): Boolean {
+        return NotificationMediaHookMethodProfile.isLayoutRefresh(method)
+    }
+
+    private fun findLayoutRefreshMethod(type: Class<*>): Method {
+        return NotificationMediaHookMethodProfile.layoutRefreshMethodNames.firstNotNullOfOrNull { name ->
+            findNearestMethods(type, name).firstOrNull { method ->
+                method.parameterCount == 0 && method.returnType == Void.TYPE
+            }
+        }?.apply { isAccessible = true }
+            ?: error("No compatible media layout refresh method in ${type.name}")
+    }
+
+    private fun findNearestMethods(type: Class<*>, name: String): List<Method> {
+        var current: Class<*>? = type
+        while (current != null) {
+            val methods = current.declaredMethods.filter { method ->
+                method.name == name &&
+                    !method.isBridge &&
+                    !method.isSynthetic &&
+                    !java.lang.reflect.Modifier.isAbstract(method.modifiers)
+            }
+            if (methods.isNotEmpty()) return methods
+            current = current.superclass
+        }
+        return emptyList()
     }
 
     fun hookerFor(executable: Executable): Hooker? {
@@ -499,12 +529,21 @@ object NotificationMediaCoverStyleHooker {
                     "setSeamless",
                     mediaDataClass
                 ).apply { isAccessible = true }
-                val loadLayout = layoutControllerClass.getDeclaredMethod("loadLayout\$1").apply {
-                    isAccessible = true
-                }
+                val loadLayout = findLayoutRefreshMethod(layoutControllerClass)
+                val updateLayout = NotificationMediaHookMethodProfile.layoutRefreshMethodNames
+                    .asSequence()
+                    .mapNotNull { name ->
+                        findNearestMethods(layoutControllerClass, name).firstOrNull { method ->
+                            method.parameterCount == 0 && method.returnType == Void.TYPE &&
+                                method !== loadLayout
+                        }
+                    }
+                    .firstOrNull()
+                    ?.apply { isAccessible = true }
+                    ?: error("No second compatible media layout refresh method in ${layoutControllerClass.name}")
 
                 return NativeApi(
-                    hookMethods = listOf(attach, bind, detach, setSeamless, loadLayout),
+                    hookMethods = listOf(attach, bind, detach, setSeamless, loadLayout, updateLayout),
                     holderField = viewControllerClass.getDeclaredField("holder").apply {
                         isAccessible = true
                     },
@@ -530,9 +569,7 @@ object NotificationMediaCoverStyleHooker {
                         "normalAlbumLayout"
                     ).apply { isAccessible = true },
                     loadLayoutMethod = loadLayout,
-                    updateLayoutMethod = layoutControllerClass.getDeclaredMethod("updateLayout\$6").apply {
-                        isAccessible = true
-                    },
+                    updateLayoutMethod = updateLayout,
                     setVisibilityMethod = constraintSetClass.getDeclaredMethod(
                         "setVisibility",
                         Int::class.javaPrimitiveType,

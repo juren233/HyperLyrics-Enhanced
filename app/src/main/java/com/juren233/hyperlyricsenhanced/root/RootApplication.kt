@@ -132,6 +132,12 @@ class RootApplication : Application() {
                 is String -> intent
                     .putExtra(RootConstants.EXTRA_REMOTE_PREFERENCE_TYPE, "string")
                     .putExtra(RootConstants.EXTRA_REMOTE_PREFERENCE_STRING, value)
+                is Set<*> -> intent
+                    .putExtra(RootConstants.EXTRA_REMOTE_PREFERENCE_TYPE, "string_set")
+                    .putStringArrayListExtra(
+                        RootConstants.EXTRA_REMOTE_PREFERENCE_STRING_SET,
+                        ArrayList(value.filterIsInstance<String>()),
+                    )
                 else -> return
             }
             runCatching { appContext?.sendBroadcast(intent) }

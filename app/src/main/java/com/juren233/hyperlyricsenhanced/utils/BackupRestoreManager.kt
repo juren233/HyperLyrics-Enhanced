@@ -61,7 +61,9 @@ object BackupRestoreManager {
                     val value = config.get(key)
                     if (key == "key_send_normal_notification" || key == "key_send_focus_notification" || key == "key_persistent_foreground"
                         || key == RootConstants.KEY_HOOK_AI_TRANS_API_KEY) continue
-                    if (key == ServiceConstants.KEY_NOTIFICATION_WHITELIST) {
+                    if (key == ServiceConstants.KEY_NOTIFICATION_WHITELIST ||
+                        key == RootConstants.KEY_HOOK_ISLAND_ALBUM_COVER_STYLE_APP_WHITELIST
+                    ) {
                         val raw = value.toString()
                         val set = if (raw.isBlank()) emptySet() else raw.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
                         putStringSet(key, set)

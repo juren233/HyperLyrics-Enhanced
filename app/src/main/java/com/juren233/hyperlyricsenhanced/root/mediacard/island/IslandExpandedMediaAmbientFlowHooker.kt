@@ -1478,7 +1478,7 @@ object IslandExpandedMediaAmbientFlowHooker {
         ) {
             val view = target.expandedView
             val methods = expandedBackgroundMethods(target)
-            val blurOpened = methods.getBackgroundBlurOpened.invoke(null, view.context) as Boolean
+            val blurOpened = methods.isBackgroundOpened.invoke(null, view.context) as Boolean
             if (!blurOpened || view.parent == null) {
                 methods.setMiViewBlurMode.invoke(null, view, 0)
                 methods.clearMiBackgroundBlendColor.invoke(null, view)
@@ -1745,7 +1745,7 @@ object IslandExpandedMediaAmbientFlowHooker {
     private data class ExpandedBackgroundMethods(
         val updateBackgroundBg: Method,
         val getMiniBar: Method,
-        val getBackgroundBlurOpened: Method,
+        val isBackgroundOpened: Method,
         val setMiViewBlurMode: Method,
         val clearMiBackgroundBlendColor: Method,
         val setMiBackgroundBlendColors: Method,
@@ -1776,10 +1776,17 @@ object IslandExpandedMediaAmbientFlowHooker {
                     getMiniBar = baseContentViewClass.getDeclaredMethod("getMiniBar").apply {
                         isAccessible = true
                     },
-                    getBackgroundBlurOpened = miBlurCompatClass.getDeclaredMethod(
-                        "getBackgroundBlurOpened",
-                        Context::class.java
-                    ).apply { isAccessible = true },
+                    isBackgroundOpened = listOf(
+                        "getBackgroundMaterialOpened",
+                        "getBackgroundBlurOpened"
+                    ).firstNotNullOfOrNull { name ->
+                        runCatching {
+                            miBlurCompatClass.getDeclaredMethod(name, Context::class.java)
+                        }.getOrNull()?.takeIf { it.returnType == Boolean::class.javaPrimitiveType }
+                    }?.apply {
+                        isAccessible = true
+                        HookLogger.d(TAG, "动态岛背景开关方法已匹配: $name")
+                    } ?: error("MiBlurCompat background-open method is unavailable"),
                     setMiViewBlurMode = miBlurCompatClass.getDeclaredMethod(
                         "setMiViewBlurModeCompat",
                         View::class.java,

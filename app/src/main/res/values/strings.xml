@@ -221,7 +221,6 @@
     <string name="provider_status_installed_disabled">未启用 · 版本号 v%1$s</string>
     <string name="provider_status_available">可下载 v%1$s</string>
     <string name="provider_status_unavailable">暂不可用</string>
-    <string name="provider_status_migrating">正在迁移，暂未发布</string>
     <string name="provider_status_needs_repair">需修复 · 文件缺失或损坏 (v%1$s)</string>
     <string name="provider_salt_player_upgrade_hint">推荐将椒盐音乐升级至12.2.0及以上版本来实现免插件使用，本插件依旧适用于低版本的椒盐音乐</string>
     <string name="provider_action_download">下载</string>
@@ -519,6 +518,7 @@
     <string name="label_right_padding_range">右边距（范围：-50 ~ 100）</string>
     <string name="title_audio_cover">音频封面</string>
     <string name="title_audio_cover_style">音频封面样式</string>
+    <string name="title_island_album_cover_app_whitelist">应用白名单</string>
     <string name="title_hide_audio_cover_source">隐藏音频封面的来源标识</string>
     <string name="title_hide_media_device_switch">隐藏设备切换按钮</string>
     <string name="option_audio_cover_style_default">默认</string>
@@ -526,6 +526,11 @@
     <string name="option_audio_cover_style_rotating_circle">旋转圆形封面</string>
     <string name="option_audio_cover_style_app_icon">应用图标</string>
     <string name="option_audio_cover_style_gradient">渐变封面</string>
+    <string name="title_island_album_cover_whitelist_enabled">已启用</string>
+    <string name="title_island_album_cover_whitelist_disabled">未启用</string>
+    <string name="hint_island_album_cover_whitelist_search">搜索应用</string>
+    <string name="title_island_album_cover_whitelist_no_apps">暂无匹配的应用</string>
+    <string name="title_island_album_cover_whitelist_loading">获取应用列表中</string>
     <string name="option_audio_cover_style_hidden">隐藏封面</string>
     <string name="title_audio_rhythm">音频律动</string>
     <string name="title_audio_rhythm_cover_color">音频律动封面色</string>

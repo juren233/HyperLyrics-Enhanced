@@ -34,6 +34,7 @@ import com.juren233.hyperlyricsenhanced.common.PrefsBridge
 import com.juren233.hyperlyricsenhanced.ui.component.CustomFontColorPickerDialog
 import com.juren233.hyperlyricsenhanced.ui.component.CustomFontColorPreview
 import com.juren233.hyperlyricsenhanced.ui.navigation.LocalNavigator
+import com.juren233.hyperlyricsenhanced.ui.navigation.Route
 import com.juren233.hyperlyricsenhanced.ui.utils.BlurredBar
 import com.juren233.hyperlyricsenhanced.ui.utils.pageScrollModifiers
 import com.juren233.hyperlyricsenhanced.ui.utils.rememberBlurBackdrop
@@ -401,6 +402,16 @@ fun SuperIslandSettingsPage() {
                                             saveConfig(RootConstants.KEY_HOOK_ISLAND_ALBUM_COVER_STYLE, style)
                                         }
                                     )
+                                    AnimatedVisibility(
+                                        visible = audioCoverStyle != RootConstants.ISLAND_ALBUM_COVER_STYLE_DEFAULT,
+                                        enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
+                                        exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
+                                    ) {
+                                        ArrowPreference(
+                                            title = stringResource(R.string.title_island_album_cover_app_whitelist),
+                                            onClick = { navigator.navigate(Route.SuperIslandAlbumCoverWhitelist) },
+                                        )
+                                    }
                                 }
                             }
                             SwitchPreference(title = stringResource(id = R.string.title_audio_rhythm), checked = audioRhythm, onCheckedChange = { audioRhythm = it; saveConfig(RootConstants.KEY_HOOK_ISLAND_RIGHT_ICON, it) })

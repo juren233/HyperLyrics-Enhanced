@@ -25,6 +25,7 @@ import android.widget.ImageView
 import android.widget.TextView
 import androidx.core.graphics.createBitmap
 import com.juren233.hyperlyricsenhanced.BuildConfig
+import com.juren233.hyperlyricsenhanced.common.IslandAlbumCoverWhitelist
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.common.media.MediaMetadataHelper
 import com.juren233.hyperlyricsenhanced.root.HookEntry
@@ -227,7 +228,9 @@ internal object IslandAlbumCoverStyleHooker {
         realView: View? = null,
         source: String,
     ) {
-        if (currentStyle() != RootConstants.ISLAND_ALBUM_COVER_STYLE_GRADIENT) return
+        val realOwner = resolveFakeTransitionOwner(fakeView, realView)
+        val currentData = IslandProbeUtils.getCurrentIslandData(realOwner)
+        if (currentStyle(currentData) != RootConstants.ISLAND_ALBUM_COVER_STYLE_GRADIENT) return
         if (!isMediaFakeTransition(fakeView, realView)) return
 
         val stateClass = resolveFakeTransitionStateClass(fakeView, realView)
@@ -265,7 +268,6 @@ internal object IslandAlbumCoverStyleHooker {
             state?.restoreCoverVisuals()
         }
 
-        val realOwner = resolveFakeTransitionOwner(fakeView, realView)
         val realEmbedded = syncRealTransitionCover(
             realOwner = realOwner,
             smallIsland = targetSmallIsland,
@@ -355,7 +357,7 @@ internal object IslandAlbumCoverStyleHooker {
         }
 
         val fixIcon = targetField.get(holder) as? ImageView ?: return
-        val style = currentStyle()
+        val style = currentStyle(dynamicIslandData)
         val artworkIdentity = resolveArtworkIdentity(fixIcon, dynamicIslandData)
         synchronized(artworkIdentityByView) {
             if (artworkIdentity == null) {
@@ -394,7 +396,13 @@ internal object IslandAlbumCoverStyleHooker {
             }
 
             RootConstants.ISLAND_ALBUM_COVER_STYLE_GRADIENT -> {
-                applyGradientCover(accessor, holder, fixIcon, fakeContentView)
+                applyGradientCover(
+                    accessor = accessor,
+                    holder = holder,
+                    fixIcon = fixIcon,
+                    fakeContentView = fakeContentView,
+                    packageName = IslandProbeUtils.extractMediaIslandInfo(dynamicIslandData)?.packageName,
+                )
             }
         }
         if (BuildConfig.DEBUG) {
@@ -612,12 +620,15 @@ internal object IslandAlbumCoverStyleHooker {
         holder: Any,
         fixIcon: ImageView,
         fakeContentView: ViewGroup?,
+        packageName: String?,
     ) {
         val iconContainer = accessor.iconContainerField.get(holder) as? View ?: return
         val existingState = gradientStates[fixIcon]
         if (existingState == null || existingState.iconContainer !== iconContainer) {
             gradientStates.remove(fixIcon)?.let { restoreGradientState(it) }
-            gradientStates[fixIcon] = GradientCoverState.capture(fixIcon, iconContainer)
+            gradientStates[fixIcon] = GradientCoverState.capture(fixIcon, iconContainer, packageName)
+        } else {
+            existingState.packageName = packageName
         }
         val state = gradientStates[fixIcon] ?: return
         state.applyLeftContentTextShadow()
@@ -949,7 +960,10 @@ internal object IslandAlbumCoverStyleHooker {
     }
 
     private fun applyInitializedTemplateGeometry(holder: Any) {
-        if (currentStyle() != RootConstants.ISLAND_ALBUM_COVER_STYLE_GRADIENT) return
+        val dynamicIslandData = synchronized(trackedHolders) {
+            trackedHolders[holder]?.dataRef?.get()
+        }
+        if (currentStyle(dynamicIslandData) != RootConstants.ISLAND_ALBUM_COVER_STYLE_GRADIENT) return
         val bigContainer = callViewGetter(holder, "getBigContainer") as? ViewGroup
         val smallContainer = callViewGetter(holder, "getSmallContainer") as? ViewGroup
         val bigApplied = applyInitializedContainer(bigContainer, smallIsland = false)
@@ -1637,6 +1651,7 @@ internal object IslandAlbumCoverStyleHooker {
     private class GradientCoverState(
         val fixIcon: ImageView,
         val iconContainer: View,
+        var packageName: String?,
         val module: View?,
         val moduleParent: View?,
         val originalFixIconWidth: Int,
@@ -1708,7 +1723,7 @@ internal object IslandAlbumCoverStyleHooker {
                 val stillTracked = synchronized(gradientStates) {
                     gradientStates[fixIcon] === this
                 }
-                if (!stillTracked || currentStyle() != RootConstants.ISLAND_ALBUM_COVER_STYLE_GRADIENT) {
+                if (!stillTracked || currentStyleForPackage(packageName) != RootConstants.ISLAND_ALBUM_COVER_STYLE_GRADIENT) {
                     removePreDrawObserver()
                     return@OnPreDrawListener true
                 }
@@ -1989,7 +2004,11 @@ internal object IslandAlbumCoverStyleHooker {
         }
 
         companion object {
-            fun capture(fixIcon: ImageView, iconContainer: View): GradientCoverState {
+            fun capture(
+                fixIcon: ImageView,
+                iconContainer: View,
+                packageName: String?,
+            ): GradientCoverState {
                 val fixLp = fixIcon.layoutParams
                 val iconLp = iconContainer.layoutParams
                 val module = (fixIcon.parent as? View)?.parent as? View
@@ -1997,6 +2016,7 @@ internal object IslandAlbumCoverStyleHooker {
                 return GradientCoverState(
                     fixIcon = fixIcon,
                     iconContainer = iconContainer,
+                    packageName = packageName,
                     module = module,
                     moduleParent = moduleParent,
                     originalFixIconWidth = fixLp?.width ?: ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -2083,7 +2103,14 @@ internal object IslandAlbumCoverStyleHooker {
         return pic == MEDIA_ALBUM_ICON
     }
 
-    private fun currentStyle(): Int {
+    private fun currentStyle(dynamicIslandData: Any? = null): Int {
+        val packageName = dynamicIslandData?.let {
+            IslandProbeUtils.extractMediaIslandInfo(it)?.packageName
+        }
+        return currentStyleForPackage(packageName)
+    }
+
+    private fun currentStyleForPackage(packageName: String?): Int {
         if (!SystemUiEnhancementGate.isEnabled()) {
             return RootConstants.ISLAND_ALBUM_COVER_STYLE_DEFAULT
         }
@@ -2095,13 +2122,26 @@ internal object IslandAlbumCoverStyleHooker {
         ) {
             return RootConstants.ISLAND_ALBUM_COVER_STYLE_DEFAULT
         }
-        return sharedPrefs.getInt(
+        val configuredStyle = sharedPrefs.getInt(
             RootConstants.KEY_HOOK_ISLAND_ALBUM_COVER_STYLE,
             RootConstants.DEFAULT_HOOK_ISLAND_ALBUM_COVER_STYLE
         ).coerceIn(
             RootConstants.ISLAND_ALBUM_COVER_STYLE_DEFAULT,
             RootConstants.ISLAND_ALBUM_COVER_STYLE_GRADIENT
         )
+        if (configuredStyle == RootConstants.ISLAND_ALBUM_COVER_STYLE_DEFAULT) {
+            return configuredStyle
+        }
+        val enabledPackages = IslandRuntimePreferenceReader.getStringSet(
+            sharedPrefs,
+            RootConstants.KEY_HOOK_ISLAND_ALBUM_COVER_STYLE_APP_WHITELIST,
+            null,
+        )
+        return if (IslandAlbumCoverWhitelist.isEnabled(enabledPackages, packageName)) {
+            configuredStyle
+        } else {
+            RootConstants.ISLAND_ALBUM_COVER_STYLE_DEFAULT
+        }
     }
 
     private fun runOnMain(block: () -> Unit) {

@@ -56,6 +56,15 @@ class LivePreferenceRefreshPolicyTest {
     }
 
     @Test
+    fun `album cover whitelist changes refresh SystemUI immediately`() {
+        assertTrue(
+            LivePreferenceRefreshPolicy.contains(
+                RootConstants.KEY_HOOK_ISLAND_ALBUM_COVER_STYLE_APP_WHITELIST
+            )
+        )
+    }
+
+    @Test
     fun `unrelated preferences do not use the island live refresh broadcast`() {
         assertFalse(LivePreferenceRefreshPolicy.contains("unrelated_preference"))
     }

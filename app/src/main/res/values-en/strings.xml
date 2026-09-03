@@ -516,6 +516,7 @@
     <string name="label_right_padding_range">Right Padding (Range: -50 ~ 100)</string>
     <string name="title_audio_cover">Audio Cover</string>
     <string name="title_audio_cover_style">Audio cover style</string>
+    <string name="title_island_album_cover_app_whitelist">App whitelist</string>
     <string name="title_hide_audio_cover_source">Hide audio cover source badge</string>
     <string name="title_hide_media_device_switch">Hide device switch button</string>
     <string name="option_audio_cover_style_default">Default</string>
@@ -523,6 +524,11 @@
     <string name="option_audio_cover_style_rotating_circle">Rotating circular cover</string>
     <string name="option_audio_cover_style_app_icon">App icon</string>
     <string name="option_audio_cover_style_gradient">Gradient cover</string>
+    <string name="title_island_album_cover_whitelist_enabled">Enabled</string>
+    <string name="title_island_album_cover_whitelist_disabled">Disabled</string>
+    <string name="hint_island_album_cover_whitelist_search">Search apps</string>
+    <string name="title_island_album_cover_whitelist_no_apps">No matching apps</string>
+    <string name="title_island_album_cover_whitelist_loading">Loading apps</string>
     <string name="option_audio_cover_style_hidden">Hide cover</string>
     <string name="title_audio_rhythm">Audio Rhythm</string>
     <string name="title_audio_rhythm_cover_color">Audio rhythm cover color</string>

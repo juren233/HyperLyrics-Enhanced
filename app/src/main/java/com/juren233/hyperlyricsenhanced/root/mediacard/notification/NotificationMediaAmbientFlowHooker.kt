@@ -37,7 +37,7 @@ object NotificationMediaAmbientFlowHooker {
     private const val TAG = "NotificationMediaAmbientFlowHooker"
     private const val VIEW_TAG = "hyperlyricsenhanced.notification_media_ambient_flow"
     private val controllerClassNames = listOf(
-        "com.android.systemui.statusbar.notification.mediacontrol.MiuiMediaViewControllerImpl",
+        NotificationMediaHookMethodProfile.VIEW_CONTROLLER_CLASS,
         "com.android.systemui.statusbar.notification.mediacontrol.MiuiMediaViewController"
     )
 
@@ -102,10 +102,17 @@ object NotificationMediaAmbientFlowHooker {
             }
         NotificationMediaBackgroundController.setNativeHooksAvailable(
             classLoader,
-            installedNativeUpdates.containsAll(NATIVE_BACKGROUND_UPDATE_METHODS)
+            installedNativeUpdates.isNotEmpty()
         )
-        if (!installedNativeUpdates.containsAll(NATIVE_BACKGROUND_UPDATE_METHODS)) {
-                HookLogger.w(TAG, "通知中心原生背景接口不完整，跳过自定义背景 Hook")
+        if (installedNativeUpdates.isEmpty()) {
+            HookLogger.w(TAG, "通知中心原生背景接口不可用，跳过自定义背景 Hook")
+        } else if (!installedNativeUpdates.containsAll(NATIVE_BACKGROUND_UPDATE_METHODS)) {
+            HookLogger.i(
+                TAG,
+                "通知中心原生背景接口按可用方法安装: " +
+                    "installed=${installedNativeUpdates.sorted().joinToString()}, " +
+                    "missing=${(NATIVE_BACKGROUND_UPDATE_METHODS - installedNativeUpdates).sorted().joinToString()}"
+            )
         }
 
         runCatching {
@@ -136,7 +143,9 @@ object NotificationMediaAmbientFlowHooker {
         return when (method.name) {
             "attach", "detach" -> true
             "bindMediaData" -> method.parameterTypes.isNotEmpty()
-            "updateForegroundColors", "updateMediaBackground" -> method.parameterCount == 0
+            NotificationMediaHookMethodProfile.UPDATE_FOREGROUND_COLORS,
+            NotificationMediaHookMethodProfile.UPDATE_MEDIA_BACKGROUND ->
+                method.parameterCount == 0 && method.returnType == Void.TYPE
             else -> false
         }
     }
@@ -148,7 +157,8 @@ object NotificationMediaAmbientFlowHooker {
             "attach" -> ControllerHook(Action.ATTACH)
             "detach" -> ControllerHook(Action.DETACH)
             "bindMediaData" -> ControllerHook(Action.BIND)
-            "updateForegroundColors", "updateMediaBackground" -> NativeBackgroundUpdateHook()
+            NotificationMediaHookMethodProfile.UPDATE_FOREGROUND_COLORS,
+            NotificationMediaHookMethodProfile.UPDATE_MEDIA_BACKGROUND -> NativeBackgroundUpdateHook()
             "onDraw" -> ProgressDrawHook()
             else -> null
         }
@@ -680,7 +690,7 @@ object NotificationMediaAmbientFlowHooker {
     private class CardThemeApi private constructor(
         private val contextField: Field,
         private val updateForegroundColorsMethod: Method,
-        private val updateMediaBackgroundMethod: Method
+        private val updateMediaBackgroundMethod: Method?
     ) {
         fun apply(controller: Any, theme: Int, refreshViews: Boolean) {
             val existingState = themeStates[controller]
@@ -706,7 +716,7 @@ object NotificationMediaAmbientFlowHooker {
 
             if (refreshViews) {
                 updateForegroundColorsMethod.invoke(controller)
-                updateMediaBackgroundMethod.invoke(controller)
+                updateMediaBackgroundMethod?.invoke(controller)
             }
         }
 
@@ -729,12 +739,16 @@ object NotificationMediaAmbientFlowHooker {
                 } ?: error("Media controller class is unavailable")
                 return CardThemeApi(
                     contextField = findRequiredField(controllerClass, "context"),
-                    updateForegroundColorsMethod = controllerClass.declaredMethods.single {
-                        it.name == "updateForegroundColors" && it.parameterCount == 0
-                    }.apply { isAccessible = true },
-                    updateMediaBackgroundMethod = controllerClass.declaredMethods.single {
-                        it.name == "updateMediaBackground" && it.parameterCount == 0
-                    }.apply { isAccessible = true }
+                    updateForegroundColorsMethod = findNearestMethods(
+                        controllerClass,
+                        NotificationMediaHookMethodProfile.UPDATE_FOREGROUND_COLORS
+                    ).single { it.parameterCount == 0 && it.returnType == Void.TYPE }
+                        .apply { isAccessible = true },
+                    updateMediaBackgroundMethod = findNearestMethods(
+                        controllerClass,
+                        NotificationMediaHookMethodProfile.UPDATE_MEDIA_BACKGROUND
+                    ).singleOrNull { it.parameterCount == 0 && it.returnType == Void.TYPE }
+                        ?.apply { isAccessible = true }
                 )
             }
 
@@ -784,7 +798,13 @@ object NotificationMediaAmbientFlowHooker {
         }
 
         fun extractSystemPalette(drawable: Drawable): MediaAmbientFlowPalette {
-            val bitmap = drawableToBitmapMethod.invoke(null, drawable) as Bitmap
+            val bitmap = if (drawableToBitmapMethod.parameterCount == 1) {
+                drawableToBitmapMethod.invoke(null, drawable) as Bitmap
+            } else {
+                val width = drawable.intrinsicWidth.coerceAtLeast(1)
+                val height = drawable.intrinsicHeight.coerceAtLeast(1)
+                drawableToBitmapMethod.invoke(null, drawable, width, height) as Bitmap
+            }
             val mainColor = getMainColorMethod.invoke(null, bitmap) as Int
             return createPalette(mainColor)
         }
@@ -818,11 +838,25 @@ object NotificationMediaAmbientFlowHooker {
                 val pause = viewClass.getDeclaredMethod("pause").apply { isAccessible = true }
 
                 val drawableUtils = classLoader.loadClass("com.miui.utils.DrawableUtils")
-                val drawableToBitmap = drawableUtils.declaredMethods.single { method ->
-                    method.name == "drawable2Bitmap" &&
-                        method.parameterTypes.contentEquals(arrayOf(Drawable::class.java)) &&
-                        method.returnType == Bitmap::class.java
-                }.apply { isAccessible = true }
+                val drawableToBitmap = drawableUtils.declaredMethods
+                    .firstOrNull { method ->
+                        method.name == "drawable2Bitmap" &&
+                            method.returnType == Bitmap::class.java &&
+                            method.parameterTypes.contentEquals(
+                                arrayOf(
+                                    Drawable::class.java,
+                                    Int::class.javaPrimitiveType,
+                                    Int::class.javaPrimitiveType
+                                )
+                            )
+                    }
+                    ?: drawableUtils.declaredMethods.firstOrNull { method ->
+                        method.name == "drawable2Bitmap" &&
+                            method.returnType == Bitmap::class.java &&
+                            method.parameterTypes.contentEquals(arrayOf(Drawable::class.java))
+                    }
+                    ?.apply { isAccessible = true }
+                    ?: error("No compatible DrawableUtils.drawable2Bitmap method")
 
                 val miPalette = classLoader.loadClass("miuix.mipalette.MiPalette")
                 miPalette.declaredMethods.firstOrNull { method ->
@@ -860,12 +894,12 @@ object NotificationMediaAmbientFlowHooker {
         "attach",
         "detach",
         "bindMediaData",
-        "updateForegroundColors",
-        "updateMediaBackground"
+        NotificationMediaHookMethodProfile.UPDATE_FOREGROUND_COLORS,
+        NotificationMediaHookMethodProfile.UPDATE_MEDIA_BACKGROUND
     )
     private val NATIVE_BACKGROUND_UPDATE_METHODS = setOf(
-        "updateForegroundColors",
-        "updateMediaBackground"
+        NotificationMediaHookMethodProfile.UPDATE_FOREGROUND_COLORS,
+        NotificationMediaHookMethodProfile.UPDATE_MEDIA_BACKGROUND
     )
     private const val HYPER_PROGRESS_SEEK_BAR_CLASS =
         "miuix.miuixbasewidget.widget.HyperProgressSeekBar"

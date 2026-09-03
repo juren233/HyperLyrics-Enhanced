@@ -34,6 +34,9 @@ internal object IslandMusicWaveColorHooker {
         Collections.newSetFromMap(WeakHashMap<ClassLoader, Boolean>())
     )
     private val trackedLottieViews = WeakHashMap<View, Boolean>()
+    private val firstColorCallbacks = Collections.synchronizedSet(
+        Collections.newSetFromMap(WeakHashMap<ClassLoader, Boolean>())
+    )
     private val colorRequest = AtomicInteger()
     private val colorCache = LruCache<String, WaveColors>(8)
 
@@ -83,16 +86,22 @@ internal object IslandMusicWaveColorHooker {
                 }
             )
 
-            val setLottieColorMethod = holderClass.declaredMethods.firstOrNull {
-                it.name == "setLottieColor" &&
-                    it.parameterTypes.contentEquals(arrayOf(Bitmap::class.java))
+            val colorInputMethods = holderClass.declaredMethods
+                .filter { IslandMusicWaveMethodProfile.isLegacyColorMethod(it) ||
+                    IslandMusicWaveMethodProfile.isOs4ColorMethod(it) }
+                .distinctBy { it.name + it.parameterTypes.contentToString() }
+            colorInputMethods.forEach { method ->
+                method.isAccessible = true
+                xposedModule.deoptimize(method)
+                xposedModule.hook(method).intercept(SetLottieColorHook(method.name))
             }
-            if (setLottieColorMethod != null) {
-                setLottieColorMethod.isAccessible = true
-                xposedModule.deoptimize(setLottieColorMethod)
-                xposedModule.hook(setLottieColorMethod).intercept(SetLottieColorHook())
+            if (colorInputMethods.isEmpty()) {
+                HookLogger.w(TAG, "音频律动原生取色接口不可用: targets=setLottieColor/getLottieColor")
             } else {
-                HookLogger.w(TAG, "音频律动原生取色接口不可用: target=setLottieColor")
+                HookLogger.i(
+                    TAG,
+                    "音频律动原生取色接口已匹配: targets=${colorInputMethods.joinToString { it.name }}"
+                )
             }
 
             val lottieViewField = holderClass.getDeclaredField("lottieView").apply {
@@ -147,6 +156,7 @@ internal object IslandMusicWaveColorHooker {
             synchronized(trackedLottieViews) {
                 trackedLottieViews.clear()
             }
+            firstColorCallbacks.clear()
             nativeColors = null
             colorAccessor = null
         }
@@ -320,13 +330,21 @@ internal object IslandMusicWaveColorHooker {
         }
     }
 
-    private class SetLottieColorHook : Hooker {
+    private class SetLottieColorHook(private val methodName: String) : Hooker {
         override fun intercept(chain: Chain): Any? {
             val result = chain.proceed()
             runCatching {
                 val bitmap = chain.args.firstOrNull() as? Bitmap ?: return@runCatching
                 val holder = chain.thisObject
-                nativeColors = colorAccessor?.read(holder)
+                val classLoader = holder?.javaClass?.classLoader
+                if (classLoader != null && firstColorCallbacks.add(classLoader)) {
+                    HookLogger.i(
+                        TAG,
+                        "音频律动取色首次回调: method=$methodName, " +
+                            "return=${result?.javaClass?.name ?: "null"}"
+                    )
+                }
+                nativeColors = readNativeColors(result, holder)
 
                 val sharedPrefs = prefs ?: return@runCatching
                 if (!isEnabled(sharedPrefs)) {
@@ -350,6 +368,20 @@ internal object IslandMusicWaveColorHooker {
             }
             return result
         }
+    }
+
+    private fun readNativeColors(result: Any?, holder: Any?): WaveColors? {
+        val pair = result ?: return colorAccessor?.read(holder)
+        val top = readPairInt(pair, "a") ?: return colorAccessor?.read(holder)
+        val bottom = readPairInt(pair, "b") ?: return colorAccessor?.read(holder)
+        return WaveColors(top, bottom)
+    }
+
+    private fun readPairInt(pair: Any, fieldName: String): Int? {
+        return runCatching {
+            val field = pair.javaClass.getDeclaredField(fieldName).apply { isAccessible = true }
+            (field.get(pair) as? Number)?.toInt()
+        }.getOrNull()
     }
 
     private class RegisterLottieCallbackHook(

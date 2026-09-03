@@ -30,6 +30,15 @@ internal object IslandRuntimePreferenceReader {
         prefs.getBoolean(key, default),
     )
 
+    fun getStringSet(
+        prefs: SharedPreferences,
+        key: String,
+        default: Set<String>? = null,
+    ): Set<String>? = IslandRuntimePreferenceOverrides.getStringSet(
+        key,
+        prefs.getStringSet(key, default),
+    )
+
     fun getProgressColorMode(prefs: SharedPreferences): Int = IslandProgressColorMode.resolve(
         storedMode = getInt(
             prefs,

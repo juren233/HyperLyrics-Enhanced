@@ -5,6 +5,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -533,6 +534,7 @@ class HookEntry : XposedModule() {
                         }
                     }
                     RootConstants.KEY_HOOK_ISLAND_ALBUM_COVER_STYLE,
+                    RootConstants.KEY_HOOK_ISLAND_ALBUM_COVER_STYLE_APP_WHITELIST,
                     RootConstants.KEY_HOOK_ISLAND_LEFT_ALBUM -> {
                         android.os.Handler(android.os.Looper.getMainLooper()).post {
                             IslandAlbumCoverStyleHooker.refresh()
@@ -697,7 +699,7 @@ class HookEntry : XposedModule() {
                         .getApplicationInfo("com.juren233.hyperlyricsenhanced", 0)
                         .uid
                 }.getOrDefault(-1)
-                val senderUid = runCatching { sentFromUid }.getOrDefault(-1)
+                val senderUid = if (Build.VERSION.SDK_INT >= 34) sentFromUid else -1
                 if (expectedUid >= 0 && senderUid >= 0 && senderUid != expectedUid) {
                     HookLogger.w(
                         "HookEntry",
@@ -720,11 +722,18 @@ class HookEntry : XposedModule() {
                     "long" -> intent.getLongExtra(RootConstants.EXTRA_REMOTE_PREFERENCE_LONG, 0L)
                     "float" -> intent.getFloatExtra(RootConstants.EXTRA_REMOTE_PREFERENCE_FLOAT, 0f)
                     "string" -> intent.getStringExtra(RootConstants.EXTRA_REMOTE_PREFERENCE_STRING)
+                    "string_set" -> intent
+                        .getStringArrayListExtra(RootConstants.EXTRA_REMOTE_PREFERENCE_STRING_SET)
+                        ?.toSet()
+                        ?: emptySet<String>()
                     else -> return
                 }
                 IslandRuntimePreferenceOverrides.put(key, value)
                 if (key == RootConstants.KEY_HOOK_LYRIC_MODE && value is Int) {
                     activeMode = value
+                }
+                if (key == RootConstants.KEY_HOOK_ISLAND_ALBUM_COVER_STYLE_APP_WHITELIST) {
+                    IslandAlbumCoverStyleHooker.refresh()
                 }
                 BaseIslandRenderer.refreshActiveIsland()
                 HookLogger.i(

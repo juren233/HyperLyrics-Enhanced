@@ -19,6 +19,8 @@ object RootConstants {
         "com.juren233.hyperlyricsenhanced.extra.REMOTE_PREFERENCE_FLOAT"
     const val EXTRA_REMOTE_PREFERENCE_STRING =
         "com.juren233.hyperlyricsenhanced.extra.REMOTE_PREFERENCE_STRING"
+    const val EXTRA_REMOTE_PREFERENCE_STRING_SET =
+        "com.juren233.hyperlyricsenhanced.extra.REMOTE_PREFERENCE_STRING_SET"
     const val CLASSIC_AOD_FOCUS_REFRESH_AUTHORITY =
         "com.juren233.hyperlyricsenhanced.classic_aod_focus_refresh"
     const val CLASSIC_AOD_FOCUS_REFRESH_METHOD = "refresh"
@@ -105,6 +107,8 @@ object RootConstants {
 
     const val KEY_HOOK_ISLAND_LEFT_ALBUM = "key_hook_island_left_album"
     const val KEY_HOOK_ISLAND_ALBUM_COVER_STYLE = "key_hook_island_album_cover_style"
+    const val KEY_HOOK_ISLAND_ALBUM_COVER_STYLE_APP_WHITELIST =
+        "key_hook_island_album_cover_style_app_whitelist"
     const val KEY_HOOK_ISLAND_CONTENT_LEFT = "key_hook_island_content_left"
     const val KEY_HOOK_ISLAND_CONTENT_RIGHT = "key_hook_island_content_right"
     const val KEY_HOOK_ISLAND_LEFT_PADDING_LEFT = "key_hook_island_left_padding_left"

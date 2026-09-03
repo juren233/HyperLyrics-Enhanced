@@ -574,9 +574,14 @@ internal class NotificationMediaBackgroundRenderer(
         val accent2: List<Int>
     )
 
+    private companion object {
+        const val OS4_COLOR_SCHEME_STYLE = 6
+    }
+
     private class MonetApi private constructor(
         private val constructor: java.lang.reflect.Constructor<*>,
-        private val styleContent: Any,
+        private val styleContent: Any?,
+        private val styleInt: Int?,
         private val allShadesField: java.lang.reflect.Field,
         private val neutral1Field: java.lang.reflect.Field,
         private val neutral2Field: java.lang.reflect.Field,
@@ -586,7 +591,11 @@ internal class NotificationMediaBackgroundRenderer(
         @Suppress("UNCHECKED_CAST")
         fun palette(colors: WallpaperColors): MonetPalette? = runCatching {
             val scheme = if (constructor.parameterCount == 3) {
-                constructor.newInstance(colors, true, styleContent)
+                if (styleInt != null) {
+                    constructor.newInstance(colors, true, styleInt)
+                } else {
+                    constructor.newInstance(colors, true, styleContent)
+                }
             } else {
                 constructor.newInstance(colors, styleContent)
             }
@@ -602,21 +611,57 @@ internal class NotificationMediaBackgroundRenderer(
             fun create(classLoader: ClassLoader): MonetApi {
                 val schemeClass = classLoader.loadClass("com.android.systemui.monet.ColorScheme")
                 val paletteClass = classLoader.loadClass("com.android.systemui.monet.TonalPalette")
-                val styleClass = classLoader.loadClass("com.android.systemui.monet.Style")
-                val constructor = schemeClass.declaredConstructors.singleOrNull { it.parameterCount == 3 }
-                    ?: schemeClass.declaredConstructors.single { it.parameterCount == 2 }
+                val os4Constructor = schemeClass.declaredConstructors.firstOrNull {
+                    it.parameterTypes.contentEquals(
+                        arrayOf(
+                            WallpaperColors::class.java,
+                            Boolean::class.javaPrimitiveType,
+                            Int::class.javaPrimitiveType
+                        )
+                    )
+                }
+                if (os4Constructor != null) {
+                    os4Constructor.isAccessible = true
+                    return MonetApi(
+                        constructor = os4Constructor,
+                        styleContent = null,
+                        styleInt = OS4_COLOR_SCHEME_STYLE,
+                        allShadesField = paletteClass.requiredField("allShades"),
+                        neutral1Field = schemeClass.requiredField("mNeutral1", "neutral1"),
+                        neutral2Field = schemeClass.requiredField("mNeutral2", "neutral2"),
+                        accent1Field = schemeClass.requiredField("mAccent1", "accent1"),
+                        accent2Field = schemeClass.requiredField("mAccent2", "accent2")
+                    )
+                }
+
+                val styleClass = runCatching {
+                    classLoader.loadClass("com.android.systemui.monet.Style")
+                }.getOrNull() ?: error("Monet Style class is unavailable")
+                val constructor = schemeClass.declaredConstructors.firstOrNull {
+                    it.parameterTypes.contentEquals(
+                        arrayOf(
+                            WallpaperColors::class.java,
+                            Boolean::class.javaPrimitiveType,
+                            styleClass
+                        )
+                    )
+                } ?: schemeClass.declaredConstructors.firstOrNull {
+                    it.parameterTypes.contentEquals(arrayOf(WallpaperColors::class.java, styleClass))
+                } ?: error("No compatible Monet ColorScheme constructor")
                 constructor.isAccessible = true
                 val valueOf = styleClass.getDeclaredMethod("valueOf", String::class.java).apply {
                     isAccessible = true
                 }
                 return MonetApi(
-                    constructor,
-                    valueOf.invoke(null, "CONTENT") ?: error("Monet CONTENT style is unavailable"),
-                    paletteClass.requiredField("allShades"),
-                    schemeClass.requiredField("mNeutral1", "neutral1"),
-                    schemeClass.requiredField("mNeutral2", "neutral2"),
-                    schemeClass.requiredField("mAccent1", "accent1"),
-                    schemeClass.requiredField("mAccent2", "accent2")
+                    constructor = constructor,
+                    styleContent = valueOf.invoke(null, "CONTENT")
+                        ?: error("Monet CONTENT style is unavailable"),
+                    styleInt = null,
+                    allShadesField = paletteClass.requiredField("allShades"),
+                    neutral1Field = schemeClass.requiredField("mNeutral1", "neutral1"),
+                    neutral2Field = schemeClass.requiredField("mNeutral2", "neutral2"),
+                    accent1Field = schemeClass.requiredField("mAccent1", "accent1"),
+                    accent2Field = schemeClass.requiredField("mAccent2", "accent2")
                 )
             }
 
