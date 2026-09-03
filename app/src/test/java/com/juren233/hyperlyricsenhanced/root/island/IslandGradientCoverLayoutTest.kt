@@ -1,6 +1,7 @@
 package com.juren233.hyperlyricsenhanced.root.island
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -384,6 +385,12 @@ class IslandGradientCoverLayoutTest {
                 density = density,
             ),
         )
+    }
+
+    @Test
+    fun pausedStateDrawsCoverAboveTransitionButPlayingStateKeepsTransitionAboveCover() {
+        assertTrue(IslandGradientCoverLayout.embeddedCoverOnTopForPlaybackState(isPlaying = false))
+        assertFalse(IslandGradientCoverLayout.embeddedCoverOnTopForPlaybackState(isPlaying = true))
     }
 
     @Test

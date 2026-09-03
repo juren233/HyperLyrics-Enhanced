@@ -30,6 +30,9 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
+/** Width of the unconditional terminal black mask, in physical pixels. */
+private const val TERMINAL_BLACK_MASK_WIDTH_PX = 10f
+
 /** Small-island artwork child. The host is a FrameLayout, so this child never consumes width. */
 internal class EmbeddedIslandAlbumCoverView(
     context: android.content.Context,
@@ -108,6 +111,9 @@ private class EmbeddedIslandAlbumCoverDrawable(
     private val bitmapPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val transitionPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val shadePaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val terminalBlackPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.BLACK
+    }
     private val maskPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
         blendMode = BlendMode.DST_IN
     }
@@ -167,6 +173,7 @@ private class EmbeddedIslandAlbumCoverDrawable(
                         "drawCount=$drawCount",
                 )
             }
+            drawTerminalBlackMask(canvas)
             return
         }
         val width = bounds.width()
@@ -196,7 +203,10 @@ private class EmbeddedIslandAlbumCoverDrawable(
             sourceHeight = source.height,
             targetWidth = coverWidth,
             targetHeight = height.toFloat(),
-        ) ?: return
+        ) ?: run {
+            drawTerminalBlackMask(canvas)
+            return
+        }
 
         canvas.save()
         clipPath.reset()
@@ -204,7 +214,7 @@ private class EmbeddedIslandAlbumCoverDrawable(
             RectF(
                 canvasLeft,
                 canvasTop,
-                maxOf(coverRight, extensionEnd),
+                bounds.right.toFloat(),
                 canvasTop + height,
             ),
             floatArrayOf(
@@ -222,12 +232,18 @@ private class EmbeddedIslandAlbumCoverDrawable(
         val cropRight = kotlin.math.ceil(crop.right).toInt().coerceIn(cropLeft + 1, source.width)
         val cropBottom = kotlin.math.ceil(crop.bottom).toInt().coerceIn(cropTop + 1, source.height)
         val coverTarget = RectF(canvasLeft, canvasTop, coverRight, canvasTop + height)
-        canvas.drawBitmap(
-            source,
-            Rect(cropLeft, cropTop, cropRight, cropBottom),
-            coverTarget,
-            bitmapPaint,
+        val coverSource = Rect(cropLeft, cropTop, cropRight, cropBottom)
+
+        // 暂停态（含显示歌名歌手的有字态）封面置顶：先画完整过渡层，封面最后画并盖住其
+        // 侵入封面的重叠区，封面保持 100% 清晰，渐变仅从封面右缘向外可见；过渡层原有的
+        // 封面内重叠保留在封面之下，避免封面与延伸之间出现黑缝。播放态保持原顺序
+        // （封面在下、过渡层渐变覆盖封面右缘），视觉与既有行为完全一致。
+        val coverOnTop = IslandGradientCoverLayout.embeddedCoverOnTopForPlaybackState(
+            EmbeddedIslandAlbumCoverController.isPlaybackActive(),
         )
+        if (!coverOnTop) {
+            canvas.drawBitmap(source, coverSource, coverTarget, bitmapPaint)
+        }
 
         val transitionPrepared = extensionWidth > 0f && ensureTransitionBitmaps(
                 source = source,
@@ -328,6 +344,24 @@ private class EmbeddedIslandAlbumCoverDrawable(
                     shadePaint,
                 )
             }
+            val availableExtension = (bounds.right.toFloat() - coverRight).coerceAtLeast(0f)
+            val uncoveredBackgroundTail = (availableExtension - extensionWidth).coerceAtLeast(0f)
+            if (uncoveredBackgroundTail > 0f) {
+                // The native background remains visible after the capped transition width. Own
+                // that terminal region here so the final black gradient pixel never meets a
+                // second Drawable with a different alpha/rounding/compositing path.
+                val terminalTailStart = maxOf(coverRight, extensionEnd - 1f)
+                canvas.drawRect(
+                    terminalTailStart,
+                    canvasTop,
+                    bounds.right.toFloat(),
+                    canvasTop + height,
+                    terminalBlackPaint,
+                )
+            }
+        }
+        if (coverOnTop) {
+            canvas.drawBitmap(source, coverSource, coverTarget, bitmapPaint)
         }
         logBigDrawDiagnostic(
             width = width,
@@ -338,6 +372,7 @@ private class EmbeddedIslandAlbumCoverDrawable(
             visibleOverlap = visibleOverlap,
             transitionInset = transitionInset,
             blurInset = blurInset,
+            coverOnTop = coverOnTop,
             transitionPrepared = transitionPrepared,
             nativeBlurEnabled = nativeBlurEnabled,
             nativeBlurAvailable = nativeBlurAvailable,
@@ -345,6 +380,34 @@ private class EmbeddedIslandAlbumCoverDrawable(
         )
 
         canvas.restore()
+        drawTerminalBlackMask(canvas)
+    }
+
+    /**
+     * Unconditional pure-black band over the last few columns of the drawable bounds. Runtime
+     * evidence (150182–150184) showed the reported cover-tinted terminal line lives inside the
+     * last two columns and that the fake-island twin of this drawable can overlap the real one
+     * with a 1–2px misalignment during width animations. Painting the tail black on every draw
+     * exit path (recycled bitmap, failed crop, and normal completion) physically covers all of
+     * those sources; the gradient already reaches >=97% black there, so the visual delta is
+     * imperceptible.
+     */
+    private fun drawTerminalBlackMask(canvas: Canvas) {
+        val width = bounds.width()
+        val height = bounds.height()
+        if (width <= 0 || height <= 0) return
+        val maskLeft = maxOf(
+            bounds.left.toFloat(),
+            bounds.right - TERMINAL_BLACK_MASK_WIDTH_PX,
+        )
+        if (maskLeft >= bounds.right.toFloat()) return
+        canvas.drawRect(
+            maskLeft,
+            bounds.top.toFloat(),
+            bounds.right.toFloat(),
+            bounds.top + height.toFloat(),
+            terminalBlackPaint,
+        )
     }
 
     private fun ensureTransitionBitmaps(
@@ -725,6 +788,7 @@ private class EmbeddedIslandAlbumCoverDrawable(
         visibleOverlap: Float,
         transitionInset: Float,
         blurInset: Float,
+        coverOnTop: Boolean,
         transitionPrepared: Boolean,
         nativeBlurEnabled: Boolean,
         nativeBlurAvailable: Boolean,
@@ -732,6 +796,8 @@ private class EmbeddedIslandAlbumCoverDrawable(
     ) {
         if (!BuildConfig.DEBUG) return
         val totalWidth = (cacheWidth - 1).coerceAtLeast(1).toFloat()
+        val availableExtension = (width - coverWidth).coerceAtLeast(0f)
+        val uncoveredBackgroundTail = (availableExtension - extensionWidth).coerceAtLeast(0f)
         val blurEdgeAlpha = IslandGradientCoverLayout.embeddedTransitionBlurEdgeAlpha()
         val blurFullAfterEdge =
             IslandGradientCoverLayout.embeddedTransitionBlurFullAfterEdge(density)
@@ -753,11 +819,12 @@ private class EmbeddedIslandAlbumCoverDrawable(
         )
         val signature = "$width|$height|${coverWidth.roundToInt()}|${extensionWidth.roundToInt()}|" +
             "$cacheWidth|${visibleOverlap.roundToInt()}|${transitionInset.roundToInt()}|" +
-            "${blurInset.roundToInt()}|${rawCacheOffset.roundToInt()}|" +
+            "${blurInset.roundToInt()}|$coverOnTop|${rawCacheOffset.roundToInt()}|" +
             "${(blurEdgeAlpha * 100f).roundToInt()}|${blurFullAfterEdge.roundToInt()}|" +
             "${(blurAtTargetStart * 100f).roundToInt()}|" +
             "${(blurAtCoverEdge * 100f).roundToInt()}|" +
-            "$transitionPrepared|$nativeBlurEnabled|$nativeBlurAvailable|$blurSuppressed"
+            "${uncoveredBackgroundTail.roundToInt()}|$transitionPrepared|$nativeBlurEnabled|" +
+            "$nativeBlurAvailable|$blurSuppressed"
         if (signature == lastDrawDiagnostic) return
         lastDrawDiagnostic = signature
         HookLogger.i(
@@ -765,11 +832,14 @@ private class EmbeddedIslandAlbumCoverDrawable(
             "大岛封面绘制诊断: bounds=${width}x$height, " +
                 "cover=${coverWidth.roundToInt()}, extension=${extensionWidth.roundToInt()}, " +
                 "visibleOverlap=${visibleOverlap.roundToInt()}, transitionInset=${transitionInset.roundToInt()}, " +
-                "blurInset=${blurInset.roundToInt()}, rawCacheOffset=${rawCacheOffset.roundToInt()}, " +
+                "blurInset=${blurInset.roundToInt()}, coverOnTop=$coverOnTop, " +
+                "rawCacheOffset=${rawCacheOffset.roundToInt()}, " +
                 "blurEdgeAlpha=${(blurEdgeAlpha * 100f).roundToInt()}%, " +
                 "blurFullAfterEdge=${blurFullAfterEdge.roundToInt()}, " +
                 "blurAtTargetStart=${(blurAtTargetStart * 100f).roundToInt()}%, " +
-                "blurAtCoverEdge=${(blurAtCoverEdge * 100f).roundToInt()}%, cacheWidth=$cacheWidth, " +
+                "blurAtCoverEdge=${(blurAtCoverEdge * 100f).roundToInt()}%, " +
+                "extensionEnd=${(coverWidth + extensionWidth).roundToInt()}, " +
+                "uncoveredBackgroundTail=${uncoveredBackgroundTail.roundToInt()}, cacheWidth=$cacheWidth, " +
                 "prepared=$transitionPrepared, algorithm=edge_smear_native_blur, " +
                 "nativeBlurEnabled=$nativeBlurEnabled, nativeBlurAvailable=$nativeBlurAvailable, " +
                 "cpuFallback=${transitionCpuBlurredTextureBitmap != null}, " +
@@ -886,6 +956,7 @@ private class EmbeddedIslandAlbumCoverDrawable(
         bitmapPaint.alpha = alpha
         transitionPaint.alpha = alpha
         shadePaint.alpha = alpha
+        terminalBlackPaint.alpha = alpha
         transitionRenderNodeReady = recordTransitionRenderNode(transitionTextureBitmap)
         if (BuildConfig.DEBUG) HookLogger.i(
             "EmbeddedIslandAlbumCover",
@@ -898,6 +969,7 @@ private class EmbeddedIslandAlbumCoverDrawable(
         bitmapPaint.colorFilter = colorFilter
         transitionPaint.colorFilter = colorFilter
         shadePaint.colorFilter = colorFilter
+        terminalBlackPaint.colorFilter = colorFilter
         transitionRenderNodeReady = recordTransitionRenderNode(transitionTextureBitmap)
         if (BuildConfig.DEBUG) HookLogger.i(
             "EmbeddedIslandAlbumCover",
@@ -945,7 +1017,14 @@ internal object EmbeddedIslandAlbumCoverController {
     private var playbackActive = true
 
     fun setPlaybackActive(active: Boolean) {
+        if (playbackActive == active) return
         playbackActive = active
+        synchronized(smallStates) {
+            smallStates.values.forEach { it.cover.invalidate() }
+        }
+        synchronized(bigStates) {
+            bigStates.values.forEach { it.target.invalidate() }
+        }
     }
 
     fun isPlaybackActive(): Boolean = playbackActive

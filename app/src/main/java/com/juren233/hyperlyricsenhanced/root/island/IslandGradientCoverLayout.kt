@@ -131,6 +131,9 @@ internal object IslandGradientCoverLayout {
         return minOf(EMBEDDED_TRANSITION_OVERLAP_DP * density, coverWidth / 5f)
     }
 
+    /** Paused covers are drawn last so the transition can keep its seam-hiding overlap underneath. */
+    fun embeddedCoverOnTopForPlaybackState(isPlaying: Boolean): Boolean = !isPlaying
+
     fun embeddedTransitionInset(coverWidth: Float, density: Float): Float {
         if (coverWidth <= 0f || density <= 0f) return 0f
         // Keep only enough source texture inside the clear cover to hide the host background seam.

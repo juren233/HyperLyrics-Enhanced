@@ -10,6 +10,7 @@ import com.juren233.hyperlyricsenhanced.lyric.view.RichLyricLineView
 import com.juren233.hyperlyricsenhanced.lyric.view.SpaceGateRichLyricLineView
 import com.juren233.hyperlyricsenhanced.root.HookEntry
 import com.juren233.hyperlyricsenhanced.root.LyriconDataBridge
+import com.juren233.hyperlyricsenhanced.root.island.IslandAlbumCoverStyleHooker
 import com.juren233.hyperlyricsenhanced.root.island.IslandHostFacade
 import com.juren233.hyperlyricsenhanced.root.island.IslandLyricTextInjector
 import com.juren233.hyperlyricsenhanced.root.island.IslandProbeUtils
@@ -278,6 +279,7 @@ object BaseIslandRenderer : IslandRenderer {
         )
         val transition = pauseTransitionGuard.onPlaybackStateChanged(isPlaying, behavior)
         playbackActive = isPlaying
+        IslandAlbumCoverStyleHooker.onPlaybackStateChanged(isPlaying)
         IslandProgressGlowController.onPlaybackStateChanged(isPlaying)
         HookLogger.d("BaseIslandRenderer", "播放状态变化: 正在播放=$isPlaying")
 
