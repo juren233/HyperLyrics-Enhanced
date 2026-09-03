@@ -20,6 +20,7 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.TextView
+import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.root.HookEntry
 import com.juren233.hyperlyricsenhanced.root.SystemUiEnhancementGate
@@ -76,6 +77,9 @@ object IslandExpandedMediaAmbientFlowHooker {
     private val binderStates = Collections.synchronizedMap(WeakHashMap<Any, BinderState>())
     private val activeBinders = Collections.synchronizedSet(
         Collections.newSetFromMap(WeakHashMap<Any, Boolean>())
+    )
+    private val firstArtworkCallbacks = Collections.synchronizedMap(
+        WeakHashMap<Any, MutableSet<String>>()
     )
     private val themeStates = Collections.synchronizedMap(WeakHashMap<View, ViewThemeState>())
     private val fakeFlowStates = Collections.synchronizedMap(
@@ -145,7 +149,9 @@ object IslandExpandedMediaAmbientFlowHooker {
                 "attach" -> method.parameterCount == 2
                 "bindMediaData" -> method.parameterCount == 1
                 "detach" -> method.parameterCount == 0
-                "setAlbumImage" -> method.parameterCount == 1
+                IslandExpandedMediaBinderMethodProfile.LEGACY_ARTWORK_METHOD,
+                IslandExpandedMediaBinderMethodProfile.OS4_ARTWORK_METHOD ->
+                    IslandExpandedMediaBinderMethodProfile.isArtworkUpdate(method)
                 "setSeamless" -> method.parameterCount == 2
                 "updateForegroundColors" -> method.parameterCount == 1
                 else -> false
@@ -171,7 +177,9 @@ object IslandExpandedMediaAmbientFlowHooker {
                 "attach" -> BinderHook(Action.ATTACH)
                 "bindMediaData" -> BinderHook(Action.BIND)
                 "detach" -> BinderHook(Action.DETACH)
-                "setAlbumImage" -> BinderHook(Action.ALBUM)
+                IslandExpandedMediaBinderMethodProfile.LEGACY_ARTWORK_METHOD,
+                IslandExpandedMediaBinderMethodProfile.OS4_ARTWORK_METHOD ->
+                    BinderHook(Action.ALBUM, method.name)
                 "setSeamless" -> BinderHook(Action.SEAMLESS)
                 "updateForegroundColors" -> ForegroundColorsHook()
                 else -> null
@@ -204,6 +212,7 @@ object IslandExpandedMediaAmbientFlowHooker {
             themeStates.clear()
             fakeFlowStates.clear()
             seekBarThemeStates.clear()
+            firstArtworkCallbacks.clear()
         }
         if (Looper.myLooper() == Looper.getMainLooper()) cleanup.run()
         else Handler(Looper.getMainLooper()).post(cleanup)
@@ -213,7 +222,10 @@ object IslandExpandedMediaAmbientFlowHooker {
 
     private enum class Action { ATTACH, BIND, DETACH, ALBUM, SEAMLESS }
 
-    private class BinderHook(private val action: Action) : Hooker {
+    private class BinderHook(
+        private val action: Action,
+        private val methodName: String? = null,
+    ) : Hooker {
         override fun intercept(chain: Chain): Any? {
             val binder = chain.thisObject ?: return chain.proceed()
             if (!SystemUiEnhancementGate.isEnabled()) {
@@ -236,6 +248,7 @@ object IslandExpandedMediaAmbientFlowHooker {
                     else bindingBinder.set(previousBinding)
                 }
             }
+            logFirstArtworkCallback(binder)
             if (nestedInBind && (action == Action.ALBUM || action == Action.SEAMLESS)) {
                 return result
             }
@@ -267,6 +280,23 @@ object IslandExpandedMediaAmbientFlowHooker {
                 HookLogger.e(TAG, "应用展开态媒体流光模式失败", error)
             }
             return result
+        }
+
+        private fun logFirstArtworkCallback(binder: Any) {
+            if (BuildConfig.DEBUG && action == Action.ALBUM) {
+                val callbackName = methodName ?: "artwork"
+                val shouldLog = synchronized(firstArtworkCallbacks) {
+                    val methods = firstArtworkCallbacks.getOrPut(binder) { mutableSetOf() }
+                    methods.add(callbackName)
+                }
+                if (shouldLog) {
+                    HookLogger.i(
+                        TAG,
+                        "展开态媒体封面刷新首次回调: method=$callbackName " +
+                            "binder=${binder.javaClass.name}@${System.identityHashCode(binder)}",
+                    )
+                }
+            }
         }
     }
 
@@ -1574,9 +1604,16 @@ object IslandExpandedMediaAmbientFlowHooker {
                 val detach = binderClass.declaredMethods.single {
                     it.name == "detach" && it.parameterCount == 0
                 }.apply { isAccessible = true }
-                val setAlbumImage = binderClass.declaredMethods.single {
-                    it.name == "setAlbumImage" && it.parameterCount == 1
-                }.apply { isAccessible = true }
+                val artworkUpdate = binderClass.declaredMethods
+                    .firstOrNull(IslandExpandedMediaBinderMethodProfile::isArtworkUpdate)
+                    ?.apply { isAccessible = true }
+                    ?.also { method ->
+                        HookLogger.d(TAG, "展开态媒体封面刷新 Hook 目标: $method")
+                    }
+                    ?: run {
+                        HookLogger.w(TAG, "展开态媒体封面刷新 Hook 目标不存在，继续安装其余媒体 Hook")
+                        null
+                    }
                 val setSeamless = binderClass.declaredMethods.single {
                     it.name == "setSeamless" && it.parameterCount == 2
                 }.apply { isAccessible = true }
@@ -1595,11 +1632,11 @@ object IslandExpandedMediaAmbientFlowHooker {
                 }.apply { isAccessible = true }
 
                 return NativeApi(
-                    hookMethods = listOf(
+                    hookMethods = listOfNotNull(
                         attach,
                         bind,
                         detach,
-                        setAlbumImage,
+                        artworkUpdate,
                         setSeamless,
                         binderClass.declaredMethods.single {
                             it.name == "updateForegroundColors" && it.parameterCount == 1
