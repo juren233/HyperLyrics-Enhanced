@@ -55,6 +55,14 @@ fun MediaCardSettingsPage() {
             )
         )
     }
+    var notificationAmbientFlowPauseRestoreDefault by remember {
+        mutableStateOf(
+            prefs.getBoolean(
+                RootConstants.KEY_HOOK_NOTIFICATION_MEDIA_AMBIENT_FLOW_PAUSE_RESTORE_DEFAULT,
+                RootConstants.DEFAULT_HOOK_NOTIFICATION_MEDIA_AMBIENT_FLOW_PAUSE_RESTORE_DEFAULT
+            )
+        )
+    }
     var notificationBackgroundStyle by remember {
         mutableIntStateOf(
             prefs.getInt(
@@ -410,6 +418,20 @@ fun MediaCardSettingsPage() {
                         PrefsBridge.putInt(
                             RootConstants.KEY_HOOK_NOTIFICATION_MEDIA_AMBIENT_FLOW_MODE,
                             mode
+                        )
+                    },
+                    ambientFlowPauseRestoreDefault = notificationAmbientFlowPauseRestoreDefault,
+                    onAmbientFlowPauseRestoreDefaultChange = { enabled ->
+                        notificationAmbientFlowPauseRestoreDefault = enabled
+                        prefs.edit {
+                            putBoolean(
+                                RootConstants.KEY_HOOK_NOTIFICATION_MEDIA_AMBIENT_FLOW_PAUSE_RESTORE_DEFAULT,
+                                enabled
+                            )
+                        }
+                        PrefsBridge.putBoolean(
+                            RootConstants.KEY_HOOK_NOTIFICATION_MEDIA_AMBIENT_FLOW_PAUSE_RESTORE_DEFAULT,
+                            enabled
                         )
                     }
                 )

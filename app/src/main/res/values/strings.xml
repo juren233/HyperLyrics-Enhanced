@@ -182,6 +182,8 @@
     <string name="option_notification_media_ambient_flow_cover_color">动态流光（封面色）</string>
     <string name="option_media_ambient_flow_custom_full">封面流光</string>
     <string name="option_notification_media_ambient_flow_disabled">禁用（默认）</string>
+    <string name="title_notification_media_ambient_flow_pause_restore_default">暂停时恢复默认</string>
+    <string name="summary_notification_media_ambient_flow_pause_restore_default">关闭后，音乐暂停时动态流光将继续流动</string>
     <string name="title_notification_media_background_style">卡片背景样式</string>
     <string name="option_notification_media_background_default">默认</string>
     <string name="option_notification_media_background_cover_art">拼贴封面</string>

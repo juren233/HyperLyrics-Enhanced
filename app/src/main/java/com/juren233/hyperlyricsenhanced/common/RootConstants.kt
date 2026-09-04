@@ -135,6 +135,8 @@ object RootConstants {
         "key_hook_island_next_song_preview_weight"
     const val KEY_HOOK_NOTIFICATION_MEDIA_AMBIENT_FLOW_MODE =
         "key_hook_notification_media_ambient_flow_mode"
+    const val KEY_HOOK_NOTIFICATION_MEDIA_AMBIENT_FLOW_PAUSE_RESTORE_DEFAULT =
+        "key_hook_notification_media_ambient_flow_pause_restore_default"
     const val KEY_HOOK_ISLAND_EXPANDED_MEDIA_AMBIENT_FLOW_MODE =
         "key_hook_island_expanded_media_ambient_flow_mode"
     const val KEY_HOOK_NOTIFICATION_MEDIA_CARD_THEME =
@@ -460,6 +462,7 @@ object RootConstants {
     const val NOTIFICATION_MEDIA_AMBIENT_FLOW_MODE_CUSTOM_FULL = 3
     const val DEFAULT_HOOK_NOTIFICATION_MEDIA_AMBIENT_FLOW_MODE =
         NOTIFICATION_MEDIA_AMBIENT_FLOW_MODE_DISABLED
+    const val DEFAULT_HOOK_NOTIFICATION_MEDIA_AMBIENT_FLOW_PAUSE_RESTORE_DEFAULT = true
     const val ISLAND_EXPANDED_MEDIA_AMBIENT_FLOW_MODE_DEFAULT = 0
     const val ISLAND_EXPANDED_MEDIA_AMBIENT_FLOW_MODE_DISABLED = 1
     const val ISLAND_EXPANDED_MEDIA_AMBIENT_FLOW_MODE_COVER_COLOR = 2

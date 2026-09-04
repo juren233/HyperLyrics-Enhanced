@@ -7,10 +7,13 @@ import android.graphics.drawable.Drawable
 import android.graphics.drawable.Icon
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.view.View
 import android.view.ViewGroup
+import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.root.HookEntry
+import com.juren233.hyperlyricsenhanced.root.LyriconDataBridge
 import com.juren233.hyperlyricsenhanced.root.SystemUiEnhancementGate
 import com.juren233.hyperlyricsenhanced.root.mediacard.MediaAmbientFlowPalette
 import com.juren233.hyperlyricsenhanced.root.mediacard.MediaAmbientFlowPaletteExtractor
@@ -59,6 +62,31 @@ object NotificationMediaAmbientFlowHooker {
 
     @Volatile
     private var module: XposedModule? = null
+
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var flowKeepAliveScheduled = false
+    private var flowHoldLogged = false
+    private var flowWakeLock: PowerManager.WakeLock? = null
+
+    /**
+     * 稳态息屏（doze）下无人持续持有 draw wake lock 时，SurfaceFlinger 不合成流光视图的
+     * 帧，流光冻结、仅在歌词路径的 1s wake lock 窗口内跳格（AMBIENT-FLOW-AOD-001 真机
+     * 证据）。该 tick 在存在已挂载控制器时常驻运行，仅在"非交互 + 流光应流动"时续期
+     * draw wake lock 并对原生视图补发帧循环恢复。
+     */
+    private val flowKeepAlive = object : Runnable {
+        override fun run() {
+            val keepTicking = runCatching { flowKeepAliveTick() }
+                .onFailure { HookLogger.e(TAG, "流光息屏保活失败", it) }
+                .getOrDefault(false)
+            if (keepTicking) {
+                mainHandler.postDelayed(this, FLOW_KEEP_ALIVE_INTERVAL_MS)
+            } else {
+                flowKeepAliveScheduled = false
+                releaseFlowWakeLock()
+            }
+        }
+    }
 
     private val prefs
         get() = (module as? HookEntry)?.prefs
@@ -171,6 +199,11 @@ object NotificationMediaAmbientFlowHooker {
         activeControllers.clear()
         colorExecutor.shutdownNow()
         NotificationMediaBackgroundController.releaseAll()
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            cancelFlowKeepAliveInternal()
+        } else {
+            mainHandler.post(::cancelFlowKeepAliveInternal)
+        }
         val cleanup = Runnable {
             controllers.forEach(::restoreCardTheme)
             snapshot.values.forEach(::disposeState)
@@ -224,6 +257,7 @@ object NotificationMediaAmbientFlowHooker {
                     Action.ATTACH -> {
                         activeControllers.add(controller)
                         syncView(controller)
+                        scheduleFlowKeepAlive()
                     }
                     Action.BIND -> {
                         activeControllers.add(controller)
@@ -232,8 +266,11 @@ object NotificationMediaAmbientFlowHooker {
                             chain.args.firstOrNull()
                         )
                         bind(controller, chain.args.firstOrNull())
+                        scheduleFlowKeepAlive()
                     }
-                    Action.DETACH -> Unit
+                    Action.DETACH -> {
+                        cancelFlowKeepAliveIfIdle()
+                    }
                 }
             }.onFailure { error ->
                 HookLogger.e(
@@ -306,6 +343,107 @@ object NotificationMediaAmbientFlowHooker {
         else Handler(Looper.getMainLooper()).post(refresh)
     }
 
+    private fun scheduleFlowKeepAlive() {
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            scheduleFlowKeepAliveInternal()
+        } else {
+            mainHandler.post(::scheduleFlowKeepAliveInternal)
+        }
+    }
+
+    private fun scheduleFlowKeepAliveInternal() {
+        if (flowKeepAliveScheduled) return
+        flowKeepAliveScheduled = true
+        mainHandler.post(flowKeepAlive)
+    }
+
+    private fun cancelFlowKeepAliveIfIdle() {
+        val hasControllers = synchronized(activeControllers) { activeControllers.isNotEmpty() }
+        if (hasControllers) return
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            cancelFlowKeepAliveInternal()
+        } else {
+            mainHandler.post(::cancelFlowKeepAliveInternal)
+        }
+    }
+
+    private fun cancelFlowKeepAliveInternal() {
+        mainHandler.removeCallbacks(flowKeepAlive)
+        flowKeepAliveScheduled = false
+        releaseFlowWakeLock()
+    }
+
+    /**
+     * @return true 表示 tick 需要继续运行（仍存在已挂载控制器的流光状态）。
+     */
+    private fun flowKeepAliveTick(): Boolean {
+        if (!SystemUiEnhancementGate.isEnabled()) return false
+        if (currentMode() == RootConstants.NOTIFICATION_MEDIA_AMBIENT_FLOW_MODE_DISABLED) return false
+        val snapshot = synchronized(states) { states.entries.toList() }
+        if (snapshot.isEmpty()) return false
+        val context = snapshot.firstNotNullOfOrNull { (_, state) -> state.view?.context }
+        val powerManager = context?.getSystemService(PowerManager::class.java)
+        // 亮屏交互时帧合成本就可用，不需要 wake lock，仅保持 tick 待命。
+        if (powerManager == null || powerManager.isInteractive) {
+            logFlowHold(false)
+            return true
+        }
+        var holding = false
+        snapshot.forEach { (controller, state) ->
+            val view = state.view ?: return@forEach
+            if (view.isShown) {
+                // SystemUI 暂停时不重发 bindMediaData（150218 真机日志证实），媒体数据里的
+                // isPlaying 会滞后；对可见卡片以 Lyricon 桥接播放状态（与 AOD 歌词 Hooker
+                // 同源）为准周期校正并驱动移除/恢复。
+                val bridgePlaying = LyriconDataBridge.currentPlaybackState
+                if (bridgePlaying != null && bridgePlaying != state.isPlaying) {
+                    state.isPlaying = bridgePlaying
+                    if (shouldRemoveFlowForState(state)) {
+                        removeFlowGracefully(controller)
+                        return@forEach
+                    }
+                    syncPlayback(state)
+                }
+            }
+            if (!flowShouldPlay(state) || !view.isShown) return@forEach
+            holding = true
+            if (view !is MediaFlowBackgroundView) {
+                // 息屏稳态下没有 bindMediaData 重同步机会，周期性补发帧循环恢复兜底。
+                state.nativeApi?.takeIf { it.accepts(view) }?.ensureFrameLoopEnabled(view)
+            }
+        }
+        if (holding) {
+            resolveFlowWakeLock(context)?.acquire(FLOW_WAKE_LOCK_TIMEOUT_MS)
+        }
+        logFlowHold(holding)
+        return true
+    }
+
+    private fun resolveFlowWakeLock(context: Context): PowerManager.WakeLock? {
+        flowWakeLock?.let { return it }
+        return runCatching {
+            context.getSystemService(PowerManager::class.java).newWakeLock(
+                DRAW_WAKE_LOCK_LEVEL,
+                "${context.packageName}:HyperLyricsFlowDraw"
+            ).apply { setReferenceCounted(false) }
+        }.onFailure {
+            HookLogger.w(TAG, "创建流光息屏唤醒锁失败: reason=${it.message}")
+        }.getOrNull()?.also { flowWakeLock = it }
+    }
+
+    private fun releaseFlowWakeLock() {
+        flowWakeLock?.let { lock ->
+            runCatching { if (lock.isHeld) lock.release() }
+        }
+        flowHoldLogged = false
+    }
+
+    private fun logFlowHold(holding: Boolean) {
+        if (holding == flowHoldLogged) return
+        flowHoldLogged = holding
+        HookLogger.i(TAG, "流光息屏帧提交保持: holding=$holding")
+    }
+
     private fun prepareCardTheme(controller: Any) {
         val api = resolveThemeApi(controller.javaClass.classLoader) ?: return
         api.apply(controller, currentCardTheme(), refreshViews = false)
@@ -357,9 +495,13 @@ object NotificationMediaAmbientFlowHooker {
             return
         }
         mediaData ?: return
-        val view = ensureView(controller) ?: return
         val isPlaying = readField(mediaData, "isPlaying") == true
         state.isPlaying = isPlaying
+        if (shouldRemoveFlowForState(state)) {
+            removeFlowGracefully(controller)
+            return
+        }
+        val view = ensureView(controller) ?: return
         configureCustomView(state)
         syncPlayback(state)
 
@@ -467,6 +609,7 @@ object NotificationMediaAmbientFlowHooker {
         state.colorToken = null
         state.pendingColorToken = null
         state.hasColors = false
+        state.flowActive = false
         return view
     }
 
@@ -475,6 +618,45 @@ object NotificationMediaAmbientFlowHooker {
         state.colorRequest.incrementAndGet()
         state.pendingColorToken = null
         disposeState(state)
+    }
+
+    /**
+     * "暂停时恢复默认"的优雅移除：与恢复播放的原生过渡对称，流光视图先淡出再真正移除。
+     * 状态即刻与视图解绑（tick/bind 视为无流光），仅物理移除延迟到淡出结束；息屏下为
+     * 淡出帧续一次唤醒锁，避免过渡中途冻结。视图尚未展示配色（无内容可淡出）时直接移除。
+     */
+    private fun removeFlowGracefully(controller: Any) {
+        val state = states[controller] ?: return
+        val view = state.view ?: return
+        val nativeApi = state.nativeApi
+        val context = view.context
+        val wasShowing = state.hasColors && view.isShown
+        state.colorRequest.incrementAndGet()
+        state.pendingColorToken = null
+        state.view = null
+        state.nativeApi = null
+        state.customView = false
+        state.hasColors = false
+        state.flowActive = false
+        if (!wasShowing) {
+            stopAndRemoveFlowView(view, nativeApi)
+            return
+        }
+        if (flowWakeLock?.isHeld != true) {
+            resolveFlowWakeLock(context)?.acquire(FLOW_WAKE_LOCK_TIMEOUT_MS)
+        }
+        view.animate()
+            .alpha(0f)
+            .setDuration(FLOW_FADE_OUT_DURATION_MS)
+            .withEndAction { stopAndRemoveFlowView(view, nativeApi) }
+            .start()
+    }
+
+    private fun stopAndRemoveFlowView(view: View, nativeApi: NativeMusicBgApi?) {
+        view.animate().cancel()
+        stopView(view, nativeApi)
+        (view.parent as? ViewGroup)?.removeView(view)
+        view.alpha = 1f
     }
 
     private fun disposeState(state: ControllerState) {
@@ -558,13 +740,44 @@ object NotificationMediaAmbientFlowHooker {
         }
         val nativeApi = state.nativeApi ?: return
         if (!nativeApi.accepts(view)) return
-        if (state.isPlaying && state.hasColors) {
+        val shouldPlay = flowShouldPlay(state)
+        if (shouldPlay) {
             nativeApi.start(view)
             nativeApi.resume(view)
-        } else {
+            // MusicBgView 的帧循环存在无自愈死态（pause 清 mNeedResumeShader +
+            // resume 对未暂停状态 early-return），播放中显式恢复帧循环兜底。
+            val kicked = if (view.isShown) nativeApi.ensureFrameLoopEnabled(view) else false
+            if (BuildConfig.DEBUG) {
+                HookLogger.d(
+                    TAG,
+                    "流光播放同步: shouldPlay=$shouldPlay, shown=${view.isShown}, " +
+                        "kicked=$kicked, flowActive=${state.flowActive}",
+                )
+            }
+        } else if (state.flowActive) {
+            // 冗余 pause() 会无条件清掉原生 mNeedResumeShader 恢复标记，只在真实停播翻转时暂停。
             nativeApi.pause(view)
         }
+        state.flowActive = shouldPlay
     }
+
+    /**
+     * "暂停时恢复默认"开启（默认）时暂停即停住流光；关闭后暂停态也保持流动。
+     */
+    private fun pauseRestoresDefault(): Boolean = prefs?.getBoolean(
+        RootConstants.KEY_HOOK_NOTIFICATION_MEDIA_AMBIENT_FLOW_PAUSE_RESTORE_DEFAULT,
+        RootConstants.DEFAULT_HOOK_NOTIFICATION_MEDIA_AMBIENT_FLOW_PAUSE_RESTORE_DEFAULT
+    ) ?: RootConstants.DEFAULT_HOOK_NOTIFICATION_MEDIA_AMBIENT_FLOW_PAUSE_RESTORE_DEFAULT
+
+    /**
+     * "暂停时恢复默认"开启时，暂停态整组移除流光视图，卡片回到无流光的原生默认背景；
+     * 恢复播放由重新挂载。"封面流光"（CUSTOM_FULL）不显示该开关，保持原有暂停冻结行为。
+     */
+    private fun shouldRemoveFlowForState(state: ControllerState): Boolean =
+        !isCustomMode(currentMode()) && pauseRestoresDefault() && !state.isPlaying
+
+    private fun flowShouldPlay(state: ControllerState): Boolean =
+        state.hasColors && (state.isPlaying || !pauseRestoresDefault())
 
     private fun configureCustomView(state: ControllerState) {
         val view = state.view as? MediaFlowBackgroundView ?: return
@@ -673,6 +886,7 @@ object NotificationMediaAmbientFlowHooker {
         var pendingColorToken: String? = null,
         var isPlaying: Boolean = false,
         var hasColors: Boolean = false,
+        var flowActive: Boolean = false,
         val colorRequest: AtomicInteger = AtomicInteger()
     )
 
@@ -775,7 +989,10 @@ object NotificationMediaAmbientFlowHooker {
         private val pauseMethod: Method,
         private val getMainColorMethod: Method,
         private val getPaletteColorMethod: Method,
-        private val drawableToBitmapMethod: Method
+        private val drawableToBitmapMethod: Method,
+        private val frameLoopShaderField: Field?,
+        private val frameLoopEnableMethod: Method?,
+        private val frameLoopEnableValue: Any?
     ) {
         fun createView(context: Context): View = constructor.newInstance(context) as View
 
@@ -795,6 +1012,26 @@ object NotificationMediaAmbientFlowHooker {
 
         fun pause(view: View) {
             pauseMethod.invoke(view)
+        }
+
+        /**
+         * 恢复原生 MusicBgView 的着色器帧循环。
+         *
+         * 原生帧循环存在无自愈死态：`MusicBgView.pause()` 无条件清除 `mNeedResumeShader`
+         * 恢复标记，`resume()` 对未暂停状态 early-return，`setFrameLoopStrategy` 在着色器
+         * 未运行时是 no-op；一旦帧循环被禁用且 pause 标志为 false，start/resume 都无法
+         * 复活它。播放中显式下发 `FrameLoopStrategy.ENABLE`（幂等）兜底恢复。
+         */
+        fun ensureFrameLoopEnabled(view: View): Boolean {
+            val shaderField = frameLoopShaderField ?: return false
+            val enableMethod = frameLoopEnableMethod ?: return false
+            val enableValue = frameLoopEnableValue ?: return false
+            if (!accepts(view)) return false
+            return runCatching {
+                val shader = shaderField.get(view) ?: return false
+                enableMethod.invoke(shader, enableValue)
+                true
+            }.getOrDefault(false)
         }
 
         fun extractSystemPalette(drawable: Drawable): MediaAmbientFlowPalette {
@@ -872,6 +1109,10 @@ object NotificationMediaAmbientFlowHooker {
                     String::class.java,
                     Int::class.javaPrimitiveType
                 ).apply { isAccessible = true }
+                val frameLoopKick = resolveFrameLoopKick(viewClass)
+                if (frameLoopKick == null) {
+                    HookLogger.w(TAG, "流光帧循环恢复接口不可用，保留原生 pause/resume 语义")
+                }
 
                 return NativeMusicBgApi(
                     viewClass = viewClass,
@@ -882,14 +1123,48 @@ object NotificationMediaAmbientFlowHooker {
                     pauseMethod = pause,
                     getMainColorMethod = getMainColor,
                     getPaletteColorMethod = getPaletteColor,
-                    drawableToBitmapMethod = drawableToBitmap
+                    drawableToBitmapMethod = drawableToBitmap,
+                    frameLoopShaderField = frameLoopKick?.first,
+                    frameLoopEnableMethod = frameLoopKick?.second,
+                    frameLoopEnableValue = frameLoopKick?.third
                 )
+            }
+
+            /**
+             * 容错解析 MusicBgView → mShader → setFrameLoopStrategy*(FrameLoopStrategy) →
+             * ENABLE 常量的调用链。方法名带库版本混淆后缀，按前缀匹配；任一环节缺失时
+             * 返回 null，降级为不强制恢复帧循环。
+             */
+            private fun resolveFrameLoopKick(
+                viewClass: Class<*>
+            ): Triple<Field, Method, Any>? {
+                return runCatching {
+                    val shaderField = viewClass.declaredFields
+                        .firstOrNull { it.name == "mShader" }
+                        ?: return null
+                    shaderField.isAccessible = true
+                    val enableMethod = shaderField.type.declaredMethods.firstOrNull { method ->
+                        method.name.startsWith("setFrameLoopStrategy") &&
+                            method.parameterCount == 1
+                    } ?: return null
+                    enableMethod.isAccessible = true
+                    val strategyType = enableMethod.parameterTypes[0]
+                    val enableValue = runCatching {
+                        strategyType.getField("ENABLE").get(null)
+                    }.getOrNull() ?: return null
+                    Triple(shaderField, enableMethod, enableValue)
+                }.getOrNull()
             }
         }
     }
 
     private const val CONTROLLER_PACKAGE =
         "com.android.systemui.statusbar.notification.mediacontrol."
+    // Hidden PowerManager level that permits frame submission while the display is dozing.
+    private const val DRAW_WAKE_LOCK_LEVEL = 0x80
+    private const val FLOW_WAKE_LOCK_TIMEOUT_MS = 1_000L
+    private const val FLOW_KEEP_ALIVE_INTERVAL_MS = 700L
+    private const val FLOW_FADE_OUT_DURATION_MS = 200L
     private val TARGET_METHOD_NAMES = listOf(
         "attach",
         "detach",

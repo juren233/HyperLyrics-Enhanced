@@ -571,6 +571,11 @@ class HookEntry : XposedModule() {
                             NotificationMediaAmbientFlowHooker.refreshBackgroundStyle()
                         }
                     }
+                    RootConstants.KEY_HOOK_NOTIFICATION_MEDIA_AMBIENT_FLOW_PAUSE_RESTORE_DEFAULT -> {
+                        android.os.Handler(android.os.Looper.getMainLooper()).post {
+                            NotificationMediaAmbientFlowHooker.refreshAmbientFlow()
+                        }
+                    }
                     RootConstants.KEY_HOOK_NOTIFICATION_MEDIA_BACKGROUND_STYLE,
                     RootConstants.KEY_HOOK_NOTIFICATION_MEDIA_BACKGROUND_BLUR,
                     RootConstants.KEY_HOOK_NOTIFICATION_MEDIA_BACKGROUND_COLOR_ANIMATION,

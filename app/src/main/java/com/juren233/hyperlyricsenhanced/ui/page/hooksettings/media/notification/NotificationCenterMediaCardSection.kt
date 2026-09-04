@@ -44,7 +44,9 @@ fun LazyListScope.notificationCenterMediaCardSection(
     softCoverTone: Int,
     onSoftCoverToneChange: (Int) -> Unit,
     ambientFlowMode: Int,
-    onAmbientFlowModeChange: (Int) -> Unit
+    onAmbientFlowModeChange: (Int) -> Unit,
+    ambientFlowPauseRestoreDefault: Boolean,
+    onAmbientFlowPauseRestoreDefaultChange: (Boolean) -> Unit
 ) {
     item(key = "notification_center_media_card") {
         SmallTitle(text = stringResource(R.string.title_notification_center_media_card))
@@ -156,6 +158,23 @@ fun LazyListScope.notificationCenterMediaCardSection(
                                 onAmbientFlowModeChange(modeValues[index])
                             }
                         )
+                        val flowPauseToggleVisible =
+                            ambientFlowMode == RootConstants.NOTIFICATION_MEDIA_AMBIENT_FLOW_MODE_DYNAMIC ||
+                                ambientFlowMode == RootConstants.NOTIFICATION_MEDIA_AMBIENT_FLOW_MODE_COVER_COLOR
+                        AnimatedVisibility(visible = flowPauseToggleVisible) {
+                            Column {
+                                SwitchPreference(
+                                    title = stringResource(
+                                        R.string.title_notification_media_ambient_flow_pause_restore_default
+                                    ),
+                                    summary = stringResource(
+                                        R.string.summary_notification_media_ambient_flow_pause_restore_default
+                                    ),
+                                    checked = ambientFlowPauseRestoreDefault,
+                                    onCheckedChange = onAmbientFlowPauseRestoreDefaultChange
+                                )
+                            }
+                        }
                     }
                 }
                 AnimatedVisibility(
