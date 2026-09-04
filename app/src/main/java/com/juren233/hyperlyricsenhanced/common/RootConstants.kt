@@ -100,6 +100,13 @@ object RootConstants {
     const val KEY_HOOK_LYRIC_MODE = "key_hook_lyric_mode"
     const val KEY_HOOK_LYRIC_SOURCE = "key_hook_lyric_source"
     const val DEFAULT_HOOK_LYRIC_SOURCE = "lyricon"
+
+    /**
+     * 模块 app 侧发布的“存在 MediaSession 的包集合”快照
+     * （格式见 [com.juren233.hyperlyricsenhanced.root.source.ActiveMediaSessionSnapshot]），
+     * SystemUI 侧据此阻断 Provider 的僵尸发布（AOD-LYRICS-004）。
+     */
+    const val KEY_ACTIVE_MEDIA_SESSION_PACKAGES = "key_active_media_session_packages"
     const val KEY_HOOK_LYRICON_PROVIDER_DELAY_PREFIX = "key_hook_lyricon_provider_delay_"
     const val KEY_HOOK_REMOVE_CJK_LYRIC_SPACES =
         "key_hook_remove_cjk_lyric_spaces"

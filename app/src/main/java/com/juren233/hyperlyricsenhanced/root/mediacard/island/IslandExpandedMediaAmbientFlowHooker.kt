@@ -82,6 +82,9 @@ object IslandExpandedMediaAmbientFlowHooker {
         WeakHashMap<Any, MutableSet<String>>()
     )
     private val themeStates = Collections.synchronizedMap(WeakHashMap<View, ViewThemeState>())
+    private val lightBackgroundModes = Collections.synchronizedMap(
+        WeakHashMap<View, IslandExpandedMediaLightBackgroundMode>()
+    )
     private val fakeFlowStates = Collections.synchronizedMap(
         WeakHashMap<ViewGroup, FakeFlowState>()
     )
@@ -210,6 +213,7 @@ object IslandExpandedMediaAmbientFlowHooker {
                 .forEach(::removeCustomFakeFlow)
             activeBinders.clear()
             themeStates.clear()
+            lightBackgroundModes.clear()
             fakeFlowStates.clear()
             seekBarThemeStates.clear()
             firstArtworkCallbacks.clear()
@@ -371,14 +375,19 @@ object IslandExpandedMediaAmbientFlowHooker {
         override fun intercept(chain: Chain): Any? {
             if (!SystemUiEnhancementGate.isEnabled()) return chain.proceed()
             val view = chain.args.firstOrNull() as? View
-            return if (
+            if (
                 view != null &&
                 IslandExpandedMediaBackgroundController.shouldSkipNativeBackgroundUpdate(view)
             ) {
-                null
-            } else {
-                chain.proceed()
+                return null
             }
+            val result = chain.proceed()
+            if (view != null) {
+                runCatching { reapplyTrackedLightTheme(view) }.onFailure { error ->
+                    HookLogger.e(TAG, "重放展开态浅色背景失败", error)
+                }
+            }
+            return result
         }
     }
 
@@ -649,7 +658,15 @@ object IslandExpandedMediaAmbientFlowHooker {
             return
         }
 
-        applyLightExpandedBackground(api, target)
+        val notificationContext = findBinderForContentOwner(dataOwner as? View, api)
+            ?.let(api::getContext)
+            ?: contentView.context.applicationContext
+            ?: contentView.context
+        applyLightExpandedBackground(
+            api,
+            target,
+            notificationContext.withNightMode(Configuration.UI_MODE_NIGHT_NO)
+        )
     }
 
     fun refreshMediaElements() {
@@ -675,11 +692,11 @@ object IslandExpandedMediaAmbientFlowHooker {
         val colors = CardColors.from(lightContext)
         api.getHolders(binder).forEach { holder ->
             val player = api.getPlayer(holder)
-            if (!applyLightExpandedBackground(api, player)) {
+            if (!applyLightExpandedBackground(api, player, lightContext)) {
                 player.post {
                     if (activeBinders.contains(binder) && shouldUseLightTheme(binder)) {
                         runCatching {
-                            applyLightExpandedBackground(api, player)
+                            applyLightExpandedBackground(api, player, lightContext)
                         }.onFailure {
                     HookLogger.e(TAG, "应用延后的实时通知背景失败", it)
                         }
@@ -715,35 +732,54 @@ object IslandExpandedMediaAmbientFlowHooker {
 
     private fun applyLightExpandedBackground(
         api: NativeApi,
-        player: View
+        player: View,
+        notificationLightContext: Context
     ): Boolean {
         val target = api.findExpandedBackgroundTarget(player) ?: return false
-        applyLightExpandedBackground(api, target)
+        applyLightExpandedBackground(api, target, notificationLightContext)
         return true
     }
 
     private fun applyLightExpandedBackground(
         api: NativeApi,
-        target: IslandExpandedBackgroundTarget
+        target: IslandExpandedBackgroundTarget,
+        notificationLightContext: Context
     ) {
         val state = themeStates.getOrPut(target.owner) {
             val miniBar = api.getMiniBar(target)
             ViewThemeState(
                 target = target,
                 miniBar = miniBar,
-                originalMiniBarTint = miniBar?.backgroundTintList
+                originalMiniBarTint = miniBar?.backgroundTintList,
+                notificationLightContext = notificationLightContext
             )
         }
-        val lightContext = target.expandedView.context.withNightMode(Configuration.UI_MODE_NIGHT_NO)
-        api.applyLiveUpdateBackground(target, lightContext)
+        state.notificationLightContext = notificationLightContext
+        val islandLightContext = target.expandedView.context.withNightMode(
+            Configuration.UI_MODE_NIGHT_NO
+        )
+        api.applyLiveUpdateBackground(target, islandLightContext, notificationLightContext)
+        // 横线标识与前景白色层级统一，恢复路径还原 originalMiniBarTint。
         state.miniBar?.backgroundTintList = ColorStateList.valueOf(
-            Color.argb(0x99, 0, 0, 0)
+            Color.argb(0x99, 0xFF, 0xFF, 0xFF)
         )
     }
 
     private fun shouldUseLightTheme(binder: Any): Boolean {
         val api = nativeApi ?: return false
         return shouldUseLightTheme(api.getContext(binder))
+    }
+
+    /**
+     * 原生 `updateBackgroundBg` 每次执行都会重建深色背景（OS4 上还会重建液态玻璃材质），
+     * 浅色主题如果只在 binder 事件后应用一次，会被随后任意内容更新冲掉；
+     * 在原生重建背景后立即重放缓存的浅色主题，保证模块总是最后写入。
+     */
+    private fun reapplyTrackedLightTheme(view: View) {
+        if (IslandExpandedMediaBackgroundController.isActive()) return
+        val api = nativeApi ?: return
+        val state = themeStates.values.firstOrNull { it.target.expandedView === view } ?: return
+        applyLightExpandedBackground(api, state.target, state.notificationLightContext)
     }
 
     private fun shouldUseLightTheme(context: Context): Boolean {
@@ -756,6 +792,7 @@ object IslandExpandedMediaAmbientFlowHooker {
 
     private fun restoreTrackedTheme(view: View, api: NativeApi) {
         themeStates.remove(view)?.let { state ->
+            lightBackgroundModes.remove(state.target.expandedView)
             state.miniBar?.backgroundTintList = state.originalMiniBarTint
             api.restoreNativeExpandedBackground(state.target)
         }
@@ -1184,7 +1221,8 @@ object IslandExpandedMediaAmbientFlowHooker {
     private data class ViewThemeState(
         val target: IslandExpandedBackgroundTarget,
         val miniBar: View?,
-        val originalMiniBarTint: ColorStateList?
+        val originalMiniBarTint: ColorStateList?,
+        var notificationLightContext: Context
     )
 
     private data class SeekBarThemeState(
@@ -1203,18 +1241,22 @@ object IslandExpandedMediaAmbientFlowHooker {
     ) {
         companion object {
             fun from(context: Context): CardColors {
-                fun color(name: String): Int {
+                // 文字、图标、进度条统一保持深色卡片的白色层级（夜间值）：
+                // 歌名/按钮 90% 白、歌手 50% 白、时长 40% 白、轨道 10% 白；
+                // 进度条前景无媒体专用夜间资源，用与歌名同级的 90% 白。
+                val whiteContext = context.withNightMode(Configuration.UI_MODE_NIGHT_YES)
+                fun nightColor(name: String): Int {
                     val id = context.resources.getIdentifier(name, "color", context.packageName)
                     require(id != 0) { "Missing color resource: $name" }
-                    return context.getColor(id)
+                    return whiteContext.getColor(id)
                 }
                 return CardColors(
-                    primaryText = color("media_primary_text"),
-                    secondaryText = color("media_secondary_text"),
-                    durationText = color("media_duration_time_font_color"),
-                    action = color("notification_media_action_button_light_color"),
-                    seekBarForeground = android.graphics.Color.BLACK,
-                    seekBarBackground = color("media_seekbar_background_color")
+                    primaryText = nightColor("media_primary_text"),
+                    secondaryText = nightColor("media_secondary_text"),
+                    durationText = nightColor("media_duration_time_font_color"),
+                    action = nightColor("notification_media_action_button_color"),
+                    seekBarForeground = android.graphics.Color.argb(0xE5, 0xFF, 0xFF, 0xFF),
+                    seekBarBackground = nightColor("media_seekbar_background_color")
                 )
             }
         }
@@ -1222,6 +1264,7 @@ object IslandExpandedMediaAmbientFlowHooker {
 
     private class NativeApi private constructor(
         val hookMethods: List<Method>,
+        private val hostClassLoader: ClassLoader,
         private val holderField: Field,
         private val dummyHolderField: Field,
         private val artworkField: Field,
@@ -1474,32 +1517,89 @@ object IslandExpandedMediaAmbientFlowHooker {
 
         fun applyLiveUpdateBackground(
             target: IslandExpandedBackgroundTarget,
-            lightContext: Context
+            islandLightContext: Context,
+            notificationLightContext: Context
         ) {
             val view = target.expandedView
             val methods = expandedBackgroundMethods(target)
             val blurOpened = methods.isBackgroundOpened.invoke(null, view.context) as Boolean
-            if (!blurOpened || view.parent == null) {
-                methods.setMiViewBlurMode.invoke(null, view, 0)
-                methods.clearMiBackgroundBlendColor.invoke(null, view)
-                view.background = requireNotNull(
-                    lightContext.getDrawable(methods.liveUpdateBackgroundDrawableId)
-                )
-                return
+            val requestedMode = IslandExpandedMediaLightBackgroundPolicy.select(
+                hasBionicsMaterialApi = methods.hasBionicsMaterialApi,
+                hasNotificationGlassApi = methods.hasNotificationGlassApi,
+                blurOpened = blurOpened,
+                attached = view.parent != null,
+            )
+            var appliedMode = requestedMode
+            var glassDiagnostics: NotificationGlassDiagnostics? = null
+            when (requestedMode) {
+                IslandExpandedMediaLightBackgroundMode.NOTIFICATION_GLASS -> {
+                    glassDiagnostics = runCatching {
+                        methods.applyNotificationGlass(view, notificationLightContext)
+                    }.onFailure { error ->
+                        HookLogger.e(
+                            TAG,
+                            "通知中心玻璃背景应用失败，使用 Drawable 降级",
+                            error
+                        )
+                    }.getOrNull()
+                    if (glassDiagnostics == null) {
+                        appliedMode = IslandExpandedMediaLightBackgroundMode.DRAWABLE_FALLBACK
+                        methods.applyDrawableFallback(view, islandLightContext)
+                    }
+                }
+
+                IslandExpandedMediaLightBackgroundMode.LEGACY_BLUR -> {
+                    methods.clearBionicsMaterial(view)
+                    val blendColors = intArrayOf(
+                        islandLightContext.getColor(methods.liveUpdateBlendColor1Id),
+                        islandLightContext.resources.getInteger(methods.blurModeLinearLightId),
+                        islandLightContext.getColor(methods.liveUpdateBlendColor2Id),
+                        islandLightContext.resources.getInteger(methods.blurModeLabId),
+                        islandLightContext.getColor(methods.liveUpdateBlendColor3Id),
+                        islandLightContext.resources.getInteger(methods.blurModePureId)
+                    )
+                    methods.setMiViewBlurMode.invoke(null, view, 1)
+                    methods.clearMiBackgroundBlendColor.invoke(null, view)
+                    methods.setMiBackgroundBlendColors.invoke(
+                        null,
+                        view,
+                        blendColors,
+                        0.0f,
+                        2,
+                        null
+                    )
+                    view.background = null
+                }
+
+                IslandExpandedMediaLightBackgroundMode.DRAWABLE_FALLBACK -> {
+                    methods.applyDrawableFallback(view, islandLightContext)
+                }
             }
 
-            val blendColors = intArrayOf(
-                lightContext.getColor(methods.liveUpdateBlendColor1Id),
-                lightContext.resources.getInteger(methods.blurModeLinearLightId),
-                lightContext.getColor(methods.liveUpdateBlendColor2Id),
-                lightContext.resources.getInteger(methods.blurModeLabId),
-                lightContext.getColor(methods.liveUpdateBlendColor3Id),
-                lightContext.resources.getInteger(methods.blurModePureId)
-            )
-            methods.setMiViewBlurMode.invoke(null, view, 1)
-            methods.clearMiBackgroundBlendColor.invoke(null, view)
-            methods.setMiBackgroundBlendColors.invoke(null, view, blendColors, 0.0f, 2, null)
-            view.background = null
+            if (BuildConfig.DEBUG) {
+                val previousMode = lightBackgroundModes.put(view, appliedMode)
+                if (previousMode != appliedMode) {
+                    val glassDetails = glassDiagnostics?.let { diagnostics ->
+                        ", resourcePackage=${diagnostics.resourcePackage}, " +
+                            "shadeColors=${diagnostics.colors.joinToString(
+                                prefix = "[",
+                                postfix = "]"
+                            ) { color -> "#%08X".format(color) }}, " +
+                            "shadeModes=${diagnostics.modes.contentToString()}, " +
+                            "glassParams=${diagnostics.glassParamCount}, glassApplied=true"
+                    } ?: ", glassApplied=false"
+                    HookLogger.d(
+                        TAG,
+                        "展开态浅色背景路径: mode=$appliedMode, requested=$requestedMode, " +
+                            "bionicsApi=${methods.hasBionicsMaterialApi}, " +
+                            "notificationGlassApi=${methods.hasNotificationGlassApi}, " +
+                            "blurOpened=$blurOpened, attached=${view.parent != null}, " +
+                            "target=${view.javaClass.name}@${System.identityHashCode(view)}, " +
+                            "hostContext=${notificationLightContext.packageName}" +
+                            glassDetails
+                    )
+                }
+            }
         }
 
         fun restoreNativeExpandedBackground(target: IslandExpandedBackgroundTarget) {
@@ -1513,6 +1613,7 @@ object IslandExpandedMediaAmbientFlowHooker {
         override fun prepareCustomBackground(target: IslandExpandedBackgroundTarget) {
             val methods = expandedBackgroundMethods(target)
             target.nativeBackgroundViews.forEach { view ->
+                methods.clearBionicsMaterial(view)
                 methods.setMiViewBlurMode.invoke(null, view, 0)
                 methods.clearMiBackgroundBlendColor.invoke(null, view)
                 if (view !== target.customBackgroundView) view.background = null
@@ -1538,7 +1639,7 @@ object IslandExpandedMediaAmbientFlowHooker {
             }
             return synchronized(expandedBackgroundMethods) {
                 expandedBackgroundMethods.getOrPut(classLoader) {
-                    ExpandedBackgroundMethods.create(ownerClass, classLoader)
+                    ExpandedBackgroundMethods.create(ownerClass, classLoader, hostClassLoader)
                 }
             }
         }
@@ -1645,6 +1746,7 @@ object IslandExpandedMediaAmbientFlowHooker {
                         resume,
                         headAlphaUpdate
                     ),
+                    hostClassLoader = classLoader,
                     holderField = binderClass.getDeclaredField("holder").apply {
                         isAccessible = true
                     },
@@ -1744,6 +1846,8 @@ object IslandExpandedMediaAmbientFlowHooker {
 
     private data class ExpandedBackgroundMethods(
         val updateBackgroundBg: Method,
+        val clearBionicsMaterialMethod: Method?,
+        val notificationGlassMethods: NotificationGlassMethods?,
         val getMiniBar: Method,
         val isBackgroundOpened: Method,
         val setMiViewBlurMode: Method,
@@ -1757,8 +1861,48 @@ object IslandExpandedMediaAmbientFlowHooker {
         val blurModePureId: Int,
         val liveUpdateBackgroundDrawableId: Int
     ) {
+        val hasBionicsMaterialApi: Boolean
+            get() = clearBionicsMaterialMethod != null
+
+        val hasNotificationGlassApi: Boolean
+            get() = notificationGlassMethods != null
+
+        /**
+         * 把展开视图材质从 OS4 液态玻璃（bionics）重置回经典模式；
+         * 经典混色背景在液态玻璃材质上不生效，系统自身的经典分支
+         * 也总是先执行这个重置。旧系统没有该 API 时保持原行为。
+         */
+        fun clearBionicsMaterial(view: View) {
+            val method = clearBionicsMaterialMethod ?: return
+            runCatching { method.invoke(null, view) }.onFailure { error ->
+                HookLogger.e(TAG, "重置展开态液态玻璃材质失败", error)
+            }
+        }
+
+        fun applyNotificationGlass(
+            view: View,
+            notificationLightContext: Context
+        ): NotificationGlassDiagnostics {
+            return requireNotNull(notificationGlassMethods) {
+                "OS4 notification glass methods are unavailable"
+            }.apply(view, notificationLightContext)
+        }
+
+        fun applyDrawableFallback(view: View, islandLightContext: Context) {
+            clearBionicsMaterial(view)
+            setMiViewBlurMode.invoke(null, view, 0)
+            clearMiBackgroundBlendColor.invoke(null, view)
+            view.background = requireNotNull(
+                islandLightContext.getDrawable(liveUpdateBackgroundDrawableId)
+            )
+        }
+
         companion object {
-            fun create(ownerClass: Class<*>, classLoader: ClassLoader): ExpandedBackgroundMethods {
+            fun create(
+                ownerClass: Class<*>,
+                classLoader: ClassLoader,
+                hostClassLoader: ClassLoader
+            ): ExpandedBackgroundMethods {
                 val baseContentViewClass = generateSequence(ownerClass as Class<*>?) {
                     it.superclass
                 }.firstOrNull { it.name == BASE_CONTENT_VIEW_CLASS }
@@ -1773,6 +1917,19 @@ object IslandExpandedMediaAmbientFlowHooker {
                         View::class.java,
                         Boolean::class.javaPrimitiveType
                     ).apply { isAccessible = true },
+                    clearBionicsMaterialMethod = runCatching {
+                        classLoader.loadClass(IslandExpandedMediaBionicsProfile.MI_BACKGROUND_STYLE_CLASS)
+                            .declaredMethods.firstOrNull(
+                                IslandExpandedMediaBionicsProfile::isClearBionicsMaterial
+                            )
+                    }.getOrNull()?.apply { isAccessible = true },
+                    notificationGlassMethods = runCatching {
+                        // NotificationUtil/MiGlassCompat 只在主 MiuiSystemUI APK 中定义，
+                        // 必须用宿主加载器解析；插件加载器会 ClassNotFoundException。
+                        NotificationGlassMethods.create(hostClassLoader)
+                    }.onFailure { error ->
+                        HookLogger.w(TAG, "通知中心媒体玻璃接口不可用", error)
+                    }.getOrNull(),
                     getMiniBar = baseContentViewClass.getDeclaredMethod("getMiniBar").apply {
                         isAccessible = true
                     },
@@ -1826,5 +1983,137 @@ object IslandExpandedMediaAmbientFlowHooker {
                 return getDeclaredField(name).apply { isAccessible = true }.getInt(null)
             }
         }
+    }
+
+    private data class NotificationGlassDiagnostics(
+        val resourcePackage: String,
+        val colors: IntArray,
+        val modes: IntArray,
+        val glassParamCount: Int
+    )
+
+    private data class NotificationGlassMethods(
+        val getBackgroundBlurOpened: Method,
+        val setMiViewBlurMode: Method,
+        val clearMiBackgroundBlendColor: Method,
+        val setMiBackgroundBlendColors: Method,
+        val setMiViewMaterialType: Method,
+        val setMiGlass: Method
+    ) {
+        fun apply(view: View, context: Context): NotificationGlassDiagnostics {
+            val backgroundId = context.requireSystemUiResource(
+                IslandExpandedMediaNotificationGlassProfile.TRANSPARENT_BACKGROUND_DRAWABLE,
+                "drawable"
+            )
+            val colors = intArrayOf(
+                context.getColor(
+                    context.requireSystemUiResource(
+                        IslandExpandedMediaNotificationGlassProfile.SHADE_COLOR_1,
+                        "color"
+                    )
+                ),
+                context.getColor(
+                    context.requireSystemUiResource(
+                        IslandExpandedMediaNotificationGlassProfile.SHADE_COLOR_2,
+                        "color"
+                    )
+                ),
+                context.getColor(
+                    context.requireSystemUiResource(
+                        IslandExpandedMediaNotificationGlassProfile.SHADE_COLOR_3,
+                        "color"
+                    )
+                )
+            )
+            val modes = intArrayOf(
+                context.resources.getInteger(
+                    context.requireSystemUiResource(
+                        IslandExpandedMediaNotificationGlassProfile.BLEND_MODE_LINEAR_LIGHT,
+                        "integer"
+                    )
+                ),
+                context.resources.getInteger(
+                    context.requireSystemUiResource(
+                        IslandExpandedMediaNotificationGlassProfile.BLEND_MODE_LAB,
+                        "integer"
+                    )
+                ),
+                context.resources.getInteger(
+                    context.requireSystemUiResource(
+                        IslandExpandedMediaNotificationGlassProfile.BLEND_MODE_PURE,
+                        "integer"
+                    )
+                )
+            )
+            val blend = intArrayOf(
+                colors[0], modes[0],
+                colors[1], modes[1],
+                colors[2], modes[2]
+            )
+            val glassParams = IslandExpandedMediaNotificationGlassProfile.defaultGlassParams()
+            check(getBackgroundBlurOpened.invoke(null, context) as Boolean) {
+                "Notification blend gate closed (getBackgroundBlurOpened=false)"
+            }
+
+            // Mirror MediaViewBlurEffect.apply, then MediaViewGlassEffect.apply. The blend half
+            // is inlined from NotificationUtil.applyElementViewBlend minus setRoundRect: its
+            // outline provider reads main-package dimens through the plugin view's Resources
+            // and crashed SystemUI repeatedly in 150207.
+            view.background = requireNotNull(context.getDrawable(backgroundId))
+            setMiViewMaterialType.invoke(null, 0, view)
+            setMiViewBlurMode.invoke(null, 1, view)
+            clearMiBackgroundBlendColor.invoke(null, view)
+            setMiBackgroundBlendColors.invoke(null, view, blend)
+            setMiViewMaterialType.invoke(null, 1, view)
+            setMiGlass.invoke(null, view, glassParams)
+
+            return NotificationGlassDiagnostics(
+                resourcePackage = context.resources.getResourcePackageName(backgroundId),
+                colors = colors,
+                modes = modes,
+                glassParamCount = glassParams.size
+            )
+        }
+
+        companion object {
+            fun create(classLoader: ClassLoader): NotificationGlassMethods {
+                val miBlurCompatClass = classLoader.loadClass(
+                    IslandExpandedMediaNotificationGlassProfile.MI_BLUR_COMPAT_CLASS
+                )
+                val miGlassCompatClass = classLoader.loadClass(
+                    IslandExpandedMediaNotificationGlassProfile.MI_GLASS_COMPAT_CLASS
+                )
+                return NotificationGlassMethods(
+                    getBackgroundBlurOpened = miBlurCompatClass.declaredMethods.single(
+                        IslandExpandedMediaNotificationGlassProfile::isGetBackgroundBlurOpened
+                    ).apply { isAccessible = true },
+                    setMiViewBlurMode = miBlurCompatClass.declaredMethods.single(
+                        IslandExpandedMediaNotificationGlassProfile::isSetMiViewBlurMode
+                    ).apply { isAccessible = true },
+                    clearMiBackgroundBlendColor = miBlurCompatClass.declaredMethods.single(
+                        IslandExpandedMediaNotificationGlassProfile::isClearMiBackgroundBlendColor
+                    ).apply { isAccessible = true },
+                    setMiBackgroundBlendColors = miBlurCompatClass.declaredMethods.single(
+                        IslandExpandedMediaNotificationGlassProfile::isSetMiBackgroundBlendColors
+                    ).apply { isAccessible = true },
+                    setMiViewMaterialType = miGlassCompatClass.declaredMethods.single(
+                        IslandExpandedMediaNotificationGlassProfile::isSetMiViewMaterialType
+                    ).apply { isAccessible = true },
+                    setMiGlass = miGlassCompatClass.declaredMethods.single(
+                        IslandExpandedMediaNotificationGlassProfile::isSetMiGlass
+                    ).apply { isAccessible = true }
+                )
+            }
+        }
+    }
+
+    private fun Context.requireSystemUiResource(name: String, type: String): Int {
+        val id = resources.getIdentifier(
+            name,
+            type,
+            IslandExpandedMediaNotificationGlassProfile.SYSTEMUI_PACKAGE
+        )
+        require(id != 0) { "Missing SystemUI $type resource: $name" }
+        return id
     }
 }

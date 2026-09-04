@@ -465,6 +465,12 @@ class HookEntry : XposedModule() {
                     lyriconSource.onPreferenceChanged(key)
                 }
                 when (key) {
+                    RootConstants.KEY_ACTIVE_MEDIA_SESSION_PACKAGES -> {
+                        lyriconSource.onActiveMediaSessionSnapshotChanged(
+                            prefs.getString(key, null),
+                            reason = "remote_prefs_changed",
+                        )
+                    }
                     RootConstants.KEY_HOOK_LYRIC_SOURCE -> {
                         val newSourceId = prefs.getString(key, RootConstants.DEFAULT_HOOK_LYRIC_SOURCE)
                             ?: RootConstants.DEFAULT_HOOK_LYRIC_SOURCE
@@ -729,6 +735,12 @@ class HookEntry : XposedModule() {
                     else -> return
                 }
                 IslandRuntimePreferenceOverrides.put(key, value)
+                if (key == RootConstants.KEY_ACTIVE_MEDIA_SESSION_PACKAGES && value is String) {
+                    lyriconSource.onActiveMediaSessionSnapshotChanged(
+                        value,
+                        reason = "preference_broadcast",
+                    )
+                }
                 if (key == RootConstants.KEY_HOOK_LYRIC_MODE && value is Int) {
                     activeMode = value
                 }

@@ -7,8 +7,11 @@ import android.media.session.MediaController
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
 import android.os.SystemClock
+import com.juren233.hyperlyricsenhanced.common.PrefsBridge
+import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.common.image.AlbumImageHelper
 import com.juren233.hyperlyricsenhanced.lyric.DynamicLyricData
+import com.juren233.hyperlyricsenhanced.root.source.ActiveMediaSessionSnapshot
 import com.juren233.hyperlyricsenhanced.utils.LogManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -38,6 +41,8 @@ class MetadataSource(
     private val bitmapRetryDelayMs = 500L
     private var currentSongIdentifier = ""
     private var lastEmittedDynamicTitle = ""
+    private var lastPublishedActiveMediaPackages: Set<String>? = null
+    private var lastActiveMediaPackagesPublishedAtMs = 0L
 
     val lyricUpdateFlow =
         MutableSharedFlow<SyncData>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
@@ -151,7 +156,34 @@ class MetadataSource(
         refreshTrackedMediaSession()
     }
 
+    /**
+     * 将“当前存在 MediaSession 的包集合”发布给 SystemUI 侧（AOD-LYRICS-004）。
+     * 集合变化立即发布；未变化时按 [ACTIVE_MEDIA_PACKAGES_REFRESH_MS] 周期重发，
+     * 让消费方通过快照时间戳确认监控存活。访问失败时不发布，快照过期后消费方 fail-open。
+     */
+    private fun publishActiveMediaSessionPackages(controllers: List<MediaController>?) {
+        val packages = controllers.orEmpty().mapNotNull { it.packageName }.toSet()
+        val nowWallClock = System.currentTimeMillis()
+        if (
+            packages == lastPublishedActiveMediaPackages &&
+            nowWallClock - lastActiveMediaPackagesPublishedAtMs < ACTIVE_MEDIA_PACKAGES_REFRESH_MS
+        ) {
+            return
+        }
+        lastPublishedActiveMediaPackages = packages
+        lastActiveMediaPackagesPublishedAtMs = nowWallClock
+        runCatching {
+            PrefsBridge.putString(
+                RootConstants.KEY_ACTIVE_MEDIA_SESSION_PACKAGES,
+                ActiveMediaSessionSnapshot.encode(nowWallClock, packages),
+            )
+        }.onFailure { error ->
+            LogManager.w(TAG, "发布活动媒体会话快照失败", error)
+        }
+    }
+
     private fun updateCurrentController(controllers: List<MediaController>?) {
+        publishActiveMediaSessionPackages(controllers)
         if (controllers.isNullOrEmpty()) {
             val now = SystemClock.elapsedRealtime()
             val emptySince = emptySessionsSinceElapsedRealtime ?: now.also {
@@ -408,6 +440,7 @@ class MetadataSource(
         private const val emptySessionGracePeriodMs = 5000L
         private const val mediaSessionRecoveryFailureThreshold = 2
         private const val mediaSessionRecoveryCooldownMs = 15000L
+        private const val ACTIVE_MEDIA_PACKAGES_REFRESH_MS = 60_000L
     }
 }
 

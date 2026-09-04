@@ -1,7 +1,10 @@
 package com.juren233.hyperlyricsenhanced.root.source
 
 import android.app.Application
+import android.content.Context
 import android.content.Intent
+import android.media.AudioManager
+import android.media.session.MediaSessionManager
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -289,6 +292,75 @@ class LyriconSource : LyricSource {
     private var lastObservedMediaKey: String? = null
     private var lastMediaPlaybackState: Boolean? = null
     private val centralPlaybackPositionWitness = CentralPlaybackPositionWitness()
+    private var audioManager: AudioManager? = null
+    private var mediaSessionManager: MediaSessionManager? = null
+    private var localSessionsListener: MediaSessionManager.OnActiveSessionsChangedListener? = null
+    private val activeMediaSessionGate = ActiveMediaSessionGate(
+        nowElapsedMs = SystemClock::elapsedRealtime,
+        nowWallClockMs = System::currentTimeMillis,
+        isMusicActive = ::isAnyMusicActive,
+    )
+    private var mediaSessionGateStopIssued = false
+
+    /**
+     * SystemUI 进程内的权威会话真值（AOD-LYRICS-004 `150213` 证据：app 侧
+     * 监听器被 MIUI 解绑后会沉默，快照可冻结在过期值上）。本地查询
+     * `getActiveSessions(null)` 与同进程 `LyricInfoSource` 的既有用法一致，
+     * 是已被运行验证的路径；不可用时回退 app 快照链路。
+     */
+    private fun registerLocalMediaSessionTracker() {
+        val context = app ?: return
+        if (localSessionsListener != null) return
+        runCatching {
+            val manager = context.getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
+            val listener = MediaSessionManager.OnActiveSessionsChangedListener { controllers ->
+                onLocalActiveMediaSessionsChanged(
+                    controllers?.mapNotNull { it.packageName }?.toSet()
+                )
+            }
+            manager.addOnActiveSessionsChangedListener(listener, null)
+            mediaSessionManager = manager
+            localSessionsListener = listener
+            onLocalActiveMediaSessionsChanged(
+                manager.getActiveSessions(null).mapNotNull { it.packageName }.toSet()
+            )
+            HookLogger.i(TAG, "SystemUI 本地媒体会话跟踪已启动")
+        }.onFailure { error ->
+            mediaSessionManager = null
+            localSessionsListener = null
+            HookLogger.w(TAG, "SystemUI 本地媒体会话跟踪不可用，回退 app 快照: reason=${error.message}")
+        }
+    }
+
+    private fun onLocalActiveMediaSessionsChanged(packages: Set<String>?) {
+        activeMediaSessionGate.updateLocal(packages)
+        diagnostic("stage=local_media_sessions, packages=${packages?.sorted()}")
+        evaluateActiveMediaSessionGate()
+    }
+
+    private fun unregisterLocalMediaSessionTracker() {
+        val manager = mediaSessionManager
+        val listener = localSessionsListener
+        if (manager != null && listener != null) {
+            runCatching { manager.removeOnActiveSessionsChangedListener(listener) }
+        }
+        mediaSessionManager = null
+        localSessionsListener = null
+        activeMediaSessionGate.updateLocal(null)
+    }
+
+    /**
+     * 系统级“是否有音频正在播放”。快照为空但音频在放时，说明 app 侧
+     * 通知监听器失明（`150212` 真机证伪）或存在无会话音频，门控必须放行。
+     * 取不到 AudioManager 时按“在放”处理，保持 fail-open。
+     */
+    private fun isAnyMusicActive(): Boolean {
+        val context = app ?: return true
+        if (audioManager == null) {
+            audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+        }
+        return audioManager?.isMusicActive ?: true
+    }
     private var lastTimingDiagnosticAtMs = 0L
     private var lastTimingDiagnosticPosition = -1L
     private var lastTimingDiagnosticState: String? = null
@@ -343,6 +415,7 @@ class LyriconSource : LyricSource {
             HookLogger.w(TAG, "数据源启动延后: reason=application_unavailable")
             return
         }
+        registerLocalMediaSessionTracker()
         diagnostic("stage=direct_bridge_starting")
         directBridge = AppleMusicDirectBridge(application, this).also { it.start() }
         diagnostic("stage=direct_bridge_started")
@@ -357,6 +430,7 @@ class LyriconSource : LyricSource {
 
     override fun stop() {
         stopAppleMediaMonitor()
+        unregisterLocalMediaSessionTracker()
         cancelFallback(clearAppleSong = true, reason = "source_stopped")
         cancelThirdPartyFallback(reason = "source_stopped")
         cancelOnlineTranslation(
@@ -400,6 +474,11 @@ class LyriconSource : LyricSource {
     ) {
         this.app = app
         this.prefs = prefs
+        registerLocalMediaSessionTracker()
+        onActiveMediaSessionSnapshotChanged(
+            prefs?.getString(RootConstants.KEY_ACTIVE_MEDIA_SESSION_PACKAGES, null),
+            reason = "source_initialized",
+        )
         this.onCentralConnected = onCentralConnected
         this.onCentralConnectTimeout = onCentralConnectTimeout
         diagnostic(
@@ -2947,6 +3026,41 @@ class LyriconSource : LyricSource {
 
     private fun hasActiveCentralPlayer(): Boolean = activeCentralPlayerPackageName != null
 
+    /**
+     * 接收模块 app 侧发布的“存在 MediaSession 的包集合”快照。
+     * 来源：远端 prefs 变更、配置广播或冷启动读取（见 [HookEntry]）。
+     */
+    fun onActiveMediaSessionSnapshotChanged(raw: String?, reason: String) {
+        activeMediaSessionGate.update(raw)
+        diagnostic(
+            "stage=active_media_session_snapshot, reason=$reason, " +
+                "tracked=${activeMediaSessionGate.trackedPackages?.sorted()}",
+        )
+        evaluateActiveMediaSessionGate()
+    }
+
+    /**
+     * 活动播放者被门控阻断（Provider 僵尸发布、宿主已无 MediaSession）时，
+     * 主动触发一次 sink 清除，恢复超级岛与经典 AOD 原生显示。
+     */
+    private fun evaluateActiveMediaSessionGate() {
+        val player = activeCentralPlayerPackageName ?: return
+        if (!activeMediaSessionGate.isBlocked(player)) {
+            mediaSessionGateStopIssued = false
+            return
+        }
+        if (mediaSessionGateStopIssued) return
+        mediaSessionGateStopIssued = true
+        HookLogger.i(TAG, "活动播放者已无系统 MediaSession，清除歌词显示: player=$player")
+        mainHandler.post { sink?.onStop() }
+    }
+
+    private fun isCentralPlayerBlockedByMediaSession(): Boolean {
+        val blocked = activeMediaSessionGate.isBlocked(activeCentralPlayerPackageName)
+        if (blocked) evaluateActiveMediaSessionGate()
+        return blocked
+    }
+
     private fun hasNonAppleCentralPlayer(): Boolean {
         val packageName = activeCentralPlayerPackageName
         return packageName != null && packageName != APPLE_MUSIC_PACKAGE
@@ -3132,6 +3246,7 @@ class LyriconSource : LyricSource {
             )
             activeCentralPlayerPackageName = playerPackageName
             centralAppleSongAvailable = false
+            evaluateActiveMediaSessionGate()
             if (playerPackageName == null && currentAppleSong != null) {
                 centralAppleProviderActive = false
                 diagnostic(
@@ -3191,6 +3306,13 @@ class LyriconSource : LyricSource {
                     "activePlayer=$activeCentralPlayerPackageName, " +
                     "centralAppleProviderActive=$centralAppleProviderActive",
             )
+            if (isCentralPlayerBlockedByMediaSession()) {
+                diagnostic(
+                    "stage=central_song_dropped, reason=no_active_media_session, " +
+                        "title=${localSong?.name}",
+                )
+                return
+            }
             if (centralAppleProviderActive) {
                 centralAppleSongAvailable = !localSong?.lyrics.isNullOrEmpty()
                 cancelThirdPartyFallback(reason = "central_apple_song")
@@ -3214,6 +3336,7 @@ class LyriconSource : LyricSource {
         }
 
         override fun onPlaybackStateChanged(isPlaying: Boolean) {
+            if (isCentralPlayerBlockedByMediaSession()) return
             if (!shouldForwardCentralPlaybackState(
                     hasActiveCentralPlayer = hasActiveCentralPlayer(),
                     centralAppleProviderActive = centralAppleProviderActive,
@@ -3227,6 +3350,10 @@ class LyriconSource : LyricSource {
         override fun onPositionChanged(position: Long) {
             if (!hasActiveCentralPlayer()) {
                 logCentralPositionDiagnostic(position, null, "dropped_no_active_player")
+                return
+            }
+            if (isCentralPlayerBlockedByMediaSession()) {
+                logCentralPositionDiagnostic(position, null, "dropped_no_active_media_session")
                 return
             }
             if (isBuiltInAppleCentralProviderActive() &&
@@ -3274,6 +3401,7 @@ class LyriconSource : LyricSource {
 
         override fun onSeekTo(position: Long) {
             if (!hasActiveCentralPlayer()) return
+            if (isCentralPlayerBlockedByMediaSession()) return
             if (centralAppleProviderActive && fallbackSongActive) return
             val adjustedPosition = (position - activeProviderDelayMs).coerceAtLeast(0L)
             if (centralAppleProviderActive) {

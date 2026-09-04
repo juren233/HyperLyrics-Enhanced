@@ -26,6 +26,7 @@ internal object LivePreferenceRefreshPolicy {
         RootConstants.KEY_HOOK_ISLAND_PROGRESS_COLOR_MODE,
         RootConstants.KEY_HOOK_ISLAND_PROGRESS_CUSTOM_COLOR,
         RootConstants.KEY_HOOK_ISLAND_ALBUM_COVER_STYLE_APP_WHITELIST,
+        RootConstants.KEY_ACTIVE_MEDIA_SESSION_PACKAGES,
     )
 
     fun contains(key: String): Boolean = key in keys
