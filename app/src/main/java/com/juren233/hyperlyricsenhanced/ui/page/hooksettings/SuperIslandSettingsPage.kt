@@ -103,6 +103,7 @@ fun SuperIslandSettingsPage() {
     var rightPaddingRight by remember { mutableIntStateOf(prefs.getInt(RootConstants.KEY_HOOK_ISLAND_RIGHT_PADDING_RIGHT, RootConstants.DEFAULT_HOOK_ISLAND_RIGHT_PADDING_RIGHT)) }
     var leftContentWidth by remember { mutableIntStateOf(prefs.getInt(RootConstants.KEY_HOOK_ISLAND_LEFT_CONTENT_MAX_WIDTH, RootConstants.DEFAULT_HOOK_ISLAND_LEFT_CONTENT_MAX_WIDTH).coerceIn(0, 500)) }
     var rightContentWidth by remember { mutableIntStateOf(prefs.getInt(RootConstants.KEY_HOOK_ISLAND_RIGHT_CONTENT_MAX_WIDTH, RootConstants.DEFAULT_HOOK_ISLAND_RIGHT_CONTENT_MAX_WIDTH).coerceIn(0, 500)) }
+    var dynamicWidth by remember { mutableStateOf(prefs.getBoolean(RootConstants.KEY_HOOK_ISLAND_DYNAMIC_WIDTH, RootConstants.DEFAULT_HOOK_ISLAND_DYNAMIC_WIDTH)) }
     var afterPauseBehavior by remember { mutableIntStateOf(prefs.getInt(RootConstants.KEY_HOOK_ISLAND_BEHAVIOR_AFTER_PAUSE, RootConstants.DEFAULT_HOOK_ISLAND_BEHAVIOR_AFTER_PAUSE)) }
     var forceNextSongAtEnd by remember { mutableStateOf(prefs.getBoolean(RootConstants.KEY_HOOK_ISLAND_FORCE_NEXT_SONG_AT_END, RootConstants.DEFAULT_HOOK_ISLAND_FORCE_NEXT_SONG_AT_END)) }
     val storedNextSongDuration = prefs.getInt(
@@ -362,9 +363,18 @@ fun SuperIslandSettingsPage() {
                 item(key = "layout_content") {
                     Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
                         Column {
+                            SwitchPreference(
+                                title = stringResource(id = R.string.title_island_dynamic_width),
+                                summary = stringResource(id = R.string.summary_island_dynamic_width),
+                                checked = dynamicWidth,
+                                onCheckedChange = {
+                                    dynamicWidth = it
+                                    saveConfig(RootConstants.KEY_HOOK_ISLAND_DYNAMIC_WIDTH, it)
+                                }
+                            )
                             ArrowPreference(
-                                title = stringResource(id = R.string.title_left_content_width), 
-                                endActions = { Text("$leftContentWidth", fontSize = MiuixTheme.textStyles.body2.fontSize, color = MiuixTheme.colorScheme.onSurfaceVariantActions) }, 
+                                title = stringResource(id = R.string.title_left_content_width),
+                                endActions = { Text("$leftContentWidth", fontSize = MiuixTheme.textStyles.body2.fontSize, color = MiuixTheme.colorScheme.onSurfaceVariantActions) },
                                 onClick = { showLeftContentWidthDialog = true }
                             )
                             ArrowPreference(

@@ -531,6 +531,9 @@ fun AppleMusicOptimizationPage(
                     title = stringResource(
                         R.string.title_apple_music_follow_system_font_weight
                     ),
+                    summary = stringResource(
+                        R.string.summary_apple_music_follow_system_font_weight
+                    ),
                     checked = followSystemFontWeight,
                     onCheckedChange = { enabled ->
                         followSystemFontWeight = enabled

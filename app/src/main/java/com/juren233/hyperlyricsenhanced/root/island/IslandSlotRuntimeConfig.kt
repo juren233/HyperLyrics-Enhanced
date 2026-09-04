@@ -18,6 +18,7 @@ internal data class IslandSlotRuntimeConfig(
     val rightPaddingRightDp: Int,
     val leftMaxWidthDp: Int,
     val rightMaxWidthDp: Int,
+    val dynamicWidthEnabled: Boolean,
     val pauseBehavior: Int,
     val forceNextSongAtEnd: Boolean,
     val nextSongDurationSeconds: Int,
@@ -91,6 +92,7 @@ internal data class IslandSlotRuntimeConfig(
     val styleSignature: String = listOf(
         activeMode,
         textSizeSp,
+        dynamicWidthEnabled,
         textSizeRatio,
         fontWeight,
         fontItalic,
@@ -322,6 +324,7 @@ internal data class IslandSlotRuntimeConfig(
                 rightPaddingRightDp = prefs.getInt(RootConstants.KEY_HOOK_ISLAND_RIGHT_PADDING_RIGHT, RootConstants.DEFAULT_HOOK_ISLAND_RIGHT_PADDING_RIGHT),
                 leftMaxWidthDp = prefs.getInt(RootConstants.KEY_HOOK_ISLAND_LEFT_CONTENT_MAX_WIDTH, RootConstants.DEFAULT_HOOK_ISLAND_LEFT_CONTENT_MAX_WIDTH),
                 rightMaxWidthDp = prefs.getInt(RootConstants.KEY_HOOK_ISLAND_RIGHT_CONTENT_MAX_WIDTH, RootConstants.DEFAULT_HOOK_ISLAND_RIGHT_CONTENT_MAX_WIDTH),
+                dynamicWidthEnabled = prefs.getBoolean(RootConstants.KEY_HOOK_ISLAND_DYNAMIC_WIDTH, RootConstants.DEFAULT_HOOK_ISLAND_DYNAMIC_WIDTH),
                 pauseBehavior = prefs.getInt(RootConstants.KEY_HOOK_ISLAND_BEHAVIOR_AFTER_PAUSE, RootConstants.DEFAULT_HOOK_ISLAND_BEHAVIOR_AFTER_PAUSE),
                 forceNextSongAtEnd = prefs.getBoolean(
                     RootConstants.KEY_HOOK_ISLAND_FORCE_NEXT_SONG_AT_END,

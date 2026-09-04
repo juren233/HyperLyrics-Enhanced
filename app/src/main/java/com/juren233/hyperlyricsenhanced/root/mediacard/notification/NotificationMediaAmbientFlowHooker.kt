@@ -186,7 +186,7 @@ object NotificationMediaAmbientFlowHooker {
             "detach" -> ControllerHook(Action.DETACH)
             "bindMediaData" -> ControllerHook(Action.BIND)
             NotificationMediaHookMethodProfile.UPDATE_FOREGROUND_COLORS,
-            NotificationMediaHookMethodProfile.UPDATE_MEDIA_BACKGROUND -> NativeBackgroundUpdateHook()
+            NotificationMediaHookMethodProfile.UPDATE_MEDIA_BACKGROUND -> NativeBackgroundUpdateHook(method.name)
             "onDraw" -> ProgressDrawHook()
             else -> null
         }
@@ -285,10 +285,16 @@ object NotificationMediaAmbientFlowHooker {
 
     enum class Action { ATTACH, DETACH, BIND }
 
-    class NativeBackgroundUpdateHook : Hooker {
+    class NativeBackgroundUpdateHook(private val methodName: String) : Hooker {
         override fun intercept(chain: Chain): Any? {
             if (!SystemUiEnhancementGate.isEnabled()) return chain.proceed()
             val controller = chain.thisObject ?: return chain.proceed()
+            if (BuildConfig.DEBUG) {
+                HookLogger.d(
+                    TAG,
+                    "流光原生更新: method=$methodName active=${NotificationMediaBackgroundController.isActive(controller)}"
+                )
+            }
             return if (NotificationMediaBackgroundController.isActive(controller)) {
                 null
             } else {
@@ -512,6 +518,13 @@ object NotificationMediaAmbientFlowHooker {
         val artworkUpdated = readField(controller, "isArtWorkUpdate") == true
         val paletteMode = if (isCustomMode(mode)) "custom" else mode.toString()
         val colorToken = "$paletteMode:$packageName:$song:$artist"
+        if (BuildConfig.DEBUG) {
+            HookLogger.d(
+                TAG,
+                "流光bind: song=$song artworkNull=${artwork == null} artworkUpdated=$artworkUpdated " +
+                    "last=${state.colorToken} pending=${state.pendingColorToken} new=$colorToken"
+            )
+        }
         if (state.pendingColorToken == colorToken) return
         if (!artworkUpdated && state.colorToken == colorToken) return
         state.pendingColorToken = colorToken
@@ -701,6 +714,9 @@ object NotificationMediaAmbientFlowHooker {
         return try {
             val mainColor = MediaAmbientFlowPaletteExtractor.extractCoverMainColor(bitmap)
                 ?: return null
+            if (BuildConfig.DEBUG) {
+                HookLogger.d(TAG, "流光取色(封面色): mainColor=#%06X".format(mainColor))
+            }
             nativeApi?.createPalette(mainColor)
         } finally {
             bitmap.recycle()

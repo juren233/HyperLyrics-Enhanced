@@ -44,7 +44,11 @@ internal data class AppleSystemFontRequest(
 internal data class AppleSystemFontVariationMethods(
     val axisConstructor: Constructor<*>,
     val createFromTypefaceWithVariation: Method,
-    val isVariationInstance: Method,
+    /**
+     * Android 17 (HyperOS 4) removed [Typeface.isVariationInstance]; it only feeds draw
+     * diagnostics, so a missing method must not invalidate the functional variation APIs.
+     */
+    val isVariationInstance: Method?,
 )
 
 internal class AppleSystemFontVariationCache<K : Any, V : Any>(

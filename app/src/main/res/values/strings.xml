@@ -76,6 +76,7 @@
     <string name="label_apple_music_lyrics_blur_min_value">最小值（%1$s），默认 %2$s（范围 %3$s-%4$s）</string>
     <string name="label_apple_music_lyrics_blur_max_value">最大值（%1$s），默认 %2$s（范围 %3$s-%4$s）</string>
     <string name="title_apple_music_follow_system_font_weight">跟随系统字体粗细</string>
+    <string name="summary_apple_music_follow_system_font_weight">仅适配HyperOS</string>
     <string name="title_apple_music_restore_cjk_original_metadata">替换中日韩歌曲信息为原地区原名</string>
     <string name="option_apple_music_content_ui_language_none">不开启</string>
     <string name="option_apple_music_content_ui_language_zh_hans_cn">简体中文（中国）</string>
@@ -509,6 +510,8 @@
     <!-- ———————————————————————— SuperIslandSettingsPage ———————————————————————— -->
     <string name="title_layout">布局</string>
     <string name="title_content">内容</string>
+    <string name="title_island_dynamic_width">动态长度</string>
+    <string name="summary_island_dynamic_width">自动跟随较长一侧收缩，长度上限受下方设定影响</string>
     <string name="title_left_content_width">左侧内容长度</string>
     <string name="title_right_content_width">右侧内容长度</string>
     <string name="label_content_width_range">范围：0 ~ 500</string>

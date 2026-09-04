@@ -96,6 +96,14 @@ object IslandExpandedMediaAmbientFlowHooker {
     private val colorExecutor = Executors.newSingleThreadExecutor { task ->
         Thread(task, "HyperLyrics Enhanced-IslandMediaColor").apply { isDaemon = true }
     }
+    // 封面图标（setFixIcon）先于 binder 的 artWorkDrawable 刷新到达（真机日志：图标 T+0、
+    // binder 滞后 0.6~0.7s，且滞后那跳并不保证出现）。流光封面色必须以图标更新为触发源，
+    // 否则切歌后流光停留在旧色直到收起重展。
+    private val iconColorRequest = AtomicInteger()
+    @Volatile
+    private var iconColorToken: String? = null
+    @Volatile
+    private var iconColorPalette: MediaAmbientFlowPalette? = null
 
     @Volatile
     private var module: XposedModule? = null
@@ -253,6 +261,13 @@ object IslandExpandedMediaAmbientFlowHooker {
                 }
             }
             logFirstArtworkCallback(binder)
+            if (BuildConfig.DEBUG && action != Action.SEAMLESS && action != Action.DETACH) {
+                HookLogger.d(
+                    TAG,
+                    "流光事件: action=${action.name} method=${methodName ?: "-"} nested=$nestedInBind " +
+                        "binder=${System.identityHashCode(binder)}"
+                )
+            }
             if (nestedInBind && (action == Action.ALBUM || action == Action.SEAMLESS)) {
                 return result
             }
@@ -1040,10 +1055,23 @@ object IslandExpandedMediaAmbientFlowHooker {
         val token = "${System.identityHashCode(drawable)}:${drawable.constantState?.hashCode() ?: 0}"
         val state = binderStates.getOrPut(binder) { BinderState() }
         if (state.colorToken == token) {
+            if (BuildConfig.DEBUG) {
+                HookLogger.d(
+                    TAG,
+                    "流光取色: token未变 重放=${state.palette?.mainColor?.let { "#%06X".format(it) } ?: "null"}"
+                )
+            }
             state.palette?.let { palette ->
                 api.setGradientColor(primaryView, palette.mainColor, palette.colors)
             }
             return
+        }
+        if (BuildConfig.DEBUG) {
+            HookLogger.d(
+                TAG,
+                "流光取色: 新token old=${state.colorToken} new=$token " +
+                    "drawable=${drawable.javaClass.simpleName}@${System.identityHashCode(drawable)}"
+            )
         }
         val bitmap = MediaArtworkSampler.sample(drawable) ?: return
         state.colorToken = token
@@ -1075,12 +1103,79 @@ object IslandExpandedMediaAmbientFlowHooker {
                     ) return@post
                     val currentPrimary = api.getMusicBgViews(binder).firstOrNull() ?: return@post
                     current.palette = palette
+                    if (BuildConfig.DEBUG) {
+                        HookLogger.d(TAG, "流光取色应用: mainColor=#%06X".format(palette.mainColor))
+                    }
                     api.setGradientColor(currentPrimary, palette.mainColor, palette.colors)
                 }
             }
         }.onFailure { error ->
             bitmap.recycle()
             HookLogger.e(TAG, "调度展开态媒体取色任务失败", error)
+        }
+    }
+
+    /**
+     * 封面图标更新（setFixIcon）触发的流光快速路径：图标到达时 binder 的 artWorkDrawable
+     * 往往还是旧封面，按 binder token 取色会重放旧色。此处直接对新图标取色并应用到当前
+     * 活跃 binder；之后 binder 路径的慢速刷新会得到相同主色（确定性提取），重复应用无副作用。
+     */
+    fun onIslandAlbumIconUpdated(iconDrawable: Drawable?) {
+        if (iconDrawable == null) return
+        if (!SystemUiEnhancementGate.isEnabled()) return
+        if (nativeApi == null) return
+        if (currentMode() != RootConstants.ISLAND_EXPANDED_MEDIA_AMBIENT_FLOW_MODE_COVER_COLOR) return
+        val token = "icon:${System.identityHashCode(iconDrawable)}:${iconDrawable.constantState?.hashCode() ?: 0}"
+        val cached = iconColorPalette
+        if (iconColorToken == token && cached != null) {
+            applyCoverPalette(cached)
+            return
+        }
+        // 图标是视图持有的 Drawable，生命周期不受控，同步采样成小图后再异步取色。
+        val bitmap = MediaArtworkSampler.sample(iconDrawable) ?: return
+        iconColorToken = token
+        iconColorPalette = null
+        val request = iconColorRequest.incrementAndGet()
+        if (BuildConfig.DEBUG) {
+            HookLogger.d(TAG, "流光取色(图标): 调度 token=$token bitmap=${bitmap.width}x${bitmap.height}")
+        }
+        runCatching {
+            colorExecutor.execute {
+                val palette = runCatching {
+                    MediaAmbientFlowPaletteExtractor.extractCoverMainColor(bitmap)
+                        ?.let { nativeApi?.createPalette(it) }
+                }
+                    .onFailure { HookLogger.e(TAG, "提取展开态媒体图标颜色失败", it) }
+                    .getOrNull()
+                bitmap.recycle()
+                if (palette == null || iconColorRequest.get() != request) return@execute
+                iconColorPalette = palette
+                Handler(Looper.getMainLooper()).post {
+                    if (iconColorRequest.get() != request) return@post
+                    if (currentMode() != RootConstants.ISLAND_EXPANDED_MEDIA_AMBIENT_FLOW_MODE_COVER_COLOR) return@post
+                    if (BuildConfig.DEBUG) {
+                        HookLogger.d(TAG, "流光取色应用(图标): mainColor=#%06X".format(palette.mainColor))
+                    }
+                    applyCoverPalette(palette)
+                }
+            }
+        }.onFailure { error ->
+            bitmap.recycle()
+            HookLogger.e(TAG, "调度展开态媒体图标取色任务失败", error)
+        }
+    }
+
+    private fun applyCoverPalette(palette: MediaAmbientFlowPalette) {
+        val api = nativeApi ?: return
+        val snapshot = synchronized(activeBinders) { activeBinders.toList() }
+        snapshot.forEach { binder ->
+            runCatching {
+                api.getMusicBgViews(binder).firstOrNull()?.let { view ->
+                    api.setGradientColor(view, palette.mainColor, palette.colors)
+                }
+            }.onFailure { error ->
+                HookLogger.e(TAG, "应用展开态媒体图标流光颜色失败", error)
+            }
         }
     }
 

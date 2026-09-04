@@ -75,6 +75,7 @@
     <string name="label_apple_music_lyrics_blur_min_value">Minimum (%1$s), default %2$s (range %3$s-%4$s)</string>
     <string name="label_apple_music_lyrics_blur_max_value">Maximum (%1$s), default %2$s (range %3$s-%4$s)</string>
     <string name="title_apple_music_follow_system_font_weight">Follow system font weight</string>
+    <string name="summary_apple_music_follow_system_font_weight">HyperOS only</string>
     <string name="title_apple_music_restore_cjk_original_metadata">Replace Chinese, Japanese, and Korean song information with original regional names</string>
     <string name="option_apple_music_content_ui_language_none">Off</string>
     <string name="option_apple_music_content_ui_language_zh_hans_cn">Simplified Chinese (China)</string>
@@ -505,6 +506,8 @@
     <!-- ———————————————————————— SuperIslandSettingsPage ———————————————————————— -->
     <string name="title_layout">Layout</string>
     <string name="title_content">Content</string>
+    <string name="title_island_dynamic_width">Dynamic Width</string>
+    <string name="summary_island_dynamic_width">Automatically shrinks to follow the longer side; the length cap follows the settings below</string>
     <string name="title_left_content_width">Left Content Width</string>
     <string name="title_right_content_width">Right Content Width</string>
     <string name="label_content_width_range">Range: 0 ~ 500</string>

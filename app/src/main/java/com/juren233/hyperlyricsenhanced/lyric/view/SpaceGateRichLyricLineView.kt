@@ -33,6 +33,46 @@ class SpaceGateRichLyricLineView(
 
     var alwaysShowSecondary = false
 
+    /**
+     * 动态长度模式：主/次行测量宽度收缩为文字实际宽度，见 [SpaceGateLyricLineView.hugContentWidth]。
+     */
+    var hugContentWidth: Boolean
+        get() = main.hugContentWidth
+        set(value) {
+            main.hugContentWidth = value
+            secondary.hugContentWidth = value
+        }
+
+    /**
+     * 换行内容因换句/预览提升动画被延迟落地后的回调（主线程）。
+     * 动态长度模式下岛宽在内容应用返回时立即测量，延迟落地时需借此触发第二次
+     * 岛宽重算，否则岛宽恒定落后一行；回调为 null 时无任何额外行为。
+     */
+    var onDeferredContentApplied: (() -> Unit)? = null
+
+    /**
+     * 动态长度：预览提升动画期间（内容延迟落地前）让视图按目标行落定后的
+     * 内容宽度参与岛宽测量，使岛宽与提升动画同步过渡。
+     * 预判与落地实测走同一条绘制管线；内容落地时清除，实测值兜底。
+     */
+    private var pendingHugWidth: Int? = null
+
+    internal fun beginDeferredContentWidth(targetLine: IRichLyricLine?) {
+        pendingHugWidth = targetLine?.let(::predictAppliedContentWidth)
+    }
+
+    private fun predictAppliedContentWidth(targetLine: IRichLyricLine): Int {
+        val mainResult = assembler.buildMain(targetLine)
+        val secResult = assembler.buildSecondary(targetLine)
+        val mainWidth = main.measureIncomingHugWidth(mainResult.line)
+        val secondaryWidth = if (secResult.alwaysShow) {
+            secondary.measureIncomingHugWidth(secResult.line)
+        } else {
+            0
+        }
+        return maxOf(mainWidth, secondaryWidth)
+    }
+
     var renderScale = 1.0f
         private set
 
@@ -111,6 +151,7 @@ class SpaceGateRichLyricLineView(
         animationTransition = false
         pendingLine = null
         pendingPosition = null
+        pendingHugWidth = null
         lastPosition = Long.MIN_VALUE
         currentMainText = null
         secondaryIsNextLinePreview = false
@@ -126,8 +167,10 @@ class SpaceGateRichLyricLineView(
     fun endAnimationTransition() {
         animationTransition = false
         if (pendingLine != null) {
+            pendingHugWidth = null
             refreshLines()
             pendingPosition?.let { setPosition(it) }
+            onDeferredContentApplied?.invoke()
         }
         pendingLine = null
         pendingPosition = null
@@ -177,7 +220,9 @@ class SpaceGateRichLyricLineView(
         }
         if (nextLineTransitionRunning) {
             cancelNextLinePromotion()
+            pendingHugWidth = null
             refreshLines(allowNextLinePromotion = false, bypassIdentityCheck = true)
+            onDeferredContentApplied?.invoke()
         }
         lastPosition = position
         main.seekTo(position)
@@ -284,6 +329,14 @@ class SpaceGateRichLyricLineView(
     }
 
     override fun onMeasure(wSpec: Int, hSpec: Int) {
+        val pending = pendingHugWidth
+        if (pending != null) {
+            // 预览提升动画期间：按预判的落定内容宽度参与岛宽测量，
+            // 受当前可用宽度约束，与 hug 实测的 spec 收敛行为一致
+            val target = pending.coerceAtMost(MeasureSpec.getSize(wSpec))
+            super.onMeasure(MeasureSpec.makeMeasureSpec(target, MeasureSpec.EXACTLY), hSpec)
+            return
+        }
         if (renderScale != 1.0f && renderScale > 0) {
             val origW = MeasureSpec.getSize(wSpec)
             val mode = MeasureSpec.getMode(wSpec)
@@ -411,7 +464,9 @@ class SpaceGateRichLyricLineView(
     private fun finishNextLinePromotion() {
         clearNextLineTransitionState()
         nextLineTransitionRunning = false
+        pendingHugWidth = null
         refreshLines(allowNextLinePromotion = false, bypassIdentityCheck = true)
+        onDeferredContentApplied?.invoke()
         if (alwaysShowSecondary) {
             secondary.alpha = 0f
             secondary.animate()

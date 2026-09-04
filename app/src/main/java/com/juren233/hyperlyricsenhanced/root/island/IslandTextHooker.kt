@@ -21,6 +21,8 @@ internal object IslandTextHooker {
         "miui.systemui.dynamicisland.view.DynamicIslandExpandedView"
     private const val TEMPLATE_BUILDER_CLASS = "miui.systemui.dynamicisland.template.IslandTemplateBuilder"
     private const val ADAPTER_CLASS = "miui.systemui.dynamicisland.module.IslandModuleViewHolderAdapter"
+    private const val PHONE_HELPER_CLASS =
+        "miui.systemui.dynamicisland.window.content.helpers.DynamicIslandContentViewPhoneHelper"
 
     fun hook(module: XposedModule, cl: ClassLoader, includeMediaHooks: Boolean = true) {
         installFeature("真实岛") {
@@ -39,6 +41,8 @@ internal object IslandTextHooker {
                     module.hook(method).intercept(IslandWidthHooker.CalculateWidthHook())
                     HookLogger.d(TAG, "已 Hook calculateBigIslandWidth: $method")
                 }
+
+            installDynamicMinWidthHook(module, cl)
 
             contentViewClass.methods
                 .filter { it.name == "hideIslandLayout" || it.name == "showIslandLayout" }
@@ -118,6 +122,20 @@ internal object IslandTextHooker {
                     HookLogger.d(TAG, "已 Hook adapter.updateView: $method")
                 }
         }
+    }
+
+    /**
+     * 动态长度：Hook 手机版 helper 的最小岛宽下限。旧系统缺该类时跳过。
+     */
+    internal fun installDynamicMinWidthHook(module: XposedModule, cl: ClassLoader) {
+        val helperClass = runCatching { cl.loadClass(PHONE_HELPER_CLASS) }.getOrNull() ?: return
+        helperClass.methods
+            .filter { it.name == "getBigIslandMinWidth" && it.parameterTypes.isEmpty() }
+            .forEach { method ->
+                module.deoptimize(method)
+                module.hook(method).intercept(IslandWidthHooker.BigIslandMinWidthHook())
+                HookLogger.d(TAG, "已 Hook getBigIslandMinWidth: $method")
+            }
     }
 
     internal fun installMiniBarHook(module: XposedModule, cl: ClassLoader) {

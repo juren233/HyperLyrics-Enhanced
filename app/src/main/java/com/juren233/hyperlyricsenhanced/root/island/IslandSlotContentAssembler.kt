@@ -599,6 +599,19 @@ internal object IslandSlotContentAssembler {
             (willAnimateNextLinePromotion && !lyricsJustBecameAvailable) ||
             view.parent == null ||
             !view.isAttachedToWindow
+        // 动态长度：预览提升动画会把内容更新延迟到动画结束时落地。动画开始前
+        // 先让视图按目标行落定后的实测宽度参与岛宽测量，使岛宽与上浮动画同步
+        // 过渡；内容落地时 pendingHugWidth 清除并由 onDeferredContentApplied 实测兜底。
+        if (config.dynamicWidthEnabled) {
+            val deferredByPromotion = willAnimateNextLinePromotion &&
+                !lyricsJustBecameAvailable &&
+                view.parent != null &&
+                view.isAttachedToWindow
+            when (view) {
+                is RichLyricLineView -> view.beginDeferredContentWidth(targetLine.takeIf { deferredByPromotion })
+                is SpaceGateRichLyricLineView -> view.beginDeferredContentWidth(targetLine.takeIf { deferredByPromotion })
+            }
+        }
         applyContentUpdate(
             view = view,
             config = config,
@@ -723,19 +736,35 @@ internal object IslandSlotContentAssembler {
             return
         }
         val preset = YoYoPresets.getById(config.lyricAnimationId) ?: YoYoPresets.Default
+        // 动态长度下换句/预览提升动画会把内容更新延迟 220~300ms 才落地，
+        // 落地点必须补一次岛宽重算（relayoutAfterDeferredContent），
+        // 否则岛宽恒定按上一行计算。动画本身原样保留。
+        val animatedUpdate: (View) -> Unit = { target ->
+            update(target)
+            relayoutAfterDeferredContent(target, config)
+        }
         when (view) {
             is RichLyricLineView -> if (entranceOnly) {
                 view.animateEntrance(preset) { update(this) }
             } else {
-                view.animateUpdate(preset) { update(this) }
+                view.animateUpdate(preset) { animatedUpdate(this) }
             }
             is SpaceGateRichLyricLineView -> if (entranceOnly) {
                 view.animateEntrance(preset) { update(this) }
             } else {
-                view.animateUpdate(preset) { update(this) }
+                view.animateUpdate(preset) { animatedUpdate(this) }
             }
             else -> update(view)
         }
+    }
+
+    /**
+     * 动态长度：延迟落地（换句动画回调、预览提升动画结束）后的第二次岛宽重算。
+     * 同步内容路径不经过这里，由调用方在内容应用后自行重算一次。
+     */
+    private fun relayoutAfterDeferredContent(view: View, config: IslandSlotRuntimeConfig) {
+        if (!config.dynamicWidthEnabled) return
+        IslandViewHelper.triggerSystemRelayoutForDescendant(view)
     }
 
     internal fun shouldAnimateContentUpdate(
@@ -764,16 +793,28 @@ internal object IslandSlotContentAssembler {
             nextLinePreview = isNextLinePreviewEnabled(prefs, config)
         )
         when (view) {
-            is RichLyricLineView -> view.setDisplayOptions(
-                options.displayMode,
-                options.fallback,
-                options.hideSecondaryContent
-            )
-            is SpaceGateRichLyricLineView -> view.setDisplayOptions(
-                options.displayMode,
-                options.fallback,
-                options.hideSecondaryContent
-            )
+            is RichLyricLineView -> {
+                view.setDisplayOptions(
+                    options.displayMode,
+                    options.fallback,
+                    options.hideSecondaryContent
+                )
+                view.hugContentWidth = config.dynamicWidthEnabled
+                view.onDeferredContentApplied = {
+                    IslandViewHelper.triggerSystemRelayoutForDescendant(view)
+                }
+            }
+            is SpaceGateRichLyricLineView -> {
+                view.setDisplayOptions(
+                    options.displayMode,
+                    options.fallback,
+                    options.hideSecondaryContent
+                )
+                view.hugContentWidth = config.dynamicWidthEnabled
+                view.onDeferredContentApplied = {
+                    IslandViewHelper.triggerSystemRelayoutForDescendant(view)
+                }
+            }
         }
     }
 

@@ -29,6 +29,7 @@ import com.juren233.hyperlyricsenhanced.common.IslandAlbumCoverWhitelist
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.common.media.MediaMetadataHelper
 import com.juren233.hyperlyricsenhanced.root.HookEntry
+import com.juren233.hyperlyricsenhanced.root.mediacard.island.IslandExpandedMediaAmbientFlowHooker
 import com.juren233.hyperlyricsenhanced.root.LyriconDataBridge
 import com.juren233.hyperlyricsenhanced.root.SystemUiEnhancementGate
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
@@ -2195,6 +2196,19 @@ internal object IslandAlbumCoverStyleHooker {
             runCatching {
                 val holder = chain.thisObject ?: return@runCatching
                 val data = chain.args.firstOrNull() ?: return@runCatching
+                val mediaAlbum = isMediaAlbum(accessor, holder)
+                if (BuildConfig.DEBUG && mediaAlbum) {
+                    HookLogger.d(
+                        TAG,
+                        "流光探测: 封面图标更新 method=$methodName " +
+                            "data=${data?.javaClass?.simpleName}@${System.identityHashCode(data)}"
+                    )
+                }
+                // 在封面样式替换 Drawable 之前，把原生封面图标交给流光取色快速路径。
+                if (mediaAlbum) {
+                    val iconDrawable = (targetField.get(holder) as? ImageView)?.drawable
+                    IslandExpandedMediaAmbientFlowHooker.onIslandAlbumIconUpdated(iconDrawable)
+                }
                 applyStyle(accessor, holder, data, targetField, methodName)
             }.onFailure { HookLogger.e(TAG, "应用超级岛封面样式失败", it) }
             return result

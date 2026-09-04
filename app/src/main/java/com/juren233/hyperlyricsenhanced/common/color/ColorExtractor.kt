@@ -80,9 +80,20 @@ object ColorExtractor {
         }
 
         val k = (maxColors * 3).coerceAtMost(size)
-        val clusters = kMeansLabOptimized(lArr, aArr, bArr, wArr, k)
+        // 确定性播种：同一封面在任何功能（字体封面色、动态流光、进度光效）中多次取色结果必须一致，
+        // 随机初始化会让各处对同一封面选出不同主色。
+        val clusters = kMeansLabOptimized(lArr, aArr, bArr, wArr, k, Random(contentSeed(rawPixels)))
 
         return filterRepresentations(clusters, maxColors)
+    }
+
+    private fun contentSeed(pixels: IntArray): Long {
+        var seed = 1125899906842597L
+        val step = maxOf(1, pixels.size / 64)
+        for (i in pixels.indices step step) {
+            seed = seed * 31 + pixels[i]
+        }
+        return seed
     }
 
     /**
@@ -150,10 +161,17 @@ object ColorExtractor {
         return sqrt((lab1[0] - lab2[0]).let { it * it } + (lab1[1] - lab2[1]).let { it * it } + (lab1[2] - lab2[2]).let { it * it })
     }
 
-    private fun kMeansLabOptimized(lArr: FloatArray, aArr: FloatArray, bArr: FloatArray, wArr: FloatArray, k: Int): List<FloatArray> {
+    private fun kMeansLabOptimized(
+        lArr: FloatArray,
+        aArr: FloatArray,
+        bArr: FloatArray,
+        wArr: FloatArray,
+        k: Int,
+        random: Random
+    ): List<FloatArray> {
         val size = lArr.size
         val cL = FloatArray(k); val cA = FloatArray(k); val cB = FloatArray(k); val assignments = IntArray(size)
-        repeat(k) { i -> val idx = Random.nextInt(size); cL[i] = lArr[idx]; cA[i] = aArr[idx]; cB[i] = bArr[idx] }
+        repeat(k) { i -> val idx = random.nextInt(size); cL[i] = lArr[idx]; cA[i] = aArr[idx]; cB[i] = bArr[idx] }
         repeat(KMEANS_ITERATIONS) {
             for (i in 0 until size) {
                 var minDist = Float.MAX_VALUE; var closest = 0

@@ -20,6 +20,8 @@ import android.view.ViewGroup
 import android.view.ViewParent
 import androidx.core.graphics.withSave
 import androidx.core.view.doOnAttach
+import com.juren233.hyperlyricsenhanced.BuildConfig
+import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import com.juren233.hyperlyricsenhanced.lyric.model.LyricLine
 import com.juren233.hyperlyricsenhanced.lyric.view.Highlight
 import com.juren233.hyperlyricsenhanced.lyric.view.LyricPlayListener
@@ -32,6 +34,7 @@ import com.juren233.hyperlyricsenhanced.lyric.view.line.model.LyricModel
 import com.juren233.hyperlyricsenhanced.lyric.view.line.model.createModel
 import com.juren233.hyperlyricsenhanced.lyric.view.line.model.emptyLyricModel
 import com.juren233.hyperlyricsenhanced.lyric.view.sp
+import kotlin.math.abs
 import kotlin.math.ceil
 
 open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null) :
@@ -105,6 +108,17 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
         set(value) {
             field = value
             syncRenderer.playListener = value
+        }
+
+    /**
+     * 动态长度模式：测量宽度收缩为当前行文字实际宽度（不超过可用宽度），
+     * 让系统按内容实测宽度计算超级岛总宽度；文字超长时回到可用宽度并沿用滚动。
+     */
+    var hugContentWidth: Boolean = false
+        set(value) {
+            if (field == value) return
+            field = value
+            requestLayout()
         }
 
     var isWordCharMotionEnabled: Boolean
@@ -539,7 +553,8 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
     }
 
     override fun onMeasure(wSpec: Int, hSpec: Int) {
-        val w = MeasureSpec.getSize(wSpec)
+        val specW = MeasureSpec.getSize(wSpec)
+        val w = if (hugContentWidth) resolveHugContentWidth(specW) else specW
         val charMotionPadding = if (isWordCharMotionEnabled) {
             val maxLift = maxOf(wordMotion.cjkLiftFactor, wordMotion.latinLiftFactor)
             ceil(textPaint.textSize * maxLift).toInt()
@@ -548,6 +563,48 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
         }
         val textHeight = (textPaint.descent() - textPaint.ascent()).toInt() + charMotionPadding
         setMeasuredDimension(w, resolveSize(textHeight, hSpec))
+    }
+
+    private fun resolveHugContentWidth(specWidth: Int): Int {
+        val shadowRadius = textPaint.getShadowLayerRadius()
+        val shadowPad = if (shadowRadius > 0f) {
+            ceil(shadowRadius + abs(textPaint.getShadowLayerDx())).toInt()
+        } else {
+            0
+        }
+        val hug = (ceil(lineWidth).toInt() + shadowPad).coerceIn(0, specWidth)
+        if (BuildConfig.DEBUG) {
+            HookLogger.d(
+                "LyricHug",
+                "slot=${(parent as? View)?.tag}, lineWidth=$lineWidth, shadowPad=$shadowPad, " +
+                    "spec=$specWidth, final=$hug, view=${System.identityHashCode(this).toString(16)}"
+            )
+        }
+        return hug
+    }
+
+    /**
+     * 用本视图当前的绘制参数（字号/字体选择器/阴影/间奏点）测量一行歌词
+     * 落定后的 hug 宽度，不改变视图任何状态。
+     * 与 [setLyric] 后的 [lineWidth] 实测走同一条管线，用于动态长度在
+     * 预览提升动画期间同步预判内容落地后的岛宽。
+     */
+    fun measureIncomingHugWidth(rawLine: LyricLine?): Int {
+        val line = if (rawLine?.text.isNullOrBlank()) null else rawLine
+        val model = line?.normalize()?.createModel() ?: return 0
+        val width = if (interludeDotsRenderer.isIndicator(model)) {
+            interludeDotsRenderer.width(textPaint.textSize)
+        } else {
+            model.updateSizes(textPaint, currentTypefaceSelector)
+            model.width
+        }
+        val shadowRadius = textPaint.getShadowLayerRadius()
+        val shadowPad = if (shadowRadius > 0f) {
+            ceil(shadowRadius + abs(textPaint.getShadowLayerDx())).toInt()
+        } else {
+            0
+        }
+        return ceil(width).toInt() + shadowPad
     }
 
     override fun onVisibilityAggregated(isVisible: Boolean) {

@@ -14,6 +14,7 @@ import android.app.Notification
 import android.app.PendingIntent
 import android.content.ComponentName
 import android.content.res.Resources
+import android.database.ContentObserver
 import android.graphics.Canvas
 import android.graphics.Bitmap
 import android.graphics.Paint
@@ -29,6 +30,7 @@ import android.media.MediaDescription
 import android.media.MediaMetadata
 import android.media.session.MediaSession
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -92,6 +94,7 @@ import java.lang.reflect.Method
 import java.lang.reflect.Modifier
 import java.lang.ref.WeakReference
 import java.io.File
+import java.nio.ByteBuffer
 import java.security.MessageDigest
 import java.util.Collections
 import java.util.IdentityHashMap
@@ -115,6 +118,13 @@ internal class AppleSystemFontHooks(
 ) {
     private companion object {
         const val MAX_APPLE_SYSTEM_FONT_VARIATION_CACHE_ENTRIES = 64
+        const val SYSTEM_FONT_WEIGHT_SCALE_KEY = "key_miui_font_weight_scale"
+
+        /** Apple 主字体家族 XML 背后的可变 TTF 资源名（6.5.0–6.5.2 稳定）。 */
+        const val APPLE_SF_PRO_FONT_RESOURCE = "sf_pro_android_ui"
+
+        /** Android 二进制 XML（RES_XML_TYPE=0x0003）小端首字节。 */
+        const val RES_XML_FIRST_BYTE: Byte = 0x03
     }
 
     private val application: Application
@@ -172,6 +182,17 @@ internal class AppleSystemFontHooks(
     private var appleSystemFontScaleLastReadUptimeMillis = -1L
     @Volatile
     private var hyperOsFontSettingsLastSyncedScale = -1
+    @Volatile
+    private var systemFontWeightObserverLastScale = -1
+    private val appleSystemFontResourceNameByTypeface =
+        Collections.synchronizedMap(WeakHashMap<Typeface, String>())
+    private val appleSystemFontResourceFileCache = ConcurrentHashMap<String, Typeface>()
+
+    private val appleSystemFontResourceBuffersByName = ConcurrentHashMap<String, ByteBuffer>()
+
+    private val appleSystemFontXmlResourceNames: MutableSet<String> = ConcurrentHashMap.newKeySet()
+    private val appleFontDerivationWidthKeys = ConcurrentHashMap.newKeySet<String>()
+    private val appleFontDerivationFailureKeys = ConcurrentHashMap.newKeySet<String>()
     private val appleSystemFontVariationMethods: AppleSystemFontVariationMethods? by lazy(
         LazyThreadSafetyMode.SYNCHRONIZED,
     ) {
@@ -227,6 +248,44 @@ internal class AppleSystemFontHooks(
         }
     }
 
+
+    /**
+     * OS4 的字体粗细变更不再触发 Apple Music 视图重建（`AM-FONT-WEIGHT-003`），
+     * 因此必须自行监听系统滑块键并主动重应用；OS3 上该监听只是既有
+     * 配置变更路径之外的一道幂等保险，不改变原行为。
+     */
+    private fun registerSystemFontWeightSettingsObserver() {
+        runCatching {
+            val resolver = application.contentResolver
+            val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
+                override fun onChange(selfChange: Boolean, uri: Uri?) {
+                    if (!isFollowSystemFontWeightEnabled()) return
+                    val scale = currentMiuiFontWeightScale(forceRefresh = true)
+                    // 滑块写入 System/Global 两个命名空间会触发两次回调，按值去重。
+                    if (scale == systemFontWeightObserverLastScale) return
+                    systemFontWeightObserverLastScale = scale
+                    ProviderLogger.info(
+                        "Apple 系统字体粗细滑块已变化：scale=$scale, 重应用已跟踪视图"
+                    )
+                    refreshAppleSystemFontWeight()
+                }
+            }
+            resolver.registerContentObserver(
+                Settings.System.getUriFor(SYSTEM_FONT_WEIGHT_SCALE_KEY),
+                false,
+                observer,
+            )
+            resolver.registerContentObserver(
+                Settings.Global.getUriFor(SYSTEM_FONT_WEIGHT_SCALE_KEY),
+                false,
+                observer,
+            )
+            systemFontWeightObserverLastScale = currentMiuiFontWeightScale(forceRefresh = true)
+            ProviderLogger.info("Apple 系统字体粗细滑块监听已注册")
+        }.onFailure {
+            ProviderLogger.error("Apple 系统字体粗细滑块监听注册失败", it)
+        }
+    }
 
     fun hookAppleSystemFontWeight() {
         val installedHooks = mutableListOf<String>()
@@ -559,6 +618,8 @@ internal class AppleSystemFontHooks(
             installedHooks = installedHooks,
             failedHooks = failedHooks,
         )
+
+        registerSystemFontWeightSettingsObserver()
 
         if (installedHooks.isNotEmpty()) {
             ProviderLogger.info(
@@ -1222,6 +1283,7 @@ internal class AppleSystemFontHooks(
             return original
         }
         appleSystemFontManagedTypefaces.add(original)
+        appleSystemFontResourceNameByTypeface[original] = resourceIdentity.third
         if (!isFollowSystemFontWeightEnabled()) return original
 
         val replacement = createAppleWeightAdjustedTypeface(original)
@@ -1271,25 +1333,42 @@ internal class AppleSystemFontHooks(
         } else {
             null
         }
-        val result = cjkComposite ?: createAppleTypefaceWithVariation(
+        // 资源文件派生仅用于 OS4（Android 17）回归环境；OS3 必须保持已验收的
+        // cjkComposite → createFromTypefaceWithVariation 原顺序执行（用户约束：修 OS4 不得动 OS3 实现）。
+        val resourceFile = if (Build.VERSION.SDK_INT >= 37) {
+            createAppleTypefaceFromResourceFile(
+                original = original,
+                effectiveWeight = effectiveWeight,
+                italic = italic,
+                text = text,
+                textSizePx = textSizePx,
+                semanticWeight = semanticWeight,
+            )
+        } else {
+            null
+        }
+        val result = resourceFile ?: cjkComposite ?: createAppleTypefaceWithVariation(
             original = original,
             effectiveWeight = effectiveWeight,
             italic = italic,
         ) ?: original
+        val strategy = when {
+            resourceFile != null -> "resource_file"
+            cjkComposite != null -> "cjk_composite"
+            result !== original -> "variation"
+            else -> "unavailable"
+        }
         rememberAppleSystemFontReplacement(
             replacement = result,
             original = original,
             effectiveWeight = effectiveWeight,
             semanticWeight = semanticWeight,
-            usesCjkFallback = cjkComposite != null,
+            usesCjkFallback = cjkComposite != null ||
+                (resourceFile != null && usesCjkFallback),
             italic = italic,
         )
         if (BuildConfig.DEBUG) {
-            val path = if (result !== original) {
-                "apple_typeface_variation_axis"
-            } else {
-                "apple_typeface_variation_unavailable"
-            }
+            val path = "apple_typeface_$strategy"
             val traceKey =
                 "system_typeface:$path:$semanticWeight:$effectiveWeight:$italic:${text != null}"
             if (appleSystemFontDebugTraceKeys.add(traceKey)) {
@@ -1297,13 +1376,190 @@ internal class AppleSystemFontHooks(
                     "Apple 系统字体粗细生成：path=$path, semanticWeight=$semanticWeight, " +
                         "effectiveWeight=$effectiveWeight, resultWeight=${result.weight}, " +
                         "sameAsOriginal=${result === original}, italic=$italic, " +
-                        "cjkFallback=${cjkComposite != null}, " +
+                        "cjkFallback=${cjkComposite != null || (resourceFile != null && usesCjkFallback)}, " +
                         "variationInstance=${isAppleTypefaceVariationInstance(result)}, " +
                         "textSizePx=$textSizePx, scale=${currentMiuiFontWeightScale()}"
                 )
             }
         }
         return result
+    }
+
+    /**
+     * A17（OS4）上旧的 fontFamilies 反射链与 createFromTypefaceWithVariation 都不再可靠
+     * （前者元素类型变化/hiddenapi BLOCKED 导致静默失败，后者对象不同但渲染无差异，
+     * 见 `AM-FONT-WEIGHT-003`）。本策略只用公开 API：直接取 Apple APK 里的
+     * 原始可变 TTF 字节，用 [Font.Builder] 写入 wght 轴并按文本追加 MiSans fallback。
+     */
+    private fun createAppleTypefaceFromResourceFile(
+        original: Typeface,
+        effectiveWeight: Int,
+        italic: Boolean,
+        text: CharSequence?,
+        textSizePx: Float?,
+        semanticWeight: Int,
+    ): Typeface? {
+        val resources = application.resources
+        val packageName = application.packageName
+        val recorded = appleSystemFontResourceNameByTypeface[original]
+        val candidates = buildList {
+            if (recorded != null) add(recorded)
+            add(APPLE_SF_PRO_FONT_RESOURCE)
+        }
+        val usesCjkFallback = AppleSystemFontWeightPolicy.shouldUseSystemCjkFallback(text)
+        val cjkAxis = if (usesCjkFallback) {
+            hyperOsFontWeightMethods?.let { methods ->
+                @Suppress("DEPRECATION")
+                val textSizeSp = (textSizePx ?: 16f).let { sizePx ->
+                    val scaledDensity = application.resources.displayMetrics.scaledDensity
+                    if (scaledDensity > 0f) sizePx / scaledDensity else sizePx
+                }
+                hyperOsCjkWeightAxis(
+                    methods = methods,
+                    semanticWeight = semanticWeight,
+                    textSizeSp = textSizeSp,
+                )
+            }
+        } else {
+            null
+        }
+        candidates.forEach { name ->
+            if (name in appleSystemFontXmlResourceNames) return@forEach
+            val cacheKey = "$name:$effectiveWeight:$italic:${cjkAxis ?: "none"}"
+            val typeface = appleSystemFontResourceFileCache[cacheKey] ?: runCatching {
+                val fontData = appleSystemFontResourceBuffer(name, resources, packageName)
+                    ?: return@runCatching null
+                buildTypefaceFromResourceBytes(
+                    fontData = fontData,
+                    effectiveWeight = effectiveWeight,
+                    italic = italic,
+                    cjkAxis = cjkAxis,
+                    semanticWeight = semanticWeight,
+                )?.also {
+                    if (appleSystemFontResourceFileCache.size >= 256) {
+                        appleSystemFontResourceFileCache.clear()
+                    }
+                    appleSystemFontResourceFileCache[cacheKey] = it
+                }
+            }.onFailure { throwable ->
+                logAppleFontDerivationFailure(
+                    "resource_file:$name",
+                    "${throwable.javaClass.simpleName}: ${throwable.message}",
+                )
+            }.getOrNull()
+            if (typeface != null) {
+                logAppleFontDerivationWidths(
+                    strategy = "resource_file($name)",
+                    original = original,
+                    derived = typeface,
+                    effectiveWeight = effectiveWeight,
+                    usesCjkFallback = usesCjkFallback,
+                )
+                return typeface
+            }
+        }
+        return null
+    }
+
+    /**
+     * 每个资源名只做一次 `getIdentifier` + `openRawResource` + 直接缓冲分配（SF Pro 约 1MB）。
+     * 派生挂在 `TextView.setTypeface`/`setText` 等高频路径上，任何按调用重复的 I/O 都会直接
+     * 变成 AM 主线程掉帧（150233 轮真机证据：5 分钟 69 次 Choreographer 掉帧、峰值 330 帧）。
+     */
+    private fun appleSystemFontResourceBuffer(
+        name: String,
+        resources: Resources,
+        packageName: String,
+    ): ByteBuffer? {
+        appleSystemFontResourceBuffersByName[name]?.let { return it.duplicate() }
+        val resourceId = resources.getIdentifier(name, "font", packageName)
+        if (resourceId == 0) {
+            logAppleFontDerivationFailure("resource_id:$name", "identifier=0")
+            return null
+        }
+        val bytes = resources.openRawResource(resourceId).use { it.readBytes() }
+        if (bytes.size >= 4 && bytes[0] == RES_XML_FIRST_BYTE) {
+            // font-family XML（regular.xml 等）而非 TTF；负缓存后不再重复读字节探测。
+            appleSystemFontXmlResourceNames.add(name)
+            logAppleFontDerivationFailure("resource_xml:$name", "family-xml-not-ttf")
+            return null
+        }
+        // Font.Builder 只接受 direct 缓冲（堆缓冲直接抛
+        // "Only direct buffer can be used as the source of font data"，见 AM-FONT-WEIGHT-003 150232 轮）。
+        val direct = ByteBuffer.allocateDirect(bytes.size).put(bytes)
+        direct.flip()
+        appleSystemFontResourceBuffersByName[name] = direct
+        return direct.duplicate()
+    }
+
+    private fun buildTypefaceFromResourceBytes(
+        fontData: ByteBuffer,
+        effectiveWeight: Int,
+        italic: Boolean,
+        cjkAxis: Int?,
+        semanticWeight: Int,
+    ): Typeface? = runCatching {
+        val font = Font.Builder(fontData)
+            .setWeight(effectiveWeight.coerceIn(1, 1000))
+            .setSlant(if (italic) FontStyle.FONT_SLANT_ITALIC else FontStyle.FONT_SLANT_UPRIGHT)
+            .setFontVariationSettings("'wght' $effectiveWeight")
+            .build()
+        val builder = Typeface.CustomFallbackBuilder(
+            FontFamily.Builder(font).build(),
+        ).setStyle(
+            FontStyle(
+                AppleSystemFontWeightPolicy.compositeStyleWeight(semanticWeight),
+                if (italic) FontStyle.FONT_SLANT_ITALIC else FontStyle.FONT_SLANT_UPRIGHT,
+            ),
+        )
+        if (cjkAxis != null) {
+            hyperOsFontWeightMethods?.let { methods ->
+                val cjkFont = Font.Builder(File(methods.miuiFontPath))
+                    .setWeight(semanticWeight.coerceIn(1, 1000))
+                    .setFontVariationSettings("'wght' $cjkAxis")
+                    .build()
+                builder.addCustomFallback(FontFamily.Builder(cjkFont).build())
+            }
+        }
+        builder.build()
+    }.onFailure { throwable ->
+        logAppleFontDerivationFailure(
+            "resource_build",
+            "${throwable.javaClass.simpleName}: ${throwable.message}",
+        )
+    }.getOrNull()
+
+    private fun logAppleFontDerivationWidths(
+        strategy: String,
+        original: Typeface,
+        derived: Typeface,
+        effectiveWeight: Int,
+        usesCjkFallback: Boolean,
+    ) {
+        if (!BuildConfig.DEBUG) return
+        if (!appleFontDerivationWidthKeys.add("$strategy:$effectiveWeight:$usesCjkFallback")) return
+        runCatching {
+            fun width(tf: Typeface, sample: String): Float = Paint().apply {
+                textSize = 100f
+                typeface = tf
+            }.measureText(sample)
+            val latinSample = "Wave Illegible 400"
+            val cjkSample = "演员测试歌曲歌词"
+            ProviderLogger.info(
+                "Apple 字体派生宽度对照：strategy=$strategy, effectiveWeight=$effectiveWeight, " +
+                    "latinOriginal=${width(original, latinSample)}, " +
+                    "latinDerived=${width(derived, latinSample)}, " +
+                    "cjkOriginal=${width(original, cjkSample)}, " +
+                    "cjkDerived=${width(derived, cjkSample)}, cjkFallback=$usesCjkFallback"
+            )
+        }
+    }
+
+    private fun logAppleFontDerivationFailure(strategy: String, detail: String) {
+        if (!BuildConfig.DEBUG) return
+        if (appleFontDerivationFailureKeys.add(strategy)) {
+            ProviderLogger.error("Apple 字体派生策略失败：strategy=$strategy, detail=$detail")
+        }
     }
 
     private fun createAppleTypefaceWithSystemCjkFallback(
@@ -1339,14 +1595,17 @@ internal class AppleSystemFontHooks(
             val originalFamily = originalFamilies
                 ?.filterIsInstance<FontFamily>()
                 ?.firstOrNull()
-                ?: return@runCatching null
+                ?: throw IllegalStateException(
+                    "fontFamilies-font-family-missing: " +
+                        "families=${originalFamilies?.map { it?.javaClass?.name }}",
+                )
             val originalFont = originalFamily.getFont(0)
             val primaryFont = buildFontWithWeight(
                 source = originalFont,
                 weight = effectiveSfProWeight,
                 italic = italic,
                 variation = "'wght' $effectiveSfProWeight",
-            ) ?: return@runCatching null
+            ) ?: throw IllegalStateException("primary-font-unavailable")
             val cjkFont = Font.Builder(File(methods.miuiFontPath))
                 .setWeight(semanticWeight.coerceIn(1, 1000))
                 .setFontVariationSettings("'wght' $cjkAxis")
@@ -1570,10 +1829,21 @@ internal class AppleSystemFontHooks(
                 Typeface::class.java,
                 List::class.java,
             ).apply { isAccessible = true }
-            val isVariationInstance = Typeface::class.java.getDeclaredMethod(
-                "isVariationInstance",
-            ).apply { isAccessible = true }
-            ProviderLogger.info("Apple SF Pro 可变字体 wght 轴接口已接入")
+            // Android 17 (HyperOS 4) removed Typeface.isVariationInstance; the method only
+            // feeds draw diagnostics and must not gate the functional variation APIs.
+            val isVariationInstance = runCatching {
+                Typeface::class.java.getDeclaredMethod(
+                    "isVariationInstance",
+                ).apply { isAccessible = true }
+            }.getOrNull()
+            ProviderLogger.info(
+                "Apple SF Pro 可变字体 wght 轴接口已接入" +
+                    if (isVariationInstance == null) {
+                        "（isVariationInstance 缺失，仅诊断能力降级）"
+                    } else {
+                        ""
+                    },
+            )
             AppleSystemFontVariationMethods(
                 axisConstructor = axisConstructor,
                 createFromTypefaceWithVariation = createFromTypefaceWithVariation,
@@ -1588,8 +1858,9 @@ internal class AppleSystemFontHooks(
     private fun isAppleTypefaceVariationInstance(typeface: Typeface?): Boolean? {
         typeface ?: return null
         val methods = appleSystemFontVariationMethods ?: return null
+        val isVariationInstance = methods.isVariationInstance ?: return null
         return runCatching {
-            methods.isVariationInstance.invoke(typeface) as? Boolean
+            isVariationInstance.invoke(typeface) as? Boolean
         }.getOrNull()
     }
 
@@ -1800,9 +2071,9 @@ internal class AppleSystemFontHooks(
             }
             val resolver = application.contentResolver
             val scale = runCatching {
-                Settings.System.getInt(resolver, "key_miui_font_weight_scale")
+                Settings.System.getInt(resolver, SYSTEM_FONT_WEIGHT_SCALE_KEY)
             }.getOrNull() ?: runCatching {
-                Settings.Global.getInt(resolver, "key_miui_font_weight_scale")
+                Settings.Global.getInt(resolver, SYSTEM_FONT_WEIGHT_SCALE_KEY)
             }.getOrNull() ?: 50
             appleSystemFontScaleCache = scale.coerceIn(0, 100)
             appleSystemFontScaleLastReadUptimeMillis = now

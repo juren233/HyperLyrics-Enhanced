@@ -124,6 +124,7 @@ object RootConstants {
     const val KEY_HOOK_ISLAND_RIGHT_PADDING_RIGHT = "key_hook_island_right_padding_right"
     const val KEY_HOOK_ISLAND_LEFT_CONTENT_MAX_WIDTH = "key_hook_island_left_content_max_width"
     const val KEY_HOOK_ISLAND_RIGHT_CONTENT_MAX_WIDTH = "key_hook_island_right_content_max_width"
+    const val KEY_HOOK_ISLAND_DYNAMIC_WIDTH = "key_hook_island_dynamic_width"
     const val KEY_HOOK_ISLAND_BEHAVIOR_AFTER_PAUSE = "key_hook_island_behavior_after_pause"
     const val KEY_HOOK_ISLAND_FORCE_NEXT_SONG_AT_END = "key_hook_island_force_next_song_at_end"
     const val KEY_HOOK_ISLAND_NEXT_SONG_DURATION = "key_hook_island_next_song_duration"
@@ -438,6 +439,7 @@ object RootConstants {
     const val DEFAULT_HOOK_ISLAND_RIGHT_PADDING_RIGHT = 0
     const val DEFAULT_HOOK_ISLAND_LEFT_CONTENT_MAX_WIDTH = 80
     const val DEFAULT_HOOK_ISLAND_RIGHT_CONTENT_MAX_WIDTH = 100
+    const val DEFAULT_HOOK_ISLAND_DYNAMIC_WIDTH = false
     const val DEFAULT_HOOK_ISLAND_BEHAVIOR_AFTER_PAUSE = 0
     const val DEFAULT_HOOK_ISLAND_FORCE_NEXT_SONG_AT_END = false
     const val DEFAULT_HOOK_ISLAND_NEXT_SONG_DURATION = 4
