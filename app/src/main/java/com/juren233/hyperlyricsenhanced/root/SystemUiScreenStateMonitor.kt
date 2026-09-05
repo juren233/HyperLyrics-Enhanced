@@ -8,6 +8,7 @@ import android.content.IntentFilter
 import com.juren233.hyperlyricsenhanced.root.island.renderer.BaseIslandRenderer
 import com.juren233.hyperlyricsenhanced.root.mediacard.notification.NotificationMediaAodLyricHooker
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
+import com.juren233.hyperlyricsenhanced.root.utils.MediaCardDiagnosticLogger
 
 internal object SystemUiScreenStateMonitor {
     private const val TAG = "SystemUiScreenState"
@@ -23,12 +24,22 @@ internal object SystemUiScreenStateMonitor {
             override fun onReceive(context: Context?, intent: Intent?) {
                 when (intent?.action) {
                     Intent.ACTION_SCREEN_ON -> {
+                        MediaCardDiagnosticLogger.log(
+                            stage = "screen",
+                            event = "screen_on",
+                            details = "action=${intent.action},source=${MediaCardDiagnosticLogger.identity(context)}",
+                        )
                         HookLogger.d(TAG, "收到亮屏事件，刷新超级岛状态")
                         BaseIslandRenderer.onScreenInteractive()
                         NotificationMediaAodLyricHooker.hideLockScreenOverlays()
                     }
 
                     Intent.ACTION_SCREEN_OFF -> {
+                        MediaCardDiagnosticLogger.log(
+                            stage = "screen",
+                            event = "screen_off",
+                            details = "action=${intent.action},source=${MediaCardDiagnosticLogger.identity(context)}",
+                        )
                         HookLogger.d(TAG, "收到息屏事件，取消超级岛亮屏恢复任务")
                         BaseIslandRenderer.onScreenNonInteractive()
                     }

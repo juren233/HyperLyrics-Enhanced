@@ -165,7 +165,7 @@ class LyriconDataBridgeTest {
     }
 
     @Test
-    fun `uses the unmerged current lyric for island when next line display is disabled`() {
+    fun `keeps the merged current vocal group when next line display is disabled`() {
         useAppleMusic()
         val main = RichLyricLine(begin = 1_000, end = 2_000, text = "Main")
         val overlapping = RichLyricLine(begin = 1_000, end = 2_200, text = "Overlapping")
@@ -177,11 +177,11 @@ class LyriconDataBridgeTest {
 
         assertEquals("Main", LyriconDataBridge.currentLyricLineForIsland(true)?.text)
         assertEquals(
-            "Overlapping",
+            "Main",
             LyriconDataBridge.currentLyricLineForIsland(false)?.text
         )
         assertEquals(
-            null,
+            "Overlapping",
             LyriconDataBridge.currentLyricLineForIsland(false)?.secondary
         )
     }

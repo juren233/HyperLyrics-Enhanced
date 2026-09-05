@@ -35,6 +35,7 @@ import com.juren233.hyperlyricsenhanced.online.utils.ChineseUtils
 import com.juren233.hyperlyricsenhanced.root.LyriconDataBridge
 import com.juren233.hyperlyricsenhanced.root.island.renderer.BaseIslandRenderer
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
+import com.juren233.hyperlyricsenhanced.root.utils.MediaCardDiagnosticLogger
 import io.github.proify.lyricon.amprovider.xposed.AppleDirectBridgeContract
 import io.github.proify.lyricon.amprovider.xposed.AppleSourceSwitchPerformanceDiagnostics
 import io.github.proify.lyricon.lyric.model.Song as LyriconSong
@@ -335,6 +336,11 @@ class LyriconSource : LyricSource {
     private fun onLocalActiveMediaSessionsChanged(packages: Set<String>?) {
         activeMediaSessionGate.updateLocal(packages)
         diagnostic("stage=local_media_sessions, packages=${packages?.sorted()}")
+        MediaCardDiagnosticLogger.log(
+            stage = "media_session",
+            event = "local_sessions_changed",
+            details = "packages=${packages?.sorted()},activePlayer=${MediaCardDiagnosticLogger.sanitize(activeCentralPlayerPackageName)},blocked=${activeCentralPlayerPackageName?.let(activeMediaSessionGate::isBlocked)}",
+        )
         evaluateActiveMediaSessionGate()
     }
 
@@ -3032,6 +3038,12 @@ class LyriconSource : LyricSource {
      */
     fun onActiveMediaSessionSnapshotChanged(raw: String?, reason: String) {
         activeMediaSessionGate.update(raw)
+        MediaCardDiagnosticLogger.log(
+            stage = "media_session",
+            event = "snapshot_changed",
+            reason = reason,
+            details = "raw=${MediaCardDiagnosticLogger.sanitize(raw)},tracked=${activeMediaSessionGate.trackedPackages?.sorted()}",
+        )
         diagnostic(
             "stage=active_media_session_snapshot, reason=$reason, " +
                 "tracked=${activeMediaSessionGate.trackedPackages?.sorted()}",
@@ -3192,18 +3204,33 @@ class LyriconSource : LyricSource {
 
     private val connectionListener = object : ConnectionListener {
         override fun onConnected(subscriber: LyriconSubscriber) {
+            MediaCardDiagnosticLogger.log(
+                stage = "subscriber",
+                event = "connected",
+                details = "subscriber=${MediaCardDiagnosticLogger.identity(subscriber)}",
+            )
             HookLogger.i(TAG, "订阅连接已建立")
             diagnostic("stage=subscriber_connected")
             mainHandler.post { onCentralConnected?.invoke() }
         }
 
         override fun onReconnected(subscriber: LyriconSubscriber) {
+            MediaCardDiagnosticLogger.log(
+                stage = "subscriber",
+                event = "reconnected",
+                details = "subscriber=${MediaCardDiagnosticLogger.identity(subscriber)}",
+            )
             HookLogger.i(TAG, "订阅连接已恢复")
             diagnostic("stage=subscriber_reconnected")
             mainHandler.post { onCentralConnected?.invoke() }
         }
 
         override fun onDisconnected(subscriber: LyriconSubscriber) {
+            MediaCardDiagnosticLogger.log(
+                stage = "subscriber",
+                event = "disconnected",
+                details = "subscriber=${MediaCardDiagnosticLogger.identity(subscriber)},activePlayer=${MediaCardDiagnosticLogger.sanitize(activeCentralPlayerPackageName)}",
+            )
             centralAppleProviderActive = false
             centralAppleSongAvailable = false
             activeCentralPlayerPackageName = null
@@ -3214,6 +3241,11 @@ class LyriconSource : LyricSource {
         }
 
         override fun onConnectTimeout(subscriber: LyriconSubscriber) {
+            MediaCardDiagnosticLogger.log(
+                stage = "subscriber",
+                event = "connect_timeout",
+                details = "subscriber=${MediaCardDiagnosticLogger.identity(subscriber)}",
+            )
             centralAppleProviderActive = false
             centralAppleSongAvailable = false
             activeCentralPlayerPackageName = null
@@ -3233,6 +3265,11 @@ class LyriconSource : LyricSource {
     private val activePlayerListener = object : ActivePlayerListener {
         override fun onActiveProviderChanged(providerInfo: ProviderInfo?) {
             val playerPackageName = providerInfo?.playerPackageName
+            MediaCardDiagnosticLogger.log(
+                stage = "central",
+                event = "active_provider_changed_begin",
+                details = "provider=${MediaCardDiagnosticLogger.sanitize(providerInfo?.providerPackageName)},player=${MediaCardDiagnosticLogger.sanitize(playerPackageName)},process=${MediaCardDiagnosticLogger.sanitize(providerInfo?.processName)}",
+            )
             diagnostic(
                 "stage=central_active_provider_callback, " +
                     "provider=${providerInfo?.providerPackageName}, " +
@@ -3251,6 +3288,12 @@ class LyriconSource : LyricSource {
                 centralAppleProviderActive = false
                 diagnostic(
                     "忽略 Central 空提供者状态: directTitle=${currentAppleSong?.name}"
+                )
+                MediaCardDiagnosticLogger.log(
+                    stage = "central",
+                    event = "active_provider_dropped",
+                    reason = "empty_player_preserved_direct_song",
+                    details = "directTitle=${MediaCardDiagnosticLogger.sanitize(currentAppleSong?.name)}",
                 )
                 return
             }
@@ -3285,6 +3328,11 @@ class LyriconSource : LyricSource {
                 ?.let(::readProviderDelay)
                 ?: RootConstants.DEFAULT_HOOK_LYRICON_PROVIDER_DELAY
             LyriconDataBridge.updateLyricPackage(playerPackageName)
+            MediaCardDiagnosticLogger.log(
+                stage = "central",
+                event = "active_provider_changed_complete",
+                details = "provider=${MediaCardDiagnosticLogger.sanitize(activeProviderPackageName)},player=${MediaCardDiagnosticLogger.sanitize(activeCentralPlayerPackageName)},apple=$centralAppleProviderActive,delayMs=$activeProviderDelayMs,preserveDirectAppleSong=$preserveDirectAppleSong",
+            )
             if (preserveDirectAppleSong) {
                 currentAppleSong?.let { directSong ->
                     diagnostic(
@@ -3299,6 +3347,11 @@ class LyriconSource : LyricSource {
 
         override fun onSongChanged(song: LyriconSong?) {
             val localSong = song?.toLocalSong()
+            MediaCardDiagnosticLogger.log(
+                stage = "central",
+                event = "song_callback_begin",
+                details = "incomingId=${MediaCardDiagnosticLogger.sanitize(localSong?.id)},incomingTitle=${MediaCardDiagnosticLogger.sanitize(localSong?.name)},incomingLines=${localSong?.lyrics.orEmpty().size},activePlayer=${MediaCardDiagnosticLogger.sanitize(activeCentralPlayerPackageName)},provider=${MediaCardDiagnosticLogger.sanitize(activeProviderPackageName)}",
+            )
             diagnostic(
                 "stage=central_song_callback, id=${localSong?.id}, title=${localSong?.name}, " +
                     "lyrics=${localSong?.lyrics.orEmpty().size}, " +
@@ -3310,6 +3363,12 @@ class LyriconSource : LyricSource {
                 diagnostic(
                     "stage=central_song_dropped, reason=no_active_media_session, " +
                         "title=${localSong?.name}",
+                )
+                MediaCardDiagnosticLogger.log(
+                    stage = "central",
+                    event = "song_callback_dropped",
+                    reason = "no_active_media_session",
+                    details = "incomingId=${MediaCardDiagnosticLogger.sanitize(localSong?.id)},incomingTitle=${MediaCardDiagnosticLogger.sanitize(localSong?.name)}",
                 )
                 return
             }
@@ -3333,27 +3392,74 @@ class LyriconSource : LyricSource {
                 )
                 handleThirdPartySong(localSong)
             }
+            MediaCardDiagnosticLogger.log(
+                stage = "central",
+                event = "song_callback_complete",
+                details = "incomingId=${MediaCardDiagnosticLogger.sanitize(localSong?.id)},publishedId=${MediaCardDiagnosticLogger.sanitize(LyriconDataBridge.currentSong?.id)},apple=$centralAppleProviderActive,sink=${sink != null}",
+            )
         }
 
         override fun onPlaybackStateChanged(isPlaying: Boolean) {
-            if (isCentralPlayerBlockedByMediaSession()) return
-            if (!shouldForwardCentralPlaybackState(
-                    hasActiveCentralPlayer = hasActiveCentralPlayer(),
-                    centralAppleProviderActive = centralAppleProviderActive,
-                    fallbackSongActive = fallbackSongActive,
+            val blocked = isCentralPlayerBlockedByMediaSession()
+            MediaCardDiagnosticLogger.log(
+                stage = "central",
+                event = "playback_state_callback",
+                details = "isPlaying=$isPlaying,blocked=$blocked,activePlayer=${MediaCardDiagnosticLogger.sanitize(activeCentralPlayerPackageName)},provider=${MediaCardDiagnosticLogger.sanitize(activeProviderPackageName)},sink=${sink != null}",
+            )
+            if (blocked) {
+                MediaCardDiagnosticLogger.log(
+                    stage = "central",
+                    event = "playback_state_dropped",
+                    reason = "no_active_media_session",
+                    details = "isPlaying=$isPlaying",
                 )
-            ) return
+                return
+            }
+            val shouldForward = shouldForwardCentralPlaybackState(
+                hasActiveCentralPlayer = hasActiveCentralPlayer(),
+                centralAppleProviderActive = centralAppleProviderActive,
+                fallbackSongActive = fallbackSongActive,
+            )
+            if (!shouldForward) {
+                MediaCardDiagnosticLogger.log(
+                    stage = "central",
+                    event = "playback_state_dropped",
+                    reason = "forward_policy_rejected",
+                    details = "isPlaying=$isPlaying,activePlayer=${MediaCardDiagnosticLogger.sanitize(activeCentralPlayerPackageName)},apple=$centralAppleProviderActive,fallback=$fallbackSongActive",
+                )
+                return
+            }
             centralPlaybackPositionWitness.onSinkPlaybackState(isPlaying)
             sink?.onPlaybackStateChanged(isPlaying)
+            MediaCardDiagnosticLogger.log(
+                stage = "central",
+                event = "playback_state_forwarded",
+                details = "isPlaying=$isPlaying",
+            )
         }
 
         override fun onPositionChanged(position: Long) {
             if (!hasActiveCentralPlayer()) {
                 logCentralPositionDiagnostic(position, null, "dropped_no_active_player")
+                MediaCardDiagnosticLogger.log(
+                    stage = "central",
+                    event = "position_dropped",
+                    reason = "no_active_player",
+                    details = "rawPosition=$position",
+                    positionSample = true,
+                )
                 return
             }
-            if (isCentralPlayerBlockedByMediaSession()) {
+            val blocked = isCentralPlayerBlockedByMediaSession()
+            if (blocked) {
                 logCentralPositionDiagnostic(position, null, "dropped_no_active_media_session")
+                MediaCardDiagnosticLogger.log(
+                    stage = "central",
+                    event = "position_dropped",
+                    reason = "no_active_media_session",
+                    details = "rawPosition=$position,activePlayer=${MediaCardDiagnosticLogger.sanitize(activeCentralPlayerPackageName)}",
+                    positionSample = true,
+                )
                 return
             }
             if (isBuiltInAppleCentralProviderActive() &&
@@ -3368,6 +3474,13 @@ class LyriconSource : LyricSource {
             }
             if (centralAppleProviderActive && fallbackSongActive) {
                 logCentralPositionDiagnostic(position, null, "dropped_apple_fallback_active")
+                MediaCardDiagnosticLogger.log(
+                    stage = "central",
+                    event = "position_dropped",
+                    reason = "apple_fallback_active",
+                    details = "rawPosition=$position",
+                    positionSample = true,
+                )
                 return
             }
             val adjustedPosition = (position - activeProviderDelayMs).coerceAtLeast(0L)
@@ -3386,22 +3499,48 @@ class LyriconSource : LyricSource {
                 val resolvedPosition = resolution.position
                 if (resolvedPosition == null) {
                     logCentralPositionDiagnostic(position, null, "dropped_apple_resolution")
+                    MediaCardDiagnosticLogger.log(
+                        stage = "central",
+                        event = "position_dropped",
+                        reason = "apple_resolution_null",
+                        details = "rawPosition=$position,adjustedPosition=$adjustedPosition",
+                        positionSample = true,
+                    )
                     return
                 }
                 maybeCommitPendingOnlineTranslation(resolvedPosition)
                 sink?.onPositionChanged(resolvedPosition)
                 logCentralPositionDiagnostic(position, resolvedPosition, "forwarded_apple")
+                MediaCardDiagnosticLogger.log(
+                    stage = "central",
+                    event = "position_forwarded",
+                    details = "rawPosition=$position,forwardedPosition=$resolvedPosition,apple=true,sink=${sink != null}",
+                    positionSample = true,
+                )
                 return
             }
             maybeCommitPendingOnlineTranslation(adjustedPosition)
             sink?.onPositionChanged(adjustedPosition)
             logCentralPositionDiagnostic(position, adjustedPosition, "forwarded_non_apple")
+            MediaCardDiagnosticLogger.log(
+                stage = "central",
+                event = "position_forwarded",
+                details = "rawPosition=$position,forwardedPosition=$adjustedPosition,apple=false,sink=${sink != null}",
+                positionSample = true,
+            )
         }
 
 
         override fun onSeekTo(position: Long) {
+            val blocked = isCentralPlayerBlockedByMediaSession()
+            MediaCardDiagnosticLogger.log(
+                stage = "central",
+                event = "seek_callback",
+                details = "rawPosition=$position,activePlayer=${MediaCardDiagnosticLogger.sanitize(activeCentralPlayerPackageName)},blocked=$blocked,apple=$centralAppleProviderActive,sink=${sink != null}",
+                positionSample = true,
+            )
             if (!hasActiveCentralPlayer()) return
-            if (isCentralPlayerBlockedByMediaSession()) return
+            if (blocked) return
             if (centralAppleProviderActive && fallbackSongActive) return
             val adjustedPosition = (position - activeProviderDelayMs).coerceAtLeast(0L)
             if (centralAppleProviderActive) {
@@ -3417,13 +3556,34 @@ class LyriconSource : LyricSource {
                     resolution = resolution,
                     force = true,
                 )
-                val resolvedPosition = resolution.position ?: return
+                val resolvedPosition = resolution.position ?: run {
+                    MediaCardDiagnosticLogger.log(
+                        stage = "central",
+                        event = "seek_dropped",
+                        reason = "apple_resolution_null",
+                        details = "rawPosition=$position,adjustedPosition=$adjustedPosition",
+                        positionSample = true,
+                    )
+                    return
+                }
                 maybeCommitPendingOnlineTranslation(resolvedPosition)
                 sink?.onSeekTo(resolvedPosition)
+                MediaCardDiagnosticLogger.log(
+                    stage = "central",
+                    event = "seek_forwarded",
+                    details = "rawPosition=$position,forwardedPosition=$resolvedPosition,apple=true",
+                    positionSample = true,
+                )
                 return
             }
             maybeCommitPendingOnlineTranslation(adjustedPosition)
             sink?.onSeekTo(adjustedPosition)
+            MediaCardDiagnosticLogger.log(
+                stage = "central",
+                event = "seek_forwarded",
+                details = "rawPosition=$position,forwardedPosition=$adjustedPosition,apple=false",
+                positionSample = true,
+            )
         }
 
         override fun onReceiveText(text: String?) {

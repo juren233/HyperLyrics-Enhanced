@@ -7,6 +7,7 @@ import android.view.ViewOutlineProvider
 import android.widget.ImageView
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.root.mediacard.MediaCoverRotationController
+import com.juren233.hyperlyricsenhanced.root.utils.MediaCardDiagnosticLogger
 import java.util.Collections
 import java.util.WeakHashMap
 import kotlin.math.roundToInt
@@ -28,6 +29,11 @@ internal object IslandExpandedMediaElementController {
         hideDeviceSwitch: Boolean,
         playbackActive: Boolean
     ) {
+        MediaCardDiagnosticLogger.log(
+            stage = "island_media_elements",
+            event = "apply_begin",
+            details = "albumView=${MediaCardDiagnosticLogger.view(elements.albumView)},albumImage=${MediaCardDiagnosticLogger.view(elements.albumImage)},coverSource=${MediaCardDiagnosticLogger.view(elements.coverSource)},deviceSwitch=${MediaCardDiagnosticLogger.view(elements.deviceSwitch)},coverStyle=$coverStyle,hideCover=$hideCoverSource,hideDevice=$hideDeviceSwitch,playing=$playbackActive",
+        )
         if (
             coverStyle == RootConstants.ISLAND_EXPANDED_MEDIA_COVER_STYLE_DEFAULT &&
             !hideCoverSource &&
@@ -68,15 +74,36 @@ internal object IslandExpandedMediaElementController {
 
         state.applyCoverSourceHidden(hideCoverSource)
         state.applyDeviceSwitchHidden(hideDeviceSwitch)
+        MediaCardDiagnosticLogger.log(
+            stage = "island_media_elements",
+            event = "apply_complete",
+            details = "albumView=${MediaCardDiagnosticLogger.view(elements.albumView)},albumImage=${MediaCardDiagnosticLogger.view(elements.albumImage)},coverSource=${MediaCardDiagnosticLogger.view(elements.coverSource)},deviceSwitch=${MediaCardDiagnosticLogger.view(elements.deviceSwitch)},coverStyle=$coverStyle,hideCover=$hideCoverSource,hideDevice=$hideDeviceSwitch,playing=$playbackActive",
+        )
     }
 
     fun restore(elements: IslandExpandedMediaElements) {
+        MediaCardDiagnosticLogger.log(
+            stage = "island_media_elements",
+            event = "restore_begin",
+            details = "albumView=${MediaCardDiagnosticLogger.view(elements.albumView)},coverSource=${MediaCardDiagnosticLogger.view(elements.coverSource)},deviceSwitch=${MediaCardDiagnosticLogger.view(elements.deviceSwitch)}",
+        )
         val state = states.remove(elements.albumView) ?: run {
+            MediaCardDiagnosticLogger.log(
+                stage = "island_media_elements",
+                event = "restore_skipped",
+                reason = "no_saved_state",
+                details = "albumView=${MediaCardDiagnosticLogger.view(elements.albumView)}",
+            )
             MediaCoverRotationController.detach(elements.albumImage)
             return
         }
         MediaCoverRotationController.detach(elements.albumImage)
         state.restoreAll()
+        MediaCardDiagnosticLogger.log(
+            stage = "island_media_elements",
+            event = "restore_complete",
+            details = "albumView=${MediaCardDiagnosticLogger.view(elements.albumView)},coverSource=${MediaCardDiagnosticLogger.view(elements.coverSource)},deviceSwitch=${MediaCardDiagnosticLogger.view(elements.deviceSwitch)}",
+        )
     }
 
     fun applyToFakeView(

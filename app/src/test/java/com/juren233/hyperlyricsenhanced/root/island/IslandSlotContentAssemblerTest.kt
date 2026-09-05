@@ -443,6 +443,23 @@ class IslandSlotContentAssemblerTest {
     }
 
     @Test
+    fun `main adjacent translation follows the primary lyric time range`() {
+        val words = IslandSlotContentAssembler.buildTranslationProgressWords(
+            sourceWords = listOf(
+                LyricWord(begin = 1_200, end = 1_800, text = "Main"),
+                LyricWord(begin = 2_000, end = 2_700, text = " lyric")
+            ),
+            translation = "主句翻译"
+        )
+
+        assertEquals(1, words.size)
+        assertEquals("主句翻译", words.single().text)
+        assertEquals(1_200L, words.single().begin)
+        assertEquals(2_700L, words.single().end)
+        assertEquals(1_500L, words.single().duration)
+    }
+
+    @Test
     fun `background vocal translation without backing timing keeps the existing fallback`() {
         val words = IslandSlotContentAssembler.buildBackgroundTranslationWords(
             RichLyricLine(begin = 1_000, end = 9_000, secondary = "Backing vocal"),
@@ -451,4 +468,30 @@ class IslandSlotContentAssemblerTest {
 
         assertTrue(words.isEmpty())
     }
+
+    @Test
+    fun `skips a duplicate refresh while the same animated target is pending`() {
+        assertTrue(
+            IslandSlotContentAssembler.shouldSkipContentRefresh(
+                force = false,
+                lastSignature = "lyric|translated|style",
+                targetSignature = "lyric|translated|style"
+            )
+        )
+        assertFalse(
+            IslandSlotContentAssembler.shouldSkipContentRefresh(
+                force = false,
+                lastSignature = "lyric|original|style",
+                targetSignature = "lyric|translated|style"
+            )
+        )
+        assertFalse(
+            IslandSlotContentAssembler.shouldSkipContentRefresh(
+                force = true,
+                lastSignature = "same",
+                targetSignature = "same"
+            )
+        )
+    }
+
 }

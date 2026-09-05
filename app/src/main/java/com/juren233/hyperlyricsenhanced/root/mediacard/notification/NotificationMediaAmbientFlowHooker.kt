@@ -24,6 +24,7 @@ import com.juren233.hyperlyricsenhanced.root.mediacard.background.MediaFlowOverl
 import com.juren233.hyperlyricsenhanced.root.mediacard.background.MediaFlowTone
 import com.juren233.hyperlyricsenhanced.root.mediacard.notification.background.NotificationMediaBackgroundController
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
+import com.juren233.hyperlyricsenhanced.root.utils.MediaCardDiagnosticLogger
 import io.github.libxposed.api.XposedInterface.Chain
 import io.github.libxposed.api.XposedInterface.Hooker
 import io.github.libxposed.api.XposedModule
@@ -222,6 +223,11 @@ object NotificationMediaAmbientFlowHooker {
     class ControllerHook(private val action: Action) : Hooker {
         override fun intercept(chain: Chain): Any? {
             val controller = chain.thisObject ?: return chain.proceed()
+            MediaCardDiagnosticLogger.log(
+                stage = "notification_ambient",
+                event = "controller_callback_begin",
+                details = "action=${action.name.lowercase()},controller=${MediaCardDiagnosticLogger.identity(controller)},arg0=${MediaCardDiagnosticLogger.identity(chain.args.firstOrNull())},enabled=${SystemUiEnhancementGate.isEnabled()}",
+            )
             if (!SystemUiEnhancementGate.isEnabled()) {
                 if (action == Action.DETACH) {
                     activeControllers.remove(controller)
@@ -233,6 +239,11 @@ object NotificationMediaAmbientFlowHooker {
                 if (action == Action.ATTACH || action == Action.BIND) {
                     activeControllers.add(controller)
                 }
+                MediaCardDiagnosticLogger.log(
+                    stage = "notification_ambient",
+                    event = "controller_callback_complete",
+                    details = "action=${action.name.lowercase()},controller=${MediaCardDiagnosticLogger.identity(controller)},enabled=false",
+                )
                 return result
             }
             if (action == Action.DETACH) {
@@ -273,12 +284,24 @@ object NotificationMediaAmbientFlowHooker {
                     }
                 }
             }.onFailure { error ->
+                MediaCardDiagnosticLogger.log(
+                    stage = "notification_ambient",
+                    event = "controller_callback_failed",
+                    reason = "exception",
+                    details = "action=${action.name.lowercase()},controller=${MediaCardDiagnosticLogger.identity(controller)},error=${MediaCardDiagnosticLogger.sanitize(error.message)}",
+                )
                 HookLogger.e(
                     TAG,
                     "处理通知中心媒体流光失败: action=${action.name.lowercase()}",
                     error
                 )
             }
+            val state = states[controller]
+            MediaCardDiagnosticLogger.log(
+                stage = "notification_ambient",
+                event = "controller_callback_complete",
+                details = "action=${action.name.lowercase()},controller=${MediaCardDiagnosticLogger.identity(controller)},view=${MediaCardDiagnosticLogger.view(state?.view)},isPlaying=${state?.isPlaying},hasColors=${state?.hasColors},flowActive=${state?.flowActive},activeControllers=${synchronized(activeControllers) { activeControllers.size }}",
+            )
             return result
         }
     }
@@ -541,7 +564,7 @@ object NotificationMediaAmbientFlowHooker {
                     val bitmap = MediaArtworkSampler.sample(drawable) ?: return@runCatching null
                     try {
                         MediaFlowColorPayload.Custom(
-                            MediaFlowArtwork.prepare(bitmap) ?: return@runCatching null
+                            MediaFlowArtwork.prepare(bitmap, blur = false) ?: return@runCatching null
                         )
                     } finally {
                         bitmap.recycle()
@@ -593,7 +616,7 @@ object NotificationMediaAmbientFlowHooker {
         }
 
         val view = if (customMode) {
-            MediaFlowBackgroundView(mediaBg.context)
+            MediaFlowBackgroundView(mediaBg.context, appleMusicStyle = true)
         } else {
             requireNotNull(nativeApi).createView(mediaBg.context)
         }

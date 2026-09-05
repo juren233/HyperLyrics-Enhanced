@@ -545,11 +545,24 @@ internal object IslandLyricTextInjector {
         mediaInfo: MediaMetadataHelper.MediaInfo
     ): Boolean {
         val view = rootView.findViewWithTag<View>(viewTag) ?: return false
+        val isLeft = viewTag == IslandProbeUtils.LEFT_TEST_VIEW_TAG
+        // The adjacent-translation slot is temporarily converted from its
+        // normal metadata mode into a lyric slot by BaseIslandRenderer. The
+        // lightweight restore/width-refresh path must make the same choice;
+        // otherwise it re-applies mode 5/6 and overwrites the translation side
+        // with the original content after it was shown.
+        val adjacentTranslation = IslandSlotContentAssembler.buildAdjacentTranslationLine(
+            prefs = prefs,
+            config = config,
+            isLeft = isLeft
+        )
+        val effectiveMode = if (adjacentTranslation != null) 7 else mode
         return IslandSlotContentAssembler.applySlotContent(
             view,
             prefs,
             config,
-            mode,
+            effectiveMode,
+            lineOverride = adjacentTranslation,
             force = force,
             suppressAnimation = suppressAnimation,
             mediaInfo = mediaInfo

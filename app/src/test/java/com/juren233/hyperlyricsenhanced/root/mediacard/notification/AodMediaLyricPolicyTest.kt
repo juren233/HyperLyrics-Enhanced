@@ -9,6 +9,7 @@ import org.junit.Test
 import java.io.File
 
 class AodMediaLyricPolicyTest {
+
     @Test
     fun `shows next song preview from the final lyric start`() {
         assertFalse(

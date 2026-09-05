@@ -13,6 +13,7 @@ import com.juren233.hyperlyricsenhanced.root.island.renderer.IslandRenderer
 import com.juren233.hyperlyricsenhanced.root.mediacard.notification.NotificationMediaAodLyricHooker
 import com.juren233.hyperlyricsenhanced.root.aitrans.AITranslator
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
+import com.juren233.hyperlyricsenhanced.root.utils.MediaCardDiagnosticLogger
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.lyric.model.Song
 import com.juren233.hyperlyricsenhanced.lyric.model.interfaces.IRichLyricLine
@@ -52,7 +53,17 @@ class RootLyricSink(
     }
 
     override fun onSongChanged(song: Any?) {
+        MediaCardDiagnosticLogger.log(
+            stage = "root_sink",
+            event = "song_callback",
+            details = "song=${MediaCardDiagnosticLogger.identity(song)}",
+        )
         handleSongChanged(song, onlineTranslationMatched = false)
+        MediaCardDiagnosticLogger.log(
+            stage = "root_sink",
+            event = "song_callback_complete",
+            details = "song=${MediaCardDiagnosticLogger.identity(song)}",
+        )
     }
 
     override fun onOnlineTranslationMatched(song: Any?) {
@@ -109,21 +120,46 @@ class RootLyricSink(
 
     override fun onLyricLine(line: Any?) {
         if (line is IRichLyricLine) {
-    
+            MediaCardDiagnosticLogger.log(
+                stage = "root_sink",
+                event = "lyric_line_callback",
+                details = "line=${MediaCardDiagnosticLogger.identity(line)},begin=${line.begin},end=${line.end},textLen=${line.text?.length ?: 0}",
+            )
             LyriconDataBridge.updateLyricLine(line)
             renderer.updateLyricLine()
             NotificationMediaAodLyricHooker.onLyricChanged()
+            MediaCardDiagnosticLogger.log(
+                stage = "root_sink",
+                event = "lyric_line_render_dispatched",
+                details = "renderer=${MediaCardDiagnosticLogger.identity(renderer)}",
+            )
+        } else {
+            MediaCardDiagnosticLogger.log(
+                stage = "root_sink",
+                event = "lyric_line_dropped",
+                reason = "not_rich_line",
+                details = "line=${MediaCardDiagnosticLogger.identity(line)}",
+            )
         }
     }
 
     override fun onPlainText(text: String?) {
-
+        MediaCardDiagnosticLogger.log(
+            stage = "root_sink",
+            event = "plain_text_callback",
+            details = "textLen=${text?.length ?: 0}",
+        )
         LyriconDataBridge.updateLyric(text)
         renderer.updateLyricLine()
         NotificationMediaAodLyricHooker.onLyricChanged()
     }
 
     override fun onStop() {
+        MediaCardDiagnosticLogger.log(
+            stage = "root_sink",
+            event = "stop_begin",
+            details = "renderer=${MediaCardDiagnosticLogger.identity(renderer)}",
+        )
         activeAiTranslationJob?.cancel()
         activeAiTranslationJob = null
         playbackActive = false
@@ -133,9 +169,18 @@ class RootLyricSink(
         renderer.clearAllViews()
         LyriconDataBridge.clearState()
         NotificationMediaAodLyricHooker.onLyricChanged()
+        MediaCardDiagnosticLogger.log(
+            stage = "root_sink",
+            event = "stop_complete",
+        )
     }
 
     override fun onMetadata(title: String?, artist: String?, album: String?, publisher: String?) {
+        MediaCardDiagnosticLogger.log(
+            stage = "root_sink",
+            event = "metadata_callback",
+            details = "title=${MediaCardDiagnosticLogger.sanitize(title)},artist=${MediaCardDiagnosticLogger.sanitize(artist)},publisher=${MediaCardDiagnosticLogger.sanitize(publisher)}",
+        )
         if (title != null) LyriconDataBridge.currentSongName = title
         if (!publisher.isNullOrEmpty()) {
             LyriconDataBridge.updateLyricPackage(publisher)
@@ -145,16 +190,33 @@ class RootLyricSink(
     }
 
     override fun onPlaybackStateChanged(isPlaying: Boolean) {
+        MediaCardDiagnosticLogger.log(
+            stage = "root_sink",
+            event = "playback_state_callback",
+            details = "isPlaying=$isPlaying,previous=$playbackActive",
+        )
         playbackActive = isPlaying
         LyriconDataBridge.updatePlaybackState(isPlaying)
         if (!isPlaying) cancelPendingPositionDispatch()
         renderer.onPlaybackStateChanged(isPlaying)
         NotificationMediaAodLyricHooker.onPlaybackStateChanged(isPlaying)
+        MediaCardDiagnosticLogger.log(
+            stage = "root_sink",
+            event = "playback_state_dispatched",
+            details = "isPlaying=$isPlaying",
+        )
     }
 
     override fun onPositionChanged(position: Long) {
         if (position == lastReceivedPosition) {
             logPositionDiagnostic(position, "dropped_duplicate")
+            MediaCardDiagnosticLogger.log(
+                stage = "root_sink",
+                event = "position_dropped",
+                reason = "duplicate",
+                details = "position=$position,previous=$lastReceivedPosition",
+                positionSample = true,
+            )
             return
         }
         logPositionDiagnostic(position, "accepted")
@@ -165,6 +227,12 @@ class RootLyricSink(
             renderer.updateLyricLine()
             NotificationMediaAodLyricHooker.onLyricChanged()
         }
+        MediaCardDiagnosticLogger.log(
+            stage = "root_sink",
+            event = "position_processed",
+            details = "position=$position,lyricChanged=$lyricChanged,dispatch=${if (playbackActive) "throttled" else "immediate"}",
+            positionSample = true,
+        )
         if (playbackActive) {
             dispatchPositionThrottled(position)
         } else {
@@ -222,6 +290,12 @@ class RootLyricSink(
         lastDispatchedPosition = position
         pendingPosition = null
         renderer.updatePosition(position)
+        MediaCardDiagnosticLogger.log(
+            stage = "root_sink",
+            event = "position_render_dispatched",
+            details = "position=$position,lastDispatched=$lastDispatchedPosition",
+            positionSample = true,
+        )
     }
 
     private fun cancelPendingPositionDispatch() {

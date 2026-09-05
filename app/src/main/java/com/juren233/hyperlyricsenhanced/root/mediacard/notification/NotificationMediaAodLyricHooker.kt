@@ -37,6 +37,7 @@ import com.juren233.hyperlyricsenhanced.root.HookEntry
 import com.juren233.hyperlyricsenhanced.root.LyriconDataBridge
 import com.juren233.hyperlyricsenhanced.root.utils.DisplayDiagnosticLogger
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
+import com.juren233.hyperlyricsenhanced.root.utils.MediaCardDiagnosticLogger
 import io.github.libxposed.api.XposedInterface.Chain
 import io.github.libxposed.api.XposedInterface.HookHandle
 import io.github.libxposed.api.XposedInterface.Hooker
@@ -731,15 +732,31 @@ object NotificationMediaAodLyricHooker {
     }
 
     fun refresh() = runOnMain {
+        MediaCardDiagnosticLogger.log(
+            stage = "aod",
+            event = "refresh_begin",
+            details = "controllers=${synchronized(states) { states.size }},aodViews=${synchronized(aodPluginStates) { aodPluginStates.size }}",
+        )
         synchronized(states) { states.entries.toList() }.forEach { (controller, state) ->
             runCatching { applyState(controller, state) }
                 .onFailure { HookLogger.e(TAG, "刷新息屏歌词失败", it) }
         }
         refreshAodPluginStates()
         updatePositionPolling()
+        MediaCardDiagnosticLogger.log(
+            stage = "aod",
+            event = "refresh_complete",
+        )
     }
 
-    fun onLyricChanged() = refresh()
+    fun onLyricChanged() {
+        MediaCardDiagnosticLogger.log(
+            stage = "aod",
+            event = "lyric_changed_refresh_requested",
+            details = "controllers=${synchronized(states) { states.size }},aodViews=${synchronized(aodPluginStates) { aodPluginStates.size }}",
+        )
+        refresh()
+    }
 
     fun isTargetMethod(method: Method): Boolean {
         return when (method.declaringClass.name) {
@@ -770,6 +787,11 @@ object NotificationMediaAodLyricHooker {
     }
 
     fun onPlaybackStateChanged(isPlaying: Boolean) = runOnMain {
+        MediaCardDiagnosticLogger.log(
+            stage = "aod",
+            event = "playback_state_refresh_begin",
+            details = "isPlaying=$isPlaying,controllers=${synchronized(states) { states.size }},aodViews=${synchronized(aodPluginStates) { aodPluginStates.size }}",
+        )
         val lyricPackage = LyriconDataBridge.currentLyricPackageName
         synchronized(states) { states.entries.toList() }.forEach { (controller, state) ->
             val api = resolveApi(controller.javaClass.classLoader) ?: return@forEach
@@ -785,6 +807,11 @@ object NotificationMediaAodLyricHooker {
                 safeApplyAodPlugin(aodView, state)
             }
         updatePositionPolling()
+        MediaCardDiagnosticLogger.log(
+            stage = "aod",
+            event = "playback_state_refresh_complete",
+            details = "isPlaying=$isPlaying",
+        )
     }
 
     fun releaseAll() = runOnMain {
@@ -819,6 +846,11 @@ object NotificationMediaAodLyricHooker {
             val controller = chain.thisObject ?: return chain.proceed()
             val api = resolveApi(controller.javaClass.classLoader) ?: return chain.proceed()
             val state = states.getOrPut(controller) { ControllerState() }
+            MediaCardDiagnosticLogger.log(
+                stage = "aod_media_controller",
+                event = "callback_begin",
+                details = "method=$methodName,controller=${MediaCardDiagnosticLogger.identity(controller)},state=${MediaCardDiagnosticLogger.identity(state)},arg0=${MediaCardDiagnosticLogger.identity(chain.args.firstOrNull())},fullAod=${state.fullAod},playing=${state.playing}",
+            )
 
             if (methodName == "bindMediaData" || methodName == "detach") {
                 restoreActions(state)
@@ -1235,8 +1267,26 @@ object NotificationMediaAodLyricHooker {
     }
 
     private fun safeApplyAodPlugin(aodView: Any, state: AodPluginState) {
+        MediaCardDiagnosticLogger.log(
+            stage = "aod_classic",
+            event = "apply_begin",
+            details = "aodView=${MediaCardDiagnosticLogger.identity(aodView)},state=${MediaCardDiagnosticLogger.identity(state)},overlay=${MediaCardDiagnosticLogger.view(state.overlay?.root)},attached=${state.attached},playing=${state.playing}",
+        )
         runCatching { applyAodPluginState(aodView, state) }
+            .onSuccess {
+                MediaCardDiagnosticLogger.log(
+                    stage = "aod_classic",
+                    event = "apply_complete",
+                    details = "aodView=${MediaCardDiagnosticLogger.identity(aodView)},overlay=${MediaCardDiagnosticLogger.view(state.overlay?.root)},attached=${state.attached},playing=${state.playing}",
+                )
+            }
             .onFailure {
+                MediaCardDiagnosticLogger.log(
+                    stage = "aod_classic",
+                    event = "apply_failed",
+                    reason = "exception",
+                    details = "aodView=${MediaCardDiagnosticLogger.identity(aodView)},error=${MediaCardDiagnosticLogger.sanitize(it.message)}",
+                )
                 state.overlay?.root?.visibility = View.GONE
                 HookLogger.e(TAG, "应用通知图标式息屏歌词失败", it)
             }
@@ -1286,6 +1336,10 @@ object NotificationMediaAodLyricHooker {
         val aodShown = api.isAodShown(aodView)
         val pauseAllowed = state.playing ||
             textStyle.pauseStyle == RootConstants.AOD_PAUSE_STYLE_KEEP_LYRICS
+        // Overlapping/background-vocal rows are valid lyric content even when
+        // the user disables “显示下一句歌词”. Do not let the single-line
+        // layout policy hide a current line whose companion vocal is the only
+        // additional rendered row.
         val hasContent = content.main.isNotBlank() ||
             content.next.isNotBlank() || songInfo.text.isNotBlank()
         val show = enabled &&
@@ -2160,8 +2214,26 @@ object NotificationMediaAodLyricHooker {
     }
 
     private fun safeApply(controller: Any, state: ControllerState) {
+        MediaCardDiagnosticLogger.log(
+            stage = "aod_lockscreen_media",
+            event = "apply_begin",
+            details = "controller=${MediaCardDiagnosticLogger.identity(controller)},state=${MediaCardDiagnosticLogger.identity(state)},fullAod=${state.fullAod},aodActive=${state.aodActive},playing=${state.playing},holder=${MediaCardDiagnosticLogger.identity(state.holder)},mediaData=${MediaCardDiagnosticLogger.identity(state.mediaData)},overlay=${MediaCardDiagnosticLogger.view(state.overlay?.root)}",
+        )
         runCatching { applyState(controller, state) }
+            .onSuccess {
+                MediaCardDiagnosticLogger.log(
+                    stage = "aod_lockscreen_media",
+                    event = "apply_complete",
+                    details = "controller=${MediaCardDiagnosticLogger.identity(controller)},fullAod=${state.fullAod},aodActive=${state.aodActive},playing=${state.playing},overlay=${MediaCardDiagnosticLogger.view(state.overlay?.root)}",
+                )
+            }
             .onFailure {
+                MediaCardDiagnosticLogger.log(
+                    stage = "aod_lockscreen_media",
+                    event = "apply_failed",
+                    reason = "exception",
+                    details = "controller=${MediaCardDiagnosticLogger.identity(controller)},error=${MediaCardDiagnosticLogger.sanitize(it.message)}",
+                )
                 restoreActions(state)
                 state.overlay?.let { overlay ->
                     overlay.root.visibility = View.GONE
@@ -3160,10 +3232,32 @@ object NotificationMediaAodLyricHooker {
         val refreshApi = classLoader?.let(dozeRefreshApis::get)
             ?: synchronized(dozeRefreshApis) { dozeRefreshApis.values.firstOrNull() }
         if (refreshApi == null) {
+            MediaCardDiagnosticLogger.log(
+                stage = "aod_refresh",
+                event = "native_frame_refresh_skipped",
+                reason = "api_unavailable",
+                details = "classLoader=${MediaCardDiagnosticLogger.identity(classLoader)}",
+            )
             HookLogger.w(TAG, "跳过 AOD 原生帧刷新: reason=api_unavailable")
             return
         }
-        refreshApi.requestTick()
+        try {
+            refreshApi.requestTick()
+            MediaCardDiagnosticLogger.log(
+                stage = "aod_refresh",
+                event = "native_frame_refresh_requested",
+                details = "api=${MediaCardDiagnosticLogger.identity(refreshApi)},classLoader=${MediaCardDiagnosticLogger.identity(classLoader)}",
+            )
+        } catch (error: Throwable) {
+            MediaCardDiagnosticLogger.log(
+                stage = "aod_refresh",
+                event = "native_frame_refresh_failed",
+                reason = "exception",
+                details = "error=${MediaCardDiagnosticLogger.sanitize(error.message)}",
+            )
+            HookLogger.e(TAG, "请求 AOD 原生帧刷新失败", error)
+            throw error
+        }
     }
 
     private inline fun runOnMain(crossinline action: () -> Unit) {

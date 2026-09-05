@@ -354,6 +354,18 @@ internal object IslandSlotContentAssembler {
         }
     }
 
+    /**
+     * A content animation writes the target signature before its fade-out
+     * callback writes the target line. A second layout/width pass can therefore
+     * observe the old View line while the target signature is already pending.
+     * The signature is the authoritative queued-content marker in that window.
+     */
+    internal fun shouldSkipContentRefresh(
+        force: Boolean,
+        lastSignature: String?,
+        targetSignature: String,
+    ): Boolean = !force && lastSignature == targetSignature
+
     private fun applyNextSongPreviewLine(
         view: View,
         prefs: SharedPreferences,
@@ -371,7 +383,7 @@ internal object IslandSlotContentAssembler {
             config.styleSignature
         ).joinToString("|")
         val contentChanged = hasViewLineContentChanged(view, line)
-        if (lastContentSignatures[view] == signature && !contentChanged) return false
+        if (shouldSkipContentRefresh(false, lastContentSignatures[view], signature)) return false
 
         applyContentUpdate(view, config, contentChanged = contentChanged) { target ->
             val isLeft = view.tag == IslandProbeUtils.LEFT_TEST_VIEW_TAG
@@ -429,17 +441,30 @@ internal object IslandSlotContentAssembler {
             isAlignedRight = source.isAlignedRight,
             metadata = source.metadata,
             text = mainTranslation,
-            words = emptyList(),
+            // Adjacent translation is rendered as a lyric line. Give its main
+            // translation the same source-word time range as the backing
+            // translation so both translation rows progress with the current
+            // Apple Music word-timed lyric instead of leaving the first row
+            // static.
+            words = buildTranslationProgressWords(source.words, mainTranslation),
             secondary = backgroundTranslation,
-            secondaryWords = buildBackgroundTranslationWords(source, backgroundTranslation)
+            secondaryWords = buildTranslationProgressWords(
+                source.secondaryWords,
+                backgroundTranslation
+            )
         )
     }
 
     internal fun buildBackgroundTranslationWords(
         source: IRichLyricLine,
         translation: String
+    ): List<LyricWord> = buildTranslationProgressWords(source.secondaryWords, translation)
+
+    internal fun buildTranslationProgressWords(
+        sourceWords: List<LyricWord>?,
+        translation: String
     ): List<LyricWord> {
-        val timedWords = source.secondaryWords.orEmpty().mapNotNull { word ->
+        val timedWords = sourceWords.orEmpty().mapNotNull { word ->
             val end = when {
                 word.end > word.begin -> word.end
                 word.duration > 0L -> word.begin + word.duration
@@ -512,16 +537,51 @@ internal object IslandSlotContentAssembler {
             )
         }
 
-        val mode = config?.translationDisplayMode ?: TranslationHelper.getTranslationDisplayMode(prefs)
-        val fallback = config?.translationFallback ?: TranslationHelper.isTranslationFallback(prefs)
-        if (mode != RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_OFF) {
-            if (TranslationHelper.isTranslationOnly(prefs)) {
-                rawLine = TranslationHelper.applyTranslationOnly(rawLine, mode, fallback)
-            } else if (TranslationHelper.isSwapTranslation(prefs)) {
-                rawLine = TranslationHelper.swapTranslation(rawLine, mode, fallback)
+        return if (config != null) {
+            applyTranslationPresentation(rawLine, config)
+        } else {
+            val mode = TranslationHelper.getTranslationDisplayMode(prefs)
+            val fallback = TranslationHelper.isTranslationFallback(prefs)
+            when {
+                mode == RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_OFF -> rawLine
+                TranslationHelper.isTranslationOnly(prefs) ->
+                    TranslationHelper.applyTranslationOnly(rawLine, mode, fallback)
+                TranslationHelper.isSwapTranslation(prefs) ->
+                    TranslationHelper.swapTranslation(rawLine, mode, fallback)
+                else -> rawLine
             }
         }
-        return rawLine
+    }
+
+    /**
+     * Applies the Island's lyric presentation preferences to every refresh
+     * path. In particular, BaseIslandRenderer can provide a raw line through
+     * lineOverride after the initial slot build; leaving that path untouched
+     * makes swapped translation flash once and then revert to the original.
+     */
+    internal fun applyTranslationPresentation(
+        line: IRichLyricLine,
+        config: IslandSlotRuntimeConfig
+    ): IRichLyricLine {
+        // A next-line preview has its own secondary payload and must not be
+        // interpreted as a normal current lyric during a later refresh.
+        if (line.metadata?.getBoolean(METADATA_NEXT_LINE_PREVIEW) == true) return line
+        if (config.translationDisplayMode == RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_OFF) {
+            return line
+        }
+        return when {
+            config.translationOnly -> TranslationHelper.applyTranslationOnly(
+                line,
+                config.translationDisplayMode,
+                config.translationFallback
+            )
+            config.swapTranslation -> TranslationHelper.swapTranslation(
+                line,
+                config.translationDisplayMode,
+                config.translationFallback
+            )
+            else -> line
+        }
     }
 
     private fun applyLyricContent(
@@ -533,14 +593,17 @@ internal object IslandSlotContentAssembler {
         playbackActive: Boolean,
         suppressAnimation: Boolean
     ): Boolean {
+        val sourceLine = lineOverride ?: buildSlotLyricLine(
+            view = view,
+            prefs = prefs,
+            config = config,
+            isLeft = view.tag == IslandProbeUtils.LEFT_TEST_VIEW_TAG
+        )
         val targetLine = displayLyricLine(
             prefs,
-            lineOverride ?: buildSlotLyricLine(
-                view = view,
-                prefs = prefs,
-                config = config,
-                isLeft = view.tag == IslandProbeUtils.LEFT_TEST_VIEW_TAG
-            )
+            sourceLine?.let { line ->
+                if (lineOverride != null) applyTranslationPresentation(line, config) else line
+            }
         )
         val isLeft = view.tag == IslandProbeUtils.LEFT_TEST_VIEW_TAG
         val centerCurrentLine = shouldCenterLine(config, targetLine, isLeft)
@@ -558,7 +621,7 @@ internal object IslandSlotContentAssembler {
         val signature = "lyric|${lineContentSignature(targetLine)}|${config.styleSignature}"
         val contentChanged = hasViewLineContentChanged(view, targetLine)
         val lyricsJustBecameAvailable = recordLyricAvailability(view, targetLine)
-        if (!force && lastContentSignatures[view] == signature && !contentChanged) {
+        if (shouldSkipContentRefresh(force, lastContentSignatures[view], signature)) {
             applyLineCentering(view, centerCurrentLine, centerSecondaryLine)
             applyLineRightAlignment(
                 view,
@@ -654,7 +717,7 @@ internal object IslandSlotContentAssembler {
         ).joinToString("|")
         val newLine = buildMetadataLine(mode, songName, artistName, albumName)
         val contentChanged = hasViewLineContentChanged(view, newLine)
-        if (!force && lastContentSignatures[view] == signature && !contentChanged) return false
+        if (shouldSkipContentRefresh(force, lastContentSignatures[view], signature)) return false
 
         applyContentUpdate(view, config, suppressAnimation, contentChanged) { target ->
             val isLeft = view.tag == IslandProbeUtils.LEFT_TEST_VIEW_TAG

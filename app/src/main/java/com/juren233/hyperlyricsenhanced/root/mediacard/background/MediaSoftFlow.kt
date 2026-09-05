@@ -377,7 +377,7 @@ internal class MediaFlowArtwork private constructor(
     companion object {
         const val TEXTURE_SIZE = 96
 
-        fun prepare(bitmap: Bitmap): MediaFlowArtwork? {
+        fun prepare(bitmap: Bitmap, blur: Boolean = true): MediaFlowArtwork? {
             if (bitmap.isRecycled || bitmap.width <= 0 || bitmap.height <= 0) return null
             val side = min(bitmap.width, bitmap.height)
             val source = Rect(
@@ -404,7 +404,7 @@ internal class MediaFlowArtwork private constructor(
                     TEXTURE_SIZE,
                     TEXTURE_SIZE
                 )
-                val blurred = boxBlur(pixels, TEXTURE_SIZE, TEXTURE_SIZE, BLUR_RADIUS)
+                val blurred = if (blur) boxBlur(pixels, TEXTURE_SIZE, TEXTURE_SIZE, BLUR_RADIUS) else pixels
                 MediaFlowArtwork(blurred, blurred.contentHashCode())
             } finally {
                 texture.recycle()
@@ -508,8 +508,10 @@ internal class MediaFlowTimeline {
 
 internal class MediaFlowBackgroundView(
     context: Context,
-    private val timeline: MediaFlowTimeline = MediaFlowTimeline()
+    private val timeline: MediaFlowTimeline = MediaFlowTimeline(),
+    appleMusicStyle: Boolean = false
 ) : View(context), Choreographer.FrameCallback {
+    private val appleRenderer = if (appleMusicStyle) AppleLyricsFlowRenderer(context, DEFAULT_ARTWORK) else null
     private val runtimeShader = RuntimeShader(FLOW_SHADER)
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { shader = runtimeShader }
     private var targetArtwork = DEFAULT_ARTWORK
@@ -560,6 +562,7 @@ internal class MediaFlowBackgroundView(
     }
 
     private fun updateArtwork(artwork: MediaFlowArtwork) {
+        appleRenderer?.updateArtwork(artwork, playing)
         val nextTexture = createTexture(artwork)
         if (!playing) {
             targetArtwork = artwork
@@ -616,6 +619,23 @@ internal class MediaFlowBackgroundView(
         val viewport = transitionViewport
         val shaderWidth = viewport?.width()?.coerceAtLeast(1) ?: width
         val shaderHeight = viewport?.height()?.coerceAtLeast(1) ?: height
+        if (appleRenderer != null) {
+            if (viewport == null) {
+                appleRenderer.draw(canvas, width, height, animationTime, transitionFraction(), tone)
+            } else {
+                val extensionHeight = (height - viewport.top).coerceAtLeast(shaderHeight)
+                val checkpoint = canvas.save()
+                canvas.translate(viewport.left.toFloat(), viewport.top.toFloat())
+                canvas.clipRect(0f, 0f, shaderWidth.toFloat(), extensionHeight.toFloat())
+                appleRenderer.draw(
+                    canvas, shaderWidth, shaderHeight, animationTime, transitionFraction(), tone,
+                    drawHeight = extensionHeight
+                )
+                canvas.restoreToCount(checkpoint)
+            }
+            finishTransitionIfNeeded()
+            return
+        }
         val appearance = MediaSoftArtworkFactory.appearance(tone)
         runtimeShader.setFloatUniform(
             "uResolution",

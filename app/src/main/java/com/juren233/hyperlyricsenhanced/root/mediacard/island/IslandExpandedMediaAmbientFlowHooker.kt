@@ -40,6 +40,7 @@ import com.juren233.hyperlyricsenhanced.root.mediacard.island.background.IslandE
 import com.juren233.hyperlyricsenhanced.root.mediacard.island.background.IslandExpandedMediaBackgroundHost
 import com.juren233.hyperlyricsenhanced.root.mediacard.notification.background.NotificationMediaColorConfig
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
+import com.juren233.hyperlyricsenhanced.root.utils.MediaCardDiagnosticLogger
 import io.github.libxposed.api.XposedInterface.Chain
 import io.github.libxposed.api.XposedInterface.HookHandle
 import io.github.libxposed.api.XposedInterface.Hooker
@@ -240,12 +241,22 @@ object IslandExpandedMediaAmbientFlowHooker {
     ) : Hooker {
         override fun intercept(chain: Chain): Any? {
             val binder = chain.thisObject ?: return chain.proceed()
+            MediaCardDiagnosticLogger.log(
+                stage = "island_expanded_media",
+                event = "binder_callback_begin",
+                details = "action=${action.name.lowercase()},method=${MediaCardDiagnosticLogger.sanitize(methodName)},binder=${MediaCardDiagnosticLogger.identity(binder)},nested=${bindingBinder.get() === binder},enabled=${SystemUiEnhancementGate.isEnabled()}",
+            )
             if (!SystemUiEnhancementGate.isEnabled()) {
                 if (action == Action.DETACH) cleanupBinder(binder)
                 val result = chain.proceed()
                 if (action == Action.ATTACH || action == Action.BIND) {
                     activeBinders.add(binder)
                 }
+                MediaCardDiagnosticLogger.log(
+                    stage = "island_expanded_media",
+                    event = "binder_callback_complete",
+                    details = "action=${action.name.lowercase()},binder=${MediaCardDiagnosticLogger.identity(binder)},enabled=false",
+                )
                 return result
             }
             if (action == Action.DETACH) cleanupBinder(binder)
@@ -296,8 +307,19 @@ object IslandExpandedMediaAmbientFlowHooker {
                     )
                 }
             }.onFailure { error ->
+                MediaCardDiagnosticLogger.log(
+                    stage = "island_expanded_media",
+                    event = "binder_apply_failed",
+                    reason = "exception",
+                    details = "action=${action.name.lowercase()},binder=${MediaCardDiagnosticLogger.identity(binder)},error=${MediaCardDiagnosticLogger.sanitize(error.message)}",
+                )
                 HookLogger.e(TAG, "应用展开态媒体流光模式失败", error)
             }
+            MediaCardDiagnosticLogger.log(
+                stage = "island_expanded_media",
+                event = "binder_callback_complete",
+                details = "action=${action.name.lowercase()},binder=${MediaCardDiagnosticLogger.identity(binder)},coverStyle=${currentCoverStyle()},hideCover=${hideCoverSource()},hideDevice=${hideDeviceSwitch()},playing=${runCatching { nativeApi?.isPlaying(binder) }.getOrNull()},activeBinders=${synchronized(activeBinders) { activeBinders.size }}",
+            )
             return result
         }
 
@@ -558,7 +580,8 @@ object IslandExpandedMediaAmbientFlowHooker {
             existing?.let { removeCustomFakeFlow(fakeContentView) }
             val flowView = MediaFlowBackgroundView(
                 fakeContentView.context,
-                binderState.customTimeline
+                binderState.customTimeline,
+                appleMusicStyle = true
             ).apply {
                 tag = CUSTOM_FAKE_FLOW_VIEW_TAG
                 visibility = View.GONE
@@ -835,12 +858,26 @@ object IslandExpandedMediaAmbientFlowHooker {
     }
 
     private fun applyMediaElements(binder: Any) {
-        val api = nativeApi ?: return
+        val api = nativeApi ?: run {
+            MediaCardDiagnosticLogger.log(
+                stage = "island_expanded_media",
+                event = "media_elements_apply_skipped",
+                reason = "native_api_unavailable",
+                details = "binder=${MediaCardDiagnosticLogger.identity(binder)}",
+            )
+            return
+        }
         val coverStyle = currentCoverStyle()
         val hideCoverSource = hideCoverSource()
         val hideDeviceSwitch = hideDeviceSwitch()
         val playbackActive = api.isPlaying(binder)
-        api.getHolders(binder).forEach { holder ->
+        val holders = api.getHolders(binder)
+        MediaCardDiagnosticLogger.log(
+            stage = "island_expanded_media",
+            event = "media_elements_apply_begin",
+            details = "binder=${MediaCardDiagnosticLogger.identity(binder)},holders=${holders.size},coverStyle=$coverStyle,hideCover=$hideCoverSource,hideDevice=$hideDeviceSwitch,playing=$playbackActive",
+        )
+        holders.forEach { holder ->
             IslandExpandedMediaElementController.apply(
                 elements = api.getMediaElements(holder),
                 coverStyle = coverStyle,
@@ -849,6 +886,11 @@ object IslandExpandedMediaAmbientFlowHooker {
                 playbackActive = playbackActive
             )
         }
+        MediaCardDiagnosticLogger.log(
+            stage = "island_expanded_media",
+            event = "media_elements_apply_complete",
+            details = "binder=${MediaCardDiagnosticLogger.identity(binder)},holders=${holders.size},coverStyle=$coverStyle,hideCover=$hideCoverSource,hideDevice=$hideDeviceSwitch,playing=$playbackActive",
+        )
     }
 
     private fun restoreMediaElements(binder: Any) {
@@ -963,7 +1005,7 @@ object IslandExpandedMediaAmbientFlowHooker {
             }
         }
         val layoutParams = MediaFlowOverlayLayout.copyForOverlay(anchor.layoutParams) ?: return null
-        val view = MediaFlowBackgroundView(anchor.context, state.customTimeline).apply {
+        val view = MediaFlowBackgroundView(anchor.context, state.customTimeline, appleMusicStyle = true).apply {
             tag = CUSTOM_FLOW_VIEW_TAG
             outlineProvider = anchor.outlineProvider
             clipToOutline = anchor.clipToOutline
@@ -1011,7 +1053,7 @@ object IslandExpandedMediaAmbientFlowHooker {
                     bitmap.recycle()
                     return@execute
                 }
-                val artwork = runCatching { MediaFlowArtwork.prepare(bitmap) }
+                val artwork = runCatching { MediaFlowArtwork.prepare(bitmap, blur = false) }
                     .onFailure { HookLogger.e(TAG, "提取展开态媒体柔光颜色失败", it) }
                     .getOrNull()
                 bitmap.recycle()

@@ -13,6 +13,7 @@ import com.juren233.hyperlyricsenhanced.root.HookEntry
 import com.juren233.hyperlyricsenhanced.root.SystemUiEnhancementGate
 import com.juren233.hyperlyricsenhanced.root.mediacard.MediaCoverRotationController
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
+import com.juren233.hyperlyricsenhanced.root.utils.MediaCardDiagnosticLogger
 import io.github.libxposed.api.XposedInterface.Chain
 import io.github.libxposed.api.XposedInterface.HookHandle
 import io.github.libxposed.api.XposedInterface.Hooker
@@ -200,6 +201,11 @@ object NotificationMediaCoverStyleHooker {
     private class ControllerHook(private val methodName: String) : Hooker {
         override fun intercept(chain: Chain): Any? {
             val controller = chain.thisObject ?: return chain.proceed()
+            MediaCardDiagnosticLogger.log(
+                stage = "notification_cover",
+                event = "controller_callback_begin",
+                details = "method=$methodName,controller=${MediaCardDiagnosticLogger.identity(controller)},arg0=${MediaCardDiagnosticLogger.identity(chain.args.firstOrNull())},enabled=${SystemUiEnhancementGate.isEnabled()}",
+            )
             if (!SystemUiEnhancementGate.isEnabled()) {
                 if (methodName == "detach") {
                     activeControllers.remove(controller)
@@ -209,9 +215,22 @@ object NotificationMediaCoverStyleHooker {
                 if (methodName == "attach" || methodName == "bindMediaData") {
                     activeControllers.add(controller)
                 }
+                MediaCardDiagnosticLogger.log(
+                    stage = "notification_cover",
+                    event = "controller_callback_complete",
+                    details = "method=$methodName,controller=${MediaCardDiagnosticLogger.identity(controller)},enabled=false",
+                )
                 return result
             }
-            if (methodName == "setSeamless" && hideDeviceSwitch()) return null
+            if (methodName == "setSeamless" && hideDeviceSwitch()) {
+                MediaCardDiagnosticLogger.log(
+                    stage = "notification_cover",
+                    event = "device_switch_callback_blocked",
+                    reason = "preference_enabled",
+                    details = "method=$methodName,controller=${MediaCardDiagnosticLogger.identity(controller)}",
+                )
+                return null
+            }
             if (methodName == "detach") {
                 activeControllers.remove(controller)
                 restoreStyle(controller)
@@ -226,8 +245,26 @@ object NotificationMediaCoverStyleHooker {
                         null
                     }
                     applyStyle(controller, mediaData)
-                }.onFailure { HookLogger.e(TAG, "应用通知中心媒体封面样式失败", it) }
+                    MediaCardDiagnosticLogger.log(
+                        stage = "notification_cover",
+                        event = "style_applied_after_controller_callback",
+                        details = "method=$methodName,controller=${MediaCardDiagnosticLogger.identity(controller)},style=${currentStyle()},hideCover=${hideCoverSource()},hideDevice=${hideDeviceSwitch()}",
+                    )
+                }.onFailure { error ->
+                    MediaCardDiagnosticLogger.log(
+                        stage = "notification_cover",
+                        event = "style_apply_failed",
+                        reason = "exception",
+                        details = "method=$methodName,controller=${MediaCardDiagnosticLogger.identity(controller)},error=${MediaCardDiagnosticLogger.sanitize(error.message)}",
+                    )
+                    HookLogger.e(TAG, "应用通知中心媒体封面样式失败", error)
+                }
             }
+            MediaCardDiagnosticLogger.log(
+                stage = "notification_cover",
+                event = "controller_callback_complete",
+                details = "method=$methodName,controller=${MediaCardDiagnosticLogger.identity(controller)},style=${currentStyle()},hideCover=${hideCoverSource()},hideDevice=${hideDeviceSwitch()}",
+            )
             return result
         }
     }
@@ -250,11 +287,26 @@ object NotificationMediaCoverStyleHooker {
     }
 
     private fun applyStyle(controller: Any, mediaData: Any?) {
-        val api = resolveApi(controller.javaClass.classLoader) ?: return
+        val api = resolveApi(controller.javaClass.classLoader) ?: run {
+            MediaCardDiagnosticLogger.log(
+                stage = "notification_cover",
+                event = "style_apply_skipped",
+                reason = "native_api_unavailable",
+                details = "controller=${MediaCardDiagnosticLogger.identity(controller)}",
+            )
+            return
+        }
         val holder = api.getHolder(controller) ?: return
         val albumView = api.getAlbumView(holder)
         val albumImage = api.getAlbumImage(holder)
         val style = currentStyle()
+        val hideSource = hideCoverSource()
+        val hideDevice = hideDeviceSwitch()
+        MediaCardDiagnosticLogger.log(
+            stage = "notification_cover",
+            event = "style_apply_begin",
+            details = "controller=${MediaCardDiagnosticLogger.identity(controller)},holder=${MediaCardDiagnosticLogger.identity(holder)},mediaData=${MediaCardDiagnosticLogger.identity(mediaData)},style=$style,hideCover=$hideSource,hideDevice=$hideDevice,albumView=${MediaCardDiagnosticLogger.view(albumView)},albumImage=${MediaCardDiagnosticLogger.view(albumImage)}",
+        )
         if (style == RootConstants.NOTIFICATION_MEDIA_COVER_STYLE_DEFAULT) {
             restoreStyle(controller)
             return
@@ -287,6 +339,11 @@ object NotificationMediaCoverStyleHooker {
             }
             else -> restoreStyle(controller)
         }
+        MediaCardDiagnosticLogger.log(
+            stage = "notification_cover",
+            event = "style_apply_complete",
+            details = "controller=${MediaCardDiagnosticLogger.identity(controller)},style=$style,hideCover=$hideSource,hideDevice=$hideDevice,albumView=${MediaCardDiagnosticLogger.view(albumView)},albumImage=${MediaCardDiagnosticLogger.view(albumImage)}",
+        )
     }
 
     private fun restoreStyle(controller: Any) {
@@ -408,11 +465,24 @@ object NotificationMediaCoverStyleHooker {
         fun applyLoadedLayout(controller: Any, style: Int) {
             val hideSource = hideCoverSource()
             val hideDevice = hideDeviceSwitch()
+            MediaCardDiagnosticLogger.log(
+                stage = "notification_cover",
+                event = "layout_apply_begin",
+                details = "controller=${MediaCardDiagnosticLogger.identity(controller)},style=$style,hideCover=$hideSource,hideDevice=$hideDevice",
+            )
             if (
                 style != RootConstants.NOTIFICATION_MEDIA_COVER_STYLE_HIDDEN &&
                 !hideSource &&
                 !hideDevice
-            ) return
+            ) {
+                MediaCardDiagnosticLogger.log(
+                    stage = "notification_cover",
+                    event = "layout_apply_skipped",
+                    reason = "no_layout_override",
+                    details = "controller=${MediaCardDiagnosticLogger.identity(controller)}",
+                )
+                return
+            }
             val normalLayout = normalLayoutField.get(controller)
             val context = layoutContextField.get(controller) as Context
             val ids = LayoutResourceIds.from(context)
@@ -462,6 +532,13 @@ object NotificationMediaCoverStyleHooker {
                     context.dp(26f)
                 )
             }
+            val normalRoot = normalLayout as? View
+            val albumRoot = normalAlbumLayoutField.get(controller) as? View
+            MediaCardDiagnosticLogger.log(
+                stage = "notification_cover",
+                event = "layout_apply_complete",
+                details = "controller=${MediaCardDiagnosticLogger.identity(controller)},style=$style,hideCover=$hideSource,hideDevice=$hideDevice,albumArt=${MediaCardDiagnosticLogger.view(normalRoot?.findViewById(ids.albumArt))},coverSource=${MediaCardDiagnosticLogger.view(albumRoot?.findViewById(ids.coverSource))},deviceSwitch=${MediaCardDiagnosticLogger.view(normalRoot?.findViewById(ids.mediaSeamless))}",
+            )
         }
 
         fun reloadAndApplyLayout(controller: Any) {
