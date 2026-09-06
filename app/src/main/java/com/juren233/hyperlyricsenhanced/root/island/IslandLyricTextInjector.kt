@@ -45,6 +45,7 @@ internal object IslandLyricTextInjector {
             linkViews(rootView)
         }
 
+        changed = IslandNativeSlotPlacement.apply(rootView, config) || changed
         IslandHostFacade.applyHostSettings(rootView, prefs)
         IslandViewRegistry.refreshInjectedViews(rootView)
         if (changed) {
@@ -112,6 +113,7 @@ internal object IslandLyricTextInjector {
         if (config.shouldInjectRight) {
             changed = restoreExistingSlotLightweight(rootView, IslandProbeUtils.RIGHT_PARENT_NAME, IslandProbeUtils.RIGHT_TEST_VIEW_TAG) || changed
         }
+        changed = IslandNativeSlotPlacement.apply(rootView, config) || changed
         IslandHostFacade.applyHostSettings(rootView, prefs)
         IslandViewRegistry.refreshInjectedViews(rootView)
         return changed
@@ -137,6 +139,7 @@ internal object IslandLyricTextInjector {
             }
         }
 
+        changed = IslandNativeSlotPlacement.apply(rootView, config) || changed
         IslandHostFacade.applyHostSettings(rootView, prefs)
         IslandViewRegistry.refreshInjectedViews(rootView)
         return changed
@@ -298,12 +301,12 @@ internal object IslandLyricTextInjector {
             val targetView = existingWrapper.findViewWithTag<View>(viewTag)
 
             if (targetView == null) {
-                existingWrapper.addView(createLyricView(rootView, viewTag, config, mode, suppressAnimation), createLyricTextLayoutParams())
+                existingWrapper.addView(createLyricView(rootView, viewTag, config, mode, suppressAnimation), createLyricTextLayoutParams(config))
                 changed = true
             } else if (!isViewTypeCorrect(targetView, config.activeMode)) {
                 existingWrapper.removeView(targetView)
                 IslandSlotContentAssembler.invalidate(targetView)
-                existingWrapper.addView(createLyricView(rootView, viewTag, config, mode, suppressAnimation), createLyricTextLayoutParams())
+                existingWrapper.addView(createLyricView(rootView, viewTag, config, mode, suppressAnimation), createLyricTextLayoutParams(config))
                 changed = true
             } else {
                 changed = restoreTargetView(targetView, config, mode, reconfigureExisting, suppressAnimation) || changed
@@ -325,10 +328,12 @@ internal object IslandLyricTextInjector {
             keepVisible = true
         }
         updateWrapper(wrapperView, widthPx, config, parentName)
-        wrapperView.addView(createLyricView(rootView, viewTag, config, mode, suppressAnimation), createLyricTextLayoutParams())
+        wrapperView.addView(createLyricView(rootView, viewTag, config, mode, suppressAnimation), createLyricTextLayoutParams(config))
 
         container.addView(wrapperView, FrameLayout.LayoutParams(wrapperLayoutWidth(config), FrameLayout.LayoutParams.MATCH_PARENT).apply {
-            gravity = Gravity.CENTER_VERTICAL
+            gravity = Gravity.CENTER_VERTICAL or config.wrapperHorizontalGravity(
+                isLeft = viewTag == IslandProbeUtils.LEFT_TEST_VIEW_TAG
+            )
         })
         hideNativeChildren(container, wrapperView)
 
@@ -436,9 +441,17 @@ internal object IslandLyricTextInjector {
         }
         val layoutParams = wrapper.layoutParams
         val expectedWidth = wrapperLayoutWidth(config)
-        if (layoutParams != null && (layoutParams.width != expectedWidth || layoutParams.height != FrameLayout.LayoutParams.MATCH_PARENT)) {
+        val expectedGravity = Gravity.CENTER_VERTICAL or config.wrapperHorizontalGravity(
+            isLeft = config.isLeftParent(parentName)
+        )
+        if (layoutParams is FrameLayout.LayoutParams && (
+                layoutParams.width != expectedWidth ||
+                    layoutParams.height != FrameLayout.LayoutParams.MATCH_PARENT ||
+                    (config.dynamicWidthEnabled && layoutParams.gravity != expectedGravity)
+            )) {
             layoutParams.width = expectedWidth
             layoutParams.height = FrameLayout.LayoutParams.MATCH_PARENT
+            if (config.dynamicWidthEnabled) layoutParams.gravity = expectedGravity
             wrapper.layoutParams = layoutParams
             changed = true
         }
@@ -457,11 +470,12 @@ internal object IslandLyricTextInjector {
     private fun restoreTargetView(targetView: View, config: IslandSlotRuntimeConfig, mode: Int, reconfigure: Boolean, suppressAnimation: Boolean = false): Boolean {
         var changed = false
         val layoutParams = targetView.layoutParams
+        val expectedWidth = lyricTextLayoutWidth(config)
         if (layoutParams != null &&
-            (layoutParams.width != FrameLayout.LayoutParams.MATCH_PARENT ||
+            (layoutParams.width != expectedWidth ||
                 layoutParams.height != FrameLayout.LayoutParams.MATCH_PARENT)
         ) {
-            layoutParams.width = FrameLayout.LayoutParams.MATCH_PARENT
+            layoutParams.width = expectedWidth
             layoutParams.height = FrameLayout.LayoutParams.MATCH_PARENT
             targetView.layoutParams = layoutParams
             changed = true
@@ -505,16 +519,24 @@ internal object IslandLyricTextInjector {
     }
 
     private fun wrapperLayoutWidth(config: IslandSlotRuntimeConfig): Int {
-        return if (config.isSplitMode) {
+        return if (config.isSplitMode || config.dynamicWidthEnabled) {
             FrameLayout.LayoutParams.WRAP_CONTENT
         } else {
             FrameLayout.LayoutParams.MATCH_PARENT
         }
     }
 
-    private fun createLyricTextLayoutParams(): FrameLayout.LayoutParams {
+    private fun lyricTextLayoutWidth(config: IslandSlotRuntimeConfig): Int {
+        return if (config.dynamicWidthEnabled && !config.isSplitMode) {
+            FrameLayout.LayoutParams.WRAP_CONTENT
+        } else {
+            FrameLayout.LayoutParams.MATCH_PARENT
+        }
+    }
+
+    private fun createLyricTextLayoutParams(config: IslandSlotRuntimeConfig): FrameLayout.LayoutParams {
         return FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT,
+            lyricTextLayoutWidth(config),
             FrameLayout.LayoutParams.MATCH_PARENT
         )
     }

@@ -78,6 +78,7 @@ object IslandViewHelper {
      * 清理所有注入的视图并恢复系统原生组件
      */
     fun clearInjectedViews(rootView: ViewGroup) {
+        IslandNativeSlotPlacement.restore(rootView)
         hideInjectedView(rootView, IslandProbeUtils.LEFT_TEST_VIEW_TAG)
         hideInjectedView(rootView, IslandProbeUtils.LEFT_TEST_WRAPPER_TAG)
         hideInjectedView(rootView, IslandProbeUtils.RIGHT_TEST_VIEW_TAG)

@@ -82,6 +82,17 @@ internal data class IslandSlotRuntimeConfig(
     fun rightAlignLyric(isLeft: Boolean): Boolean =
         IslandLyricPosition.alignsRight(lyricPosition(isLeft))
 
+    /**
+     * Horizontal placement for content-width slots. Apply this at both the
+     * injected wrapper and the native module boundary: aligning only the inner
+     * wrapper cannot override the right native module's END layout gravity.
+     */
+    fun wrapperHorizontalGravity(isLeft: Boolean): Int = when {
+        centerLyric(isLeft) -> android.view.Gravity.CENTER_HORIZONTAL
+        rightAlignLyric(isLeft) -> android.view.Gravity.END
+        else -> android.view.Gravity.START
+    }
+
     val groupVocalCenteringEnabled: Boolean
         get() = IslandLyricPosition.supportsGroupVocalCentering(
             lyricMode = activeMode,

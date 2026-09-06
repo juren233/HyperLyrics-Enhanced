@@ -41,6 +41,19 @@ class RichLyricLineView(
         set(value) {
             main.hugContentWidth = value
             secondary.hugContentWidth = value
+            // In dynamic mode the rich wrapper itself is content-sized. Keep
+            // its rows wrap-content too; MATCH_PARENT rows would retain the
+            // old side width and let the host place the visible text at the
+            // wrong edge after the wrapper shrinks.
+            val childWidth = if (value) LayoutParams.WRAP_CONTENT else LayoutParams.MATCH_PARENT
+            listOf(main, secondary).forEach { child ->
+                val params = child.layoutParams
+                if (params != null && params.width != childWidth) {
+                    params.width = childWidth
+                    child.layoutParams = params
+                }
+            }
+            requestLayout()
         }
 
     /**
