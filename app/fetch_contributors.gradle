@@ -28,35 +28,43 @@ tasks.register("generateContributors") {
             }
         }
 
-        def contributors
+        def maintainerSource
+        def originalSources
+        def developmentSources
         try {
-            contributors = fetchJson("${githubApiUrl}/repos/limczhh/HyperLyric/contributors") as List<Map<String, Object>>
             // The "original HyperLyric contributors" section must stay frozen to the
             // initial two upstream contributors instead of growing with the upstream repo.
             def originalContributorLogins = ["limczhh", "zszf114514"] as Set
-            contributors = contributors.findAll { user ->
+            originalSources = (fetchJson("${githubApiUrl}/repos/limczhh/HyperLyric/contributors") as List<Map<String, Object>>).findAll { user ->
                 def login = user["login"] as String
                 login && login in originalContributorLogins
             }
-
-            contributors.each { user ->
+            // Development contributors are everyone who has committed to this
+            // repository apart from the maintainer and the frozen original
+            // HyperLyric contributors.
+            def reservedLogins = (["juren233"] + originalContributorLogins) as Set
+            developmentSources = (fetchJson("${githubApiUrl}/repos/juren233/HyperLyrics-Enhanced/contributors") as List<Map<String, Object>>).findAll { user ->
                 def login = user["login"] as String
-                try {
-                    def userDetail = fetchJson("${githubApiUrl}/users/${login}") as Map<String, Object>
-                    def actualName = userDetail["name"] as String
-                    if (actualName) {
-                        user["name"] = actualName
-                    }
-                } catch (Exception ignored) {
-                    // The login remains a valid display-name fallback.
-                }
+                login && !(login in reservedLogins) && !login.endsWith("[bot]")
             }
-
-            contributors.add(0, contributorFallback.first())
+            maintainerSource = contributorFallback.first()
         } catch (Exception exception) {
             println("Failed to fetch contributors, using local fallback: ${exception.message}")
-            contributors = contributorFallback.collect { user ->
-                [login: user.login, name: user.name, html_url: user.html_url]
+            maintainerSource = contributorFallback[0]
+            originalSources = [contributorFallback[1], contributorFallback[2]]
+            developmentSources = [contributorFallback[3]]
+        }
+
+        ([maintainerSource] + originalSources + developmentSources).each { user ->
+            def login = user["login"] as String
+            try {
+                def userDetail = fetchJson("${githubApiUrl}/users/${login}") as Map<String, Object>
+                def actualName = userDetail["name"] as String
+                if (actualName) {
+                    user["name"] = actualName
+                }
+            } catch (Exception ignored) {
+                // The login remains a valid display-name fallback.
             }
         }
 
@@ -69,20 +77,7 @@ tasks.register("generateContributors") {
                 .replace("\t", "\\t")
         }
 
-        def content = '''package com.juren233.hyperlyricsenhanced.ui.utils
-
-data class ContributorItem(
-    val name: String,
-    val summary: String,
-    val githubUrl: String,
-    val avatarRes: Int
-)
-
-object ContributorsProvider {
-    val list = listOf(
-'''
-
-        contributors.each { user ->
+        def renderContributorEntry = { user ->
             def login = user["login"] as String
             def name = (user["name"] as String) ?: login
             def htmlUrl = (user["html_url"] as String) ?: "https://github.com/${login}"
@@ -113,13 +108,38 @@ object ContributorsProvider {
                 }
             }
 
-            content += "        ContributorItem(\"${escapeKotlinString(name)}\", \"@${escapeKotlinString(login)}\", \"${escapeKotlinString(htmlUrl)}\", ${avatarResource}),\n"
+            "ContributorItem(\"${escapeKotlinString(name)}\", \"@${escapeKotlinString(login)}\", \"${escapeKotlinString(htmlUrl)}\", ${avatarResource})"
         }
-        content += "    )\n}\n"
+
+        def content = '''package com.juren233.hyperlyricsenhanced.ui.utils
+
+data class ContributorItem(
+    val name: String,
+    val summary: String,
+    val githubUrl: String,
+    val avatarRes: Int
+)
+
+object ContributorsProvider {
+    val maintainer = '''
+        content += renderContributorEntry(maintainerSource)
+        content += '''
+    val developmentContributors = listOf(
+'''
+        content += developmentSources.collect { "        " + renderContributorEntry(it) }.join(",\n")
+        content += '''
+    )
+    val originalHyperLyricContributors = listOf(
+'''
+        content += originalSources.collect { "        " + renderContributorEntry(it) }.join(",\n")
+        content += '''
+    )
+}
+'''
 
         def file = new File(projectDir, "src/main/java/com/juren233/hyperlyricsenhanced/ui/utils/ContributorsProvider.kt")
         file.parentFile.mkdirs()
         file.setText(content, "UTF-8")
-        println("ContributorsProvider.kt generated with ${contributors.size()} contributor(s).")
+        println("ContributorsProvider.kt generated: maintainer=1, development=${developmentSources.size()}, originalHyperLyric=${originalSources.size()}.")
     }
 }

@@ -109,6 +109,8 @@
     <string name="dev_name">李得胜</string>
     <string name="title_project">项目地址</string>
     <string name="title_contributors">贡献者</string>
+    <string name="title_main_maintainer">主要维护者</string>
+    <string name="title_development_contributors">开发贡献者</string>
     <string name="title_original_hyperlyric_contributors">原 HyperLyric 开发贡献者</string>
     <string name="title_licenses">引用</string>
     <string name="title_acknowledgments">致谢</string>

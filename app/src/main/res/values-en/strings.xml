@@ -108,6 +108,8 @@
     <string name="dev_name">lidesheng</string>
     <string name="title_project">Project</string>
     <string name="title_contributors">Contributors</string>
+    <string name="title_main_maintainer">Maintainer</string>
+    <string name="title_development_contributors">Developers</string>
     <string name="title_original_hyperlyric_contributors">Original HyperLyric development contributors</string>
     <string name="title_licenses">References</string>
     <string name="title_acknowledgments">Acknowledgments</string>

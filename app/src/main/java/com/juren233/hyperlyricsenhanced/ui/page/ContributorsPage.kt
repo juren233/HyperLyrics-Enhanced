@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import com.juren233.hyperlyricsenhanced.R
 import com.juren233.hyperlyricsenhanced.ui.navigation.LocalNavigator
 import com.juren233.hyperlyricsenhanced.ui.utils.BlurredBar
+import com.juren233.hyperlyricsenhanced.ui.utils.ContributorItem
 import com.juren233.hyperlyricsenhanced.ui.utils.ContributorsProvider
 import com.juren233.hyperlyricsenhanced.ui.utils.pageScrollModifiers
 import com.juren233.hyperlyricsenhanced.ui.utils.rememberBlurBackdrop
@@ -113,33 +114,26 @@ private fun LazyListScope.contributorsPageSections() {
             )
         }
     }
+    item(key = "maintainer_title") {
+        SmallTitle(text = stringResource(R.string.title_main_maintainer))
+    }
     item(key = "maintainer_card") {
-        val context = LocalContext.current
         Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
             Column {
-                ContributorsProvider.list.firstOrNull()?.let { contributor ->
-                    ArrowPreference(
-                        title = contributor.name,
-                        summary = contributor.summary.ifEmpty { null },
-                        startAction = {
-                            Image(
-                                painter = painterResource(id = contributor.avatarRes),
-                                contentDescription = contributor.name,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier
-                                    .padding(end = 8.dp)
-                                    .size(40.dp)
-                                    .clip(CircleShape)
-                                    .background(MiuixTheme.colorScheme.primaryContainer)
-                            )
-                        },
-                        onClick = {
-                            if (contributor.githubUrl.isNotEmpty()) {
-                                val intent = Intent(Intent.ACTION_VIEW, contributor.githubUrl.toUri())
-                                context.startActivity(intent)
-                            }
-                        }
-                    )
+                ContributorEntry(contributor = ContributorsProvider.maintainer)
+            }
+        }
+    }
+    if (ContributorsProvider.developmentContributors.isNotEmpty()) {
+        item(key = "development_contributors_title") {
+            SmallTitle(text = stringResource(R.string.title_development_contributors))
+        }
+        item(key = "development_contributors_card") {
+            Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
+                Column {
+                    ContributorsProvider.developmentContributors.forEach { contributor ->
+                        ContributorEntry(contributor = contributor)
+                    }
                 }
             }
         }
@@ -155,34 +149,39 @@ private fun LazyListScope.contributorsPageSections() {
         }
     }
     item(key = "original_contributors_card") {
-        val context = LocalContext.current
         Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
             Column {
-                ContributorsProvider.list.drop(1).forEach { contributor ->
-                    ArrowPreference(
-                        title = contributor.name,
-                        summary = contributor.summary.ifEmpty { null },
-                        startAction = {
-                            Image(
-                                painter = painterResource(id = contributor.avatarRes),
-                                contentDescription = contributor.name,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier
-                                    .padding(end = 8.dp)
-                                    .size(40.dp)
-                                    .clip(CircleShape)
-                                    .background(MiuixTheme.colorScheme.primaryContainer)
-                            )
-                        },
-                        onClick = {
-                            if (contributor.githubUrl.isNotEmpty()) {
-                                val intent = Intent(Intent.ACTION_VIEW, contributor.githubUrl.toUri())
-                                context.startActivity(intent)
-                            }
-                        }
-                    )
+                ContributorsProvider.originalHyperLyricContributors.forEach { contributor ->
+                    ContributorEntry(contributor = contributor)
                 }
             }
         }
     }
+}
+
+@Composable
+private fun ContributorEntry(contributor: ContributorItem) {
+    val context = LocalContext.current
+    ArrowPreference(
+        title = contributor.name,
+        summary = contributor.summary.ifEmpty { null },
+        startAction = {
+            Image(
+                painter = painterResource(id = contributor.avatarRes),
+                contentDescription = contributor.name,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .padding(end = 8.dp)
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(MiuixTheme.colorScheme.primaryContainer)
+            )
+        },
+        onClick = {
+            if (contributor.githubUrl.isNotEmpty()) {
+                val intent = Intent(Intent.ACTION_VIEW, contributor.githubUrl.toUri())
+                context.startActivity(intent)
+            }
+        }
+    )
 }
