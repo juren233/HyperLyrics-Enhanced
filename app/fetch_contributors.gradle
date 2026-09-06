@@ -31,9 +31,12 @@ tasks.register("generateContributors") {
         def contributors
         try {
             contributors = fetchJson("${githubApiUrl}/repos/limczhh/HyperLyric/contributors") as List<Map<String, Object>>
+            // The "original HyperLyric contributors" section must stay frozen to the
+            // initial two upstream contributors instead of growing with the upstream repo.
+            def originalContributorLogins = ["limczhh", "zszf114514"] as Set
             contributors = contributors.findAll { user ->
                 def login = user["login"] as String
-                login && login != "juren233" && !login.endsWith("[bot]")
+                login && login in originalContributorLogins
             }
 
             contributors.each { user ->
