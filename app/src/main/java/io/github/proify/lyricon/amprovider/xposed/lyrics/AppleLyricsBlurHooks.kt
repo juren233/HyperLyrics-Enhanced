@@ -1509,7 +1509,17 @@ internal class AppleLyricsBlurHooks(
                                     resetAppleLyricsBlurRuntimeState(recyclerView)
                                 } else {
                                     if (name == "onChildAttachedToWindow") {
-                                        (chain.args.firstOrNull() as? View)?.let(::clearAppleLyricsBlur)
+                                        // 只有复用且带过模糊状态的视图才可能有残留效果或未结束的动画；
+                                        // 无状态视图直接跳过，避免每次挂载都执行效果清除
+                                        (chain.args.firstOrNull() as? View)?.let { child ->
+                                            val hasBlurState =
+                                                synchronized(appleLyricsBlurRuntimeStates) {
+                                                    appleLyricsBlurRuntimeStates.containsKey(child)
+                                                }
+                                            if (hasBlurState) {
+                                                clearAppleLyricsBlur(child)
+                                            }
+                                        }
                                     }
                                     if (name == "onLayout") {
                                         completeAppleLyricsProgrammaticRecenter(recyclerView)

@@ -535,22 +535,27 @@ fun AppleMusicOptimizationPage(
                         onClick = { showLyricsBlurValuesDialog = true },
                     )
                 }
-                SwitchPreference(
-                    title = stringResource(
-                        R.string.title_apple_music_lyrics_blur_animation
-                    ),
-                    summary = stringResource(
-                        R.string.summary_apple_music_lyrics_blur_animation
-                    ),
-                    checked = lyricsBlurAnimation,
-                    onCheckedChange = { enabled ->
-                        lyricsBlurAnimation = enabled
-                        saveConfig(
-                            RootConstants.KEY_HOOK_APPLE_MUSIC_LYRICS_BLUR_ANIMATION,
-                            enabled,
-                        )
-                    },
-                )
+                AnimatedVisibility(
+                    visible = lyricsBlurEffect !=
+                        RootConstants.APPLE_MUSIC_LYRICS_BLUR_EFFECT_OFF
+                ) {
+                    SwitchPreference(
+                        title = stringResource(
+                            R.string.title_apple_music_lyrics_blur_animation
+                        ),
+                        summary = stringResource(
+                            R.string.summary_apple_music_lyrics_blur_animation
+                        ),
+                        checked = lyricsBlurAnimation,
+                        onCheckedChange = { enabled ->
+                            lyricsBlurAnimation = enabled
+                            saveConfig(
+                                RootConstants.KEY_HOOK_APPLE_MUSIC_LYRICS_BLUR_ANIMATION,
+                                enabled,
+                            )
+                        },
+                    )
+                }
                 SwitchPreference(
                     title = stringResource(
                         R.string.title_apple_music_follow_system_font_weight
