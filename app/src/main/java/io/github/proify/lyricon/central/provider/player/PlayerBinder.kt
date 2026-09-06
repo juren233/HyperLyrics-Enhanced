@@ -124,6 +124,9 @@ internal class PlayerBinder(
             val normalized = song?.normalize()
             recorder.song = normalized
             playerEvents.safeNotify { onSongChanged(recorder, normalized) }
+            // Song decoding is asynchronous: lyrics may arrive after the playback anchor.
+            // Refresh the subscriber's position after the song event resets its lyric cursor.
+            publishPlaybackAnchor("song_changed")
         }
     }
 
@@ -198,6 +201,9 @@ internal class PlayerBinder(
             playerEvents.safeNotify { onPlaybackStateChanged(recorder, isPlaying) }
         }
 
+        // Accepting state must also deliver its anchor. The screen-off ticker is deliberately
+        // stopped, and PLAYING -> PLAYING does not emit a boolean playback event.
+        publishPlaybackAnchor("playback_state")
         if (isPlaying) startPositionUpdate() else stopPositionUpdate()
     }
 
@@ -342,6 +348,21 @@ internal class PlayerBinder(
 
     private fun isBuffering(): Boolean =
         isState2Enabled.get() && lastPlaybackState?.state == PlaybackState.STATE_BUFFERING
+
+    private fun publishPlaybackAnchor(reason: String) {
+        if (closed.get() || !isState2Enabled.get()) return
+        val position = computeCurrentPosition()
+        publishPosition(position)
+        if (BuildConfig.DEBUG) {
+            HookLogger.i(
+                TAG,
+                "[LyricPositionDiag] stage=central_anchor_publish, reason=$reason, " +
+                    "stateSequence=${playbackStateSequence.get()}, player=${providerInfo.playerPackageName}, " +
+                    "screen=${ScreenStateMonitor.state}, position=$position, " +
+                    "state=${lastPlaybackState?.state}, songId=${recorder.song?.id}",
+            )
+        }
+    }
 
     private fun publishPosition(position: Long) {
         recorder.position = position

@@ -272,6 +272,54 @@ class ActivePlayerCoordinatorTest {
         assertEquals(listOf("first-song"), listener.songIds)
     }
 
+    @Test
+    fun `new zero anchor reaches active subscriber without another playing event`() {
+        val coordinator = coordinator(officialProviderPreference = { true })
+        val listener = RecordingListener()
+        coordinator.addListener(listener)
+        val recorder = playingRecorder(officialInfo)
+        recorder.position = 35_163L
+        coordinator.onPlaybackStateChanged(recorder, true)
+        listener.positions.clear()
+
+        // No ticker and no PLAYING -> PLAYING boolean event: only the new anchor is delivered.
+        recorder.position = 0L
+        coordinator.onPositionChanged(recorder, 0L)
+
+        assertEquals(listOf(0L), listener.positions)
+        assertEquals(true, listener.isPlaying)
+        assertEquals(officialInfo, listener.activeProvider)
+    }
+
+    @Test
+    fun `late song and same song lyrics keep the new authoritative position`() {
+        val coordinator = coordinator(officialProviderPreference = { true })
+        val listener = RecordingListener()
+        coordinator.addListener(listener)
+        val recorder = playingRecorder(officialInfo)
+        recorder.position = 35_163L
+        coordinator.onPlaybackStateChanged(recorder, true)
+        listener.positions.clear()
+
+        recorder.position = 0L
+        coordinator.onPositionChanged(recorder, 0L)
+        val song = Song().apply { id = "new-song"; name = "New Song" }
+        recorder.song = song
+        coordinator.onSongChanged(recorder, song)
+        recorder.position = 356L
+        coordinator.onPositionChanged(recorder, 356L)
+        // A later same-song supplement must not restore the previous track's 35 second cursor.
+        coordinator.onSongChanged(recorder, song)
+        recorder.position = 1_200L
+        coordinator.onPositionChanged(recorder, 1_200L)
+
+        assertEquals(listOf(0L, 356L, 1_200L), listener.positions)
+        val reconnect = RecordingListener()
+        coordinator.syncNewProviderState(recorder, reconnect)
+        assertEquals(listOf("new-song"), reconnect.songIds)
+        assertEquals(listOf(1_200L), reconnect.positions)
+    }
+
     private fun playingRecorder(providerInfo: ProviderInfo) = PlayerRecorder(providerInfo).apply {
         isPlaying = true
     }

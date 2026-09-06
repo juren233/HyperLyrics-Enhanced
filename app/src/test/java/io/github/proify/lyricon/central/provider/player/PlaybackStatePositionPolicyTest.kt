@@ -57,4 +57,24 @@ class PlaybackStatePositionPolicyTest {
             ),
         )
     }
+    @Test
+    fun `new track anchor replaces old cursor while ticker is stopped`() {
+        assertEquals(4L, PlaybackStatePositionPolicy.positionAt(
+            PlaybackState.STATE_PLAYING, 0L, 47_516_983L, 1f, 47_516_987L,
+        ))
+        assertEquals(356L, PlaybackStatePositionPolicy.positionAt(
+            PlaybackState.STATE_PLAYING, 0L, 47_516_983L, 1f, 47_517_339L,
+        ))
+    }
+
+    @Test
+    fun `seek and paused anchors use the received position without ticking`() {
+        assertEquals(90_200L, PlaybackStatePositionPolicy.positionAt(
+            PlaybackState.STATE_PLAYING, 90_000L, 10_000L, 2f, 10_100L,
+        ))
+        assertEquals(90_000L, PlaybackStatePositionPolicy.positionAt(
+            PlaybackState.STATE_PAUSED, 90_000L, 10_000L, 1f, 20_000L,
+        ))
+    }
+
 }
