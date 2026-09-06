@@ -105,6 +105,11 @@ interface OfficialProviderHost {
     ) = Unit
 
     /** Emits bounded debug-only diagnostics through the host's exported log channel. */
+    /** Optional capability: false unless the core explicitly enables debug diagnostics.
+     * New packs must fail closed when an older core has no such method.
+     */
+    fun isDiagnosticEnabled(): Boolean = false
+
     fun reportDiagnostic(
         tag: String,
         message: String,

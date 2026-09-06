@@ -1,5 +1,7 @@
 package com.juren233.hyperlyricsenhanced.root.mediacard.background
 
+import com.juren233.hyperlyricsenhanced.BuildConfig
+import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapShader
@@ -514,10 +516,11 @@ internal class MediaFlowBackgroundView(
     private val appleRenderer = if (appleMusicStyle) AppleLyricsFlowRenderer(context, DEFAULT_ARTWORK) else null
     private val runtimeShader = RuntimeShader(FLOW_SHADER)
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { shader = runtimeShader }
-    private var targetArtwork = DEFAULT_ARTWORK
     private var fromTexture = createTexture(DEFAULT_ARTWORK)
     private var targetTexture = fromTexture
-    private var transitionStartedAt: Float? = null
+    private val crossfade = MediaArtworkCrossfade<MediaFlowArtwork>()
+    private var artworkFraction = 1f
+    private var diagnosticFirstDraw = false
     private var animationTime = 0f
     private var frameScheduled = false
     private var playing = false
@@ -539,18 +542,15 @@ internal class MediaFlowBackgroundView(
         playing: Boolean
     ) {
         animationTime = timeline.currentTimeSeconds()
-        if (artwork != null && artwork != targetArtwork) updateArtwork(artwork)
-        this.tone = tone
-        if (this.playing != playing) {
-            this.playing = playing
-            timeline.setPlaying(playing)
-            if (!playing) {
-                finishArtworkTransition()
-                stopFrames()
-            } else {
-                scheduleFrame()
-            }
+        if (BuildConfig.DEBUG && this.playing != playing) {
+            HookLogger.i("MediaFlowCrossfade", "event=playback view=${System.identityHashCode(this)} " +
+                "previous=${this.playing} next=$playing transition=${crossfade.active} fraction=$artworkFraction shown=$isShown")
         }
+        this.tone = tone
+        this.playing = playing
+        timeline.setPlaying(playing)
+        if (artwork != null && crossfade.offer(artwork)) updateArtwork(artwork)
+        if (shouldScheduleFrames()) scheduleFrame() else stopFrames()
         invalidate()
     }
 
@@ -562,20 +562,23 @@ internal class MediaFlowBackgroundView(
     }
 
     private fun updateArtwork(artwork: MediaFlowArtwork) {
-        appleRenderer?.updateArtwork(artwork, playing)
+        appleRenderer?.updateArtwork(artwork, crossfade.active)
         val nextTexture = createTexture(artwork)
-        if (!playing) {
-            targetArtwork = artwork
+        if (!crossfade.active) {
             fromTexture = nextTexture
             targetTexture = nextTexture
-            transitionStartedAt = null
+            artworkFraction = 1f
         } else {
             fromTexture = targetTexture
-            targetArtwork = artwork
             targetTexture = nextTexture
-            transitionStartedAt = animationTime
+            artworkFraction = 0f
         }
         updateShaderArtwork()
+        if (BuildConfig.DEBUG) {
+            diagnosticFirstDraw = true
+            HookLogger.i("MediaFlowCrossfade", "event=artwork_commit view=${System.identityHashCode(this)} " +
+                "artwork=${System.identityHashCode(artwork)} transition=${crossfade.active} playing=$playing shown=$isShown")
+        }
     }
 
     override fun onAttachedToWindow() {
@@ -602,6 +605,7 @@ internal class MediaFlowBackgroundView(
         frameScheduled = false
         if (!shouldScheduleFrames()) return
         val visible = isEffectivelyVisible()
+        if (!visible) crossfade.suspendDrawing()
         if (visible) {
             animationTime = timeline.currentTimeSeconds()
             invalidate()
@@ -616,6 +620,12 @@ internal class MediaFlowBackgroundView(
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         if (width <= 0 || height <= 0) return
+        artworkFraction = crossfade.draw(SystemClock.uptimeMillis())
+        if (BuildConfig.DEBUG && diagnosticFirstDraw) {
+            diagnosticFirstDraw = false
+            HookLogger.i("MediaFlowCrossfade", "event=first_draw view=${System.identityHashCode(this)} " +
+                "transition=${crossfade.active} fraction=$artworkFraction shown=$isShown playing=$playing")
+        }
         val viewport = transitionViewport
         val shaderWidth = viewport?.width()?.coerceAtLeast(1) ?: width
         val shaderHeight = viewport?.height()?.coerceAtLeast(1) ?: height
@@ -680,27 +690,25 @@ internal class MediaFlowBackgroundView(
         runtimeShader.setInputShader("uArtworkTo", targetTexture)
     }
 
-    private fun transitionFraction(): Float {
-        val start = transitionStartedAt ?: return 1f
-        val fraction = ((animationTime - start) / ARTWORK_TRANSITION_SECONDS).coerceIn(0f, 1f)
-        return fraction * fraction * (3f - 2f * fraction)
-    }
+    private fun transitionFraction(): Float = artworkFraction
 
     private fun finishTransitionIfNeeded() {
-        val start = transitionStartedAt ?: return
-        if (animationTime - start < ARTWORK_TRANSITION_SECONDS) return
-        finishArtworkTransition()
-    }
-
-    private fun finishArtworkTransition() {
-        if (transitionStartedAt == null) return
-        fromTexture = targetTexture
-        transitionStartedAt = null
-        updateShaderArtwork()
+        val wasActive = crossfade.active
+        val next = crossfade.completeFrame()
+        if (next != null) {
+            updateArtwork(next)
+        } else if (wasActive && !crossfade.active) {
+            fromTexture = targetTexture
+            updateShaderArtwork()
+        }
+        if (BuildConfig.DEBUG && wasActive && (next != null || !crossfade.active)) {
+            HookLogger.i("MediaFlowCrossfade", "event=transition_complete view=${System.identityHashCode(this)} queued=${next != null}")
+        }
+        if (!shouldScheduleFrames()) stopFrames()
     }
 
     private fun shouldScheduleFrames(): Boolean =
-        playing && isAttachedToWindow && windowVisibility == VISIBLE
+        (playing || crossfade.active) && isAttachedToWindow && windowVisibility == VISIBLE
 
     private fun isEffectivelyVisible(): Boolean {
         if (!isShown || !getGlobalVisibleRect(visibleRect) || visibleRect.isEmpty) return false
@@ -719,6 +727,7 @@ internal class MediaFlowBackgroundView(
     }
 
     private fun stopFrames() {
+        crossfade.suspendDrawing()
         if (frameScheduled) Choreographer.getInstance().removeFrameCallback(this)
         frameScheduled = false
     }
@@ -726,7 +735,6 @@ internal class MediaFlowBackgroundView(
     companion object {
         private const val FRAME_INTERVAL_MS = 42L
         private const val HIDDEN_PROBE_INTERVAL_MS = 250L
-        private const val ARTWORK_TRANSITION_SECONDS = 0.85f
         private const val FLOW_SATURATION = 2.5f
         private val DEFAULT_ARTWORK = createDefaultArtwork()
 

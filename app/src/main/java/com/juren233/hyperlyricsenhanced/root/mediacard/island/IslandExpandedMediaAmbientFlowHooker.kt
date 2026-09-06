@@ -913,23 +913,45 @@ object IslandExpandedMediaAmbientFlowHooker {
             !hideCoverSource &&
             !hideDeviceSwitch
         ) {
+            logFakeMediaSkip("no_override_requested", fakeContentView, binder)
             return
         }
         val fakeExpandedView = fakeContentView.javaClass.methods.firstOrNull {
             it.name == "getFakeExpandedView" && it.parameterTypes.isEmpty()
-        }?.invoke(fakeContentView) as? View ?: return
+        }?.invoke(fakeContentView) as? View ?: run {
+            logFakeMediaSkip("fake_expanded_view_unavailable", fakeContentView, binder)
+            return
+        }
         val activeBinder = binder
             ?: synchronized(activeBinders) { activeBinders.firstOrNull() }
-            ?: return
+            ?: run {
+                logFakeMediaSkip("binder_unavailable", fakeContentView, binder)
+                return
+            }
         val referenceElements = api.getHolders(activeBinder).firstNotNullOfOrNull { holder ->
             runCatching { api.getMediaElements(holder) }.getOrNull()
-        } ?: return
+        } ?: run {
+            logFakeMediaSkip("reference_holder_unavailable", fakeContentView, activeBinder)
+            return
+        }
         IslandExpandedMediaElementController.applyToFakeView(
             fakeExpandedView = fakeExpandedView,
             referenceElements = referenceElements,
             coverStyle = coverStyle,
             hideCoverSource = hideCoverSource,
             hideDeviceSwitch = hideDeviceSwitch
+        )
+    }
+
+    private fun logFakeMediaSkip(reason: String, contentView: View, binder: Any?) {
+        if (!BuildConfig.DEBUG) return
+        MediaCardDiagnosticLogger.log(
+            stage = "island_fake_media_resolve",
+            event = "apply_skipped",
+            reason = reason,
+            details = "build=${BuildConfig.VERSION_CODE},fake=${MediaCardDiagnosticLogger.view(contentView)}," +
+                "binder=${MediaCardDiagnosticLogger.identity(binder)}",
+            positionSample = true,
         )
     }
 
@@ -1045,7 +1067,7 @@ object IslandExpandedMediaAmbientFlowHooker {
         }
         val bitmap = MediaArtworkSampler.sample(drawable) ?: return
         state.customColorToken = token
-        state.customArtwork = null
+        // Keep the displayed artwork while the next request is prepared.
         val request = state.request.incrementAndGet()
         runCatching {
             colorExecutor.execute {

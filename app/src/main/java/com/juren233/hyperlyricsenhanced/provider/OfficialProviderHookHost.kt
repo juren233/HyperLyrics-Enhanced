@@ -430,6 +430,8 @@ internal class OfficialProviderHookHost(
         }
     }
 
+    override fun isDiagnosticEnabled(): Boolean = BuildConfig.DEBUG
+
     override fun reportDiagnostic(tag: String, message: String) {
         if (!BuildConfig.DEBUG) return
         val safeTag = tag
