@@ -138,6 +138,14 @@ fun AppleMusicOptimizationPage(
             )
         )
     }
+    var lyricsBlurAnimation by remember {
+        mutableStateOf(
+            prefs.getBoolean(
+                RootConstants.KEY_HOOK_APPLE_MUSIC_LYRICS_BLUR_ANIMATION,
+                RootConstants.DEFAULT_HOOK_APPLE_MUSIC_LYRICS_BLUR_ANIMATION,
+            )
+        )
+    }
     val initialNativeLyricsBlurRadiusRange = remember(prefs) {
         val configuredMin = prefs.getFloat(
             RootConstants.KEY_HOOK_APPLE_MUSIC_NATIVE_LYRICS_BLUR_MIN_RADIUS_DP,
@@ -527,6 +535,22 @@ fun AppleMusicOptimizationPage(
                         onClick = { showLyricsBlurValuesDialog = true },
                     )
                 }
+                SwitchPreference(
+                    title = stringResource(
+                        R.string.title_apple_music_lyrics_blur_animation
+                    ),
+                    summary = stringResource(
+                        R.string.summary_apple_music_lyrics_blur_animation
+                    ),
+                    checked = lyricsBlurAnimation,
+                    onCheckedChange = { enabled ->
+                        lyricsBlurAnimation = enabled
+                        saveConfig(
+                            RootConstants.KEY_HOOK_APPLE_MUSIC_LYRICS_BLUR_ANIMATION,
+                            enabled,
+                        )
+                    },
+                )
                 SwitchPreference(
                     title = stringResource(
                         R.string.title_apple_music_follow_system_font_weight

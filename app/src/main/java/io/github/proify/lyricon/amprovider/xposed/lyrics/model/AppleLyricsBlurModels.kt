@@ -6,6 +6,7 @@
 
 package io.github.proify.lyricon.amprovider.xposed
 
+import android.animation.ValueAnimator
 import java.lang.ref.WeakReference
 import java.lang.reflect.Method
 
@@ -25,4 +26,8 @@ internal data class AppleLyricsBlurRuntimeState(
     var outgoingZoneTopByPosition: Map<Int, Float> = emptyMap(),
     var pendingApplyBlur: Runnable? = null,
     var lastDiagnosticSignature: String? = null,
+    var blurMode: Int? = null,
+    var currentBlurRadius: Float = 0f,
+    var targetBlurRadius: Float = 0f,
+    var blurAnimator: ValueAnimator? = null,
 )

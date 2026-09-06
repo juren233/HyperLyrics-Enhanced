@@ -7,6 +7,8 @@
 package io.github.proify.lyricon.amprovider.xposed
 
 import android.annotation.SuppressLint
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
 import android.animation.ValueAnimator
 import android.app.Activity
 import android.app.Application
@@ -103,7 +105,6 @@ import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.abs
 import kotlin.math.roundToInt
-import android.content.SharedPreferences
 
 
 internal class AppleLyricsBlurHooks(
@@ -120,6 +121,7 @@ internal class AppleLyricsBlurHooks(
         const val APPLE_LYRICS_OUTGOING_RECHECK_DELAY_MS = 16L
         const val APPLE_LYRICS_BEFORE_FIRST_LINE_RECHECK_MAX_MS = 250L
         const val APPLE_LYRICS_HYPER_OS_SELF_BLUR_TYPE = 0
+        const val APPLE_LYRICS_BLUR_ANIMATION_DURATION_MS = 300L
     }
 
     private val application: Application
@@ -188,6 +190,13 @@ internal class AppleLyricsBlurHooks(
             RootConstants.DEFAULT_HOOK_APPLE_MUSIC_LYRICS_BLUR_EFFECT,
         ) ?: RootConstants.DEFAULT_HOOK_APPLE_MUSIC_LYRICS_BLUR_EFFECT
         return AppleLyricsBlurPolicy.normalizeMode(configured)
+    }
+    private fun appleLyricsBlurAnimationEnabled(): Boolean {
+        val prefs = contentUiLanguagePrefs
+        return prefs?.getBoolean(
+            RootConstants.KEY_HOOK_APPLE_MUSIC_LYRICS_BLUR_ANIMATION,
+            RootConstants.DEFAULT_HOOK_APPLE_MUSIC_LYRICS_BLUR_ANIMATION,
+        ) ?: RootConstants.DEFAULT_HOOK_APPLE_MUSIC_LYRICS_BLUR_ANIMATION
     }
 
     private fun appleLyricsBlurRadiusRange(mode: Int): ClosedFloatingPointRange<Float> {
@@ -1125,17 +1134,99 @@ internal class AppleLyricsBlurHooks(
 
     private fun applyAppleLyricsBlur(view: View, mode: Int, radiusPx: Int) {
         if (BuildConfig.DEBUG) {
-            ProviderLogger.debug("[LyricsScrollDiag] applyBlur: view=${view.javaClass.simpleName}@${System.identityHashCode(view)}, mode=$mode, radius=$radiusPx")
+            ProviderLogger.debug(
+                "[LyricsScrollDiag] applyBlur: " +
+                    "view=${view.javaClass.simpleName}@${System.identityHashCode(view)}, " +
+                    "mode=$mode, radius=$radiusPx"
+            )
+        }
+        if (mode == AppleLyricsBlurPolicy.OFF) {
+            clearAppleLyricsBlur(view)
+            return
+        }
+        val state = synchronized(appleLyricsBlurRuntimeStates) {
+            appleLyricsBlurRuntimeStates.getOrPut(view) {
+                AppleLyricsBlurRuntimeState()
+            }
         }
         appleLyricsBlurredViews.add(view)
+        if (state.blurMode != null && state.blurMode != mode) {
+            cancelAppleLyricsBlurAnimation(view, state, clearEffect = true)
+            state.blurMode = null
+        }
+        state.blurMode = mode
+        val targetRadius = radiusPx.coerceAtLeast(0).toFloat()
+        if (!appleLyricsBlurAnimationEnabled()) {
+            cancelAppleLyricsBlurAnimation(view, state, clearEffect = true)
+            state.currentBlurRadius = targetRadius
+            state.targetBlurRadius = targetRadius
+            applyAppleLyricsBlurRadius(view, mode, targetRadius)
+            return
+        }
+        animateAppleLyricsBlur(view, mode, targetRadius, state)
+    }
+
+    private fun animateAppleLyricsBlur(
+        view: View,
+        mode: Int,
+        targetRadius: Float,
+        state: AppleLyricsBlurRuntimeState,
+    ) {
+        if (
+            state.blurAnimator != null &&
+            state.blurMode == mode &&
+            state.targetBlurRadius == targetRadius
+        ) {
+            return
+        }
+        cancelAppleLyricsBlurAnimator(state)
+        val currentRadius = state.currentBlurRadius.coerceAtLeast(0f)
+        state.targetBlurRadius = targetRadius
+        if (currentRadius == targetRadius) {
+            applyAppleLyricsBlurRadius(view, mode, targetRadius)
+            return
+        }
+        val viewRef = WeakReference(view)
+        val animator = ValueAnimator.ofFloat(currentRadius, targetRadius).apply {
+            duration = APPLE_LYRICS_BLUR_ANIMATION_DURATION_MS
+            addUpdateListener { animation ->
+                if (state.blurAnimator !== animation) return@addUpdateListener
+                val targetView = viewRef.get() ?: return@addUpdateListener
+                val animatedRadius = animation.animatedValue as? Float ?: return@addUpdateListener
+                state.currentBlurRadius = animatedRadius
+                applyAppleLyricsBlurRadius(targetView, mode, animatedRadius)
+            }
+            addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) {
+                    if (state.blurAnimator !== animation) return
+                    state.blurAnimator = null
+                    state.currentBlurRadius = targetRadius
+                    state.targetBlurRadius = targetRadius
+                    viewRef.get()?.let { targetView ->
+                        applyAppleLyricsBlurRadius(targetView, mode, targetRadius)
+                    }
+                }
+            })
+        }
+        state.blurAnimator = animator
+        animator.start()
+    }
+
+    private fun applyAppleLyricsBlurRadius(view: View, mode: Int, radiusPx: Float) {
+        val boundedRadius = radiusPx.coerceAtLeast(0f)
+        if (boundedRadius <= 0f) {
+            view.setRenderEffect(null)
+            clearAppleLyricsHyperOsBlur(view)
+            return
+        }
         when (mode) {
             AppleLyricsBlurPolicy.NATIVE -> {
                 clearAppleLyricsHyperOsBlur(view)
-                applyAppleLyricsNativeBlur(view, radiusPx)
+                applyAppleLyricsNativeBlur(view, boundedRadius)
             }
             AppleLyricsBlurPolicy.ADVANCED_MATERIAL -> {
                 view.setRenderEffect(null)
-                if (!applyAppleLyricsHyperOsBlur(view, radiusPx)) {
+                if (!applyAppleLyricsHyperOsBlur(view, boundedRadius.roundToInt())) {
                     clearAppleLyricsBlur(view)
                 }
             }
@@ -1143,12 +1234,33 @@ internal class AppleLyricsBlurHooks(
         }
     }
 
-    private fun applyAppleLyricsNativeBlur(view: View, radiusPx: Int) {
+    private fun cancelAppleLyricsBlurAnimator(state: AppleLyricsBlurRuntimeState) {
+        val animator = state.blurAnimator ?: return
+        state.blurAnimator = null
+        animator.cancel()
+    }
+
+    private fun cancelAppleLyricsBlurAnimation(
+        view: View,
+        state: AppleLyricsBlurRuntimeState,
+        clearEffect: Boolean,
+    ) {
+        cancelAppleLyricsBlurAnimator(state)
+        if (clearEffect) {
+            view.setRenderEffect(null)
+            clearAppleLyricsHyperOsBlur(view)
+            state.currentBlurRadius = 0f
+            state.targetBlurRadius = 0f
+        }
+    }
+
+
+    private fun applyAppleLyricsNativeBlur(view: View, radiusPx: Float) {
         view.setRenderEffect(
-            radiusPx.takeIf { it > 0 }?.let { radius ->
+            radiusPx.takeIf { it > 0f }?.let { radius ->
                 RenderEffect.createBlurEffect(
-                    radius.toFloat(),
-                    radius.toFloat(),
+                    radius,
+                    radius,
                     Shader.TileMode.CLAMP,
                 )
             }
@@ -1169,10 +1281,28 @@ internal class AppleLyricsBlurHooks(
 
     private fun clearAppleLyricsBlur(view: View) {
         if (BuildConfig.DEBUG) {
-            ProviderLogger.debug("[LyricsScrollDiag] clearBlur: view=${view.javaClass.simpleName}@${System.identityHashCode(view)}")
+            ProviderLogger.debug(
+                "[LyricsScrollDiag] clearBlur: " +
+                    "view=${view.javaClass.simpleName}@${System.identityHashCode(view)}"
+            )
+        }
+        val state = synchronized(appleLyricsBlurRuntimeStates) {
+            appleLyricsBlurRuntimeStates[view]
+        }
+        state?.let {
+            cancelAppleLyricsBlurAnimator(it)
+            it.blurMode = null
+            it.currentBlurRadius = 0f
+            it.targetBlurRadius = 0f
         }
         view.setRenderEffect(null)
         clearAppleLyricsHyperOsBlur(view)
+        appleLyricsBlurredViews.remove(view)
+        synchronized(appleLyricsBlurRuntimeStates) {
+            if (state != null && appleLyricsBlurRuntimeStates[view] === state) {
+                appleLyricsBlurRuntimeStates.remove(view)
+            }
+        }
     }
 
     private fun clearAppleLyricsBlurForRecycler(recyclerView: View) {
@@ -1378,6 +1508,9 @@ internal class AppleLyricsBlurHooks(
                                 if (name == "setAdapter") {
                                     resetAppleLyricsBlurRuntimeState(recyclerView)
                                 } else {
+                                    if (name == "onChildAttachedToWindow") {
+                                        (chain.args.firstOrNull() as? View)?.let(::clearAppleLyricsBlur)
+                                    }
                                     if (name == "onLayout") {
                                         completeAppleLyricsProgrammaticRecenter(recyclerView)
                                     }

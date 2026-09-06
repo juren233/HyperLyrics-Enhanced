@@ -2064,6 +2064,7 @@ internal object AppleMusicProviderOrchestrator {
                     lyricsHooks.refreshAppleLyricsSupplementPresentation()
                 }
                 RootConstants.KEY_HOOK_APPLE_MUSIC_LYRICS_BLUR_EFFECT,
+                RootConstants.KEY_HOOK_APPLE_MUSIC_LYRICS_BLUR_ANIMATION,
                 RootConstants.KEY_HOOK_APPLE_MUSIC_NATIVE_LYRICS_BLUR_MIN_RADIUS_DP,
                 RootConstants.KEY_HOOK_APPLE_MUSIC_NATIVE_LYRICS_BLUR_MAX_RADIUS_DP,
                 RootConstants.KEY_HOOK_APPLE_MUSIC_ADVANCED_LYRICS_BLUR_MIN_RADIUS_PX,

@@ -75,6 +75,8 @@
     <string name="title_apple_music_lyrics_blur_custom_values">模糊值自定义</string>
     <string name="label_apple_music_lyrics_blur_min_value">最小值（%1$s），默认 %2$s（范围 %3$s-%4$s）</string>
     <string name="label_apple_music_lyrics_blur_max_value">最大值（%1$s），默认 %2$s（范围 %3$s-%4$s）</string>
+    <string name="title_apple_music_lyrics_blur_animation">歌词模糊动画</string>
+    <string name="summary_apple_music_lyrics_blur_animation">切换模糊状态时平滑过渡，可能影响流畅度</string>
     <string name="title_apple_music_follow_system_font_weight">跟随系统字体粗细</string>
     <string name="summary_apple_music_follow_system_font_weight">仅适配HyperOS</string>
     <string name="title_apple_music_restore_cjk_original_metadata">替换中日韩歌曲信息为原地区原名</string>
