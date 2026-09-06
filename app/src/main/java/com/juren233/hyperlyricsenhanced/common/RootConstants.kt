@@ -303,6 +303,8 @@ object RootConstants {
         "key_hook_apple_music_lunabeat_word_lyrics"
     const val KEY_HOOK_APPLE_MUSIC_LYRICS_BLUR_EFFECT =
         "key_hook_apple_music_lyrics_blur_effect"
+    const val KEY_HOOK_APPLE_MUSIC_LYRICS_BLUR_ANIMATION =
+        "key_hook_apple_music_lyrics_blur_animation"
     const val KEY_HOOK_APPLE_MUSIC_NATIVE_LYRICS_BLUR_MIN_RADIUS_DP =
         "key_hook_apple_music_native_lyrics_blur_min_radius_dp"
     const val KEY_HOOK_APPLE_MUSIC_NATIVE_LYRICS_BLUR_MAX_RADIUS_DP =
@@ -355,6 +357,7 @@ object RootConstants {
     const val APPLE_MUSIC_LYRICS_BLUR_EFFECT_ADVANCED_MATERIAL = 2
     const val DEFAULT_HOOK_APPLE_MUSIC_LYRICS_BLUR_EFFECT =
         APPLE_MUSIC_LYRICS_BLUR_EFFECT_OFF
+    const val DEFAULT_HOOK_APPLE_MUSIC_LYRICS_BLUR_ANIMATION = false
     const val DEFAULT_HOOK_APPLE_MUSIC_NATIVE_LYRICS_BLUR_MIN_RADIUS_DP = 3f
     const val DEFAULT_HOOK_APPLE_MUSIC_NATIVE_LYRICS_BLUR_MAX_RADIUS_DP = 6.5f
     const val MIN_HOOK_APPLE_MUSIC_NATIVE_LYRICS_BLUR_RADIUS_DP = 0f

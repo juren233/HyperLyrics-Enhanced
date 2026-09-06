@@ -74,6 +74,8 @@
     <string name="title_apple_music_lyrics_blur_custom_values">Custom Blur Values</string>
     <string name="label_apple_music_lyrics_blur_min_value">Minimum (%1$s), default %2$s (range %3$s-%4$s)</string>
     <string name="label_apple_music_lyrics_blur_max_value">Maximum (%1$s), default %2$s (range %3$s-%4$s)</string>
+    <string name="title_apple_music_lyrics_blur_animation">Lyrics blur animation</string>
+    <string name="summary_apple_music_lyrics_blur_animation">Smoothly transition between blur states; may affect smoothness</string>
     <string name="title_apple_music_follow_system_font_weight">Follow system font weight</string>
     <string name="summary_apple_music_follow_system_font_weight">HyperOS only</string>
     <string name="title_apple_music_restore_cjk_original_metadata">Replace Chinese, Japanese, and Korean song information with original regional names</string>
