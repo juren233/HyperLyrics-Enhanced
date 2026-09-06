@@ -19,6 +19,7 @@ import com.juren233.hyperlyricsenhanced.common.lyric.LyricSplitter
 import com.juren233.hyperlyricsenhanced.lyric.ConfigRepository
 import com.juren233.hyperlyricsenhanced.lyric.DynamicLyricData
 import com.juren233.hyperlyricsenhanced.root.ClassicAodFocusNotificationPolicy
+import com.juren233.hyperlyricsenhanced.root.FullScreenAodSetting
 import com.juren233.hyperlyricsenhanced.service.source.SyncData
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -383,6 +384,7 @@ class NotificationPresenter(
         val title = state.trackTitle.trim()
         val artist = state.trackArtist.trim()
         val songInfo = ClassicAodSongInfoConfig.formatSongInfo(title, artist, format)
+        val fullScreenAodActive = FullScreenAodSetting.isActive(context)
         val shouldShow = prefs.getBoolean(
             RootConstants.KEY_HOOK_ENABLE_AOD_LYRICS,
             RootConstants.DEFAULT_HOOK_ENABLE_AOD_LYRICS,
@@ -390,12 +392,14 @@ class NotificationPresenter(
             displayStyle ==
                 RootConstants.AOD_SONG_INFO_DISPLAY_STYLE_FOCUS_NOTIFICATION &&
             !isScreenInteractive() &&
+            !fullScreenAodActive &&
             songInfo.isNotBlank()
         LogManager.i(
             "NotificationPresenter",
             "经典AOD歌曲信息: displayStyle=$displayStyle, format=$format, " +
                 "title=$title, artist=$artist, " +
-                "interactive=${isScreenInteractive()}, shouldShow=$shouldShow"
+                "interactive=${isScreenInteractive()}, fullscreenAod=$fullScreenAodActive, " +
+                "shouldShow=$shouldShow"
         )
         val signature = if (shouldShow) {
             ClassicAodFocusNotificationPolicy.songSignature(
@@ -477,7 +481,8 @@ class NotificationPresenter(
             delay(400L)
             if (
                 signature != lastClassicAodSongInfo ||
-                isScreenInteractive()
+                isScreenInteractive() ||
+                FullScreenAodSetting.isActive(context)
             ) {
                 return@launch
             }

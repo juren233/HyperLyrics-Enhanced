@@ -2,6 +2,7 @@
 <resources>
     <string name="enhanced_version_notice">If you encounter an issue that occurs only in HyperLyrics Enhanced, please report it in this repository\'s Issues. You can open this module\'s repository from “About” - “Project”. Reporting it to the wrong repository causes unnecessary disturbance and reduces the efficiency of resolving the issue!</string>
     <string name="module_update_available_notice">A new module version is available. Download the update from the GitHub repository.</string>
+    <string name="debug_build_notice">This is a debug build. If you are a daily user, it is recommended to download and install the release build instead.</string>
     <string name="module_update_available_version">New version: %1$s</string>
     <string name="apple_music_provider_description">Built-in Apple Music word-synced lyric provider</string>
     <string name="app_description">在 HyperOS3 媒体超级岛与米系AOD上体验歌词，更有 Apple Music 专属体验优化</string>

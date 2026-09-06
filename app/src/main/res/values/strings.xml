@@ -3,6 +3,7 @@
     <string name="app_name" translatable="false">HyperLyrics Enhanced</string>
     <string name="enhanced_version_notice">遇到仅在 HyperLyrics Enhanced 中出现的问题，请在本仓库的 Issue 中反馈，本模块仓库可在“关于”-“项目地址”跳转。反馈至错误的仓库会引起非必要的打扰且降低解决问题的效率！</string>
     <string name="module_update_available_notice">当前模块有新版本，建议去GitHub仓库下载更新</string>
+    <string name="debug_build_notice">当前为Debug包，如果你只是日常使用，建议重新下载安装Release包。</string>
     <string name="module_update_available_version">有新版本：%1$s</string>
     <string name="apple_music_provider_description">内置 Apple Music 逐字歌词提供器</string>
     <string name="app_description">在 HyperOS3 媒体超级岛与米系AOD上体验歌词，更有 Apple Music 专属体验优化</string>

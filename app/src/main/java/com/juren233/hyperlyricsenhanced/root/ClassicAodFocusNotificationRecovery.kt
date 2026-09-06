@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.net.Uri
 import android.os.SystemClock
+import android.provider.Settings
 import android.service.notification.NotificationListenerService
 import com.juren233.hyperlyricsenhanced.common.ClassicAodSongInfoConfig
 import com.juren233.hyperlyricsenhanced.common.RootConstants
@@ -81,6 +82,13 @@ internal object ClassicAodFocusNotificationRecovery {
         ) {
             return
         }
+        if (FullScreenAodSetting.isActive(context)) {
+            HookLogger.d(
+                TAG,
+                "锁屏全屏AOD启用，经典AOD焦点通知已隔离，跳过刷新请求: reason=$reason"
+            )
+            return
+        }
 
         val now = SystemClock.elapsedRealtime()
         if (now - lastRefreshBroadcastElapsedRealtime < REFRESH_BROADCAST_DEBOUNCE_MS) return
@@ -103,6 +111,20 @@ internal object ClassicAodFocusNotificationRecovery {
 }
 
 internal object ClassicAodFocusNotificationPolicy {
+    /**
+     * Binary evidence (OS4.0.0.6 MiuiSystemUI classes3.dex): the keyguard repository
+     * Lcom/miui/keyguard/data/repository/KeyguardCommonSettingsRepository; reads the
+     * Settings.Secure key "full_screen_aod_on" into fullscreenAodEnabled, the
+     * fullscreen (lockscreen) AOD master switch. The classic AOD focus renderer
+     * (com.miui.aod AODView/AodContainerView reading mFocusNotification) only covers
+     * the classic AOD surface, so the focus-notification song info must stay off
+     * while the fullscreen lockscreen AOD is the system's active AOD; otherwise the
+     * contentView-less notification is listed as a blank row under the media card.
+     */
+    const val SETTING_FULL_SCREEN_AOD_ON = "full_screen_aod_on"
+
+    fun isFullScreenAodActive(rawSetting: String?): Boolean = rawSetting == "1"
+
     fun requiresAutoStart(aodLyricsEnabled: Boolean, songInfoDisplayStyle: Int): Boolean =
         aodLyricsEnabled &&
             songInfoDisplayStyle ==
@@ -131,4 +153,33 @@ internal object ClassicAodFocusNotificationPolicy {
     } else {
         primaryNotificationId
     }
+}
+
+/**
+ * Short-TTL cache so per-second presenter/hook polls avoid a Settings binder round
+ * trip; the fullscreen AOD switch changes at system-settings timescale only.
+ */
+internal object FullScreenAodSetting {
+    private const val CACHE_MS = 2_000L
+
+    private data class CachedRaw(val atElapsedRealtime: Long, val raw: String?)
+
+    @Volatile
+    private var cache: CachedRaw? = null
+
+    fun raw(context: Context): String? {
+        val now = SystemClock.elapsedRealtime()
+        cache?.takeIf { now - it.atElapsedRealtime < CACHE_MS }?.let { return it.raw }
+        val value = runCatching {
+            Settings.Secure.getString(
+                context.contentResolver,
+                ClassicAodFocusNotificationPolicy.SETTING_FULL_SCREEN_AOD_ON,
+            )
+        }.getOrNull()
+        cache = CachedRaw(now, value)
+        return value
+    }
+
+    fun isActive(context: Context): Boolean =
+        ClassicAodFocusNotificationPolicy.isFullScreenAodActive(raw(context))
 }

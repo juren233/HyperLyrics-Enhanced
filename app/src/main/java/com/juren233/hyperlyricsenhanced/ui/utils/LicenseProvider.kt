@@ -10,6 +10,7 @@ object LicenseProvider {
             LicenseItem("libxposed API", "libxposed", "https://github.com/libxposed/api"),
             LicenseItem("lyricon", "tomakino", "https://github.com/tomakino/lyricon"),
             LicenseItem("LyricProvider", "tomakino", "https://github.com/tomakino/LyricProvider"),
+            LicenseItem("ttml-hub", "2755337087", "https://github.com/2755337087/ttml-hub"),
             LicenseItem("kotlinx.serialization", "Kotlin", "https://github.com/Kotlin/kotlinx.serialization"),
             LicenseItem("Jetpack Compose", "Google", "https://developer.android.com/jetpack/compose"),
             LicenseItem("HyperCeiler", "Sevtinge", "https://github.com/ReChronoRain/HyperCeiler"),

@@ -81,4 +81,23 @@ class ClassicAodFocusNotificationPolicyTest {
             )
         )
     }
+
+    @Test
+    fun `fullscreen aod is active only for the enabled raw setting`() {
+        assertTrue(ClassicAodFocusNotificationPolicy.isFullScreenAodActive("1"))
+    }
+
+    @Test
+    fun `classic aod stays active when fullscreen aod is disabled or unknown`() {
+        assertFalse(ClassicAodFocusNotificationPolicy.isFullScreenAodActive("0"))
+        assertFalse(ClassicAodFocusNotificationPolicy.isFullScreenAodActive(null))
+        assertFalse(ClassicAodFocusNotificationPolicy.isFullScreenAodActive(""))
+        assertFalse(ClassicAodFocusNotificationPolicy.isFullScreenAodActive("2"))
+        assertFalse(ClassicAodFocusNotificationPolicy.isFullScreenAodActive("true"))
+    }
+
+    @Test
+    fun `fullscreen aod setting key matches the verified system key`() {
+        assertEquals("full_screen_aod_on", ClassicAodFocusNotificationPolicy.SETTING_FULL_SCREEN_AOD_ON)
+    }
 }

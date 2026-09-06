@@ -6,6 +6,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.R
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Text
@@ -24,7 +25,11 @@ fun EnhancedVersionNotice(
                 } else {
                     R.string.enhanced_version_notice
                 }
-            ),
+            ) + if (BuildConfig.DEBUG) {
+                stringResource(R.string.debug_build_notice)
+            } else {
+                ""
+            },
             fontSize = 13.sp,
             lineHeight = 18.sp,
             color = MiuixTheme.colorScheme.onSurface,
