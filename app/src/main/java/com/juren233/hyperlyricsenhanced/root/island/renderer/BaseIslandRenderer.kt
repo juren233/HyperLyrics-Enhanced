@@ -18,6 +18,7 @@ import com.juren233.hyperlyricsenhanced.root.island.IslandProgressGlowController
 import com.juren233.hyperlyricsenhanced.root.island.IslandSlotContentAssembler
 import com.juren233.hyperlyricsenhanced.root.island.IslandSlotRuntimeConfig
 import com.juren233.hyperlyricsenhanced.root.island.IslandViewRegistry
+import com.juren233.hyperlyricsenhanced.root.island.IslandViewHelper
 import com.juren233.hyperlyricsenhanced.root.island.NextSongPreviewPolicy
 import com.juren233.hyperlyricsenhanced.root.utils.DisplayDiagnosticLogger
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
@@ -29,6 +30,9 @@ object BaseIslandRenderer : IslandRenderer {
     private val SCREEN_ON_REFRESH_DELAYS_MS = longArrayOf(0L, 120L, 400L, 900L)
     private val mainHandler = Handler(Looper.getMainLooper())
     private val refreshRunnable = Runnable { performRefreshActiveIsland() }
+    // Main-thread preference refreshes coalesce, but must survive a subsequent
+    // ordinary content refresh replacing the debounce runnable.
+    private var dynamicWidthRefreshPending = false
     private val pauseTransitionGuard = IslandPauseTransitionGuard()
     private val pauseRestoreRunnable = Runnable { commitDeferredNativeRestore() }
     private val nextSongPreviewActive = WeakHashMap<ViewGroup, NextSongPreviewState>()
@@ -105,7 +109,14 @@ object BaseIslandRenderer : IslandRenderer {
         DisplayDiagnosticLogger.clear("ISLAND/screen_on")
     }
 
+    fun refreshDynamicWidth() {
+        dynamicWidthRefreshPending = true
+        refreshActiveIsland()
+    }
+
     private fun performRefreshActiveIsland() {
+        val refreshWidth = dynamicWidthRefreshPending
+        dynamicWidthRefreshPending = false
         val prefs = HookEntry.instance?.prefs ?: run {
             DisplayDiagnosticLogger.log("ISLAND", "skipped", "preferences_unavailable")
             return
@@ -145,13 +156,19 @@ object BaseIslandRenderer : IslandRenderer {
                     cv,
                     reconfigureExisting = false,
                 )
-                if (injectionChanged) {
+                if (injectionChanged && !refreshWidth) {
                     IslandHostFacade.triggerSystemRelayout(cv)
                 } else {
                     IslandHostFacade.applyHostSettings(cv, prefs)
                 }
                 val contentChanged = updateContentForView(cv, lyricPkg, prefs, config)
-                if (config.dynamicWidthEnabled && contentChanged) {
+                // Also force measurement when turning dynamic width OFF: the
+                // normal width hook intentionally only invalidates while ON.
+                // Apply current content/hug options before measuring either way.
+                if (refreshWidth) {
+                    IslandViewHelper.forceLayoutIslandAreas(cv)
+                }
+                if (refreshWidth || (config.dynamicWidthEnabled && contentChanged)) {
                     IslandHostFacade.triggerSystemRelayout(cv)
                 }
                 val injected = IslandLyricTextInjector.hasInjectedLyricText(cv)

@@ -8,6 +8,27 @@ import org.junit.Test
 class IslandNativeSlotPlacementTest {
     private val nativeRight = Gravity.END or Gravity.CENTER_VERTICAL
 
+    @Test fun `rhythm stays at native right edge across content widths and alignments`() {
+        // Fresh host evidence: area=275, content=182. Include wider/narrower lines
+        // and START/CENTER/END placements without changing content measurement.
+        for (width in listOf(182, 100, 275)) {
+            for (left in listOf(0, (275 - width) / 2, 275 - width)) {
+                val offset = IslandNativeSlotPlacement.rhythmOffset(
+                    275, 0, 0, 0, 0, left, width, false)
+                assertEquals(275f, left + width + offset, 0f)
+            }
+        }
+        assertEquals(93f, IslandNativeSlotPlacement.rhythmOffset(
+            275, 0, 0, 0, 0, 0, 182, false), 0f)
+    }
+
+    @Test fun `native padding and margins remain at the end edge`() {
+        assertEquals(258f, 15 + 182 + IslandNativeSlotPlacement.rhythmOffset(
+            275, 8, 10, 7, 7, 15, 182, false), 0f)
+        assertEquals(15f, 78 + IslandNativeSlotPlacement.rhythmOffset(
+            275, 8, 10, 7, 7, 78, 182, true), 0f)
+    }
+
     @Test fun `short default content anchors native module at start not end`() {
         assertEquals(Gravity.START or Gravity.CENTER_VERTICAL,
             IslandNativeSlotPlacement.resolveGravity(nativeRight, true, Gravity.START))

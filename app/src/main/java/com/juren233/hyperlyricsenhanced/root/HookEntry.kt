@@ -614,6 +614,11 @@ class HookEntry : XposedModule() {
                             IslandExpandedMediaAmbientFlowHooker.refreshMediaElements()
                         }
                     }
+                    RootConstants.KEY_HOOK_ISLAND_DYNAMIC_WIDTH -> {
+                        android.os.Handler(android.os.Looper.getMainLooper()).post {
+                            BaseIslandRenderer.refreshDynamicWidth()
+                        }
+                    }
                     in SUPER_ISLAND_RUNTIME_REFRESH_KEYS -> {
                         android.os.Handler(android.os.Looper.getMainLooper()).post {
                             BaseIslandRenderer.refreshActiveIsland()
@@ -752,7 +757,11 @@ class HookEntry : XposedModule() {
                 if (key == RootConstants.KEY_HOOK_ISLAND_ALBUM_COVER_STYLE_APP_WHITELIST) {
                     IslandAlbumCoverStyleHooker.refresh()
                 }
-                BaseIslandRenderer.refreshActiveIsland()
+                if (key == RootConstants.KEY_HOOK_ISLAND_DYNAMIC_WIDTH) {
+                    BaseIslandRenderer.refreshDynamicWidth()
+                } else {
+                    BaseIslandRenderer.refreshActiveIsland()
+                }
                 HookLogger.i(
                     "HookEntry",
                     "收到配置广播并更新运行时覆盖: key=$key, " +
