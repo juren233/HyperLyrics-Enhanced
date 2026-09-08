@@ -7,6 +7,44 @@ import org.junit.Test
 
 class AppleSystemFontWeightPolicyTest {
     @Test
+    fun `system font takes priority without depending on the saved weight toggle`() {
+        assertEquals(AppleSystemFontWeightPolicy.FontMode.ORIGINAL, AppleSystemFontWeightPolicy.fontMode(false, false, "歌词 Lyrics"))
+        assertEquals(AppleSystemFontWeightPolicy.FontMode.APPLE_WEIGHT, AppleSystemFontWeightPolicy.fontMode(false, true, "歌词 Lyrics"))
+        assertEquals(AppleSystemFontWeightPolicy.FontMode.SYSTEM, AppleSystemFontWeightPolicy.fontMode(true, false, "歌词 Lyrics"))
+        assertEquals(AppleSystemFontWeightPolicy.FontMode.SYSTEM, AppleSystemFontWeightPolicy.fontMode(true, true, "歌词 Lyrics"))
+    }
+
+    @Test
+    fun `icon only content stays original in all modes including after recycling text`() {
+        for (systemFont in listOf(false, true)) {
+            for (appleWeight in listOf(false, true)) {
+                for (text in listOf(null, "", " ", "\uE001\uF8FF", "♫")) {
+                    assertEquals(
+                        AppleSystemFontWeightPolicy.FontMode.ORIGINAL,
+                        AppleSystemFontWeightPolicy.fontMode(systemFont, appleWeight, text),
+                    )
+                }
+            }
+        }
+        assertEquals(
+            AppleSystemFontWeightPolicy.FontMode.SYSTEM,
+            AppleSystemFontWeightPolicy.fontMode(true, false, "下一首"),
+        )
+    }
+
+    @Test
+    fun `leaving system mode resumes either saved weight setting`() {
+        for (savedWeight in listOf(false, true)) {
+            val before = AppleSystemFontWeightPolicy.fontMode(false, savedWeight, "Apple Music")
+            assertEquals(
+                AppleSystemFontWeightPolicy.FontMode.SYSTEM,
+                AppleSystemFontWeightPolicy.fontMode(true, savedWeight, "Apple Music"),
+            )
+            assertEquals(before, AppleSystemFontWeightPolicy.fontMode(false, savedWeight, "Apple Music"))
+        }
+    }
+
+    @Test
     fun `replaces only Apple Music primary text font resources`() {
         listOf("regular", "medium", "semibold", "bold", "black").forEach { resourceName ->
             assertTrue(

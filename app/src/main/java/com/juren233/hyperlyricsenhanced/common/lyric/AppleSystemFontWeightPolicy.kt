@@ -1,6 +1,16 @@
 package com.juren233.hyperlyricsenhanced.common.lyric
 
 object AppleSystemFontWeightPolicy {
+    enum class FontMode { ORIGINAL, APPLE_WEIGHT, SYSTEM }
+
+    // Settings remain independent; selecting a mode must never overwrite the saved flags.
+    fun fontMode(systemFont: Boolean, appleWeight: Boolean, text: CharSequence?): FontMode = when {
+        !shouldReplaceTextContent(text) -> FontMode.ORIGINAL
+        systemFont -> FontMode.SYSTEM
+        appleWeight -> FontMode.APPLE_WEIGHT
+        else -> FontMode.ORIGINAL
+    }
+
     private const val APPLE_MUSIC_PACKAGE = "com.apple.android.music"
     private const val FONT_RESOURCE_TYPE = "font"
     private const val REGULAR_WEIGHT = 400

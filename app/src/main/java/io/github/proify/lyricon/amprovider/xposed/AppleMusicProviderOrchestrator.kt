@@ -2070,8 +2070,9 @@ internal object AppleMusicProviderOrchestrator {
                 RootConstants.KEY_HOOK_APPLE_MUSIC_ADVANCED_LYRICS_BLUR_MIN_RADIUS_PX,
                 RootConstants.KEY_HOOK_APPLE_MUSIC_ADVANCED_LYRICS_BLUR_MAX_RADIUS_PX ->
                     lyricsHooks.refreshAppleLyricsBlurEffect()
+                RootConstants.KEY_HOOK_APPLE_MUSIC_FOLLOW_SYSTEM_FONT,
                 RootConstants.KEY_HOOK_APPLE_MUSIC_FOLLOW_SYSTEM_FONT_WEIGHT ->
-                    lyricsHooks.refreshAppleSystemFontWeight()
+                    lyricsHooks.refreshAppleSystemFont()
                 RootConstants.KEY_HOOK_APPLE_MUSIC_VOLUME_BALANCE -> {
                     val enabled = changed.getBoolean(
                         key,

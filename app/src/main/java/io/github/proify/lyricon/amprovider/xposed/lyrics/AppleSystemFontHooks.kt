@@ -204,49 +204,122 @@ internal class AppleSystemFontHooks(
         resolveHyperOsFontWeightMethods()
     }
 
+    private fun isFollowSystemFontEnabled(): Boolean =
+        contentUiLanguagePrefs?.getBoolean(
+            RootConstants.KEY_HOOK_APPLE_MUSIC_FOLLOW_SYSTEM_FONT,
+            RootConstants.DEFAULT_HOOK_APPLE_MUSIC_FOLLOW_SYSTEM_FONT,
+        ) == true
+
     private fun isFollowSystemFontWeightEnabled(): Boolean =
         contentUiLanguagePrefs?.getBoolean(
             RootConstants.KEY_HOOK_APPLE_MUSIC_FOLLOW_SYSTEM_FONT_WEIGHT,
             RootConstants.DEFAULT_HOOK_APPLE_MUSIC_FOLLOW_SYSTEM_FONT_WEIGHT,
         ) == true
 
-    fun refreshAppleSystemFontWeight() {
+    private val systemDefaultTypefaceCache = ConcurrentHashMap<String, Typeface>()
+
+    private fun createSystemDefaultTypeface(
+        requestedWeight: Int,
+        italic: Boolean,
+        textSizePx: Float?,
+    ): Typeface {
+        val weight = requestedWeight.coerceIn(1, 1000)
+        val methods = hyperOsFontWeightMethods
+        if (methods != null) {
+            @Suppress("DEPRECATION")
+            val density = application.resources.displayMetrics.scaledDensity
+            val textSizeSp = (textSizePx ?: 16f * density) / density.coerceAtLeast(0.01f)
+            // Reuse the binary-verified HyperOS mapping and font path already used by
+            // the CJK fallback. OEM axis values belong to this font, never to SF Pro.
+            val axis = hyperOsCjkWeightAxis(methods, weight, textSizeSp)
+            if (axis != null) {
+                val key = "${methods.miuiFontPath}:$weight:$axis:$italic"
+                systemDefaultTypefaceCache[key]?.let { return it }
+                val result = runCatching {
+                    val slant = if (italic) FontStyle.FONT_SLANT_ITALIC else FontStyle.FONT_SLANT_UPRIGHT
+                    val font = Font.Builder(File(methods.miuiFontPath))
+                        .setWeight(weight)
+                        .setSlant(slant)
+                        .setFontVariationSettings("'wght' $axis")
+                        .build()
+                    Typeface.CustomFallbackBuilder(FontFamily.Builder(font).build())
+                        .setSystemFallback("sans-serif")
+                        .setStyle(FontStyle(weight, slant))
+                        .build()
+                }.onFailure {
+                    logAppleFontDerivationFailure("system_default", it.toString())
+                }.getOrNull()
+                if (result != null) {
+                    if (systemDefaultTypefaceCache.size >= 128) systemDefaultTypefaceCache.clear()
+                    systemDefaultTypefaceCache[key] = result
+                    return result
+                }
+            }
+        }
+        val adjustment = application.resources.configuration.fontWeightAdjustment
+            .takeUnless { it == android.content.res.Configuration.FONT_WEIGHT_ADJUSTMENT_UNDEFINED }
+            ?: 0
+        return Typeface.create(Typeface.DEFAULT, (weight + adjustment).coerceIn(1, 1000), italic)
+    }
+
+    private fun resolveTextViewOriginalTypeface(
+        view: TextView,
+        requested: Typeface,
+    ): Typeface {
+        val state = synchronized(appleSystemFontTrackedTextViews) {
+            appleSystemFontTrackedTextViews[view]
+        }
+        if (state?.appliedTypeface === requested) {
+            return state.originalTypeface
+        }
+        return originalAppleTypeface(requested) ?: requested
+    }
+
+    private fun rememberTextViewState(
+        view: TextView,
+        originalTypeface: Typeface,
+        requestedWeight: Int,
+        italic: Boolean,
+        originalStyle: Int,
+        appliedTypeface: Typeface,
+    ) {
+        synchronized(appleSystemFontTrackedTextViews) {
+            appleSystemFontTrackedTextViews[view] = AppleSystemFontTextViewState(
+                originalTypeface = originalTypeface,
+                requestedWeight = requestedWeight,
+                italic = italic,
+                originalStyle = originalStyle,
+                appliedTypeface = appliedTypeface,
+            )
+        }
+    }
+
+    fun refreshAppleSystemFont() {
         mainHandler.post {
-            val enabled = isFollowSystemFontWeightEnabled()
+            val systemFontEnabled = isFollowSystemFontEnabled()
+            val systemFontWeightEnabled = isFollowSystemFontWeightEnabled()
             appleSystemFontVariationCache.clear()
-            if (enabled) currentMiuiFontWeightScale(forceRefresh = true)
+            systemDefaultTypefaceCache.clear()
+            if (systemFontWeightEnabled || systemFontEnabled) {
+                currentMiuiFontWeightScale(forceRefresh = true)
+            }
             val trackedViews = synchronized(appleSystemFontTrackedTextViews) {
                 appleSystemFontTrackedTextViews.entries.map { it.key to it.value }
             }
-            trackedViews.forEach { (view, state) ->
-                val target = if (enabled) {
-                    createAppleWeightAdjustedTypeface(
-                        original = state.originalTypeface,
-                        requestedWeight = state.requestedWeight,
-                        italic = state.italic,
-                        textView = view,
-                    )
-                } else {
-                    state.originalTypeface
-                }
-                appleSystemFontApplyGuard.run {
-                    if (enabled) {
-                        view.setTypeface(target)
-                    } else {
-                        view.setTypeface(target, state.originalStyle)
-                    }
-                }
-                view.requestLayout()
-                view.invalidate()
+            trackedViews.forEach { (view, _) ->
+                applyAppleSystemFontForTextView(view, stage = "settings_refresh")
             }
             if (BuildConfig.DEBUG) {
                 ProviderLogger.debug(
-                    "Apple 系统字体粗细已刷新：enabled=$enabled, " +
-                        "views=${trackedViews.size}, scale=${currentMiuiFontWeightScale()}"
+                    "Apple 系统字体已刷新：font=$systemFontEnabled, " +
+                        "weight=$systemFontWeightEnabled, views=${trackedViews.size}, " +
+                        "scale=${currentMiuiFontWeightScale()}"
                 )
             }
         }
     }
+
+    fun refreshAppleSystemFontWeight() = refreshAppleSystemFont()
 
 
     /**
@@ -259,7 +332,7 @@ internal class AppleSystemFontHooks(
             val resolver = application.contentResolver
             val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
                 override fun onChange(selfChange: Boolean, uri: Uri?) {
-                    if (!isFollowSystemFontWeightEnabled()) return
+                    if (!isFollowSystemFontEnabled() && !isFollowSystemFontWeightEnabled()) return
                     val scale = currentMiuiFontWeightScale(forceRefresh = true)
                     // 滑块写入 System/Global 两个命名空间会触发两次回调，按值去重。
                     if (scale == systemFontWeightObserverLastScale) return
@@ -267,7 +340,7 @@ internal class AppleSystemFontHooks(
                     ProviderLogger.info(
                         "Apple 系统字体粗细滑块已变化：scale=$scale, 重应用已跟踪视图"
                     )
-                    refreshAppleSystemFontWeight()
+                    refreshAppleSystemFont()
                 }
             }
             resolver.registerContentObserver(
@@ -327,6 +400,7 @@ internal class AppleSystemFontHooks(
             hookRegistrar.installResultOverrideHook(createWithWeight) { chain, originalResult ->
                 if (
                     appleSystemFontApplyGuard.isActive ||
+                    isFollowSystemFontEnabled() ||
                     !isFollowSystemFontWeightEnabled()
                 ) {
                     return@installResultOverrideHook originalResult
@@ -363,45 +437,15 @@ internal class AppleSystemFontHooks(
                 "setTypeface",
                 Typeface::class.java,
             ).apply { isAccessible = true }
-            hookRegistrar.installArgumentRewriteHook(setTypeface) { chain ->
-                if (appleSystemFontApplyGuard.isActive) {
-                    return@installArgumentRewriteHook null
-                }
-                val view = chain.thisObject as? TextView
-                    ?: return@installArgumentRewriteHook null
-                val requested = chain.args.firstOrNull() as? Typeface
-                    ?: return@installArgumentRewriteHook null
-                val originalTypeface = originalAppleTypeface(requested)
-                    ?: return@installArgumentRewriteHook null
-                synchronized(appleSystemFontTrackedTextViews) {
-                    appleSystemFontTrackedTextViews[view] =
-                        AppleSystemFontTextViewState(
-                            originalTypeface = originalTypeface,
-                            requestedWeight = originalTypeface.weight,
-                            italic = originalTypeface.isItalic,
-                            originalStyle = originalTypeface.style,
-                        )
-                }
-                if (!isFollowSystemFontWeightEnabled()) {
-                    return@installArgumentRewriteHook if (requested === originalTypeface) {
-                        null
-                    } else {
-                        arrayOf(originalTypeface)
-                    }
-                }
-                val replacement = createAppleWeightAdjustedTypeface(
-                    original = originalTypeface,
-                    textView = view,
-                )
-                logAppleSystemFontReplacement(
+            hookRegistrar.installHook(setTypeface, after = { chain, _ ->
+                val view = chain.thisObject as? TextView ?: return@installHook
+                handleTextViewTypefaceAfterSet(
+                    view = view,
+                    requested = chain.args.firstOrNull() as? Typeface,
+                    requestedStyle = null,
                     stage = "text_view",
-                    resourceName = null,
-                    original = originalTypeface,
-                    replacement = replacement,
-                    requestedWeight = originalTypeface.weight,
                 )
-                if (replacement === requested) null else arrayOf(replacement)
-            }
+            })
             installedHooks += "TextView.setTypeface"
         }.onFailure { throwable ->
             failedHooks += "TextView.setTypeface:${throwable.javaClass.simpleName}"
@@ -425,38 +469,63 @@ internal class AppleSystemFontHooks(
                     ?: return@installArgumentRewriteHook null
                 val requestedStyle = (chain.args.getOrNull(1) as? Number)?.toInt()
                     ?: Typeface.NORMAL
-                val originalTypeface = originalAppleTypeface(requested)
-                    ?: return@installArgumentRewriteHook null
+                val previousState = synchronized(appleSystemFontTrackedTextViews) {
+                    appleSystemFontTrackedTextViews[view]
+                }
+                val originalTypeface = resolveTextViewOriginalTypeface(view, requested)
+                val systemFontEnabled = isFollowSystemFontEnabled()
+                val systemFontWeightEnabled = isFollowSystemFontWeightEnabled()
+                if (!AppleSystemFontWeightPolicy.shouldReplaceTextContent(view.text)) {
+                    return@installArgumentRewriteHook null
+                }
+                val reusedState = previousState?.takeIf {
+                    it.appliedTypeface === requested && requestedStyle == Typeface.NORMAL
+                }
                 val bold = requestedStyle and Typeface.BOLD != 0
-                val italic = originalTypeface.isItalic ||
-                    requestedStyle and Typeface.ITALIC != 0
-                val requestedWeight = if (bold) {
+                val italic = reusedState?.italic ?: (
+                    originalTypeface.isItalic ||
+                        requestedStyle and Typeface.ITALIC != 0
+                    )
+                val requestedWeight = reusedState?.requestedWeight ?: if (bold) {
                     maxOf(originalTypeface.weight, 700)
                 } else {
                     originalTypeface.weight
                 }
-                synchronized(appleSystemFontTrackedTextViews) {
-                    appleSystemFontTrackedTextViews[view] =
-                        AppleSystemFontTextViewState(
-                            originalTypeface = originalTypeface,
+                val replacement = when {
+                    systemFontEnabled -> createSystemDefaultTypeface(requestedWeight, italic, view.textSize)
+                    systemFontWeightEnabled ->
+                        createAppleWeightAdjustedTypeface(
+                            original = originalTypeface,
                             requestedWeight = requestedWeight,
                             italic = italic,
-                            originalStyle = requestedStyle,
+                            textView = view,
                         )
+                    else -> originalTypeface
                 }
-                if (!isFollowSystemFontWeightEnabled()) {
-                    return@installArgumentRewriteHook if (requested === originalTypeface) {
-                        null
-                    } else {
-                        arrayOf(originalTypeface, requestedStyle)
-                    }
-                }
-                val replacement = createAppleWeightAdjustedTypeface(
-                    original = originalTypeface,
+                rememberTextViewState(
+                    view = view,
+                    originalTypeface = originalTypeface,
                     requestedWeight = requestedWeight,
                     italic = italic,
-                    textView = view,
+                    originalStyle = reusedState?.originalStyle ?: requestedStyle,
+                    appliedTypeface = replacement,
                 )
+                if (!systemFontEnabled && !systemFontWeightEnabled) {
+                    return@installArgumentRewriteHook if (requested === replacement) {
+                        null
+                    } else {
+                        arrayOf(replacement, requestedStyle)
+                    }
+                }
+                if (systemFontEnabled) {
+                    return@installArgumentRewriteHook if (
+                        requested === replacement && requestedStyle == Typeface.NORMAL
+                    ) {
+                        null
+                    } else {
+                        arrayOf(replacement, Typeface.NORMAL)
+                    }
+                }
                 logAppleSystemFontReplacement(
                     stage = "custom_text_view_style",
                     resourceName = null,
@@ -632,6 +701,34 @@ internal class AppleSystemFontHooks(
                 "Apple 系统字体粗细 Hook 安装不完整：${failedHooks.joinToString()}"
             )
         }
+    }
+
+    private fun handleTextViewTypefaceAfterSet(
+        view: TextView,
+        requested: Typeface?,
+        requestedStyle: Int?,
+        stage: String,
+    ) {
+        if (appleSystemFontApplyGuard.isActive) return
+        val current = view.typeface ?: return
+        val requestedTypeface = requested ?: current
+        val previousState = synchronized(appleSystemFontTrackedTextViews) {
+            appleSystemFontTrackedTextViews[view]
+        }
+        val reusedState = previousState?.takeIf { it.appliedTypeface === requestedTypeface }
+        val originalTypeface = reusedState?.originalTypeface
+            ?: originalAppleTypeface(requestedTypeface)
+            ?: requestedTypeface
+        val originalStyle = requestedStyle ?: reusedState?.originalStyle
+            ?: requestedTypeface.style
+        val italic = reusedState?.italic ?: (
+            originalTypeface.isItalic || originalStyle and Typeface.ITALIC != 0
+        )
+        val requestedWeight = reusedState?.requestedWeight ?: originalTypeface.weight
+        rememberTextViewState(
+            view, originalTypeface, requestedWeight, italic, originalStyle, current,
+        )
+        applyAppleSystemFontForTextView(view, stage = stage)
     }
 
     private fun hookAppleComposeSystemFontWeight(
@@ -1168,6 +1265,15 @@ internal class AppleSystemFontHooks(
         textSizePx: Float,
     ): Typeface? {
         current ?: return null
+        if (!AppleSystemFontWeightPolicy.shouldReplaceTextContent(text)) return current
+        if (isFollowSystemFontEnabled()) {
+            val request = appleSystemFontRequest(current)
+            return createSystemDefaultTypeface(
+                request?.semanticWeight ?: current.weight,
+                request?.italic ?: current.isItalic,
+                textSizePx,
+            )
+        }
         val request = appleSystemFontRequest(current) ?: return current
         if (
             !isFollowSystemFontWeightEnabled() ||
@@ -1284,7 +1390,7 @@ internal class AppleSystemFontHooks(
         }
         appleSystemFontManagedTypefaces.add(original)
         appleSystemFontResourceNameByTypeface[original] = resourceIdentity.third
-        if (!isFollowSystemFontWeightEnabled()) return original
+        if (isFollowSystemFontEnabled() || !isFollowSystemFontWeightEnabled()) return original
 
         val replacement = createAppleWeightAdjustedTypeface(original)
         logAppleSystemFontReplacement(
@@ -1871,7 +1977,7 @@ internal class AppleSystemFontHooks(
         )
 
     private fun logAppleSystemFontDrawState(view: TextView) {
-        if (!BuildConfig.DEBUG || !isFollowSystemFontWeightEnabled()) return
+        if (!BuildConfig.DEBUG || (!isFollowSystemFontEnabled() && !isFollowSystemFontWeightEnabled())) return
         val viewTypeface = view.typeface
         val paint = view.paint
         val paintTypeface = paint.typeface
@@ -1919,94 +2025,88 @@ internal class AppleSystemFontHooks(
                 appleSystemFontOriginalTypefacesByReplacement[current]
             }
             val content = textOverride ?: view.text
-
-            fun restoreOriginalTypeface() {
-                val original = state?.originalTypeface ?: originalFromReplacement ?: return
-                view.setTypeface(original, state?.originalStyle ?: original.style)
-                if (requestLayout) view.requestLayout()
+            val activeState = state?.takeIf {
+                current === it.appliedTypeface || current === it.originalTypeface
             }
-
-            if (!isFollowSystemFontWeightEnabled()) {
-                if (originalFromReplacement != null) restoreOriginalTypeface()
-                if (state != null) {
-                    synchronized(appleSystemFontTrackedTextViews) {
-                        appleSystemFontTrackedTextViews.remove(view)
-                    }
-                }
-                return@run
-            }
-
-            if (!AppleSystemFontWeightPolicy.shouldReplaceTextContent(content)) {
-                if (originalFromReplacement != null) restoreOriginalTypeface()
-                synchronized(appleSystemFontTrackedTextViews) {
-                    appleSystemFontTrackedTextViews.remove(view)
-                }
-                return@run
-            }
-
+            val original = originalFromReplacement ?: activeState?.originalTypeface ?: current
+            val originalStyle = activeState?.originalStyle ?: original.style
+            val systemFontEnabled = isFollowSystemFontEnabled()
+            val systemFontWeightEnabled = isFollowSystemFontWeightEnabled()
             val appliedSignature = synchronized(appleSystemFontSignaturesByReplacement) {
                 appleSystemFontSignaturesByReplacement[current]
             }
-            val original = originalFromReplacement
-                ?: if (state != null && current === state.originalTypeface) {
-                    state.originalTypeface
-                } else {
-                    current
-                }
-            val requestedWeight = if (state != null && state.originalTypeface === original) {
-                state.requestedWeight
-            } else {
-                appliedSignature?.semanticWeight ?: original.weight
-            }
-            val italic = if (state != null && state.originalTypeface === original) {
-                state.italic
-            } else {
-                appliedSignature?.italic ?: original.isItalic
-            }
-            val originalStyle = state?.originalStyle ?: original.style
-            val semanticWeight = AppleSystemFontWeightPolicy.semanticWeight(
-                reportedWeight = requestedWeight,
-                isBold = original.isBold,
+            val requestedWeight = activeState?.requestedWeight
+                ?: appliedSignature?.semanticWeight
+                ?: original.weight
+            val italic = activeState?.italic
+                ?: appliedSignature?.italic
+                ?: original.isItalic
+            val mode = AppleSystemFontWeightPolicy.fontMode(
+                systemFontEnabled, systemFontWeightEnabled, content,
             )
-            val expectedWeight = mappedAppleSystemFontWeight(semanticWeight)
-            val expectedSignature = AppleSystemFontReplacementSignature(
-                effectiveSfProWeight = expectedWeight,
-                semanticWeight = semanticWeight,
-                usesCjkFallback = AppleSystemFontWeightPolicy.shouldUseSystemCjkFallback(content),
-                italic = italic,
-            )
-            val alreadyApplied = originalFromReplacement != null &&
-                appliedSignature == expectedSignature
-            if (alreadyApplied) return@run
-
-            val nextState = AppleSystemFontTextViewState(
-                originalTypeface = original,
-                requestedWeight = requestedWeight,
-                italic = italic,
-                originalStyle = originalStyle,
-            )
-            if (state != nextState) {
-                synchronized(appleSystemFontTrackedTextViews) {
-                    appleSystemFontTrackedTextViews[view] = nextState
+            val useSystemFont = mode == AppleSystemFontWeightPolicy.FontMode.SYSTEM
+            val useAppleWeight = mode == AppleSystemFontWeightPolicy.FontMode.APPLE_WEIGHT
+            if (useAppleWeight && originalFromReplacement != null) {
+                val semanticWeight = AppleSystemFontWeightPolicy.semanticWeight(
+                    reportedWeight = requestedWeight,
+                    isBold = original.isBold,
+                )
+                val expectedSignature = AppleSystemFontReplacementSignature(
+                    effectiveSfProWeight = mappedAppleSystemFontWeight(semanticWeight),
+                    semanticWeight = semanticWeight,
+                    usesCjkFallback = AppleSystemFontWeightPolicy.shouldUseSystemCjkFallback(content),
+                    italic = italic,
+                )
+                if (appliedSignature == expectedSignature) {
+                    rememberTextViewState(
+                        view = view,
+                        originalTypeface = original,
+                        requestedWeight = requestedWeight,
+                        italic = italic,
+                        originalStyle = originalStyle,
+                        appliedTypeface = current,
+                    )
+                    return@run
                 }
             }
-
-            val replacement = createAppleWeightAdjustedTypeface(
-                original = original,
-                requestedWeight = requestedWeight,
-                italic = italic,
-                text = content,
-                textSizePx = view.textSize,
-            )
-            view.setTypeface(replacement)
+            val target = when {
+                useSystemFont -> createSystemDefaultTypeface(requestedWeight, italic, view.textSize)
+                useAppleWeight -> createAppleWeightAdjustedTypeface(
+                    original = original,
+                    requestedWeight = requestedWeight,
+                    italic = italic,
+                    text = content,
+                    textSizePx = view.textSize,
+                )
+                else -> original
+            }
+            if (AppleSystemFontWeightPolicy.shouldReplaceTextContent(content) || state != null || originalFromReplacement != null) {
+                rememberTextViewState(
+                    view = view,
+                    originalTypeface = original,
+                    requestedWeight = requestedWeight,
+                    italic = italic,
+                    originalStyle = originalStyle,
+                    appliedTypeface = target,
+                )
+            }
+            if (current === target) return@run
+            if (useSystemFont || useAppleWeight) {
+                view.setTypeface(target)
+            } else {
+                view.setTypeface(target, originalStyle)
+            }
             if (requestLayout) view.requestLayout()
-            logAppleSystemFontReplacement(
-                stage = stage,
-                resourceName = null,
-                original = original,
-                replacement = replacement,
-                requestedWeight = requestedWeight,
-            )
+            view.invalidate()
+            if (useAppleWeight || useSystemFont) {
+                logAppleSystemFontReplacement(
+                    stage = stage,
+                    resourceName = null,
+                    original = original,
+                    replacement = target,
+                    requestedWeight = requestedWeight,
+                )
+            }
         }
     }
 

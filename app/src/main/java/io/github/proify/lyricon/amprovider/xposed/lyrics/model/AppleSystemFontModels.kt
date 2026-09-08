@@ -18,6 +18,7 @@ internal data class AppleSystemFontTextViewState(
     val requestedWeight: Int,
     val italic: Boolean,
     val originalStyle: Int,
+    val appliedTypeface: Typeface? = null,
 )
 
 internal data class AppleSystemFontTemplateFieldPath(

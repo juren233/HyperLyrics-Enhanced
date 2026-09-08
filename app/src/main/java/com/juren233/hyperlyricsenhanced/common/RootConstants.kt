@@ -322,6 +322,8 @@ object RootConstants {
         "key_hook_apple_music_advanced_lyrics_blur_min_radius_px"
     const val KEY_HOOK_APPLE_MUSIC_ADVANCED_LYRICS_BLUR_MAX_RADIUS_PX =
         "key_hook_apple_music_advanced_lyrics_blur_max_radius_px"
+    const val KEY_HOOK_APPLE_MUSIC_FOLLOW_SYSTEM_FONT =
+        "key_hook_apple_music_follow_system_font"
     const val KEY_HOOK_APPLE_MUSIC_FOLLOW_SYSTEM_FONT_WEIGHT =
         "key_hook_apple_music_follow_system_font_weight"
     const val KEY_HOOK_AI_TRANS_ENABLE = "key_hook_ai_trans_enable"
@@ -376,6 +378,7 @@ object RootConstants {
     const val DEFAULT_HOOK_APPLE_MUSIC_ADVANCED_LYRICS_BLUR_MAX_RADIUS_PX = 26
     const val MIN_HOOK_APPLE_MUSIC_ADVANCED_LYRICS_BLUR_RADIUS_PX = 0
     const val MAX_HOOK_APPLE_MUSIC_ADVANCED_LYRICS_BLUR_RADIUS_PX = 100
+    const val DEFAULT_HOOK_APPLE_MUSIC_FOLLOW_SYSTEM_FONT = false
     const val DEFAULT_HOOK_APPLE_MUSIC_FOLLOW_SYSTEM_FONT_WEIGHT = false
     const val MIN_HOOK_LYRICON_PROVIDER_DELAY = -5000
     const val MAX_HOOK_LYRICON_PROVIDER_DELAY = 5000
