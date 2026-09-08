@@ -7,6 +7,7 @@
 package com.juren233.hyperlyricsenhanced.root.mediacard.notification
 
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -21,6 +22,30 @@ class NotificationMediaHookMethodProfileTest {
     fun `keeps legacy layout names as fallback candidates`() {
         assertTrue(isLayout(NotificationMediaHookMethodProfile.LEGACY_LOAD_LAYOUT))
         assertTrue(isLayout(NotificationMediaHookMethodProfile.LEGACY_UPDATE_LAYOUT))
+    }
+
+
+    @Test
+    fun `separates layout loading from layout application`() {
+        assertEquals(
+            listOf(
+                NotificationMediaHookMethodProfile.OS4_LOAD_LAYOUT,
+                NotificationMediaHookMethodProfile.LEGACY_LOAD_LAYOUT,
+            ),
+            NotificationMediaHookMethodProfile.layoutLoadMethodNames,
+        )
+        assertEquals(
+            listOf(
+                NotificationMediaHookMethodProfile.OS4_UPDATE_LAYOUT,
+                NotificationMediaHookMethodProfile.LEGACY_UPDATE_LAYOUT,
+            ),
+            NotificationMediaHookMethodProfile.layoutApplyMethodNames,
+        )
+        assertTrue(
+            NotificationMediaHookMethodProfile.layoutLoadMethodNames.none {
+                it in NotificationMediaHookMethodProfile.layoutApplyMethodNames
+            },
+        )
     }
 
     @Test

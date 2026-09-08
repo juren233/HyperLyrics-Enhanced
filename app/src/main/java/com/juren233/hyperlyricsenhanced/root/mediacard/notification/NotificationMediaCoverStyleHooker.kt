@@ -121,13 +121,13 @@ object NotificationMediaCoverStyleHooker {
         return NotificationMediaHookMethodProfile.isLayoutRefresh(method)
     }
 
-    private fun findLayoutRefreshMethod(type: Class<*>): Method {
-        return NotificationMediaHookMethodProfile.layoutRefreshMethodNames.firstNotNullOfOrNull { name ->
+    private fun findLayoutMethod(type: Class<*>, names: List<String>, role: String): Method {
+        return names.firstNotNullOfOrNull { name ->
             findNearestMethods(type, name).firstOrNull { method ->
                 method.parameterCount == 0 && method.returnType == Void.TYPE
             }
         }?.apply { isAccessible = true }
-            ?: error("No compatible media layout refresh method in ${type.name}")
+            ?: error("No compatible media layout $role method in ${type.name}")
     }
 
     private fun findNearestMethods(type: Class<*>, name: String): List<Method> {
@@ -150,7 +150,7 @@ object NotificationMediaCoverStyleHooker {
         if (!isTargetMethod(method)) return null
         return when (method.declaringClass.name) {
             VIEW_CONTROLLER_CLASS -> ControllerHook(method.name)
-            LAYOUT_CONTROLLER_CLASS -> LayoutLoadHook()
+            LAYOUT_CONTROLLER_CLASS -> LayoutLoadHook(method.name)
             else -> null
         }
     }
@@ -269,10 +269,15 @@ object NotificationMediaCoverStyleHooker {
         }
     }
 
-    private class LayoutLoadHook : Hooker {
+    private class LayoutLoadHook(private val methodName: String) : Hooker {
         override fun intercept(chain: Chain): Any? {
             val result = chain.proceed()
             val controller = chain.thisObject ?: return result
+            MediaCardDiagnosticLogger.log(
+                stage = "notification_cover",
+                event = "layout_callback",
+                details = "method=$methodName,controller=${MediaCardDiagnosticLogger.identity(controller)},enabled=${SystemUiEnhancementGate.isEnabled()},restoring=${restoringNativeLayout.get() == true}",
+            )
             layoutControllers.add(controller)
             if (SystemUiEnhancementGate.isEnabled() && restoringNativeLayout.get() != true) {
                 runCatching {
@@ -606,18 +611,19 @@ object NotificationMediaCoverStyleHooker {
                     "setSeamless",
                     mediaDataClass
                 ).apply { isAccessible = true }
-                val loadLayout = findLayoutRefreshMethod(layoutControllerClass)
-                val updateLayout = NotificationMediaHookMethodProfile.layoutRefreshMethodNames
-                    .asSequence()
-                    .mapNotNull { name ->
-                        findNearestMethods(layoutControllerClass, name).firstOrNull { method ->
-                            method.parameterCount == 0 && method.returnType == Void.TYPE &&
-                                method !== loadLayout
-                        }
-                    }
-                    .firstOrNull()
-                    ?.apply { isAccessible = true }
-                    ?: error("No second compatible media layout refresh method in ${layoutControllerClass.name}")
+                val loadLayout = findLayoutMethod(
+                    layoutControllerClass,
+                    NotificationMediaHookMethodProfile.layoutLoadMethodNames,
+                    "load",
+                )
+                val updateLayout = findLayoutMethod(
+                    layoutControllerClass,
+                    NotificationMediaHookMethodProfile.layoutApplyMethodNames,
+                    "apply",
+                )
+                require(loadLayout != updateLayout) {
+                    "Media layout load/apply methods must be distinct"
+                }
 
                 return NativeApi(
                     hookMethods = listOf(attach, bind, detach, setSeamless, loadLayout, updateLayout),

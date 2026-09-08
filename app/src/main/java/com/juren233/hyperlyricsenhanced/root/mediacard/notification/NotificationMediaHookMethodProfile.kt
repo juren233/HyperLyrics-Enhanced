@@ -29,6 +29,10 @@ internal object NotificationMediaHookMethodProfile {
         LEGACY_UPDATE_LAYOUT,
     )
 
+    /** Keep the XML-loading and ConstraintSet-application phases distinct. */
+    val layoutLoadMethodNames = listOf(OS4_LOAD_LAYOUT, LEGACY_LOAD_LAYOUT)
+    val layoutApplyMethodNames = listOf(OS4_UPDATE_LAYOUT, LEGACY_UPDATE_LAYOUT)
+
     fun isZeroArgVoid(method: Method, name: String): Boolean {
         return method.name == name &&
             method.parameterCount == 0 &&
