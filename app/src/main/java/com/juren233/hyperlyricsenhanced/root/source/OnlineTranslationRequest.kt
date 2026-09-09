@@ -10,7 +10,13 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
-/** One invalidation boundary for the worker, race results and deferred sentence commit. */
+/**
+ * One invalidation boundary for the worker, race results and deferred sentence commit.
+ *
+ * [resultReady] marks the window after the worker finished but before the posted main-thread
+ * delivery ran: without it a repeated song callback would treat the request as idle, cancel
+ * the queued result and keep the old attempt key, so the same track could never re-request.
+ */
 internal class OnlineTranslationRequest<P> {
     private var generation = 0
     private var attempt: String? = null
@@ -18,6 +24,7 @@ internal class OnlineTranslationRequest<P> {
     private var firstPublished: Int? = null
     private var firstAccepted: Int? = null
     private var pending: P? = null
+    private var resultReady = false
 
     data class Snapshot<P>(
         val generation: Int,
@@ -26,14 +33,19 @@ internal class OnlineTranslationRequest<P> {
         val firstPublished: Int?,
         val firstAccepted: Int?,
         val pending: P?,
+        val resultReady: Boolean,
     )
 
     @Synchronized fun snapshot() = Snapshot(
-        generation, attempt, job?.isActive == true, firstPublished, firstAccepted, pending,
+        generation, attempt, job?.isActive == true, firstPublished, firstAccepted, pending, resultReady,
     )
 
-    @Synchronized fun begin(key: String): Int? {
-        if (attempt == key) return null
+    /**
+     * Registers [key] and returns the generation token. A matching key returns null unless
+     * [allowRestart] is set, which retires a dead attempt under the same key and starts fresh.
+     */
+    @Synchronized fun begin(key: String, allowRestart: Boolean = false): Int? {
+        if (attempt == key && !allowRestart) return null
         invalidate()
         attempt = key
         return generation
@@ -54,7 +66,13 @@ internal class OnlineTranslationRequest<P> {
     @Synchronized fun deliver(token: Int, apply: () -> Unit): Boolean {
         if (token != generation) return false
         apply()
+        resultReady = false
         return true
+    }
+
+    /** Marks that a result exists and only waits for its main-thread delivery. */
+    @Synchronized fun markResultReady(token: Int) {
+        if (token == generation) resultReady = true
     }
 
     @Synchronized fun markFirstPublished(token: Int) {
@@ -92,6 +110,7 @@ internal class OnlineTranslationRequest<P> {
         firstPublished = null
         firstAccepted = null
         pending = null
+        resultReady = false
         previous?.cancel()
     }
 }

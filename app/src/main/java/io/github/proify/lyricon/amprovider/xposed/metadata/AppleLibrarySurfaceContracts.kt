@@ -6,18 +6,6 @@
 
 package io.github.proify.lyricon.amprovider.xposed
 
-import android.os.SystemClock
-import android.view.Choreographer
-import com.juren233.hyperlyricsenhanced.BuildConfig
-import io.github.proify.lyricon.amprovider.xposed.internal.WeakIdentityMap
-import java.lang.ref.WeakReference
-import java.lang.reflect.Modifier
-import java.util.Collections
-import java.util.IdentityHashMap
-import java.util.WeakHashMap
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.ConcurrentLinkedQueue
-
 internal interface AppleLibrarySurfaceHost {
     fun contentItemMediaId(source: Any): String?
 

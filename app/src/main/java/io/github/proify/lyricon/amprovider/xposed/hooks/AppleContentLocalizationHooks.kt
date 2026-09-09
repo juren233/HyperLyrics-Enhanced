@@ -24,7 +24,6 @@ import io.github.proify.lyricon.amprovider.xposed.CATALOG_REQUEST_TOKEN_PARAM
 import io.github.proify.lyricon.amprovider.xposed.catalogRequestLocalization
 import io.github.proify.lyricon.amprovider.xposed.languageTagForCurrentRequest
 import io.github.proify.lyricon.amprovider.xposed.pendingCatalogRequestCount
-import io.github.proify.lyricon.amprovider.xposed.storefrontForContentUiLanguage
 import io.github.proify.lyricon.amprovider.xposed.AppleMusicHookPoint
 import io.github.proify.lyricon.amprovider.xposed.AppleMusicHookTarget
 import io.github.proify.lyricon.amprovider.xposed.AppleMusicProviderRuntime

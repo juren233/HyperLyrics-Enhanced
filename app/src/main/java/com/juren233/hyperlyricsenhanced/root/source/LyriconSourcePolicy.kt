@@ -82,6 +82,33 @@ internal fun shouldClearAppleOnlineTranslationAttempt(
     originalMetadataChanged
 
 /**
+ * 同曲重复回调是否允许重新调度在线翻译。请求仍在运行、结果已查到但尚未在主线程应用、
+ * 或已确认匹配时,既有请求有效,不得重启;否则(key 相同但请求已死亡)允许重启,
+ * 避免旧 attempt key 永久封死同曲的重试与兜底结果的重新调度。
+ */
+internal fun isAppleOnlineTranslationAttemptAlive(
+    attemptMatches: Boolean,
+    requestRunning: Boolean,
+    resultReady: Boolean,
+    matchedActive: Boolean,
+): Boolean = attemptMatches && (requestRunning || resultReady || matchedActive)
+
+/**
+ * 正文与来源以合并结果为准;当合并沿用了旧歌曲对象(如保留 LunaBeat 正文)时,
+ * 把最新 Apple 回调中非空且不同的标题/歌手同步到该对象上,避免晚到的显示元数据丢失。
+ * 歌词、正文来源、翻译标记与位置不受影响;非同曲或无可同步字段时原样返回。
+ */
+internal fun mergeRetainedSongDisplayMetadata(
+    mergedSong: LocalSong?,
+    previousSong: LocalSong?,
+    incomingSong: LocalSong?,
+): LocalSong? = if (mergedSong === previousSong) {
+    AppleSongUpdatePolicy.refreshDisplayMetadata(previousSong, incomingSong) ?: mergedSong
+} else {
+    mergedSong
+}
+
+/**
  * Central Apple callbacks can rebuild the same lyric model from TTML and drop the
  * process-independent supplement metadata. Keep the already confirmed supplement
  * marker and source description attached to that same track so it is not promoted

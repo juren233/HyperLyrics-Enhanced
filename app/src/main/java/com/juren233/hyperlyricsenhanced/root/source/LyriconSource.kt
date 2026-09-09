@@ -120,6 +120,7 @@ class LyriconSource : LyricSource {
     internal val onlineTranslationGeneration get() = onlineTranslationRequest.snapshot().generation
     internal val onlineTranslationAttemptKey get() = onlineTranslationRequest.snapshot().attempt
     internal val onlineTranslationRunning get() = onlineTranslationRequest.snapshot().running
+    internal val onlineTranslationResultReady get() = onlineTranslationRequest.snapshot().resultReady
     internal val onlineRaceFirstPublishedGeneration get() = onlineTranslationRequest.snapshot().firstPublished
     internal val onlineRaceFirstAcceptedGeneration get() = onlineTranslationRequest.snapshot().firstAccepted
 
@@ -320,7 +321,9 @@ class LyriconSource : LyricSource {
         if (ThirdPartySongUpdatePolicy.preserveOnline(
                 sameTrack = sameTrack,
                 sameContent = sameContent,
-                enrichmentRunningOrMatched = onlineTranslationRunning || onlineMatchedTranslationActive,
+                enrichmentRunningOrMatched = onlineTranslationRunning ||
+                    onlineTranslationResultReady ||
+                    onlineMatchedTranslationActive,
                 fallbackRunning = request.running,
                 fallbackPending = request.pending,
                 fallbackSelected = thirdPartyFallbackSongActive,

@@ -545,7 +545,7 @@ internal fun LyriconSource.applyFallbackResult(
     )
     if (!fallbackHasTranslation) {
         val onlineTranslationRunning =
-            onlineTranslationRunning || onlineMatchedTranslationActive
+            onlineTranslationRunning || onlineTranslationResultReady || onlineMatchedTranslationActive
         val onlineTranslationScheduled = supplementSong != null &&
             isAppleTranslationEnrichmentEnabled() &&
             scheduleOnlineTranslation(supplementSong)

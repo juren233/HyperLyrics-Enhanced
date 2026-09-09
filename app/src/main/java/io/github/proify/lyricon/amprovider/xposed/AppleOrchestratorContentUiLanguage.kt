@@ -243,12 +243,6 @@ internal fun AppleMusicProviderOrchestrator.isRestoreCjkOriginalMetadataEnabled(
     RootConstants.DEFAULT_HOOK_APPLE_MUSIC_RESTORE_CJK_ORIGINAL_METADATA,
 ) == true
 
-internal fun AppleMusicProviderOrchestrator.isSimplifyTraditionalLyricsEnabled(): Boolean =
-    contentUiLanguagePrefs?.getBoolean(
-        RootConstants.KEY_HOOK_APPLE_MUSIC_SIMPLIFY_TRADITIONAL_LYRICS,
-        RootConstants.DEFAULT_HOOK_APPLE_MUSIC_SIMPLIFY_TRADITIONAL_LYRICS,
-    ) == true
-
 internal fun AppleMusicProviderOrchestrator.isAodLyricsEnabled(): Boolean = contentUiLanguagePrefs?.getBoolean(
     RootConstants.KEY_HOOK_ENABLE_AOD_LYRICS,
     RootConstants.DEFAULT_HOOK_ENABLE_AOD_LYRICS,

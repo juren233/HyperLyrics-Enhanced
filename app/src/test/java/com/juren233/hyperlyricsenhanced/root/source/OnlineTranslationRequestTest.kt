@@ -57,4 +57,47 @@ class OnlineTranslationRequestTest {
         assertFalse(applied)
     }
 
+    @Test fun `result ready survives worker completion until delivery`() {
+        val owner = OnlineTranslationRequest<String>()
+        val token = owner.begin("song")!!
+        owner.markResultReady(token)
+        assertTrue(owner.snapshot().resultReady)
+        assertTrue(owner.deliver(token) { })
+        assertFalse(owner.snapshot().resultReady)
+    }
+
+    @Test fun `stale result ready mark is ignored`() {
+        val owner = OnlineTranslationRequest<String>()
+        val first = owner.begin("a")!!
+        owner.cancel(clearAttempt = true)
+        val second = owner.begin("b")!!
+        owner.markResultReady(first)
+        assertFalse(owner.snapshot().resultReady)
+        owner.markResultReady(second)
+        assertTrue(owner.snapshot().resultReady)
+    }
+
+    @Test fun `cancel and restart clear the ready result`() {
+        val owner = OnlineTranslationRequest<String>()
+        val token = owner.begin("song")!!
+        owner.markResultReady(token)
+        owner.cancel(clearAttempt = true)
+        assertFalse(owner.snapshot().resultReady)
+
+        val restarted = owner.begin("song")!!
+        owner.markResultReady(restarted)
+        owner.begin("other")
+        assertFalse(owner.snapshot().resultReady)
+    }
+
+    @Test fun `matching attempt with allowRestart retires the dead key`() {
+        val owner = OnlineTranslationRequest<String>()
+        val first = owner.begin("song")!!
+        assertNull(owner.begin("song"))
+        val second = owner.begin("song", allowRestart = true)!!
+        assertTrue(second > first)
+        assertFalse(owner.deliver(first) { })
+        assertTrue(owner.deliver(second) { })
+    }
+
 }

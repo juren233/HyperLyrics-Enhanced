@@ -447,7 +447,7 @@ internal fun LyriconSource.cancelOnlineTranslation(
     clearMatched: Boolean,
     reason: String
 ) {
-    if (onlineTranslationRunning || onlineMatchedTranslationActive) {
+    if (onlineTranslationRunning || onlineTranslationResultReady || onlineMatchedTranslationActive) {
         diagnostic(
             "Apple Music 在线翻译匹配取消: reason=$reason, " +
                 "title=${currentAppleSong?.name}"

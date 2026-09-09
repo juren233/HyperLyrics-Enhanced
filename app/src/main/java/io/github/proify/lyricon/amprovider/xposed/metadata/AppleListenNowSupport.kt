@@ -25,7 +25,11 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
 
 /**
- * Debug-only trace for the real Listen Now / Home artwork path.
+ * Listen Now / Home artwork support: shared state helpers plus a debug-only trace.
+ *
+ * [clearMetadataState], [hasDataBindingRefs], [isArtworkContinuityInstalled] and
+ * [onArtworkDelegateResolved] run in release builds; [installDebugArtworkLifecycleHooks]
+ * is a debug-only trace for the real Listen Now / Home artwork path.
  *
  * The profiled model builder creates one MutableLiveData<String[]> per card and seeds it
  * from the feed image URL. The profiled bound listener submits a second medialibrary artwork

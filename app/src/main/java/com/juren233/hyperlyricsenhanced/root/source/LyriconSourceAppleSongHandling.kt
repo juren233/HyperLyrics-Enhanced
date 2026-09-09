@@ -81,11 +81,17 @@ internal fun LyriconSource.handleAppleSong(incomingSong: LocalSong?) {
                 selection.songId == incomingSong.id
         }
         ?.source
-    val song = mergeMissingLyricsSupplementMetadata(
+    val mergedSong = mergeMissingLyricsSupplementMetadata(
         previousSong = previousSong,
         incomingSong = incomingSong,
         sameTrack = sameTrack,
         authoritativeSource = authoritativeLyricsSource,
+    )
+    // 正文与来源按合并结果保留;标题/歌手仍跟随最新回调,避免保留正文时丢失晚到的显示元数据。
+    val song = mergeRetainedSongDisplayMetadata(
+        mergedSong = mergedSong,
+        previousSong = previousSong,
+        incomingSong = incomingSong,
     )
     val authoritativeNativeTransition = sameTrack &&
         isMissingLyricsSupplement(previousSong) &&
@@ -97,7 +103,7 @@ internal fun LyriconSource.handleAppleSong(incomingSong: LocalSong?) {
                 "nativeLines=${song?.lyrics.orEmpty().size}"
         )
     }
-    if (song === previousSong && incomingSong !== previousSong && authoritativeLyricsSource != null) {
+    if (mergedSong === previousSong && incomingSong !== previousSong && authoritativeLyricsSource != null) {
         diagnostic(
             "忽略过期 Apple Music 歌词来源回传: id=${previousSong?.id}, " +
                 "authoritative=$authoritativeLyricsSource, incoming=" +
@@ -139,7 +145,7 @@ internal fun LyriconSource.handleAppleSong(incomingSong: LocalSong?) {
         needsEnrichment = needsOnlineEnrichment(song),
         originalMetadataChanged = originalMetadataChanged,
         enrichmentRunning =
-            onlineTranslationRunning || onlineMatchedTranslationActive,
+            onlineTranslationRunning || onlineTranslationResultReady || onlineMatchedTranslationActive,
     )
     if (repeatedLyricsNeedingEnrichment) {
         refreshRetainedAppleMetadata(song)

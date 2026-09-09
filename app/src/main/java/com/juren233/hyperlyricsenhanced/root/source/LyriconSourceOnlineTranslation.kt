@@ -100,7 +100,14 @@ internal fun LyriconSource.scheduleOnlineTranslation(baseSong: LocalSong): Boole
         return false
     }
     val attemptKey = translationIdentity(baseSong)
-    if (onlineTranslationAttemptKey == attemptKey) {
+    val requestSnapshot = onlineTranslationRequest.snapshot()
+    if (isAppleOnlineTranslationAttemptAlive(
+            attemptMatches = onlineTranslationAttemptKey == attemptKey,
+            requestRunning = requestSnapshot.running,
+            resultReady = requestSnapshot.resultReady,
+            matchedActive = onlineMatchedTranslationActive,
+        )
+    ) {
         sourceSwitchCoreStage(
             request = sourceSwitchRequest,
             stage = "translation_schedule_skipped",
@@ -114,7 +121,7 @@ internal fun LyriconSource.scheduleOnlineTranslation(baseSong: LocalSong): Boole
     }
 
     val previousJobActive = onlineTranslationRunning
-    val generation = onlineTranslationRequest.begin(attemptKey) ?: return false
+    val generation = onlineTranslationRequest.begin(attemptKey, allowRestart = true) ?: return false
     pronunciationDiagnostic(
         "stage=request_scheduled, generation=$generation, id=${baseSong.id}, " +
             "attempt=$attemptKey, nativeLines=${baseSong.lyrics.orEmpty().size}"
@@ -137,6 +144,7 @@ internal fun LyriconSource.scheduleOnlineTranslation(baseSong: LocalSong): Boole
             details = "generation=$generation,publicationStage=$publicationStage," +
                 "reason=$reason,resultPresent=${selection != null}",
         )
+        onlineTranslationRequest.markResultReady(generation)
         mainHandler.post {
             val applyStartedAtNanos = SystemClock.elapsedRealtimeNanos()
             sourceSwitchCoreStage(

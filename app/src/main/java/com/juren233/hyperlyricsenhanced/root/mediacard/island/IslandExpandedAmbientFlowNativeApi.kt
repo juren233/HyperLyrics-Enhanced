@@ -768,7 +768,7 @@ internal data class ExpandedBackgroundMethods(
             val baseContentViewClass = generateSequence(ownerClass as Class<*>?) {
                 it.superclass
             }.firstOrNull { it.name == IslandExpandedMediaAmbientFlowHooker.BASE_CONTENT_VIEW_CLASS }
-                ?: error("Missing superclass: $IslandExpandedMediaAmbientFlowHooker.BASE_CONTENT_VIEW_CLASS")
+                ?: error("Missing superclass: ${IslandExpandedMediaAmbientFlowHooker.BASE_CONTENT_VIEW_CLASS}")
             val miBlurCompatClass = classLoader.loadClass(IslandExpandedMediaAmbientFlowHooker.MI_BLUR_COMPAT_CLASS)
             val colorClass = classLoader.loadClass("miui.systemui.dynamicisland.R\$color")
             val integerClass = classLoader.loadClass("miui.systemui.dynamicisland.R\$integer")
