@@ -4,8 +4,87 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import org.junit.After
+import org.junit.Before
+import org.junit.Assert.assertArrayEquals
 
 class CoverColorHelperTest {
+
+    @Before fun resetBefore() = CoverColorHelper.clearCache()
+    @After fun resetAfter() = CoverColorHelper.clearCache()
+
+    // Seed private state to reproduce a completed extractor without Android Bitmap stubs.
+    // Production cache lookup is invoked unchanged; no test-only production setters.
+    private fun seedActive(key: String, colors: IntArray) {
+        for ((name, value) in listOf(
+            "cachedKey" to key, "cachedLightColors" to colors, "cachedDarkColors" to colors,
+        )) {
+            CoverColorHelper::class.java.getDeclaredField(name).apply {
+                isAccessible = true
+                set(CoverColorHelper, value)
+            }
+        }
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun seedKeyed(key: String, gradient: Boolean, colors: IntArray) {
+        val nested = CoverColorHelper::class.java.declaredClasses
+        val signature = nested.single { it.simpleName == "ArtworkSignature" }
+            .declaredConstructors.single().apply { isAccessible = true }.newInstance(1, 1, 42)
+        val entry = nested.single { it.simpleName == "CacheEntry" }
+            .declaredConstructors.single().apply { isAccessible = true }
+            .newInstance(gradient, signature, Pair(colors, colors))
+        val cache = CoverColorHelper::class.java.getDeclaredField("keyedCache").apply {
+            isAccessible = true
+        }.get(CoverColorHelper) as MutableMap<String, Any>
+        cache[key] = entry
+    }
+
+    @Test fun `single keyed cache survives gradient progress becoming active`() {
+        val single = intArrayOf(0xFFFF0000.toInt())
+        seedKeyed("song_false", false, single)
+        seedActive("song_true", intArrayOf(0xFFFF0000.toInt(), 0xFF0000FF.toInt()))
+        val result = CoverColorHelper.resolveTextColors(null, false, "song")!!
+        assertEquals(CoverColorHelper.PaletteSource.KEYED_CACHE, result.source)
+        assertArrayEquals(single, result.colors.second)
+        assertEquals("song_false", result.resolvedKey)
+    }
+
+    @Test fun `gradient keyed cache stays independent from active single text color`() {
+        val gradient = intArrayOf(0xFFFF0000.toInt(), 0xFF0000FF.toInt())
+        seedKeyed("song_true", true, gradient)
+        seedActive("song_false", intArrayOf(0xFFFF0000.toInt()))
+        val result = CoverColorHelper.resolveTextColors(null, true, "song")!!
+        assertEquals(CoverColorHelper.PaletteSource.KEYED_CACHE, result.source)
+        assertEquals(3, result.colors.second.size)
+        assertEquals("song_true", result.resolvedKey)
+    }
+
+    @Test fun `single text request cannot borrow active gradient progress palette`() {
+        seedActive("song_true", intArrayOf(0xFFFF0000.toInt(), 0xFF0000FF.toInt()))
+        assertNull(CoverColorHelper.resolveTextColors(null, false, "song"))
+    }
+
+    @Test fun `gradient request cannot borrow active single text palette`() {
+        seedActive("song_false", intArrayOf(0xFFFF0000.toInt()))
+        assertNull(CoverColorHelper.resolveTextColors(null, true, "song"))
+    }
+
+    @Test fun `missing artwork on next track cannot borrow previous track colors`() {
+        seedActive("old_false", intArrayOf(0xFFFF0000.toInt()))
+        assertNull(CoverColorHelper.resolveTextColors(null, false, "new"))
+        assertNull(CoverColorHelper.resolveTextColors(null, false, null))
+    }
+
+    @Test fun `matching active palette survives missing artwork and clears normally`() {
+        val colors = intArrayOf(0xFFFF0000.toInt())
+        seedActive("song_false", colors)
+        val result = CoverColorHelper.resolveTextColors(null, false, "song")!!
+        assertArrayEquals(colors, result.colors.second)
+        assertEquals(result.requestedKey, result.resolvedKey)
+        CoverColorHelper.clearCache()
+        assertNull(CoverColorHelper.resolveTextColors(null, false, "song"))
+    }
 
     @Test
     fun `same artwork pixels produce a stable signature across bitmap instances`() {

@@ -19,8 +19,9 @@ internal data class LyricPublicationEvent(
 
 /**
  * Owns only source selection and publication caches. No jobs, preferences, Android Views or
- * subscriber are stored here. Callers retain the existing main-thread dispatch; request
- * owners serialize result delivery with cancellation before entering this boundary.
+ * subscriber are stored here. All access is synchronized at this boundary because Central callbacks and direct Binder
+ * callbacks can arrive on different threads; request owners still serialize result delivery
+ * with cancellation before entering this boundary.
  */
 internal class LyriconPublication {
     private var appleInput: Song? = null
@@ -34,37 +35,43 @@ internal class LyriconPublication {
     private var enrichmentMatched = false
     private var lyricsSelection: ConfirmedLyricsSourceSelection? = null
 
-    val currentAppleSong get() = appleInput
-    val currentAppleNativeSong get() = appleNative
-    val currentAppleHasNativeLyrics get() = appleNativeLyrics
-    val currentPublishedAppleSong get() = applePublished?.song
-    val currentPublishedAppleOnlineTranslationMatched get() = applePublished?.onlineMatched == true
-    val currentThirdPartySong get() = thirdPartyInput
-    val currentPublishedThirdPartySong get() = thirdPartyPublished?.song
-    val fallbackSongActive get() = appleFallbackSelected
-    val thirdPartyFallbackSongActive get() = thirdPartyFallbackSelected
-    val onlineMatchedTranslationActive get() = enrichmentMatched
-    val confirmedLyricsSourceSelection get() = lyricsSelection
+    val currentAppleSong get() = synchronized(this) { appleInput }
+    val currentAppleNativeSong get() = synchronized(this) { appleNative }
+    val currentAppleHasNativeLyrics get() = synchronized(this) { appleNativeLyrics }
+    val currentPublishedAppleSong get() = synchronized(this) { applePublished?.song }
+    val currentPublishedAppleOnlineTranslationMatched get() = synchronized(this) { applePublished?.onlineMatched == true }
+    val currentThirdPartySong get() = synchronized(this) { thirdPartyInput }
+    val currentPublishedThirdPartySong get() = synchronized(this) { thirdPartyPublished?.song }
+    val fallbackSongActive get() = synchronized(this) { appleFallbackSelected }
+    val thirdPartyFallbackSongActive get() = synchronized(this) { thirdPartyFallbackSelected }
+    val onlineMatchedTranslationActive get() = synchronized(this) { enrichmentMatched }
+    val confirmedLyricsSourceSelection get() = synchronized(this) { lyricsSelection }
 
+    @Synchronized
     fun rememberNative(song: Song?) { appleNative = song }
 
+    @Synchronized
     fun acceptAppleInput(song: Song?, hasNativeLyrics: Boolean) {
         appleInput = song
         appleNativeLyrics = hasNativeLyrics
     }
 
+    @Synchronized
     fun acceptThirdPartyInput(song: Song?) { thirdPartyInput = song }
 
+    @Synchronized
     fun beginAppleTrack(nativeSong: Song?) {
         lyricsSelection = null
         appleNative = nativeSong
     }
 
+    @Synchronized
     fun confirmLyricsSource(selection: ConfirmedLyricsSourceSelection) {
         // A delayed manual result may never change the next track's selected source.
         if (appleInput?.id == selection.songId) lyricsSelection = selection
     }
 
+    @Synchronized
     fun acceptAppleSupplement(song: Song, notify: (Song) -> Boolean): Boolean {
         val current = appleInput ?: return false
         if (!SourceTrackIdentity.of(current).matches(SourceTrackIdentity.of(song))) return false
@@ -74,9 +81,12 @@ internal class LyriconPublication {
         return delivered
     }
 
+    @Synchronized
     fun selectAppleFallback() { appleFallbackSelected = true }
+    @Synchronized
     fun selectThirdPartyFallback() { thirdPartyFallbackSelected = true }
 
+    @Synchronized
     fun cancelAppleFallback(clearSong: Boolean) {
         appleFallbackSelected = false
         if (clearSong) {
@@ -87,28 +97,44 @@ internal class LyriconPublication {
         }
     }
 
+    @Synchronized
     fun cancelThirdPartyFallback() { thirdPartyFallbackSelected = false }
+    @Synchronized
     fun acceptEnrichment(matched: Boolean) { enrichmentMatched = matched }
+    @Synchronized
     fun cancelEnrichment() { enrichmentMatched = false }
 
+    @Synchronized
     fun publishApple(event: LyricPublicationEvent, notify: (Song?, Boolean) -> Unit) {
         applePublished = event
         notify(event.song, event.onlineMatched)
     }
 
+    @Synchronized
     fun publishThirdParty(event: LyricPublicationEvent, notify: (Song?, Boolean) -> Unit) {
         thirdPartyPublished = event
         notify(event.song, event.onlineMatched)
     }
 
+    @Synchronized
+    fun refreshAppleDisplayMetadata(incoming: Song?, notify: (Song?, Boolean) -> Unit): Boolean {
+        val event = applePublished ?: return false
+        val updated = AppleSongUpdatePolicy.refreshDisplayMetadata(event.song, incoming) ?: return false
+        publishApple(event.copy(song = updated, identity = SourceTrackIdentity.of(updated)), notify)
+        return true
+    }
+
+    @Synchronized
     fun resetPublishedApple() { applePublished = null }
 
+    @Synchronized
     fun resetThirdParty() {
         thirdPartyInput = null
         thirdPartyPublished = null
         thirdPartyFallbackSelected = false
     }
 
+    @Synchronized
     fun reset() {
         cancelAppleFallback(clearSong = true)
         resetPublishedApple()

@@ -114,6 +114,7 @@ internal fun LyriconSource.handleAppleSong(incomingSong: LocalSong?) {
     val preservesCurrentLyrics = previousSong != null && song != null &&
         AppleSongUpdatePolicy.shouldPreserveCurrentLyrics(previousSong, song, sameTrack)
     if (preservesCurrentLyrics) {
+        refreshRetainedAppleMetadata(song)
         debug("忽略同一首歌的空歌词降级: title=${song.name}")
         return
     }
@@ -123,6 +124,7 @@ internal fun LyriconSource.handleAppleSong(incomingSong: LocalSong?) {
         song.lyrics.isNullOrEmpty() &&
         (fallbackSongActive || fallbackDelayRunnable != null || fallbackJob?.isActive == true)
     if (repeatedEmptySong) {
+        refreshRetainedAppleMetadata(song)
         publication.acceptAppleInput(song, false)
         debug("忽略同一首歌的重复空歌词占位: title=${song.name}")
         return
@@ -140,6 +142,7 @@ internal fun LyriconSource.handleAppleSong(incomingSong: LocalSong?) {
             onlineTranslationRunning || onlineMatchedTranslationActive,
     )
     if (repeatedLyricsNeedingEnrichment) {
+        refreshRetainedAppleMetadata(song)
         publication.acceptAppleInput(song, hasAppleNativeLyrics(song))
         debug("忽略同一首歌的重复待补全歌词: title=${song?.name}")
         return

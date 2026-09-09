@@ -3,6 +3,7 @@ package com.juren233.hyperlyricsenhanced.root.source
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.delay
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -35,4 +36,25 @@ class OnlineTranslationRequestTest {
         assertEquals("result", owner.takePending { true })
         assertNull(owner.takePending { true })
     }
+    @Test fun `launch registers and runs current worker only`() = runBlocking {
+        val owner = OnlineTranslationRequest<String>()
+        val token = owner.begin("song")!!
+        var ran = false
+        owner.launch(this, token) { ran = true }
+        delay(20)
+        assertTrue(ran)
+        assertFalse(owner.snapshot().running)
+    }
+
+    @Test fun `cancel rejects a queued delivery after worker completion`() = runBlocking {
+        val owner = OnlineTranslationRequest<String>()
+        val token = owner.begin("song")!!
+        var applied = false
+        owner.launch(this, token) { delay(1) }
+        delay(20)
+        owner.cancel(clearAttempt = false)
+        assertFalse(owner.deliver(token) { applied = true })
+        assertFalse(applied)
+    }
+
 }

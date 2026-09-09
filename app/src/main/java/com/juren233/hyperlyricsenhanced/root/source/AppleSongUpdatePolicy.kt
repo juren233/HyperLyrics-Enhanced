@@ -4,6 +4,16 @@ import com.juren233.hyperlyricsenhanced.lyric.model.Song
 
 internal object AppleSongUpdatePolicy {
 
+    /** Metadata-only updates must never replace selected lyrics or cross song identities. */
+    fun refreshDisplayMetadata(current: Song?, incoming: Song?): Song? {
+        if (current == null || incoming == null || current.id.isNullOrBlank() ||
+            current.id != incoming.id) return null
+        val name = incoming.name?.takeIf { it.isNotBlank() } ?: current.name
+        val artist = incoming.artist?.takeIf { it.isNotBlank() } ?: current.artist
+        if (name == current.name && artist == current.artist) return null
+        return current.copy(name = name, artist = artist)
+    }
+
     fun shouldPreserveCurrentLyrics(
         currentSong: Song,
         candidate: Song,

@@ -138,6 +138,10 @@ object CoverColorHelper {
             )
         }
 
+        // Text and edge progress share this cache but choose modes independently.
+        // Without artwork there is no signature proof for a different song key, and
+        // a palette from the opposite mode must not become this request's fallback.
+        if (cachedKey != key) return null
         val light = cachedLightColors ?: return null
         val dark = cachedDarkColors ?: return null
         return ResolvedPalette(

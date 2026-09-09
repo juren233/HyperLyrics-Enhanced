@@ -343,7 +343,11 @@ private fun LyriconSource.restoreAppleNativeLyricsSource(requestId: Long, songId
     publication.acceptAppleInput(nativeSong, true)
     publication.cancelAppleFallback(clearSong = false)
     stopMediaPositionPolling()
-    publishAppleSong(nativeSong, restorePosition = true)
+    publishAppleSong(
+        nativeSong,
+        restorePosition = true,
+        origin = LyricPublicationOrigin.MANUAL,
+    )
     if (needsOnlineEnrichment(nativeSong) && isAppleTranslationEnrichmentEnabled()) {
         scheduleOnlineTranslation(nativeSong)
     }

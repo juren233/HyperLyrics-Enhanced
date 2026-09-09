@@ -371,6 +371,8 @@ class LyriconSource : LyricSource {
             HookLogger.i(
                 TAG,
                 "[debug] Timing publish: songId=${song?.id}, restorePosition=$restorePosition, " +
+                    "title=${song?.name}, artist=${song?.artist}, origin=$origin, " +
+                    "currentInputTitle=${currentAppleSong?.name}, " +
                     "lastAdjustedPosition=$lastAdjustedPosition, " +
                     "onlineTranslationMatched=$onlineTranslationMatched, " +
                     "centralPlayer=$activeCentralPlayerPackageName, fallback=$fallbackSongActive"
@@ -379,14 +381,37 @@ class LyriconSource : LyricSource {
         publication.publishApple(
             LyricPublicationEvent(song, origin, onlineTranslationMatched),
         ) { selected, matched ->
+            dispatchAppleSong(selected, restorePosition, matched)
+        }
+    }
+
+    internal fun refreshRetainedAppleMetadata(incoming: LocalSong?) {
+        val updatedInput = AppleSongUpdatePolicy.refreshDisplayMetadata(currentAppleSong, incoming)
+        if (updatedInput != null) {
+            publication.acceptAppleInput(updatedInput, currentAppleHasNativeLyrics)
+        }
+        val refreshed = publication.refreshAppleDisplayMetadata(incoming) { selected, matched ->
+            dispatchAppleSong(selected, restorePosition = true, onlineTranslationMatched = matched)
+        }
+        diagnostic(
+            "stage=retained_metadata_refresh, incomingId=${incoming?.id}, " +
+                "incomingTitle=${incoming?.name}, publishedId=${currentPublishedAppleSong?.id}, " +
+                "publishedTitle=${currentPublishedAppleSong?.name}, refreshed=$refreshed",
+        )
+    }
+
+    private fun dispatchAppleSong(
+        song: LocalSong?,
+        restorePosition: Boolean,
+        onlineTranslationMatched: Boolean,
+    ) {
         publishSong(
             song = AppleSongDisplayPolicy.copyForDisplay(song)
                 ?.let(::filterApplePronunciationForDisplay)
                 ?.let(::simplifyAppleSongForDisplay),
             restorePosition = restorePosition,
-            onlineTranslationMatched = matched
+            onlineTranslationMatched = onlineTranslationMatched,
         )
-        }
     }
 
     internal fun publishThirdPartySong(

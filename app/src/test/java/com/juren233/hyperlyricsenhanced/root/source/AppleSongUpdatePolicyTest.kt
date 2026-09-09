@@ -2,6 +2,9 @@ package com.juren233.hyperlyricsenhanced.root.source
 
 import com.juren233.hyperlyricsenhanced.lyric.model.RichLyricLine
 import com.juren233.hyperlyricsenhanced.lyric.model.Song
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -107,5 +110,50 @@ class AppleSongUpdatePolicyTest {
                 currentHasNativeLyrics = true
             )
         )
+    }
+
+    @Test fun `late display metadata preserves lyrics duration and source metadata`() {
+        val incoming = nativeSong.copy(name = "満ちてゆく", artist = "藤井風", lyrics = emptyList(), duration = 0L)
+        val updated = AppleSongUpdatePolicy.refreshDisplayMetadata(nativeSong, incoming)!!
+        assertEquals(incoming.name, updated.name)
+        assertEquals(incoming.artist, updated.artist)
+        assertSame(nativeSong.lyrics, updated.lyrics)
+        assertSame(nativeSong.metadata, updated.metadata)
+        assertEquals(nativeSong.duration, updated.duration)
+    }
+
+    @Test fun `metadata refresh rejects old track missing identity and duplicates`() {
+        assertNull(AppleSongUpdatePolicy.refreshDisplayMetadata(nativeSong, nativeSong.copy(id = "other", name = "new")))
+        assertNull(AppleSongUpdatePolicy.refreshDisplayMetadata(nativeSong.copy(id = null), nativeSong.copy(id = null, name = "new")))
+        assertNull(AppleSongUpdatePolicy.refreshDisplayMetadata(nativeSong, nativeSong))
+        assertNull(AppleSongUpdatePolicy.refreshDisplayMetadata(nativeSong, null))
+    }
+
+    @Test fun `blank metadata does not erase existing title or artist`() {
+        assertNull(AppleSongUpdatePolicy.refreshDisplayMetadata(nativeSong, nativeSong.copy(name = " ", artist = null)))
+        val updated = AppleSongUpdatePolicy.refreshDisplayMetadata(nativeSong, nativeSong.copy(name = "new", artist = ""))!!
+        assertEquals("new", updated.name)
+        assertEquals(nativeSong.artist, updated.artist)
+    }
+
+    @Test fun `publication refresh updates cache and consumer without replacing enriched payload`() {
+        val publication = LyriconPublication()
+        publication.publishApple(LyricPublicationEvent(nativeSong, LyricPublicationOrigin.MANUAL, true)) { _, _ -> }
+        var notifications = 0
+        val changed = nativeSong.copy(name = "満ちてゆく", artist = "藤井風", lyrics = emptyList())
+        assertTrue(publication.refreshAppleDisplayMetadata(changed) { received, matched ->
+            notifications++
+            assertSame(received, publication.currentPublishedAppleSong)
+            assertEquals("満ちてゆく", received?.name)
+            assertSame(nativeSong.lyrics, received?.lyrics)
+            assertTrue(matched)
+        })
+        assertFalse(publication.refreshAppleDisplayMetadata(changed) { _, _ -> notifications++ })
+        assertFalse(publication.refreshAppleDisplayMetadata(changed.copy(id = "next")) { _, _ -> notifications++ })
+        assertEquals(1, notifications)
+        assertTrue(publication.currentPublishedAppleOnlineTranslationMatched)
+        publication.reset()
+        assertFalse(publication.refreshAppleDisplayMetadata(changed) { _, _ -> notifications++ })
+        assertEquals(1, notifications)
     }
 }
