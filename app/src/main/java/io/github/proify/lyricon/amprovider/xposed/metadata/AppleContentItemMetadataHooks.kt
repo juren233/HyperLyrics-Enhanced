@@ -14,22 +14,22 @@ import java.util.concurrent.ConcurrentHashMap
 internal interface AppleContentItemMetadataHost {
     fun containerNavigationBinding(contentItem: Any): InAppContainerNavigationRef?
 
-    fun effectiveAlias(mediaId: String): AppleInternalCatalogResolver.Alias?
+    fun effectiveAlias(mediaId: String): Alias?
 
     fun registerContainerItem(mediaId: String, contentItem: Any, kind: InAppContainerKind)
 
     fun localizedEntityType(
         contentItem: Any,
-    ): AppleInternalCatalogResolver.LocalizedEntityType?
+    ): LocalizedEntityType?
 
     fun recordComposeMediaId(mediaId: String)
 
     fun recordCurrentRecyclerMediaId(mediaId: String)
 
-    fun requestPriority(mediaId: String): AppleInternalCatalogResolver.RequestPriority
+    fun requestPriority(mediaId: String): RequestPriority
 
     fun shouldResolveFromGetter(
-        priority: AppleInternalCatalogResolver.RequestPriority,
+        priority: RequestPriority,
     ): Boolean
 
     fun registerPlaybackItem(
@@ -43,14 +43,14 @@ internal interface AppleContentItemMetadataHost {
 
     fun applyAliasToPlaybackItem(
         playbackItem: Any,
-        alias: AppleInternalCatalogResolver.Alias,
+        alias: Alias,
         notifyChange: Boolean,
     )
 
     fun metadataOverride(
-        entityType: AppleInternalCatalogResolver.LocalizedEntityType,
+        entityType: LocalizedEntityType,
         getter: AppleContentItemGetter,
-        alias: AppleInternalCatalogResolver.Alias,
+        alias: Alias,
         original: String?,
     ): String?
 }

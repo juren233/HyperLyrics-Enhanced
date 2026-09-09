@@ -13,6 +13,18 @@ import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import io.github.proify.lyricon.amprovider.xposed.AppleContentHttpTimingTracker
 import io.github.proify.lyricon.amprovider.xposed.AppleInternalCatalogResolver
+import io.github.proify.lyricon.amprovider.xposed.CatalogRequestLocalization
+import io.github.proify.lyricon.amprovider.xposed.applyContentUiLanguage
+import io.github.proify.lyricon.amprovider.xposed.accountStorefrontForPlaybackRequest
+import io.github.proify.lyricon.amprovider.xposed.isAccountScopedPlaybackPath
+import io.github.proify.lyricon.amprovider.xposed.storefrontFromContentPath
+import io.github.proify.lyricon.amprovider.xposed.localizedStorefrontHeaderValue
+import io.github.proify.lyricon.amprovider.xposed.storefrontForContentUiLanguage
+import io.github.proify.lyricon.amprovider.xposed.CATALOG_REQUEST_TOKEN_PARAM
+import io.github.proify.lyricon.amprovider.xposed.catalogRequestLocalization
+import io.github.proify.lyricon.amprovider.xposed.languageTagForCurrentRequest
+import io.github.proify.lyricon.amprovider.xposed.pendingCatalogRequestCount
+import io.github.proify.lyricon.amprovider.xposed.storefrontForContentUiLanguage
 import io.github.proify.lyricon.amprovider.xposed.AppleMusicHookPoint
 import io.github.proify.lyricon.amprovider.xposed.AppleMusicHookTarget
 import io.github.proify.lyricon.amprovider.xposed.AppleMusicProviderRuntime
@@ -55,7 +67,7 @@ internal class AppleContentLocalizationHooks(
                 val resolver = catalogResolver()
                 resolver.applyContentUiLanguage(selection)
                 val requestToken = params[
-                    AppleInternalCatalogResolver.CATALOG_REQUEST_TOKEN_PARAM
+                    CATALOG_REQUEST_TOKEN_PARAM
                 ]?.toString()
                 val requestLocalization = resolver.catalogRequestLocalization(requestToken)
                 val language = requestLocalization?.language
@@ -121,7 +133,7 @@ internal class AppleContentLocalizationHooks(
                     val isLyricsRequest = isAppleLyricsRequestPath(pathSegments)
                     val resolver = catalogResolver()
                     if (
-                        AppleInternalCatalogResolver.isAccountScopedPlaybackPath(pathSegments) ||
+                        isAccountScopedPlaybackPath(pathSegments) ||
                         isLyricsRequest
                     ) {
                         val accountStorefront = resolver.accountStorefrontForPlaybackRequest()
@@ -141,7 +153,7 @@ internal class AppleContentLocalizationHooks(
                         }
                         if (BuildConfig.DEBUG && isLyricsRequest) {
                             val sourceStorefront =
-                                AppleInternalCatalogResolver.storefrontFromContentPath(pathSegments)
+                                storefrontFromContentPath(pathSegments)
                             ProviderLogger.info(
                                 "Apple 歌词请求使用账号 storefront: " +
                                     "${sourceStorefront ?: "none"}->$accountStorefront"
@@ -150,11 +162,11 @@ internal class AppleContentLocalizationHooks(
                         return@installHook
                     }
                     val requestToken = requestUri.getQueryParameter(
-                        AppleInternalCatalogResolver.CATALOG_REQUEST_TOKEN_PARAM
+                        CATALOG_REQUEST_TOKEN_PARAM
                     )
                     val requestLocalization = resolver.catalogRequestLocalization(requestToken)
                     val configuredStorefront =
-                        AppleInternalCatalogResolver.storefrontForContentUiLanguage(selection)
+                        storefrontForContentUiLanguage(selection)
                     val storefront = requestLocalization?.storefront
                         ?: configuredStorefront
                         ?: return@installHook
@@ -196,7 +208,7 @@ internal class AppleContentLocalizationHooks(
     private fun startContentHttpTiming(httpChain: Any, uri: Uri) {
         if (!BuildConfig.DEBUG || !uri.host.orEmpty().contains("apple", ignoreCase = true)) return
         val requestToken = uri.getQueryParameter(
-            AppleInternalCatalogResolver.CATALOG_REQUEST_TOKEN_PARAM
+            CATALOG_REQUEST_TOKEN_PARAM
         )
         val source = if (requestToken == null) {
             AppleContentHttpTimingTracker.Source.NATIVE
@@ -208,7 +220,7 @@ internal class AppleContentLocalizationHooks(
             descriptor = AppleContentHttpTimingTracker.RequestDescriptor(
                 source = source,
                 category = contentHttpRequestCategory(uri.pathSegments),
-                storefront = AppleInternalCatalogResolver.storefrontFromContentPath(
+                storefront = storefrontFromContentPath(
                     uri.pathSegments
                 ),
                 pendingModuleRequests = catalogResolver().pendingCatalogRequestCount(),
@@ -296,7 +308,7 @@ internal class AppleContentLocalizationHooks(
         if (!host.contains("apple", ignoreCase = true)) return null
 
         val segments = uri.pathSegments.toMutableList()
-        val pathStorefront = AppleInternalCatalogResolver.storefrontFromContentPath(segments)
+        val pathStorefront = storefrontFromContentPath(segments)
         val isPersonalizedContent = segments.take(3) == listOf("v1", "me", "recommendations")
         val isLyricsRequest = isAppleLyricsRequestPath(segments)
         if (pathStorefront == null && !isPersonalizedContent) return null
@@ -311,7 +323,7 @@ internal class AppleContentLocalizationHooks(
         uri.queryParameterNames.forEach { name ->
             if (
                 name != "l" &&
-                name != AppleInternalCatalogResolver.CATALOG_REQUEST_TOKEN_PARAM
+                name != CATALOG_REQUEST_TOKEN_PARAM
             ) {
                 uri.getQueryParameters(name).forEach { value ->
                     builder.appendQueryParameter(name, value)
@@ -325,12 +337,12 @@ internal class AppleContentLocalizationHooks(
         val sourceRequestStorefrontHeader =
             requestHeader(request, "X-Apple-Request-Store-Front")
         val targetStorefrontHeader =
-            AppleInternalCatalogResolver.localizedStorefrontHeaderValue(
+            localizedStorefrontHeaderValue(
                 storefront = storefront,
                 currentValue = sourceStorefrontHeader,
             )
         val targetRequestStorefrontHeader =
-            AppleInternalCatalogResolver.localizedStorefrontHeaderValue(
+            localizedStorefrontHeaderValue(
                 storefront = storefront,
                 currentValue = sourceRequestStorefrontHeader,
             )
@@ -413,7 +425,7 @@ internal class AppleContentLocalizationHooks(
         val uri = Uri.parse(url)
         if (!uri.host.orEmpty().contains("apple", ignoreCase = true)) return null
         val segments = uri.pathSegments.toMutableList()
-        val pathStorefront = AppleInternalCatalogResolver.storefrontFromContentPath(segments)
+        val pathStorefront = storefrontFromContentPath(segments)
             ?: return null
         if (pathStorefront == storefront) return null
         segments[2] = storefront
@@ -485,7 +497,7 @@ internal class AppleContentLocalizationHooks(
     private fun logContentRequestLocalizationDecision(
         uri: Uri,
         requestToken: String?,
-        requestLocalization: AppleInternalCatalogResolver.CatalogRequestLocalization?,
+        requestLocalization: CatalogRequestLocalization?,
         targetStorefront: String,
         targetLanguage: String,
     ) {
@@ -494,7 +506,7 @@ internal class AppleContentLocalizationHooks(
         if (segments.getOrNull(3) != "songs") return
         val pendingCount = catalogResolver().pendingCatalogRequestCount()
         if (requestToken == null && pendingCount == 0) return
-        val sourceStorefront = AppleInternalCatalogResolver.storefrontFromContentPath(segments)
+        val sourceStorefront = storefrontFromContentPath(segments)
         val sourceLanguage = uri.getQueryParameter("l") ?: "unset"
         val requestKey = uri.getQueryParameter("ids")
             ?: uri.getQueryParameter("filter[isrc]")

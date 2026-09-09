@@ -23,7 +23,7 @@ internal interface AppleActionSheetMetadataHost {
 
     fun recordArtistAssociation(mediaId: String, item: Any, rawTitle: String?)
 
-    fun effectiveAlias(mediaId: String): AppleInternalCatalogResolver.Alias?
+    fun effectiveAlias(mediaId: String): Alias?
 
     fun knownValues(mediaId: String, field: VisibleTextField): Set<String>
 
@@ -31,12 +31,12 @@ internal interface AppleActionSheetMetadataHost {
 
     fun ensureOverride(
         mediaId: String,
-        priority: AppleInternalCatalogResolver.RequestPriority,
+        priority: RequestPriority,
     )
 
     fun localizedText(
         field: VisibleTextField,
-        alias: AppleInternalCatalogResolver.Alias,
+        alias: Alias,
     ): String
 
     fun logMetadataIdentity(
@@ -160,7 +160,7 @@ internal class AppleActionSheetMetadataHooks(
                 if (host.shouldRequestOverride(mediaId)) {
                     host.ensureOverride(
                         mediaId = mediaId,
-                        priority = AppleInternalCatalogResolver.RequestPriority.VISIBLE,
+                        priority = RequestPriority.VISIBLE,
                     )
                 }
                 alias?.let {
@@ -184,7 +184,7 @@ internal class AppleActionSheetMetadataHooks(
     fun hasBindings(mediaId: String): Boolean =
         bindingRefs[mediaId]?.any { it.get() != null } == true
 
-    fun applyAlias(mediaId: String, alias: AppleInternalCatalogResolver.Alias) {
+    fun applyAlias(mediaId: String, alias: Alias) {
         val apply = apply@{
             var liveBindings = 0
             val refs = bindingRefs[mediaId] ?: return@apply
@@ -225,7 +225,7 @@ internal class AppleActionSheetMetadataHooks(
     private fun applyAliasToBinding(
         binding: Any,
         association: InAppActionSheetBinding,
-        alias: AppleInternalCatalogResolver.Alias,
+        alias: Alias,
     ) {
         if (bindings[binding] != association) return
         val itemContract = collectionItemContract ?: return

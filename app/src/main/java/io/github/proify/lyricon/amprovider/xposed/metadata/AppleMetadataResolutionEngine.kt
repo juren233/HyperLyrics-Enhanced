@@ -53,12 +53,12 @@ internal object AppleMetadataResolutionEngine {
     fun selectEffectiveMetadataAlias(
         restoreOriginalEnabled: Boolean,
         originalMetadataResolved: Boolean,
-        originalMetadata: AppleInternalCatalogResolver.Alias?,
+        originalMetadata: Alias?,
         originalArtistResolved: Boolean,
-        originalArtist: AppleInternalCatalogResolver.Alias?,
-        localizedMetadata: AppleInternalCatalogResolver.Alias?,
-        localizedArtist: AppleInternalCatalogResolver.Alias?,
-    ): AppleInternalCatalogResolver.Alias? {
+        originalArtist: Alias?,
+        localizedMetadata: Alias?,
+        localizedArtist: Alias?,
+    ): Alias? {
         if (restoreOriginalEnabled) {
             if (originalMetadata != null) {
                 return mergeMetadataArtist(
@@ -89,9 +89,9 @@ internal object AppleMetadataResolutionEngine {
     fun selectIndependentArtistAlias(
         restoreOriginalEnabled: Boolean,
         canUseAssociatedArtist: Boolean,
-        originalArtist: AppleInternalCatalogResolver.Alias?,
-        localizedArtist: AppleInternalCatalogResolver.Alias?,
-    ): AppleInternalCatalogResolver.Alias? {
+        originalArtist: Alias?,
+        localizedArtist: Alias?,
+    ): Alias? {
         if (!canUseAssociatedArtist) return null
         val selected = if (restoreOriginalEnabled) {
             originalArtist ?: localizedArtist
@@ -143,16 +143,16 @@ internal object AppleMetadataResolutionEngine {
 
     fun associatedArtistAlias(
         artistIds: List<String>,
-        aliases: Map<String, AppleInternalCatalogResolver.Alias>,
+        aliases: Map<String, Alias>,
         language: String,
-    ): AppleInternalCatalogResolver.Alias? {
+    ): Alias? {
         if (artistIds.isEmpty()) return null
         val names = artistIds.map { artistId ->
             val alias = aliases[artistId] ?: return null
             alias.artist.ifBlank { alias.title }.trim().takeIf(String::isNotEmpty) ?: return null
         }.distinct()
         val separator = if (language.startsWith("zh-", ignoreCase = true)) "、" else ", "
-        return AppleInternalCatalogResolver.Alias(
+        return Alias(
             title = "",
             artist = names.joinToString(separator),
             language = language,
@@ -171,7 +171,7 @@ internal object AppleMetadataResolutionEngine {
         val normalizedCredit = artistCredit?.trim().orEmpty()
         return artistId.takeIf {
             normalizedCredit.isNotEmpty() &&
-                !AppleInternalCatalogResolver.isCollaborationArtistName(normalizedCredit)
+                !isCollaborationArtistName(normalizedCredit)
         }
     }
 
@@ -190,11 +190,11 @@ internal object AppleMetadataResolutionEngine {
     ) == artistId
 
     fun associatedArtistCredit(
-        entityType: AppleInternalCatalogResolver.LocalizedEntityType?,
+        entityType: LocalizedEntityType?,
         accountTitle: String?,
         accountArtist: String?,
     ): String? = if (
-        entityType == AppleInternalCatalogResolver.LocalizedEntityType.ARTIST
+        entityType == LocalizedEntityType.ARTIST
     ) {
         accountTitle?.takeIf(String::isNotBlank) ?: accountArtist
     } else {
@@ -214,16 +214,16 @@ internal object AppleMetadataResolutionEngine {
     fun localizedEntityTypeForQueueItem(
         historyEntry: Boolean,
         classNames: Collection<String>,
-    ): AppleInternalCatalogResolver.LocalizedEntityType? =
+    ): LocalizedEntityType? =
         if (historyEntry) {
-            AppleInternalCatalogResolver.LocalizedEntityType.SONG
+            LocalizedEntityType.SONG
         } else {
             localizedEntityTypeForContentItemClassNames(classNames)
         }
 
     fun localizedEntityTypeForContentItemClassNames(
         classNames: Collection<String>,
-    ): AppleInternalCatalogResolver.LocalizedEntityType? {
+    ): LocalizedEntityType? {
         val excludedTokens = listOf(
             "Radio",
             "Station",
@@ -238,13 +238,13 @@ internal object AppleMetadataResolutionEngine {
         ) return null
         return when {
             classNames.any { it.contains("MusicVideo", ignoreCase = true) } ->
-                AppleInternalCatalogResolver.LocalizedEntityType.SONG
+                LocalizedEntityType.SONG
             classNames.any { it.contains("Song", ignoreCase = true) } ->
-                AppleInternalCatalogResolver.LocalizedEntityType.SONG
+                LocalizedEntityType.SONG
             classNames.any { it.contains("Album", ignoreCase = true) } ->
-                AppleInternalCatalogResolver.LocalizedEntityType.ALBUM
+                LocalizedEntityType.ALBUM
             classNames.any { it.contains("Artist", ignoreCase = true) } ->
-                AppleInternalCatalogResolver.LocalizedEntityType.ARTIST
+                LocalizedEntityType.ARTIST
             else -> null
         }
     }
@@ -273,9 +273,9 @@ internal object AppleMetadataResolutionEngine {
             .toCollection(linkedSetOf())
 
     private fun mergeMetadataArtist(
-        metadata: AppleInternalCatalogResolver.Alias?,
-        artist: AppleInternalCatalogResolver.Alias?,
-    ): AppleInternalCatalogResolver.Alias? {
+        metadata: Alias?,
+        artist: Alias?,
+    ): Alias? {
         metadata ?: return null
         val artistName = artist?.artist?.takeIf(String::isNotBlank) ?: return metadata
         return metadata.copy(artist = artistName)

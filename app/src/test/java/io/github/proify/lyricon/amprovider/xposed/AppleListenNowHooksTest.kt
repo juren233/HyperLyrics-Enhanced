@@ -224,7 +224,7 @@ class AppleListenNowHooksTest {
 
     private fun listenNowAlias(): AppliedMetadataAlias = AppliedMetadataAlias(
         mediaId = "1519740112",
-        alias = AppleInternalCatalogResolver.Alias(
+        alias = Alias(
             title = "盗作",
             artist = "ヨルシカ",
             album = "盗作",

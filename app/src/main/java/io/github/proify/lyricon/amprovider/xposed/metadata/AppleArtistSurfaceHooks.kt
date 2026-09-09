@@ -41,11 +41,11 @@ internal interface AppleArtistSurfaceHost {
 
     fun enrichLibraryEntitiesForResolution(mediaIds: Collection<String>)
 
-    fun effectiveAlias(mediaId: String): AppleInternalCatalogResolver.Alias?
+    fun effectiveAlias(mediaId: String): Alias?
 
     fun applyAliasToMetadataRefs(
         mediaId: String,
-        alias: AppleInternalCatalogResolver.Alias,
+        alias: Alias,
         notifyModelChange: Boolean,
     )
 
@@ -53,7 +53,7 @@ internal interface AppleArtistSurfaceHost {
 
     fun scheduleMetadataResolution(
         mediaIds: Collection<String>,
-        priority: AppleInternalCatalogResolver.RequestPriority,
+        priority: RequestPriority,
         originalResolutionMode: InAppOriginalResolutionMode,
     )
 
@@ -305,7 +305,7 @@ internal class AppleArtistSurfaceHooks(
                         if (host.shouldRequestOverride(mediaId)) {
                             host.scheduleMetadataResolution(
                                 mediaIds = listOf(mediaId),
-                                priority = AppleInternalCatalogResolver.RequestPriority.VISIBLE,
+                                priority = RequestPriority.VISIBLE,
                                 originalResolutionMode = InAppOriginalResolutionMode.ORIGINAL_FIRST,
                             )
                         }
@@ -475,7 +475,7 @@ internal class AppleArtistSurfaceHooks(
         mediaId: String,
         appliedAlias: AppliedMetadataAlias,
         pendingAlias: AppliedMetadataAlias?,
-        effectiveAlias: AppleInternalCatalogResolver.Alias,
+        effectiveAlias: Alias,
         expectedTitle: String?,
         renderedTexts: Collection<String>,
     ): Boolean {
@@ -594,8 +594,8 @@ internal class AppleArtistSurfaceHooks(
         val latestMediaId = latestProfileMediaId ?: return null
         val modelTitle = reflectiveField(model, headerTitleField)?.toString().orEmpty()
         val accountTitle = metadataStore.accountMetadata(latestMediaId)?.title.orEmpty()
-        val modelKey = AppleInternalCatalogResolver.normalizedArtistNameKey(modelTitle)
-        val accountKey = AppleInternalCatalogResolver.normalizedArtistNameKey(accountTitle)
+        val modelKey = normalizedArtistNameKey(modelTitle)
+        val accountKey = normalizedArtistNameKey(accountTitle)
         return latestMediaId.takeIf { modelKey.isNotEmpty() && modelKey == accountKey }
     }
 
@@ -636,7 +636,7 @@ internal class AppleArtistSurfaceHooks(
             if (shouldRequest) {
                 host.scheduleMetadataResolution(
                     mediaIds = listOf(mediaId),
-                    priority = AppleInternalCatalogResolver.RequestPriority.VISIBLE,
+                    priority = RequestPriority.VISIBLE,
                     originalResolutionMode = InAppOriginalResolutionMode.ORIGINAL_FIRST,
                 )
             }
@@ -713,12 +713,12 @@ internal fun artistProfileFallbackArtistId(
         ?.takeIf { it.isNotEmpty() && it.all(Char::isDigit) }
         ?: return null
     val credit = songArtistCredit?.trim()?.takeIf(String::isNotEmpty) ?: return null
-    if (AppleInternalCatalogResolver.isCollaborationArtistName(credit)) return null
-    val creditKey = AppleInternalCatalogResolver.normalizedArtistNameKey(credit)
+    if (isCollaborationArtistName(credit)) return null
+    val creditKey = normalizedArtistNameKey(credit)
         .takeIf(String::isNotEmpty)
         ?: return null
     val knownCreditKeys = profileArtistCredits.asSequence()
-        .map(AppleInternalCatalogResolver::normalizedArtistNameKey)
+        .map(::normalizedArtistNameKey)
         .filter(String::isNotEmpty)
         .toSet()
     return artistId.takeIf { creditKey in knownCreditKeys }
@@ -753,8 +753,8 @@ internal fun artistProfileSubtitleWithArtist(
         if (separatorIndex <= 0) return@forEach
         val credit = subtitle.substring(0, separatorIndex)
         if (
-            AppleInternalCatalogResolver.normalizedArtistNameKey(credit) ==
-            AppleInternalCatalogResolver.normalizedArtistNameKey(original)
+            normalizedArtistNameKey(credit) ==
+            normalizedArtistNameKey(original)
         ) {
             return replacement + subtitle.substring(separatorIndex)
         }

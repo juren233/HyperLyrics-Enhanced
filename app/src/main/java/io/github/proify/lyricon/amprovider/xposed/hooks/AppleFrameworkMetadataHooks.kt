@@ -16,6 +16,7 @@ import android.media.MediaMetadata
 import android.media.session.MediaSession
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import io.github.proify.lyricon.amprovider.xposed.AppleInternalCatalogResolver
+import io.github.proify.lyricon.amprovider.xposed.Alias
 import io.github.proify.lyricon.amprovider.xposed.AppleMusicHookPoint
 import io.github.proify.lyricon.amprovider.xposed.AppleMetadataOverrideStore
 import io.github.proify.lyricon.amprovider.xposed.AppleMusicProviderRuntime
@@ -33,7 +34,7 @@ internal class AppleFrameworkMetadataHooks(
     private val runtime: AppleMusicProviderRuntime,
     private val preferences: () -> SharedPreferences?,
     private val metadataStore: AppleMetadataOverrideStore,
-    private val effectiveMetadataAlias: (String) -> AppleInternalCatalogResolver.Alias?,
+    private val effectiveMetadataAlias: (String) -> Alias?,
     private val activePlaybackIdentity: () -> ActivePlaybackMediaIdentity,
     private val logMetadataIdentity: (
         event: String,
@@ -179,7 +180,7 @@ internal class AppleFrameworkMetadataHooks(
 
     fun refreshMediaSessionMetadata(
         mediaId: String,
-        alias: AppleInternalCatalogResolver.Alias,
+        alias: Alias,
     ) {
         val refresh = currentMediaSessionRefresh?.takeIf { it.mediaId == mediaId } ?: return
         val session = refresh.session.get() ?: return
@@ -285,7 +286,7 @@ internal class AppleFrameworkMetadataHooks(
 
     private fun rewriteMediaMetadata(
         metadata: MediaMetadata,
-        alias: AppleInternalCatalogResolver.Alias,
+        alias: Alias,
     ): MediaMetadata? {
         val title = metadata.getString(MediaMetadata.METADATA_KEY_TITLE)
         val artist = metadata.getString(MediaMetadata.METADATA_KEY_ARTIST)

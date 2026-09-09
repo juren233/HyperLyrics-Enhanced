@@ -24,179 +24,11 @@ import java.util.WeakHashMap
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
 
-internal interface AppleListenNowHost {
-    fun mediaApiEntityAttributes(entity: Any): Any?
-
-    fun mediaApiEntityCatalogId(entity: Any, knownAttributes: Any? = null): String?
-
-    fun registerLibraryEntity(
-        mediaId: String,
-        entity: Any,
-        kind: InAppLibraryEntityKind,
-        knownAttributes: Any?,
-        requestResolution: Boolean,
-        retainEntityRef: Boolean,
-    )
-
-    fun enrichLibraryEntity(
-        mediaId: String,
-        entity: Any,
-        kind: InAppLibraryEntityKind,
-        attributes: Any,
-    )
-
-    fun isRestoreOriginalMetadataEnabled(): Boolean
-
-    fun shouldRetryOriginalMetadataCacheProbe(mediaId: String): Boolean
-
-    fun rememberOriginalMetadataOverride(
-        mediaId: String,
-        alias: AppleInternalCatalogResolver.Alias,
-        confirmed: Boolean,
-    )
-
-    fun rememberOriginalLanguageForArtist(mediaId: String, language: String)
-
-    fun resolveCachedOriginalEntityForInApp(
-        mediaId: String,
-        entityType: AppleInternalCatalogResolver.LocalizedEntityType,
-        preBind: Boolean,
-        priority: AppleInternalCatalogResolver.RequestPriority,
-    )
-
-    fun effectiveAlias(mediaId: String): AppleInternalCatalogResolver.Alias?
-
-    fun applyAliasToLibraryEntity(
-        entity: Any,
-        kind: InAppLibraryEntityKind,
-        alias: AppleInternalCatalogResolver.Alias,
-    ): Boolean
-
-    fun shouldRequestOverride(mediaId: String): Boolean
-
-    fun markMetadataVisible(mediaIds: Collection<String>)
-
-    fun scheduleMetadataResolution(
-        mediaIds: Collection<String>,
-        priority: AppleInternalCatalogResolver.RequestPriority,
-        originalResolutionMode: InAppOriginalResolutionMode,
-    )
-
-    fun nextMetadataTraceSequence(): Long
-
-    fun logMetadataIdentity(event: String, details: String)
-
-    fun isDataBindingInstance(candidate: Any): Boolean
-
-    fun dataBindingFromHolder(argument: Any?): Any?
-
-    fun beginDataBindingModelBind(binding: Any)
-
-    fun clearDataBindingMediaId(binding: Any)
-
-    fun dataBindingGeneration(binding: Any): Long
-
-    fun captureDataBinding(binding: Any)
-
-    fun registerDataBinding(mediaId: String, binding: Any)
-
-    fun aliasValues(
-        mediaId: String,
-        alias: AppleInternalCatalogResolver.Alias,
-        binding: Any?,
-    ): DataBindingAliasValues
-
-    fun renderedTexts(binding: Any): List<String>
-
-    fun appliedAlias(binding: Any): AppliedMetadataAlias?
-
-    fun rememberAppliedAlias(binding: Any, alias: AppliedMetadataAlias)
-
-    fun applyAliasVariables(
-        binding: Any,
-        values: DataBindingAliasValues,
-    ): DataBindingVariableApplyResult
-
-    fun invalidateDataBinding(binding: Any)
-
-    fun executePendingDataBindings(binding: Any)
-}
-
-internal fun shouldRefreshListenNowDataBindingAlias(
-    appliedAlias: AppliedMetadataAlias?,
-    requestedAlias: AppliedMetadataAlias,
-    expectedTitle: String?,
-    expectedSubtitle: String?,
-    renderedTexts: Collection<String>,
-): Boolean {
-    if (appliedAlias != requestedAlias) return true
-    if (renderedTexts.isEmpty()) return false
-    return !dataBindingAliasAlreadyRendered(
-        expectedTitle = expectedTitle,
-        expectedSubtitle = expectedSubtitle,
-        renderedTexts = renderedTexts,
-    )
-}
-
-internal fun normalizedInAppArtworkValueUrls(value: Any?): List<String> {
-    val values: Sequence<Any?> = when (value) {
-        null -> emptySequence()
-        is CharSequence -> sequenceOf(value)
-        is Array<*> -> value.asSequence()
-        is Iterable<*> -> value.asSequence()
-        else -> emptySequence()
-    }
-    return values.mapNotNull { item ->
-        item?.toString()?.trim()?.takeIf(String::isNotEmpty)
-    }.distinct().toList()
-}
-
-internal fun preferredInAppListenNowArtworkKey(
-    builderKey: InAppListenNowArtworkContinuityKey?,
-    delegateKey: InAppListenNowArtworkContinuityKey?,
-): InAppListenNowArtworkContinuityKey? = builderKey ?: delegateKey
-
-internal fun listenNowCatalogIdForExactCard(
-    builderLiveData: Any?,
-    delegateLiveData: Any?,
-    builderKey: InAppListenNowArtworkContinuityKey?,
-    delegateKey: InAppListenNowArtworkContinuityKey?,
-): String? {
-    if (builderLiveData == null || builderLiveData !== delegateLiveData) return null
-    val builder = builderKey ?: return null
-    val delegate = delegateKey ?: return null
-    if (
-        builder.persistentId != delegate.persistentId ||
-        builder.contentType != delegate.contentType ||
-        builder.artworkIdentity != delegate.artworkIdentity
-    ) return null
-    val delegateCatalogId = delegate.id.trim()
-        .takeIf { it.isNotEmpty() && it.all(Char::isDigit) }
-        ?: return null
-    val builderId = builder.id.trim()
-    val builderCatalogId = builderId.takeIf { it.isNotEmpty() && it.all(Char::isDigit) }
-    if (builderCatalogId != null) {
-        return delegateCatalogId.takeIf { it == builderCatalogId }
-    }
-    return delegateCatalogId.takeIf { builderId.startsWith("l.") }
-}
-
-internal fun shouldSkipInAppListenNowArtworkLookup(
-    keyMatches: Boolean,
-    currentUrls: Collection<String>,
-    seededUrls: Collection<String>,
-): Boolean {
-    if (!keyMatches) return false
-    val normalizedCurrent = currentUrls.map(String::trim).filter(String::isNotEmpty).distinct()
-    val normalizedSeeded = seededUrls.map(String::trim).filter(String::isNotEmpty).distinct()
-    return normalizedCurrent.isNotEmpty() && normalizedCurrent == normalizedSeeded
-}
-
 internal class AppleListenNowHooks(
-    private val runtime: AppleMusicProviderRuntime,
+    internal val runtime: AppleMusicProviderRuntime,
     private val metadataStore: AppleMetadataOverrideStore,
     private val catalogResolver: AppleInternalCatalogResolver,
-    private val host: AppleListenNowHost,
+    internal val host: AppleListenNowHost,
 ) {
     private companion object {
         const val MAX_LISTEN_NOW_ARTWORK_CONTINUITY_ENTRIES = 1_024
@@ -217,32 +49,32 @@ internal class AppleListenNowHooks(
                 ): Boolean = size > MAX_LISTEN_NOW_ARTWORK_CONTINUITY_ENTRIES
             }
         )
-    private val inAppListenNowArtworkKeysByLiveData =
+    internal val inAppListenNowArtworkKeysByLiveData =
         WeakIdentityMap<Any, InAppListenNowArtworkContinuityKey>()
     private val inAppListenNowSeededArtwork =
         WeakIdentityMap<Any, InAppListenNowSeededArtwork>()
     @Volatile
-    private var inAppListenNowArtworkContinuityHookInstalled = false
-    private val inAppListenNowDataBindingRefs =
+    internal var inAppListenNowArtworkContinuityHookInstalled = false
+    internal val inAppListenNowDataBindingRefs =
         java.util.concurrent.ConcurrentHashMap<
             String,
             ConcurrentLinkedQueue<WeakReference<Any>>,
             >()
-    private val inAppListenNowDataBindingMediaIds =
+    internal val inAppListenNowDataBindingMediaIds =
         Collections.synchronizedMap(WeakHashMap<Any, String>())
-    private val inAppListenNowDataBindingPendingRefreshes =
+    internal val inAppListenNowDataBindingPendingRefreshes =
         Collections.synchronizedMap(WeakHashMap<Any, PendingDataBindingRefresh>())
-    private val inAppListenNowModelBuildStates =
+    internal val inAppListenNowModelBuildStates =
         WeakIdentityMap<Any, InAppListenNowModelBuildState>()
-    private val inAppListenNowModelBuildStatesByLiveData =
+    internal val inAppListenNowModelBuildStatesByLiveData =
         WeakIdentityMap<Any, InAppListenNowModelBuildState>()
-    private val debugListenNowArtworkLiveData =
+    internal val debugListenNowArtworkLiveData =
         WeakIdentityMap<Any, DebugListenNowArtworkTrace>()
-    private val debugListenNowArtworkDelegates =
+    internal val debugListenNowArtworkDelegates =
         WeakIdentityMap<Any, DebugListenNowArtworkTrace>()
-    private val debugListenNowArtworkImageViews =
+    internal val debugListenNowArtworkImageViews =
         WeakIdentityMap<Any, DebugListenNowArtworkTrace>()
-    private val debugListenNowLatestArtworkTraces =
+    internal val debugListenNowLatestArtworkTraces =
         ConcurrentHashMap<String, DebugListenNowArtworkTrace>()
     private val collectionItemRuntimeTarget by lazy {
         runtime.hookResolver.resolveClass(
@@ -497,7 +329,7 @@ internal class AppleListenNowHooks(
                 mediaId = mediaId,
                 entityType = entityType,
                 preBind = true,
-                priority = AppleInternalCatalogResolver.RequestPriority.VISIBLE,
+                priority = RequestPriority.VISIBLE,
             )
         }
         val alias = host.effectiveAlias(mediaId)
@@ -510,7 +342,7 @@ internal class AppleListenNowHooks(
             host.markMetadataVisible(listOf(mediaId))
             host.scheduleMetadataResolution(
                 mediaIds = listOf(mediaId),
-                priority = AppleInternalCatalogResolver.RequestPriority.VISIBLE,
+                priority = RequestPriority.VISIBLE,
                 originalResolutionMode = InAppOriginalResolutionMode.AFTER_LOCALIZED,
             )
             if (BuildConfig.DEBUG) {
@@ -682,7 +514,7 @@ internal class AppleListenNowHooks(
         if (!registered) refs.add(WeakReference(binding))
     }
 
-    private fun resolveInAppListenNowCatalogIdentity(
+    internal fun resolveInAppListenNowCatalogIdentity(
         liveData: Any,
         delegateKey: InAppListenNowArtworkContinuityKey?,
     ) {
@@ -731,7 +563,7 @@ internal class AppleListenNowHooks(
 
     fun refreshDataBindings(
         mediaId: String,
-        alias: AppleInternalCatalogResolver.Alias,
+        alias: Alias,
     ): Int {
         val refs = inAppListenNowDataBindingRefs[mediaId] ?: return 0
         val appliedAlias = AppliedMetadataAlias(mediaId, alias)
@@ -940,7 +772,7 @@ internal class AppleListenNowHooks(
             "${identity.selectedArtworkIdentity.takeIf(String::isNotEmpty)?.hashCode()}, " +
             "keyValid=${identity.key != null}"
 
-    private fun putInAppListenNowArtworkContinuity(
+    internal fun putInAppListenNowArtworkContinuity(
         key: InAppListenNowArtworkContinuityKey,
         urls: Collection<String>,
     ) {
@@ -952,572 +784,6 @@ internal class AppleListenNowHooks(
                 capturedAtUptimeMillis = SystemClock.uptimeMillis(),
             )
         }
-    }
-
-    /**
-     * Debug-only trace for the real Listen Now / Home artwork path.
-     *
-     * The profiled model builder creates one MutableLiveData<String[]> per card and seeds it
-     * from the feed image URL. The profiled bound listener submits a second medialibrary artwork
-     * lookup only when the entity has a persistent ID. The trace follows that exact LiveData
-     * through the profiled resolver, delegate, and image view so a reproduction can distinguish
-     * a duplicate URL publication from an actual clear/rebind or a replacement card View.
-     */
-    fun installDebugArtworkLifecycleHooks() {
-        if (!BuildConfig.DEBUG) return
-        runCatching {
-            val resolvedOnModelBound = runtime.hookResolver.resolveMethod(
-                AppleMusicHookPoint.LISTEN_NOW_BOUND_LISTENER
-            )
-            val resolvedArtworkSubmit = runtime.hookResolver.resolveMethod(
-                AppleMusicHookPoint.LISTEN_NOW_ARTWORK_RESOLVER
-            )
-            val modelClass = runtime.hookResolver.resolveClass(
-                AppleMusicHookPoint.LISTEN_NOW_MODEL
-            ).clazz
-            val resolvedDelegate = runtime.hookResolver.resolveClass(
-                AppleMusicHookPoint.LISTEN_NOW_DELEGATING_ITEM
-            )
-            val delegateClass = resolvedDelegate.clazz
-            val resolvedCustomImageView = runtime.hookResolver.resolveClass(
-                AppleMusicHookPoint.LISTEN_NOW_CUSTOM_IMAGE_VIEW
-            )
-            val customImageViewClass = resolvedCustomImageView.clazz
-            val resolvedMediaEntity = runtime.hookResolver.resolveClass(
-                AppleMusicHookPoint.LISTEN_NOW_MEDIA_ENTITY
-            )
-            val mediaEntityClass = resolvedMediaEntity.clazz
-            val liveDataClass = runtime.classLoader.loadClass("androidx.lifecycle.MutableLiveData")
-
-            val onModelBoundMethod = resolvedOnModelBound.method
-            val resolverSubmitMethod = resolvedArtworkSubmit.method
-            val delegateLiveDataField = generateSequence(delegateClass) { it.superclass }
-                .flatMap { it.declaredFields.asSequence() }
-                .single { field -> liveDataClass.isAssignableFrom(field.type) }
-                .apply { isAccessible = true }
-            val delegateGetImageUrl = AppleReflection.findMethod(
-                delegateClass,
-                resolvedDelegate.target.runtimeMemberName(
-                    AppleMusicRuntimeMember.ARTWORK_GET_IMAGE_URL_METHOD
-                ),
-                0,
-            )
-            val delegateGetImageUrls = AppleReflection.findMethod(
-                delegateClass,
-                resolvedDelegate.target.runtimeMemberName(
-                    AppleMusicRuntimeMember.ARTWORK_GET_IMAGE_URLS_METHOD
-                ),
-                0,
-            )
-            val liveDataGetValue = AppleReflection.findMethod(liveDataClass, "getValue", 0)
-            val liveDataMutationMethods = listOf(
-                AppleReflection.findMethod(liveDataClass, "postValue", 1),
-                AppleReflection.findMethod(liveDataClass, "setValue", 1),
-            )
-            val delegateArtworkMethods = delegateClass.declaredMethods.filter { method ->
-                (method.name == resolvedDelegate.target.runtimeMemberName(
-                    AppleMusicRuntimeMember.ARTWORK_SET_IMAGE_URL_METHOD
-                ) &&
-                    method.parameterTypes.firstOrNull() == String::class.java) ||
-                    (method.name == resolvedDelegate.target.runtimeMemberName(
-                        AppleMusicRuntimeMember.ARTWORK_SET_IMAGE_URLS_METHOD
-                    ) &&
-                        method.parameterTypes.contentEquals(arrayOf(Array<String>::class.java)))
-            }.onEach { it.isAccessible = true }
-            check(delegateArtworkMethods.isNotEmpty()) {
-                "Listen Now delegate artwork setters unavailable"
-            }
-            val customImageMutationMethods = listOf(
-                customImageViewClass.getDeclaredMethod(
-                    "setImageDrawable",
-                    Drawable::class.java,
-                ),
-                customImageViewClass.getDeclaredMethod(
-                    resolvedCustomImageView.target.runtimeMemberName(
-                        AppleMusicRuntimeMember.CUSTOM_IMAGE_SET_BITMAP_METHOD
-                    ),
-                    Bitmap::class.java,
-                ),
-            ).onEach { it.isAccessible = true }
-
-            runtime.hookRegistrar.installHook(
-                onModelBoundMethod,
-                before = { chain ->
-                    val listener = chain.thisObject ?: return@installHook
-                    val model = chain.args.firstOrNull()
-                        ?.takeIf(modelClass::isInstance)
-                        ?: return@installHook
-                    val entity = fieldValueByType(listener, mediaEntityClass)
-                        ?: return@installHook
-                    val persistentIdValue = runCatching {
-                        AppleReflection.call(
-                            entity,
-                            resolvedMediaEntity.target.runtimeMemberName(
-                                AppleMusicRuntimeMember.COLLECTION_ITEM_GET_PERSISTENT_ID_METHOD
-                            ),
-                        )
-                    }.getOrNull() ?: return@installHook
-                    val persistentId = (persistentIdValue as? Number)?.toLong()
-                        ?: return@installHook
-                    val liveData = fieldValueByType(listener, liveDataClass)
-                        ?: return@installHook
-                    val binding = host.dataBindingFromHolder(chain.args.getOrNull(1))
-                    val root = runCatching {
-                        binding?.let { AppleReflection.call(it, "getRoot") as? View }
-                    }.getOrNull()
-                    val imageViews = debugListenNowImageViews(root)
-                    val mediaId = runCatching {
-                        AppleReflection.call(
-                            entity,
-                            resolvedMediaEntity.target.runtimeMemberName(
-                                AppleMusicRuntimeMember.COLLECTION_ITEM_GET_ID_METHOD
-                            ),
-                        )?.toString()
-                    }.getOrNull()?.trim().orEmpty()
-                    val title = runCatching {
-                        AppleReflection.call(
-                            entity,
-                            resolvedMediaEntity.target.runtimeMemberName(
-                                AppleMusicRuntimeMember.COLLECTION_ITEM_GET_TITLE_METHOD
-                            ),
-                        )?.toString()
-                    }.getOrNull()?.replace('\n', ' ')?.take(96)
-                    val contentType = runCatching {
-                        (AppleReflection.call(
-                            entity,
-                            resolvedMediaEntity.target.runtimeMemberName(
-                                AppleMusicRuntimeMember.COLLECTION_ITEM_GET_CONTENT_TYPE_METHOD
-                            ),
-                        ) as? Number)?.toInt()
-                    }.getOrNull() ?: -1
-                    val mediaKey = "$mediaId:$persistentId:$contentType"
-                    val trace = DebugListenNowArtworkTrace(
-                        mediaKey = mediaKey,
-                        mediaId = mediaId.ifEmpty { "none" },
-                        title = title,
-                        persistentId = persistentId,
-                        contentType = contentType,
-                        liveData = WeakReference(liveData),
-                        model = WeakReference(model),
-                        root = root?.let(::WeakReference),
-                        imageViews = imageViews.map(::WeakReference),
-                    )
-                    val previous = debugListenNowLatestArtworkTraces.put(mediaKey, trace)
-                    debugListenNowArtworkLiveData[liveData] = trace
-                    imageViews.forEach { imageView ->
-                        debugListenNowArtworkImageViews[imageView] = trace
-                    }
-                    val currentValue = runCatching {
-                        liveDataGetValue.invoke(liveData)
-                    }.getOrNull()
-                    ProviderLogger.diagnostic(
-                        "ListenNowArtwork: event=model_bound_before, " +
-                            debugListenNowArtworkTraceIdentity(trace) + ", " +
-                            "moduleVersion=${BuildConfig.VERSION_CODE}, " +
-                            "continuityInstalled=" +
-                            "${isArtworkContinuityInstalled()}, " +
-                            "model=${objectIdentity(model)}, " +
-                            "previousModel=${objectIdentity(previous?.model?.get())}, " +
-                            "root=${objectIdentity(root)}, " +
-                            "previousRoot=${objectIdentity(previous?.root?.get())}, " +
-                            "liveData=${objectIdentity(liveData)}, " +
-                            "value=${debugListenNowArtworkValueSummary(currentValue)}, " +
-                            "images=${debugListenNowArtworkImageStates(trace)}"
-                    )
-                },
-                after = { chain, _ ->
-                    val listener = chain.thisObject ?: return@installHook
-                    val liveData = fieldValueByType(listener, liveDataClass)
-                        ?: return@installHook
-                    val trace = debugListenNowArtworkLiveData[liveData]
-                        ?: return@installHook
-                    debugListenNowLogTraceSnapshot(
-                        trace = trace,
-                        stage = "model_bound_after",
-                        liveDataGetValue = liveDataGetValue,
-                    )
-                    trace.root?.get()?.let { root ->
-                        root.post {
-                            debugListenNowLogTraceSnapshot(
-                                trace = trace,
-                                stage = "model_bound_next_frame",
-                                liveDataGetValue = liveDataGetValue,
-                            )
-                        }
-                        root.postDelayed(
-                            {
-                                debugListenNowLogTraceSnapshot(
-                                    trace = trace,
-                                    stage = "model_bound_250ms",
-                                    liveDataGetValue = liveDataGetValue,
-                                )
-                            },
-                            250L,
-                        )
-                    }
-                },
-            )
-
-            runtime.hookRegistrar.installHook(
-                resolverSubmitMethod,
-                before = { chain ->
-                    val delegate = chain.args.firstOrNull()
-                        ?.takeIf(delegateClass::isInstance)
-                        ?: return@installHook
-                    val liveData = runCatching { delegateLiveDataField.get(delegate) }
-                        .getOrNull()
-                        ?: return@installHook
-                    val trace = debugListenNowArtworkLiveData[liveData]
-                        ?: return@installHook
-                    debugListenNowArtworkDelegates[delegate] = trace
-                    ProviderLogger.diagnostic(
-                        "ListenNowArtwork: event=library_lookup_submit, " +
-                            debugListenNowArtworkTraceIdentity(trace) + ", " +
-                            "delegate=${objectIdentity(delegate)}, " +
-                            "liveData=${objectIdentity(liveData)}, " +
-                            "delegateValue=${debugListenNowDelegateArtworkSummary(
-                                delegate,
-                                delegateGetImageUrl,
-                                delegateGetImageUrls,
-                            )}, liveValue=${debugListenNowArtworkValueSummary(
-                                runCatching { liveDataGetValue.invoke(liveData) }.getOrNull()
-                            )}"
-                    )
-                },
-                after = { chain, _ ->
-                    val delegate = chain.args.firstOrNull()
-                        ?.takeIf(delegateClass::isInstance)
-                        ?: return@installHook
-                    val trace = debugListenNowArtworkDelegates[delegate]
-                        ?: return@installHook
-                    ProviderLogger.diagnostic(
-                        "ListenNowArtwork: event=library_lookup_submitted, " +
-                            debugListenNowArtworkTraceIdentity(trace) + ", " +
-                            "delegate=${objectIdentity(delegate)}"
-                    )
-                },
-            )
-
-            delegateArtworkMethods.forEach { method ->
-                runtime.hookRegistrar.installHook(
-                    method,
-                    before = { chain ->
-                        val delegate = chain.thisObject ?: return@installHook
-                        val trace = debugListenNowTraceForDelegate(
-                            delegate = delegate,
-                            delegateLiveDataField = delegateLiveDataField,
-                        ) ?: return@installHook
-                        val liveData = trace.liveData.get()
-                        val currentLiveValue = liveData?.let { target ->
-                            runCatching { liveDataGetValue.invoke(target) }.getOrNull()
-                        }
-                        val incoming = chain.args.firstOrNull()
-                        ProviderLogger.diagnostic(
-                            "ListenNowArtwork: event=delegate_${method.name}_before, " +
-                                debugListenNowArtworkTraceIdentity(trace) + ", " +
-                                "delegate=${objectIdentity(delegate)}, " +
-                                "incoming=${debugListenNowArtworkValueSummary(incoming)}, " +
-                                "sameAsLive=${debugListenNowArtworkUrls(incoming) ==
-                                    debugListenNowArtworkUrls(currentLiveValue)}, " +
-                                "liveValue=${debugListenNowArtworkValueSummary(currentLiveValue)}"
-                        )
-                    },
-                    after = { chain, _ ->
-                        val delegate = chain.thisObject ?: return@installHook
-                        val trace = debugListenNowTraceForDelegate(
-                            delegate = delegate,
-                            delegateLiveDataField = delegateLiveDataField,
-                        ) ?: return@installHook
-                        ProviderLogger.diagnostic(
-                            "ListenNowArtwork: event=delegate_${method.name}_after, " +
-                                debugListenNowArtworkTraceIdentity(trace) + ", " +
-                                "delegateValue=${debugListenNowDelegateArtworkSummary(
-                                    delegate,
-                                    delegateGetImageUrl,
-                                    delegateGetImageUrls,
-                                )}, images=${debugListenNowArtworkImageStates(trace)}"
-                        )
-                    },
-                )
-            }
-
-            liveDataMutationMethods.forEach { method ->
-                runtime.hookRegistrar.installHook(
-                    method,
-                    before = { chain ->
-                        val liveData = chain.thisObject ?: return@installHook
-                        val trace = debugListenNowArtworkLiveData[liveData]
-                            ?: return@installHook
-                        val current = runCatching { liveDataGetValue.invoke(liveData) }
-                            .getOrNull()
-                        val incoming = chain.args.firstOrNull()
-                        ProviderLogger.diagnostic(
-                            "ListenNowArtwork: event=live_data_${method.name}_before, " +
-                                debugListenNowArtworkTraceIdentity(trace) + ", " +
-                                "liveData=${objectIdentity(liveData)}, " +
-                                "incoming=${debugListenNowArtworkValueSummary(incoming)}, " +
-                                "current=${debugListenNowArtworkValueSummary(current)}, " +
-                                "same=${debugListenNowArtworkUrls(incoming) ==
-                                    debugListenNowArtworkUrls(current)}, " +
-                                "images=${debugListenNowArtworkImageStates(trace)}"
-                        )
-                    },
-                    after = { chain, _ ->
-                        val liveData = chain.thisObject ?: return@installHook
-                        val trace = debugListenNowArtworkLiveData[liveData]
-                            ?: return@installHook
-                        debugListenNowLogTraceSnapshot(
-                            trace = trace,
-                            stage = "live_data_${method.name}_after",
-                            liveDataGetValue = liveDataGetValue,
-                        )
-                        if (method.name == "postValue") {
-                            runtime.mainHandler.post {
-                                debugListenNowLogTraceSnapshot(
-                                    trace = trace,
-                                    stage = "live_data_postValue_committed",
-                                    liveDataGetValue = liveDataGetValue,
-                                )
-                            }
-                        }
-                    },
-                )
-            }
-
-            customImageMutationMethods.forEach { method ->
-                runtime.hookRegistrar.installHook(
-                    method,
-                    before = { chain ->
-                        val imageView = chain.thisObject ?: return@installHook
-                        val trace = debugListenNowArtworkImageViews[imageView]
-                            ?: return@installHook
-                        ProviderLogger.diagnostic(
-                            "ListenNowArtwork: event=image_${method.name}_before, " +
-                                debugListenNowArtworkTraceIdentity(trace) + ", " +
-                                "view=${objectIdentity(imageView)}, " +
-                                "incoming=${debugListenNowImageMutationSummary(
-                                    chain.args.firstOrNull()
-                                )}, state=${debugListenNowImageViewState(imageView as ImageView)}"
-                        )
-                    },
-                    after = { chain, _ ->
-                        val imageView = chain.thisObject ?: return@installHook
-                        val trace = debugListenNowArtworkImageViews[imageView]
-                            ?: return@installHook
-                        ProviderLogger.diagnostic(
-                            "ListenNowArtwork: event=image_${method.name}_after, " +
-                                debugListenNowArtworkTraceIdentity(trace) + ", " +
-                                "view=${objectIdentity(imageView)}, " +
-                                "state=${debugListenNowImageViewState(imageView as ImageView)}"
-                        )
-                    },
-                )
-            }
-
-            ProviderLogger.info(
-                "Apple Music 主页 Listen Now 封面诊断 Hook 已安装: " +
-                    "bound=${onModelBoundMethod.name}/${onModelBoundMethod.parameterCount}, " +
-                    "resolver=${resolverSubmitMethod.name}/${resolverSubmitMethod.parameterCount}, " +
-                    "delegateMethods=${delegateArtworkMethods.size}, " +
-                    "imageMethods=${customImageMutationMethods.size}, " +
-                    "fallback=${resolvedOnModelBound.compatibilityFallback ||
-                        resolvedArtworkSubmit.compatibilityFallback}"
-            )
-        }.onFailure {
-            ProviderLogger.error("Apple Music 主页 Listen Now 封面诊断 Hook 安装失败", it)
-        }
-    }
-
-    private fun fieldValueByType(instance: Any, fieldType: Class<*>): Any? =
-        generateSequence(instance.javaClass) { it.superclass }
-            .flatMap { it.declaredFields.asSequence() }
-            .filter { field -> fieldType.isAssignableFrom(field.type) }
-            .firstNotNullOfOrNull { field ->
-                runCatching {
-                    field.isAccessible = true
-                    field.get(instance)
-                }.getOrNull()
-            }
-
-    private fun debugListenNowTraceForDelegate(
-        delegate: Any,
-        delegateLiveDataField: Field,
-    ): DebugListenNowArtworkTrace? {
-        debugListenNowArtworkDelegates[delegate]?.let { return it }
-        val liveData = runCatching { delegateLiveDataField.get(delegate) }.getOrNull()
-            ?: return null
-        return debugListenNowArtworkLiveData[liveData]?.also { trace ->
-            debugListenNowArtworkDelegates[delegate] = trace
-        }
-    }
-
-    private fun debugListenNowLogTraceSnapshot(
-        trace: DebugListenNowArtworkTrace,
-        stage: String,
-        liveDataGetValue: Method,
-    ) {
-        val liveData = trace.liveData.get()
-        val value = liveData?.let { target ->
-            runCatching { liveDataGetValue.invoke(target) }.getOrNull()
-        }
-        ProviderLogger.diagnostic(
-            "ListenNowArtwork: event=$stage, " +
-                debugListenNowArtworkTraceIdentity(trace) + ", " +
-                "liveData=${objectIdentity(liveData)}, " +
-                "value=${debugListenNowArtworkValueSummary(value)}, " +
-                "root=${objectIdentity(trace.root?.get())}, " +
-                "images=${debugListenNowArtworkImageStates(trace)}"
-        )
-    }
-
-    private fun debugListenNowArtworkTraceIdentity(
-        trace: DebugListenNowArtworkTrace,
-    ): String =
-        "mediaId=${trace.mediaId}, persistentId=${trace.persistentId}, " +
-            "contentType=${trace.contentType}, title=${trace.title ?: "none"}"
-
-    private fun debugListenNowArtworkUrls(value: Any?): List<String> = when (value) {
-        null -> emptyList()
-        is CharSequence -> listOf(value.toString())
-        is Array<*> -> value.mapNotNull { it?.toString() }
-        is Iterable<*> -> value.mapNotNull { it?.toString() }
-        else -> emptyList()
-    }.map(String::trim).filter(String::isNotEmpty)
-
-    private fun debugListenNowArtworkValueSummary(value: Any?): String {
-        val urls = debugListenNowArtworkUrls(value)
-        val values = urls.joinToString(prefix = "[", postfix = "]") { url ->
-            "len=${url.length},hash=${url.hashCode()},error=${url == "error url"}"
-        }
-        return "type=${value?.javaClass?.name ?: "null"},count=${urls.size}," +
-            "hash=${urls.hashCode()},values=$values"
-    }
-
-    private fun debugListenNowDelegateArtworkSummary(
-        delegate: Any,
-        getImageUrl: Method,
-        getImageUrls: Method,
-    ): String {
-        val single = runCatching { getImageUrl.invoke(delegate) }.getOrNull()
-        if (single != null) return debugListenNowArtworkValueSummary(single)
-        return debugListenNowArtworkValueSummary(
-            runCatching { getImageUrls.invoke(delegate) }.getOrNull()
-        )
-    }
-
-    private fun debugListenNowImageViews(root: View?): List<ImageView> {
-        root ?: return emptyList()
-        val result = mutableListOf<ImageView>()
-        val pending = ArrayDeque<View>()
-        pending.add(root)
-        var visited = 0
-        while (pending.isNotEmpty() && visited < 48 && result.size < 4) {
-            val view = pending.removeFirst()
-            visited += 1
-            if (view is ImageView) result += view
-            if (view is ViewGroup) {
-                for (index in 0 until view.childCount) {
-                    view.getChildAt(index)?.let(pending::addLast)
-                }
-            }
-        }
-        return result
-    }
-
-    private fun debugListenNowArtworkImageStates(
-        trace: DebugListenNowArtworkTrace,
-    ): String = trace.imageViews.mapNotNull(WeakReference<ImageView>::get)
-        .joinToString(prefix = "[", postfix = "]") { imageView ->
-            debugListenNowImageViewState(imageView)
-        }
-
-    private fun debugListenNowImageViewState(imageView: ImageView): String =
-        "${objectIdentity(imageView)}{" +
-            "drawable=${objectIdentity(imageView.drawable)}/" +
-            "${drawableSignature(imageView.drawable)}," +
-            "background=${objectIdentity(imageView.background)}/" +
-            "${drawableSignature(imageView.background)}," +
-            "visibility=${imageView.visibility},alpha=${imageView.alpha}," +
-            "shown=${imageView.isShown},attached=${imageView.isAttachedToWindow}}"
-
-    private fun debugListenNowImageMutationSummary(value: Any?): String = when (value) {
-        null -> "null"
-        is Bitmap ->
-            "${objectIdentity(value)}:" +
-                "${value.width}x${value.height},generation=${value.generationId}"
-        is Drawable ->
-            "${objectIdentity(value)}/" +
-                drawableSignature(value)
-        else -> objectIdentity(value)
-    }
-
-
-    fun clearMetadataState() {
-        inAppListenNowDataBindingRefs.clear()
-        inAppListenNowDataBindingMediaIds.clear()
-        inAppListenNowDataBindingPendingRefreshes.clear()
-        inAppListenNowModelBuildStates.clear()
-        inAppListenNowModelBuildStatesByLiveData.clear()
-    }
-
-    fun hasDataBindingRefs(mediaId: String): Boolean =
-        inAppListenNowDataBindingRefs[mediaId]?.isNotEmpty() == true
-
-    fun isArtworkContinuityInstalled(): Boolean =
-        inAppListenNowArtworkContinuityHookInstalled
-
-    fun onArtworkDelegateResolved(
-        delegate: Any,
-        liveData: Any?,
-        urls: List<String>,
-    ) {
-        val identity = inAppListenNowArtworkIdentity(delegate)
-        val builderKey = liveData?.let(inAppListenNowArtworkKeysByLiveData::get)
-        val hasDebugTrace = debugListenNowArtworkDelegates[delegate] != null
-        liveData?.let { exactLiveData ->
-            resolveInAppListenNowCatalogIdentity(
-                liveData = exactLiveData,
-                delegateKey = identity.key,
-            )
-        }
-        if (BuildConfig.DEBUG && (builderKey != null || hasDebugTrace)) {
-            host.logMetadataIdentity(
-                event = "listen_now_artwork_delegate_cache_candidate",
-                details = "moduleVersion=${BuildConfig.VERSION_CODE}, " +
-                    "liveData=${objectIdentity(liveData)}, " +
-                    "builderArtworkHash=${builderKey?.artworkIdentity?.hashCode()}, " +
-                    "builderKeyMatchesDelegate=${builderKey == identity.key}, " +
-                    "urls=${urls.size}, urlHash=${urls.hashCode()}, " +
-                    debugInAppListenNowArtworkIdentity(identity),
-            )
-        }
-        val cacheKey = preferredInAppListenNowArtworkKey(
-            builderKey = builderKey,
-            delegateKey = identity.key,
-        )
-        cacheKey?.let { key ->
-            putInAppListenNowArtworkContinuity(key, urls)
-            if (BuildConfig.DEBUG && (builderKey != null || hasDebugTrace)) {
-                host.logMetadataIdentity(
-                    event = "listen_now_artwork_delegate_cache_stored",
-                    details = "contentId=${key.id}, persistentId=${key.persistentId}, " +
-                        "contentType=${key.contentType}, artworkHash=" +
-                        "${key.artworkIdentity.hashCode()}, urls=${urls.size}, " +
-                        "urlHash=${urls.hashCode()}, keyOrigin=" +
-                        "${if (builderKey != null) "builder_live_data" else "delegate"}",
-                )
-            }
-        }
-    }
-
-    private fun objectIdentity(value: Any?): String =
-        value?.let { "${it.javaClass.name}@${System.identityHashCode(it)}" } ?: "null"
-
-    private fun drawableSignature(value: Any?): String = when (value) {
-        null -> "null"
-        is ColorDrawable -> "${value.javaClass.name}:color=${value.color}"
-        else -> "${value.javaClass.name}:hash=" +
-            (runCatching { value.hashCode() }.getOrNull() ?: "error")
     }
 
 }

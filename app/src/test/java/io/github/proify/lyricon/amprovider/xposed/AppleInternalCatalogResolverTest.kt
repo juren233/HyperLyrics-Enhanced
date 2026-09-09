@@ -10,47 +10,47 @@ class AppleInternalCatalogResolverTest {
     @Test
     fun `detects coroutine suspension across classloader boundaries by enum name`() {
         assertTrue(
-            AppleInternalCatalogResolver.isCoroutineSuspended(
+            isCoroutineSuspended(
                 TestCoroutineState.COROUTINE_SUSPENDED,
             )
         )
         assertFalse(
-            AppleInternalCatalogResolver.isCoroutineSuspended(
+            isCoroutineSuspended(
                 TestCoroutineState.COMPLETED,
             )
         )
-        assertFalse(AppleInternalCatalogResolver.isCoroutineSuspended(null))
+        assertFalse(isCoroutineSuspended(null))
     }
 
     @Test
     fun `visible metadata requests leapfrog queued page and background work`() {
         val priorities = listOf(
-            AppleInternalCatalogResolver.RequestPriority.BACKGROUND,
-            AppleInternalCatalogResolver.RequestPriority.ACTIVE_PAGE,
-            AppleInternalCatalogResolver.RequestPriority.VISIBLE,
-            AppleInternalCatalogResolver.RequestPriority.VISIBLE,
+            RequestPriority.BACKGROUND,
+            RequestPriority.ACTIVE_PAGE,
+            RequestPriority.VISIBLE,
+            RequestPriority.VISIBLE,
         )
 
         assertEquals(
             2,
-            AppleInternalCatalogResolver.selectNextRequestIndex(priorities),
+            selectNextRequestIndex(priorities),
         )
     }
 
     @Test
     fun `request promotion never lowers an existing priority`() {
         assertEquals(
-            AppleInternalCatalogResolver.RequestPriority.VISIBLE,
-            AppleInternalCatalogResolver.higherPriority(
-                AppleInternalCatalogResolver.RequestPriority.VISIBLE,
-                AppleInternalCatalogResolver.RequestPriority.BACKGROUND,
+            RequestPriority.VISIBLE,
+            higherPriority(
+                RequestPriority.VISIBLE,
+                RequestPriority.BACKGROUND,
             ),
         )
         assertEquals(
-            AppleInternalCatalogResolver.RequestPriority.ACTIVE_PAGE,
-            AppleInternalCatalogResolver.higherPriority(
-                AppleInternalCatalogResolver.RequestPriority.BACKGROUND,
-                AppleInternalCatalogResolver.RequestPriority.ACTIVE_PAGE,
+            RequestPriority.ACTIVE_PAGE,
+            higherPriority(
+                RequestPriority.BACKGROUND,
+                RequestPriority.ACTIVE_PAGE,
             ),
         )
     }
@@ -61,24 +61,24 @@ class AppleInternalCatalogResolverTest {
         val activePage = setOf("3")
 
         assertEquals(
-            AppleInternalCatalogResolver.RequestPriority.BACKGROUND,
-            AppleInternalCatalogResolver.priorityForRequestScope(
+            RequestPriority.BACKGROUND,
+            priorityForRequestScope(
                 mediaId = "1",
                 visibleMediaIds = visible,
                 activePageMediaIds = activePage,
             ),
         )
         assertEquals(
-            AppleInternalCatalogResolver.RequestPriority.VISIBLE,
-            AppleInternalCatalogResolver.priorityForRequestScope(
+            RequestPriority.VISIBLE,
+            priorityForRequestScope(
                 mediaId = "2",
                 visibleMediaIds = visible,
                 activePageMediaIds = activePage,
             ),
         )
         assertEquals(
-            AppleInternalCatalogResolver.RequestPriority.ACTIVE_PAGE,
-            AppleInternalCatalogResolver.priorityForRequestScope(
+            RequestPriority.ACTIVE_PAGE,
+            priorityForRequestScope(
                 mediaId = "3",
                 visibleMediaIds = visible,
                 activePageMediaIds = activePage,
@@ -94,8 +94,8 @@ class AppleInternalCatalogResolverTest {
     @Test
     fun `background work leaves resolver capacity for visible requests`() {
         assertFalse(
-            AppleInternalCatalogResolver.canStartRequest(
-                priority = AppleInternalCatalogResolver.RequestPriority.BACKGROUND,
+            canStartRequest(
+                priority = RequestPriority.BACKGROUND,
                 totalRunning = 2,
                 backgroundRunning = 2,
                 maxRunning = 3,
@@ -103,8 +103,8 @@ class AppleInternalCatalogResolverTest {
             )
         )
         assertTrue(
-            AppleInternalCatalogResolver.canStartRequest(
-                priority = AppleInternalCatalogResolver.RequestPriority.VISIBLE,
+            canStartRequest(
+                priority = RequestPriority.VISIBLE,
                 totalRunning = 2,
                 backgroundRunning = 2,
                 maxRunning = 3,
@@ -116,25 +116,25 @@ class AppleInternalCatalogResolverTest {
     @Test
     fun `does not cache an empty catalog identity before complete playback data arrives`() {
         assertFalse(
-            AppleInternalCatalogResolver.shouldCacheCatalogIdentity(
+            shouldCacheCatalogIdentity(
                 isrc = null,
                 genres = emptyList(),
             )
         )
         assertTrue(
-            AppleInternalCatalogResolver.shouldCacheCatalogIdentity(
+            shouldCacheCatalogIdentity(
                 isrc = "TWA451600011",
                 genres = emptyList(),
             )
         )
         assertTrue(
-            AppleInternalCatalogResolver.shouldCacheCatalogIdentity(
+            shouldCacheCatalogIdentity(
                 isrc = null,
                 genres = listOf("Mandopop"),
             )
         )
         assertTrue(
-            AppleInternalCatalogResolver.shouldRetryEmptyCatalogIdentity(
+            shouldRetryEmptyCatalogIdentity(
                 mediaId = "1158763998",
                 title = "派對動物",
                 artist = "Mayday",
@@ -144,7 +144,7 @@ class AppleInternalCatalogResolverTest {
             )
         )
         assertFalse(
-            AppleInternalCatalogResolver.shouldRetryEmptyCatalogIdentity(
+            shouldRetryEmptyCatalogIdentity(
                 mediaId = "1158763998",
                 title = "派對動物",
                 artist = "五月天",
@@ -159,42 +159,42 @@ class AppleInternalCatalogResolverTest {
     fun `maps localized content types to catalog paths`() {
         assertEquals(
             "songs",
-            AppleInternalCatalogResolver.LocalizedEntityType.SONG.path,
+            LocalizedEntityType.SONG.path,
         )
         assertEquals(
             "albums",
-            AppleInternalCatalogResolver.LocalizedEntityType.ALBUM.path,
+            LocalizedEntityType.ALBUM.path,
         )
         assertEquals(
             "artists",
-            AppleInternalCatalogResolver.LocalizedEntityType.ARTIST.path,
+            LocalizedEntityType.ARTIST.path,
         )
     }
 
     @Test
     fun `metadata cache keys are isolated by entity type locale and storefront selection`() {
-        val song = AppleInternalCatalogResolver.localizedMetadataCacheKey(
+        val song = localizedMetadataCacheKey(
             selection = 1,
-            entityType = AppleInternalCatalogResolver.LocalizedEntityType.SONG,
+            entityType = LocalizedEntityType.SONG,
             mediaId = "123",
         )
-        val album = AppleInternalCatalogResolver.localizedMetadataCacheKey(
+        val album = localizedMetadataCacheKey(
             selection = 1,
-            entityType = AppleInternalCatalogResolver.LocalizedEntityType.ALBUM,
+            entityType = LocalizedEntityType.ALBUM,
             mediaId = "123",
         )
-        val otherSelection = AppleInternalCatalogResolver.localizedMetadataCacheKey(
+        val otherSelection = localizedMetadataCacheKey(
             selection = 2,
-            entityType = AppleInternalCatalogResolver.LocalizedEntityType.SONG,
+            entityType = LocalizedEntityType.SONG,
             mediaId = "123",
         )
-        val chineseOriginal = AppleInternalCatalogResolver.originalEntityCacheKey(
-            entityType = AppleInternalCatalogResolver.LocalizedEntityType.SONG,
+        val chineseOriginal = originalEntityCacheKey(
+            entityType = LocalizedEntityType.SONG,
             language = "zh-Hans-CN",
             mediaId = "123",
         )
-        val japaneseOriginal = AppleInternalCatalogResolver.originalEntityCacheKey(
-            entityType = AppleInternalCatalogResolver.LocalizedEntityType.SONG,
+        val japaneseOriginal = originalEntityCacheKey(
+            entityType = LocalizedEntityType.SONG,
             language = "ja-JP",
             mediaId = "123",
         )
@@ -203,15 +203,15 @@ class AppleInternalCatalogResolverTest {
         assertTrue(song != otherSelection)
         assertTrue(chineseOriginal != japaneseOriginal)
         assertTrue(
-            AppleInternalCatalogResolver.storefrontForContentUiLanguage(1) !=
-                AppleInternalCatalogResolver.storefrontForContentUiLanguage(2)
+            storefrontForContentUiLanguage(1) !=
+                storefrontForContentUiLanguage(2)
         )
     }
 
     @Test
     fun `original entity cache probes direct and compatibility IDs in stable precedence order`() {
-        val keys = AppleInternalCatalogResolver.originalEntityCacheLookupKeys(
-            entityType = AppleInternalCatalogResolver.LocalizedEntityType.ALBUM,
+        val keys = originalEntityCacheLookupKeys(
+            entityType = LocalizedEntityType.ALBUM,
             mediaId = "200",
             lookupIds = listOf("201", "200"),
             languages = listOf("zh-Hans-CN"),
@@ -237,17 +237,17 @@ class AppleInternalCatalogResolverTest {
     @Test
     fun `artist alias cache keys are routed separately from entity metadata`() {
         assertTrue(
-            AppleInternalCatalogResolver.isLocalizedArtistAliasCacheKey(
+            isLocalizedArtistAliasCacheKey(
                 "2:ARTIST_ALIAS:V2:id:18756224",
             )
         )
         assertFalse(
-            AppleInternalCatalogResolver.isLocalizedArtistAliasCacheKey(
+            isLocalizedArtistAliasCacheKey(
                 "2:ARTIST:18756224",
             )
         )
         assertFalse(
-            AppleInternalCatalogResolver.isLocalizedArtistAliasCacheKey(
+            isLocalizedArtistAliasCacheKey(
                 "2:SONG:1542953977",
             )
         )
@@ -257,21 +257,21 @@ class AppleInternalCatalogResolverTest {
     fun `rejects the account current language as an original storefront`() {
         assertEquals(
             null,
-            AppleInternalCatalogResolver.storefrontForOriginalLanguage("current"),
+            storefrontForOriginalLanguage("current"),
         )
         assertEquals(
             null,
-            AppleInternalCatalogResolver.supportedOriginalLanguageOrNull("current"),
+            supportedOriginalLanguageOrNull("current"),
         )
         assertEquals(
             "cn",
-            AppleInternalCatalogResolver.storefrontForOriginalLanguage("zh-TW"),
+            storefrontForOriginalLanguage("zh-TW"),
         )
     }
 
     @Test
     fun `does not persist current account aliases as original metadata`() {
-        val currentAlias = AppleInternalCatalogResolver.Alias(
+        val currentAlias = Alias(
             title = "陶喆同名专辑",
             artist = "David Tao",
             language = "current",
@@ -283,18 +283,18 @@ class AppleInternalCatalogResolverTest {
 
         assertEquals(
             null,
-            AppleInternalCatalogResolver.canonicalCachedOriginalAlias(currentAlias),
+            canonicalCachedOriginalAlias(currentAlias),
         )
         assertEquals(
-            emptyList<AppleInternalCatalogResolver.Alias>(),
-            AppleInternalCatalogResolver.regionalOriginalAliases(
+            emptyList<Alias>(),
+            regionalOriginalAliases(
                 aliases = listOf(currentAlias),
                 languages = emptyList(),
             ),
         )
         assertEquals(
             listOf(originalAlias),
-            AppleInternalCatalogResolver.regionalOriginalAliases(
+            regionalOriginalAliases(
                 aliases = listOf(currentAlias, originalAlias),
                 languages = listOf("zh-Hans-CN"),
             ),
@@ -306,9 +306,9 @@ class AppleInternalCatalogResolverTest {
         val mediaId = "255921025"
 
         assertTrue(
-            AppleInternalCatalogResolver.originalSongCacheKey(mediaId) !=
-                AppleInternalCatalogResolver.originalDirectEntityCacheKey(
-                    AppleInternalCatalogResolver.LocalizedEntityType.SONG,
+            originalSongCacheKey(mediaId) !=
+                originalDirectEntityCacheKey(
+                    LocalizedEntityType.SONG,
                     mediaId,
                 )
         )
@@ -317,18 +317,18 @@ class AppleInternalCatalogResolverTest {
     @Test
     fun `original metadata cache keys use the post hook pollution schema`() {
         assertTrue(
-            AppleInternalCatalogResolver.originalSongCacheKey("1542953977")
+            originalSongCacheKey("1542953977")
                 .startsWith("V2:"),
         )
         assertTrue(
-            AppleInternalCatalogResolver.originalDirectEntityCacheKey(
-                AppleInternalCatalogResolver.LocalizedEntityType.ARTIST,
+            originalDirectEntityCacheKey(
+                LocalizedEntityType.ARTIST,
                 "18756224",
             ).startsWith("V2:"),
         )
         assertTrue(
-            AppleInternalCatalogResolver.originalEntityCacheKey(
-                entityType = AppleInternalCatalogResolver.LocalizedEntityType.ARTIST,
+            originalEntityCacheKey(
+                entityType = LocalizedEntityType.ARTIST,
                 language = "ja-JP",
                 mediaId = "18756224",
             ).startsWith("V2:"),
@@ -337,13 +337,13 @@ class AppleInternalCatalogResolverTest {
 
     @Test
     fun `exact catalog id wins over former id candidates`() {
-        val exact = AppleInternalCatalogResolver.Alias(
+        val exact = Alias(
             "我不难过",
             "孙燕姿",
             "zh-Hans-CN",
             "未完成",
         )
-        val wrongFormerId = AppleInternalCatalogResolver.Alias(
+        val wrongFormerId = Alias(
             "I Am Fine",
             "孙燕姿",
             "zh-Hans-CN",
@@ -352,7 +352,7 @@ class AppleInternalCatalogResolverTest {
 
         assertEquals(
             exact,
-            AppleInternalCatalogResolver.selectExactOriginalEntityAlias(
+            selectExactOriginalEntityAlias(
                 mediaId = "255921025",
                 lookupIds = listOf("other-id", "255921025"),
                 resolved = mapOf(
@@ -366,7 +366,7 @@ class AppleInternalCatalogResolverTest {
 
     @Test
     fun `exact catalog id preserves a legitimate English original name`() {
-        val exact = AppleInternalCatalogResolver.Alias(
+        val exact = Alias(
             "English Title",
             "English Artist",
             "zh-Hans-CN",
@@ -375,7 +375,7 @@ class AppleInternalCatalogResolverTest {
 
         assertEquals(
             exact,
-            AppleInternalCatalogResolver.selectExactOriginalEntityAlias(
+            selectExactOriginalEntityAlias(
                 mediaId = "exact-id",
                 lookupIds = listOf("exact-id"),
                 resolved = mapOf("exact-id" to exact),
@@ -386,13 +386,13 @@ class AppleInternalCatalogResolverTest {
 
     @Test
     fun `configured storefront exact identity can complete simplified Chinese original lookup`() {
-        val exact = AppleInternalCatalogResolver.Alias(
+        val exact = Alias(
             "海阔天空",
             "邓紫棋",
             "zh-CN",
             "T.I.M.E. - EP",
         )
-        val unrelated = AppleInternalCatalogResolver.Alias(
+        val unrelated = Alias(
             "Infinite",
             "G.E.M.",
             "en-US",
@@ -401,7 +401,7 @@ class AppleInternalCatalogResolverTest {
 
         assertEquals(
             exact,
-            AppleInternalCatalogResolver.selectExactIdentityAlias(
+            selectExactIdentityAlias(
                 aliases = listOf(unrelated, exact),
                 sourceLanguage = "zh-Hans-CN",
             ),
@@ -412,9 +412,9 @@ class AppleInternalCatalogResolverTest {
     fun `configured storefront identity does not confirm a different language`() {
         assertEquals(
             null,
-            AppleInternalCatalogResolver.selectExactIdentityAlias(
+            selectExactIdentityAlias(
                 aliases = listOf(
-                    AppleInternalCatalogResolver.Alias(
+                    Alias(
                         "Infinite",
                         "G.E.M.",
                         "en-US",
@@ -430,27 +430,27 @@ class AppleInternalCatalogResolverTest {
     fun `maps Apple genres to original language tags`() {
         assertEquals(
             listOf("ja-JP"),
-            AppleInternalCatalogResolver.languageTagsForGenre("J-Pop")
+            languageTagsForGenre("J-Pop")
         )
         assertEquals(
             listOf("ko-KR"),
-            AppleInternalCatalogResolver.languageTagsForGenre("K-Pop")
+            languageTagsForGenre("K-Pop")
         )
         assertEquals(
             listOf("zh-Hans-CN"),
-            AppleInternalCatalogResolver.languageTagsForGenre("Mandopop")
+            languageTagsForGenre("Mandopop")
         )
         assertEquals(
             listOf("zh-Hans-CN"),
-            AppleInternalCatalogResolver.languageTagsForGenre("Cantopop")
+            languageTagsForGenre("Cantopop")
         )
         assertEquals(
             listOf("zh-Hans-CN"),
-            AppleInternalCatalogResolver.languageTagsForGenre("国语流行")
+            languageTagsForGenre("国语流行")
         )
         assertEquals(
             listOf("ja-JP"),
-            AppleInternalCatalogResolver.languageTagsForGenre("日本流行")
+            languageTagsForGenre("日本流行")
         )
     }
 
@@ -458,49 +458,49 @@ class AppleInternalCatalogResolverTest {
     fun `uses CJK ISRC countries to avoid unnecessary regional queries`() {
         assertEquals(
             listOf("ja-JP"),
-            AppleInternalCatalogResolver.languageTagsForOriginalMetadata(
+            languageTagsForOriginalMetadata(
                 genre = null,
                 isrc = "JPPO02400480",
             )
         )
         assertEquals(
             listOf("ko-KR"),
-            AppleInternalCatalogResolver.languageTagsForOriginalMetadata(
+            languageTagsForOriginalMetadata(
                 genre = null,
                 isrc = "KRA252400001",
             )
         )
         assertEquals(
             listOf("zh-Hans-CN"),
-            AppleInternalCatalogResolver.languageTagsForOriginalMetadata(
+            languageTagsForOriginalMetadata(
                 genre = null,
                 isrc = "CNZ632400001",
             )
         )
         assertEquals(
             listOf("zh-Hans-CN"),
-            AppleInternalCatalogResolver.languageTagsForOriginalMetadata(
+            languageTagsForOriginalMetadata(
                 genre = null,
                 isrc = "HKA612400001",
             )
         )
         assertEquals(
             listOf("zh-Hans-CN"),
-            AppleInternalCatalogResolver.languageTagsForOriginalMetadata(
+            languageTagsForOriginalMetadata(
                 genre = null,
                 isrc = "TWA452400001",
             )
         )
         assertEquals(
             listOf("zh-Hans-CN"),
-            AppleInternalCatalogResolver.languageTagsForOriginalMetadata(
+            languageTagsForOriginalMetadata(
                 genre = null,
                 isrc = "MOA612400001",
             )
         )
         assertEquals(
             emptyList<String>(),
-            AppleInternalCatalogResolver.languageTagsForOriginalMetadata(
+            languageTagsForOriginalMetadata(
                 genre = null,
                 isrc = "USUM72400001",
             )
@@ -511,7 +511,7 @@ class AppleInternalCatalogResolverTest {
     fun `prefers catalog genre over distributor ISRC country`() {
         assertEquals(
             listOf("zh-Hans-CN"),
-            AppleInternalCatalogResolver.languageTagsForOriginalMetadata(
+            languageTagsForOriginalMetadata(
                 null,
                 listOf("Mandopop"),
                 "FR10S2241109",
@@ -519,7 +519,7 @@ class AppleInternalCatalogResolverTest {
         )
         assertEquals(
             listOf("zh-Hans-CN"),
-            AppleInternalCatalogResolver.languageTagsForOriginalMetadata(
+            languageTagsForOriginalMetadata(
                 null,
                 listOf("Mandopop"),
                 null,
@@ -527,7 +527,7 @@ class AppleInternalCatalogResolverTest {
         )
         assertEquals(
             listOf("zh-Hans-CN"),
-            AppleInternalCatalogResolver.languageTagsForOriginalMetadata(
+            languageTagsForOriginalMetadata(
                 "Mandopop",
                 emptyList(),
                 "JPPO02400480",
@@ -539,7 +539,7 @@ class AppleInternalCatalogResolverTest {
     fun `uses ISRC only when catalog genre has no regional signal`() {
         assertEquals(
             listOf("ko-KR"),
-            AppleInternalCatalogResolver.languageTagsForOriginalMetadata(
+            languageTagsForOriginalMetadata(
                 "Pop",
                 listOf("Pop"),
                 "KRA252400001",
@@ -549,10 +549,10 @@ class AppleInternalCatalogResolverTest {
 
     @Test
     fun `selects original script metadata`() {
-        val selected = AppleInternalCatalogResolver.selectOriginalAlias(
+        val selected = selectOriginalAlias(
             variants = listOf(
-                AppleInternalCatalogResolver.Alias("Kawakiwoameku", "Minami", "en-US"),
-                AppleInternalCatalogResolver.Alias("カワキヲアメク", "美波", "ja-JP")
+                Alias("Kawakiwoameku", "Minami", "en-US"),
+                Alias("カワキヲアメク", "美波", "ja-JP")
             ),
             localizedTitle = "Kawakiwoameku",
             localizedArtist = "Minami"
@@ -575,7 +575,7 @@ class AppleInternalCatalogResolverTest {
         ).forEach { language ->
             assertEquals(
                 "zh-Hans-CN",
-                AppleInternalCatalogResolver.canonicalOriginalLanguage(language),
+                canonicalOriginalLanguage(language),
             )
         }
     }
@@ -583,20 +583,20 @@ class AppleInternalCatalogResolverTest {
     @Test
     fun `rejects all English aliases for a Chinese original source`() {
         assertFalse(
-            AppleInternalCatalogResolver.isAcceptableOriginalAlias(
-                AppleInternalCatalogResolver.Alias("HANA", "Masshiro", "zh-Hans-CN"),
+            isAcceptableOriginalAlias(
+                Alias("HANA", "Masshiro", "zh-Hans-CN"),
                 "zh-Hans-CN",
             )
         )
         assertTrue(
-            AppleInternalCatalogResolver.isAcceptableOriginalAlias(
-                AppleInternalCatalogResolver.Alias("I Am Fine", "孙燕姿", "zh-Hans-CN"),
+            isAcceptableOriginalAlias(
+                Alias("I Am Fine", "孙燕姿", "zh-Hans-CN"),
                 "zh-Hans-CN",
             )
         )
         assertTrue(
-            AppleInternalCatalogResolver.isAcceptableOriginalAlias(
-                AppleInternalCatalogResolver.Alias("白色", "HANA", "zh-Hans-CN"),
+            isAcceptableOriginalAlias(
+                Alias("白色", "HANA", "zh-Hans-CN"),
                 "zh-Hans-CN",
             )
         )
@@ -606,28 +606,28 @@ class AppleInternalCatalogResolverTest {
     fun `invalidates traditional Chinese cached aliases`() {
         assertEquals(
             null,
-            AppleInternalCatalogResolver.canonicalCachedOriginalAlias(
-                AppleInternalCatalogResolver.Alias("純白", "HANA", "zh-Hant-TW"),
+            canonicalCachedOriginalAlias(
+                Alias("純白", "HANA", "zh-Hant-TW"),
             ),
         )
         assertEquals(
             "zh-Hans-CN",
-            AppleInternalCatalogResolver.canonicalCachedOriginalAlias(
-                AppleInternalCatalogResolver.Alias("纯白", "HANA", "zh-CN"),
+            canonicalCachedOriginalAlias(
+                Alias("纯白", "HANA", "zh-CN"),
             )?.language,
         )
     }
 
     @Test
     fun `prefers original script title over localized artist only`() {
-        val selected = AppleInternalCatalogResolver.selectOriginalAlias(
+        val selected = selectOriginalAlias(
             variants = listOf(
-                AppleInternalCatalogResolver.Alias(
+                Alias(
                     "Michi Teyu Ku (Overflowing)",
                     "藤井风",
                     "zh-Hans-CN"
                 ),
-                AppleInternalCatalogResolver.Alias("満ちてゆく", "藤井 風", "ja-JP")
+                Alias("満ちてゆく", "藤井 風", "ja-JP")
             ),
             localizedTitle = "Michi Teyu Ku (Overflowing)",
             localizedArtist = "Fujii Kaze"
@@ -639,7 +639,7 @@ class AppleInternalCatalogResolverTest {
 
     @Test
     fun `does not treat localized title with original artist as strong alias`() {
-        val alias = AppleInternalCatalogResolver.Alias(
+        val alias = Alias(
             "Michi Teyu Ku (Overflowing)",
             "藤井风",
             "zh-Hans-CN"
@@ -647,7 +647,7 @@ class AppleInternalCatalogResolverTest {
 
         assertEquals(
             false,
-            AppleInternalCatalogResolver.isOriginalTitle(
+            isOriginalTitle(
                 alias,
                 "Michi Teyu Ku (Overflowing)"
             )
@@ -656,7 +656,7 @@ class AppleInternalCatalogResolverTest {
 
     @Test
     fun `rejects a romanized solo title when only the artist was localized`() {
-        val alias = AppleInternalCatalogResolver.Alias(
+        val alias = Alias(
             "Hana",
             "藤井 風",
             "ja-JP",
@@ -665,21 +665,21 @@ class AppleInternalCatalogResolverTest {
 
         assertEquals(
             null,
-            AppleInternalCatalogResolver.selectOriginalAlias(
+            selectOriginalAlias(
                 variants = listOf(alias),
                 localizedTitle = "Hana",
                 localizedArtist = "Fujii Kaze",
             ),
         )
         assertFalse(
-            AppleInternalCatalogResolver.isConfidentOriginalSongAlias(
+            isConfidentOriginalSongAlias(
                 alias = alias,
                 localizedTitle = "Hana",
                 localizedArtist = "Fujii Kaze",
             )
         )
         assertFalse(
-            AppleInternalCatalogResolver.isReusableOriginalSongAlias(
+            isReusableOriginalSongAlias(
                 alias = alias,
                 localizedTitle = "Hana",
                 localizedArtist = "Fujii Kaze",
@@ -689,9 +689,9 @@ class AppleInternalCatalogResolverTest {
 
     @Test
     fun `rejects collaboration aliases that only localize the artist credit`() {
-        val selected = AppleInternalCatalogResolver.selectOriginalAlias(
+        val selected = selectOriginalAlias(
             variants = listOf(
-                AppleInternalCatalogResolver.Alias(
+                Alias(
                     "Same English Title",
                     "アメリカ人歌手, 日本人歌手",
                     "ja-JP",
@@ -703,8 +703,8 @@ class AppleInternalCatalogResolverTest {
 
         assertEquals(null, selected)
         assertFalse(
-            AppleInternalCatalogResolver.isConfidentOriginalSongAlias(
-                alias = AppleInternalCatalogResolver.Alias(
+            isConfidentOriginalSongAlias(
+                alias = Alias(
                     "Same English Title",
                     "アメリカ人歌手, 日本人歌手",
                     "ja-JP",
@@ -714,8 +714,8 @@ class AppleInternalCatalogResolverTest {
             )
         )
         assertFalse(
-            AppleInternalCatalogResolver.isReusableOriginalSongAlias(
-                alias = AppleInternalCatalogResolver.Alias(
+            isReusableOriginalSongAlias(
+                alias = Alias(
                     "Home",
                     "チャーリー・プース、宇多田ヒカル",
                     "ja-JP",
@@ -728,9 +728,9 @@ class AppleInternalCatalogResolverTest {
 
     @Test
     fun `keeps collaboration aliases when the title provides original script evidence`() {
-        val selected = AppleInternalCatalogResolver.selectOriginalAlias(
+        val selected = selectOriginalAlias(
             variants = listOf(
-                AppleInternalCatalogResolver.Alias(
+                Alias(
                     "日本語の原題",
                     "American Artist, 日本人歌手",
                     "ja-JP",
@@ -742,7 +742,7 @@ class AppleInternalCatalogResolverTest {
 
         assertEquals("日本語の原題", selected?.title)
         assertTrue(
-            AppleInternalCatalogResolver.isConfidentOriginalSongAlias(
+            isConfidentOriginalSongAlias(
                 alias = requireNotNull(selected),
                 localizedTitle = "Romanized Title",
                 localizedArtist = "American Artist, Japanese Artist",
@@ -761,7 +761,7 @@ class AppleInternalCatalogResolverTest {
             queueId = 1L
         )
 
-        assertTrue(AppleInternalCatalogResolver.shouldResolve(metadata))
+        assertTrue(shouldResolve(metadata))
     }
 
     @Test
@@ -775,7 +775,7 @@ class AppleInternalCatalogResolverTest {
             queueId = 1L,
         )
 
-        assertTrue(AppleInternalCatalogResolver.shouldResolve(metadata))
+        assertTrue(shouldResolve(metadata))
     }
 
     @Test
@@ -789,7 +789,7 @@ class AppleInternalCatalogResolverTest {
             queueId = 1L
         )
 
-        assertTrue(AppleInternalCatalogResolver.shouldResolve(metadata))
+        assertTrue(shouldResolve(metadata))
     }
 
     @Test
@@ -803,38 +803,38 @@ class AppleInternalCatalogResolverTest {
             queueId = 1L
         )
 
-        assertFalse(AppleInternalCatalogResolver.shouldResolve(metadata))
+        assertFalse(shouldResolve(metadata))
     }
 
     @Test
     fun `maps content UI language selections to storefronts`() {
         assertEquals(
             "cn",
-            AppleInternalCatalogResolver.storefrontForContentUiLanguage(
+            storefrontForContentUiLanguage(
                 com.juren233.hyperlyricsenhanced.common.RootConstants.APPLE_MUSIC_CONTENT_UI_LANGUAGE_ZH_HANS_CN
             )
         )
         assertEquals(
             "us",
-            AppleInternalCatalogResolver.storefrontForContentUiLanguage(
+            storefrontForContentUiLanguage(
                 com.juren233.hyperlyricsenhanced.common.RootConstants.APPLE_MUSIC_CONTENT_UI_LANGUAGE_ZH_HANS_US
             )
         )
         assertEquals(
             "kr",
-            AppleInternalCatalogResolver.storefrontForContentUiLanguage(
+            storefrontForContentUiLanguage(
                 com.juren233.hyperlyricsenhanced.common.RootConstants.APPLE_MUSIC_CONTENT_UI_LANGUAGE_KO_KR
             )
         )
         assertEquals(
             "jp",
-            AppleInternalCatalogResolver.storefrontForContentUiLanguage(
+            storefrontForContentUiLanguage(
                 com.juren233.hyperlyricsenhanced.common.RootConstants.APPLE_MUSIC_CONTENT_UI_LANGUAGE_JA_JP
             )
         )
         assertEquals(
             null,
-            AppleInternalCatalogResolver.storefrontForContentUiLanguage(
+            storefrontForContentUiLanguage(
                 com.juren233.hyperlyricsenhanced.common.RootConstants.APPLE_MUSIC_CONTENT_UI_LANGUAGE_NONE
             )
         )
@@ -846,49 +846,49 @@ class AppleInternalCatalogResolverTest {
 
         assertEquals(
             "zh-CN",
-            AppleInternalCatalogResolver.languageTagForContentUiLanguage(
+            languageTagForContentUiLanguage(
                 constants.APPLE_MUSIC_CONTENT_UI_LANGUAGE_ZH_HANS_CN
             )
         )
         assertEquals(
             "zh-Hans",
-            AppleInternalCatalogResolver.languageTagForContentUiLanguage(
+            languageTagForContentUiLanguage(
                 constants.APPLE_MUSIC_CONTENT_UI_LANGUAGE_ZH_HANS_US
             )
         )
         assertEquals(
             listOf("zh-Hans", "zh-CN"),
-            AppleInternalCatalogResolver.languageTagsForContentUiLanguage(
+            languageTagsForContentUiLanguage(
                 constants.APPLE_MUSIC_CONTENT_UI_LANGUAGE_ZH_HANS_US
             )
         )
         assertEquals(
             "zh-HK",
-            AppleInternalCatalogResolver.languageTagForContentUiLanguage(
+            languageTagForContentUiLanguage(
                 constants.APPLE_MUSIC_CONTENT_UI_LANGUAGE_ZH_HANT_HK
             )
         )
         assertEquals(
             "zh-TW",
-            AppleInternalCatalogResolver.languageTagForContentUiLanguage(
+            languageTagForContentUiLanguage(
                 constants.APPLE_MUSIC_CONTENT_UI_LANGUAGE_ZH_HANT_TW
             )
         )
         assertEquals(
             "ko-KR",
-            AppleInternalCatalogResolver.languageTagForContentUiLanguage(
+            languageTagForContentUiLanguage(
                 constants.APPLE_MUSIC_CONTENT_UI_LANGUAGE_KO_KR
             )
         )
         assertEquals(
             "ja-JP",
-            AppleInternalCatalogResolver.languageTagForContentUiLanguage(
+            languageTagForContentUiLanguage(
                 constants.APPLE_MUSIC_CONTENT_UI_LANGUAGE_JA_JP
             )
         )
         assertEquals(
             null,
-            AppleInternalCatalogResolver.languageTagForContentUiLanguage(
+            languageTagForContentUiLanguage(
                 constants.APPLE_MUSIC_CONTENT_UI_LANGUAGE_NONE
             )
         )
@@ -898,21 +898,21 @@ class AppleInternalCatalogResolverTest {
     fun `rewrites Apple storefront header id and preserves account suffix`() {
         assertEquals(
             "143462-1,29",
-            AppleInternalCatalogResolver.localizedStorefrontHeaderValue(
+            localizedStorefrontHeaderValue(
                 storefront = "jp",
                 currentValue = "143441-1,29",
             ),
         )
         assertEquals(
             "143465",
-            AppleInternalCatalogResolver.localizedStorefrontHeaderValue(
+            localizedStorefrontHeaderValue(
                 storefront = "cn",
                 currentValue = null,
             ),
         )
         assertEquals(
             null,
-            AppleInternalCatalogResolver.localizedStorefrontHeaderValue(
+            localizedStorefrontHeaderValue(
                 storefront = "unknown",
                 currentValue = "143441-1,29",
             ),
@@ -923,19 +923,19 @@ class AppleInternalCatalogResolverTest {
     fun `extracts storefront from Apple content paths`() {
         assertEquals(
             "in",
-            AppleInternalCatalogResolver.storefrontFromContentPath(
+            storefrontFromContentPath(
                 listOf("v1", "catalog", "in", "playlists", "playlist-id")
             )
         )
         assertEquals(
             "us",
-            AppleInternalCatalogResolver.storefrontFromContentPath(
+            storefrontFromContentPath(
                 listOf("v1", "editorial", "us", "groupings")
             )
         )
         assertEquals(
             null,
-            AppleInternalCatalogResolver.storefrontFromContentPath(
+            storefrontFromContentPath(
                 listOf("v1", "me", "recommendations")
             )
         )
@@ -944,17 +944,17 @@ class AppleInternalCatalogResolverTest {
     @Test
     fun `keeps radio playback requests on the account storefront`() {
         assertTrue(
-            AppleInternalCatalogResolver.isAccountScopedPlaybackPath(
+            isAccountScopedPlaybackPath(
                 listOf("v1", "catalog", "jp", "stations", "ra.123")
             )
         )
         assertTrue(
-            AppleInternalCatalogResolver.isAccountScopedPlaybackPath(
+            isAccountScopedPlaybackPath(
                 listOf("v1", "me", "radio", "recent")
             )
         )
         assertFalse(
-            AppleInternalCatalogResolver.isAccountScopedPlaybackPath(
+            isAccountScopedPlaybackPath(
                 listOf("v1", "catalog", "jp", "albums", "123")
             )
         )
@@ -964,7 +964,7 @@ class AppleInternalCatalogResolverTest {
     fun `prefers localized artist relationship over stale song artist snapshot`() {
         assertEquals(
             "梁静茹",
-            AppleInternalCatalogResolver.selectLocalizedArtistName(
+            selectLocalizedArtistName(
                 attributeArtist = "양정여",
                 relationshipArtists = listOf("梁静茹"),
                 language = "zh-CN",
@@ -972,7 +972,7 @@ class AppleInternalCatalogResolverTest {
         )
         assertEquals(
             "周杰伦、梁静茹",
-            AppleInternalCatalogResolver.selectLocalizedArtistName(
+            selectLocalizedArtistName(
                 attributeArtist = "Jay Chou & Fish Leong",
                 relationshipArtists = listOf("周杰伦", "梁静茹"),
                 language = "zh-CN",
@@ -984,17 +984,17 @@ class AppleInternalCatalogResolverTest {
     fun `normalizes account artist names for cross song cache reuse`() {
         assertEquals(
             "karen mok",
-            AppleInternalCatalogResolver.normalizedArtistNameKey("  Karen   MOK "),
+            normalizedArtistNameKey("  Karen   MOK "),
         )
         assertEquals(
             "周杰伦、梁静茹",
-            AppleInternalCatalogResolver.normalizedArtistNameKey("周杰伦、梁静茹"),
+            normalizedArtistNameKey("周杰伦、梁静茹"),
         )
     }
 
     @Test
     fun `keeps original album when the song alias is not confident`() {
-        val rejectedAlias = AppleInternalCatalogResolver.Alias(
+        val rejectedAlias = Alias(
             title = "Reply",
             artist = "KZ, Cosmic Princess Kaguya!, かぐや(cv.夏吉ゆうこ)",
             language = "ja-JP",
@@ -1012,7 +1012,7 @@ class AppleInternalCatalogResolverTest {
 
     @Test
     fun `confident alias album wins over other resolved albums`() {
-        val confident = AppleInternalCatalogResolver.Alias(
+        val confident = Alias(
             title = "カワキヲアメク",
             artist = "美波",
             language = "ja-JP",
@@ -1025,7 +1025,7 @@ class AppleInternalCatalogResolverTest {
                 alias = confident,
                 acceptableResults = listOf(
                     confident,
-                    AppleInternalCatalogResolver.Alias(
+                    Alias(
                         title = "Crying for Rain",
                         artist = "Minami",
                         language = "en-US",
@@ -1043,7 +1043,7 @@ class AppleInternalCatalogResolverTest {
             originalAlbumFromResolution(
                 alias = null,
                 acceptableResults = listOf(
-                    AppleInternalCatalogResolver.Alias(
+                    Alias(
                         title = "Reply",
                         artist = "KZ",
                         language = "ja-JP",

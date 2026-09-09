@@ -79,25 +79,29 @@ class AppleMusicIdentifierCentralizationTest {
 
     @Test
     fun `DexKit fallback cannot overwrite trusted cross version baselines`() {
-        val relativeSourcePath =
-            "src/main/java/io/github/proify/lyricon/amprovider/xposed/AppleMusicDexKitResolver.kt"
-        val sourceFile = listOf(File("app/$relativeSourcePath"), File(relativeSourcePath))
-            .first(File::isFile)
-        val source = sourceFile.readText()
+        // 模块拆分后：解析主流程仍在 Resolver，基线编解码与缓存常量在 Codec 文件。
+        fun readSource(fileName: String): String {
+            val relativeSourcePath =
+                "src/main/java/io/github/proify/lyricon/amprovider/xposed/$fileName"
+            return listOf("app/$relativeSourcePath", relativeSourcePath)
+                .map(::File)
+                .first(File::isFile)
+                .readText()
+        }
+        val source = readSource("AppleMusicDexKitResolver.kt")
+        val codecSource = readSource("AppleMusicDexKitBaselineCodec.kt")
         val classResolution = source.substring(
             source.indexOf("fun resolveClasses("),
             source.indexOf("fun resolveMethod("),
         )
-        val methodResolution = source.substring(
-            source.indexOf("fun resolveMethod("),
-            source.indexOf("private fun disambiguateMatches("),
-        )
+        val methodResolution = source.substring(source.indexOf("fun resolveMethod("))
 
         assertFalse(classResolution.contains("recordBaseline("))
         assertFalse(methodResolution.contains("recordMethodBaseline("))
-        assertTrue(source.contains("hle_apple_music_dex_methods_v2"))
-        assertTrue(source.contains("AppleMusicDexKitCachePolicy.methodCacheKey"))
-        assertTrue(source.contains("AppleMusicDexKitCachePolicy.classCacheKey"))
+        val combined = source + codecSource
+        assertTrue(combined.contains("hle_apple_music_dex_methods_v2"))
+        assertTrue(combined.contains("AppleMusicDexKitCachePolicy.methodCacheKey"))
+        assertTrue(combined.contains("AppleMusicDexKitCachePolicy.classCacheKey"))
     }
 
     @Test

@@ -141,7 +141,7 @@ internal class AppleMetadataSurfaceRuntime(
 
     fun isCurrentMediaId(mediaId: String): Boolean =
         requestContext(mediaId).priority !=
-            AppleInternalCatalogResolver.RequestPriority.BACKGROUND
+            RequestPriority.BACKGROUND
 
     fun hasVisibleConsumer(mediaId: String): Boolean =
         host.hasVisibleExactConsumer(mediaId) || host.hasGenericRecyclerConsumer(mediaId)

@@ -124,12 +124,12 @@ object ContributorsProvider {
     val maintainer = '''
         content += renderContributorEntry(maintainerSource)
         content += '''
-    val developmentContributors = listOf(
+    val developmentContributors = listOf<ContributorItem>(
 '''
         content += developmentSources.collect { "        " + renderContributorEntry(it) }.join(",\n")
         content += '''
     )
-    val originalHyperLyricContributors = listOf(
+    val originalHyperLyricContributors = listOf<ContributorItem>(
 '''
         content += originalSources.collect { "        " + renderContributorEntry(it) }.join(",\n")
         content += '''

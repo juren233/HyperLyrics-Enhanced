@@ -10,8 +10,74 @@ import android.media.AudioDeviceInfo
 import android.media.AudioFormat
 import org.junit.Assert.*
 import org.junit.Test
+import java.util.concurrent.FutureTask
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.locks.LockSupport
 
 class AppleAtmosPcmProcessorTest {
+    private fun assertWaitsForProcessorLock(processor: AppleAtmosVolumeProcessor, action: () -> Unit) {
+        val task = FutureTask<Unit> { action() }
+        val worker = Thread(task, "Atmos processor lock regression").apply { isDaemon = true }
+        try {
+            synchronized(processor) {
+                worker.start()
+                val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+                while (!task.isDone && worker.state != Thread.State.BLOCKED &&
+                    System.nanoTime() < deadline
+                ) {
+                    LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(1))
+                }
+                assertEquals(
+                    "PCM and release callbacks must wait for the playback processor monitor",
+                    Thread.State.BLOCKED,
+                    worker.state,
+                )
+            }
+        } finally {
+            // Join only after releasing the monitor; also propagate worker exceptions.
+            task.get(5, TimeUnit.SECONDS)
+            worker.join(1_000)
+        }
+    }
+
+    @Test
+    fun `PCM context capture shares the playback state lock`() {
+        val f = Fixture()
+        f.start()
+        assertWaitsForProcessorLock(f.processor) {
+            assertNotNull(f.processor.capturePcmContext(f.session, f.track))
+        }
+    }
+
+    @Test
+    fun `PCM discontinuity shares the playback state lock`() {
+        val f = Fixture()
+        f.start()
+        val before = f.window().context
+        assertWaitsForProcessorLock(f.processor) {
+            f.processor.onPcmDiscontinuity(f.session, f.track, flush = true)
+        }
+        assertNotEquals(before, f.window().context)
+    }
+
+    @Test
+    fun `PCM reference update shares the playback state lock`() {
+        val f = Fixture()
+        f.start(variant = 1)
+        val window = f.window(channels = 2)
+        assertWaitsForProcessorLock(f.processor) { f.processor.onPcmWindow(window) }
+        assertEquals(-27f, checkNotNull(f.processor.nonAtmosReferenceDbfs), 0.001f)
+    }
+
+    @Test
+    fun `player release shares the playback state lock`() {
+        val f = Fixture()
+        f.start()
+        assertWaitsForProcessorLock(f.processor) { f.processor.onPlayerReleased(f.player) }
+        assertTrue(f.effects.last().released)
+        assertNull(f.processor.capturePcmContext(f.session, f.track))
+    }
+
     private class Effect(initial: Float) : AppleSessionDynamicsEffect {
         var gain = initial
         var released = false

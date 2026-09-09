@@ -36,18 +36,18 @@ internal interface AppleMediaApiMetadataHost {
         analyzeMetadata: Boolean,
     )
 
-    fun effectiveAlias(mediaId: String): AppleInternalCatalogResolver.Alias?
+    fun effectiveAlias(mediaId: String): Alias?
 
     fun applyAliasToPlaybackItem(
         playbackItem: Any,
-        alias: AppleInternalCatalogResolver.Alias,
+        alias: Alias,
         notifyChange: Boolean,
     )
 
     fun shouldShareOriginalSongLanguage(
         localizedTitle: String?,
         localizedArtist: String?,
-        alias: AppleInternalCatalogResolver.Alias?,
+        alias: Alias?,
     ): Boolean
 
     fun rememberOriginalLanguageForArtist(mediaId: String, language: String)
@@ -58,7 +58,7 @@ internal interface AppleMediaApiMetadataHost {
 
     fun applyAliasToMetadataRefs(
         mediaId: String,
-        alias: AppleInternalCatalogResolver.Alias,
+        alias: Alias,
         forceRebind: Boolean,
         notifyModelChange: Boolean,
     )
@@ -67,7 +67,7 @@ internal interface AppleMediaApiMetadataHost {
 
     fun scheduleMetadataResolution(
         mediaIds: Collection<String>,
-        priority: AppleInternalCatalogResolver.RequestPriority,
+        priority: RequestPriority,
         originalResolutionMode: InAppOriginalResolutionMode,
     )
 
@@ -312,7 +312,7 @@ internal class AppleMediaApiMetadataCoordinator(
             metadataStore.sharedOriginalArtist(artistId),
             catalogResolver.cachedLocalizedMetadata(
                 selection = selection,
-                entityType = AppleInternalCatalogResolver.LocalizedEntityType.ARTIST,
+                entityType = LocalizedEntityType.ARTIST,
                 mediaId = artistId,
             ),
             catalogResolver.cachedLocalizedArtist(
@@ -404,7 +404,7 @@ internal class AppleMediaApiMetadataCoordinator(
             if (host.shouldRequestOverride(mediaId)) {
                 host.scheduleMetadataResolution(
                     mediaIds = listOf(mediaId),
-                    priority = AppleInternalCatalogResolver.RequestPriority.VISIBLE,
+                    priority = RequestPriority.VISIBLE,
                     originalResolutionMode = InAppOriginalResolutionMode.ORIGINAL_FIRST,
                 )
             }
@@ -429,7 +429,7 @@ internal class AppleMediaApiMetadataCoordinator(
         album: String?,
     ): Set<String> = buildSet {
         artist?.takeIf(String::isNotBlank)?.let { value ->
-            add("name:${AppleInternalCatalogResolver.normalizedArtistNameKey(value)}")
+            add("name:${normalizedArtistNameKey(value)}")
         }
         val albumName = when (kind) {
             InAppLibraryEntityKind.ALBUM -> name
@@ -437,11 +437,11 @@ internal class AppleMediaApiMetadataCoordinator(
             InAppLibraryEntityKind.ARTIST -> null
         }
         albumName?.takeIf(String::isNotBlank)?.let { value ->
-            add("album:${AppleInternalCatalogResolver.normalizedArtistNameKey(value)}")
+            add("album:${normalizedArtistNameKey(value)}")
         }
         if (kind == InAppLibraryEntityKind.ARTIST) {
             name?.takeIf(String::isNotBlank)?.let { value ->
-                add("name:${AppleInternalCatalogResolver.normalizedArtistNameKey(value)}")
+                add("name:${normalizedArtistNameKey(value)}")
             }
         }
     }
@@ -479,7 +479,7 @@ internal class AppleMediaApiMetadataCoordinator(
                 }
                 ?.takeIf(String::isNotBlank)
                 ?.let { artistName ->
-                    add("name:${AppleInternalCatalogResolver.normalizedArtistNameKey(artistName)}")
+                    add("name:${normalizedArtistNameKey(artistName)}")
                 }
         }
     }

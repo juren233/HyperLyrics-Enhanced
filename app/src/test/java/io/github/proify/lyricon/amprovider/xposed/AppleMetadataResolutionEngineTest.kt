@@ -131,7 +131,7 @@ class AppleMetadataResolutionEngineTest {
         title: String,
         artist: String,
         language: String,
-    ): AppleInternalCatalogResolver.Alias = AppleInternalCatalogResolver.Alias(
+    ): Alias = Alias(
         title = title,
         artist = artist,
         language = language,

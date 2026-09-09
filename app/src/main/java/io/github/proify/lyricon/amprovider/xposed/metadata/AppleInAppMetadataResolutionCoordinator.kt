@@ -11,51 +11,15 @@ import com.juren233.hyperlyricsenhanced.BuildConfig
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
-internal interface AppleInAppMetadataResolutionHost {
-    fun currentPlaybackMetadataId(): String?
-
-    fun configuredContentUiLanguage(): Int
-
-    fun shouldOverrideAccountLanguage(selection: Int): Boolean
-
-    fun isRestoreOriginalEnabled(): Boolean
-
-    fun refreshRequestScope()
-
-    fun enrichLibraryEntitiesForResolution(mediaIds: Collection<String>)
-
-    fun applyAliasToMetadataRefs(
-        mediaId: String,
-        alias: AppleInternalCatalogResolver.Alias,
-        forceRebind: Boolean,
-        notifyModelChange: Boolean,
-    )
-
-    fun applyPlaybackMetadataOverride(
-        mediaId: String,
-        alias: AppleInternalCatalogResolver.Alias,
-        forceInAppRebind: Boolean = true,
-        rememberLocalizedArtist: Boolean = true,
-        originalMetadata: Boolean = false,
-        originalMetadataConfirmed: Boolean = false,
-        artistOnly: Boolean = false,
-        propagateArtistEntity: Boolean = true,
-    )
-
-    fun logMetadataIdentity(event: String, details: String)
-
-    fun nextTraceSequence(): Long
-}
-
 /**
  * Owns deferred, configured-region, original-region, and associated-artist metadata resolution.
  * Page/model mutation is only published through the narrow host callbacks above.
  */
 internal class AppleInAppMetadataResolutionCoordinator(
     private val runtime: AppleMusicProviderRuntime,
-    private val metadataStore: AppleMetadataOverrideStore,
-    private val catalogResolver: AppleInternalCatalogResolver,
-    private val host: AppleInAppMetadataResolutionHost,
+    internal val metadataStore: AppleMetadataOverrideStore,
+    internal val catalogResolver: AppleInternalCatalogResolver,
+    internal val host: AppleInAppMetadataResolutionHost,
 ) {
     private val deferredMetadataResolutions =
         linkedMapOf<String, DeferredMetadataResolution>()
@@ -63,11 +27,11 @@ internal class AppleInAppMetadataResolutionCoordinator(
 
     fun schedule(
         mediaIds: Collection<String>,
-        priority: AppleInternalCatalogResolver.RequestPriority,
+        priority: RequestPriority,
         originalResolutionMode: InAppOriginalResolutionMode =
             InAppOriginalResolutionMode.AFTER_LOCALIZED,
     ) {
-        if (priority == AppleInternalCatalogResolver.RequestPriority.BACKGROUND) return
+        if (priority == RequestPriority.BACKGROUND) return
         host.enrichLibraryEntitiesForResolution(mediaIds)
         val unresolvedIds = normalizedRecyclerBindingMediaIds(mediaIds)
             .filter(::shouldRequestOverride)
@@ -161,459 +125,11 @@ internal class AppleInAppMetadataResolutionCoordinator(
         }
     }
 
-    private fun trackAssociatedMediaIds(
-        mediaId: String,
-        artistIds: Collection<String>,
-    ) {
-        AppleMetadataResolutionEngine.normalizedAssociatedArtistIds(artistIds).forEach { artistId ->
-            metadataStore.trackAssociatedMediaId("id:$artistId", mediaId)
-        }
-    }
-
-    fun associatedArtistCredit(mediaId: String): String? {
-        val account = metadataStore.accountMetadata(mediaId)
-        return associatedArtistCredit(
-            entityType = metadataStore.entityType(mediaId),
-            accountTitle = account?.title,
-            accountArtist = account?.artist,
-        )
-    }
-
-    fun enforceAssociatedArtistIsolation(
-        mediaId: String,
-        resetSafeResolution: Boolean = false,
-    ): Boolean {
-        val artistIds = metadataStore.associatedArtistIds(mediaId).orEmpty()
-        if (artistIds.isEmpty()) return false
-        val canUseAssociatedArtist = shouldUseAssociatedArtistEntities(
-            artistIds = artistIds,
-            artistCredit = associatedArtistCredit(mediaId),
-        )
-        if (canUseAssociatedArtist && resetSafeResolution) {
-            metadataStore.markOriginalArtistUnresolved(mediaId)
-        } else if (!canUseAssociatedArtist) {
-            metadataStore.markOriginalArtistResolved(mediaId)
-            metadataStore.removeOriginalArtist(mediaId)
-            metadataStore.removeConfiguredArtist(mediaId)
-        }
-        return canUseAssociatedArtist
-    }
-
-    fun sharedAssociatedArtistId(mediaId: String): String? =
-        sharedAssociatedArtistId(
-            artistIds = metadataStore.associatedArtistIds(mediaId).orEmpty(),
-            artistCredit = associatedArtistCredit(mediaId),
-        )
-
-    fun hydrateSharedArtistOverrides(mediaId: String) {
-        val artistId = sharedAssociatedArtistId(mediaId) ?: return
-        metadataStore.sharedConfiguredArtist(host.configuredContentUiLanguage(), artistId)?.let { alias ->
-            metadataStore.rememberConfiguredArtist(mediaId, alias)
-        }
-        metadataStore.sharedOriginalArtist(artistId)?.let { alias ->
-            metadataStore.markOriginalArtistResolved(mediaId)
-            metadataStore.rememberOriginalArtist(mediaId, alias)
-        }
-    }
-
-    fun effectiveAlias(
-        mediaId: String,
-    ): AppleInternalCatalogResolver.Alias? {
-        val selection = host.configuredContentUiLanguage()
-        val associatedArtistIds = metadataStore.associatedArtistIds(mediaId).orEmpty()
-        val sharedArtistId = sharedAssociatedArtistId(mediaId)
-        val canUseAssociatedArtist = sharedArtistId != null
-        val localizedMetadata = metadataStore.configuredMetadata(mediaId) ?: if (
-            host.shouldOverrideAccountLanguage(selection)
-        ) {
-            val entityType = metadataStore.entityType(mediaId)
-                ?: AppleInternalCatalogResolver.LocalizedEntityType.SONG
-            catalogResolver.cachedLocalizedMetadata(
-                selection = selection,
-                entityType = entityType,
-                mediaId = mediaId,
-            )?.let { alias ->
-                metadataStore.rememberConfiguredMetadataIfAbsent(mediaId, alias)
-            }
-        } else {
-            null
-        }
-        val localizedArtist = if (canUseAssociatedArtist) {
-            val artistKeys = buildSet {
-                addAll(metadataStore.artistKeys(mediaId).orEmpty())
-                associatedArtistIds.forEach { artistId -> add("id:$artistId") }
-            }
-            metadataStore.configuredArtist(mediaId)
-                ?: sharedArtistId.let { artistId ->
-                    metadataStore.sharedConfiguredArtist(selection, artistId)?.also { alias ->
-                        metadataStore.rememberConfiguredArtistIfAbsent(mediaId, alias)
-                    }
-                }
-                ?: catalogResolver.cachedLocalizedArtist(
-                    selection = selection,
-                    artistKeys = localizedArtistCacheKeys(artistKeys),
-                )?.also { alias ->
-                    metadataStore.rememberConfiguredArtistIfAbsent(mediaId, alias)
-                }
-        } else {
-            null
-        }
-        val originalMetadata = metadataStore.originalMetadata(mediaId)?.takeIf {
-            AppleMetadataResolutionEngine.shouldExposeOriginalMetadataOverride(
-                mediaId = mediaId,
-                currentPlaybackMediaId = host.currentPlaybackMetadataId(),
-                confirmed = metadataStore.isOriginalMetadataConfirmed(mediaId),
-            )
-        }
-        val originalArtist = if (canUseAssociatedArtist) {
-            metadataStore.originalArtist(mediaId)
-                ?: sharedArtistId.let { artistId ->
-                    metadataStore.sharedOriginalArtist(artistId)?.also { alias ->
-                        metadataStore.markOriginalArtistResolved(mediaId)
-                        metadataStore.rememberOriginalArtistIfAbsent(mediaId, alias)
-                    }
-                }
-        } else {
-            null
-        }
-        val originalArtistResolved = associatedArtistIds.isEmpty() ||
-            !canUseAssociatedArtist ||
-            metadataStore.isOriginalArtistResolved(mediaId)
-        return selectEffectiveMetadataAlias(
-            restoreOriginalEnabled = host.isRestoreOriginalEnabled(),
-            originalMetadataResolved = metadataStore.isOriginalResolved(mediaId),
-            originalMetadata = originalMetadata,
-            originalArtistResolved = originalArtistResolved,
-            originalArtist = originalArtist,
-            localizedMetadata = localizedMetadata,
-            localizedArtist = localizedArtist,
-        ) ?: selectIndependentArtistAlias(
-            restoreOriginalEnabled = host.isRestoreOriginalEnabled(),
-            canUseAssociatedArtist = canUseAssociatedArtist,
-            originalArtist = originalArtist,
-            localizedArtist = localizedArtist,
-        )
-    }
-
-    private fun ensureAssociatedArtistOverride(
-        mediaId: String,
-        preBind: Boolean = false,
-        priority: AppleInternalCatalogResolver.RequestPriority =
-            AppleInternalCatalogResolver.RequestPriority.ACTIVE_PAGE,
-    ) {
-        val artistIds = metadataStore.associatedArtistIds(mediaId).orEmpty()
-        if (artistIds.isEmpty()) return
-        if (!shouldUseAssociatedArtistEntities(
-                artistIds = artistIds,
-                artistCredit = associatedArtistCredit(mediaId),
-            )
-        ) {
-            metadataStore.markOriginalArtistResolved(mediaId)
-            metadataStore.removeOriginalArtist(mediaId)
-            metadataStore.removeConfiguredArtist(mediaId)
-            return
-        }
-        val artistKeys = artistIds.mapTo(linkedSetOf()) { artistId -> "id:$artistId" }
-        val selection = host.configuredContentUiLanguage()
-        val cachedLocalizedArtist = catalogResolver.cachedLocalizedArtist(
-            selection = selection,
-            artistKeys = artistKeys,
-        )
-        if (cachedLocalizedArtist != null) {
-            metadataStore.rememberConfiguredArtistIfAbsent(
-                mediaId,
-                cachedLocalizedArtist,
-            )
-            host.applyPlaybackMetadataOverride(
-                mediaId = mediaId,
-                alias = cachedLocalizedArtist,
-                forceInAppRebind = !preBind,
-                rememberLocalizedArtist = false,
-                artistOnly = true,
-            )
-        }
-        if (!host.isRestoreOriginalEnabled()) {
-            if (cachedLocalizedArtist == null) {
-                resolveLocalizedAssociatedArtist(mediaId, artistIds, preBind, priority = priority)
-            }
-            return
-        }
-
-        val originalLanguage = if (artistIds.size == 1) originalLanguageFor(mediaId) else null
-        if (originalLanguage != null) {
-            resolveOriginalAssociatedArtist(
-                mediaId = mediaId,
-                artistIds = artistIds,
-                language = originalLanguage,
-                preBind = preBind,
-                priority = priority,
-            )
-        } else {
-            resolveCachedOriginalAssociatedArtist(
-                mediaId = mediaId,
-                artistIds = artistIds,
-                preBind = preBind,
-                priority = priority,
-            )
-        }
-    }
-
-    private fun resolveCachedOriginalAssociatedArtist(
-        mediaId: String,
-        artistIds: List<String>,
-        preBind: Boolean,
-        priority: AppleInternalCatalogResolver.RequestPriority,
-    ) {
-        val requestKey = "original-artist-cache:$mediaId:" + artistIds.joinToString(",")
-        if (!metadataStore.beginAssociatedArtistRequest(requestKey)) return
-        var bindingPhase = true
-        collectAssociatedArtistAliases(
-            artistIds = artistIds,
-            request = { artistId, callback ->
-                catalogResolver.resolveCachedOriginalEntity(
-                    mediaId = artistId,
-                    entityType = AppleInternalCatalogResolver.LocalizedEntityType.ARTIST,
-                    lookupIds = metadataStore.lookupIds(artistId).orEmpty(),
-                    onResolved = callback,
-                )
-            },
-        ) { resolved ->
-            val callbackPreBind = preBind && bindingPhase
-            metadataStore.finishAssociatedArtistRequest(requestKey)
-            if (!shouldAcceptAssociatedArtistResolution(
-                    requestedArtistIds = artistIds,
-                    currentArtistIds =
-                        metadataStore.associatedArtistIds(mediaId).orEmpty(),
-                    artistCredit = associatedArtistCredit(mediaId),
-                )
-            ) {
-                enforceAssociatedArtistIsolation(mediaId)
-                publishResolvedAssociatedArtistFallback(mediaId, callbackPreBind)
-                return@collectAssociatedArtistAliases
-            }
-            val language = resolved.values.firstOrNull()?.language.orEmpty()
-            val alias = associatedArtistAlias(artistIds, resolved, language)
-            if (alias != null) {
-                metadataStore.markOriginalArtistResolved(mediaId)
-                alias.language.takeIf(String::isNotBlank)?.let { originalLanguage ->
-                    rememberOriginalLanguageForArtist(mediaId, originalLanguage)
-                }
-                host.applyPlaybackMetadataOverride(
-                    mediaId = mediaId,
-                    alias = alias,
-                    forceInAppRebind = !callbackPreBind,
-                    rememberLocalizedArtist = false,
-                    originalMetadata = true,
-                    artistOnly = true,
-                )
-            } else {
-                resolveLocalizedAssociatedArtist(
-                    mediaId = mediaId,
-                    artistIds = artistIds,
-                    preBind = callbackPreBind,
-                    priority = priority,
-                    completesOriginalArtistResolution = true,
-                )
-            }
-        }
-        bindingPhase = false
-    }
-
-    private fun resolveOriginalAssociatedArtist(
-        mediaId: String,
-        artistIds: List<String>,
-        language: String,
-        preBind: Boolean,
-        priority: AppleInternalCatalogResolver.RequestPriority,
-    ) {
-        val canonicalLanguage = AppleInternalCatalogResolver.canonicalOriginalLanguage(language)
-        val cached = metadataStore.originalArtist(mediaId)
-        if (cached != null &&
-            shouldAcceptAssociatedArtistResolution(
-                requestedArtistIds = artistIds,
-                currentArtistIds = metadataStore.associatedArtistIds(mediaId).orEmpty(),
-                artistCredit = associatedArtistCredit(mediaId),
-            ) &&
-            AppleInternalCatalogResolver.canonicalOriginalLanguage(cached.language) == canonicalLanguage
-        ) {
-            metadataStore.markOriginalArtistResolved(mediaId)
-            return
-        }
-        val requestKey = "original-artist:$canonicalLanguage:$mediaId:" +
-            artistIds.joinToString(",")
-        if (!metadataStore.beginAssociatedArtistRequest(requestKey)) return
-        var bindingPhase = true
-        collectAssociatedArtistAliases(
-            artistIds = artistIds,
-            request = { artistId, callback ->
-                catalogResolver.resolveOriginalEntityForLanguage(
-                    mediaId = artistId,
-                    lookupIds = listOf(artistId),
-                    entityType = AppleInternalCatalogResolver.LocalizedEntityType.ARTIST,
-                    language = canonicalLanguage,
-                    priority = priority,
-                    onResolved = callback,
-                )
-            },
-        ) { resolved ->
-            val callbackPreBind = preBind && bindingPhase
-            metadataStore.finishAssociatedArtistRequest(requestKey)
-            if (!shouldAcceptAssociatedArtistResolution(
-                    requestedArtistIds = artistIds,
-                    currentArtistIds =
-                        metadataStore.associatedArtistIds(mediaId).orEmpty(),
-                    artistCredit = associatedArtistCredit(mediaId),
-                )
-            ) {
-                enforceAssociatedArtistIsolation(mediaId)
-                publishResolvedAssociatedArtistFallback(mediaId, callbackPreBind)
-                return@collectAssociatedArtistAliases
-            }
-            val alias = associatedArtistAlias(artistIds, resolved, canonicalLanguage)
-            if (alias != null) {
-                metadataStore.markOriginalArtistResolved(mediaId)
-                host.applyPlaybackMetadataOverride(
-                    mediaId = mediaId,
-                    alias = alias,
-                    forceInAppRebind = !callbackPreBind,
-                    rememberLocalizedArtist = false,
-                    originalMetadata = true,
-                    artistOnly = true,
-                )
-            } else {
-                resolveLocalizedAssociatedArtist(
-                    mediaId = mediaId,
-                    artistIds = artistIds,
-                    preBind = callbackPreBind,
-                    priority = priority,
-                    completesOriginalArtistResolution = true,
-                )
-            }
-        }
-        bindingPhase = false
-    }
-
-    private fun resolveLocalizedAssociatedArtist(
-        mediaId: String,
-        artistIds: List<String>,
-        preBind: Boolean,
-        priority: AppleInternalCatalogResolver.RequestPriority,
-        completesOriginalArtistResolution: Boolean = false,
-    ) {
-        val selection = host.configuredContentUiLanguage()
-        val requestKey = "localized-artist:$selection:$mediaId:" +
-            artistIds.joinToString(",")
-        if (!metadataStore.beginAssociatedArtistRequest(requestKey)) return
-        var bindingPhase = true
-        collectAssociatedArtistAliases(
-            artistIds = artistIds,
-            request = { artistId, callback ->
-                catalogResolver.resolveForContentUiLanguage(
-                    mediaId = artistId,
-                    lookupIds = listOf(artistId),
-                    entityType = AppleInternalCatalogResolver.LocalizedEntityType.ARTIST,
-                    selection = selection,
-                    priority = priority,
-                    onResolved = callback,
-                )
-            },
-        ) { resolved ->
-            val callbackPreBind = preBind && bindingPhase
-            metadataStore.finishAssociatedArtistRequest(requestKey)
-            if (host.configuredContentUiLanguage() != selection) return@collectAssociatedArtistAliases
-            if (!shouldAcceptAssociatedArtistResolution(
-                    requestedArtistIds = artistIds,
-                    currentArtistIds =
-                        metadataStore.associatedArtistIds(mediaId).orEmpty(),
-                    artistCredit = associatedArtistCredit(mediaId),
-                )
-            ) {
-                enforceAssociatedArtistIsolation(mediaId)
-                if (completesOriginalArtistResolution) {
-                    publishResolvedAssociatedArtistFallback(mediaId, callbackPreBind)
-                }
-                return@collectAssociatedArtistAliases
-            }
-            val language = AppleInternalCatalogResolver
-                .languageTagForContentUiLanguage(selection)
-                .orEmpty()
-            val alias = associatedArtistAlias(artistIds, resolved, language)
-            if (completesOriginalArtistResolution) {
-                metadataStore.markOriginalArtistResolved(mediaId)
-            }
-            if (alias == null) {
-                if (completesOriginalArtistResolution) {
-                    publishResolvedAssociatedArtistFallback(mediaId, callbackPreBind)
-                }
-                return@collectAssociatedArtistAliases
-            }
-            catalogResolver.rememberLocalizedArtist(
-                selection = selection,
-                artistKeys = artistIds.map { artistId -> "id:$artistId" },
-                localizedArtist = alias.artist,
-                language = language,
-            )
-            host.applyPlaybackMetadataOverride(
-                mediaId = mediaId,
-                alias = alias,
-                forceInAppRebind = !callbackPreBind,
-                rememberLocalizedArtist = false,
-                artistOnly = true,
-            )
-        }
-        bindingPhase = false
-    }
-
-    private fun publishResolvedAssociatedArtistFallback(
-        mediaId: String,
-        preBind: Boolean,
-    ) {
-        val original = metadataStore.originalMetadata(mediaId)
-        if (original != null) {
-            host.applyPlaybackMetadataOverride(
-                mediaId = mediaId,
-                alias = original,
-                forceInAppRebind = !preBind,
-                rememberLocalizedArtist = false,
-                originalMetadata = true,
-                originalMetadataConfirmed = metadataStore.isOriginalMetadataConfirmed(mediaId),
-            )
-            return
-        }
-        metadataStore.configuredMetadata(mediaId)?.let { localized ->
-            host.applyPlaybackMetadataOverride(
-                mediaId = mediaId,
-                alias = localized,
-                forceInAppRebind = !preBind,
-                rememberLocalizedArtist = false,
-            )
-        }
-    }
-
-    private fun collectAssociatedArtistAliases(
-        artistIds: List<String>,
-        request: (String, (AppleInternalCatalogResolver.Alias?) -> Unit) -> Unit,
-        onComplete: (Map<String, AppleInternalCatalogResolver.Alias>) -> Unit,
-    ) {
-        if (artistIds.isEmpty()) {
-            onComplete(emptyMap())
-            return
-        }
-        val resolved = ConcurrentHashMap<String, AppleInternalCatalogResolver.Alias>()
-        val remaining = AtomicInteger(artistIds.size)
-        artistIds.forEach { artistId ->
-            request(artistId) { alias ->
-                if (alias != null) resolved[artistId] = alias
-                if (remaining.decrementAndGet() == 0) onComplete(resolved)
-            }
-        }
-    }
-
     fun ensureOverride(
         mediaId: String,
         preBind: Boolean = false,
-        priority: AppleInternalCatalogResolver.RequestPriority =
-            AppleInternalCatalogResolver.RequestPriority.ACTIVE_PAGE,
+        priority: RequestPriority =
+            RequestPriority.ACTIVE_PAGE,
         originalResolutionMode: InAppOriginalResolutionMode =
             InAppOriginalResolutionMode.AFTER_LOCALIZED,
     ) {
@@ -629,8 +145,8 @@ internal class AppleInAppMetadataResolutionCoordinator(
         mediaIds: Collection<String>,
         preBind: Boolean = false,
         originalResolutionLimit: Int = Int.MAX_VALUE,
-        priority: AppleInternalCatalogResolver.RequestPriority =
-            AppleInternalCatalogResolver.RequestPriority.BACKGROUND,
+        priority: RequestPriority =
+            RequestPriority.BACKGROUND,
         originalResolutionMode: InAppOriginalResolutionMode =
             InAppOriginalResolutionMode.AFTER_LOCALIZED,
     ) {
@@ -716,8 +232,8 @@ internal class AppleInAppMetadataResolutionCoordinator(
     private fun ensureOriginalInAppMetadataOverrides(
         mediaIds: Collection<String>,
         preBind: Boolean,
-        priority: AppleInternalCatalogResolver.RequestPriority =
-            AppleInternalCatalogResolver.RequestPriority.BACKGROUND,
+        priority: RequestPriority =
+            RequestPriority.BACKGROUND,
     ) {
         mediaIds.forEach { mediaId ->
             if ((metadataStore.isOriginalResolved(mediaId) &&
@@ -730,8 +246,8 @@ internal class AppleInAppMetadataResolutionCoordinator(
                 return@forEach
             }
             val entityType = metadataStore.entityType(mediaId)
-                ?: AppleInternalCatalogResolver.LocalizedEntityType.SONG
-            if (entityType == AppleInternalCatalogResolver.LocalizedEntityType.SONG) {
+                ?: LocalizedEntityType.SONG
+            if (entityType == LocalizedEntityType.SONG) {
                 resolveOriginalSongForInApp(mediaId, account, preBind, priority)
             } else {
                 val language = originalLanguageFor(mediaId)
@@ -758,9 +274,9 @@ internal class AppleInAppMetadataResolutionCoordinator(
 
     fun resolveCachedOriginalEntity(
         mediaId: String,
-        entityType: AppleInternalCatalogResolver.LocalizedEntityType,
+        entityType: LocalizedEntityType,
         preBind: Boolean,
-        priority: AppleInternalCatalogResolver.RequestPriority,
+        priority: RequestPriority,
     ) {
         val requestKey = "original-cache:$entityType:$mediaId"
         if (!metadataStore.beginOriginalRequest(requestKey)) return
@@ -823,7 +339,7 @@ internal class AppleInAppMetadataResolutionCoordinator(
         mediaId: String,
         account: AccountMetadata,
         preBind: Boolean,
-        priority: AppleInternalCatalogResolver.RequestPriority,
+        priority: RequestPriority,
     ) {
         val requestKey = "original:SONG:$mediaId"
         if (!metadataStore.beginOriginalRequest(requestKey)) return
@@ -869,7 +385,7 @@ internal class AppleInAppMetadataResolutionCoordinator(
                 )?.let { language ->
                     rememberOriginalLanguageForArtist(mediaId, language)
                 }
-                fun finishResolution(alias: AppleInternalCatalogResolver.Alias?) {
+                fun finishResolution(alias: Alias?) {
                     metadataStore.finishOriginalRequest(requestKey)
                     if (!host.isRestoreOriginalEnabled()) return
                     metadataStore.markOriginalResolved(mediaId)
@@ -883,7 +399,7 @@ internal class AppleInAppMetadataResolutionCoordinator(
                         catalogResolver.invalidateOriginalEntity(
                             mediaId = mediaId,
                             entityType =
-                            AppleInternalCatalogResolver.LocalizedEntityType.SONG,
+                            LocalizedEntityType.SONG,
                         )
                         ProviderLogger.info(
                             "Apple App 原地区合作歌曲别名拒绝: id=$mediaId, " +
@@ -937,7 +453,7 @@ internal class AppleInAppMetadataResolutionCoordinator(
                         mediaId = mediaId,
                         lookupIds = metadataStore.lookupIds(mediaId).orEmpty()
                             .ifEmpty { setOf(mediaId) },
-                        entityType = AppleInternalCatalogResolver.LocalizedEntityType.SONG,
+                        entityType = LocalizedEntityType.SONG,
                         language = retryLanguage,
                         priority = priority,
                         onResolved = ::finishResolution,
@@ -950,10 +466,10 @@ internal class AppleInAppMetadataResolutionCoordinator(
 
     private fun resolveOriginalEntityForInApp(
         mediaId: String,
-        entityType: AppleInternalCatalogResolver.LocalizedEntityType,
+        entityType: LocalizedEntityType,
         language: String,
         preBind: Boolean,
-        priority: AppleInternalCatalogResolver.RequestPriority,
+        priority: RequestPriority,
     ) {
         val requestKey = "original:$entityType:$language:$mediaId"
         if (!metadataStore.beginOriginalRequest(requestKey)) return
@@ -993,8 +509,7 @@ internal class AppleInAppMetadataResolutionCoordinator(
         val artistKeys = originalArtistKeysForMedia(mediaId)
         val regionKeys = persistentOriginalArtistKeys(artistKeys)
         if (regionKeys.isEmpty()) return
-        val canonicalLanguage = AppleInternalCatalogResolver
-            .supportedOriginalLanguageOrNull(language)
+        val canonicalLanguage = supportedOriginalLanguageOrNull(language)
         if (canonicalLanguage == null) {
             ProviderLogger.info(
                 "Apple 艺人原地区语言忽略: id=$mediaId, language=$language, " +
@@ -1038,23 +553,23 @@ internal class AppleInAppMetadataResolutionCoordinator(
     fun shouldShareOriginalSongLanguage(
         localizedTitle: String?,
         localizedArtist: String?,
-        alias: AppleInternalCatalogResolver.Alias?,
+        alias: Alias?,
     ): Boolean {
         alias ?: return false
         val artist = localizedArtist.orEmpty()
-        if (AppleInternalCatalogResolver.isCollaborationArtistName(artist)) return false
-        return AppleInternalCatalogResolver.isConfidentOriginalSongAlias(
+        if (isCollaborationArtistName(artist)) return false
+        return isConfidentOriginalSongAlias(
             alias = alias,
             localizedTitle = localizedTitle.orEmpty(),
             localizedArtist = artist,
         )
     }
 
-    private fun originalLanguageFor(mediaId: String): String? {
+    internal fun originalLanguageFor(mediaId: String): String? {
         val artistKeys = persistentOriginalArtistKeys(originalArtistKeysForMedia(mediaId))
         artistKeys.forEach { key ->
             val cached = metadataStore.originalLanguage(key) ?: return@forEach
-            val supported = AppleInternalCatalogResolver.supportedOriginalLanguageOrNull(cached)
+            val supported = supportedOriginalLanguageOrNull(cached)
             if (supported != null) return supported
             metadataStore.removeOriginalLanguage(key, cached)
         }
@@ -1078,8 +593,8 @@ internal class AppleInAppMetadataResolutionCoordinator(
     private fun ensureLocalizedInAppMetadataOverrides(
         mediaIds: Collection<String>,
         preBind: Boolean = false,
-        priority: AppleInternalCatalogResolver.RequestPriority =
-            AppleInternalCatalogResolver.RequestPriority.BACKGROUND,
+        priority: RequestPriority =
+            RequestPriority.BACKGROUND,
     ): Set<String> {
         val selection = host.configuredContentUiLanguage()
         if (!host.shouldOverrideAccountLanguage(selection)) {
@@ -1097,7 +612,7 @@ internal class AppleInAppMetadataResolutionCoordinator(
                     .ifEmpty { setOf(mediaId) }
                     .sorted()
                 val entityType = metadataStore.entityType(mediaId)
-                    ?: AppleInternalCatalogResolver.LocalizedEntityType.SONG
+                    ?: LocalizedEntityType.SONG
                 val requestKey =
                     "$selection:$entityType:$mediaId:${lookupIds.joinToString(",")}".trim()
                 if (metadataStore.isConfiguredMiss(requestKey)) return@mapNotNull null
@@ -1107,7 +622,7 @@ internal class AppleInAppMetadataResolutionCoordinator(
                 }
                 PendingMetadataLookup(
                     requestKey = requestKey,
-                    lookup = AppleInternalCatalogResolver.LocalizedLookup(
+                    lookup = LocalizedLookup(
                         mediaId = mediaId,
                         lookupIds = lookupIds,
                         entityType = entityType,

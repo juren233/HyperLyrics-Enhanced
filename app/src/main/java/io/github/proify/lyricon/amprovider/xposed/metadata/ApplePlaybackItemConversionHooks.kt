@@ -35,12 +35,12 @@ internal interface ApplePlaybackItemConversionHost {
         kind: InAppContainerKind,
     )
 
-    fun effectiveAlias(mediaId: String): AppleInternalCatalogResolver.Alias?
+    fun effectiveAlias(mediaId: String): Alias?
 
     fun applyAliasToContainerItem(
         containerItem: Any,
         kind: InAppContainerKind,
-        alias: AppleInternalCatalogResolver.Alias,
+        alias: Alias,
     )
 
     fun contentItemMediaId(contentItem: Any): String?
@@ -49,14 +49,14 @@ internal interface ApplePlaybackItemConversionHost {
 
     fun applyAliasToPlaybackItem(
         playbackItem: Any,
-        alias: AppleInternalCatalogResolver.Alias,
+        alias: Alias,
     )
 
     fun shouldRequestOverride(mediaId: String): Boolean
 
     fun ensureOverride(
         mediaId: String,
-        priority: AppleInternalCatalogResolver.RequestPriority,
+        priority: RequestPriority,
     )
 }
 
@@ -102,7 +102,7 @@ internal class ApplePlaybackItemConversionHooks(
                 if (host.shouldRequestOverride(mediaId)) {
                     host.ensureOverride(
                         mediaId = mediaId,
-                        priority = AppleInternalCatalogResolver.RequestPriority.VISIBLE,
+                        priority = RequestPriority.VISIBLE,
                     )
                 }
                 original
@@ -130,7 +130,7 @@ internal class ApplePlaybackItemConversionHooks(
                 if (host.shouldRequestOverride(mediaId)) {
                     host.ensureOverride(
                         mediaId = mediaId,
-                        priority = AppleInternalCatalogResolver.RequestPriority.VISIBLE,
+                        priority = RequestPriority.VISIBLE,
                     )
                 }
                 original

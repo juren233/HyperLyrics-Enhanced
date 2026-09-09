@@ -41,11 +41,11 @@ internal class AppleInAppMetadataRegistrationCoordinator(
         metadata: Any,
         requestResolution: Boolean = true,
         preBind: Boolean = false,
-        priority: AppleInternalCatalogResolver.RequestPriority =
-            AppleInternalCatalogResolver.RequestPriority.ACTIVE_PAGE,
+        priority: RequestPriority =
+            RequestPriority.ACTIVE_PAGE,
     ) {
         dataBindingHooks.recordCurrentRecyclerMediaId(mediaId)
-        if (priority == AppleInternalCatalogResolver.RequestPriority.VISIBLE) {
+        if (priority == RequestPriority.VISIBLE) {
             surfaceRuntime.markVisible(listOf(mediaId))
         }
         registerMetadataRef(mediaId, metadata)
@@ -96,7 +96,7 @@ internal class AppleInAppMetadataRegistrationCoordinator(
         val artistKeys = contentItemArtistCacheKeys(
             playbackItem,
             rawArtist ?: rawTitle.takeIf {
-                entityType == AppleInternalCatalogResolver.LocalizedEntityType.ARTIST
+                entityType == LocalizedEntityType.ARTIST
             },
         )
         if (artistKeys.isNotEmpty()) {
@@ -255,7 +255,7 @@ internal class AppleInAppMetadataRegistrationCoordinator(
 
     fun contentItemArtistCacheKeys(contentItem: Any, rawArtist: String?): Set<String> = buildSet {
         rawArtist?.takeIf(String::isNotBlank)?.let { artist ->
-            add("name:${AppleInternalCatalogResolver.normalizedArtistNameKey(artist)}")
+            add("name:${normalizedArtistNameKey(artist)}")
         }
         listOf(
             AppleMusicRuntimeMember.CONTENT_ITEM_ARTIST_ID_GETTER,
@@ -277,7 +277,7 @@ internal class AppleInAppMetadataRegistrationCoordinator(
 
     fun contentItemLocalizedEntityType(
         contentItem: Any,
-    ): AppleInternalCatalogResolver.LocalizedEntityType? = localizedEntityTypeForQueueItem(
+    ): LocalizedEntityType? = localizedEntityTypeForQueueItem(
         historyEntry = playbackItemContract(contentItem) == InAppPlaybackItemContract.HISTORY,
         classNames = generateSequence(contentItem.javaClass as Class<*>?) { it.superclass }
             .map { it.simpleName }

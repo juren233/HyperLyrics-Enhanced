@@ -27,7 +27,7 @@ internal class AppleLocalizedMetadataCache(
 
     fun warmRecentBlocking(
         prefix: String,
-    ): Map<String, AppleInternalCatalogResolver.Alias>? {
+    ): Map<String, Alias>? {
         if (!enabled) return null
         return runCatching { readRecent(prefix) }
             .onFailure { ProviderLogger.error("Apple 地区元数据缓存预热失败", it) }
@@ -36,7 +36,7 @@ internal class AppleLocalizedMetadataCache(
 
     fun warmRecentAsync(
         prefix: String,
-        onResult: (Map<String, AppleInternalCatalogResolver.Alias>?) -> Unit,
+        onResult: (Map<String, Alias>?) -> Unit,
     ) {
         if (!enabled) {
             onResult(null)
@@ -50,7 +50,7 @@ internal class AppleLocalizedMetadataCache(
 
     fun getMany(
         keys: Collection<String>,
-        onResult: (Map<String, AppleInternalCatalogResolver.Alias>) -> Unit,
+        onResult: (Map<String, Alias>) -> Unit,
     ) {
         val normalizedKeys = keys.asSequence()
             .map(String::trim)
@@ -73,11 +73,11 @@ internal class AppleLocalizedMetadataCache(
         }
     }
 
-    fun put(key: String, alias: AppleInternalCatalogResolver.Alias) {
+    fun put(key: String, alias: Alias) {
         putMany(mapOf(key to alias))
     }
 
-    fun putMany(aliases: Map<String, AppleInternalCatalogResolver.Alias>) {
+    fun putMany(aliases: Map<String, Alias>) {
         if (!enabled || aliases.isEmpty()) return
         val normalized = aliases.filterKeys(String::isNotBlank)
         executor.execute {
@@ -87,8 +87,8 @@ internal class AppleLocalizedMetadataCache(
         }
     }
 
-    private fun readRecent(prefix: String): Map<String, AppleInternalCatalogResolver.Alias> {
-        val aliases = linkedMapOf<String, AppleInternalCatalogResolver.Alias>()
+    private fun readRecent(prefix: String): Map<String, Alias> {
+        val aliases = linkedMapOf<String, Alias>()
         val db = helper.readableDatabase
         CacheBucket.entries.forEach { bucket ->
             db.query(
@@ -117,7 +117,7 @@ internal class AppleLocalizedMetadataCache(
 
     private fun readAll(
         keys: List<String>,
-    ): Map<String, AppleInternalCatalogResolver.Alias> = buildMap {
+    ): Map<String, Alias> = buildMap {
         keys.chunked(MAX_BATCH_SIZE).forEach { batch ->
             val placeholders = batch.joinToString(",") { "?" }
             helper.readableDatabase.query(
@@ -134,7 +134,7 @@ internal class AppleLocalizedMetadataCache(
         }
     }
 
-    private fun writeAll(aliases: Map<String, AppleInternalCatalogResolver.Alias>) {
+    private fun writeAll(aliases: Map<String, Alias>) {
         val db = helper.writableDatabase
         db.beginTransaction()
         try {
@@ -160,9 +160,9 @@ internal class AppleLocalizedMetadataCache(
         }
     }
 
-    private fun MutableMap<String, AppleInternalCatalogResolver.Alias>.putFromCursor(cursor: Cursor) {
+    private fun MutableMap<String, Alias>.putFromCursor(cursor: Cursor) {
         val key = cursor.stringColumn(COLUMN_KEY)
-        this[key] = AppleInternalCatalogResolver.Alias(
+        this[key] = Alias(
             title = cursor.stringColumn(COLUMN_TITLE),
             artist = cursor.stringColumn(COLUMN_ARTIST),
             album = cursor.stringColumn(COLUMN_ALBUM),

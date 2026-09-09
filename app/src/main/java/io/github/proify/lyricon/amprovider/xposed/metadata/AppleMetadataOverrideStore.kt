@@ -11,24 +11,24 @@ import java.util.concurrent.ConcurrentHashMap
 /** Owns Apple Music metadata overrides, identity facts, and request lifecycle state. */
 internal class AppleMetadataOverrideStore {
     private val configuredMetadataOverrides =
-        ConcurrentHashMap<String, AppleInternalCatalogResolver.Alias>()
+        ConcurrentHashMap<String, Alias>()
     private val originalMetadataOverrides =
-        ConcurrentHashMap<String, AppleInternalCatalogResolver.Alias>()
+        ConcurrentHashMap<String, Alias>()
     private val confirmedOriginalMetadataIds = ConcurrentHashMap.newKeySet<String>()
     private val configuredArtistOverrides =
-        ConcurrentHashMap<String, AppleInternalCatalogResolver.Alias>()
+        ConcurrentHashMap<String, Alias>()
     private val originalArtistOverrides =
-        ConcurrentHashMap<String, AppleInternalCatalogResolver.Alias>()
+        ConcurrentHashMap<String, Alias>()
     private val sharedConfiguredArtistOverrides =
-        ConcurrentHashMap<String, AppleInternalCatalogResolver.Alias>()
+        ConcurrentHashMap<String, Alias>()
     private val sharedOriginalArtistOverrides =
-        ConcurrentHashMap<String, AppleInternalCatalogResolver.Alias>()
+        ConcurrentHashMap<String, Alias>()
     private val originalArtistResolvedIds = ConcurrentHashMap.newKeySet<String>()
 
     private val accountMetadataValues = ConcurrentHashMap<String, AccountMetadata>()
     private val metadataLookupIds = ConcurrentHashMap<String, Set<String>>()
     private val metadataEntityTypes =
-        ConcurrentHashMap<String, AppleInternalCatalogResolver.LocalizedEntityType>()
+        ConcurrentHashMap<String, LocalizedEntityType>()
     private val metadataArtistKeys = ConcurrentHashMap<String, Set<String>>()
     private val metadataAssociatedArtistIds = ConcurrentHashMap<String, List<String>>()
     private val associatedMediaIdsByArtistKey =
@@ -45,7 +45,7 @@ internal class AppleMetadataOverrideStore {
     private val originalLanguageByArtistKey = ConcurrentHashMap<String, String>()
 
     @Volatile
-    private var currentPlaybackOverride: AppleInternalCatalogResolver.Alias? = null
+    private var currentPlaybackOverride: Alias? = null
 
     fun onConfigurationChanged() {
         configuredMetadataOverrides.clear()
@@ -67,7 +67,7 @@ internal class AppleMetadataOverrideStore {
         currentPlaybackOverride = null
     }
 
-    fun configuredMetadata(mediaId: String): AppleInternalCatalogResolver.Alias? =
+    fun configuredMetadata(mediaId: String): Alias? =
         configuredMetadataOverrides[mediaId]
 
     fun hasConfiguredMetadata(mediaId: String): Boolean =
@@ -75,18 +75,18 @@ internal class AppleMetadataOverrideStore {
 
     fun rememberConfiguredMetadata(
         mediaId: String,
-        alias: AppleInternalCatalogResolver.Alias,
+        alias: Alias,
     ) {
         configuredMetadataOverrides[mediaId] = alias
     }
 
     fun rememberConfiguredMetadataIfAbsent(
         mediaId: String,
-        alias: AppleInternalCatalogResolver.Alias,
-    ): AppleInternalCatalogResolver.Alias =
+        alias: Alias,
+    ): Alias =
         configuredMetadataOverrides.putIfAbsent(mediaId, alias) ?: alias
 
-    fun originalMetadata(mediaId: String): AppleInternalCatalogResolver.Alias? =
+    fun originalMetadata(mediaId: String): Alias? =
         originalMetadataOverrides[mediaId]
 
     fun hasOriginalMetadata(mediaId: String): Boolean =
@@ -94,7 +94,7 @@ internal class AppleMetadataOverrideStore {
 
     fun rememberOriginalMetadata(
         mediaId: String,
-        alias: AppleInternalCatalogResolver.Alias,
+        alias: Alias,
         confirmed: Boolean,
     ) {
         clearOriginalCacheMiss(mediaId)
@@ -110,40 +110,40 @@ internal class AppleMetadataOverrideStore {
     fun isOriginalMetadataConfirmed(mediaId: String): Boolean =
         mediaId in confirmedOriginalMetadataIds
 
-    fun configuredArtist(mediaId: String): AppleInternalCatalogResolver.Alias? =
+    fun configuredArtist(mediaId: String): Alias? =
         configuredArtistOverrides[mediaId]
 
     fun rememberConfiguredArtist(
         mediaId: String,
-        alias: AppleInternalCatalogResolver.Alias,
+        alias: Alias,
     ) {
         configuredArtistOverrides[mediaId] = alias
     }
 
     fun rememberConfiguredArtistIfAbsent(
         mediaId: String,
-        alias: AppleInternalCatalogResolver.Alias,
-    ): AppleInternalCatalogResolver.Alias =
+        alias: Alias,
+    ): Alias =
         configuredArtistOverrides.putIfAbsent(mediaId, alias) ?: alias
 
     fun removeConfiguredArtist(mediaId: String) {
         configuredArtistOverrides.remove(mediaId)
     }
 
-    fun originalArtist(mediaId: String): AppleInternalCatalogResolver.Alias? =
+    fun originalArtist(mediaId: String): Alias? =
         originalArtistOverrides[mediaId]
 
     fun rememberOriginalArtist(
         mediaId: String,
-        alias: AppleInternalCatalogResolver.Alias,
+        alias: Alias,
     ) {
         originalArtistOverrides[mediaId] = alias
     }
 
     fun rememberOriginalArtistIfAbsent(
         mediaId: String,
-        alias: AppleInternalCatalogResolver.Alias,
-    ): AppleInternalCatalogResolver.Alias =
+        alias: Alias,
+    ): Alias =
         originalArtistOverrides.putIfAbsent(mediaId, alias) ?: alias
 
     fun removeOriginalArtist(mediaId: String) {
@@ -153,23 +153,23 @@ internal class AppleMetadataOverrideStore {
     fun sharedConfiguredArtist(
         selection: Int,
         artistId: String,
-    ): AppleInternalCatalogResolver.Alias? =
+    ): Alias? =
         sharedConfiguredArtistOverrides[configuredArtistKey(selection, artistId)]
 
     fun rememberSharedConfiguredArtist(
         selection: Int,
         artistId: String,
-        alias: AppleInternalCatalogResolver.Alias,
-    ): AppleInternalCatalogResolver.Alias? =
+        alias: Alias,
+    ): Alias? =
         sharedConfiguredArtistOverrides.put(configuredArtistKey(selection, artistId), alias)
 
-    fun sharedOriginalArtist(artistId: String): AppleInternalCatalogResolver.Alias? =
+    fun sharedOriginalArtist(artistId: String): Alias? =
         sharedOriginalArtistOverrides[artistId]
 
     fun rememberSharedOriginalArtist(
         artistId: String,
-        alias: AppleInternalCatalogResolver.Alias,
-    ): AppleInternalCatalogResolver.Alias? = sharedOriginalArtistOverrides.put(artistId, alias)
+        alias: Alias,
+    ): Alias? = sharedOriginalArtistOverrides.put(artistId, alias)
 
     fun isOriginalArtistResolved(mediaId: String): Boolean =
         mediaId in originalArtistResolvedIds
@@ -202,12 +202,12 @@ internal class AppleMetadataOverrideStore {
         }
     }
 
-    fun entityType(mediaId: String): AppleInternalCatalogResolver.LocalizedEntityType? =
+    fun entityType(mediaId: String): LocalizedEntityType? =
         metadataEntityTypes[mediaId]
 
     fun rememberEntityType(
         mediaId: String,
-        entityType: AppleInternalCatalogResolver.LocalizedEntityType,
+        entityType: LocalizedEntityType,
     ) {
         metadataEntityTypes[mediaId] = entityType
     }
@@ -318,9 +318,9 @@ internal class AppleMetadataOverrideStore {
     fun removeOriginalLanguage(artistKey: String, language: String): Boolean =
         originalLanguageByArtistKey.remove(artistKey, language)
 
-    fun currentPlaybackOverride(): AppleInternalCatalogResolver.Alias? = currentPlaybackOverride
+    fun currentPlaybackOverride(): Alias? = currentPlaybackOverride
 
-    fun updateCurrentPlaybackOverride(alias: AppleInternalCatalogResolver.Alias?) {
+    fun updateCurrentPlaybackOverride(alias: Alias?) {
         currentPlaybackOverride = alias
     }
 

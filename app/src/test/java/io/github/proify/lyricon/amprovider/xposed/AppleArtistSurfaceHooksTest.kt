@@ -148,7 +148,7 @@ class AppleArtistSurfaceHooksTest {
 
     private fun artistAlias() = AppliedMetadataAlias(
         mediaId = "18756224",
-        alias = AppleInternalCatalogResolver.Alias(
+        alias = Alias(
             title = "宇多田ヒカル",
             artist = "宇多田ヒカル",
             album = "",

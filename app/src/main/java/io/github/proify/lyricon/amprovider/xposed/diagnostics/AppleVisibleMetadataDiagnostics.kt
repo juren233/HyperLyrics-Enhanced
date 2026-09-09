@@ -18,7 +18,7 @@ import java.util.concurrent.ConcurrentHashMap
 internal interface AppleVisibleMetadataDiagnosticsHost {
     fun activePlaybackIdentity(): ActivePlaybackMediaIdentity
 
-    fun effectiveAlias(mediaId: String): AppleInternalCatalogResolver.Alias?
+    fun effectiveAlias(mediaId: String): Alias?
 
     fun activeMetadataValues(mediaId: String): Set<String>
 

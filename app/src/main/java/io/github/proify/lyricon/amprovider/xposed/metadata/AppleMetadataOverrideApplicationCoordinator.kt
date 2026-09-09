@@ -32,7 +32,7 @@ internal class AppleMetadataOverrideApplicationCoordinator(
 ) {
     fun rememberOriginalMetadataOverride(
         mediaId: String,
-        alias: AppleInternalCatalogResolver.Alias,
+        alias: Alias,
         confirmed: Boolean,
     ) {
         metadataStore.rememberOriginalMetadata(
@@ -44,7 +44,7 @@ internal class AppleMetadataOverrideApplicationCoordinator(
 
     fun apply(
         mediaId: String,
-        alias: AppleInternalCatalogResolver.Alias,
+        alias: Alias,
         forceInAppRebind: Boolean = true,
         rememberLocalizedArtist: Boolean = true,
         originalMetadata: Boolean = false,
@@ -188,7 +188,7 @@ internal class AppleMetadataOverrideApplicationCoordinator(
     private fun propagateSharedArtistOverride(
         sourceMediaId: String,
         artistId: String,
-        alias: AppleInternalCatalogResolver.Alias,
+        alias: Alias,
         forceInAppRebind: Boolean,
         rememberLocalizedArtist: Boolean,
         originalMetadata: Boolean,

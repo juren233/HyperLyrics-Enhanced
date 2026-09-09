@@ -31,15 +31,15 @@ class AppleMetadataSurfaceCoordinatorTest {
         coordinator.markVisible(listOf("2"))
 
         assertEquals(
-            AppleInternalCatalogResolver.RequestPriority.ACTIVE_PAGE,
+            RequestPriority.ACTIVE_PAGE,
             coordinator.requestContext("1").priority,
         )
         assertEquals(
-            AppleInternalCatalogResolver.RequestPriority.VISIBLE,
+            RequestPriority.VISIBLE,
             coordinator.requestContext("2").priority,
         )
         assertEquals(
-            AppleInternalCatalogResolver.RequestPriority.BACKGROUND,
+            RequestPriority.BACKGROUND,
             coordinator.requestContext("3").priority,
         )
     }
@@ -68,7 +68,7 @@ class AppleMetadataSurfaceCoordinatorTest {
         coordinator.onSurfaceResumed(Any())
 
         assertEquals(
-            AppleInternalCatalogResolver.RequestPriority.VISIBLE,
+            RequestPriority.VISIBLE,
             coordinator.requestContext("9").priority,
         )
         assertTrue(coordinator.allowsRefresh(request.generation, "9"))
@@ -88,7 +88,7 @@ class AppleMetadataSurfaceCoordinatorTest {
         now = 101L
 
         assertEquals(
-            AppleInternalCatalogResolver.RequestPriority.ACTIVE_PAGE,
+            RequestPriority.ACTIVE_PAGE,
             coordinator.requestContext("5").priority,
         )
     }
@@ -107,7 +107,7 @@ class AppleMetadataSurfaceCoordinatorTest {
 
         assertEquals(setOf("1", "3", "4"), snapshot.activePageMediaIds)
         assertEquals(
-            AppleInternalCatalogResolver.RequestPriority.BACKGROUND,
+            RequestPriority.BACKGROUND,
             coordinator.requestContext("2").priority,
         )
     }
@@ -121,11 +121,11 @@ class AppleMetadataSurfaceCoordinatorTest {
         coordinator.markCurrentPage(mediaIds)
 
         assertEquals(
-            AppleInternalCatalogResolver.RequestPriority.ACTIVE_PAGE,
+            RequestPriority.ACTIVE_PAGE,
             coordinator.requestContext("1").priority,
         )
         assertEquals(
-            AppleInternalCatalogResolver.RequestPriority.ACTIVE_PAGE,
+            RequestPriority.ACTIVE_PAGE,
             coordinator.requestContext("100").priority,
         )
     }

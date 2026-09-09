@@ -118,7 +118,7 @@ class AppleDataBindingMetadataHooksTest {
     fun `pending data binding alias suppresses duplicate queued refreshes`() {
         val requested = AppliedMetadataAlias(
             mediaId = "1445886021",
-            alias = AppleInternalCatalogResolver.Alias(
+            alias = Alias(
                 title = "Come Back to Me",
                 artist = "宇多田ヒカル",
                 album = "This Is the One",

@@ -147,9 +147,9 @@ internal fun selectInAppArtworkContinuityUrls(
 }
 
 internal fun changedAssociatedArtistAlias(
-    previousAlias: AppleInternalCatalogResolver.Alias?,
-    updatedAlias: AppleInternalCatalogResolver.Alias?,
-): AppleInternalCatalogResolver.Alias? = updatedAlias?.takeIf { it != previousAlias }
+    previousAlias: Alias?,
+    updatedAlias: Alias?,
+): Alias? = updatedAlias?.takeIf { it != previousAlias }
 
 internal fun inAppLibraryControllerRefreshDelayMillis(
     strategy: InAppLibraryControllerBuildStrategy,
@@ -173,10 +173,10 @@ internal fun inAppLibraryControllerRefreshDelayMillis(
 
 internal fun localizedEntityTypeForInAppLibraryKind(
     kind: InAppLibraryEntityKind,
-): AppleInternalCatalogResolver.LocalizedEntityType = when (kind) {
-    InAppLibraryEntityKind.ALBUM -> AppleInternalCatalogResolver.LocalizedEntityType.ALBUM
-    InAppLibraryEntityKind.SONG -> AppleInternalCatalogResolver.LocalizedEntityType.SONG
-    InAppLibraryEntityKind.ARTIST -> AppleInternalCatalogResolver.LocalizedEntityType.ARTIST
+): LocalizedEntityType = when (kind) {
+    InAppLibraryEntityKind.ALBUM -> LocalizedEntityType.ALBUM
+    InAppLibraryEntityKind.SONG -> LocalizedEntityType.SONG
+    InAppLibraryEntityKind.ARTIST -> LocalizedEntityType.ARTIST
 }
 
 /** Classifies only entities whose concrete runtime classes carry a profiled library kind. */
@@ -244,9 +244,9 @@ internal fun inferredOriginalArtistLanguage(
     if (associatedArtistIds.size != 1) return null
     if (
         kind != InAppLibraryEntityKind.ARTIST &&
-        AppleInternalCatalogResolver.isCollaborationArtistName(artist.orEmpty())
+        isCollaborationArtistName(artist.orEmpty())
     ) return null
-    return AppleInternalCatalogResolver.languageTagsForOriginalMetadata(
+    return languageTagsForOriginalMetadata(
         genre = null,
         catalogGenres = genres,
         isrc = null,
@@ -283,7 +283,7 @@ internal fun shouldShareAssociatedArtistAlias(
 )
 
 internal fun associatedArtistCredit(
-    entityType: AppleInternalCatalogResolver.LocalizedEntityType?,
+    entityType: LocalizedEntityType?,
     accountTitle: String?,
     accountArtist: String?,
 ): String? = AppleMetadataResolutionEngine.associatedArtistCredit(
@@ -305,7 +305,7 @@ internal fun shouldAcceptAssociatedArtistResolution(
 internal fun localizedEntityTypeForQueueItem(
     historyEntry: Boolean,
     classNames: Collection<String>,
-): AppleInternalCatalogResolver.LocalizedEntityType? =
+): LocalizedEntityType? =
     AppleMetadataResolutionEngine.localizedEntityTypeForQueueItem(
         historyEntry = historyEntry,
         classNames = classNames,
@@ -313,19 +313,19 @@ internal fun localizedEntityTypeForQueueItem(
 
 internal fun localizedEntityTypeForContentItemClassNames(
     classNames: Collection<String>,
-): AppleInternalCatalogResolver.LocalizedEntityType? =
+): LocalizedEntityType? =
     AppleMetadataResolutionEngine.localizedEntityTypeForContentItemClassNames(classNames)
 
 internal fun confirmedOriginalSongAlias(
-    resolution: AppleInternalCatalogResolver.OriginalResolution,
-): AppleInternalCatalogResolver.Alias? = resolution.alias
+    resolution: OriginalResolution,
+): Alias? = resolution.alias
 
 internal fun validatedOriginalSongAlias(
-    alias: AppleInternalCatalogResolver.Alias?,
+    alias: Alias?,
     localizedTitle: String?,
     localizedArtist: String?,
-): AppleInternalCatalogResolver.Alias? = alias?.takeIf {
-    AppleInternalCatalogResolver.isConfidentOriginalSongAlias(
+): Alias? = alias?.takeIf {
+    isConfidentOriginalSongAlias(
         alias = it,
         localizedTitle = localizedTitle.orEmpty(),
         localizedArtist = localizedArtist.orEmpty(),
@@ -333,13 +333,13 @@ internal fun validatedOriginalSongAlias(
 }
 
 internal fun originalSongRetryLanguage(
-    resolution: AppleInternalCatalogResolver.OriginalResolution,
+    resolution: OriginalResolution,
 ): String? = resolution.language?.takeIf {
     resolution.alias == null && resolution.originKnown
 }
 
 internal fun originalArtistLanguageFromSongResolution(
-    resolution: AppleInternalCatalogResolver.OriginalResolution,
+    resolution: OriginalResolution,
     localizedArtist: String?,
 ): String? {
     if (!resolution.originKnown ||
@@ -351,7 +351,7 @@ internal fun originalArtistLanguageFromSongResolution(
         return null
     }
     return resolution.language?.let(
-        AppleInternalCatalogResolver::supportedOriginalLanguageOrNull
+        ::supportedOriginalLanguageOrNull
     )
 }
 
@@ -363,9 +363,9 @@ internal fun localizedArtistCacheKeys(keys: Collection<String>): Set<String> =
 
 internal fun associatedArtistAlias(
     artistIds: List<String>,
-    aliases: Map<String, AppleInternalCatalogResolver.Alias>,
+    aliases: Map<String, Alias>,
     language: String,
-): AppleInternalCatalogResolver.Alias? =
+): Alias? =
     AppleMetadataResolutionEngine.associatedArtistAlias(
         artistIds = artistIds,
         aliases = aliases,
@@ -375,12 +375,12 @@ internal fun associatedArtistAlias(
 internal fun selectEffectiveMetadataAlias(
     restoreOriginalEnabled: Boolean,
     originalMetadataResolved: Boolean,
-    originalMetadata: AppleInternalCatalogResolver.Alias?,
+    originalMetadata: Alias?,
     originalArtistResolved: Boolean,
-    originalArtist: AppleInternalCatalogResolver.Alias?,
-    localizedMetadata: AppleInternalCatalogResolver.Alias?,
-    localizedArtist: AppleInternalCatalogResolver.Alias?,
-): AppleInternalCatalogResolver.Alias? =
+    originalArtist: Alias?,
+    localizedMetadata: Alias?,
+    localizedArtist: Alias?,
+): Alias? =
     AppleMetadataResolutionEngine.selectEffectiveMetadataAlias(
         restoreOriginalEnabled = restoreOriginalEnabled,
         originalMetadataResolved = originalMetadataResolved,
@@ -394,9 +394,9 @@ internal fun selectEffectiveMetadataAlias(
 internal fun selectIndependentArtistAlias(
     restoreOriginalEnabled: Boolean,
     canUseAssociatedArtist: Boolean,
-    originalArtist: AppleInternalCatalogResolver.Alias?,
-    localizedArtist: AppleInternalCatalogResolver.Alias?,
-): AppleInternalCatalogResolver.Alias? =
+    originalArtist: Alias?,
+    localizedArtist: Alias?,
+): Alias? =
     AppleMetadataResolutionEngine.selectIndependentArtistAlias(
         restoreOriginalEnabled = restoreOriginalEnabled,
         canUseAssociatedArtist = canUseAssociatedArtist,
@@ -437,7 +437,7 @@ internal fun collectionPageOriginalResolutionMode(
 
 internal fun localizedVisibleText(
     field: VisibleTextField,
-    alias: AppleInternalCatalogResolver.Alias,
+    alias: Alias,
 ): String = when (field) {
     VisibleTextField.TITLE -> alias.title
     VisibleTextField.ARTIST -> alias.artist
@@ -458,73 +458,73 @@ internal fun visibleTextFieldForMediaApiAttribute(
 }
 
 internal fun contentItemMetadataOverride(
-    entityType: AppleInternalCatalogResolver.LocalizedEntityType,
+    entityType: LocalizedEntityType,
     getter: AppleContentItemGetter,
-    alias: AppleInternalCatalogResolver.Alias,
+    alias: Alias,
     original: String?,
 ): String? = when (getter) {
     AppleContentItemGetter.TITLE -> when (entityType) {
-        AppleInternalCatalogResolver.LocalizedEntityType.SONG -> alias.title
-        AppleInternalCatalogResolver.LocalizedEntityType.ALBUM ->
+        LocalizedEntityType.SONG -> alias.title
+        LocalizedEntityType.ALBUM ->
             alias.album.ifBlank { alias.title }
-        AppleInternalCatalogResolver.LocalizedEntityType.ARTIST ->
+        LocalizedEntityType.ARTIST ->
             alias.artist.ifBlank { alias.title }
     }
     AppleContentItemGetter.NOW_PLAYING_TITLE ->
         alias.title.takeIf {
-            entityType == AppleInternalCatalogResolver.LocalizedEntityType.SONG
+            entityType == LocalizedEntityType.SONG
         }
     AppleContentItemGetter.ARTIST -> alias.artist
     AppleContentItemGetter.NOW_PLAYING_SUBTITLE ->
         alias.artist.takeIf {
-            entityType == AppleInternalCatalogResolver.LocalizedEntityType.SONG
+            entityType == LocalizedEntityType.SONG
         }
     AppleContentItemGetter.SUBTITLE ->
         alias.artist.takeIf {
-            entityType == AppleInternalCatalogResolver.LocalizedEntityType.SONG ||
-                entityType == AppleInternalCatalogResolver.LocalizedEntityType.ALBUM
+            entityType == LocalizedEntityType.SONG ||
+                entityType == LocalizedEntityType.ALBUM
         }
     AppleContentItemGetter.COLLECTION ->
         alias.album.takeIf {
-            entityType == AppleInternalCatalogResolver.LocalizedEntityType.SONG
+            entityType == LocalizedEntityType.SONG
         }
 }?.takeIf { it.isNotBlank() } ?: original
 
 internal fun visibleTextFieldForContentItemGetter(
-    entityType: AppleInternalCatalogResolver.LocalizedEntityType,
+    entityType: LocalizedEntityType,
     getter: AppleContentItemGetter,
 ): VisibleTextField? = when (getter) {
     AppleContentItemGetter.TITLE -> when (entityType) {
-        AppleInternalCatalogResolver.LocalizedEntityType.SONG -> VisibleTextField.TITLE
-        AppleInternalCatalogResolver.LocalizedEntityType.ALBUM -> VisibleTextField.ALBUM
-        AppleInternalCatalogResolver.LocalizedEntityType.ARTIST -> VisibleTextField.ARTIST
+        LocalizedEntityType.SONG -> VisibleTextField.TITLE
+        LocalizedEntityType.ALBUM -> VisibleTextField.ALBUM
+        LocalizedEntityType.ARTIST -> VisibleTextField.ARTIST
     }
     AppleContentItemGetter.NOW_PLAYING_TITLE ->
         VisibleTextField.TITLE.takeIf {
-            entityType == AppleInternalCatalogResolver.LocalizedEntityType.SONG
+            entityType == LocalizedEntityType.SONG
         }
     AppleContentItemGetter.ARTIST -> VisibleTextField.ARTIST
     AppleContentItemGetter.NOW_PLAYING_SUBTITLE ->
         VisibleTextField.ARTIST.takeIf {
-            entityType == AppleInternalCatalogResolver.LocalizedEntityType.SONG
+            entityType == LocalizedEntityType.SONG
         }
     AppleContentItemGetter.SUBTITLE ->
         VisibleTextField.ARTIST.takeIf {
-            entityType == AppleInternalCatalogResolver.LocalizedEntityType.SONG ||
-                entityType == AppleInternalCatalogResolver.LocalizedEntityType.ALBUM
+            entityType == LocalizedEntityType.SONG ||
+                entityType == LocalizedEntityType.ALBUM
         }
     AppleContentItemGetter.COLLECTION ->
         VisibleTextField.ALBUM.takeIf {
-            entityType == AppleInternalCatalogResolver.LocalizedEntityType.SONG
+            entityType == LocalizedEntityType.SONG
         }
 }
 
 internal fun preferredVisibleEntityType(
     field: VisibleTextField?,
-): AppleInternalCatalogResolver.LocalizedEntityType? = when (field) {
-    VisibleTextField.TITLE -> AppleInternalCatalogResolver.LocalizedEntityType.SONG
-    VisibleTextField.ARTIST -> AppleInternalCatalogResolver.LocalizedEntityType.ARTIST
-    VisibleTextField.ALBUM -> AppleInternalCatalogResolver.LocalizedEntityType.ALBUM
+): LocalizedEntityType? = when (field) {
+    VisibleTextField.TITLE -> LocalizedEntityType.SONG
+    VisibleTextField.ARTIST -> LocalizedEntityType.ARTIST
+    VisibleTextField.ALBUM -> LocalizedEntityType.ALBUM
     null -> null
 }
 
@@ -549,8 +549,8 @@ internal fun shouldRetryOriginalMetadataCacheProbe(
 )
 
 internal fun shouldResolveMetadataFromGetter(
-    priority: AppleInternalCatalogResolver.RequestPriority,
-): Boolean = priority == AppleInternalCatalogResolver.RequestPriority.VISIBLE
+    priority: RequestPriority,
+): Boolean = priority == RequestPriority.VISIBLE
 
 internal fun appleNativeSupplementTracks(
     pronunciationSelected: Boolean,

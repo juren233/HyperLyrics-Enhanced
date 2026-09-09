@@ -52,7 +52,7 @@ internal class AppleInAppMetadataApplier(
 
     fun applyAliasToMetadata(
         metadata: Any,
-        alias: AppleInternalCatalogResolver.Alias,
+        alias: Alias,
     ) {
         setMetadataField(
             metadata = metadata,
@@ -68,7 +68,7 @@ internal class AppleInAppMetadataApplier(
 
     fun applyAliasToMetadataRefs(
         mediaId: String,
-        alias: AppleInternalCatalogResolver.Alias,
+        alias: Alias,
         forceRebind: Boolean = true,
         notifyModelChange: Boolean = true,
     ) {
@@ -168,11 +168,11 @@ internal class AppleInAppMetadataApplier(
 
     fun dataBindingAliasValues(
         mediaId: String,
-        alias: AppleInternalCatalogResolver.Alias,
+        alias: Alias,
         binding: Any?,
     ): DataBindingAliasValues {
         val entityType = metadataStore.entityType(mediaId)
-            ?: AppleInternalCatalogResolver.LocalizedEntityType.SONG
+            ?: LocalizedEntityType.SONG
         val title = contentItemMetadataOverride(
             entityType,
             AppleContentItemGetter.TITLE,
@@ -204,7 +204,7 @@ internal class AppleInAppMetadataApplier(
     fun applyAliasToContainerItem(
         containerItem: Any,
         kind: InAppContainerKind,
-        alias: AppleInternalCatalogResolver.Alias,
+        alias: Alias,
         notifyChange: Boolean = true,
     ) {
         val title = when (kind) {
@@ -242,7 +242,7 @@ internal class AppleInAppMetadataApplier(
 
     fun applyAliasToPlaybackItem(
         playbackItem: Any,
-        alias: AppleInternalCatalogResolver.Alias,
+        alias: Alias,
         notifyChange: Boolean = true,
     ) {
         val entityType = localizedEntityType(playbackItem) ?: return
@@ -346,7 +346,7 @@ internal class AppleInAppMetadataApplier(
 
     fun refreshMetadataCallbacks(
         mediaId: String? = null,
-        alias: AppleInternalCatalogResolver.Alias? = null,
+        alias: Alias? = null,
     ) {
         val dispatcherRefresh = queueMetadataHooks.currentDispatcherRefresh()
             ?.takeIf { mediaId == null || it.mediaId == mediaId }
@@ -544,7 +544,7 @@ internal class AppleInAppMetadataApplier(
 
     private fun localizedEntityType(
         contentItem: Any,
-    ): AppleInternalCatalogResolver.LocalizedEntityType? = localizedEntityTypeForQueueItem(
+    ): LocalizedEntityType? = localizedEntityTypeForQueueItem(
         historyEntry = registry.playbackItemContract(contentItem) ==
             InAppPlaybackItemContract.HISTORY,
         classNames = generateSequence(contentItem.javaClass as Class<*>?) { it.superclass }

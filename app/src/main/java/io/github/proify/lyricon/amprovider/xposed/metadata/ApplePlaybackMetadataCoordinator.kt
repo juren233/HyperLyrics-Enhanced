@@ -21,11 +21,11 @@ internal interface ApplePlaybackMetadataCoordinatorHost {
 
     fun onCurrentPlaybackItem(mediaId: String, playbackItem: Any, queueId: Long)
 
-    fun effectiveMetadataAlias(mediaId: String): AppleInternalCatalogResolver.Alias?
+    fun effectiveMetadataAlias(mediaId: String): Alias?
 
     fun applyPlaybackMetadataOverride(
         mediaId: String,
-        alias: AppleInternalCatalogResolver.Alias,
+        alias: Alias,
         rememberLocalizedArtist: Boolean = true,
         originalMetadata: Boolean = false,
         originalMetadataConfirmed: Boolean = false,
@@ -34,15 +34,15 @@ internal interface ApplePlaybackMetadataCoordinatorHost {
     fun logMetadataIdentity(event: String, details: String)
 
     fun validatedOriginalSongAlias(
-        alias: AppleInternalCatalogResolver.Alias?,
+        alias: Alias?,
         localizedTitle: String?,
         localizedArtist: String?,
-    ): AppleInternalCatalogResolver.Alias?
+    ): Alias?
 
     fun shouldShareOriginalSongLanguage(
         localizedTitle: String?,
         localizedArtist: String?,
-        alias: AppleInternalCatalogResolver.Alias?,
+        alias: Alias?,
     ): Boolean
 
     fun rememberOriginalLanguageForArtist(mediaId: String, language: String)
@@ -419,11 +419,11 @@ internal class ApplePlaybackMetadataCoordinator(
 
     private fun cachedOriginalMetadataAlias(
         metadata: MediaMetadataCache.Metadata,
-    ): AppleInternalCatalogResolver.Alias? {
+    ): Alias? {
         val title = metadata.originalTitle?.takeIf(String::isNotBlank)
         val artist = metadata.originalArtist?.takeIf(String::isNotBlank)
         if (title == null && artist == null) return null
-        return AppleInternalCatalogResolver.Alias(
+        return Alias(
             title = title ?: metadata.title.orEmpty(),
             artist = artist ?: metadata.artist.orEmpty(),
             language = "original",

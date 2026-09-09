@@ -31,7 +31,7 @@ internal data class AppliedMetadataAlias(
     val album: String,
     val language: String,
 ) {
-    constructor(mediaId: String, alias: AppleInternalCatalogResolver.Alias) : this(
+    constructor(mediaId: String, alias: Alias) : this(
         mediaId = mediaId,
         title = alias.title,
         artist = alias.artist,
@@ -42,7 +42,7 @@ internal data class AppliedMetadataAlias(
 
 internal data class PendingMetadataLookup(
     val requestKey: String,
-    val lookup: AppleInternalCatalogResolver.LocalizedLookup,
+    val lookup: LocalizedLookup,
 )
 
 internal data class MetadataSurfaceSignature(
@@ -69,7 +69,7 @@ internal enum class InAppOriginalResolutionMode {
 }
 
 internal data class DeferredMetadataResolution(
-    val priority: AppleInternalCatalogResolver.RequestPriority,
+    val priority: RequestPriority,
     val originalResolutionMode: InAppOriginalResolutionMode,
 )
 

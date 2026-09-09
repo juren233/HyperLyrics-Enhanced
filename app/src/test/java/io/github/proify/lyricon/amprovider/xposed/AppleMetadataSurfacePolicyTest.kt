@@ -18,15 +18,15 @@ class AppleMetadataSurfacePolicyTest {
     @Test
     fun `prefers album entities for delayed artist page album bindings`() {
         assertEquals(
-            AppleInternalCatalogResolver.LocalizedEntityType.SONG,
+            LocalizedEntityType.SONG,
             preferredVisibleEntityType(VisibleTextField.TITLE),
         )
         assertEquals(
-            AppleInternalCatalogResolver.LocalizedEntityType.ARTIST,
+            LocalizedEntityType.ARTIST,
             preferredVisibleEntityType(VisibleTextField.ARTIST),
         )
         assertEquals(
-            AppleInternalCatalogResolver.LocalizedEntityType.ALBUM,
+            LocalizedEntityType.ALBUM,
             preferredVisibleEntityType(VisibleTextField.ALBUM),
         )
     }
@@ -44,7 +44,7 @@ class AppleMetadataSurfacePolicyTest {
             )
         )
         assertEquals(
-            AppleInternalCatalogResolver.LocalizedEntityType.SONG,
+            LocalizedEntityType.SONG,
             AppleMetadataResolutionEngine.localizedEntityTypeForContentItemClassNames(
                 listOf("Song", "BaseContentItem")
             ),
@@ -63,7 +63,7 @@ class AppleMetadataSurfacePolicyTest {
         assertTrue(isInAppHistoryQueueEntryClassName(historyEntryClassName, historyEntryClassName))
         assertFalse(isInAppHistoryQueueEntryClassName("Z8.c", historyEntryClassName))
         assertEquals(
-            AppleInternalCatalogResolver.LocalizedEntityType.SONG,
+            LocalizedEntityType.SONG,
             AppleMetadataResolutionEngine.localizedEntityTypeForQueueItem(
                 historyEntry = true,
                 classNames = listOf("CollectionItemView"),

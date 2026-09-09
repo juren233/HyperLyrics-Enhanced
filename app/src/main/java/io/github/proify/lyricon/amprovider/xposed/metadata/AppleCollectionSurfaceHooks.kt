@@ -44,11 +44,11 @@ internal interface AppleCollectionSurfaceHost {
 
     fun enrichLibraryEntitiesForResolution(mediaIds: Collection<String>)
 
-    fun effectiveAlias(mediaId: String): AppleInternalCatalogResolver.Alias?
+    fun effectiveAlias(mediaId: String): Alias?
 
     fun applyAliasToMetadataRefs(
         mediaId: String,
-        alias: AppleInternalCatalogResolver.Alias,
+        alias: Alias,
         notifyModelChange: Boolean,
     )
 
@@ -56,13 +56,13 @@ internal interface AppleCollectionSurfaceHost {
 
     fun scheduleMetadataResolution(
         mediaIds: Collection<String>,
-        priority: AppleInternalCatalogResolver.RequestPriority,
+        priority: RequestPriority,
         originalResolutionMode: InAppOriginalResolutionMode,
     )
 
     fun dataBindingAliasValues(
         mediaId: String,
-        alias: AppleInternalCatalogResolver.Alias,
+        alias: Alias,
         binding: Any?,
     ): DataBindingAliasValues
 
@@ -186,7 +186,7 @@ internal class AppleCollectionSurfaceHooks(
     fun controllerAppliedAlias(
         controller: Any,
         mediaId: String,
-        alias: AppleInternalCatalogResolver.Alias,
+        alias: Alias,
     ): AppliedMetadataAlias {
         val appliedAlias = AppliedMetadataAlias(mediaId, alias)
         val albumData = albumPageBuildData[controller] ?: return appliedAlias
@@ -240,7 +240,7 @@ internal class AppleCollectionSurfaceHooks(
 
     fun refreshPlaylistRowRefs(
         mediaId: String,
-        alias: AppleInternalCatalogResolver.Alias,
+        alias: Alias,
     ): Int {
         val refs = playlistRowRefs[mediaId] ?: return 0
         var completeTargets = 0
@@ -631,7 +631,7 @@ internal class AppleCollectionSurfaceHooks(
     private fun applyAliasToPlaylistRow(
         mediaId: String,
         ref: InAppPlaylistRowRef,
-        alias: AppleInternalCatalogResolver.Alias,
+        alias: Alias,
     ): Boolean {
         val root = ref.root.get() ?: return false
         if (playlistRowRootMediaIds[root] != mediaId) return false
@@ -712,7 +712,7 @@ internal class AppleCollectionSurfaceHooks(
             }
             host.scheduleMetadataResolution(
                 mediaIds = listOf(mediaId),
-                priority = AppleInternalCatalogResolver.RequestPriority.VISIBLE,
+                priority = RequestPriority.VISIBLE,
                 originalResolutionMode =
                     AppleMetadataResolutionEngine.collectionPageOriginalResolutionMode(pageType),
             )
@@ -770,7 +770,7 @@ internal class AppleCollectionSurfaceHooks(
             if (shouldRequest) {
                 host.scheduleMetadataResolution(
                     mediaIds = listOf(mediaId),
-                    priority = AppleInternalCatalogResolver.RequestPriority.VISIBLE,
+                    priority = RequestPriority.VISIBLE,
                     originalResolutionMode = InAppOriginalResolutionMode.ORIGINAL_FIRST,
                 )
             }
@@ -877,10 +877,10 @@ internal fun albumPageControllerAppliedAlias(
     if (songArtistId == null || songArtistId != albumArtistId) return appliedAlias
     val targetArtist = albumArtist?.trim().orEmpty()
     if (targetArtist.isEmpty()) return appliedAlias
-    val songArtistKey = AppleInternalCatalogResolver.normalizedArtistNameKey(
+    val songArtistKey = normalizedArtistNameKey(
         appliedAlias.artist
     )
-    val albumArtistKey = AppleInternalCatalogResolver.normalizedArtistNameKey(targetArtist)
+    val albumArtistKey = normalizedArtistNameKey(targetArtist)
     if (songArtistKey == albumArtistKey) return appliedAlias
     return appliedAlias.copy(artist = targetArtist)
 }

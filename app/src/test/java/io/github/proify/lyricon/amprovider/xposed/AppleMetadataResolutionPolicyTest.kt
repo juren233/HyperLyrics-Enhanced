@@ -164,7 +164,7 @@ class AppleMetadataResolutionPolicyTest {
     @Test
     fun `artist entities reuse their title as the shared artist credit`() {
         val artistCredit = AppleMetadataResolutionEngine.associatedArtistCredit(
-            entityType = AppleInternalCatalogResolver.LocalizedEntityType.ARTIST,
+            entityType = LocalizedEntityType.ARTIST,
             accountTitle = "陶喆",
             accountArtist = null,
         )
@@ -182,7 +182,7 @@ class AppleMetadataResolutionPolicyTest {
         assertEquals(
             "David Tao",
             AppleMetadataResolutionEngine.associatedArtistCredit(
-                entityType = AppleInternalCatalogResolver.LocalizedEntityType.SONG,
+                entityType = LocalizedEntityType.SONG,
                 accountTitle = "普通朋友",
                 accountArtist = "David Tao",
             ),
@@ -192,7 +192,7 @@ class AppleMetadataResolutionPolicyTest {
     @Test
     fun `collaboration songs never borrow a single artist entity credit`() {
         val credit = AppleMetadataResolutionEngine.associatedArtistCredit(
-            entityType = AppleInternalCatalogResolver.LocalizedEntityType.SONG,
+            entityType = LocalizedEntityType.SONG,
             accountTitle = "Home",
             accountArtist = "Charlie Puth、Utada",
         )
@@ -301,7 +301,7 @@ class AppleMetadataResolutionPolicyTest {
 
     @Test
     fun `does not promote an unresolved account snapshot to confirmed original metadata`() {
-        val unresolved = AppleInternalCatalogResolver.OriginalResolution(
+        val unresolved = OriginalResolution(
             alias = null,
             language = "zh-Hans-CN",
             originKnown = true,
@@ -377,24 +377,24 @@ class AppleMetadataResolutionPolicyTest {
     fun `only visible getter access can start metadata resolution`() {
         assertFalse(
             shouldResolveMetadataFromGetter(
-                AppleInternalCatalogResolver.RequestPriority.BACKGROUND,
+                RequestPriority.BACKGROUND,
             )
         )
         assertFalse(
             shouldResolveMetadataFromGetter(
-                AppleInternalCatalogResolver.RequestPriority.ACTIVE_PAGE,
+                RequestPriority.ACTIVE_PAGE,
             )
         )
         assertTrue(
             shouldResolveMetadataFromGetter(
-                AppleInternalCatalogResolver.RequestPriority.VISIBLE,
+                RequestPriority.VISIBLE,
             )
         )
     }
 
     @Test
     fun `uses album metadata when refreshing visible album text`() {
-        val alias = AppleInternalCatalogResolver.Alias(
+        val alias = Alias(
             title = "歌曲",
             artist = "歌手",
             album = "专辑",
@@ -408,13 +408,13 @@ class AppleMetadataResolutionPolicyTest {
 
     @Test
     fun `maps every playback and list getter to one song alias`() {
-        val alias = AppleInternalCatalogResolver.Alias(
+        val alias = Alias(
             title = "喜欢寂寞",
             artist = "苏打绿",
             album = "你在烦恼什么",
             language = "zh-Hans-CN",
         )
-        val song = AppleInternalCatalogResolver.LocalizedEntityType.SONG
+        val song = LocalizedEntityType.SONG
 
         assertEquals(
             "喜欢寂寞",
@@ -466,7 +466,7 @@ class AppleMetadataResolutionPolicyTest {
 
     @Test
     fun `maps album and artist titles by entity instead of song fields`() {
-        val alias = AppleInternalCatalogResolver.Alias(
+        val alias = Alias(
             title = "song title",
             artist = "陶喆",
             album = "陶喆同名专辑",
@@ -476,7 +476,7 @@ class AppleMetadataResolutionPolicyTest {
         assertEquals(
             "陶喆同名专辑",
             contentItemMetadataOverride(
-                AppleInternalCatalogResolver.LocalizedEntityType.ALBUM,
+                LocalizedEntityType.ALBUM,
                 AppleContentItemGetter.TITLE,
                 alias,
                 "raw",
@@ -485,7 +485,7 @@ class AppleMetadataResolutionPolicyTest {
         assertEquals(
             "陶喆",
             contentItemMetadataOverride(
-                AppleInternalCatalogResolver.LocalizedEntityType.ALBUM,
+                LocalizedEntityType.ALBUM,
                 AppleContentItemGetter.SUBTITLE,
                 alias,
                 "raw",
@@ -494,7 +494,7 @@ class AppleMetadataResolutionPolicyTest {
         assertEquals(
             "陶喆",
             contentItemMetadataOverride(
-                AppleInternalCatalogResolver.LocalizedEntityType.ARTIST,
+                LocalizedEntityType.ARTIST,
                 AppleContentItemGetter.TITLE,
                 alias,
                 "raw",
@@ -504,13 +504,13 @@ class AppleMetadataResolutionPolicyTest {
 
     @Test
     fun `original artist entity overrides the stale artist embedded in an album`() {
-        val album = AppleInternalCatalogResolver.Alias(
+        val album = Alias(
             title = "陶喆同名专辑",
             artist = "David Tao",
             album = "陶喆同名专辑",
             language = "zh-Hans-CN",
         )
-        val artist = AppleInternalCatalogResolver.Alias(
+        val artist = Alias(
             title = "",
             artist = "陶喆",
             language = "zh-Hans-CN",
@@ -532,7 +532,7 @@ class AppleMetadataResolutionPolicyTest {
 
     @Test
     fun `configured metadata is shown atomically while original metadata is pending`() {
-        val localizedAlbum = AppleInternalCatalogResolver.Alias(
+        val localizedAlbum = Alias(
             title = "Configured Album",
             artist = "David Tao",
             album = "Configured Album",
@@ -561,13 +561,13 @@ class AppleMetadataResolutionPolicyTest {
 
     @Test
     fun `cached original artist is visible while original song metadata is pending`() {
-        val configuredSong = AppleInternalCatalogResolver.Alias(
+        val configuredSong = Alias(
             title = "Come Back to Me",
             artist = "Utada",
             album = "This Is the One",
             language = "zh-CN",
         )
-        val originalArtist = AppleInternalCatalogResolver.Alias(
+        val originalArtist = Alias(
             title = "",
             artist = "宇多田ヒカル",
             album = "",
@@ -591,13 +591,13 @@ class AppleMetadataResolutionPolicyTest {
 
     @Test
     fun `confirmed original metadata remains stable while the original artist entity is pending`() {
-        val originalAlbum = AppleInternalCatalogResolver.Alias(
+        val originalAlbum = Alias(
             title = "陶喆同名专辑",
             artist = "David Tao",
             album = "陶喆同名专辑",
             language = "zh-Hans-CN",
         )
-        val configuredAlbum = AppleInternalCatalogResolver.Alias(
+        val configuredAlbum = Alias(
             title = "Tao",
             artist = "David Tao",
             album = "Tao",
@@ -620,7 +620,7 @@ class AppleMetadataResolutionPolicyTest {
 
     @Test
     fun `cached single artist can be applied before song metadata resolves`() {
-        val configuredArtist = AppleInternalCatalogResolver.Alias(
+        val configuredArtist = Alias(
             title = "Dove Cameron",
             artist = "德芙·卡梅隆",
             album = "Should not replace the current album",
@@ -642,7 +642,7 @@ class AppleMetadataResolutionPolicyTest {
 
     @Test
     fun `resolved original artist replaces the temporary configured artist`() {
-        val configuredArtist = AppleInternalCatalogResolver.Alias(
+        val configuredArtist = Alias(
             title = "",
             artist = "Utada",
             album = "",
@@ -666,7 +666,7 @@ class AppleMetadataResolutionPolicyTest {
 
     @Test
     fun `collaboration credit cannot use an independent cached artist`() {
-        val configuredArtist = AppleInternalCatalogResolver.Alias(
+        val configuredArtist = Alias(
             title = "",
             artist = "宇多田ヒカル",
             album = "",
@@ -685,13 +685,13 @@ class AppleMetadataResolutionPolicyTest {
 
     @Test
     fun `original artist wins when the original song title matches the configured title`() {
-        val configuredSong = AppleInternalCatalogResolver.Alias(
+        val configuredSong = Alias(
             title = "One Last Kiss",
             artist = "Utada",
             album = "One Last Kiss",
             language = "ja-JP",
         )
-        val originalArtist = AppleInternalCatalogResolver.Alias(
+        val originalArtist = Alias(
             title = "",
             artist = "宇多田ヒカル",
             album = "",
@@ -739,13 +739,13 @@ class AppleMetadataResolutionPolicyTest {
 
     @Test
     fun `keeps the confirmed song credit when original artist lookup completes without a hit`() {
-        val originalSong = AppleInternalCatalogResolver.Alias(
+        val originalSong = Alias(
             title = "喜歡寂寞",
             artist = "sodagreen",
             album = "你在煩惱什麼",
             language = "zh-Hant-TW",
         )
-        val configuredArtist = AppleInternalCatalogResolver.Alias(
+        val configuredArtist = Alias(
             title = "",
             artist = "苏打绿",
             album = "",
@@ -769,13 +769,13 @@ class AppleMetadataResolutionPolicyTest {
 
     @Test
     fun `confirmed collaboration metadata never merges a localized single artist`() {
-        val originalSong = AppleInternalCatalogResolver.Alias(
+        val originalSong = Alias(
             title = "日本語の原題",
             artist = "Charlie Puth、Utada",
             album = "Original Album",
             language = "ja-JP",
         )
-        val localizedArtist = AppleInternalCatalogResolver.Alias(
+        val localizedArtist = Alias(
             title = "",
             artist = "宇多田ヒカル",
             album = "",
@@ -800,7 +800,7 @@ class AppleMetadataResolutionPolicyTest {
     @Test
     fun `associated artist replacement requires every related artist entity`() {
         val aliases = mapOf(
-            "16789930" to AppleInternalCatalogResolver.Alias(
+            "16789930" to Alias(
                 title = "陶喆",
                 artist = "陶喆",
                 language = "zh-Hans-CN",
@@ -898,7 +898,7 @@ class AppleMetadataResolutionPolicyTest {
 
     @Test
     fun `song resolution shares an artist region only for one exact non collaboration artist`() {
-        val oneLastKiss = AppleInternalCatalogResolver.OriginalResolution(
+        val oneLastKiss = OriginalResolution(
             alias = null,
             language = "ja-JP",
             originKnown = true,
@@ -933,7 +933,7 @@ class AppleMetadataResolutionPolicyTest {
     fun `collaboration alias cannot localize only the Home artist credit`() {
         assertNull(
             validatedOriginalSongAlias(
-                alias = AppleInternalCatalogResolver.Alias(
+                alias = Alias(
                     title = "Home",
                     artist = "チャーリー・プース、宇多田ヒカル",
                     album = "Whatever's Clever! (Expanded)",
@@ -946,7 +946,7 @@ class AppleMetadataResolutionPolicyTest {
         assertEquals(
             "日本語の原題",
             validatedOriginalSongAlias(
-                alias = AppleInternalCatalogResolver.Alias(
+                alias = Alias(
                     title = "日本語の原題",
                     artist = "チャーリー・プース、宇多田ヒカル",
                     language = "ja-JP",
@@ -961,7 +961,7 @@ class AppleMetadataResolutionPolicyTest {
     fun `artist profile coverage cannot partially rewrite Comets and Gold collaborators`() {
         assertNull(
             validatedOriginalSongAlias(
-                alias = AppleInternalCatalogResolver.Alias(
+                alias = Alias(
                     title = "Comets + Gold",
                     artist = "Elmiene、藤井 風",
                     album = "Comets + Gold",
@@ -1008,7 +1008,7 @@ class AppleMetadataResolutionPolicyTest {
 
     @Test
     fun `late associated artist hydration publishes the changed effective alias`() {
-        val previous = AppleInternalCatalogResolver.Alias(
+        val previous = Alias(
             title = "Feelin’ Go(o)d",
             artist = "藤井风",
             language = "zh-Hans",
@@ -1030,7 +1030,7 @@ class AppleMetadataResolutionPolicyTest {
 
     @Test
     fun `stable or missing associated artist hydration does not republish`() {
-        val alias = AppleInternalCatalogResolver.Alias(
+        val alias = Alias(
             title = "Home",
             artist = "Charlie Puth、Utada",
             language = "en-US",
@@ -1055,16 +1055,16 @@ class AppleMetadataResolutionPolicyTest {
     fun `visible original first request survives deferred request merging`() {
         assertEquals(
             DeferredMetadataResolution(
-                priority = AppleInternalCatalogResolver.RequestPriority.VISIBLE,
+                priority = RequestPriority.VISIBLE,
                 originalResolutionMode = InAppOriginalResolutionMode.ORIGINAL_FIRST,
             ),
             mergeDeferredMetadataResolution(
                 previous = DeferredMetadataResolution(
-                    priority = AppleInternalCatalogResolver.RequestPriority.ACTIVE_PAGE,
+                    priority = RequestPriority.ACTIVE_PAGE,
                     originalResolutionMode = InAppOriginalResolutionMode.AFTER_LOCALIZED,
                 ),
                 incoming = DeferredMetadataResolution(
-                    priority = AppleInternalCatalogResolver.RequestPriority.VISIBLE,
+                    priority = RequestPriority.VISIBLE,
                     originalResolutionMode = InAppOriginalResolutionMode.ORIGINAL_FIRST,
                 ),
             ),

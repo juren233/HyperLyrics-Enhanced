@@ -103,15 +103,15 @@ class AppleLibrarySurfaceHooksTest {
     @Test
     fun `library entity kinds retain independent resolver cache types`() {
         assertEquals(
-            AppleInternalCatalogResolver.LocalizedEntityType.ALBUM,
+            LocalizedEntityType.ALBUM,
             localizedEntityTypeForInAppLibraryKind(InAppLibraryEntityKind.ALBUM),
         )
         assertEquals(
-            AppleInternalCatalogResolver.LocalizedEntityType.SONG,
+            LocalizedEntityType.SONG,
             localizedEntityTypeForInAppLibraryKind(InAppLibraryEntityKind.SONG),
         )
         assertEquals(
-            AppleInternalCatalogResolver.LocalizedEntityType.ARTIST,
+            LocalizedEntityType.ARTIST,
             localizedEntityTypeForInAppLibraryKind(InAppLibraryEntityKind.ARTIST),
         )
     }

@@ -24,12 +24,17 @@ import com.juren233.hyperlyricsenhanced.root.mediacard.notification.AodEnvironme
 import com.juren233.hyperlyricsenhanced.root.mediacard.notification.NotificationMediaAodLyricHooker
 import com.juren233.hyperlyricsenhanced.root.mediacard.notification.NotificationMediaCoverStyleHooker
 import com.juren233.hyperlyricsenhanced.root.mediacard.island.IslandExpandedMediaAmbientFlowHooker
+import com.juren233.hyperlyricsenhanced.root.mediacard.island.refreshBackgroundStyle
+import com.juren233.hyperlyricsenhanced.root.mediacard.island.refreshCardTheme
+import com.juren233.hyperlyricsenhanced.root.mediacard.island.refreshMediaElements
 import com.juren233.hyperlyricsenhanced.root.mediacard.notification.background.MediaBackgroundRendererPool
 import com.juren233.hyperlyricsenhanced.root.island.renderer.BaseIslandRenderer
 import com.juren233.hyperlyricsenhanced.root.lyricon.central.EmbeddedLyriconCentralController
 import com.juren233.hyperlyricsenhanced.root.lyricon.provider.LyriconProviderControlFrameBridge
 import com.juren233.hyperlyricsenhanced.root.salt.SaltPlayerNextTrackHooker
 import com.juren233.hyperlyricsenhanced.root.source.LyriconSource
+import com.juren233.hyperlyricsenhanced.root.source.onActiveMediaSessionSnapshotChanged
+import com.juren233.hyperlyricsenhanced.root.source.onPreferenceChanged
 import com.juren233.hyperlyricsenhanced.root.source.LyricInfoSource
 import com.juren233.hyperlyricsenhanced.root.source.RootLyricSink
 import com.juren233.hyperlyricsenhanced.root.source.SuperLyricSource

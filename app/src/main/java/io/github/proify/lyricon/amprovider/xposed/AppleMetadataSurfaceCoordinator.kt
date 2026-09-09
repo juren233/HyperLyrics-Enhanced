@@ -104,7 +104,7 @@ internal class AppleMetadataSurfaceCoordinator(
         normalized == playbackMediaId ||
             (requestGeneration == generation &&
                 priorityForLocked(normalized) !=
-                AppleInternalCatalogResolver.RequestPriority.BACKGROUND)
+                RequestPriority.BACKGROUND)
     }
 
     fun snapshot(): SurfaceSnapshot = synchronized(lock) {
@@ -114,15 +114,15 @@ internal class AppleMetadataSurfaceCoordinator(
 
     private fun priorityForLocked(
         mediaId: String?,
-    ): AppleInternalCatalogResolver.RequestPriority = when {
+    ): RequestPriority = when {
         mediaId == null ->
-            AppleInternalCatalogResolver.RequestPriority.BACKGROUND
+            RequestPriority.BACKGROUND
         mediaId == playbackMediaId || mediaId in visibleMediaIds ->
-            AppleInternalCatalogResolver.RequestPriority.VISIBLE
+            RequestPriority.VISIBLE
         mediaId in pageMediaIds ->
-            AppleInternalCatalogResolver.RequestPriority.ACTIVE_PAGE
+            RequestPriority.ACTIVE_PAGE
         else ->
-            AppleInternalCatalogResolver.RequestPriority.BACKGROUND
+            RequestPriority.BACKGROUND
     }
 
     private fun snapshotLocked(): SurfaceSnapshot {
@@ -162,7 +162,7 @@ internal class AppleMetadataSurfaceCoordinator(
 
     data class RequestContext(
         val generation: Long,
-        val priority: AppleInternalCatalogResolver.RequestPriority,
+        val priority: RequestPriority,
     )
 
     data class SurfaceSnapshot(

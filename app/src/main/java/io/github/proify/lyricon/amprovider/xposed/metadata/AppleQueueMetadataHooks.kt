@@ -31,7 +31,7 @@ internal interface AppleQueueMetadataHost {
         metadata: Any,
         requestResolution: Boolean,
         preBind: Boolean,
-        priority: AppleInternalCatalogResolver.RequestPriority,
+        priority: RequestPriority,
     )
 
     fun markPlaybackItemHistory(playbackItem: Any)
@@ -45,11 +45,11 @@ internal interface AppleQueueMetadataHost {
 
     fun contentItemMediaId(contentItem: Any, refresh: Boolean): String?
 
-    fun effectiveAlias(mediaId: String): AppleInternalCatalogResolver.Alias?
+    fun effectiveAlias(mediaId: String): Alias?
 
     fun applyAliasToPlaybackItem(
         playbackItem: Any,
-        alias: AppleInternalCatalogResolver.Alias,
+        alias: Alias,
         notifyChange: Boolean,
     )
 
@@ -58,7 +58,7 @@ internal interface AppleQueueMetadataHost {
     fun ensureOverride(
         mediaId: String,
         preBind: Boolean,
-        priority: AppleInternalCatalogResolver.RequestPriority,
+        priority: RequestPriority,
     )
 
     fun ensureOverrides(
@@ -198,7 +198,7 @@ internal class AppleQueueMetadataHooks(
                 metadata = metadata,
                 requestResolution = true,
                 preBind = false,
-                priority = AppleInternalCatalogResolver.RequestPriority.VISIBLE,
+                priority = RequestPriority.VISIBLE,
             )
         })
         ProviderLogger.info(
@@ -239,7 +239,7 @@ internal class AppleQueueMetadataHooks(
                 metadata = metadata,
                 requestResolution = true,
                 preBind = false,
-                priority = AppleInternalCatalogResolver.RequestPriority.VISIBLE,
+                priority = RequestPriority.VISIBLE,
             )
         })
         ProviderLogger.info(
@@ -331,7 +331,7 @@ internal class AppleQueueMetadataHooks(
                 entrySource = lookup.source,
                 requestResolution = true,
                 preBind = true,
-                priority = AppleInternalCatalogResolver.RequestPriority.VISIBLE,
+                priority = RequestPriority.VISIBLE,
             )
         })
         ProviderLogger.info(
@@ -419,8 +419,8 @@ internal class AppleQueueMetadataHooks(
         requestResolution: Boolean = true,
         preBind: Boolean = false,
         historyEntry: Boolean = entry?.let(::isHistoryQueueEntry) == true,
-        priority: AppleInternalCatalogResolver.RequestPriority =
-            AppleInternalCatalogResolver.RequestPriority.ACTIVE_PAGE,
+        priority: RequestPriority =
+            RequestPriority.ACTIVE_PAGE,
     ): String? {
         entry ?: return null
         val item = runCatching {
@@ -490,8 +490,8 @@ internal class AppleQueueMetadataHooks(
         entrySource: String,
         requestResolution: Boolean,
         preBind: Boolean,
-        priority: AppleInternalCatalogResolver.RequestPriority =
-            AppleInternalCatalogResolver.RequestPriority.BACKGROUND,
+        priority: RequestPriority =
+            RequestPriority.BACKGROUND,
     ): String? {
         val historyEntry = isHistoryQueueEntry(entry)
         val item = entry?.let {
@@ -548,7 +548,7 @@ internal class AppleQueueMetadataHooks(
             historyEntry = historyEntry,
             priority = priority,
         )
-        if (mediaId != null && priority == AppleInternalCatalogResolver.RequestPriority.VISIBLE) {
+        if (mediaId != null && priority == RequestPriority.VISIBLE) {
             host.markMetadataVisible(listOf(mediaId))
         }
         if (BuildConfig.DEBUG) {

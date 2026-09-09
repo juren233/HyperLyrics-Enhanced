@@ -4,6 +4,8 @@ import android.view.View
 import android.view.ViewGroup
 import com.juren233.hyperlyricsenhanced.root.island.IslandTextHookerSupport.TAG
 import com.juren233.hyperlyricsenhanced.root.mediacard.island.IslandExpandedMediaAmbientFlowHooker
+import com.juren233.hyperlyricsenhanced.root.mediacard.island.applyFakeTransitionTheme
+import com.juren233.hyperlyricsenhanced.root.mediacard.island.restoreFakeTransitionTheme
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import io.github.libxposed.api.XposedInterface.Chain
 import io.github.libxposed.api.XposedInterface.Hooker

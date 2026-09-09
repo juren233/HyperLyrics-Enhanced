@@ -2,6 +2,7 @@ package com.juren233.hyperlyricsenhanced.online.utils
 
 import com.juren233.hyperlyricsenhanced.online.model.LyricsData
 import com.juren233.hyperlyricsenhanced.online.OnlineLyricTargeter
+import com.juren233.hyperlyricsenhanced.online.toLrcLines
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Test

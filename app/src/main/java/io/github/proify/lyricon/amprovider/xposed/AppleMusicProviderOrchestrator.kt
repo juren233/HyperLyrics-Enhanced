@@ -114,61 +114,61 @@ internal fun refreshMissingLyricsNowPlaying(
 
 /** Internal lifecycle and module coordinator behind [AppleMusicProvider]. */
 internal object AppleMusicProviderOrchestrator {
-    private const val APPLE_MUSIC_PACKAGE = "com.apple.android.music"
-    private val initialized = AtomicBoolean(false)
-    private lateinit var runtime: AppleMusicProviderRuntime
-    private val application: Application
+    internal const val APPLE_MUSIC_PACKAGE = "com.apple.android.music"
+    internal val initialized = AtomicBoolean(false)
+    internal lateinit var runtime: AppleMusicProviderRuntime
+    internal val application: Application
         get() = runtime.application
-    private val classLoader: ClassLoader
+    internal val classLoader: ClassLoader
         get() = runtime.classLoader
-    private val hookResolver: AppleMusicHookResolver
+    internal val hookResolver: AppleMusicHookResolver
         get() = runtime.hookResolver
-    private val module: XposedModule
+    internal val module: XposedModule
         get() = runtime.module
-    private val hookRegistrar
+    internal val hookRegistrar
         get() = runtime.hookRegistrar
-    private lateinit var contentLocalizationHooks: AppleContentLocalizationHooks
-    private lateinit var debugNetworkHooks: AppleDebugNetworkHooks
-    private lateinit var atmosphereVolumeDiagnostics: AppleAtmosVolumeDiagnostics
-    private lateinit var frameworkMetadataHooks: AppleFrameworkMetadataHooks
-    private lateinit var lyricsHooks: AppleLyricsSupplementHooks
-    private lateinit var onlineSourceMenuHooks: AppleOnlineSourceMenuHooks
-    private lateinit var missingLyricsHooks: AppleMissingLyricsHooks
-    private lateinit var playbackHooks: ApplePlaybackHooks
-    private lateinit var queueMetadataHooks: AppleQueueMetadataHooks
-    private lateinit var listenNowHooks: AppleListenNowHooks
-    private lateinit var librarySurfaceHooks: AppleLibrarySurfaceHooks
-    private lateinit var dataBindingHooks: AppleDataBindingMetadataHooks
-    private lateinit var collectionSurfaceHooks: AppleCollectionSurfaceHooks
-    private lateinit var artistSurfaceHooks: AppleArtistSurfaceHooks
-    private lateinit var inAppArtworkContinuityHooks: AppleInAppArtworkContinuityHooks
-    private lateinit var actionSheetMetadataHooks: AppleActionSheetMetadataHooks
-    private lateinit var playbackItemConversionHooks: ApplePlaybackItemConversionHooks
-    private lateinit var metadataSurfaceRuntime: AppleMetadataSurfaceRuntime
-    private lateinit var visibleMetadataDiagnostics: AppleVisibleMetadataDiagnostics
-    private lateinit var metadataConfigurationDispatcher: AppleMetadataConfigurationDispatcher
-    private lateinit var playbackMetadataCoordinator: ApplePlaybackMetadataCoordinator
-    private lateinit var playbackMetadataHooks: ApplePlaybackMetadataHooks
-    private lateinit var media3MetadataCoordinator: AppleMedia3MetadataCoordinator
-    private lateinit var contentItemMetadataHooks: AppleContentItemMetadataHooks
-    private lateinit var mediaApiMetadataCoordinator: AppleMediaApiMetadataCoordinator
-    private lateinit var metadataResolutionCoordinator: AppleInAppMetadataResolutionCoordinator
-    private var directPlayer: AppleDirectPlayer? = null
-    private lateinit var lyricRequester: LyricRequester
-    private lateinit var internalCatalogResolver: AppleInternalCatalogResolver
-    private var contentUiLanguagePrefs: android.content.SharedPreferences? = null
-    private var contentUiLanguagePreferenceListener:
+    internal lateinit var contentLocalizationHooks: AppleContentLocalizationHooks
+    internal lateinit var debugNetworkHooks: AppleDebugNetworkHooks
+    internal lateinit var atmosphereVolumeDiagnostics: AppleAtmosVolumeDiagnostics
+    internal lateinit var frameworkMetadataHooks: AppleFrameworkMetadataHooks
+    internal lateinit var lyricsHooks: AppleLyricsSupplementHooks
+    internal lateinit var onlineSourceMenuHooks: AppleOnlineSourceMenuHooks
+    internal lateinit var missingLyricsHooks: AppleMissingLyricsHooks
+    internal lateinit var playbackHooks: ApplePlaybackHooks
+    internal lateinit var queueMetadataHooks: AppleQueueMetadataHooks
+    internal lateinit var listenNowHooks: AppleListenNowHooks
+    internal lateinit var librarySurfaceHooks: AppleLibrarySurfaceHooks
+    internal lateinit var dataBindingHooks: AppleDataBindingMetadataHooks
+    internal lateinit var collectionSurfaceHooks: AppleCollectionSurfaceHooks
+    internal lateinit var artistSurfaceHooks: AppleArtistSurfaceHooks
+    internal lateinit var inAppArtworkContinuityHooks: AppleInAppArtworkContinuityHooks
+    internal lateinit var actionSheetMetadataHooks: AppleActionSheetMetadataHooks
+    internal lateinit var playbackItemConversionHooks: ApplePlaybackItemConversionHooks
+    internal lateinit var metadataSurfaceRuntime: AppleMetadataSurfaceRuntime
+    internal lateinit var visibleMetadataDiagnostics: AppleVisibleMetadataDiagnostics
+    internal lateinit var metadataConfigurationDispatcher: AppleMetadataConfigurationDispatcher
+    internal lateinit var playbackMetadataCoordinator: ApplePlaybackMetadataCoordinator
+    internal lateinit var playbackMetadataHooks: ApplePlaybackMetadataHooks
+    internal lateinit var media3MetadataCoordinator: AppleMedia3MetadataCoordinator
+    internal lateinit var contentItemMetadataHooks: AppleContentItemMetadataHooks
+    internal lateinit var mediaApiMetadataCoordinator: AppleMediaApiMetadataCoordinator
+    internal lateinit var metadataResolutionCoordinator: AppleInAppMetadataResolutionCoordinator
+    internal var directPlayer: AppleDirectPlayer? = null
+    internal lateinit var lyricRequester: LyricRequester
+    internal lateinit var internalCatalogResolver: AppleInternalCatalogResolver
+    internal var contentUiLanguagePrefs: android.content.SharedPreferences? = null
+    internal var contentUiLanguagePreferenceListener:
         android.content.SharedPreferences.OnSharedPreferenceChangeListener? = null
-    private val metadataOverrideStore = AppleMetadataOverrideStore()
-    private val inAppMetadataRegistry = AppleInAppMetadataRegistry()
-    private lateinit var inAppMetadataApplier: AppleInAppMetadataApplier
-    private lateinit var metadataOverrideApplicationCoordinator:
+    internal val metadataOverrideStore = AppleMetadataOverrideStore()
+    internal val inAppMetadataRegistry = AppleInAppMetadataRegistry()
+    internal lateinit var inAppMetadataApplier: AppleInAppMetadataApplier
+    internal lateinit var metadataOverrideApplicationCoordinator:
         AppleMetadataOverrideApplicationCoordinator
-    private lateinit var metadataRegistrationCoordinator:
+    internal lateinit var metadataRegistrationCoordinator:
         AppleInAppMetadataRegistrationCoordinator
-    private val mainHandler: Handler
+    internal val mainHandler: Handler
         get() = runtime.mainHandler
-    private val metadataTraceSequence = AtomicLong(0L)
+    internal val metadataTraceSequence = AtomicLong(0L)
 
     @Synchronized
     fun install(module: XposedModule, classLoader: ClassLoader) {
@@ -270,12 +270,12 @@ internal object AppleMusicProviderOrchestrator {
 
                     override fun effectiveMetadataAlias(
                         mediaId: String,
-                    ): AppleInternalCatalogResolver.Alias? =
+                    ): Alias? =
                         metadataResolutionCoordinator.effectiveAlias(mediaId)
 
                     override fun applyPlaybackMetadataOverride(
                         mediaId: String,
-                        alias: AppleInternalCatalogResolver.Alias,
+                        alias: Alias,
                         rememberLocalizedArtist: Boolean,
                         originalMetadata: Boolean,
                         originalMetadataConfirmed: Boolean,
@@ -297,10 +297,10 @@ internal object AppleMusicProviderOrchestrator {
                     }
 
                     override fun validatedOriginalSongAlias(
-                        alias: AppleInternalCatalogResolver.Alias?,
+                        alias: Alias?,
                         localizedTitle: String?,
                         localizedArtist: String?,
-                    ): AppleInternalCatalogResolver.Alias? =
+                    ): Alias? =
                         io.github.proify.lyricon.amprovider.xposed.validatedOriginalSongAlias(
                             alias = alias,
                             localizedTitle = localizedTitle,
@@ -310,7 +310,7 @@ internal object AppleMusicProviderOrchestrator {
                     override fun shouldShareOriginalSongLanguage(
                         localizedTitle: String?,
                         localizedArtist: String?,
-                        alias: AppleInternalCatalogResolver.Alias?,
+                        alias: Alias?,
                     ): Boolean = metadataResolutionCoordinator.shouldShareOriginalSongLanguage(
                             localizedTitle = localizedTitle,
                             localizedArtist = localizedArtist,
@@ -561,7 +561,7 @@ internal object AppleMusicProviderOrchestrator {
                         metadata: Any,
                         requestResolution: Boolean,
                         preBind: Boolean,
-                        priority: AppleInternalCatalogResolver.RequestPriority,
+                        priority: RequestPriority,
                     ) {
                         registerInAppMetadata(
                             mediaId = mediaId,
@@ -600,12 +600,12 @@ internal object AppleMusicProviderOrchestrator {
 
                     override fun effectiveAlias(
                         mediaId: String,
-                    ): AppleInternalCatalogResolver.Alias? =
+                    ): Alias? =
                         metadataResolutionCoordinator.effectiveAlias(mediaId)
 
                     override fun applyAliasToPlaybackItem(
                         playbackItem: Any,
-                        alias: AppleInternalCatalogResolver.Alias,
+                        alias: Alias,
                         notifyChange: Boolean,
                     ) {
                         applyAliasToInAppPlaybackItem(playbackItem, alias, notifyChange)
@@ -617,7 +617,7 @@ internal object AppleMusicProviderOrchestrator {
                     override fun ensureOverride(
                         mediaId: String,
                         preBind: Boolean,
-                        priority: AppleInternalCatalogResolver.RequestPriority,
+                        priority: RequestPriority,
                     ) {
                         metadataResolutionCoordinator.ensureOverride(
                             mediaId = mediaId,
@@ -712,7 +712,7 @@ internal object AppleMusicProviderOrchestrator {
 
                     override fun rememberOriginalMetadataOverride(
                         mediaId: String,
-                        alias: AppleInternalCatalogResolver.Alias,
+                        alias: Alias,
                         confirmed: Boolean,
                     ) {
                         metadataOverrideApplicationCoordinator.rememberOriginalMetadataOverride(
@@ -734,9 +734,9 @@ internal object AppleMusicProviderOrchestrator {
 
                     override fun resolveCachedOriginalEntityForInApp(
                         mediaId: String,
-                        entityType: AppleInternalCatalogResolver.LocalizedEntityType,
+                        entityType: LocalizedEntityType,
                         preBind: Boolean,
-                        priority: AppleInternalCatalogResolver.RequestPriority,
+                        priority: RequestPriority,
                     ) {
                         metadataResolutionCoordinator.resolveCachedOriginalEntity(
                             mediaId = mediaId,
@@ -748,13 +748,13 @@ internal object AppleMusicProviderOrchestrator {
 
                     override fun effectiveAlias(
                         mediaId: String,
-                    ): AppleInternalCatalogResolver.Alias? =
+                    ): Alias? =
                         metadataResolutionCoordinator.effectiveAlias(mediaId)
 
                     override fun applyAliasToLibraryEntity(
                         entity: Any,
                         kind: InAppLibraryEntityKind,
-                        alias: AppleInternalCatalogResolver.Alias,
+                        alias: Alias,
                     ): Boolean = librarySurfaceHooks.applyAliasToEntity(
                         entity = entity,
                         kind = kind,
@@ -770,7 +770,7 @@ internal object AppleMusicProviderOrchestrator {
 
                     override fun scheduleMetadataResolution(
                         mediaIds: Collection<String>,
-                        priority: AppleInternalCatalogResolver.RequestPriority,
+                        priority: RequestPriority,
                         originalResolutionMode: InAppOriginalResolutionMode,
                     ) {
                         metadataResolutionCoordinator.schedule(
@@ -817,7 +817,7 @@ internal object AppleMusicProviderOrchestrator {
 
                     override fun aliasValues(
                         mediaId: String,
-                        alias: AppleInternalCatalogResolver.Alias,
+                        alias: Alias,
                         binding: Any?,
                     ): DataBindingAliasValues = dataBindingAliasValues(
                         mediaId = mediaId,
@@ -898,7 +898,7 @@ internal object AppleMusicProviderOrchestrator {
 
                     override fun requestPriorityForMediaId(
                         mediaId: String,
-                    ): AppleInternalCatalogResolver.RequestPriority =
+                    ): RequestPriority =
                         this@AppleMusicProviderOrchestrator.requestPriorityForMediaId(mediaId)
 
                     override fun enrichEntityAssociations(
@@ -927,7 +927,7 @@ internal object AppleMusicProviderOrchestrator {
 
                     override fun effectiveAlias(
                         mediaId: String,
-                    ): AppleInternalCatalogResolver.Alias? =
+                    ): Alias? =
                         metadataResolutionCoordinator.effectiveAlias(mediaId)
 
                     override fun normalizeMediaIds(mediaIds: Collection<String>): List<String> =
@@ -939,7 +939,7 @@ internal object AppleMusicProviderOrchestrator {
 
                     override fun applyAliasToMetadataRefs(
                         mediaId: String,
-                        alias: AppleInternalCatalogResolver.Alias,
+                        alias: Alias,
                     ) {
                         applyAliasToInAppMetadataRefs(
                             mediaId = mediaId,
@@ -951,7 +951,7 @@ internal object AppleMusicProviderOrchestrator {
 
                     override fun scheduleMetadataResolution(
                         mediaIds: Collection<String>,
-                        priority: AppleInternalCatalogResolver.RequestPriority,
+                        priority: RequestPriority,
                     ) {
                         metadataResolutionCoordinator.schedule(mediaIds, priority)
                     }
@@ -982,7 +982,7 @@ internal object AppleMusicProviderOrchestrator {
                     override fun controllerAppliedAlias(
                         controller: Any,
                         mediaId: String,
-                        alias: AppleInternalCatalogResolver.Alias,
+                        alias: Alias,
                     ): AppliedMetadataAlias = collectionSurfaceHooks.controllerAppliedAlias(
                         controller = controller,
                         mediaId = mediaId,
@@ -1058,12 +1058,12 @@ internal object AppleMusicProviderOrchestrator {
 
                     override fun effectiveAlias(
                         mediaId: String,
-                    ): AppleInternalCatalogResolver.Alias? =
+                    ): Alias? =
                         metadataResolutionCoordinator.effectiveAlias(mediaId)
 
                     override fun aliasValues(
                         mediaId: String,
-                        alias: AppleInternalCatalogResolver.Alias,
+                        alias: Alias,
                         binding: Any?,
                     ): DataBindingAliasValues = dataBindingAliasValues(mediaId, alias, binding)
 
@@ -1090,7 +1090,7 @@ internal object AppleMusicProviderOrchestrator {
 
                     override fun scheduleMetadataResolution(
                         mediaIds: Collection<String>,
-                        priority: AppleInternalCatalogResolver.RequestPriority,
+                        priority: RequestPriority,
                         originalResolutionMode: InAppOriginalResolutionMode,
                     ) {
                         metadataResolutionCoordinator.schedule(
@@ -1165,12 +1165,12 @@ internal object AppleMusicProviderOrchestrator {
 
                     override fun effectiveAlias(
                         mediaId: String,
-                    ): AppleInternalCatalogResolver.Alias? =
+                    ): Alias? =
                         metadataResolutionCoordinator.effectiveAlias(mediaId)
 
                     override fun applyAliasToMetadataRefs(
                         mediaId: String,
-                        alias: AppleInternalCatalogResolver.Alias,
+                        alias: Alias,
                         notifyModelChange: Boolean,
                     ) {
                         applyAliasToInAppMetadataRefs(
@@ -1186,7 +1186,7 @@ internal object AppleMusicProviderOrchestrator {
 
                     override fun scheduleMetadataResolution(
                         mediaIds: Collection<String>,
-                        priority: AppleInternalCatalogResolver.RequestPriority,
+                        priority: RequestPriority,
                         originalResolutionMode: InAppOriginalResolutionMode,
                     ) {
                         metadataResolutionCoordinator.schedule(
@@ -1198,7 +1198,7 @@ internal object AppleMusicProviderOrchestrator {
 
                     override fun dataBindingAliasValues(
                         mediaId: String,
-                        alias: AppleInternalCatalogResolver.Alias,
+                        alias: Alias,
                         binding: Any?,
                     ): DataBindingAliasValues = this@AppleMusicProviderOrchestrator.dataBindingAliasValues(
                         mediaId = mediaId,
@@ -1300,12 +1300,12 @@ internal object AppleMusicProviderOrchestrator {
 
                     override fun effectiveAlias(
                         mediaId: String,
-                    ): AppleInternalCatalogResolver.Alias? =
+                    ): Alias? =
                         metadataResolutionCoordinator.effectiveAlias(mediaId)
 
                     override fun applyAliasToMetadataRefs(
                         mediaId: String,
-                        alias: AppleInternalCatalogResolver.Alias,
+                        alias: Alias,
                         notifyModelChange: Boolean,
                     ) {
                         applyAliasToInAppMetadataRefs(
@@ -1321,7 +1321,7 @@ internal object AppleMusicProviderOrchestrator {
 
                     override fun scheduleMetadataResolution(
                         mediaIds: Collection<String>,
-                        priority: AppleInternalCatalogResolver.RequestPriority,
+                        priority: RequestPriority,
                         originalResolutionMode: InAppOriginalResolutionMode,
                     ) {
                         metadataResolutionCoordinator.schedule(
@@ -1445,7 +1445,7 @@ internal object AppleMusicProviderOrchestrator {
 
                     override fun effectiveAlias(
                         mediaId: String,
-                    ): AppleInternalCatalogResolver.Alias? =
+                    ): Alias? =
                         metadataResolutionCoordinator.effectiveAlias(mediaId)
 
                     override fun knownValues(
@@ -1481,14 +1481,14 @@ internal object AppleMusicProviderOrchestrator {
 
                     override fun ensureOverride(
                         mediaId: String,
-                        priority: AppleInternalCatalogResolver.RequestPriority,
+                        priority: RequestPriority,
                     ) {
                         metadataResolutionCoordinator.ensureOverride(mediaId = mediaId, priority = priority)
                     }
 
                     override fun localizedText(
                         field: VisibleTextField,
-                        alias: AppleInternalCatalogResolver.Alias,
+                        alias: Alias,
                     ): String = localizedVisibleText(field, alias)
 
                     override fun logMetadataIdentity(
@@ -1560,13 +1560,13 @@ internal object AppleMusicProviderOrchestrator {
 
                     override fun effectiveAlias(
                         mediaId: String,
-                    ): AppleInternalCatalogResolver.Alias? =
+                    ): Alias? =
                         metadataResolutionCoordinator.effectiveAlias(mediaId)
 
                     override fun applyAliasToContainerItem(
                         containerItem: Any,
                         kind: InAppContainerKind,
-                        alias: AppleInternalCatalogResolver.Alias,
+                        alias: Alias,
                     ) {
                         this@AppleMusicProviderOrchestrator.applyAliasToInAppContainerItem(
                             containerItem,
@@ -1584,7 +1584,7 @@ internal object AppleMusicProviderOrchestrator {
 
                     override fun applyAliasToPlaybackItem(
                         playbackItem: Any,
-                        alias: AppleInternalCatalogResolver.Alias,
+                        alias: Alias,
                     ) {
                         this@AppleMusicProviderOrchestrator.applyAliasToInAppPlaybackItem(
                             playbackItem,
@@ -1597,7 +1597,7 @@ internal object AppleMusicProviderOrchestrator {
 
                     override fun ensureOverride(
                         mediaId: String,
-                        priority: AppleInternalCatalogResolver.RequestPriority,
+                        priority: RequestPriority,
                     ) {
                         metadataResolutionCoordinator.ensureOverride(mediaId = mediaId, priority = priority)
                     }
@@ -1613,7 +1613,7 @@ internal object AppleMusicProviderOrchestrator {
 
                     override fun effectiveAlias(
                         mediaId: String,
-                    ): AppleInternalCatalogResolver.Alias? =
+                    ): Alias? =
                         metadataResolutionCoordinator.effectiveAlias(mediaId)
 
                     override fun registerContainerItem(
@@ -1626,7 +1626,7 @@ internal object AppleMusicProviderOrchestrator {
 
                     override fun localizedEntityType(
                         contentItem: Any,
-                    ): AppleInternalCatalogResolver.LocalizedEntityType? =
+                    ): LocalizedEntityType? =
                         contentItemLocalizedEntityType(contentItem)
 
                     override fun recordComposeMediaId(mediaId: String) {
@@ -1640,11 +1640,11 @@ internal object AppleMusicProviderOrchestrator {
 
                     override fun requestPriority(
                         mediaId: String,
-                    ): AppleInternalCatalogResolver.RequestPriority =
+                    ): RequestPriority =
                         requestPriorityForMediaId(mediaId)
 
                     override fun shouldResolveFromGetter(
-                        priority: AppleInternalCatalogResolver.RequestPriority,
+                        priority: RequestPriority,
                     ): Boolean = shouldResolveMetadataFromGetter(priority)
 
                     override fun registerPlaybackItem(
@@ -1666,7 +1666,7 @@ internal object AppleMusicProviderOrchestrator {
 
                     override fun applyAliasToPlaybackItem(
                         playbackItem: Any,
-                        alias: AppleInternalCatalogResolver.Alias,
+                        alias: Alias,
                         notifyChange: Boolean,
                     ) {
                         applyAliasToInAppPlaybackItem(
@@ -1677,9 +1677,9 @@ internal object AppleMusicProviderOrchestrator {
                     }
 
                     override fun metadataOverride(
-                        entityType: AppleInternalCatalogResolver.LocalizedEntityType,
+                        entityType: LocalizedEntityType,
                         getter: AppleContentItemGetter,
-                        alias: AppleInternalCatalogResolver.Alias,
+                        alias: Alias,
                         original: String?,
                     ): String? = contentItemMetadataOverride(
                         entityType = entityType,
@@ -1715,12 +1715,12 @@ internal object AppleMusicProviderOrchestrator {
 
                     override fun effectiveAlias(
                         mediaId: String,
-                    ): AppleInternalCatalogResolver.Alias? =
+                    ): Alias? =
                         metadataResolutionCoordinator.effectiveAlias(mediaId)
 
                     override fun applyAliasToPlaybackItem(
                         playbackItem: Any,
-                        alias: AppleInternalCatalogResolver.Alias,
+                        alias: Alias,
                         notifyChange: Boolean,
                     ) {
                         applyAliasToInAppPlaybackItem(playbackItem, alias, notifyChange)
@@ -1729,7 +1729,7 @@ internal object AppleMusicProviderOrchestrator {
                     override fun shouldShareOriginalSongLanguage(
                         localizedTitle: String?,
                         localizedArtist: String?,
-                        alias: AppleInternalCatalogResolver.Alias?,
+                        alias: Alias?,
                     ): Boolean = metadataResolutionCoordinator.shouldShareOriginalSongLanguage(
                             localizedTitle = localizedTitle,
                             localizedArtist = localizedArtist,
@@ -1756,7 +1756,7 @@ internal object AppleMusicProviderOrchestrator {
 
                     override fun applyAliasToMetadataRefs(
                         mediaId: String,
-                        alias: AppleInternalCatalogResolver.Alias,
+                        alias: Alias,
                         forceRebind: Boolean,
                         notifyModelChange: Boolean,
                     ) {
@@ -1773,7 +1773,7 @@ internal object AppleMusicProviderOrchestrator {
 
                     override fun scheduleMetadataResolution(
                         mediaIds: Collection<String>,
-                        priority: AppleInternalCatalogResolver.RequestPriority,
+                        priority: RequestPriority,
                         originalResolutionMode: InAppOriginalResolutionMode,
                     ) {
                         metadataResolutionCoordinator.schedule(
@@ -1819,7 +1819,7 @@ internal object AppleMusicProviderOrchestrator {
 
                     override fun applyAliasToMetadataRefs(
                         mediaId: String,
-                        alias: AppleInternalCatalogResolver.Alias,
+                        alias: Alias,
                         forceRebind: Boolean,
                         notifyModelChange: Boolean,
                     ) {
@@ -1833,7 +1833,7 @@ internal object AppleMusicProviderOrchestrator {
 
                     override fun applyPlaybackMetadataOverride(
                         mediaId: String,
-                        alias: AppleInternalCatalogResolver.Alias,
+                        alias: Alias,
                         forceInAppRebind: Boolean,
                         rememberLocalizedArtist: Boolean,
                         originalMetadata: Boolean,
@@ -1882,7 +1882,7 @@ internal object AppleMusicProviderOrchestrator {
 
                     override fun effectiveAlias(
                         mediaId: String,
-                    ): AppleInternalCatalogResolver.Alias? =
+                    ): Alias? =
                         metadataResolutionCoordinator.effectiveAlias(mediaId)
 
                     override fun activeMetadataValues(mediaId: String): Set<String> {
@@ -2030,652 +2030,5 @@ internal object AppleMusicProviderOrchestrator {
         }
     }
 
-    private fun initializeContentUiLanguage() {
-        val prefs = runCatching {
-            module.getRemotePreferences(UIConstants.PREF_NAME)
-        }.getOrNull() ?: return
-        contentUiLanguagePrefs = prefs
-        AppleLyricTextTransform.initialize(application) {
-            lyricsHooks.isSimplifyTraditionalLyricsEnabled()
-        }
-        internalCatalogResolver.setPersistentLocalizedCacheEnabled(
-            prefs.getBoolean(
-                RootConstants.KEY_HOOK_APPLE_MUSIC_LOCALIZED_METADATA_CACHE,
-                RootConstants.DEFAULT_HOOK_APPLE_MUSIC_LOCALIZED_METADATA_CACHE,
-            )
-        )
-        applyConfiguredContentUiLanguage(prefs)
-        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { changed, key ->
-            when (key) {
-                RootConstants.KEY_HOOK_APPLE_MUSIC_CONTENT_UI_LANGUAGE -> {
-                    applyConfiguredContentUiLanguage(changed)
-                    metadataConfigurationDispatcher.dispatch()
-                }
-                RootConstants.KEY_HOOK_APPLE_MUSIC_OVERRIDE_ACCOUNT_LANGUAGE ->
-                    metadataConfigurationDispatcher.dispatch()
-                RootConstants.KEY_HOOK_APPLE_MUSIC_RESTORE_CJK_ORIGINAL_METADATA ->
-                    metadataConfigurationDispatcher.dispatch()
-                RootConstants.KEY_HOOK_APPLE_MUSIC_LOCALIZED_METADATA_CACHE ->
-                    applyConfiguredContentUiLanguage(changed)
-                RootConstants.KEY_HOOK_APPLE_MUSIC_SIMPLIFY_TRADITIONAL_LYRICS ->
-                    lyricsHooks.refreshAppleLyricsDisplay()
-                RootConstants.KEY_HOOK_APPLE_MUSIC_HIDE_MANDARIN_PINYIN -> {
-                    lyricsHooks.clearPendingApplePronunciationRenderPlans()
-                    lyricsHooks.refreshAppleLyricsSupplementPresentation()
-                }
-                RootConstants.KEY_HOOK_APPLE_MUSIC_LYRICS_BLUR_EFFECT,
-                RootConstants.KEY_HOOK_APPLE_MUSIC_LYRICS_BLUR_ANIMATION,
-                RootConstants.KEY_HOOK_APPLE_MUSIC_NATIVE_LYRICS_BLUR_MIN_RADIUS_DP,
-                RootConstants.KEY_HOOK_APPLE_MUSIC_NATIVE_LYRICS_BLUR_MAX_RADIUS_DP,
-                RootConstants.KEY_HOOK_APPLE_MUSIC_ADVANCED_LYRICS_BLUR_MIN_RADIUS_PX,
-                RootConstants.KEY_HOOK_APPLE_MUSIC_ADVANCED_LYRICS_BLUR_MAX_RADIUS_PX ->
-                    lyricsHooks.refreshAppleLyricsBlurEffect()
-                RootConstants.KEY_HOOK_APPLE_MUSIC_FOLLOW_SYSTEM_FONT,
-                RootConstants.KEY_HOOK_APPLE_MUSIC_FOLLOW_SYSTEM_FONT_WEIGHT ->
-                    lyricsHooks.refreshAppleSystemFont()
-                RootConstants.KEY_HOOK_APPLE_MUSIC_VOLUME_BALANCE -> {
-                    val enabled = changed.getBoolean(
-                        key,
-                        RootConstants.DEFAULT_HOOK_APPLE_MUSIC_VOLUME_BALANCE,
-                    )
-                    ProviderLogger.info(
-                        "[AtmosVolumeDiag] event=preference_changed," +
-                            "elapsedMs=${android.os.SystemClock.elapsedRealtime()}," +
-                            "enabled=$enabled"
-                    )
-                    playbackHooks.onVolumeBalancePreferenceChanged()
-                }
-                RootConstants.KEY_HOOK_APPLE_MUSIC_MATCH_ONLINE_TRANSLATION,
-                RootConstants.KEY_HOOK_APPLE_MUSIC_NATIVE_ONLINE_TRANSLATION -> {
-                    if (!lyricsHooks.isNativeOnlineTranslationEnabled()) {
-                        lyricsHooks.nativeOnlineTranslationStore.clear()
-                        lyricsHooks.refreshAppleLyricsSupplementPresentation()
-                    }
-                }
-                RootConstants.KEY_HOOK_APPLE_MUSIC_FILL_MISSING_LYRICS,
-                RootConstants.KEY_HOOK_APPLE_MUSIC_LUNABEAT_WORD_LYRICS ->
-                    missingLyricsHooks.onPreferenceChanged()
-                RootConstants.KEY_HOOK_ENABLE_AOD_LYRICS -> {
-                    playbackHooks.onAodPreferenceChanged()
-                }
-                else -> {
-                    if (com.juren233.hyperlyricsenhanced.online.OnlineTranslationSourcePreferences.isSourcePreference(key)) {
-                        currentLyricsMenuSongId(
-                            playbackSongId = playbackMetadataCoordinator.currentPlaybackQueueMediaId(),
-                            visibleLyricsSongId = lyricsHooks.currentSongId(),
-                        )?.let { songId ->
-                            onlineSourceMenuHooks.refreshActiveMenu(songId)
-                        }
-                    }
-                }
-            }
-        }
-        contentUiLanguagePreferenceListener = listener
-        prefs.registerOnSharedPreferenceChangeListener(listener)
-        ProviderLogger.diagnostic(
-            "[AtmosVolumeDiag] event=preference_listener_registered," +
-                "listener=${System.identityHashCode(listener)}"
-        )
-    }
-
-    private fun applyConfiguredContentUiLanguage(
-        prefs: android.content.SharedPreferences? = contentUiLanguagePrefs
-    ) {
-        prefs ?: return
-        val selection = prefs.getInt(
-            RootConstants.KEY_HOOK_APPLE_MUSIC_CONTENT_UI_LANGUAGE,
-            RootConstants.DEFAULT_HOOK_APPLE_MUSIC_CONTENT_UI_LANGUAGE
-        )
-        internalCatalogResolver.applyContentUiLanguage(selection)
-        internalCatalogResolver.setPersistentLocalizedCacheEnabled(
-            prefs.getBoolean(
-                RootConstants.KEY_HOOK_APPLE_MUSIC_LOCALIZED_METADATA_CACHE,
-                RootConstants.DEFAULT_HOOK_APPLE_MUSIC_LOCALIZED_METADATA_CACHE,
-            )
-        )
-    }
-
-    private fun initProvider() {
-        val directPlayer = AppleDirectPlayer(
-            context = application,
-            onOriginalMetadataRequested =
-                playbackMetadataCoordinator::resolveOriginalMetadataOnDemand,
-            onOnlineTranslationReceived = lyricsHooks::receiveNativeOnlineTranslation,
-            onOnlineTranslationCleared = lyricsHooks::clearNativeOnlineTranslation,
-            onMissingLyricsSupplementReceived = lyricsHooks::receiveMissingLyricsSupplement,
-            onMissingLyricsSupplementCleared = missingLyricsHooks::clearSupplement,
-            onOnlineTranslationSourceSwitchResult =
-                { requestId, songId, contentType, requestedSource, actualSource, successful ->
-                    var effectiveActualSource = actualSource
-                    var effectiveSuccessful = successful
-                    if (contentType == "lyrics") {
-                        val appliedSource = missingLyricsHooks.onLyricsSourceSelectionChanged(
-                            songId = songId,
-                            source = actualSource,
-                            successful = successful,
-                        )
-                        if (successful && appliedSource != null) {
-                            effectiveActualSource = appliedSource
-                            if (requestedSource != null && appliedSource != requestedSource) {
-                                effectiveSuccessful = false
-                            }
-                        }
-                    }
-                    onlineSourceMenuHooks.receiveSourceSwitchResult(
-                        requestId,
-                        songId,
-                        contentType,
-                        requestedSource,
-                        effectiveActualSource,
-                        effectiveSuccessful,
-                    )
-                },
-        ).also { it.start() }
-        this.directPlayer = directPlayer
-        val helper = runCatching {
-            LyriconFactory.createProvider(
-                context = application,
-                providerPackageName = Constants.PROVIDER_PACKAGE_NAME,
-                playerPackageName = APPLE_MUSIC_PACKAGE,
-                logo = ProviderLogo.fromBase64(Constants.ICON)
-            ).also { it.register() }
-        }.onFailure {
-            ProviderLogger.error("Lyricon Central 提供器注册失败，使用内置直连", it)
-        }.getOrNull()
-        val activePlayer = helper?.player?.let { CompositeRemotePlayer(it, directPlayer) }
-            ?: directPlayer
-        lyricRequester = LyricRequester(hookResolver, application)
-        PlaybackManager.init(
-            remotePlayer = activePlayer,
-            requester = lyricRequester,
-            hookResolver = hookResolver,
-            onMissingLyricsSupplementBuilt = lyricsHooks::receiveModuleMissingLyrics,
-            hasKnownNativeLyrics = missingLyricsHooks::hasKnownNativeLyricsFor,
-        )
-        playbackHooks.attachRemotePlayer(activePlayer)
-        playbackHooks.setDisplayTranslation(PreferencesMonitor.isTranslationSelected())
-    }
-
-    private fun startHooks() {
-        hookModules().asSequence()
-            .filter { hookModule -> !hookModule.debugOnly || BuildConfig.DEBUG }
-            .forEach { hookModule ->
-                hookRegistrar.withModule(hookModule.id, hookModule::installHooks)
-            }
-    }
-
-    internal fun hookModuleIdsForBuild(debug: Boolean): List<String> =
-        hookModules()
-            .filter { hookModule -> !hookModule.debugOnly || debug }
-            .map { hookModule -> hookModule.id }
-
-    private fun hookModules() = listOf(
-        FunctionalAppleMusicHookModule(
-            "hookMetadataSurfaceLifecycle",
-            installer = { metadataSurfaceRuntime.installLifecycleHooks() },
-        ),
-        FunctionalAppleMusicHookModule(
-            "hookTranslationPreference",
-            installer = { lyricsHooks.hookTranslationPreference() },
-        ),
-        FunctionalAppleMusicHookModule(
-            "hookMediaApiLocalization",
-            installer = { contentLocalizationHooks.installMediaApiLocalization() },
-        ),
-        FunctionalAppleMusicHookModule(
-            "hookContentHttpLocalization",
-            installer = { contentLocalizationHooks.installContentHttpLocalization() },
-        ),
-        FunctionalAppleMusicHookModule(
-            "hookExoMediaPlayer",
-            installer = { playbackHooks.installExoMediaPlayer() },
-        ),
-        FunctionalAppleMusicHookModule(
-            "hookAtmosVolumeDiagnostics",
-            debugOnly = true,
-            installer = { atmosphereVolumeDiagnostics.installHooks() },
-        ),
-        FunctionalAppleMusicHookModule(
-            "hookMediaMetadataChange",
-            installer = { playbackMetadataHooks.installHooks() },
-        ),
-        FunctionalAppleMusicHookModule(
-            "hookContentItemMetadata",
-            installer = { contentItemMetadataHooks.installHooks() },
-        ),
-        FunctionalAppleMusicHookModule(
-            "hookInAppLibraryEntities",
-            installer = { librarySurfaceHooks.installEntityHooks() },
-        ),
-        FunctionalAppleMusicHookModule(
-            "hookCollectionPageMetadataRefresh",
-            installer = { collectionSurfaceHooks.installHooks() },
-        ),
-        FunctionalAppleMusicHookModule(
-            "hookArtistProfileTopSongs",
-            installer = { artistSurfaceHooks.installTopSongHooks() },
-        ),
-        FunctionalAppleMusicHookModule(
-            "hookArtistProfileMetadata",
-            installer = { artistSurfaceHooks.installProfileHooks() },
-        ),
-        FunctionalAppleMusicHookModule(
-            "hookRecentlySearchedMetadata",
-            installer = { mediaApiMetadataCoordinator.installRecentlySearchedHooks() },
-        ),
-        FunctionalAppleMusicHookModule(
-            "hookInAppArtworkContinuity",
-            installer = { inAppArtworkContinuityHooks.installHooks() },
-        ),
-        FunctionalAppleMusicHookModule(
-            "hookInAppListenNowArtworkContinuity",
-            installer = { listenNowHooks.installArtworkContinuityHooks() },
-        ),
-        FunctionalAppleMusicHookModule(
-            "hookInAppLibraryEpoxyRefresh",
-            installer = { librarySurfaceHooks.installEpoxyHooks() },
-        ),
-        FunctionalAppleMusicHookModule(
-            "hookInAppLibraryComposeRefresh",
-            installer = { librarySurfaceHooks.installComposeHooks() },
-        ),
-        FunctionalAppleMusicHookModule(
-            "hookDebugListenNowArtworkLifecycle",
-            debugOnly = true,
-            installer = { listenNowHooks.installDebugArtworkLifecycleHooks() },
-        ),
-        FunctionalAppleMusicHookModule(
-            "hookVisibleMetadataDiagnostics",
-            debugOnly = true,
-            installer = { visibleMetadataDiagnostics.installHooks() },
-        ),
-        FunctionalAppleMusicHookModule(
-            "hookInAppDataBindingRefresh",
-            installer = { dataBindingHooks.installDataBindingHooks() },
-        ),
-        FunctionalAppleMusicHookModule(
-            "hookInAppListenNowMetadataBinding",
-            installer = { listenNowHooks.installMetadataBindingHooks() },
-        ),
-        FunctionalAppleMusicHookModule(
-            "hookRecyclerViewCentralBinding",
-            installer = { dataBindingHooks.installRecyclerHooks() },
-        ),
-        FunctionalAppleMusicHookModule(
-            "hookInAppMetadata",
-            installer = { queueMetadataHooks.installHooks() },
-        ),
-        FunctionalAppleMusicHookModule(
-            "hookInAppPlaybackItemConversion",
-            installer = { playbackItemConversionHooks.installHooks() },
-        ),
-        FunctionalAppleMusicHookModule(
-            "hookInAppActionSheetMetadata",
-            installer = { actionSheetMetadataHooks.installHooks() },
-        ),
-        FunctionalAppleMusicHookModule(
-            "hookSettingsCellularDataEntry",
-            installer = {
-                io.github.proify.lyricon.amprovider.xposed.hooks.AppleCellularDataSettingsHooks(
-                    runtime,
-                    preferences = { contentUiLanguagePrefs },
-                ).install()
-            },
-        ),
-        FunctionalAppleMusicHookModule(
-            "hookCellularAvailability",
-            installer = {
-                io.github.proify.lyricon.amprovider.xposed.hooks.AppleCellularDataSettingsHooks(
-                    runtime,
-                    preferences = { contentUiLanguagePrefs },
-                ).installCellularAvailability()
-            },
-        ),
-        FunctionalAppleMusicHookModule(
-            "hookMediaSessionMetadata",
-            installer = { frameworkMetadataHooks.installMediaSessionMetadata() },
-        ),
-        FunctionalAppleMusicHookModule(
-            "hookMediaSessionQueue",
-            installer = { frameworkMetadataHooks.installMediaSessionQueue() },
-        ),
-        FunctionalAppleMusicHookModule(
-            "hookPlaybackNotificationMetadata",
-            installer = { frameworkMetadataHooks.installPlaybackNotificationMetadata() },
-        ),
-        FunctionalAppleMusicHookModule(
-            "hookAppleOfficialPronunciationLanguageMatching",
-            installer = { lyricsHooks.hookAppleOfficialPronunciationLanguageMatching() },
-        ),
-        FunctionalAppleMusicHookModule(
-            "hookAppleLyricsPreferredLanguages",
-            installer = { lyricsHooks.hookAppleLyricsPreferredLanguages() },
-        ),
-        FunctionalAppleMusicHookModule(
-            "hookApplePronunciationWordRendering",
-            installer = { lyricsHooks.hookApplePronunciationWordRendering() },
-        ),
-        FunctionalAppleMusicHookModule(
-            "hookLyricBuildMethod",
-            installer = { lyricsHooks.hookLyricBuildMethod() },
-        ),
-        FunctionalAppleMusicHookModule(
-            "hookAppleNativeLyricsPresentation",
-            installer = { lyricsHooks.hookAppleNativeLyricsPresentation() },
-        ),
-        FunctionalAppleMusicHookModule(
-            "hookAppleSystemFontWeight",
-            installer = { lyricsHooks.hookAppleSystemFontWeight() },
-        ),
-        FunctionalAppleMusicHookModule(
-            "hookAppleLyricsBlurEffect",
-            installer = { lyricsHooks.hookAppleLyricsBlurEffect() },
-        ),
-        FunctionalAppleMusicHookModule(
-            "hookAppleLyricsUiDiagnostics",
-            debugOnly = true,
-            installer = { lyricsHooks.hookAppleLyricsUiDiagnostics() },
-        ),
-        FunctionalAppleMusicHookModule(
-            "hookAppleLyricsBindingDiagnostics",
-            debugOnly = true,
-            installer = { lyricsHooks.hookAppleLyricsBindingDiagnostics() },
-        ),
-        FunctionalAppleMusicHookModule(
-            "hookAppleLyricsSourceMenu",
-            installer = { onlineSourceMenuHooks.installSourceMenu() },
-        ),
-        FunctionalAppleMusicHookModule(
-            "hookAppleMissingLyricsSupplement",
-            installer = { missingLyricsHooks.installHooks() },
-        ),
-        FunctionalAppleMusicHookModule(
-            "hookLyricsNetworkRequest",
-            debugOnly = true,
-            installer = { debugNetworkHooks.installLyricsNetworkRequest() },
-        ),
-        FunctionalAppleMusicHookModule(
-            "hookLyricsCookies",
-            debugOnly = true,
-            installer = { debugNetworkHooks.installLyricsCookies() },
-        ),
-        FunctionalAppleMusicHookModule(
-            "hookFinalLyricsHttp",
-            debugOnly = true,
-            installer = { debugNetworkHooks.installFinalLyricsHttp() },
-        ),
-    )
-
-    private fun onMetadataPageAttached(owner: Any, recycler: RecyclerView) {
-        metadataSurfaceRuntime.onPageAttached(owner, recycler)
-    }
-
-    private fun onMetadataPageDetached(owner: Any) {
-        metadataSurfaceRuntime.onPageDetached(owner)
-    }
-
-    private fun markMetadataVisible(
-        mediaIds: Collection<String>,
-    ): AppleMetadataSurfaceCoordinator.SurfaceSnapshot =
-        metadataSurfaceRuntime.markVisible(mediaIds)
-
-    private fun setMetadataPlaybackMediaId(
-        mediaId: String?,
-    ): AppleMetadataSurfaceCoordinator.SurfaceSnapshot =
-        metadataSurfaceRuntime.setPlaybackMediaId(mediaId)
-
-    private fun metadataRequestContext(
-        mediaId: String,
-    ): AppleMetadataSurfaceCoordinator.RequestContext =
-        metadataSurfaceRuntime.requestContext(mediaId)
-
-    private fun isCurrentMetadataSurfaceMediaId(mediaId: String): Boolean =
-        metadataSurfaceRuntime.isCurrentMediaId(mediaId)
-
-    private fun hasVisibleInAppConsumer(mediaId: String): Boolean =
-        metadataSurfaceRuntime.hasVisibleConsumer(mediaId)
-
-    private fun isRefreshableInAppMediaId(mediaId: String): Boolean =
-        metadataSurfaceRuntime.isRefreshable(mediaId)
-
-    private fun requestPriorityForMediaId(
-        mediaId: String,
-    ): AppleInternalCatalogResolver.RequestPriority = metadataRequestContext(mediaId).priority
-
-    private fun recordCurrentRecyclerMediaId(mediaId: String): Boolean =
-        dataBindingHooks.recordCurrentRecyclerMediaId(mediaId)
-
-    private fun media3MetadataId(
-        metadata: Any,
-        fallback: String?,
-        trustedFallback: Boolean = false,
-    ): String? = media3MetadataCoordinator.mediaId(metadata, fallback, trustedFallback)
-
-    private fun media3MetadataDetails(metadata: Any): String =
-        media3MetadataCoordinator.details(metadata)
-
-    private fun activePlaybackMediaIdentity(): ActivePlaybackMediaIdentity =
-        media3MetadataCoordinator.activePlaybackIdentity()
-
-    private fun logMetadataIdentity(
-        event: String,
-        identity: ActivePlaybackMediaIdentity = activePlaybackMediaIdentity(),
-        details: String,
-    ) = media3MetadataCoordinator.logIdentity(event, identity, details)
-
-    private fun registerInAppMetadata(
-        mediaId: String,
-        metadata: Any,
-        requestResolution: Boolean = true,
-        preBind: Boolean = false,
-        priority: AppleInternalCatalogResolver.RequestPriority =
-            AppleInternalCatalogResolver.RequestPriority.ACTIVE_PAGE,
-    ) = metadataRegistrationCoordinator.registerMetadata(
-        mediaId = mediaId,
-        metadata = metadata,
-        requestResolution = requestResolution,
-        preBind = preBind,
-        priority = priority,
-    )
-
-    private fun registerInAppPlaybackItem(
-        mediaId: String,
-        playbackItem: Any,
-        notifyChange: Boolean = true,
-        analyzeMetadata: Boolean = true,
-    ) = metadataRegistrationCoordinator.registerPlaybackItem(
-        mediaId = mediaId,
-        playbackItem = playbackItem,
-        notifyChange = notifyChange,
-        analyzeMetadata = analyzeMetadata,
-    )
-
-    private fun mergePlaybackAccountMetadata(
-        mediaId: String,
-        title: String?,
-        artist: String?,
-        reconcileArtistAssociations: Boolean = true,
-    ) = metadataRegistrationCoordinator.mergePlaybackAccountMetadata(
-        mediaId = mediaId,
-        title = title,
-        artist = artist,
-        reconcileArtistAssociations = reconcileArtistAssociations,
-    )
-
-    private fun registerInAppContainerItem(
-        mediaId: String,
-        containerItem: Any,
-        kind: InAppContainerKind,
-    ) = metadataRegistrationCoordinator.registerContainerItem(mediaId, containerItem, kind)
-
-    private fun inAppContainerKind(containerItem: Any): InAppContainerKind? =
-        metadataRegistrationCoordinator.containerKind(containerItem)
-
-    private fun markInAppContainerNavigationItem(
-        containerItem: Any,
-        kind: InAppContainerKind,
-        mediaId: String,
-    ) = metadataRegistrationCoordinator.markContainerNavigationItem(containerItem, kind, mediaId)
-
-    private fun inAppContainerNavigationBinding(
-        containerItem: Any,
-    ): InAppContainerNavigationRef? =
-        metadataRegistrationCoordinator.containerNavigationBinding(containerItem)
-
-    private fun rawContentItemValue(
-        contentItem: Any,
-        runtimeMember: AppleMusicRuntimeMember,
-    ): Any? = metadataRegistrationCoordinator.rawContentItemValue(contentItem, runtimeMember)
-
-    private fun inAppPlaybackItemContract(playbackItem: Any): InAppPlaybackItemContract =
-        metadataRegistrationCoordinator.playbackItemContract(playbackItem)
-
-    private fun readInAppPlaybackItemValue(
-        playbackItem: Any,
-        field: InAppPlaybackItemField,
-        contract: InAppPlaybackItemContract = inAppPlaybackItemContract(playbackItem),
-    ): String? = metadataRegistrationCoordinator.readPlaybackItemValue(
-        playbackItem = playbackItem,
-        field = field,
-        contract = contract,
-    )
-
-    private fun contentItemCatalogLookupIds(contentItem: Any, mediaId: String): Set<String> =
-        metadataRegistrationCoordinator.contentItemCatalogLookupIds(contentItem, mediaId)
-
-    private fun contentItemArtistCacheKeys(
-        contentItem: Any,
-        rawArtist: String?,
-    ): Set<String> = metadataRegistrationCoordinator.contentItemArtistCacheKeys(
-        contentItem,
-        rawArtist,
-    )
-
-    private fun contentItemLocalizedEntityType(
-        contentItem: Any,
-    ): AppleInternalCatalogResolver.LocalizedEntityType? =
-        metadataRegistrationCoordinator.contentItemLocalizedEntityType(contentItem)
-
-    private fun applyAliasToInAppMetadataRefs(
-        mediaId: String,
-        alias: AppleInternalCatalogResolver.Alias,
-        forceRebind: Boolean = true,
-        notifyModelChange: Boolean = true,
-    ) = inAppMetadataApplier.applyAliasToMetadataRefs(
-        mediaId = mediaId,
-        alias = alias,
-        forceRebind = forceRebind,
-        notifyModelChange = notifyModelChange,
-    )
-
-    private fun requestInAppLibraryControllerBuild(
-        controller: Any,
-        strategy: InAppLibraryControllerBuildStrategy,
-    ) = inAppMetadataApplier.requestLibraryControllerBuild(controller, strategy)
-
-    private fun dataBindingAliasValues(
-        mediaId: String,
-        alias: AppleInternalCatalogResolver.Alias,
-        binding: Any?,
-    ): DataBindingAliasValues = inAppMetadataApplier.dataBindingAliasValues(
-        mediaId = mediaId,
-        alias = alias,
-        binding = binding,
-    )
-
-    private fun applyAliasToInAppContainerItem(
-        containerItem: Any,
-        kind: InAppContainerKind,
-        alias: AppleInternalCatalogResolver.Alias,
-        notifyChange: Boolean = true,
-    ) = inAppMetadataApplier.applyAliasToContainerItem(
-        containerItem = containerItem,
-        kind = kind,
-        alias = alias,
-        notifyChange = notifyChange,
-    )
-
-    private fun applyAliasToInAppPlaybackItem(
-        playbackItem: Any,
-        alias: AppleInternalCatalogResolver.Alias,
-        notifyChange: Boolean = true,
-    ) = inAppMetadataApplier.applyAliasToPlaybackItem(
-        playbackItem = playbackItem,
-        alias = alias,
-        notifyChange = notifyChange,
-    )
-
-    private fun applyPlaybackMetadataOverride(
-        mediaId: String,
-        alias: AppleInternalCatalogResolver.Alias,
-        forceInAppRebind: Boolean = true,
-        rememberLocalizedArtist: Boolean = true,
-        originalMetadata: Boolean = false,
-        originalMetadataConfirmed: Boolean = false,
-        artistOnly: Boolean = false,
-        propagateArtistEntity: Boolean = true,
-    ) = metadataOverrideApplicationCoordinator.apply(
-        mediaId = mediaId,
-        alias = alias,
-        forceInAppRebind = forceInAppRebind,
-        rememberLocalizedArtist = rememberLocalizedArtist,
-        originalMetadata = originalMetadata,
-        originalMetadataConfirmed = originalMetadataConfirmed,
-        artistOnly = artistOnly,
-        propagateArtistEntity = propagateArtistEntity,
-    )
-
-    private fun configuredContentUiLanguage(): Int {
-        val prefs = contentUiLanguagePrefs
-        return prefs?.getInt(
-            RootConstants.KEY_HOOK_APPLE_MUSIC_CONTENT_UI_LANGUAGE,
-            RootConstants.DEFAULT_HOOK_APPLE_MUSIC_CONTENT_UI_LANGUAGE,
-        ) ?: RootConstants.DEFAULT_HOOK_APPLE_MUSIC_CONTENT_UI_LANGUAGE
-    }
-
-    private fun shouldOverrideAccountLanguage(selection: Int): Boolean {
-        if (selection == RootConstants.APPLE_MUSIC_CONTENT_UI_LANGUAGE_NONE) return false
-        return contentUiLanguagePrefs?.getBoolean(
-            RootConstants.KEY_HOOK_APPLE_MUSIC_OVERRIDE_ACCOUNT_LANGUAGE,
-            RootConstants.DEFAULT_HOOK_APPLE_MUSIC_OVERRIDE_ACCOUNT_LANGUAGE,
-        ) == true
-    }
-
-    private fun shouldRestoreCjkOriginalMetadata(
-        metadata: MediaMetadataCache.Metadata,
-    ): Boolean = isRestoreCjkOriginalMetadataEnabled() &&
-        AppleOriginalMetadataPolicy.shouldProbeCjkOriginalMetadata(
-            mediaId = metadata.id,
-            title = metadata.title,
-            artist = metadata.artist,
-            genre = metadata.genre,
-        )
-
-    private fun shouldRetryOriginalMetadataCacheProbe(mediaId: String): Boolean =
-        shouldRetryOriginalMetadataCacheProbe(
-            originalResolved = metadataOverrideStore.isOriginalResolved(mediaId),
-            lastMissUptimeMillis = metadataOverrideStore.originalCacheMissUptimeMillis(mediaId),
-            nowUptimeMillis = SystemClock.uptimeMillis(),
-        )
-
-    private fun shouldRequestInAppMetadataOverride(mediaId: String): Boolean =
-        metadataResolutionCoordinator.shouldRequestOverride(mediaId)
-
-    private fun isRestoreCjkOriginalMetadataEnabled(): Boolean =
-        contentUiLanguagePrefs?.getBoolean(
-        RootConstants.KEY_HOOK_APPLE_MUSIC_RESTORE_CJK_ORIGINAL_METADATA,
-        RootConstants.DEFAULT_HOOK_APPLE_MUSIC_RESTORE_CJK_ORIGINAL_METADATA,
-    ) == true
-
-    private fun isSimplifyTraditionalLyricsEnabled(): Boolean =
-        contentUiLanguagePrefs?.getBoolean(
-            RootConstants.KEY_HOOK_APPLE_MUSIC_SIMPLIFY_TRADITIONAL_LYRICS,
-            RootConstants.DEFAULT_HOOK_APPLE_MUSIC_SIMPLIFY_TRADITIONAL_LYRICS,
-        ) == true
-
-    private fun isAodLyricsEnabled(): Boolean = contentUiLanguagePrefs?.getBoolean(
-        RootConstants.KEY_HOOK_ENABLE_AOD_LYRICS,
-        RootConstants.DEFAULT_HOOK_ENABLE_AOD_LYRICS,
-    ) ?: RootConstants.DEFAULT_HOOK_ENABLE_AOD_LYRICS
 
 }

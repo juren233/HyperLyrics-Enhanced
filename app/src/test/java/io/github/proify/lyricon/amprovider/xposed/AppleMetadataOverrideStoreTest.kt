@@ -97,7 +97,7 @@ class AppleMetadataOverrideStoreTest {
         store.rememberOriginalArtist("1", value)
         store.mergeAccountMetadata("1", AccountMetadata("Title", "Artist"))
         store.mergeLookupIds("1", setOf("1", "2"))
-        store.rememberEntityType("1", AppleInternalCatalogResolver.LocalizedEntityType.SONG)
+        store.rememberEntityType("1", LocalizedEntityType.SONG)
         store.mergeArtistKeys("1", setOf("id:9"))
         store.mergeAssociatedArtistIds("1", listOf("9"))
         store.markOriginalPending("1")
@@ -113,7 +113,7 @@ class AppleMetadataOverrideStoreTest {
         assertEquals(AccountMetadata("Title", "Artist"), store.accountMetadata("1"))
         assertEquals(setOf("1", "2"), store.lookupIds("1"))
         assertEquals(
-            AppleInternalCatalogResolver.LocalizedEntityType.SONG,
+            LocalizedEntityType.SONG,
             store.entityType("1"),
         )
         assertEquals(setOf("id:9"), store.artistKeys("1"))
@@ -127,7 +127,7 @@ class AppleMetadataOverrideStoreTest {
         title: String,
         artist: String,
         language: String,
-    ): AppleInternalCatalogResolver.Alias = AppleInternalCatalogResolver.Alias(
+    ): Alias = Alias(
         title = title,
         artist = artist,
         language = language,

@@ -24,11 +24,11 @@ internal class AppleOriginalMetadataCache(
         Thread(task, "HLE-AppleOriginalMetadataCache").apply { isDaemon = true }
     }
     private val memoryCache = object :
-        LinkedHashMap<String, AppleInternalCatalogResolver.Alias>(256, 0.75f, true) {
+        LinkedHashMap<String, Alias>(256, 0.75f, true) {
         override fun removeEldestEntry(
             eldest: MutableMap.MutableEntry<
                 String,
-                AppleInternalCatalogResolver.Alias,
+                Alias,
                 >?,
         ): Boolean = size > MAX_ENTRIES
     }
@@ -45,7 +45,7 @@ internal class AppleOriginalMetadataCache(
 
     fun get(
         key: String,
-        onResult: (AppleInternalCatalogResolver.Alias?) -> Unit,
+        onResult: (Alias?) -> Unit,
     ) {
         val normalizedKey = key.trim()
         if (!enabled || normalizedKey.isEmpty()) {
@@ -80,7 +80,7 @@ internal class AppleOriginalMetadataCache(
      */
     fun getFirst(
         keys: Collection<String>,
-        accept: (AppleInternalCatalogResolver.Alias) -> Boolean = { true },
+        accept: (Alias) -> Boolean = { true },
         onResult: (CacheHit?) -> Unit,
     ) {
         val normalizedKeys = keys.asSequence()
@@ -118,7 +118,7 @@ internal class AppleOriginalMetadataCache(
     /**
      * 只读取已预热或已访问的内存项，不在当前线程触发 SQLite I/O。
      */
-    fun cached(key: String): AppleInternalCatalogResolver.Alias? {
+    fun cached(key: String): Alias? {
         val normalizedKey = key.trim()
         if (!enabled || normalizedKey.isEmpty()) return null
         return synchronized(memoryCache) { memoryCache[normalizedKey] }
@@ -175,10 +175,10 @@ internal class AppleOriginalMetadataCache(
         }
     }
 
-    fun put(key: String, alias: AppleInternalCatalogResolver.Alias) {
+    fun put(key: String, alias: Alias) {
         val normalizedKey = key.trim()
         if (!enabled || normalizedKey.isEmpty()) return
-        val canonicalAlias = AppleInternalCatalogResolver.canonicalCachedOriginalAlias(alias)
+        val canonicalAlias = canonicalCachedOriginalAlias(alias)
             ?: return
         remember(normalizedKey, canonicalAlias)
         executor.execute {
@@ -217,8 +217,7 @@ internal class AppleOriginalMetadataCache(
                     ?.substringBefore(ARTIST_REGION_VALUE_SEPARATOR)
                     ?.takeIf(String::isNotBlank)
                     ?: return@forEach
-                val supportedLanguage = AppleInternalCatalogResolver
-                    .supportedOriginalLanguageOrNull(storedLanguage)
+                val supportedLanguage = supportedOriginalLanguageOrNull(storedLanguage)
                 if (supportedLanguage == null) {
                     editor = (editor ?: artistRegionPreferences.edit()).remove(key)
                 } else if (resolvedLanguage == null) {
@@ -230,8 +229,7 @@ internal class AppleOriginalMetadataCache(
         }
 
     fun rememberArtistRegion(keys: Collection<String>, language: String) {
-        val normalizedLanguage = AppleInternalCatalogResolver
-            .supportedOriginalLanguageOrNull(language)
+        val normalizedLanguage = supportedOriginalLanguageOrNull(language)
             ?: return
         val normalizedKeys = keys.asSequence()
             .map(String::trim)
@@ -264,13 +262,13 @@ internal class AppleOriginalMetadataCache(
 
     private fun remember(
         key: String,
-        alias: AppleInternalCatalogResolver.Alias,
+        alias: Alias,
     ) {
         synchronized(memoryCache) { memoryCache[key] = alias }
     }
 
-    private fun readRecent(): Map<String, AppleInternalCatalogResolver.Alias> {
-        val aliases = linkedMapOf<String, AppleInternalCatalogResolver.Alias>()
+    private fun readRecent(): Map<String, Alias> {
+        val aliases = linkedMapOf<String, Alias>()
         helper.readableDatabase.query(
             TABLE_NAME,
             WARM_COLUMNS,
@@ -284,14 +282,14 @@ internal class AppleOriginalMetadataCache(
             while (cursor.moveToNext()) {
                 val key = cursor.stringColumn(COLUMN_KEY)
                 val alias = cursor.toAlias()
-                AppleInternalCatalogResolver.canonicalCachedOriginalAlias(alias)
+                canonicalCachedOriginalAlias(alias)
                     ?.let { aliases[key] = it }
             }
         }
         return aliases
     }
 
-    private fun read(key: String): AppleInternalCatalogResolver.Alias? {
+    private fun read(key: String): Alias? {
         val alias = helper.readableDatabase.query(
             TABLE_NAME,
             COLUMNS,
@@ -304,7 +302,7 @@ internal class AppleOriginalMetadataCache(
         ).use { cursor ->
             if (!cursor.moveToFirst()) null else cursor.toAlias()
         }
-        val canonicalAlias = alias?.let(AppleInternalCatalogResolver::canonicalCachedOriginalAlias)
+        val canonicalAlias = alias?.let(::canonicalCachedOriginalAlias)
         if (alias != null && canonicalAlias == null) {
             helper.writableDatabase.delete(
                 TABLE_NAME,
@@ -319,10 +317,10 @@ internal class AppleOriginalMetadataCache(
 
     private fun readFirst(
         keys: List<String>,
-        accept: (AppleInternalCatalogResolver.Alias) -> Boolean,
+        accept: (Alias) -> Boolean,
     ): CacheHit? {
         val placeholders = keys.joinToString(",") { "?" }
-        val aliases = linkedMapOf<String, AppleInternalCatalogResolver.Alias>()
+        val aliases = linkedMapOf<String, Alias>()
         helper.readableDatabase.query(
             TABLE_NAME,
             WARM_COLUMNS,
@@ -336,7 +334,7 @@ internal class AppleOriginalMetadataCache(
             while (cursor.moveToNext()) {
                 val key = cursor.stringColumn(COLUMN_KEY)
                 val alias = cursor.toAlias()
-                AppleInternalCatalogResolver.canonicalCachedOriginalAlias(alias)
+                canonicalCachedOriginalAlias(alias)
                     ?.let { aliases[key] = it }
             }
         }
@@ -347,7 +345,7 @@ internal class AppleOriginalMetadataCache(
         }
     }
 
-    private fun write(key: String, alias: AppleInternalCatalogResolver.Alias) {
+    private fun write(key: String, alias: Alias) {
         val db = helper.writableDatabase
         db.beginTransaction()
         try {
@@ -378,7 +376,7 @@ internal class AppleOriginalMetadataCache(
         }
     }
 
-    private fun Cursor.toAlias() = AppleInternalCatalogResolver.Alias(
+    private fun Cursor.toAlias() = Alias(
         title = stringColumn(COLUMN_TITLE),
         artist = stringColumn(COLUMN_ARTIST),
         album = stringColumn(COLUMN_ALBUM),
@@ -446,6 +444,6 @@ internal class AppleOriginalMetadataCache(
 
     data class CacheHit(
         val key: String,
-        val alias: AppleInternalCatalogResolver.Alias,
+        val alias: Alias,
     )
 }
