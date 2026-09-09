@@ -301,25 +301,36 @@ internal fun OnlineLyricTargeter.calculateScore(
 }
 
 internal fun OnlineLyricTargeter.albumScore(cleanLocalAlbum: String, cleanRemoteAlbum: String): Int {
-    val localBase = stripAlbumVersionSuffixes(cleanLocalAlbum)
-    val remoteBase = stripAlbumVersionSuffixes(cleanRemoteAlbum)
+    // Strip while word boundaries still exist. Only equality ignores whitespace.
+    val localExact = compactWhitespace(cleanLocalAlbum)
+    val remoteExact = compactWhitespace(cleanRemoteAlbum)
+    val localBase = compactWhitespace(stripAlbumVersionSuffixes(cleanLocalAlbum))
+    val remoteBase = compactWhitespace(stripAlbumVersionSuffixes(cleanRemoteAlbum))
     return when {
-        cleanLocalAlbum.isEmpty() || cleanRemoteAlbum.isEmpty() -> 0
-        cleanLocalAlbum == cleanRemoteAlbum -> 10
+        localExact.isEmpty() || remoteExact.isEmpty() -> 0
+        localExact == remoteExact -> 10
         localBase.isNotEmpty() && localBase == remoteBase -> 5
         else -> 0
     }
 }
 
-/**
- * 专辑名参与评分前的字符归一化。NFKC 会把全角字母/数字/括号统一成半角，
- * 随后 [cleanString] 继续去掉括号内容、压缩空白、转简体并小写。
- */
+/** NFKC normalization remains shared; album word boundaries survive until scoring. */
 internal fun OnlineLyricTargeter.normalizeAlbumCharacters(input: String): String =
     Normalizer.normalize(input, Normalizer.Form.NFKC)
 
 internal fun OnlineLyricTargeter.normalizeAlbum(context: Context, input: String): String =
-    cleanString(context, normalizeAlbumCharacters(input))
+    normalizeAlbumForComparison(input) { ChineseUtils.toSimplified(context, it) }
+
+/** Same pipeline for local and remote albums; the only platform dependency is simplification. */
+internal fun OnlineLyricTargeter.normalizeAlbumForComparison(
+    input: String,
+    toSimplified: (String) -> String,
+): String {
+    val cleaned = normalizeAlbumCharacters(input)
+        .replace(Regex("\\(.*?\\)|\\[.*?]|\\{.*?\\}"), "")
+        .trim().lowercase()
+    return toSimplified(cleaned).replace(Regex("\\s+"), " ").trim()
+}
 
 /**
  * 去掉末尾的版本/录音标记，让“原曲 / 现场 / 不插电 / 翻唱 / 豪华版”等

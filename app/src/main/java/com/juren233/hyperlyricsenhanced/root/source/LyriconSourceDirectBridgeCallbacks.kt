@@ -336,13 +336,12 @@ private fun LyriconSource.restoreAppleNativeLyricsSource(requestId: Long, songId
         clearMatched = false,
         reason = "temporary_apple_lyrics_selected",
     )
-    confirmedLyricsSourceSelection = ConfirmedLyricsSourceSelection(
+    publication.confirmLyricsSource(ConfirmedLyricsSourceSelection(
         songId = requireNotNull(nativeSong.id),
         source = LyriconSource.APPLE_NATIVE_LYRICS_SOURCE,
-    )
-    currentAppleSong = nativeSong
-    currentAppleHasNativeLyrics = true
-    fallbackSongActive = false
+    ))
+    publication.acceptAppleInput(nativeSong, true)
+    publication.cancelAppleFallback(clearSong = false)
     stopMediaPositionPolling()
     publishAppleSong(nativeSong, restorePosition = true)
     if (needsOnlineEnrichment(nativeSong) && isAppleTranslationEnrichmentEnabled()) {
@@ -377,10 +376,10 @@ internal fun LyriconSource.completePendingLyricsSourceRequest(
     )
     pendingLyricsSourceRequest = null
     if (actualSource == request.requestedSource) {
-        confirmedLyricsSourceSelection = ConfirmedLyricsSourceSelection(
+        publication.confirmLyricsSource(ConfirmedLyricsSourceSelection(
             songId = request.songId,
             source = actualSource.name,
-        )
+        ))
     }
     publishOnlineSourceSwitchResult(request, actualSource)
 }

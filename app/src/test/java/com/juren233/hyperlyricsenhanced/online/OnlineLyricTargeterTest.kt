@@ -369,4 +369,55 @@ class OnlineLyricTargeterTest {
             words = listOf(LyricsWord(start, start + 1_000L, text))
         )
     }
+    private fun normalizedAlbumScore(local: String, remote: String): Int =
+        OnlineLyricTargeter.albumScore(
+            OnlineLyricTargeter.normalizeAlbumForComparison(local) { it },
+            OnlineLyricTargeter.normalizeAlbumForComparison(remote) { it },
+        )
+
+    @Test
+    fun `normalized album variants retain single and multi word suffix bonuses`() {
+        for (remote in listOf(
+            "Midnights Deluxe Edition", "Midnights Live", "Midnights - Live",
+            "Midnights - Deluxe Edition", "Midnights  Deluxe   Edition",
+            "Midnights\tDeluxe\nEdition", "Ｍｉｄｎｉｇｈｔｓ　Ｄｅｌｕｘｅ　Ｅｄｉｔｉｏｎ",
+            "Midnights Deluxe Edition Live", "Midnights豪华版",
+        )) {
+            assertEquals(remote, 5, normalizedAlbumScore("Midnights", remote))
+            assertEquals(remote, 5, normalizedAlbumScore(remote, "Midnights"))
+        }
+    }
+
+    @Test
+    fun `normalized exact empty and unrelated albums keep existing scores`() {
+        assertEquals(10, normalizedAlbumScore("Midnights Deluxe Edition", "midnights deluxe edition"))
+        assertEquals(10, normalizedAlbumScore("Greatest Hits", "GreatestHits"))
+        assertEquals(10, normalizedAlbumScore("Midnights", "Ｍｉｄｎｉｇｈｔｓ（Ｌｉｖｅ）"))
+        assertEquals(0, normalizedAlbumScore("", "Midnights"))
+        assertEquals(0, normalizedAlbumScore("Midnights", ""))
+        assertEquals(0, normalizedAlbumScore("  ", ""))
+        assertEquals(0, normalizedAlbumScore("Midnights", "Folklore"))
+        assertEquals(0, normalizedAlbumScore("Live", "Deluxe Edition"))
+    }
+
+    @Test
+    fun `normalization keeps english suffix word boundary protection`() {
+        assertEquals(0, normalizedAlbumScore("A", "Alive"))
+        assertEquals(0, normalizedAlbumScore("Dis", "Discover"))
+        assertEquals(0, normalizedAlbumScore("Greatest", "Greatest Hits"))
+        assertEquals(0, normalizedAlbumScore("Midnights", "MidnightsLive"))
+        assertEquals(10, normalizedAlbumScore("Alive", "Alive"))
+    }
+
+    @Test
+    fun `album simplification preserves boundaries for subsequent scoring`() {
+        var simplifierInput = ""
+        val normalized = OnlineLyricTargeter.normalizeAlbumForComparison("專輯　Deluxe Edition") {
+            simplifierInput = it
+            it.replace("專輯", "专辑")
+        }
+        assertEquals("專輯 deluxe edition", simplifierInput)
+        assertEquals("专辑 deluxe edition", normalized)
+        assertEquals(5, OnlineLyricTargeter.albumScore("专辑", normalized))
+    }
 }

@@ -463,10 +463,10 @@ internal fun LyriconSource.applyFallbackResult(
         )
         if (supplementSong != null) {
             if (outcome.selectedSource == Source.LB) {
-                confirmedLyricsSourceSelection = ConfirmedLyricsSourceSelection(
+                publication.confirmLyricsSource(ConfirmedLyricsSourceSelection(
                     songId = baseSong.id.orEmpty(),
                     source = Source.LB.name,
-                )
+                ))
             }
             val publishStartedAtNanos = SystemClock.elapsedRealtimeNanos()
             val published = directBridge?.publishMissingLyricsSupplement(supplementSong) == true
@@ -485,8 +485,7 @@ internal fun LyriconSource.applyFallbackResult(
             )
             // 后续在线翻译请求必须把这份补充歌词当作匹配基准；空歌词的 Apple
             // 占位不能再作为 currentAppleSong，否则翻译结果会在 apply guard 被丢弃。
-            currentAppleSong = supplementSong
-            currentAppleHasNativeLyrics = false
+            publication.acceptAppleInput(supplementSong, false)
         } else if (requestedSource == null) {
             directBridge?.clearMissingLyricsSupplement(baseSong.id)
             diagnostic("Apple Music 无歌词补充未命中: title=${baseSong.name}")
@@ -524,7 +523,7 @@ internal fun LyriconSource.applyFallbackResult(
         requestOriginalMetadata(baseSong, "lyrics_fallback_miss")
         return
     }
-    fallbackSongActive = true
+    publication.selectAppleFallback()
     MediaMetadataHelper.getPlaybackProgress(application, LyriconSource.APPLE_MUSIC_PACKAGE)
         .position
         .takeIf { it >= 0L }
@@ -546,7 +545,7 @@ internal fun LyriconSource.applyFallbackResult(
     )
     if (!fallbackHasTranslation) {
         val onlineTranslationRunning =
-            onlineTranslationJob?.isActive == true || onlineMatchedTranslationActive
+            onlineTranslationRunning || onlineMatchedTranslationActive
         val onlineTranslationScheduled = supplementSong != null &&
             isAppleTranslationEnrichmentEnabled() &&
             scheduleOnlineTranslation(supplementSong)
@@ -600,11 +599,10 @@ internal fun LyriconSource.cancelFallback(clearAppleSong: Boolean, reason: Strin
     fallbackDelayRunnable = null
     fallbackJob?.cancel()
     fallbackJob = null
-    fallbackSongActive = false
+    publication.cancelAppleFallback(clearSong = false)
     stopMediaPositionPolling()
     if (clearAppleSong) {
-        currentAppleSong = null
-        currentAppleHasNativeLyrics = false
+        publication.acceptAppleInput(null, false)
     }
 }
 
@@ -634,7 +632,7 @@ internal fun LyriconSource.scheduleThirdPartyFallback(baseSong: LocalSong, delay
     if (baseSong.name.isNullOrBlank()) return
     if (!isOnlineTranslationEnabledFor(playerPackage)) return
     if (OnlineTranslationSourcePreferences.orderedSources(prefs).isEmpty()) return
-    thirdPartyFallbackSongActive = false
+    publication.cancelThirdPartyFallback()
     val generation = thirdPartyFallbackRequest.schedule(
         delayMs = delayMs,
         query = {
@@ -702,12 +700,11 @@ private fun LyriconSource.applyThirdPartyFallbackResult(
         return
     }
     if (fallbackSong == null) {
-        thirdPartyFallbackSongActive = false
+        publication.cancelThirdPartyFallback()
         diagnostic("椒盐音乐在线兜底未命中: title=${baseSong.name}")
         return
     }
-    thirdPartyFallbackSongActive = true
-    currentPublishedThirdPartySong = fallbackSong
+    publication.selectThirdPartyFallback()
     HookLogger.i(
         LyriconSource.TAG,
         "椒盐音乐在线兜底命中: title=${baseSong.name}, " +
@@ -716,7 +713,7 @@ private fun LyriconSource.applyThirdPartyFallbackResult(
                 OnlineTranslationContentPolicy.isMeaningful(it.translation)
             }}"
     )
-    publishSong(fallbackSong, restorePosition = true)
+    publishThirdPartySong(fallbackSong, restorePosition = true)
 }
 
 internal fun LyriconSource.cancelThirdPartyFallback(reason: String) {
@@ -729,6 +726,6 @@ internal fun LyriconSource.cancelThirdPartyFallback(reason: String) {
         )
     }
     thirdPartyFallbackRequest.cancel()
-    thirdPartyFallbackSongActive = false
+    publication.cancelThirdPartyFallback()
 }
 

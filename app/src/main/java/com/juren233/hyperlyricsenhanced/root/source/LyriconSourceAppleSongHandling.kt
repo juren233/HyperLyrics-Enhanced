@@ -70,7 +70,7 @@ import kotlin.math.abs
 internal fun LyriconSource.handleAppleSong(incomingSong: LocalSong?) {
     val previousSong = currentAppleSong
     if (incomingSong != null && !isMissingLyricsSupplement(incomingSong)) {
-        currentAppleNativeSong = incomingSong
+        publication.rememberNative(incomingSong)
     }
     val sameTrack = previousSong != null && incomingSong != null &&
         isSameTrack(previousSong, incomingSong)
@@ -123,8 +123,7 @@ internal fun LyriconSource.handleAppleSong(incomingSong: LocalSong?) {
         song.lyrics.isNullOrEmpty() &&
         (fallbackSongActive || fallbackDelayRunnable != null || fallbackJob?.isActive == true)
     if (repeatedEmptySong) {
-        currentAppleSong = song
-        currentAppleHasNativeLyrics = false
+        publication.acceptAppleInput(song, false)
         debug("忽略同一首歌的重复空歌词占位: title=${song.name}")
         return
     }
@@ -138,11 +137,10 @@ internal fun LyriconSource.handleAppleSong(incomingSong: LocalSong?) {
         needsEnrichment = needsOnlineEnrichment(song),
         originalMetadataChanged = originalMetadataChanged,
         enrichmentRunning =
-            onlineTranslationJob?.isActive == true || onlineMatchedTranslationActive,
+            onlineTranslationRunning || onlineMatchedTranslationActive,
     )
     if (repeatedLyricsNeedingEnrichment) {
-        currentAppleSong = song
-        currentAppleHasNativeLyrics = hasAppleNativeLyrics(song)
+        publication.acceptAppleInput(song, hasAppleNativeLyrics(song))
         debug("忽略同一首歌的重复待补全歌词: title=${song?.name}")
         return
     }
@@ -159,8 +157,7 @@ internal fun LyriconSource.handleAppleSong(incomingSong: LocalSong?) {
         clearMatched = true,
         reason = "apple_song_updated"
     )
-    currentAppleSong = song
-    currentAppleHasNativeLyrics = hasAppleNativeLyrics(song)
+    publication.acceptAppleInput(song, hasAppleNativeLyrics(song))
     if (!sameTrack) {
         appleSongGeneration += 1
         appleMediaPositionReference = null
@@ -172,8 +169,7 @@ internal fun LyriconSource.handleAppleSong(incomingSong: LocalSong?) {
         pendingTranslationSourceRequest = null
         pendingPronunciationSourceRequest = null
         pendingLyricsSourceRequest = null
-        confirmedLyricsSourceSelection = null
-        currentAppleNativeSong = incomingSong?.takeUnless(::isMissingLyricsSupplement)
+        publication.beginAppleTrack(incomingSong?.takeUnless(::isMissingLyricsSupplement))
         refreshAppleMediaPositionReference()
     }
     val originalMetadataPlan = AppleOnlineTranslationRequestPolicy.originalMetadataLookupPlan(

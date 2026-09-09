@@ -104,9 +104,27 @@ class LyriconSource : LyricSource {
     internal val mainHandler = Handler(Looper.getMainLooper())
     internal val fallbackScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     internal val fallbackRequestMutex = Mutex()
+    internal val publication = LyriconPublication()
+    internal val currentAppleSong get() = publication.currentAppleSong
+    internal val currentAppleNativeSong get() = publication.currentAppleNativeSong
+    internal val currentAppleHasNativeLyrics get() = publication.currentAppleHasNativeLyrics
+    internal val currentPublishedAppleSong get() = publication.currentPublishedAppleSong
+    internal val currentPublishedAppleOnlineTranslationMatched get() = publication.currentPublishedAppleOnlineTranslationMatched
+    internal val currentThirdPartySong get() = publication.currentThirdPartySong
+    internal val currentPublishedThirdPartySong get() = publication.currentPublishedThirdPartySong
+    internal val fallbackSongActive get() = publication.fallbackSongActive
+    internal val thirdPartyFallbackSongActive get() = publication.thirdPartyFallbackSongActive
+    internal val onlineMatchedTranslationActive get() = publication.onlineMatchedTranslationActive
+    internal val confirmedLyricsSourceSelection get() = publication.confirmedLyricsSourceSelection
+    internal val onlineTranslationRequest = OnlineTranslationRequest<PendingOnlineTranslationCommit>()
+    internal val onlineTranslationGeneration get() = onlineTranslationRequest.snapshot().generation
+    internal val onlineTranslationAttemptKey get() = onlineTranslationRequest.snapshot().attempt
+    internal val onlineTranslationRunning get() = onlineTranslationRequest.snapshot().running
+    internal val onlineRaceFirstPublishedGeneration get() = onlineTranslationRequest.snapshot().firstPublished
+    internal val onlineRaceFirstAcceptedGeneration get() = onlineTranslationRequest.snapshot().firstAccepted
+
     internal val mediaPositionScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     internal var fallbackJob: Job? = null
-    internal var onlineTranslationJob: Job? = null
     internal var mediaPositionJob: Job? = null
     internal var fallbackDelayRunnable: Runnable? = null
     internal var fallbackGeneration = 0
@@ -115,14 +133,7 @@ class LyriconSource : LyricSource {
         post = { task, delayMs -> mainHandler.postDelayed(task, delayMs) },
         remove = { task -> mainHandler.removeCallbacks(task) },
     )
-    internal var thirdPartyFallbackSongActive = false
-    internal var onlineTranslationGeneration = 0
-    internal var onlineTranslationAttemptKey: String? = null
     internal var originalMetadataRequestKey: String? = null
-    internal var onlineMatchedTranslationActive = false
-    internal var onlineRaceFirstPublishedGeneration: Int? = null
-    internal var onlineRaceFirstAcceptedGeneration: Int? = null
-    internal var pendingOnlineTranslationCommit: PendingOnlineTranslationCommit? = null
     internal var temporaryTranslationSource: Source? = null
     internal var temporaryPronunciationSource: Source? = null
     internal var pendingTranslationSourceRequest: OnlineSourceSwitchRequest? = null
@@ -130,16 +141,6 @@ class LyriconSource : LyricSource {
     internal var pendingLyricsSourceRequest: OnlineSourceSwitchRequest? = null
     @Volatile
     internal var latestSourceSwitchTraceRequest: OnlineSourceSwitchRequest? = null
-    internal var confirmedLyricsSourceSelection: ConfirmedLyricsSourceSelection? = null
-    internal var currentAppleSong: LocalSong? = null
-    internal var currentAppleNativeSong: LocalSong? = null
-    internal var currentAppleHasNativeLyrics = false
-    internal var currentPublishedAppleSong: LocalSong? = null
-    internal var currentThirdPartySong: LocalSong? = null
-    internal var currentPublishedThirdPartySong: LocalSong? = null
-    internal var currentPublishedAppleOnlineTranslationMatched = false
-    @Volatile
-    internal var fallbackSongActive = false
     internal var lastAdjustedPosition = 0L
     internal var appleSongGeneration = 0
     @Volatile
@@ -251,10 +252,7 @@ class LyriconSource : LyricSource {
             centralAppleSongAvailable = false
             activeCentralPlayerPackageName = null
             activeProviderPackageName = null
-            currentPublishedAppleSong = null
-            currentThirdPartySong = null
-            currentPublishedThirdPartySong = null
-            currentPublishedAppleOnlineTranslationMatched = false
+            publication.reset()
             appleMediaPositionReference = null
             appleDirectPositionReference = null
             currentDirectAppleSongId = null
@@ -317,22 +315,21 @@ class LyriconSource : LyricSource {
         val previousSong = currentThirdPartySong
         val sameTrack = previousSong != null && song != null && isSameTrack(previousSong, song)
         val sameContent = sameTrack && previousSong == song
-        if (sameContent && (onlineTranslationJob?.isActive == true ||
-                onlineMatchedTranslationActive ||
-                thirdPartyFallbackRequest.snapshot().running ||
-                thirdPartyFallbackSongActive)
-        ) {
-            currentThirdPartySong = song
-            debug("忽略同一首歌的重复三方歌曲回调: title=${song.name}")
-            return
-        }
-        val fallbackPending = thirdPartyFallbackRequest.snapshot().pending || thirdPartyFallbackSongActive
         val preferOnline = isSaltPreferOnlineEnabled()
-        if (sameTrack && fallbackPending && (preferOnline || song.lyrics.isNullOrEmpty())) {
-            // 在线兜底进行中：椒盐 Pack 重复发来的占位，或“优先使用在线源”下
-            // 迟到的本地歌词，都不打断在线结果。
-            currentThirdPartySong = song
-            debug("忽略同一首歌的三方回调（在线兜底进行中）: title=${song.name}")
+        val request = thirdPartyFallbackRequest.snapshot()
+        if (ThirdPartySongUpdatePolicy.preserveOnline(
+                sameTrack = sameTrack,
+                sameContent = sameContent,
+                enrichmentRunningOrMatched = onlineTranslationRunning || onlineMatchedTranslationActive,
+                fallbackRunning = request.running,
+                fallbackPending = request.pending,
+                fallbackSelected = thirdPartyFallbackSongActive,
+                preferOnline = preferOnline,
+                incomingHasLyrics = !song?.lyrics.isNullOrEmpty(),
+            )
+        ) {
+            publication.acceptThirdPartyInput(song)
+            debug("忽略同一首歌的三方回调（保留在线结果）: title=${song?.name}")
             return
         }
         cancelThirdPartyFallback(reason = "third_party_song_updated")
@@ -341,9 +338,8 @@ class LyriconSource : LyricSource {
             clearMatched = true,
             reason = "third_party_song_updated",
         )
-        currentThirdPartySong = song
-        currentPublishedThirdPartySong = song
-        publishSong(song, restorePosition = sameTrack)
+        publication.acceptThirdPartyInput(song)
+        publishThirdPartySong(song, restorePosition = sameTrack, origin = LyricPublicationOrigin.NATIVE)
         if (song == null) return
         val playerPackage = activeCentralPlayerPackageName
         if (!isOnlineTranslationEnabledFor(playerPackage)) return
@@ -367,10 +363,10 @@ class LyriconSource : LyricSource {
         restorePosition: Boolean,
         onlineTranslationMatched: Boolean = false,
         publishToSink: Boolean = true,
+        origin: LyricPublicationOrigin = if (onlineTranslationMatched || isMissingLyricsSupplement(song))
+            LyricPublicationOrigin.AUTOMATIC else LyricPublicationOrigin.NATIVE,
     ) {
         if (!publishToSink) return
-        currentPublishedAppleSong = song
-        currentPublishedAppleOnlineTranslationMatched = onlineTranslationMatched
         if (BuildConfig.DEBUG) {
             HookLogger.i(
                 TAG,
@@ -380,16 +376,31 @@ class LyriconSource : LyricSource {
                     "centralPlayer=$activeCentralPlayerPackageName, fallback=$fallbackSongActive"
             )
         }
+        publication.publishApple(
+            LyricPublicationEvent(song, origin, onlineTranslationMatched),
+        ) { selected, matched ->
         publishSong(
             song = AppleSongDisplayPolicy.copyForDisplay(song)
                 ?.let(::filterApplePronunciationForDisplay)
                 ?.let(::simplifyAppleSongForDisplay),
             restorePosition = restorePosition,
-            onlineTranslationMatched = onlineTranslationMatched
+            onlineTranslationMatched = matched
         )
+        }
     }
 
-    internal fun publishSong(
+    internal fun publishThirdPartySong(
+        song: LocalSong?,
+        restorePosition: Boolean,
+        onlineTranslationMatched: Boolean = false,
+        origin: LyricPublicationOrigin = LyricPublicationOrigin.AUTOMATIC,
+    ) {
+        publication.publishThirdParty(LyricPublicationEvent(song, origin, onlineTranslationMatched)) { selected, matched ->
+            publishSong(selected, restorePosition, matched)
+        }
+    }
+
+    private fun publishSong(
         song: LocalSong?,
         restorePosition: Boolean,
         onlineTranslationMatched: Boolean = false
@@ -509,24 +520,10 @@ class LyriconSource : LyricSource {
 
     internal fun hasActiveCentralPlayer(): Boolean = activeCentralPlayerPackageName != null
 
-    internal fun isSameTrack(first: LocalSong, second: LocalSong): Boolean {
-        val firstId = first.id?.trim().orEmpty()
-        val secondId = second.id?.trim().orEmpty()
-        if (firstId.isNotEmpty() && secondId.isNotEmpty() && firstId == secondId) return true
+    internal fun isSameTrack(first: LocalSong, second: LocalSong): Boolean =
+        SourceTrackIdentity.of(first).matches(SourceTrackIdentity.of(second))
 
-        if (normalizeIdentity(first.name) != normalizeIdentity(second.name)) return false
-        if (normalizeIdentity(first.artist) != normalizeIdentity(second.artist)) return false
-        return first.duration <= 0L || second.duration <= 0L ||
-            abs(first.duration - second.duration) <= SAME_TRACK_DURATION_TOLERANCE_MS
-    }
-
-    internal fun songIdentity(song: LocalSong): String = listOf(
-        normalizeIdentity(song.name),
-        normalizeIdentity(song.artist),
-        song.duration.toString()
-    ).joinToString("|")
-
-    private fun normalizeIdentity(value: String?): String = value.orEmpty().trim().lowercase()
+    internal fun songIdentity(song: LocalSong): String = SourceTrackIdentity.of(song).legacyKey()
 
     internal fun debug(message: String) {
         if (BuildConfig.DEBUG) HookLogger.d(TAG, message)
@@ -660,11 +657,9 @@ internal val activePlayerListener = object : ActivePlayerListener {
         centralAppleProviderActive =
             playerPackageName == LyriconSource.APPLE_MUSIC_PACKAGE
         if (!centralAppleProviderActive) {
-            currentPublishedAppleSong = null
-            currentPublishedAppleOnlineTranslationMatched = false
+            publication.resetPublishedApple()
         }
-        currentThirdPartySong = null
-        currentPublishedThirdPartySong = null
+        publication.resetThirdParty()
         activeProviderPackageName = providerInfo?.providerPackageName
         activeProviderDelayMs = providerInfo?.providerPackageName
             ?.let(::readProviderDelay)

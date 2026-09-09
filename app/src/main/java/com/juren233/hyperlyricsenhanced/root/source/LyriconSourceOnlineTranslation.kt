@@ -113,18 +113,12 @@ internal fun LyriconSource.scheduleOnlineTranslation(baseSong: LocalSong): Boole
         return false
     }
 
-    onlineTranslationAttemptKey = attemptKey
-    onlineTranslationGeneration += 1
-    val generation = onlineTranslationGeneration
-    onlineRaceFirstPublishedGeneration = null
-    onlineRaceFirstAcceptedGeneration = null
-    pendingOnlineTranslationCommit = null
-    val previousJobActive = onlineTranslationJob?.isActive == true
+    val previousJobActive = onlineTranslationRunning
+    val generation = onlineTranslationRequest.begin(attemptKey) ?: return false
     pronunciationDiagnostic(
         "stage=request_scheduled, generation=$generation, id=${baseSong.id}, " +
             "attempt=$attemptKey, nativeLines=${baseSong.lyrics.orEmpty().size}"
     )
-    onlineTranslationJob?.cancel()
     sourceSwitchCoreStage(
         request = sourceSwitchRequest,
         stage = "translation_job_scheduled",
@@ -172,7 +166,7 @@ internal fun LyriconSource.scheduleOnlineTranslation(baseSong: LocalSong): Boole
         }
     }
 
-    onlineTranslationJob = fallbackScope.launch {
+    onlineTranslationRequest.launch(fallbackScope, generation) {
         val mutexWaitStartedAtNanos = SystemClock.elapsedRealtimeNanos()
         sourceSwitchCoreStage(
             request = sourceSwitchRequest,
@@ -346,7 +340,7 @@ internal fun LyriconSource.scheduleOnlineTranslation(baseSong: LocalSong): Boole
                                         sourceOrder = listOf(source),
                                         pronunciationRequested = completeOnlinePronunciation,
                                     )
-                                    onlineRaceFirstPublishedGeneration = generation
+                                    onlineTranslationRequest.markFirstPublished(generation)
                                     pronunciationDiagnostic(
                                         "stage=race_first_ready, generation=$generation, " +
                                             "id=${baseSong.id}, source=$source, " +

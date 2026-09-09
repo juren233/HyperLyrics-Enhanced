@@ -60,9 +60,8 @@ private fun LyriconSource.applyLunaBeatWordLyricsPreferenceChange() {
     if (currentAppleSong?.metadata
             ?.getString(LyricMetadataKeys.APPLE_MISSING_LYRICS_SOURCE) == Source.LB.name
     ) {
-        currentAppleSong = nativeSong
-        currentAppleHasNativeLyrics = hasAppleNativeLyrics(nativeSong)
-        fallbackSongActive = false
+        publication.acceptAppleInput(nativeSong, hasAppleNativeLyrics(nativeSong))
+        publication.cancelAppleFallback(clearSong = false)
         stopMediaPositionPolling()
         publishAppleSong(nativeSong, restorePosition = true)
         if (!hasAppleNativeLyrics(nativeSong) && isFillMissingLyricsEnabled()) {
@@ -177,8 +176,7 @@ private fun LyriconSource.applyOnlineTranslationPreferenceChange(key: String) {
             reason = "third_party_preference_changed",
         )
         if (currentPublishedThirdPartySong != song) {
-            currentPublishedThirdPartySong = song
-            publishSong(song, restorePosition = true)
+            publishThirdPartySong(song, restorePosition = true)
         }
         reevaluateThirdPartyOnlineMatching(song)
         return

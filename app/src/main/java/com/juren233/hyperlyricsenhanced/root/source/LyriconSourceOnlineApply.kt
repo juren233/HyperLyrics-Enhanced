@@ -75,6 +75,17 @@ internal fun LyriconSource.applyOnlineTranslationResult(
     selection: OnlineTranslationSelection?,
     publicationStage: LyriconSource.OnlineTranslationPublicationStage = LyriconSource.OnlineTranslationPublicationStage.SINGLE,
 ) {
+    onlineTranslationRequest.deliver(generation) {
+        applyCurrentOnlineTranslationResult(generation, baseSong, selection, publicationStage)
+    }
+}
+
+private fun LyriconSource.applyCurrentOnlineTranslationResult(
+    generation: Int,
+    baseSong: LocalSong,
+    selection: OnlineTranslationSelection?,
+    publicationStage: LyriconSource.OnlineTranslationPublicationStage = LyriconSource.OnlineTranslationPublicationStage.SINGLE,
+) {
     val appleRequest = activeCentralPlayerPackageName == LyriconSource.APPLE_MUSIC_PACKAGE ||
         currentThirdPartySong == null
     val nativeSong = if (appleRequest) currentAppleSong else currentThirdPartySong
@@ -115,9 +126,6 @@ internal fun LyriconSource.applyOnlineTranslationResult(
         return
     }
 
-    if (publicationStage != LyriconSource.OnlineTranslationPublicationStage.RACE_FIRST) {
-        onlineTranslationJob = null
-    }
     val latestNativeSong = nativeSong
     val currentPublishedSong = (if (appleRequest) {
         currentPublishedAppleSong
@@ -186,8 +194,7 @@ internal fun LyriconSource.applyOnlineTranslationResult(
             ) {
                 if (appleRequest) publishAppleSong(latestNativeSong, restorePosition = true)
                 else {
-                    currentPublishedThirdPartySong = latestNativeSong
-                    publishSong(latestNativeSong, restorePosition = true)
+                    publishThirdPartySong(latestNativeSong, restorePosition = true)
                 }
             }
             sink?.onOnlineTranslationUnavailable(nativeSong)
@@ -195,12 +202,12 @@ internal fun LyriconSource.applyOnlineTranslationResult(
         return
     }
 
-    onlineMatchedTranslationActive = hasOnlineEnrichment
+    publication.acceptEnrichment(hasOnlineEnrichment)
     if (
         publicationStage == LyriconSource.OnlineTranslationPublicationStage.RACE_FIRST &&
         hasOnlineEnrichment
     ) {
-        onlineRaceFirstAcceptedGeneration = generation
+        onlineTranslationRequest.markFirstAccepted(generation)
     }
     diagnostic(
         "在线翻译结果接受: player=$activeCentralPlayerPackageName, " +
@@ -291,12 +298,12 @@ internal fun LyriconSource.applyOnlineTranslationResult(
             currentPosition = LyriconDataBridge.currentPosition,
         )
         if (targetPosition != null && targetPosition > LyriconDataBridge.currentPosition) {
-            pendingOnlineTranslationCommit = LyriconSource.PendingOnlineTranslationCommit(
+            onlineTranslationRequest.defer(generation, LyriconSource.PendingOnlineTranslationCommit(
                 generation = generation,
                 baseSong = baseSong,
                 selection = selection,
                 targetPosition = targetPosition,
-            )
+            ))
             pronunciationDiagnostic(
                 "stage=race_final_deferred, generation=$generation, id=${baseSong.id}, " +
                     "targetPosition=$targetPosition, currentPosition=${LyriconDataBridge.currentPosition}"
@@ -309,7 +316,7 @@ internal fun LyriconSource.applyOnlineTranslationResult(
             "stage=race_final_commit, generation=$generation, id=${baseSong.id}, " +
                 "position=${LyriconDataBridge.currentPosition}"
         )
-        pendingOnlineTranslationCommit = null
+        onlineTranslationRequest.clearPending(generation)
     }
     val nativePublicationEnabled = appleRequest && isNativeOnlineTranslationEnabled()
     pronunciationDiagnostic(
@@ -337,8 +344,7 @@ internal fun LyriconSource.applyOnlineTranslationResult(
             publishToSink = overlayPublicationEnabled,
         )
     } else {
-        currentPublishedThirdPartySong = mergedResult.song
-        publishSong(
+        publishThirdPartySong(
             mergedResult.song,
             restorePosition = true,
             onlineTranslationMatched = hasOnlineEnrichment,
@@ -376,9 +382,7 @@ internal fun LyriconSource.actualSourceFirst(sourceName: String?, fallbackOrder:
 }
 
 internal fun LyriconSource.maybeCommitPendingOnlineTranslation(position: Long) {
-    val pending = pendingOnlineTranslationCommit ?: return
-    if (position < pending.targetPosition) return
-    pendingOnlineTranslationCommit = null
+    val pending = onlineTranslationRequest.takePending { position >= it.targetPosition } ?: return
     pronunciationDiagnostic(
         "stage=race_commit_boundary_reached, generation=${pending.generation}, " +
             "id=${pending.baseSong.id}, targetPosition=${pending.targetPosition}, position=$position"
@@ -443,22 +447,16 @@ internal fun LyriconSource.cancelOnlineTranslation(
     clearMatched: Boolean,
     reason: String
 ) {
-    if (onlineTranslationJob?.isActive == true || onlineMatchedTranslationActive) {
+    if (onlineTranslationRunning || onlineMatchedTranslationActive) {
         diagnostic(
             "Apple Music 在线翻译匹配取消: reason=$reason, " +
                 "title=${currentAppleSong?.name}"
         )
     }
-    onlineTranslationGeneration += 1
-    onlineTranslationJob?.cancel()
-    onlineTranslationJob = null
-    pendingOnlineTranslationCommit = null
-    onlineRaceFirstPublishedGeneration = null
-    onlineRaceFirstAcceptedGeneration = null
-    if (clearAttempt) onlineTranslationAttemptKey = null
+    onlineTranslationRequest.cancel(clearAttempt)
     if (clearMatched) {
         directBridge?.clearOnlineTranslation(currentAppleSong?.id)
-        onlineMatchedTranslationActive = false
+        publication.cancelEnrichment()
     }
 }
 
