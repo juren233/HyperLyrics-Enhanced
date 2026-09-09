@@ -634,29 +634,19 @@ internal fun LyriconSource.scheduleThirdPartyFallback(baseSong: LocalSong, delay
     if (baseSong.name.isNullOrBlank()) return
     if (!isOnlineTranslationEnabledFor(playerPackage)) return
     if (OnlineTranslationSourcePreferences.orderedSources(prefs).isEmpty()) return
-    thirdPartyFallbackGeneration += 1
-    val generation = thirdPartyFallbackGeneration
-    thirdPartyFallbackDelayRunnable?.let(mainHandler::removeCallbacks)
-    thirdPartyFallbackDelayRunnable = null
-    thirdPartyFallbackJob?.cancel()
-    thirdPartyFallbackJob = null
     thirdPartyFallbackSongActive = false
-
-    val delayedSearch = Runnable {
-        if (generation != thirdPartyFallbackGeneration) return@Runnable
-        thirdPartyFallbackDelayRunnable = null
-        val application = app
-        if (application == null) {
-            diagnostic(
-                "椒盐音乐在线兜底无法启动: reason=application_unavailable, " +
-                    "title=${baseSong.name}"
-            )
-            return@Runnable
-        }
-        thirdPartyFallbackJob = fallbackScope.launch {
-            try {
+    val generation = thirdPartyFallbackRequest.schedule(
+        delayMs = delayMs,
+        query = {
+            val application = app
+            if (application == null) {
+                diagnostic(
+                    "椒盐音乐在线兜底无法启动: reason=application_unavailable, " +
+                        "title=${baseSong.name}"
+                )
+                null
+            } else {
                 fallbackRequestMutex.withLock {
-                    if (generation != thirdPartyFallbackGeneration) return@withLock
                     diagnostic(
                         "椒盐音乐在线兜底开始: title=${baseSong.name}, " +
                             "artist=${baseSong.artist}, " +
@@ -673,40 +663,33 @@ internal fun LyriconSource.scheduleThirdPartyFallback(baseSong: LocalSong, delay
                             .getMediaInfo(application, playerPackage, HookLogger)
                             .album,
                     )
-                    val fallbackSong = lines
+                    lines
                         ?.let(::stripFullyChineseTranslations)
                         ?.let { OnlineFallbackSongMapper.map(baseSong, it) }
-                    mainHandler.post {
-                        applyThirdPartyFallbackResult(generation, baseSong, fallbackSong)
-                    }
                 }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                debugError("椒盐音乐在线兜底失败: title=${baseSong.name}", e)
             }
-        }
-    }
-    thirdPartyFallbackDelayRunnable = delayedSearch
+        },
+        apply = { requestGeneration, fallbackSong ->
+            applyThirdPartyFallbackResult(requestGeneration, baseSong, fallbackSong)
+        },
+        failed = { error ->
+            debugError("椒盐音乐在线兜底失败: title=${baseSong.name}", error)
+        },
+    )
     diagnostic(
         "椒盐音乐在线兜底已调度: title=${baseSong.name}, delayMs=$delayMs, " +
             "generation=$generation"
     )
-    if (delayMs <= 0L) {
-        mainHandler.post(delayedSearch)
-    } else {
-        mainHandler.postDelayed(delayedSearch, delayMs)
-    }
 }
 
-internal fun LyriconSource.applyThirdPartyFallbackResult(
+private fun LyriconSource.applyThirdPartyFallbackResult(
     generation: Int,
     baseSong: LocalSong,
     fallbackSong: LocalSong?,
 ) {
     val playerPackage = activeCentralPlayerPackageName
     val song = currentThirdPartySong
-    val requestStillCurrent = generation == thirdPartyFallbackGeneration &&
+    val requestStillCurrent = generation == thirdPartyFallbackRequest.snapshot().generation &&
         playerPackage == OnlineTranslationSourcePreferences.SALT_PACKAGE &&
         isOnlineTranslationEnabledFor(playerPackage) &&
         song != null && isSameTrack(song, baseSong) &&
@@ -714,11 +697,10 @@ internal fun LyriconSource.applyThirdPartyFallbackResult(
     if (!requestStillCurrent) {
         diagnostic(
             "椒盐音乐在线兜底结果已过期: title=${baseSong.name}, " +
-                "generation=$generation, currentGeneration=$thirdPartyFallbackGeneration"
+                "generation=$generation, currentGeneration=${thirdPartyFallbackRequest.snapshot().generation}"
         )
         return
     }
-    thirdPartyFallbackJob = null
     if (fallbackSong == null) {
         thirdPartyFallbackSongActive = false
         diagnostic("椒盐音乐在线兜底未命中: title=${baseSong.name}")
@@ -738,8 +720,7 @@ internal fun LyriconSource.applyThirdPartyFallbackResult(
 }
 
 internal fun LyriconSource.cancelThirdPartyFallback(reason: String) {
-    if (thirdPartyFallbackDelayRunnable != null ||
-        thirdPartyFallbackJob?.isActive == true ||
+    if (thirdPartyFallbackRequest.snapshot().pending ||
         thirdPartyFallbackSongActive
     ) {
         diagnostic(
@@ -747,11 +728,7 @@ internal fun LyriconSource.cancelThirdPartyFallback(reason: String) {
                 "title=${currentThirdPartySong?.name}"
         )
     }
-    thirdPartyFallbackGeneration += 1
-    thirdPartyFallbackDelayRunnable?.let(mainHandler::removeCallbacks)
-    thirdPartyFallbackDelayRunnable = null
-    thirdPartyFallbackJob?.cancel()
-    thirdPartyFallbackJob = null
+    thirdPartyFallbackRequest.cancel()
     thirdPartyFallbackSongActive = false
 }
 

@@ -275,6 +275,7 @@ internal fun NotificationMediaAodLyricHooker.applyState(controller: Any, state: 
         overlay.root.visibility = View.INVISIBLE
     }
     overlay.root.post {
+        if (!overlay.lifetime.allowsUpdates || state.overlay !== overlay) return@post
         if (overlay.root.visibility == View.GONE) return@post
         if (overlay.root.visibility == View.INVISIBLE) {
             overlay.root.visibility = View.VISIBLE

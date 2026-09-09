@@ -61,7 +61,7 @@ internal fun NotificationMediaAodLyricHooker.updateLockScreenCardHeight(
     overlay: LyricOverlay,
     forceRemeasure: Boolean = false
 ) {
-    if (!overlay.root.isShown) return
+    if (!overlay.lifetime.allowsUpdates || !overlay.root.isShown) return
     if (updateLockScreenHorizontalMargins(overlay)) {
         overlay.root.post {
             updateLockScreenCardHeight(overlay, forceRemeasure = true)

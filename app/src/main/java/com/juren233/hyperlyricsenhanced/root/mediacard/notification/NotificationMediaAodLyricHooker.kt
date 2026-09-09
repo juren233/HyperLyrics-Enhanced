@@ -511,6 +511,7 @@ object NotificationMediaAodLyricHooker {
 
     private fun removeOverlay(state: ControllerState) {
         val overlay = state.overlay ?: return
+        overlay.lifetime.dispose()
         restorePlayerHeight(overlay, state.fullAod)
         (overlay.root.parent as? ViewGroup)?.removeView(overlay.root)
         state.overlay = null

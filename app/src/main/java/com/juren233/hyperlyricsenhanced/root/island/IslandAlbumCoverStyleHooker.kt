@@ -65,7 +65,7 @@ internal object IslandAlbumCoverStyleHooker {
         Collections.newSetFromMap(WeakHashMap<ClassLoader, Boolean>())
     )
     internal val trackedHolders = WeakHashMap<Any, TrackedHolder>()
-    internal val captureGenerationByView = WeakHashMap<ImageView, Int>()
+    internal val artworkCaptureRequests = NativeArtworkCaptureRequests<ImageView>()
     internal val gradientStates = WeakHashMap<ImageView, GradientCoverState>()
     private val fakeTransitionLogSignatures = WeakHashMap<ViewGroup, String>()
     private val artworkDiagnosticStates = WeakHashMap<ImageView, String>()
@@ -328,9 +328,7 @@ internal object IslandAlbumCoverStyleHooker {
         synchronized(trackedHolders) {
             trackedHolders.clear()
         }
-        synchronized(captureGenerationByView) {
-            captureGenerationByView.clear()
-        }
+        artworkCaptureRequests.clear()
         synchronized(gradientStates) {
             gradientStates.clear()
         }

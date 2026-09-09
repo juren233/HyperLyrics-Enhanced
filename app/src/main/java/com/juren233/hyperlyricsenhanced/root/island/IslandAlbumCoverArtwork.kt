@@ -119,22 +119,15 @@ internal fun IslandAlbumCoverStyleHooker.scheduleNativeArtworkCapture(fixIcon: I
         ?.packageName
         ?.takeIf(String::isNotBlank)
         ?: return
-    val generation = synchronized(captureGenerationByView) {
-        ((captureGenerationByView[fixIcon] ?: 0) + 1).also {
-            captureGenerationByView[fixIcon] = it
-        }
-    }
+    val request = artworkCaptureRequests.begin(fixIcon)
+    val hostReference = WeakReference(fixIcon)
     CAPTURE_DELAYS_MS.forEach { delayMs ->
         fixIcon.postDelayed(
-            {
-                val stillCurrent = synchronized(captureGenerationByView) {
-                    captureGenerationByView[fixIcon] == generation
-                }
-                if (!stillCurrent) return@postDelayed
+            artworkCaptureRequests.callback(hostReference, request) { target ->
                 val token = MediaMetadataHelper.currentArtworkCaptureToken(
-                    fixIcon.context,
+                    target.context,
                     packageName,
-                ) ?: return@postDelayed
+                ) ?: return@callback
                 val lyricSong = LyriconDataBridge.currentSong
                 if (IslandSlotContentAssembler.shouldRejectArtworkForTitleMismatch(
                         lyricTitle = lyricSong?.name
@@ -145,22 +138,18 @@ internal fun IslandAlbumCoverStyleHooker.scheduleNativeArtworkCapture(fixIcon: I
                         mediaAlbum = token.album,
                     )
                 ) {
-                    return@postDelayed
+                    return@callback
                 }
-                val capture = fixIcon.drawable.toCaptureBitmap(fixIcon) ?: return@postDelayed
+                val capture = target.drawable.toCaptureBitmap(target) ?: return@callback
                 val cached = MediaMetadataHelper.cacheCapturedArtwork(
-                    context = fixIcon.context,
+                    context = target.context,
                     token = token,
                     bitmap = capture.bitmap,
                     logger = HookLogger,
                 )
                 if (!cached && capture.owned) capture.bitmap.recycle()
                 if (cached) {
-                    synchronized(captureGenerationByView) {
-                        if (captureGenerationByView[fixIcon] == generation) {
-                            captureGenerationByView[fixIcon] = generation + 1
-                        }
-                    }
+                    artworkCaptureRequests.complete(target, request)
                 }
             },
             delayMs,

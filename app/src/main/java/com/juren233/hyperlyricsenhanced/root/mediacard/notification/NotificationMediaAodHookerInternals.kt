@@ -162,7 +162,9 @@ internal class LyricOverlay(
     var lastHeightDriftKey: String? = null,
     var fullAodActive: Boolean = false,
     var heightAnimator: ValueAnimator? = null,
-)
+) {
+    val lifetime = AodOverlayLifetime()
+}
 
 internal class MediaHeaderHeightController private constructor(
     val view: View,

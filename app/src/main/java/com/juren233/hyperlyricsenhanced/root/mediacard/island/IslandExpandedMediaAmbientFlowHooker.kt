@@ -227,10 +227,20 @@ object IslandExpandedMediaAmbientFlowHooker {
             seekBarThemeStates.clear()
             firstArtworkCallbacks.clear()
         }
-        if (Looper.myLooper() == Looper.getMainLooper()) cleanup.run()
-        else Handler(Looper.getMainLooper()).post(cleanup)
-        binderStates.clear()
-        colorExecutor.shutdown()
+        releaseAmbientFlowResources(
+            dispatchCleanup = { task ->
+                if (Looper.myLooper() == Looper.getMainLooper()) task.run()
+                else Handler(Looper.getMainLooper()).post(task)
+            },
+            invalidateRequests = {
+                synchronized(binderStates) {
+                    binderStates.values.forEach { it.request.incrementAndGet() }
+                }
+            },
+            cleanupViews = { cleanup.run() },
+            clearStates = { binderStates.clear() },
+            shutdownWorker = { colorExecutor.shutdown() },
+        )
     }
 
     private enum class Action { ATTACH, BIND, DETACH, ALBUM, SEAMLESS }

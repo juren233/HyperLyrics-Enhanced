@@ -110,9 +110,11 @@ class LyriconSource : LyricSource {
     internal var mediaPositionJob: Job? = null
     internal var fallbackDelayRunnable: Runnable? = null
     internal var fallbackGeneration = 0
-    internal var thirdPartyFallbackJob: Job? = null
-    internal var thirdPartyFallbackDelayRunnable: Runnable? = null
-    internal var thirdPartyFallbackGeneration = 0
+    internal val thirdPartyFallbackRequest = DelayedFallbackRequest<LocalSong?>(
+        scope = fallbackScope,
+        post = { task, delayMs -> mainHandler.postDelayed(task, delayMs) },
+        remove = { task -> mainHandler.removeCallbacks(task) },
+    )
     internal var thirdPartyFallbackSongActive = false
     internal var onlineTranslationGeneration = 0
     internal var onlineTranslationAttemptKey: String? = null
@@ -317,15 +319,14 @@ class LyriconSource : LyricSource {
         val sameContent = sameTrack && previousSong == song
         if (sameContent && (onlineTranslationJob?.isActive == true ||
                 onlineMatchedTranslationActive ||
-                thirdPartyFallbackJob?.isActive == true ||
+                thirdPartyFallbackRequest.snapshot().running ||
                 thirdPartyFallbackSongActive)
         ) {
             currentThirdPartySong = song
             debug("忽略同一首歌的重复三方歌曲回调: title=${song.name}")
             return
         }
-        val fallbackPending = thirdPartyFallbackDelayRunnable != null ||
-            thirdPartyFallbackJob?.isActive == true || thirdPartyFallbackSongActive
+        val fallbackPending = thirdPartyFallbackRequest.snapshot().pending || thirdPartyFallbackSongActive
         val preferOnline = isSaltPreferOnlineEnabled()
         if (sameTrack && fallbackPending && (preferOnline || song.lyrics.isNullOrEmpty())) {
             // 在线兜底进行中：椒盐 Pack 重复发来的占位，或“优先使用在线源”下
