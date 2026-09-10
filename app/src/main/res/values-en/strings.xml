@@ -490,6 +490,8 @@
     <string name="source_qq_music">QQ Music</string>
     <string name="source_kuwo_music">Kuwo Music</string>
     <string name="source_kugou_music">Kugou Music</string>
+    <string name="action_drag_source">Long press and drag to reorder</string>
+    <string name="source_priority_description">Priority %1$d</string>
     <string name="action_move_source_up">Move lyric source up</string>
     <string name="action_move_source_down">Move lyric source down</string>
     <string name="title_online_translation_auto_select_best_source">Automatically select the best source</string>

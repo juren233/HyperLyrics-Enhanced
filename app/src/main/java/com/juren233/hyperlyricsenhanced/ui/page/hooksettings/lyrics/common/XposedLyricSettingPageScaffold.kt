@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -68,6 +69,7 @@ internal fun XposedLyricSettingPage(
     subtitle: String = "",
     outerPadding: PaddingValues = PaddingValues(),
     showNavigationIcon: Boolean = true,
+    listState: LazyListState = rememberLazyListState(),
     content: LazyListScope.() -> Unit
 ) {
     val navigator = LocalNavigator.current
@@ -115,11 +117,9 @@ internal fun XposedLyricSettingPage(
                 bottom = bottomPadding + outerBottomPadding + 16.dp,
             )
         }
-        val lazyListState = rememberLazyListState()
-
         Box(modifier = if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier) {
             LazyColumn(
-                state = lazyListState,
+                state = listState,
                 modifier = Modifier.pageScrollModifiers(
                     enableScrollEndHaptic = true,
                     showTopAppBar = true,

@@ -491,6 +491,8 @@
     <string name="source_qq_music">QQ音乐</string>
     <string name="source_kuwo_music">酷我音乐</string>
     <string name="source_kugou_music">酷狗音乐</string>
+    <string name="action_drag_source">长按拖动调整优先级</string>
+    <string name="source_priority_description">优先级 %1$d</string>
     <string name="action_move_source_up">上移歌词源</string>
     <string name="action_move_source_down">下移歌词源</string>
     <string name="title_online_translation_auto_select_best_source">自动选择最优来源</string>
