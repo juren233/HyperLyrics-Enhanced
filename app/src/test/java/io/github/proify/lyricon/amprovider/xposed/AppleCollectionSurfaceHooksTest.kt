@@ -15,31 +15,6 @@ import org.junit.Test
 class AppleCollectionSurfaceHooksTest {
 
     @Test
-    fun `final Epoxy dispatcher routes collection and artist page models separately`() {
-        assertEquals(
-            MetadataPageFinalBindingKind.ALBUM_HEADER,
-            metadataPageFinalBindingKind(true, false, false, false, false),
-        )
-        assertEquals(
-            MetadataPageFinalBindingKind.ALBUM_ROW,
-            metadataPageFinalBindingKind(false, true, false, false, false),
-        )
-        assertEquals(
-            MetadataPageFinalBindingKind.PLAYLIST_ROW,
-            metadataPageFinalBindingKind(false, false, true, false, false),
-        )
-        assertEquals(
-            MetadataPageFinalBindingKind.ARTIST_TOP_SONG,
-            metadataPageFinalBindingKind(false, false, false, true, false),
-        )
-        assertEquals(
-            MetadataPageFinalBindingKind.ARTIST_HEADER,
-            metadataPageFinalBindingKind(false, false, false, false, true),
-        )
-        assertNull(metadataPageFinalBindingKind(false, false, false, false, false))
-    }
-
-    @Test
     fun `album artist mismatch changes the controller alias for the same safe artist`() {
         val songAlias = AppliedMetadataAlias(
             mediaId = "song",

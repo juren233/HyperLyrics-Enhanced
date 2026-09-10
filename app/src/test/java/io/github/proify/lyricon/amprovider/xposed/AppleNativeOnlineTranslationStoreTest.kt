@@ -399,16 +399,16 @@ class AppleNativeOnlineTranslationStoreTest {
             )
         )
 
-        assertTrue(store.wouldChangeDisplayContent(first))
-        assertTrue(store.update(first))
+        assertReceipt(store, first, updated = true, displayChanged = true, revision = 1)
 
         val sourceOnlyChange = first.copy(
             metadata = lyricMetadataOf(
                 LyricMetadataKeys.ONLINE_TRANSLATION_SOURCE to "NE",
             )
         )
-        assertFalse(store.wouldChangeDisplayContent(sourceOnlyChange))
-        assertTrue(store.update(sourceOnlyChange))
+        assertReceipt(store, sourceOnlyChange, updated = true, displayChanged = false, revision = 2)
+        assertEquals("NE", store.translationSource("100"))
+        assertReceipt(store, sourceOnlyChange.copy(), updated = false, displayChanged = false, revision = 2)
     }
 
     @Test
@@ -423,7 +423,7 @@ class AppleNativeOnlineTranslationStoreTest {
                 translation = "你好，世界",
             ),
         )
-        assertTrue(store.update(first))
+        assertReceipt(store, first, updated = true, displayChanged = true, revision = 1)
 
         val changed = song(
             id = "100",
@@ -434,7 +434,94 @@ class AppleNativeOnlineTranslationStoreTest {
                 translation = "你好世界",
             ),
         )
-        assertTrue(store.wouldChangeDisplayContent(changed))
+        assertReceipt(store, changed, updated = true, displayChanged = true, revision = 2)
+    }
+
+    @Test
+    fun `receipts detect each displayed line dimension through the receive path`() {
+        val firstLine = RichLyricLine(
+            begin = 1_000, end = 2_000, text = "君の名は",
+            translation = "你的名字", roma = "Kimi no na wa",
+        )
+        listOf(
+            firstLine.copy(begin = 1_100),
+            firstLine.copy(end = 2_100),
+            firstLine.copy(text = "君の名前は"),
+            firstLine.copy(translation = "你的姓名"),
+            firstLine.copy(roma = "Kimi no namae wa"),
+        ).forEach { changedLine ->
+            val store = AppleNativeOnlineTranslationStore()
+            assertReceipt(store, song("100", firstLine), true, true, 1)
+            assertReceipt(store, song("100", changedLine), true, true, 2)
+            assertReceipt(store, song("100", changedLine), false, false, 2)
+        }
+    }
+
+    @Test
+    fun `empty or unidentified receipts preserve the accepted overlay and revision`() {
+        val store = AppleNativeOnlineTranslationStore()
+        val first = song("100", RichLyricLine(
+            begin = 1_000, end = 2_000, text = "Hello", translation = "你好",
+        ))
+        assertReceipt(store, Song(id = "100"), false, false, 0, current = false)
+        assertReceipt(store, first, true, true, 1)
+        assertReceipt(store, Song(id = "100"), false, false, 1)
+        assertReceipt(store, Song(id = "200"), false, false, 1, current = false)
+        assertReceipt(store, first.copy(id = null), false, false, 1, current = false)
+        assertReceipt(store, first.copy(id = " "), false, false, 1, current = false)
+        assertEquals("你好", store.translation("100", 1_000, 2_000, "Hello"))
+        assertTrue(store.isCurrentRevision("100", 1))
+    }
+
+    @Test
+    fun `song switches advance receipt identity even with identical displayed content`() {
+        val store = AppleNativeOnlineTranslationStore()
+        val first = song("100", RichLyricLine(
+            begin = 1_000, end = 2_000, text = "Hello", translation = "你好",
+        ))
+        assertReceipt(store, first, true, true, 1)
+        assertReceipt(store, first.copy(id = "200"), true, false, 2)
+        assertFalse(store.isCurrentRevision("100", 1))
+        assertFalse(store.hasTranslation("100"))
+        assertReceipt(store, first, true, false, 3)
+        assertFalse(store.isCurrentRevision("200", 2))
+        assertFalse(store.clear("200"))
+        assertEquals(3L, store.revision())
+        assertTrue(store.clear("100"))
+        assertEquals(4L, store.revision())
+        assertFalse(store.clear("100"))
+        assertReceipt(store, first, true, true, 5)
+    }
+
+    @Test
+    fun `pronunciation source only receipt refreshes menus without requesting presentation`() {
+        val store = AppleNativeOnlineTranslationStore()
+        val first = song("100", RichLyricLine(
+            begin = 1_000, end = 2_000, text = "君の名は", roma = "Kimi no na wa",
+        )).copy(metadata = lyricMetadataOf(LyricMetadataKeys.ONLINE_PRONUNCIATION_SOURCE to "QM"))
+        assertReceipt(store, first, true, true, 1)
+        val changed = first.copy(metadata = lyricMetadataOf(
+            LyricMetadataKeys.ONLINE_PRONUNCIATION_SOURCE to "NE",
+        ))
+        assertReceipt(store, changed, true, false, 2)
+        assertEquals("NE", store.pronunciationSource("100"))
+        assertFalse(store.hasTranslation("100"))
+    }
+
+    private fun assertReceipt(
+        store: AppleNativeOnlineTranslationStore,
+        song: Song,
+        updated: Boolean,
+        displayChanged: Boolean,
+        revision: Long,
+        current: Boolean = true,
+    ) {
+        val receipt = store.receive(song)
+        assertEquals(updated, receipt.updated)
+        assertEquals(displayChanged, receipt.displayContentChanged)
+        assertEquals(AppleLyricsPresentationUpdate(song.id, revision), receipt.update)
+        assertEquals(revision, store.revision())
+        assertEquals(current, store.isCurrentRevision(receipt.update.songId, checkNotNull(receipt.update.revision)))
     }
 
     private fun song(id: String, vararg lines: RichLyricLine) = Song(

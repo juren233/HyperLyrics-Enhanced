@@ -16,22 +16,6 @@ import org.junit.Test
 class AppleMetadataSurfacePolicyTest {
 
     @Test
-    fun `prefers album entities for delayed artist page album bindings`() {
-        assertEquals(
-            LocalizedEntityType.SONG,
-            preferredVisibleEntityType(VisibleTextField.TITLE),
-        )
-        assertEquals(
-            LocalizedEntityType.ARTIST,
-            preferredVisibleEntityType(VisibleTextField.ARTIST),
-        )
-        assertEquals(
-            LocalizedEntityType.ALBUM,
-            preferredVisibleEntityType(VisibleTextField.ALBUM),
-        )
-    }
-
-    @Test
     fun `does not treat station models as songs`() {
         assertNull(
             AppleMetadataResolutionEngine.localizedEntityTypeForContentItemClassNames(

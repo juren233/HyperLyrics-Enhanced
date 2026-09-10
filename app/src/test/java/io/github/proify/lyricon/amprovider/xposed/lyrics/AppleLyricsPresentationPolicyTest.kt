@@ -6,7 +6,6 @@
 
 package io.github.proify.lyricon.amprovider.xposed.lyrics
 
-import io.github.proify.lyricon.amprovider.xposed.belongsToCurrentLyricsPage
 import io.github.proify.lyricon.amprovider.xposed.AppleLyricsRestoreAnchor
 import io.github.proify.lyricon.amprovider.xposed.selectLyricsViewModelPlaybackItem
 import io.github.proify.lyricon.amprovider.xposed.selectAppleLyricsPlaybackAdapterPosition
@@ -60,57 +59,6 @@ class AppleLyricsPresentationPolicyTest {
         )
 
         assertNull(selected)
-    }
-
-    @Test
-    fun `accepts current queue song load while visible page id is stale`() {
-        assertTrue(
-            belongsToCurrentLyricsPage(
-                loadedSongId = "1720737136",
-                visibleSongId = "1768090627",
-                queueSongId = "1720737136",
-            )
-        )
-    }
-
-    @Test
-    fun `accepts load matching visible page song`() {
-        assertTrue(
-            belongsToCurrentLyricsPage(
-                loadedSongId = "1768090627",
-                visibleSongId = "1768090627",
-                queueSongId = "1720737136",
-            )
-        )
-    }
-
-    @Test
-    fun `rejects historical load matching neither visible nor queue song`() {
-        assertFalse(
-            belongsToCurrentLyricsPage(
-                loadedSongId = "1440818674",
-                visibleSongId = "1768090627",
-                queueSongId = "1720737136",
-            )
-        )
-    }
-
-    @Test
-    fun `accepts unknown loaded song when identities are unavailable`() {
-        assertTrue(
-            belongsToCurrentLyricsPage(
-                loadedSongId = null,
-                visibleSongId = null,
-                queueSongId = null,
-            )
-        )
-        assertTrue(
-            belongsToCurrentLyricsPage(
-                loadedSongId = "1440818674",
-                visibleSongId = null,
-                queueSongId = null,
-            )
-        )
     }
 
     @Test
@@ -316,24 +264,6 @@ class AppleLyricsPresentationPolicyTest {
     fun `visible adapter range ignores invalid child positions`() {
         assertEquals(4..8, visibleAdapterRange(listOf(-1, 8, 4, 6)))
         assertNull(visibleAdapterRange(listOf(-1, -2)))
-    }
-
-    @Test
-    fun `belongsToCurrentLyricsPage allows same song and queue transition`() {
-        assertTrue(
-            belongsToCurrentLyricsPage(
-                loadedSongId = "1720737136",
-                visibleSongId = "1720737136",
-                queueSongId = "1720737136",
-            )
-        )
-        assertTrue(
-            belongsToCurrentLyricsPage(
-                loadedSongId = "1720737136",
-                visibleSongId = "1768090627",
-                queueSongId = "1720737136",
-            )
-        )
     }
 
     @Test

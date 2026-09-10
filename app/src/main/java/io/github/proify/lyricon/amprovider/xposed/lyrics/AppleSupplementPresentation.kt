@@ -95,7 +95,6 @@ import java.lang.reflect.Executable
 import java.lang.reflect.Field
 import java.lang.reflect.Method
 import java.lang.reflect.Modifier
-import java.lang.ref.WeakReference
 import java.io.File
 import java.security.MessageDigest
 import java.util.Collections
@@ -462,17 +461,17 @@ internal fun AppleLyricsSupplementHooks.synchronizeSupplementPlaybackItem(
     }
     val itemSongId = registeredPlaybackItemId(playbackItem)
         ?: playbackItemSongId(playbackItem)
-    val boundItemId = appleLyricsItemRef?.get()?.let { item ->
+    val binding = playbackBinding.snapshot()
+    val boundItemId = binding.item?.let { item ->
         registeredPlaybackItemId(item) ?: playbackItemSongId(item)
     }
-    if (appleLyricsViewModelRef?.get() === viewModel && boundItemId == expectedSongId) {
+    if (binding.viewModel === viewModel && boundItemId == expectedSongId) {
         return true
     }
     return runCatching {
         loadMethod.invoke(viewModel, playbackItem)
     }.onSuccess {
-        appleLyricsViewModelRef = WeakReference(viewModel)
-        appleLyricsItemRef = WeakReference(playbackItem)
+        playbackBinding.rememberLoad(viewModel, playbackItem)
         ProviderLogger.debug(
             "Apple Music 无歌词补充已同步当前 PlaybackItem: " +
                 "previousId=$boundItemId, currentId=$itemSongId"

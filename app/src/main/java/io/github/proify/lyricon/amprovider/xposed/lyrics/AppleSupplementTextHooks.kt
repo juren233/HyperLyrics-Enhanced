@@ -406,7 +406,7 @@ internal fun AppleLyricsSupplementHooks.hookAppleLyricsPreferredLanguages() {
 }
 
 internal fun AppleLyricsSupplementHooks.currentSystemLyricsLanguage(): String? = runCatching {
-    appleLyricsViewModelRef?.get()?.let {
+    playbackBinding.snapshot().viewModel?.let {
             lyricsNativeCall(
                 it,
                 AppleMusicRuntimeMember.LYRICS_VIEW_MODEL_CURRENT_LANGUAGE_METHOD,

@@ -490,44 +490,6 @@ internal fun contentItemMetadataOverride(
         }
 }?.takeIf { it.isNotBlank() } ?: original
 
-internal fun visibleTextFieldForContentItemGetter(
-    entityType: LocalizedEntityType,
-    getter: AppleContentItemGetter,
-): VisibleTextField? = when (getter) {
-    AppleContentItemGetter.TITLE -> when (entityType) {
-        LocalizedEntityType.SONG -> VisibleTextField.TITLE
-        LocalizedEntityType.ALBUM -> VisibleTextField.ALBUM
-        LocalizedEntityType.ARTIST -> VisibleTextField.ARTIST
-    }
-    AppleContentItemGetter.NOW_PLAYING_TITLE ->
-        VisibleTextField.TITLE.takeIf {
-            entityType == LocalizedEntityType.SONG
-        }
-    AppleContentItemGetter.ARTIST -> VisibleTextField.ARTIST
-    AppleContentItemGetter.NOW_PLAYING_SUBTITLE ->
-        VisibleTextField.ARTIST.takeIf {
-            entityType == LocalizedEntityType.SONG
-        }
-    AppleContentItemGetter.SUBTITLE ->
-        VisibleTextField.ARTIST.takeIf {
-            entityType == LocalizedEntityType.SONG ||
-                entityType == LocalizedEntityType.ALBUM
-        }
-    AppleContentItemGetter.COLLECTION ->
-        VisibleTextField.ALBUM.takeIf {
-            entityType == LocalizedEntityType.SONG
-        }
-}
-
-internal fun preferredVisibleEntityType(
-    field: VisibleTextField?,
-): LocalizedEntityType? = when (field) {
-    VisibleTextField.TITLE -> LocalizedEntityType.SONG
-    VisibleTextField.ARTIST -> LocalizedEntityType.ARTIST
-    VisibleTextField.ALBUM -> LocalizedEntityType.ALBUM
-    null -> null
-}
-
 internal fun catalogMetadataResolutionPlan(
     overrideAccountLanguage: Boolean,
     restoreCjkOriginalMetadata: Boolean,

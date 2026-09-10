@@ -57,7 +57,6 @@ import com.juren233.hyperlyricsenhanced.common.UIConstants
 import com.juren233.hyperlyricsenhanced.lyric.model.Song as LocalSong
 import com.juren233.hyperlyricsenhanced.common.lyric.LyricMetadataKeys
 import io.github.proify.lyricon.lyric.model.Song as LyriconSong
-import java.lang.ref.WeakReference
 import io.github.proify.extensions.inflate
 import io.github.proify.extensions.json
 import kotlinx.coroutines.launch
@@ -200,8 +199,7 @@ internal fun AppleLyricsSupplementHooks.recoverBlankNativeLyricsPage(
         }
         return
     }
-    appleLyricsViewModelRef = WeakReference(viewModel)
-    appleLyricsItemRef = WeakReference(playbackItem)
+    playbackBinding.rememberLoad(viewModel, playbackItem)
     runCatching {
         loadMethod.invoke(viewModel, playbackItem)
     }.onSuccess {

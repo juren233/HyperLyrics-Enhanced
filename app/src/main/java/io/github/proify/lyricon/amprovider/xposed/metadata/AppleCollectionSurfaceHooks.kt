@@ -886,21 +886,6 @@ internal fun albumPageControllerAppliedAlias(
     return appliedAlias.copy(artist = targetArtist)
 }
 
-internal fun metadataPageFinalBindingKind(
-    albumHeader: Boolean,
-    albumRow: Boolean,
-    playlistRow: Boolean,
-    artistTopSong: Boolean,
-    artistHeader: Boolean,
-): MetadataPageFinalBindingKind? = when {
-    albumHeader -> MetadataPageFinalBindingKind.ALBUM_HEADER
-    albumRow -> MetadataPageFinalBindingKind.ALBUM_ROW
-    playlistRow -> MetadataPageFinalBindingKind.PLAYLIST_ROW
-    artistTopSong -> MetadataPageFinalBindingKind.ARTIST_TOP_SONG
-    artistHeader -> MetadataPageFinalBindingKind.ARTIST_HEADER
-    else -> null
-}
-
 /**
  * Collection Surface Hook 的默认宿主实现：orchestrator 依赖以 supplier 显式注入，保持原匿名
  * 实现"调用期解析"的语义；traceSequence 为根单例构造期值可直捕。

@@ -20,25 +20,6 @@ internal fun selectLyricsViewModelPlaybackItem(
                 ?: runtimeSongId(candidate)?.takeIf(String::isNotBlank)) == expectedSongId
     }
 
-/**
- * 判断 Apple 的一次 loadLyrics 调用是否属于当前歌词页。
- *
- * 页面可见歌曲 ID 可能在切歌后的若干秒内仍停在上一首；此时 Apple 为队列当前歌曲
- * 发起的 loadLyrics 恰恰是让页面追上新歌的合法调用，必须接受。只有既不匹配可见歌曲
- * 也不匹配队列当前歌曲的历史调用才需要拒绝。
- */
-internal fun belongsToCurrentLyricsPage(
-    loadedSongId: String?,
-    visibleSongId: String?,
-    queueSongId: String?,
-): Boolean {
-    if (loadedSongId.isNullOrBlank()) return true
-    val visibleSong = visibleSongId?.takeIf(String::isNotBlank)
-    val queueSong = queueSongId?.takeIf(String::isNotBlank)
-    if (visibleSong == null && queueSong == null) return true
-    return loadedSongId == visibleSong || loadedSongId == queueSong
-}
-
 internal const val APPLE_LYRICS_REQUEST_SOURCE_APPLE = "apple"
 internal const val APPLE_LYRICS_REQUEST_SOURCE_MODULE = "module"
 internal const val APPLE_LYRICS_DIAGNOSTIC_SOURCE_MODULE_NATIVE = "module_native"

@@ -180,16 +180,13 @@ internal class AppleLyricsSupplementHooks(
     @Volatile
     internal var appleLyricsLoadMethod: Method? = null
     @Volatile
-    internal var appleLyricsViewModelRef: WeakReference<Any>? = null
-    @Volatile
     private var activeLyricsResultObserver: Pair<WeakReference<Any>, Any>? = null
-    @Volatile
-    internal var appleLyricsItemRef: WeakReference<Any>? = null
     @Volatile
     internal var appleLyricsPresentationMethod: Method? = null
     @Volatile
     internal var appleLyricsResultPresentationMethod: Method? = null
     internal val presentationBinding = AppleLyricsPresentationBinding()
+    internal val playbackBinding = AppleLyricsPlaybackBinding()
     internal val currentAppleLyricsSongId: String?
         get() = presentationBinding.songId()
     private data class AppleLyricsPresentationPerformanceContext(
@@ -563,8 +560,9 @@ internal class AppleLyricsSupplementHooks(
     fun refreshAppleLyricsDisplay() {
         mainHandler.post {
             val method = appleLyricsLoadMethod ?: return@post
-            val viewModel = appleLyricsViewModelRef?.get() ?: return@post
-            val item = appleLyricsItemRef?.get() ?: return@post
+            val binding = playbackBinding.snapshot()
+            val viewModel = binding.viewModel ?: return@post
+            val item = binding.item ?: return@post
             runCatching {
                 method.invoke(viewModel, item)
             }.onFailure {

@@ -95,7 +95,6 @@ import java.lang.reflect.Executable
 import java.lang.reflect.Field
 import java.lang.reflect.Method
 import java.lang.reflect.Modifier
-import java.lang.ref.WeakReference
 import java.io.File
 import java.security.MessageDigest
 import java.util.Collections
@@ -152,10 +151,7 @@ internal fun AppleLyricsSupplementHooks.hookLyricBuildMethod() {
                 appleLyricsScrollSnapshotSongId = null
                 presentationBinding.selectSong(loadedSongId)
             }
-            chain.thisObject?.let { viewModel ->
-                appleLyricsViewModelRef = WeakReference(viewModel)
-            }
-            appleLyricsItemRef = WeakReference(item)
+            playbackBinding.rememberLoad(chain.thisObject, item)
             missingLyricsSupplement().onLyricsItem(item)
         } else {
             // 旧版缓存没有 lyricsSource；若模块请求后 Apple 原生链仍未产出，延迟迁移为补充歌词。

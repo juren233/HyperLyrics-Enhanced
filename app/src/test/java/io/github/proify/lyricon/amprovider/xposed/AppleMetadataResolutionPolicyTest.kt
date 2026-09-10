@@ -448,20 +448,6 @@ class AppleMetadataResolutionPolicyTest {
                 "raw",
             ),
         )
-        assertEquals(
-            VisibleTextField.ARTIST,
-            visibleTextFieldForContentItemGetter(
-                song,
-                AppleContentItemGetter.NOW_PLAYING_SUBTITLE,
-            ),
-        )
-        assertEquals(
-            VisibleTextField.ALBUM,
-            visibleTextFieldForContentItemGetter(
-                song,
-                AppleContentItemGetter.COLLECTION,
-            ),
-        )
     }
 
     @Test
@@ -500,6 +486,42 @@ class AppleMetadataResolutionPolicyTest {
                 "raw",
             ),
         )
+    }
+
+    @Test
+    fun `content item getters keep entity restrictions and original text fallback`() {
+        val alias = Alias(title = "title", artist = "artist", album = "album", language = "en")
+        val getters = listOf(
+            AppleContentItemGetter.TITLE,
+            AppleContentItemGetter.NOW_PLAYING_TITLE,
+            AppleContentItemGetter.ARTIST,
+            AppleContentItemGetter.NOW_PLAYING_SUBTITLE,
+            AppleContentItemGetter.SUBTITLE,
+            AppleContentItemGetter.COLLECTION,
+        )
+        val expected = mapOf(
+            LocalizedEntityType.SONG to listOf("title", "title", "artist", "artist", "artist", "album"),
+            LocalizedEntityType.ALBUM to listOf("album", "raw", "artist", "raw", "artist", "raw"),
+            LocalizedEntityType.ARTIST to listOf("artist", "raw", "artist", "raw", "raw", "raw"),
+        )
+        expected.forEach { (entity, values) ->
+            getters.forEachIndexed { index, getter ->
+                assertEquals("$entity/$getter", values[index], contentItemMetadataOverride(entity, getter, alias, "raw"))
+                assertEquals("raw", contentItemMetadataOverride(
+                    entity, getter, alias.copy(title = " ", artist = " ", album = " "), "raw",
+                ))
+            }
+        }
+        // TITLE has entity-specific fallbacks; COLLECTION must keep the original on blank album.
+        assertEquals("title", contentItemMetadataOverride(
+            LocalizedEntityType.ARTIST, AppleContentItemGetter.TITLE, alias.copy(artist = ""), "raw",
+        ))
+        assertEquals("title", contentItemMetadataOverride(
+            LocalizedEntityType.ALBUM, AppleContentItemGetter.TITLE, alias.copy(album = ""), "raw",
+        ))
+        assertEquals("raw", contentItemMetadataOverride(
+            LocalizedEntityType.SONG, AppleContentItemGetter.COLLECTION, alias.copy(album = ""), "raw",
+        ))
     }
 
     @Test
