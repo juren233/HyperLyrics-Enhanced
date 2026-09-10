@@ -200,6 +200,8 @@
     <string name="option_notification_media_ambient_flow_cover_color">Ambient flow (cover color)</string>
     <string name="option_media_ambient_flow_custom_full">Cover flow</string>
     <string name="option_notification_media_ambient_flow_disabled">Disabled (default)</string>
+    <string name="title_notification_media_ambient_flow_pause_restore_default">Restore default when paused</string>
+    <string name="summary_notification_media_ambient_flow_pause_restore_default">When off, the ambient flow keeps moving while music is paused</string>
     <string name="title_notification_media_background_style">Card background style</string>
     <string name="option_notification_media_background_default">Default</string>
     <string name="option_notification_media_background_cover_art">Cover collage</string>
@@ -746,4 +748,5 @@
     <string name="setup_completion_lyricinfo">Install the LyricInfo module, enable it in LSPosed and select your music app, then restart SystemUI</string>
     <string name="setup_completion_restart_hint">After adding plugins, restart System UI and the corresponding music app processes. You can use the “One-tap refresh” button in the top-right corner of the home page to restart them.</string>
     <string name="no_lyric_data">No lyric data</string>
+    <string name="title_apple_music_force_cellular_data_entry">Force cellular data entry on tablets</string>
 </resources>

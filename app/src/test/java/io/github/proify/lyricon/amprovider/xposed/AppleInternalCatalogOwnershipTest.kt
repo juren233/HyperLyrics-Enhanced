@@ -11,14 +11,17 @@ import org.junit.Test
 import java.io.File
 
 /**
- * P4 所有权守卫：调度状态只由 AppleInternalCatalogDispatch 声明，
+ * P4/R4 所有权守卫：调度状态只由 AppleInternalCatalogDispatch 声明，
  * 缓存状态只由 AppleInternalCatalogCaches 声明；Resolver 只保留
- * 两个 owner 与 Query/Reflection 适配边界所需的接线字段；家族外的
- * 文件不得触碰 owner 内部状态（外部只能走具名入口函数）。
+ * 两个 owner 与 Query/Reflection 适配边界所需的接线字段。
+ *
+ * R4 起所有状态字段必须为 `private`，且除两个 owner 本体外的所有文件
+ * （**包括 Catalog 家族内的 Batching/Query/Resolve/PersistentCache/Reflection**）
+ * 都不得触碰 owner 内部状态，只能走具名入口。豁免只按 owner 本体，不按文件名前缀。
  */
 class AppleInternalCatalogOwnershipTest {
 
-    private val dispatchInternals = listOf(
+    private val dispatchStateFields = listOf(
         "originalSongInFlight",
         "originalCandidateCallbacks",
         "catalogIdentityInFlight",
@@ -36,7 +39,7 @@ class AppleInternalCatalogOwnershipTest {
         "requestScopeRevision",
     )
 
-    private val cacheInternals = listOf(
+    private val cacheStateFields = listOf(
         "originalSongCache",
         "localizedCache",
         "localizedArtistAliasCache",
@@ -65,7 +68,7 @@ class AppleInternalCatalogOwnershipTest {
             "Resolver 必须持有缓存所有者",
             resolver.contains("internal val caches = AppleInternalCatalogCaches()"),
         )
-        (dispatchInternals + cacheInternals).forEach { field ->
+        (dispatchStateFields + cacheStateFields).forEach { field ->
             val declared = Regex("internal\\s+(val|var)\\s+$field\\b")
             assertTrue(
                 "Resolver 不应再直接声明 $field",
@@ -75,33 +78,38 @@ class AppleInternalCatalogOwnershipTest {
     }
 
     @Test
-    fun `owner files declare the moved state exactly`() {
+    fun `owner state is declared private`() {
         val dispatchSource = source("AppleInternalCatalogDispatch.kt")
-        dispatchInternals.forEach { field ->
+        dispatchStateFields.forEach { field ->
             assertTrue(
-                "调度所有者缺少 $field",
-                Regex("(val|var)\\s+$field\\b").containsMatchIn(dispatchSource),
+                "调度所有者的 $field 必须为 private",
+                Regex("private\\s+(val|var)\\s+$field\\b").containsMatchIn(dispatchSource),
             )
         }
         val cachesSource = source("AppleInternalCatalogCaches.kt")
-        cacheInternals.forEach { field ->
+        cacheStateFields.forEach { field ->
             assertTrue(
-                "缓存所有者缺少 $field",
-                Regex("(val|var)\\s+$field\\b").containsMatchIn(cachesSource),
+                "缓存所有者的 $field 必须为 private",
+                Regex("private\\s+(val|var)\\s+$field\\b").containsMatchIn(cachesSource),
             )
         }
     }
 
     @Test
-    fun `non catalog files never touch owner internals`() {
-        val forbidden = (dispatchInternals + cacheInternals).joinToString("|")
+    fun `no file outside the owner bodies touches owner state`() {
+        // 豁免只针对 owner 本体，家族内其他文件不再整体放行。
+        val exempt = setOf(
+            "AppleInternalCatalogDispatch.kt",
+            "AppleInternalCatalogCaches.kt",
+        )
+        val forbidden = (dispatchStateFields + cacheStateFields).joinToString("|")
         val regex = Regex("\\.(?:dispatch|caches)\\.(?:$forbidden)\\b")
         val offenders = mainSourceDir().walkTopDown()
             .filter { file -> file.isFile && file.extension == "kt" }
-            .filterNot { file -> file.name.startsWith("AppleInternalCatalog") }
+            .filterNot { file -> file.name in exempt }
             .filter { file -> regex.containsMatchIn(file.readText()) }
             .map(File::getName)
             .toList()
-        assertTrue("外部文件不得触碰 owner 内部状态: $offenders", offenders.isEmpty())
+        assertTrue("owner 本体之外不得触碰 owner 内部状态: $offenders", offenders.isEmpty())
     }
 }

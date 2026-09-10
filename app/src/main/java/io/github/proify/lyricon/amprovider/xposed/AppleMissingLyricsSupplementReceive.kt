@@ -282,7 +282,7 @@ internal fun AppleMissingLyricsHooks.onPreferenceChanged() {
         songId?.let {
             candidates.revokeAcceptance(it)
             candidates.revokeAvailability(it)
-            scheduledTakeoverRechecks.remove(it)
+            takeoverRechecks.remove(it)
             nativeTakeoverGate.clear(it)
         }
         if (store.clear()) {
@@ -328,16 +328,13 @@ internal fun AppleMissingLyricsHooks.scheduleNativeLyricsModel(songId: String) {
         contentRevision = store.revision(),
         identity = identity,
     )
-    synchronized(nativeBuildLock) {
-        if (pendingNativeBuildKey == key) {
-            AppleSourceSwitchPerformanceDiagnostics.record(
-                songId = songId,
-                event = "native_model_schedule_deduplicated",
-                details = "revision=${key.contentRevision}",
-            )
-            return
-        }
-        pendingNativeBuildKey = key
+    if (!nativeBuildState.begin(key)) {
+        AppleSourceSwitchPerformanceDiagnostics.record(
+            songId = songId,
+            event = "native_model_schedule_deduplicated",
+            details = "revision=${key.contentRevision}",
+        )
+        return
     }
     val queuedAtNanos = SystemClock.elapsedRealtimeNanos()
     AppleSourceSwitchPerformanceDiagnostics.stageForSong(
@@ -346,7 +343,7 @@ internal fun AppleMissingLyricsHooks.scheduleNativeLyricsModel(songId: String) {
         details = "revision=${key.contentRevision},thread=${Thread.currentThread().name}"
     )
     mainHandler.post {
-        if (pendingNativeBuildKey != key) {
+        if (!nativeBuildState.isCurrent(key)) {
             AppleSourceSwitchPerformanceDiagnostics.stageForSong(
                 songId = songId,
                 stage = "native_model_main_skipped",
@@ -372,11 +369,7 @@ internal fun AppleMissingLyricsHooks.scheduleNativeLyricsModel(songId: String) {
         try {
             buildNativeLyricsModel(key)
         } finally {
-            synchronized(nativeBuildLock) {
-                if (pendingNativeBuildKey == key) {
-                    pendingNativeBuildKey = null
-                }
-            }
+            nativeBuildState.clearIfCurrent(key)
             AppleSourceSwitchPerformanceDiagnostics.stageForSong(
                 songId = songId,
                 stage = "native_model_main_finished",
@@ -419,7 +412,7 @@ internal fun AppleMissingLyricsHooks.buildNativeLyricsModel(key: AppleMissingLyr
         details = "bytes=${ttml.length},kind=${nativeTtml.kind}",
     )
     val parseStartedAtNanos = SystemClock.elapsedRealtimeNanos()
-    val pointer = nativeBuildScope.within {
+    val pointer = nativeBuildState.withinScope {
         nativeParser.parse(ttml)
     }
     AppleSourceSwitchPerformanceDiagnostics.record(
@@ -478,4 +471,3 @@ internal fun AppleMissingLyricsHooks.buildNativeLyricsModel(key: AppleMissingLyr
         details = "pointer=true",
     )
 }
-

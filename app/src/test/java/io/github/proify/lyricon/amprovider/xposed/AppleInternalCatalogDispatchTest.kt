@@ -69,7 +69,7 @@ class AppleInternalCatalogDispatchTest {
 
         assertTrue(first)
         assertFalse(second)
-        val queued = dispatch.originalEntityPending.values.single()
+        val queued = dispatch.pendingOriginalEntityRequests().single()
         assertEquals(RequestPriority.VISIBLE, queued.priority)
         assertEquals(2, queued.callbacks.size)
     }
@@ -84,9 +84,10 @@ class AppleInternalCatalogDispatchTest {
         val taken = dispatch.takeOriginalEntityBatch()
 
         assertEquals(listOf("a", "b"), taken.map { it.mediaId })
-        assertEquals(1, dispatch.originalEntityPending.size)
-        assertEquals(1, dispatch.originalEntityBatchesRunning)
-        assertEquals(1, dispatch.originalEntityBackgroundBatchesRunning)
+        val lanes = dispatch.laneSnapshot()
+        assertEquals(1, lanes.originalPending)
+        assertEquals(1, lanes.originalRunning)
+        assertEquals(1, dispatch.batchFlags().originalBackgroundRunning)
     }
 
     @Test
@@ -98,8 +99,8 @@ class AppleInternalCatalogDispatchTest {
 
         assertTrue(dispatch.submitOriginalEntityRequest(originalRequest("b")))
         dispatch.endOriginalEntityBatch(first.first().priority)
-        assertEquals(0, dispatch.originalEntityBatchesRunning)
-        assertEquals(0, dispatch.originalEntityBackgroundBatchesRunning)
+        assertEquals(0, dispatch.laneSnapshot().originalRunning)
+        assertEquals(0, dispatch.batchFlags().originalBackgroundRunning)
 
         val second = dispatch.takeOriginalEntityBatch()
         assertEquals(listOf("b"), second.map { it.mediaId })
@@ -108,12 +109,17 @@ class AppleInternalCatalogDispatchTest {
     @Test
     fun `background cap holds queued work while visible requests keep a slot`() {
         val dispatch = AppleInternalCatalogDispatch()
-        dispatch.originalEntityBatchesRunning = MAX_ORIGINAL_ENTITY_BATCHES_RUNNING - 1
-        dispatch.originalEntityBackgroundBatchesRunning =
-            MAX_BACKGROUND_ORIGINAL_ENTITY_BATCHES_RUNNING
+        // Occupies the background lane up to its cap using real submissions, then confirms the
+        // cap holds queued background work while a visible request still gets a slot.
+        dispatch.submitOriginalEntityRequest(originalRequest("warm-1"))
+        dispatch.submitOriginalEntityRequest(originalRequest("warm-2"))
+        dispatch.takeOriginalEntityBatch()
+        dispatch.submitOriginalEntityRequest(originalRequest("warm-3"))
+        dispatch.submitOriginalEntityRequest(originalRequest("warm-4"))
+        dispatch.takeOriginalEntityBatch()
 
         assertFalse(dispatch.submitOriginalEntityRequest(originalRequest("bg")))
-        assertTrue(dispatch.originalEntityPending.containsKey("bg"))
+        assertTrue(dispatch.pendingOriginalEntityRequests().any { it.mediaId == "bg" })
         assertTrue(dispatch.submitOriginalEntityRequest(originalRequest("v", priority = RequestPriority.VISIBLE)))
 
         val taken = dispatch.takeOriginalEntityBatch()
@@ -125,10 +131,16 @@ class AppleInternalCatalogDispatchTest {
     fun `take clears the scheduled flag even when capacity vanished so later release re-arms`() {
         val dispatch = AppleInternalCatalogDispatch()
         dispatch.submitOriginalEntityRequest(originalRequest("a"))
-        dispatch.originalEntityBatchesRunning = MAX_ORIGINAL_ENTITY_BATCHES_RUNNING
+        // Fill every running slot with real batches so the next take cannot acquire one.
+        repeat(MAX_ORIGINAL_ENTITY_BATCHES_RUNNING) { index ->
+            dispatch.submitOriginalEntityRequest(
+                originalRequest("fill-$index", priority = RequestPriority.VISIBLE),
+            )
+            dispatch.takeOriginalEntityBatch()
+        }
 
         assertTrue(dispatch.takeOriginalEntityBatch().isEmpty())
-        assertFalse(dispatch.originalEntityBatchScheduled)
+        assertFalse(dispatch.batchFlags().originalScheduled)
 
         dispatch.endOriginalEntityBatch(RequestPriority.VISIBLE)
         assertTrue(dispatch.shouldScheduleOriginalEntityBatch())
@@ -227,8 +239,11 @@ class AppleInternalCatalogDispatchTest {
             scopedPriorities = mapOf("1" to RequestPriority.VISIBLE),
         )
         assertEquals(2, changed)
-        assertEquals(RequestPriority.VISIBLE, dispatch.localizedPending.values.single().priority)
-        assertEquals(RequestPriority.BACKGROUND, dispatch.originalEntityPending.values.single().priority)
+        assertEquals(RequestPriority.VISIBLE, dispatch.pendingLocalizedRequests().single().priority)
+        assertEquals(
+            RequestPriority.BACKGROUND,
+            dispatch.pendingOriginalEntityRequests().single().priority,
+        )
 
         val unchanged = dispatch.updatePendingRequestPriorities(
             scopedPriorities = mapOf("1" to RequestPriority.VISIBLE),
@@ -244,7 +259,7 @@ class AppleInternalCatalogDispatchTest {
         assertTrue(dispatch.submitLocalizedRequest(localizedRequest("a", priority = RequestPriority.BACKGROUND)))
         assertFalse(dispatch.submitLocalizedRequest(localizedRequest("a", priority = RequestPriority.VISIBLE)))
 
-        val queued = dispatch.localizedPending.values.single()
+        val queued = dispatch.pendingLocalizedRequests().single()
         assertEquals(RequestPriority.VISIBLE, queued.priority)
     }
 
@@ -257,12 +272,12 @@ class AppleInternalCatalogDispatchTest {
 
         val taken = dispatch.takeLocalizedBatch()
         assertEquals(2, taken.size)
-        assertEquals(1, dispatch.localizedPending.size)
-        assertEquals(1, dispatch.localizedBatchesRunning)
+        assertEquals(1, dispatch.laneSnapshot().localizedPending)
+        assertEquals(1, dispatch.laneSnapshot().localizedRunning)
 
         dispatch.endLocalizedBatch(taken.first().priority)
-        assertEquals(0, dispatch.localizedBatchesRunning)
-        assertEquals(0, dispatch.localizedBackgroundBatchesRunning)
+        assertEquals(0, dispatch.laneSnapshot().localizedRunning)
+        assertEquals(0, dispatch.batchFlags().localizedBackgroundRunning)
     }
 
     @Test
@@ -270,13 +285,15 @@ class AppleInternalCatalogDispatchTest {
         val dispatch = AppleInternalCatalogDispatch()
         val aliases = mutableListOf<Alias?>()
 
-        synchronized(dispatch.localizedInFlight) {
-            dispatch.localizedInFlight["rk-a"] = mutableListOf({ aliases += it })
-        }
+        assertTrue(dispatch.attachLocalizedCallback("rk-a", { aliases += it }, onMerged = {}))
+        // A second attach merges into the same lane without querying again.
+        assertFalse(
+            dispatch.attachLocalizedCallback("rk-a", { alias -> aliases += alias }, onMerged = {}),
+        )
         val drained = dispatch.drainLocalizedCallbacks("rk-a")
-        assertEquals(1, drained.size)
+        assertEquals(2, drained.size)
         drained.forEach { callback -> callback(Alias("t", "a", "ja-JP")) }
-        assertEquals(1, aliases.size)
+        assertEquals(2, aliases.size)
         assertNull(dispatch.drainLocalizedCallbacks("rk-a").firstOrNull())
     }
 }

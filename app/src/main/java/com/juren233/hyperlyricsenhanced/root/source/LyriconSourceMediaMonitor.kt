@@ -7,9 +7,6 @@
 package com.juren233.hyperlyricsenhanced.root.source
 
 import android.app.Application
-import android.content.Context
-import android.media.AudioManager
-import android.media.session.MediaSessionManager
 import android.os.SystemClock
 import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.common.media.MediaMetadataHelper
@@ -22,26 +19,19 @@ import kotlinx.coroutines.launch
 
 internal fun LyriconSource.registerLocalMediaSessionTracker() {
     val context = app ?: return
-    if (localSessionsListener != null) return
-    runCatching {
-        val manager = context.getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
-        val listener = MediaSessionManager.OnActiveSessionsChangedListener { controllers ->
-            onLocalActiveMediaSessionsChanged(
-                controllers?.mapNotNull { it.packageName }?.toSet()
+    localMediaSessionState.register(
+        context = context,
+        onSessions = ::onLocalActiveMediaSessionsChanged,
+        onRegistered = {
+            HookLogger.i(LyriconSource.TAG, "SystemUI 本地媒体会话跟踪已启动")
+        },
+        onFailure = { error ->
+            HookLogger.w(
+                LyriconSource.TAG,
+                "SystemUI 本地媒体会话跟踪不可用，回退 app 快照: reason=${error.message}",
             )
-        }
-        manager.addOnActiveSessionsChangedListener(listener, null)
-        mediaSessionManager = manager
-        localSessionsListener = listener
-        onLocalActiveMediaSessionsChanged(
-            manager.getActiveSessions(null).mapNotNull { it.packageName }.toSet()
-        )
-        HookLogger.i(LyriconSource.TAG, "SystemUI 本地媒体会话跟踪已启动")
-    }.onFailure { error ->
-        mediaSessionManager = null
-        localSessionsListener = null
-        HookLogger.w(LyriconSource.TAG, "SystemUI 本地媒体会话跟踪不可用，回退 app 快照: reason=${error.message}")
-    }
+        },
+    )
 }
 
 internal fun LyriconSource.onLocalActiveMediaSessionsChanged(packages: Set<String>?) {
@@ -56,13 +46,7 @@ internal fun LyriconSource.onLocalActiveMediaSessionsChanged(packages: Set<Strin
 }
 
 internal fun LyriconSource.unregisterLocalMediaSessionTracker() {
-    val manager = mediaSessionManager
-    val listener = localSessionsListener
-    if (manager != null && listener != null) {
-        runCatching { manager.removeOnActiveSessionsChangedListener(listener) }
-    }
-    mediaSessionManager = null
-    localSessionsListener = null
+    localMediaSessionState.unregister()
     activeMediaSessionGate.updateLocal(null)
 }
 
@@ -73,21 +57,18 @@ internal fun LyriconSource.unregisterLocalMediaSessionTracker() {
  */
 internal fun LyriconSource.isAnyMusicActive(): Boolean {
     val context = app ?: return true
-    if (audioManager == null) {
-        audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
-    }
-    return audioManager?.isMusicActive ?: true
+    return localMediaSessionState.isAnyMusicActive(context)
 }
 
 internal fun LyriconSource.startAppleMediaMonitor() {
-    lastObservedMediaKey = null
+    applePositionState.setObservedMediaKey(null)
     mainHandler.removeCallbacks(appleMediaMonitor)
     mainHandler.post(appleMediaMonitor)
 }
 
 internal fun LyriconSource.stopAppleMediaMonitor() {
     mainHandler.removeCallbacks(appleMediaMonitor)
-    lastObservedMediaKey = null
+    applePositionState.setObservedMediaKey(null)
 }
 
 internal fun LyriconSource.observeAppleMediaSession(force: Boolean = false) {
@@ -109,8 +90,8 @@ internal fun LyriconSource.observeAppleMediaSession(force: Boolean = false) {
         lyrics = emptyList()
     )
     val mediaKey = songIdentity(mediaSong)
-    if (!force && mediaKey == lastObservedMediaKey) return
-    lastObservedMediaKey = mediaKey
+    if (!force && mediaKey == applePositionState.observedMediaKey()) return
+    applePositionState.setObservedMediaKey(mediaKey)
 
     val nativeSong = currentAppleSong
     if (
@@ -120,7 +101,7 @@ internal fun LyriconSource.observeAppleMediaSession(force: Boolean = false) {
             currentHasNativeLyrics = currentAppleHasNativeLyrics
         )
     ) {
-        val fallbackPending = fallbackDelayRunnable != null || fallbackJob?.isActive == true
+        val fallbackPending = appleFallbackRequest.snapshot().pending
         if (!fallbackPending && !fallbackSongActive) {
             diagnostic(
                 "Apple Music Provider 已确认无歌词，媒体会话补充触发在线兜底: title=${media.title}, " +
@@ -147,7 +128,7 @@ internal fun LyriconSource.refreshAppleMediaPositionReference() {
 internal fun LyriconSource.updateAppleMediaPositionReference(media: MediaMetadataHelper.MediaInfo) {
     val application = app ?: return
     val currentSong = currentAppleSong ?: return
-    val previous = appleMediaPositionReference
+    val previous = applePositionState.mediaReference()
     val matchesCurrentSong = AppleCentralPositionPolicy.matchesTrack(
         firstTitle = currentSong.name,
         firstArtist = currentSong.artist,
@@ -156,7 +137,7 @@ internal fun LyriconSource.updateAppleMediaPositionReference(media: MediaMetadat
         secondArtist = media.artist,
         secondDuration = media.duration,
     )
-    val continuesBoundMediaIdentity = previous?.songGeneration == appleSongGeneration &&
+    val continuesBoundMediaIdentity = previous?.songGeneration == applePositionState.songGeneration() &&
         AppleCentralPositionPolicy.matchesTrack(
             firstTitle = previous.title,
             firstArtist = previous.artist,
@@ -169,8 +150,8 @@ internal fun LyriconSource.updateAppleMediaPositionReference(media: MediaMetadat
 
     val progress = MediaMetadataHelper.getPlaybackProgress(application, LyriconSource.APPLE_MUSIC_PACKAGE)
     if (progress.position < 0L) return
-    appleMediaPositionReference = AppleCentralPositionPolicy.MediaReference(
-        songGeneration = appleSongGeneration,
+    applePositionState.setMediaReference(AppleCentralPositionPolicy.MediaReference(
+        songGeneration = applePositionState.songGeneration(),
         title = media.title,
         artist = media.artist,
         duration = media.duration.takeIf { it > 0L } ?: progress.duration,
@@ -178,7 +159,7 @@ internal fun LyriconSource.updateAppleMediaPositionReference(media: MediaMetadat
         isPlaying = progress.isPlaying,
         playbackSpeed = progress.playbackSpeed,
         observedAtMs = SystemClock.elapsedRealtime(),
-    )
+    ))
 }
 
 internal fun LyriconSource.resolveApplePosition(
@@ -190,9 +171,9 @@ internal fun LyriconSource.resolveApplePosition(
         ?.takeIf { it > 0L }
         ?: currentAppleSong?.duration
         ?: 0L,
-    currentSongGeneration = appleSongGeneration,
-    mediaReference = appleMediaPositionReference,
-    directReference = appleDirectPositionReference.takeIf {
+    currentSongGeneration = applePositionState.songGeneration(),
+    mediaReference = applePositionState.mediaReference(),
+    directReference = applePositionState.directReference().takeIf {
         !hasActiveCentralPlayer() || isBuiltInAppleCentralProviderActive()
     },
     providerDelayMs = activeProviderDelayMs,
@@ -203,7 +184,7 @@ internal fun LyriconSource.resolveApplePosition(
 internal fun LyriconSource.startMediaPositionPolling() {
     if (mediaPositionJob?.isActive == true) return
     val application = app ?: return
-    lastMediaPlaybackState = null
+    applePositionState.setMediaPlaybackState(null)
     mediaPositionJob = mediaPositionScope.launch {
         while (isActive && fallbackSongActive) {
             val progress = MediaMetadataHelper.getPlaybackProgress(
@@ -211,11 +192,11 @@ internal fun LyriconSource.startMediaPositionPolling() {
                 LyriconSource.APPLE_MUSIC_PACKAGE
             )
             if (progress.position >= 0L) {
-                lastAdjustedPosition = progress.position
+                applePositionState.lastAdjustedPosition = progress.position
                 sink?.onPositionChanged(progress.position)
             }
-            if (lastMediaPlaybackState != progress.isPlaying) {
-                lastMediaPlaybackState = progress.isPlaying
+            if (applePositionState.mediaPlaybackState() != progress.isPlaying) {
+                applePositionState.setMediaPlaybackState(progress.isPlaying)
                 sink?.onPlaybackStateChanged(progress.isPlaying)
             }
             delay(33L)
@@ -226,7 +207,7 @@ internal fun LyriconSource.startMediaPositionPolling() {
 internal fun LyriconSource.stopMediaPositionPolling() {
     mediaPositionJob?.cancel()
     mediaPositionJob = null
-    lastMediaPlaybackState = null
+    applePositionState.setMediaPlaybackState(null)
 }
 
 /**

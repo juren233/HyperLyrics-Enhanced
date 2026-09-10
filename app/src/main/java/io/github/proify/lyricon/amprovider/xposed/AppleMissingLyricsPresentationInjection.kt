@@ -245,8 +245,7 @@ internal fun AppleMissingLyricsHooks.logAvailabilityDecision(
         presentationAccepted,
         nativeResolutionReason,
     ).joinToString("|")
-    if (lastAvailabilityDiagnostic == signature) return
-    lastAvailabilityDiagnostic = signature
+    if (!availabilityDiagnostics.shouldLog(signature)) return
     ProviderLogger.diagnostic(
         "Apple Music 无歌词补充可用性判定: enabled=$enabled, " +
             "queueSongId=$queueSongId, contentId=$songId, hasContent=$hasContent, " +

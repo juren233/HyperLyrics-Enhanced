@@ -27,7 +27,7 @@ class AppleMusicProviderHookOrderTest {
 
     @Test
     fun `Apple Music remote preference listener keeps a strong owner reference`() {
-        // 模块拆分后：强引用字段声明仍在 Orchestrator，监听器接线代码位于内容语言偏好扩展文件。
+        // R6 拆分后：强引用字段声明在目录/语言组装群，监听器接线代码位于内容语言偏好扩展文件。
         fun readSource(fileName: String): String {
             val relativeSourcePath =
                 "src/main/java/io/github/proify/lyricon/amprovider/xposed/$fileName"
@@ -36,15 +36,15 @@ class AppleMusicProviderHookOrderTest {
                 .first(File::isFile)
                 .readText()
         }
-        val orchestratorSource = readSource("AppleMusicProviderOrchestrator.kt")
+        val catalogLanguageSource = readSource("AppleOrchestratorCatalogLanguageAssembly.kt")
         val wiringSource = readSource("AppleOrchestratorContentUiLanguage.kt")
         val listenerField = "var contentUiLanguagePreferenceListener:"
-        val listenerAssignment = "contentUiLanguagePreferenceListener = listener"
+        val listenerAssignment = "catalogLanguage.attachPreferenceListener(listener)"
         val listenerRegistration = "prefs.registerOnSharedPreferenceChangeListener(listener)"
 
         assertTrue(
             "Remote SharedPreferences listeners are weakly held and need a strong field owner",
-            orchestratorSource.contains(listenerField) && wiringSource.contains(listenerAssignment),
+            catalogLanguageSource.contains(listenerField),
         )
         assertTrue(
             "The strong listener reference must be assigned before registration",

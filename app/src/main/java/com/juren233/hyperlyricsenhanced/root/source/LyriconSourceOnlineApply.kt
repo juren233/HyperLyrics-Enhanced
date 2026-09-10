@@ -154,10 +154,7 @@ private fun LyriconSource.applyCurrentOnlineTranslationResult(
             "latestLines=${latestNativeSong.lyrics.orEmpty().size}, " +
             "candidateSources=${selection?.onlineLinesBySource?.keys?.joinToString("+").orEmpty()}"
     )
-    val hasPendingSourceSwitch = pendingTranslationSourceRequest
-        ?.takeIf { it.songId == baseSong.id } != null ||
-        pendingPronunciationSourceRequest
-            ?.takeIf { it.songId == baseSong.id } != null
+    val hasPendingSourceSwitch = manualSourceRequests.hasPendingOnlineRequest(baseSong.id)
     val hasOnlineEnrichment = mergedResult != null &&
         (
             OnlineTranslationMatcher.contributesTranslation(latestNativeSong, mergedResult) ||
@@ -410,10 +407,10 @@ internal fun LyriconSource.requestOriginalMetadata(baseSong: LocalSong, reason: 
     if (
         hasOriginalMetadata ||
         originalMetadataResolved ||
-        originalMetadataRequestKey == mediaId
+        originalMetadataRequest.isCurrent(mediaId)
     ) return false
     val application = app ?: return false
-    originalMetadataRequestKey = mediaId
+    originalMetadataRequest.register(mediaId)
     application.sendBroadcast(
         Intent(AppleDirectBridgeContract.ACTION_RESOLVE_ORIGINAL_METADATA)
             .setPackage(LyriconSource.APPLE_MUSIC_PACKAGE)

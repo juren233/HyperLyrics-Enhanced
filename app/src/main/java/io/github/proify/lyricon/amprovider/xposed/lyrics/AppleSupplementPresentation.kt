@@ -148,7 +148,7 @@ internal fun AppleLyricsSupplementHooks.requestMissingLyricsPresentationRefresh(
             )
         }.getOrNull()?.let { this.nativeSongId(it) }
         if (presentedSongId != null) {
-            appleLyricsPresentationInFlight = true
+            scrollPresentationState.beginPresentation()
             ensureAppleLyricsScrollTracking(fragment, presentedSongId)
         }
         runCatching { method.invoke(fragment, pointer) }
@@ -167,12 +167,12 @@ internal fun AppleLyricsSupplementHooks.requestMissingLyricsPresentationRefresh(
                     // 新歌词 Adapter 的本轮布局，而不是旧 holder 尚未清理的中间态。
                     restoreAppleLyricsScrollSnapshot(fragment, presentedSongId)
                 } else {
-                    appleLyricsPresentationInFlight = false
+                    scrollPresentationState.finishPresentation()
                 }
                 ProviderLogger.debug("Apple Music 无歌词补充原生呈现已刷新")
             }
             .onFailure {
-                appleLyricsPresentationInFlight = false
+                scrollPresentationState.finishPresentation()
                 ProviderLogger.error("Apple Music 无歌词补充原生呈现刷新失败", it)
             }
         ensureMissingLyricsTranslationButtonVisible(fragment)
@@ -217,7 +217,7 @@ internal fun AppleLyricsSupplementHooks.dismissAppleLyricsLoadingOverlay(fragmen
             }
             // Apple 可能在任意后续回调里把遮罩重新置为 VISIBLE。把抑制动作
             // 绑定到该 View 自己的 layout 变化上，不再依赖固定延迟窗口。
-            if (suppressedLyricsLoadingViews.add(view)) {
+            if (viewTracking.markLoadingViewSuppressedIfNew(view)) {
                 view.addOnLayoutChangeListener(
                     object : View.OnLayoutChangeListener {
                         override fun onLayoutChange(
@@ -292,7 +292,7 @@ internal fun AppleLyricsSupplementHooks.ensureMissingLyricsTranslationButtonVisi
                 view.isClickable = true
                 forced += 1
             }
-            if (forcedLyricsTranslationButtons.add(view)) {
+            if (viewTracking.markTranslationButtonForcedIfNew(view)) {
                 view.addOnLayoutChangeListener(
                     object : View.OnLayoutChangeListener {
                         override fun onLayoutChange(
@@ -660,7 +660,7 @@ internal fun AppleLyricsSupplementHooks.shouldHideMandarinPronunciation(
     pronunciationLanguages: Collection<String> = emptyList(),
     lyricObject: Any? = null,
 ): Boolean {
-    val lyricContext = lyricObject?.let(applePronunciationContextByLyricObject::get)
+    val lyricContext = lyricObject?.let(pronunciationState::contextFor)
     val resolvedSongId = songId ?: lyricContext?.songId ?: currentAppleLyricsSongId
     val genre = resolvedSongId?.let { id ->
         sequenceOf(MediaMetadataCache.getMetadataById(id)?.genre)
@@ -679,7 +679,7 @@ internal fun AppleLyricsSupplementHooks.shouldHideMandarinPronunciation(
         addAll(pronunciationLanguages)
         addAll(lyricContext?.pronunciationLanguages.orEmpty())
         resolvedSongId?.let { id ->
-            addAll(applePronunciationLanguagesBySongId[id].orEmpty())
+            addAll(pronunciationState.languages(id).orEmpty())
         }
     }.map(String::trim).filter(String::isNotEmpty).distinct()
     return ApplePronunciationVisibilityPolicy.shouldHide(
@@ -688,4 +688,3 @@ internal fun AppleLyricsSupplementHooks.shouldHideMandarinPronunciation(
         hideMandarinPinyin = isHideMandarinPinyinEnabled(),
     )
 }
-

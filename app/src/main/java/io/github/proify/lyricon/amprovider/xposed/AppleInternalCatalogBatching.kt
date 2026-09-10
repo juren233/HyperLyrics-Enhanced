@@ -231,23 +231,17 @@ internal fun AppleInternalCatalogResolver.resolveManyForContentUiLanguageSingleL
     }
     val uncached = mutableListOf<LocalizedRequest>()
     requests.forEach { request ->
-        val cached = synchronized(caches.localizedCache) { caches.localizedCache[request.cacheKey] }
+        val cached = caches.localizedAlias(request.cacheKey)
         if (cached != null) {
             complete(request, cached)
             return@forEach
         }
-        val ownsRequest = synchronized(dispatch.localizedInFlight) {
-            val callbacks = dispatch.localizedInFlight[request.requestKey]
-            if (callbacks != null) {
-                callbacks += { alias -> complete(request, alias) }
-                promotePendingRequests(listOf(request.mediaId), request.priority)
-                false
-            } else {
-                dispatch.localizedInFlight[request.requestKey] =
-                    mutableListOf({ alias -> complete(request, alias) })
-                true
-            }
-        }
+        val ownsRequest = dispatch.attachLocalizedCallback(
+            requestKey = request.requestKey,
+            callback = { alias -> complete(request, alias) },
+            // 合并分支必须在 in-flight 车道锁内完成优先级提升，保持原锁嵌套。
+            onMerged = { promotePendingRequests(listOf(request.mediaId), request.priority) },
+        )
         if (ownsRequest) uncached += request
     }
     if (uncached.isEmpty()) return
@@ -261,7 +255,7 @@ internal fun AppleInternalCatalogResolver.resolveManyForContentUiLanguageSingleL
 }
 
 internal fun AppleInternalCatalogResolver.finishLocalizedCacheHit(request: LocalizedRequest, alias: Alias) {
-    synchronized(caches.localizedCache) { caches.localizedCache[request.cacheKey] = alias }
+    caches.putLocalizedAlias(request.cacheKey, alias)
     val callbacks = dispatch.drainLocalizedCallbacks(request.requestKey)
     ProviderLogger.info(
         "Apple 地区元数据持久缓存命中: id=${request.mediaId}, " +
@@ -317,7 +311,7 @@ internal fun AppleInternalCatalogResolver.promotePendingRequests(
         .filter(String::isNotEmpty)
         .toSet()
     if (normalizedIds.isEmpty()) return
-    if (dispatch.requestScopeActive) {
+    if (dispatch.isRequestScopeActive()) {
         val scopedPriorities = normalizedIds.associateWith(dispatch::currentScopedPriority)
         dispatch.updatePendingRequestPriorities(
             scopedPriorities = scopedPriorities,
@@ -327,30 +321,11 @@ internal fun AppleInternalCatalogResolver.promotePendingRequests(
     }
     if (priority == RequestPriority.BACKGROUND) return
     normalizedIds.forEach { mediaId -> dispatch.rememberRequestPriority(mediaId, priority) }
-    var localizedPromoted = 0
-    synchronized(dispatch.localizedPending) {
-        dispatch.localizedPending.entries.forEach { entry ->
-            val request = entry.value
-            if (request.mediaId in normalizedIds && request.priority.ordinal < priority.ordinal) {
-                entry.setValue(request.copy(priority = priority))
-                localizedPromoted += 1
-            }
-        }
-    }
-    var originalPromoted = 0
-    synchronized(dispatch.originalEntityPending) {
-        dispatch.originalEntityPending.entries.forEach { entry ->
-            val request = entry.value
-            if (request.mediaId in normalizedIds && request.priority.ordinal < priority.ordinal) {
-                entry.setValue(request.copy(priority = priority))
-                originalPromoted += 1
-            }
-        }
-    }
-    if (BuildConfig.DEBUG && (localizedPromoted > 0 || originalPromoted > 0)) {
+    val promoted = dispatch.promotePendingRequests(normalizedIds, priority)
+    if (BuildConfig.DEBUG && (promoted.localized > 0 || promoted.original > 0)) {
         ProviderLogger.info(
             "Apple 元数据请求优先级提升: priority=$priority, ids=$normalizedIds, " +
-                "localized=$localizedPromoted, original=$originalPromoted"
+                "localized=${promoted.localized}, original=${promoted.original}"
         )
     }
     scheduleLocalizedBatchIfCapacity()
@@ -385,7 +360,7 @@ internal fun AppleInternalCatalogResolver.finishLocalizedRequest(
     alias: Alias?,
 ) {
     if (alias != null) {
-        synchronized(caches.localizedCache) { caches.localizedCache[request.cacheKey] = alias }
+        caches.putLocalizedAlias(request.cacheKey, alias)
         persistentLocalizedCache.put(request.cacheKey, alias)
     }
     val callbacks = dispatch.drainLocalizedCallbacks(request.requestKey)
@@ -429,7 +404,7 @@ internal fun AppleInternalCatalogResolver.finishResolve(
     }
     val originalAlias = selected ?: confirmedRegionalAlias
     if (originalAlias != null) {
-        synchronized(caches.originalSongCache) { caches.originalSongCache[metadata.id] = originalAlias }
+        caches.putOriginalSongAlias(metadata.id, originalAlias)
         persistentOriginalCache.put(originalSongCacheKey(metadata.id), originalAlias)
     }
     val resolvedAlbum = originalAlbumFromResolution(
@@ -474,7 +449,7 @@ internal fun AppleInternalCatalogResolver.registerOriginalCandidateCallback(
     callback: (Alias) -> Unit,
 ) {
     dispatch.addOriginalCandidateCallback(mediaId, callback)
-    caches.catalogIdentityCache[mediaId]
+    caches.catalogIdentity(mediaId)
         ?.fallbackAliases
         ?.firstOrNull()
         ?.let { alias -> dispatch.publishOriginalCandidate(mediaId, alias) }

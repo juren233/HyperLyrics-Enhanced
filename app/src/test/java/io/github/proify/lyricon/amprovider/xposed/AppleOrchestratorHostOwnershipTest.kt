@@ -52,6 +52,12 @@ class AppleOrchestratorHostOwnershipTest {
 
     @Test
     fun `every host default implementation lives in its owner file`() {
+        val wiring = listOf(
+            "AppleMusicProviderOrchestrator.kt",
+            "AppleOrchestratorLyricsPlaybackAssembly.kt",
+            "AppleOrchestratorInAppMetadataAssembly.kt",
+            "AppleOrchestratorCatalogLanguageAssembly.kt",
+        ).joinToString("\n") { source(it) }
         hostOwners.forEach { (interfaceName, ownerFile) ->
             val className = "Default$interfaceName"
             val owner = source(ownerFile)
@@ -59,24 +65,26 @@ class AppleOrchestratorHostOwnershipTest {
                 "$ownerFile 缺少 $className",
                 owner.contains("internal class $className"),
             )
-            val orchestrator = source("AppleMusicProviderOrchestrator.kt")
             assertTrue(
-                "Orchestrator 应以 $className 接线",
-                orchestrator.contains(className),
+                "R6 组装群应以 $className 接线",
+                wiring.contains(className),
             )
         }
     }
 
     @Test
     fun `preference listener strong reference wiring stays in orchestrator`() {
-        val orchestrator = source("AppleMusicProviderOrchestrator.kt")
+        val catalogLanguage = source("AppleOrchestratorCatalogLanguageAssembly.kt")
+        val lyricsPlayback = source("AppleOrchestratorLyricsPlaybackAssembly.kt")
         assertTrue(
-            "偏好监听器强引用字段必须保留在 Orchestrator",
-            orchestrator.contains("contentUiLanguagePreferenceListener"),
+            "偏好监听器强引用字段必须保留在目录/语言组装群",
+            catalogLanguage.contains("contentUiLanguagePreferenceListener"),
         )
         assertTrue(
-            "PreferencesMonitor 监听器接线必须保留在 Orchestrator",
-            orchestrator.contains("PreferencesMonitor.listener = object : PreferencesMonitor.Listener"),
+            "PreferencesMonitor 监听器接线必须保留在歌词/播放组装群",
+            lyricsPlayback.contains(
+                "PreferencesMonitor.listener = object : PreferencesMonitor.Listener",
+            ),
         )
     }
 
@@ -99,11 +107,11 @@ class AppleOrchestratorHostOwnershipTest {
 
     @Test
     fun `visible diagnostics framework metadata access keeps baseline call-time semantics`() {
-        val orchestrator = source("AppleMusicProviderOrchestrator.kt")
+        val metadataAssembly = source("AppleOrchestratorInAppMetadataAssembly.kt")
         assertTrue(
             "frameworkMetadataFn 必须与基线一致直接调用 frameworkMetadataHooks，" +
                 "不得引入 isInitialized 守卫静默吞掉未初始化失败",
-            !orchestrator.contains("::frameworkMetadataHooks.isInitialized"),
+            !metadataAssembly.contains("::frameworkMetadataHooks.isInitialized"),
         )
     }
 }

@@ -128,7 +128,7 @@ internal fun LyriconSource.handleAppleSong(incomingSong: LocalSong?) {
         AppleOnlineTranslationRequestPolicy.originalMetadataChanged(previousSong, song)
     val repeatedEmptySong = sameTrack && song != null && !originalMetadataChanged &&
         song.lyrics.isNullOrEmpty() &&
-        (fallbackSongActive || fallbackDelayRunnable != null || fallbackJob?.isActive == true)
+        (fallbackSongActive || appleFallbackRequest.snapshot().pending)
     if (repeatedEmptySong) {
         refreshRetainedAppleMetadata(song)
         publication.acceptAppleInput(song, false)
@@ -168,16 +168,9 @@ internal fun LyriconSource.handleAppleSong(incomingSong: LocalSong?) {
     )
     publication.acceptAppleInput(song, hasAppleNativeLyrics(song))
     if (!sameTrack) {
-        appleSongGeneration += 1
-        appleMediaPositionReference = null
-        appleDirectPositionReference = null
-        lastAdjustedPosition = 0L
-        originalMetadataRequestKey = null
-        temporaryTranslationSource = null
-        temporaryPronunciationSource = null
-        pendingTranslationSourceRequest = null
-        pendingPronunciationSourceRequest = null
-        pendingLyricsSourceRequest = null
+        applePositionState.beginSongGeneration()
+        originalMetadataRequest.clear()
+        manualSourceRequests.clearForTrackChange()
         publication.beginAppleTrack(incomingSong?.takeUnless(::isMissingLyricsSupplement))
         refreshAppleMediaPositionReference()
     }
@@ -185,7 +178,7 @@ internal fun LyriconSource.handleAppleSong(incomingSong: LocalSong?) {
         song != null && shouldRequestOriginalMetadataForOnlineLookup(song)
     )
     pronunciationDiagnostic(
-        "stage=request_entry_gate, id=${song?.id}, generation=$appleSongGeneration, " +
+        "stage=request_entry_gate, id=${song?.id}, generation=${applePositionState.songGeneration()}, " +
             "prefsPresent=${prefs != null}, matchingEnabled=${isAppleTranslationEnrichmentEnabled()}, " +
             "lyrics=${song?.lyrics.orEmpty().size}, needsEnrichment=${needsOnlineEnrichment(song)}, " +
             "titlePresent=${!song?.name.isNullOrBlank()}, " +

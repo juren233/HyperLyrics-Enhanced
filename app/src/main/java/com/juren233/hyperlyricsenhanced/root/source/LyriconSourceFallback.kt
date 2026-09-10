@@ -90,35 +90,30 @@ internal fun LyriconSource.scheduleFallback(
     }
     val configuredSources = OnlineTranslationSourcePreferences.orderedSources(prefs)
     if (configuredSources.isEmpty() && !lunaBeatRequested) return
-    val previousGeneration = fallbackGeneration
-    val previousJobActive = fallbackJob?.isActive == true
-    val previousDelayPending = fallbackDelayRunnable != null
-    fallbackGeneration += 1
-    val generation = fallbackGeneration
-    fallbackDelayRunnable?.let(mainHandler::removeCallbacks)
-    fallbackDelayRunnable = null
-    fallbackJob?.cancel()
-    fallbackJob = null
+    val previousSnapshot = appleFallbackRequest.snapshot()
+    val generation = appleFallbackRequest.invalidate(mainHandler::removeCallbacks)
     sourceSwitchCoreStage(
         request = sourceSwitchRequest,
         stage = "fallback_scheduled",
-        details = "generation=$previousGeneration->$generation,delayMs=$delayMs," +
+        details = "generation=${previousSnapshot.generation}->$generation,delayMs=$delayMs," +
             "strict=$strictSource,preferred=${preferredSourceOverride ?: "none"}," +
             "order=${configuredSources.joinToString("+")}," +
-            "cancelledJobActive=$previousJobActive," +
-            "cancelledDelayPending=$previousDelayPending",
+            "cancelledJobActive=${previousSnapshot.jobActive}," +
+            "cancelledDelayPending=${previousSnapshot.delayPending}",
     )
 
-    val delayedSearch = Runnable {
-        if (generation != fallbackGeneration) {
+    lateinit var delayedSearch: Runnable
+    delayedSearch = Runnable {
+        if (!appleFallbackRequest.isCurrent(generation)) {
             sourceSwitchCoreStage(
                 request = sourceSwitchRequest,
                 stage = "fallback_delay_abandoned",
-                details = "generation=$generation,currentGeneration=$fallbackGeneration",
+                details = "generation=$generation,currentGeneration=" +
+                    "${appleFallbackRequest.generation()}",
             )
             return@Runnable
         }
-        fallbackDelayRunnable = null
+        appleFallbackRequest.clearDelayIfCurrent(delayedSearch)
         sourceSwitchCoreStage(
             request = sourceSwitchRequest,
             stage = "fallback_worker_launching",
@@ -137,7 +132,7 @@ internal fun LyriconSource.scheduleFallback(
             )
             return@Runnable
         }
-        fallbackJob = fallbackScope.launch {
+        val worker = fallbackScope.launch {
             val mutexWaitStartedAtNanos = SystemClock.elapsedRealtimeNanos()
             sourceSwitchCoreStage(
                 request = sourceSwitchRequest,
@@ -153,12 +148,12 @@ internal fun LyriconSource.scheduleFallback(
                             ((SystemClock.elapsedRealtimeNanos() - mutexWaitStartedAtNanos) /
                                 1_000_000.0),
                     )
-                    if (generation != fallbackGeneration) {
+                    if (!appleFallbackRequest.isCurrent(generation)) {
                         sourceSwitchCoreStage(
                             request = sourceSwitchRequest,
                             stage = "fallback_search_abandoned",
-                            details = "generation=$generation," +
-                                "currentGeneration=$fallbackGeneration",
+                            details = "generation=$generation,currentGeneration=" +
+                                "${appleFallbackRequest.generation()}",
                         )
                         return@withLock
                     }
@@ -226,7 +221,8 @@ internal fun LyriconSource.scheduleFallback(
                 sourceSwitchCoreStage(
                     request = sourceSwitchRequest,
                     stage = "fallback_worker_cancelled",
-                    details = "generation=$generation,currentGeneration=$fallbackGeneration",
+                    details = "generation=$generation,currentGeneration=" +
+                        "${appleFallbackRequest.generation()}",
                 )
                 throw e
             } catch (e: Exception) {
@@ -238,8 +234,9 @@ internal fun LyriconSource.scheduleFallback(
                 debugError("Apple Music 在线兜底失败: title=${baseSong.name}", e)
             }
         }
+        appleFallbackRequest.attachJob(worker)
     }
-    fallbackDelayRunnable = delayedSearch
+    appleFallbackRequest.registerDelay(delayedSearch)
     diagnostic(
         "Apple Music 在线兜底已调度: title=${baseSong.name}, " +
             "delayMs=$delayMs, generation=$generation"
@@ -370,7 +367,8 @@ internal fun LyriconSource.applyFallbackResult(
     sourceSwitchCoreStage(
         request = sourceSwitchRequest,
         stage = "fallback_result_applying",
-        details = "generation=$generation,currentGeneration=$fallbackGeneration," +
+        details = "generation=$generation,currentGeneration=" +
+            "${appleFallbackRequest.generation()}," +
             "selected=${outcome.selectedSource ?: "none"}," +
             "lines=${outcome.lines?.size ?: 0},wordLines=${outcome.wordLines?.size ?: 0}",
     )
@@ -378,16 +376,15 @@ internal fun LyriconSource.applyFallbackResult(
     val sameTrack = nativeSong != null && isSameTrack(nativeSong, baseSong)
     val nativeSupplement = isMissingLyricsSupplement(nativeSong)
     val nativeSongHasNativeLyrics = hasAppleNativeLyrics(nativeSong)
-    val pendingSourceRequest = pendingLyricsSourceRequest
+    val pendingSourceRequest = manualSourceRequests.lyricsRequestToComplete(requestedSource)
     val manualLyricsSourceSwitch = requestedSource != null &&
-        pendingSourceRequest?.songId == baseSong.id &&
-        pendingSourceRequest?.requestedSource == requestedSource
+        pendingSourceRequest?.songId == baseSong.id
     val automaticLunaBeatOverride = requestedSource == Source.LB &&
         outcome.selectedSource == Source.LB &&
         isLunaBeatWordLyricsEnabled()
     val requestStillCurrent = nativeSong != null && acceptsAppleOnlineLyricResult(
         generation = generation,
-        currentGeneration = fallbackGeneration,
+        currentGeneration = appleFallbackRequest.generation(),
         sameTrack = sameTrack,
         currentNativeLyrics = currentAppleHasNativeLyrics,
         currentSongHasNativeLyrics = nativeSongHasNativeLyrics,
@@ -398,14 +395,15 @@ internal fun LyriconSource.applyFallbackResult(
         sourceSwitchCoreStage(
             request = sourceSwitchRequest,
             stage = "fallback_result_rejected",
-            details = "generation=$generation,currentGeneration=$fallbackGeneration," +
+            details = "generation=$generation,currentGeneration=" +
+                "${appleFallbackRequest.generation()}," +
                 "sameTrack=$sameTrack,currentNative=$currentAppleHasNativeLyrics," +
                 "currentSongHasNative=$nativeSongHasNativeLyrics," +
                 "manual=$manualLyricsSourceSwitch",
         )
         diagnostic(
             "Apple Music 在线兜底结果已过期: title=${baseSong.name}, " +
-                "generation=$generation, currentGeneration=$fallbackGeneration, " +
+                "generation=$generation, currentGeneration=${appleFallbackRequest.generation()}, " +
                 "sameTrack=$sameTrack, currentNative=$currentAppleHasNativeLyrics, " +
                 "currentSongHasNative=$nativeSongHasNativeLyrics, " +
                 "currentSupplement=$nativeSupplement, currentId=${nativeSong?.id}, " +
@@ -418,7 +416,7 @@ internal fun LyriconSource.applyFallbackResult(
         return
     }
 
-    fallbackJob = null
+    appleFallbackRequest.clearJob()
     var supplementSong: LocalSong? = null
     var enrichedLrcLines: List<LrcLine>? = null
     if (isFillMissingLyricsEnabled() || outcome.selectedSource == Source.LB) {
@@ -527,7 +525,7 @@ internal fun LyriconSource.applyFallbackResult(
     MediaMetadataHelper.getPlaybackProgress(application, LyriconSource.APPLE_MUSIC_PACKAGE)
         .position
         .takeIf { it >= 0L }
-        ?.let { lastAdjustedPosition = it }
+        ?.let { applePositionState.lastAdjustedPosition = it }
     val displayFallbackSong = supplementSong ?: requireNotNull(fallbackSong)
     HookLogger.i(
         LyriconSource.TAG,
@@ -588,17 +586,13 @@ internal fun LyriconSource.normalizeLyricText(text: String?): String =
     text.orEmpty().replace(Regex("\\s+"), " ").trim()
 
 internal fun LyriconSource.cancelFallback(clearAppleSong: Boolean, reason: String) {
-    if (fallbackDelayRunnable != null || fallbackJob?.isActive == true || fallbackSongActive) {
+    if (appleFallbackRequest.snapshot().pending || fallbackSongActive) {
         diagnostic(
             "Apple Music 在线兜底取消: reason=$reason, " +
                 "clearAppleSong=$clearAppleSong, title=${currentAppleSong?.name}"
         )
     }
-    fallbackGeneration += 1
-    fallbackDelayRunnable?.let(mainHandler::removeCallbacks)
-    fallbackDelayRunnable = null
-    fallbackJob?.cancel()
-    fallbackJob = null
+    appleFallbackRequest.invalidate(mainHandler::removeCallbacks)
     publication.cancelAppleFallback(clearSong = false)
     stopMediaPositionPolling()
     if (clearAppleSong) {

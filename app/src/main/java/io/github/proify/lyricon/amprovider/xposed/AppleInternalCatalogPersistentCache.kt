@@ -38,8 +38,7 @@ internal fun AppleInternalCatalogResolver.applyContentUiLanguage(selection: Int)
 }
 
 internal fun AppleInternalCatalogResolver.setPersistentLocalizedCacheEnabled(enabled: Boolean) {
-    val wasEnabled = caches.persistentLocalizedCacheEnabled
-    caches.persistentLocalizedCacheEnabled = enabled
+    val wasEnabled = caches.setPersistentCacheEnabled(enabled)
     persistentLocalizedCache.setEnabled(enabled)
     persistentOriginalCache.setEnabled(enabled)
     if (enabled) {
@@ -52,7 +51,7 @@ internal fun AppleInternalCatalogResolver.setPersistentLocalizedCacheEnabled(ena
 }
 
 internal fun AppleInternalCatalogResolver.warmPersistentOriginalCache() {
-    if (!caches.persistentLocalizedCacheEnabled) return
+    if (!caches.isPersistentCacheEnabled()) return
     persistentOriginalCache.warmRecentAsync { count ->
         if (count != null) {
             ProviderLogger.info("Apple 原地区元数据缓存预热完成: entries=$count")
@@ -68,9 +67,7 @@ internal fun AppleInternalCatalogResolver.cachedLocalizedArtist(selection: Int, 
         languageTags.map { language -> artistCacheKey(selection, key, language) } +
             if (languageTags.size == 1) listOf(artistCacheKey(selection, key)) else emptyList()
     }
-    return synchronized(caches.localizedArtistAliasCache) {
-        keys.firstNotNullOfOrNull(caches.localizedArtistAliasCache::get)
-    }
+    return caches.firstLocalizedArtistAlias(keys)
 }
 
 internal fun AppleInternalCatalogResolver.cachedLocalizedMetadata(
@@ -88,9 +85,7 @@ internal fun AppleInternalCatalogResolver.cachedLocalizedMetadata(
     } else {
         emptyList()
     }
-    return synchronized(caches.localizedCache) {
-        keys.firstNotNullOfOrNull(caches.localizedCache::get)
-    }
+    return caches.firstLocalizedAlias(keys)
 }
 
 internal fun AppleInternalCatalogResolver.rememberLocalizedArtist(
@@ -106,15 +101,12 @@ internal fun AppleInternalCatalogResolver.rememberLocalizedArtist(
         .distinct()
         .associateWith { alias }
     if (entries.isEmpty()) return
-    val changedEntries = synchronized(caches.localizedArtistAliasCache) {
-        entries.filter { (key, value) -> caches.localizedArtistAliasCache[key] != value }
-            .also(caches.localizedArtistAliasCache::putAll)
-    }
+    val changedEntries = caches.mergeLocalizedArtistAliases(entries)
     persistentLocalizedCache.putMany(changedEntries)
 }
 
 internal fun AppleInternalCatalogResolver.warmPersistentLocalizedCache(selection: Int) {
-    if (!caches.persistentLocalizedCacheEnabled) return
+    if (!caches.isPersistentCacheEnabled()) return
     if (storefrontForContentUiLanguage(selection) == null) return
     if (!caches.beginLocalizedCacheWarm(selection)) return
     val prefix = "$selection:"
@@ -133,10 +125,8 @@ internal fun AppleInternalCatalogResolver.finishPersistentCacheWarm(selection: I
     val metadataAliases = aliases.filterKeys { key ->
         !isLocalizedArtistAliasCacheKey(key)
     }
-    synchronized(caches.localizedCache) { caches.localizedCache.putAll(metadataAliases) }
-    synchronized(caches.localizedArtistAliasCache) {
-        caches.localizedArtistAliasCache.putAll(artistAliases)
-    }
+    caches.putAllLocalizedAliases(metadataAliases)
+    caches.putAllLocalizedArtistAliases(artistAliases)
     caches.completeLocalizedCacheWarm(selection)
     ProviderLogger.info(
         "Apple 地区元数据缓存预热完成: selection=$selection, " +
@@ -154,7 +144,7 @@ internal fun AppleInternalCatalogResolver.catalogRequestLocalization(token: Stri
 internal fun AppleInternalCatalogResolver.pendingCatalogRequestCount(): Int = pendingCatalogRequests.size
 
 internal fun AppleInternalCatalogResolver.cachedCatalogGenres(mediaId: String): List<String> =
-    caches.catalogIdentityCache[mediaId]?.genres.orEmpty()
+    caches.catalogGenres(mediaId)
 
 internal fun AppleInternalCatalogResolver.accountStorefrontForPlaybackRequest(): String? {
     accountStorefront?.let { return it }
@@ -266,4 +256,3 @@ internal fun AppleInternalCatalogResolver.cachedOriginalArtistRegion(artistKeys:
 internal fun AppleInternalCatalogResolver.rememberOriginalArtistRegion(artistKeys: Collection<String>, language: String) {
     persistentOriginalCache.rememberArtistRegion(artistKeys, language)
 }
-

@@ -44,7 +44,6 @@ import android.util.Log
 import android.view.Choreographer
 import android.view.View
 import android.view.ViewGroup
-import android.view.ViewTreeObserver
 import android.view.LayoutInflater
 import android.widget.LinearLayout
 import android.widget.ImageView
@@ -75,7 +74,6 @@ import io.github.proify.lyricon.amprovider.xposed.hooks.FunctionalAppleMusicHook
 import io.github.proify.lyricon.amprovider.xposed.lyrics.AppleOnlineSourceMenuHooks
 import io.github.proify.lyricon.amprovider.xposed.internal.ThreadLocalReentryGuard
 import io.github.proify.lyricon.amprovider.xposed.internal.ThreadLocalStack
-import io.github.proify.lyricon.amprovider.xposed.internal.WeakIdentityMap
 import io.github.proify.lyricon.lyric.model.Song as LyriconSong
 import io.github.proify.lyricon.provider.LyriconFactory
 import io.github.proify.lyricon.provider.ProviderConstants
@@ -98,9 +96,6 @@ import java.lang.reflect.Modifier
 import java.lang.ref.WeakReference
 import java.io.File
 import java.security.MessageDigest
-import java.util.Collections
-import java.util.IdentityHashMap
-import java.util.WeakHashMap
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicBoolean
@@ -127,14 +122,7 @@ internal class AppleLyricsSupplementHooks(
     internal val missingLyricsSupplement: () -> AppleMissingLyricsHooks,
 ) {
     internal companion object {
-        const val APPLE_LYRICS_INITIAL_ANCHOR_Y_FRACTION = 0.22f
-        const val APPLE_LYRICS_SCROLL_STATE_IDLE = 0
-        const val APPLE_LYRICS_IDLE_RECHECK_DELAY_MS = 96L
-        const val APPLE_LYRICS_OUTGOING_RECHECK_DELAY_MS = 16L
-        const val APPLE_LYRICS_BEFORE_FIRST_LINE_RECHECK_MAX_MS = 250L
-        const val APPLE_LYRICS_HYPER_OS_SELF_BLUR_TYPE = 0
         const val MAX_APPLE_SYSTEM_FONT_VARIATION_CACHE_ENTRIES = 64
-        const val APPLE_MUSIC_PACKAGE = "com.apple.android.music"
         const val LEGACY_MODULE_PROMOTION_DELAY_MS = 1_000L
         const val SUPPLEMENT_ACTIVE_LINE_INTERVAL_MS = 300L
         const val BLANK_NATIVE_LYRICS_PAGE_RECOVERY_DELAY_MS = 1_500L
@@ -154,29 +142,15 @@ internal class AppleLyricsSupplementHooks(
         get() = preferences()
     internal val coroutineScope by lazy { CoroutineScope(Dispatchers.Default + SupervisorJob()) }
 
-    internal val lyricDisplayTextHookedMethods = ConcurrentHashMap.newKeySet<Executable>()
-    internal val nativeOnlineTranslationHookedMethods =
-        ConcurrentHashMap.newKeySet<Executable>()
-    internal val applePronunciationRenderHookedMethods =
-        ConcurrentHashMap.newKeySet<Executable>()
+    /** 方法发现与安装去重；各 Hook 家族独立，互不共享第一次安装判定。 */
+    internal val lyricTextInstallDedup = AppleLyricsMethodInstallDedup()
+    internal val nativeTextInstallDedup = AppleLyricsMethodInstallDedup()
+    internal val pronunciationRenderInstallDedup = AppleLyricsMethodInstallDedup()
     internal val appleOfficialTranslationProbeGuard = ThreadLocalReentryGuard()
-    internal val applePronunciationDiagnosticsLoggedSongIds =
-        ConcurrentHashMap.newKeySet<String>()
-    internal val applePronunciationRuntimeDiagnosticKeys =
-        ConcurrentHashMap.newKeySet<String>()
-    internal val applePronunciationBindingDiagnosticKeys =
-        ConcurrentHashMap.newKeySet<String>()
-    internal val applePronunciationLanguagesBySongId =
-        ConcurrentHashMap<String, List<String>>()
-    internal val applePronunciationContextByLyricObject =
-        WeakIdentityMap<Any, ApplePronunciationContext>()
+    internal val pronunciationDiagnostics = AppleLyricsPronunciationDiagnostics()
+    internal val pronunciationState = AppleLyricsPronunciationState()
     val nativeOnlineTranslationStore = AppleNativeOnlineTranslationStore()
     internal val deferredTranslationPresentation = AppleLyricsDeferredPresentation()
-    internal val pendingApplePronunciationRenderPlans = Collections.synchronizedMap(
-        IdentityHashMap<Any, ApplePronunciationRenderPlan>()
-    )
-    internal val applePronunciationWordRenderContexts =
-        ThreadLocalStack<ApplePronunciationWordRenderContext>()
     @Volatile
     internal var appleLyricsLoadMethod: Method? = null
     @Volatile
@@ -199,45 +173,15 @@ internal class AppleLyricsSupplementHooks(
         ThreadLocalStack<AppleLyricsPresentationPerformanceContext>()
     private val appleLyricsPresentationPerformanceMethods =
         ConcurrentHashMap.newKeySet<Executable>()
-    /** 已绑定「可见即隐藏」监听的 loading_progress View，避免同一实例重复注册。 */
-    internal val suppressedLyricsLoadingViews =
-        Collections.newSetFromMap(IdentityHashMap<View, Boolean>())
-    internal val forcedLyricsTranslationButtons =
-        Collections.newSetFromMap(IdentityHashMap<View, Boolean>())
-    internal val trackedLyricsRecyclerViews =
-        Collections.newSetFromMap(WeakHashMap<View, Boolean>())
-    internal data class AppleLyricsScrollSnapshot(
-        val firstPosition: Int,
-        val firstOffset: Int,
-        val activeAdapterPosition: Int?,
-        val activeAdapterOffset: Int?,
-        val playbackPositionMs: Long?,
-        val sourceTimingDebug: String? = null,
-        val adapterTimingDebug: String? = null,
-    )
-    internal data class ResolvedAppleLyricsScrollTarget(
-        val layoutManager: Any,
-        val itemCount: Int,
-        val anchor: AppleLyricsRestoreAnchor,
-        val activePositions: Set<Int>,
-        val playbackMappedPosition: Int?,
-        val sourceTimingDebug: String? = null,
-        val adapterTimingDebug: String? = null,
-    )
-    internal var appleLyricsScrollSnapshot: AppleLyricsScrollSnapshot? = null
-    internal var appleLyricsScrollSnapshotSongId: String? = null
-    /** A failed restore must not let Apple's temporary top layout erase the last good anchor. */
-    internal var preserveAppleLyricsTopSnapshotSongId: String? = null
-    internal var pendingAppleLyricsScrollRestoreRecycler: WeakReference<ViewGroup>? = null
-    internal var pendingAppleLyricsScrollRestoreListener: ViewTreeObserver.OnPreDrawListener? = null
-    internal var appleLyricsPresentationInFlight = false
-    internal var supplementActiveLineUpdateScheduled = false
-    internal var lastSupplementActiveLineIndex = -1
-    internal val supplementActiveLineUpdateRunnable = object : Runnable {
-        override fun run() {
-            supplementActiveLineUpdateScheduled = false
-            updateSupplementActiveLine()
-        }
+    /** 已绑定「可见即隐藏」监听的 loading_progress View 与已强制的翻译按钮，按实例去重。 */
+    internal val viewTracking = AppleLyricsViewTracking()
+    internal val scrollPresentationState = AppleLyricsScrollPresentationState()
+    internal val activeLineUpdateController by lazy {
+        AppleLyricsActiveLineUpdateController(
+            post = { task, delayMs -> mainHandler.postDelayed(task, delayMs) },
+            intervalMs = SUPPLEMENT_ACTIVE_LINE_INTERVAL_MS,
+            update = ::updateSupplementActiveLine,
+        )
     }
     internal lateinit var lyricsRuntimeTarget: AppleMusicHookTarget
     private val lyricsUiTarget by lazy {

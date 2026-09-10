@@ -115,17 +115,17 @@ internal fun AppleLyricsSupplementHooks.ensureAppleLyricsScrollTracking(fragment
     // androidx.recyclerview.widget.RecyclerView。这里只依赖 framework View/ViewTreeObserver，
     // 位置读取和滚动调用统一交给已有的安全反射/ChildAdapterPosition 解析。
     val recycler = resolveAppleLyricsRecyclerView(fragment) as? ViewGroup ?: return
-    if (trackedLyricsRecyclerViews.add(recycler)) {
+    if (scrollPresentationState.markTrackedIfNew(recycler)) {
         val recyclerRef = WeakReference(recycler)
         recycler.viewTreeObserver.addOnScrollChangedListener {
-            if (appleLyricsPresentationInFlight || isAppleLyricsScrollRestorePending()) return@addOnScrollChangedListener
+            if (scrollPresentationState.isPresentationInFlight() || isAppleLyricsScrollRestorePending()) return@addOnScrollChangedListener
             val currentRecycler = recyclerRef.get() ?: return@addOnScrollChangedListener
             currentAppleLyricsSongId?.let { currentSongId ->
                 captureAppleLyricsScrollSnapshot(currentRecycler, currentSongId)
             }
         }
         recycler.addOnLayoutChangeListener { changedView, _, _, _, _, _, _, _, _ ->
-            if (appleLyricsPresentationInFlight || isAppleLyricsScrollRestorePending()) return@addOnLayoutChangeListener
+            if (scrollPresentationState.isPresentationInFlight() || isAppleLyricsScrollRestorePending()) return@addOnLayoutChangeListener
             val currentRecycler = changedView as? ViewGroup ?: return@addOnLayoutChangeListener
             currentAppleLyricsSongId?.let { currentSongId ->
                 captureAppleLyricsScrollSnapshot(currentRecycler, currentSongId)
@@ -140,19 +140,20 @@ internal fun AppleLyricsSupplementHooks.ensureAppleLyricsScrollTracking(fragment
 }
 
 internal fun AppleLyricsSupplementHooks.isAppleLyricsScrollRestorePending(): Boolean =
-    pendingAppleLyricsScrollRestoreRecycler?.get() != null &&
-        pendingAppleLyricsScrollRestoreListener != null
+    scrollPresentationState.isRestorePending()
 
 internal fun AppleLyricsSupplementHooks.clearPendingAppleLyricsScrollRestore() {
-    val recycler = pendingAppleLyricsScrollRestoreRecycler?.get()
-    val listener = pendingAppleLyricsScrollRestoreListener
-    if (recycler != null && listener != null) {
-        runCatching {
-            recycler.viewTreeObserver.removeOnPreDrawListener(listener)
-        }
+    scrollPresentationState.takePendingRestore()?.let(::detachPendingAppleLyricsScrollRestore)
+}
+
+/** Removes the queued PreDraw listener from its host, if the host is still alive. */
+private fun AppleLyricsSupplementHooks.detachPendingAppleLyricsScrollRestore(
+    pending: AppleLyricsScrollPresentationState.PendingRestore,
+) {
+    val recycler = pending.host.get() as? ViewGroup ?: return
+    runCatching {
+        recycler.viewTreeObserver.removeOnPreDrawListener(pending.listener)
     }
-    pendingAppleLyricsScrollRestoreRecycler = null
-    pendingAppleLyricsScrollRestoreListener = null
 }
 
 internal fun AppleLyricsSupplementHooks.captureAppleLyricsScrollSnapshot(recycler: ViewGroup, songId: String) {
@@ -176,7 +177,7 @@ internal fun AppleLyricsSupplementHooks.captureAppleLyricsScrollSnapshot(recycle
         .maxOrNull()
         ?: activePositions.maxOrNull()
     val detailedDiagnostics = BuildConfig.DEBUG &&
-        (appleLyricsPresentationInFlight || isAppleLyricsScrollRestorePending())
+        (scrollPresentationState.isPresentationInFlight() || isAppleLyricsScrollRestorePending())
     val sourceTimingDebug = detailedDiagnostics.takeIf { it }
         ?.let { missingLyricsSupplement().timingDebugSnapshot(songId) }
     val adapterTimingDebug = detailedDiagnostics.takeIf { it }
@@ -187,7 +188,7 @@ internal fun AppleLyricsSupplementHooks.captureAppleLyricsScrollSnapshot(recycle
                 playbackPositionMs = appleLyricsCurrentPlaybackPositionMs(),
             )
         }
-    val snapshot = AppleLyricsSupplementHooks.AppleLyricsScrollSnapshot(
+    val snapshot = AppleLyricsScrollPresentationState.ScrollSnapshot(
         firstPosition = position,
         firstOffset = firstChild.top,
         activeAdapterPosition = activeAdapterPosition,
@@ -198,30 +199,19 @@ internal fun AppleLyricsSupplementHooks.captureAppleLyricsScrollSnapshot(recycle
         sourceTimingDebug = sourceTimingDebug,
         adapterTimingDebug = adapterTimingDebug,
     )
-    val existing = appleLyricsScrollSnapshot
-        ?.takeIf { appleLyricsScrollSnapshotSongId == songId }
-    if (
-        preserveAppleLyricsTopSnapshotSongId == songId &&
-            position == 0 &&
-            existing?.firstPosition != null &&
-            existing.firstPosition > 0
-    ) {
-        return
-    }
-    if (preserveAppleLyricsTopSnapshotSongId == songId && position > 0) {
-        preserveAppleLyricsTopSnapshotSongId = null
-    }
+    val existing = scrollPresentationState.snapshotFor(songId)
+    if (scrollPresentationState.shouldPreserveTopSnapshot(songId, position)) return
+    scrollPresentationState.clearPreservedTopSnapshotIfScrolled(songId, position)
     if (shouldKeepAppleLyricsScrollSnapshot(
             existingPosition = existing?.firstPosition,
             capturedPosition = snapshot.firstPosition,
             presentationInFlight =
-                appleLyricsPresentationInFlight || isAppleLyricsScrollRestorePending(),
+                scrollPresentationState.isPresentationInFlight() || isAppleLyricsScrollRestorePending(),
         )
     ) {
         return
     }
-    appleLyricsScrollSnapshot = snapshot
-    appleLyricsScrollSnapshotSongId = songId
+    scrollPresentationState.acceptSnapshot(songId, snapshot)
     if (BuildConfig.DEBUG) {
         ProviderLogger.diagnostic(
             "Apple Music 歌词滚动快照已更新: id=$songId, " +
@@ -230,7 +220,7 @@ internal fun AppleLyricsSupplementHooks.captureAppleLyricsScrollSnapshot(recycle
                 "activeAnchor=${snapshot.activeAdapterPosition ?: "none"}, " +
                 "activeAnchorOffset=${snapshot.activeAdapterOffset ?: "none"}, " +
                 "playback=${snapshot.playbackPositionMs ?: "none"}, " +
-                "presentationInFlight=$appleLyricsPresentationInFlight"
+                "presentationInFlight=${scrollPresentationState.isPresentationInFlight()}"
         )
         if (sourceTimingDebug != null || adapterTimingDebug != null) {
             ProviderLogger.diagnostic(
@@ -242,15 +232,14 @@ internal fun AppleLyricsSupplementHooks.captureAppleLyricsScrollSnapshot(recycle
 }
 
 internal fun AppleLyricsSupplementHooks.restoreAppleLyricsScrollSnapshot(fragment: Any, songId: String) {
-    val snapshot = appleLyricsScrollSnapshot
-        ?.takeIf { appleLyricsScrollSnapshotSongId == songId }
+    val snapshot = scrollPresentationState.snapshotFor(songId)
         ?: run {
-            appleLyricsPresentationInFlight = false
+            scrollPresentationState.finishPresentation()
             return
         }
     val recycler = resolveAppleLyricsRecyclerView(fragment) as? ViewGroup
         ?: run {
-            appleLyricsPresentationInFlight = false
+            scrollPresentationState.finishPresentation()
             return
         }
 
@@ -262,7 +251,7 @@ internal fun AppleLyricsSupplementHooks.restoreAppleLyricsScrollSnapshot(fragmen
     var cachedPlaybackMappedPosition: Int? = null
     lateinit var listener: ViewTreeObserver.OnPreDrawListener
 
-    fun resolveRestoreTarget(): AppleLyricsSupplementHooks.ResolvedAppleLyricsScrollTarget? {
+    fun resolveRestoreTarget(): AppleLyricsScrollPresentationState.ResolvedRestoreTarget? {
         val layoutManager = runCatching {
             AppleReflection.call(recycler, "getLayoutManager")
         }.getOrNull() ?: return null
@@ -305,7 +294,7 @@ internal fun AppleLyricsSupplementHooks.restoreAppleLyricsScrollSnapshot(fragmen
             activePositions.forEach(::add)
             playbackMappedPosition?.let(::add)
         }
-        return AppleLyricsSupplementHooks.ResolvedAppleLyricsScrollTarget(
+        return AppleLyricsScrollPresentationState.ResolvedRestoreTarget(
             layoutManager = layoutManager,
             itemCount = itemCount,
             anchor = anchor,
@@ -334,14 +323,9 @@ internal fun AppleLyricsSupplementHooks.restoreAppleLyricsScrollSnapshot(fragmen
         runCatching {
             recycler.viewTreeObserver.removeOnPreDrawListener(listener)
         }
-        if (pendingAppleLyricsScrollRestoreListener === listener) {
-            pendingAppleLyricsScrollRestoreRecycler = null
-            pendingAppleLyricsScrollRestoreListener = null
-        }
-        if (!success) {
-            preserveAppleLyricsTopSnapshotSongId = songId
-        }
-        appleLyricsPresentationInFlight = false
+        scrollPresentationState.clearPendingRestoreIf(listener)
+        if (!success) scrollPresentationState.markRestoreFailed(songId)
+        scrollPresentationState.finishPresentation()
     }
 
     // R2/I2 clears all RecyclerView children before the first layout of the new source.
@@ -438,8 +422,7 @@ internal fun AppleLyricsSupplementHooks.restoreAppleLyricsScrollSnapshot(fragmen
         if (attempts >= 8) finishRestore()
         true
     }
-    pendingAppleLyricsScrollRestoreRecycler = WeakReference(recycler)
-    pendingAppleLyricsScrollRestoreListener = listener
+    scrollPresentationState.setPendingRestore(recycler, listener)
     recycler.viewTreeObserver.addOnPreDrawListener(listener)
     recycler.postOnAnimation {
         if (!recycler.isAttachedToWindow && !completed) {
@@ -449,12 +432,7 @@ internal fun AppleLyricsSupplementHooks.restoreAppleLyricsScrollSnapshot(fragmen
 }
 
 internal fun AppleLyricsSupplementHooks.scheduleSupplementActiveLineUpdate() {
-    if (supplementActiveLineUpdateScheduled) return
-    supplementActiveLineUpdateScheduled = true
-    mainHandler.postDelayed(
-        supplementActiveLineUpdateRunnable,
-        AppleLyricsSupplementHooks.SUPPLEMENT_ACTIVE_LINE_INTERVAL_MS,
-    )
+    activeLineUpdateController.schedule()
 }
 
 /**
@@ -503,7 +481,7 @@ internal fun AppleLyricsSupplementHooks.updateSupplementActiveLine() {
     }
     val lineIndex = lines.indexOfLast { line -> line.begin <= position }
         .coerceAtLeast(0)
-    if (lineIndex == lastSupplementActiveLineIndex) {
+    if (lineIndex == activeLineUpdateController.lastAppliedIndex()) {
         return scheduleSupplementActiveLineUpdate()
     }
     val methodName = blurHooks.lyricsAdapterMember(
@@ -527,7 +505,7 @@ internal fun AppleLyricsSupplementHooks.updateSupplementActiveLine() {
         ProviderLogger.error("Apple Music 无歌词补充激活行补发失败", it)
     }.getOrDefault(false)
     if (applied) {
-        lastSupplementActiveLineIndex = lineIndex
+        activeLineUpdateController.markApplied(lineIndex)
         ProviderLogger.debug(
             "Apple Music 无歌词补充激活行补发: " +
                 "id=$songId, index=$lineIndex, position=$position"
@@ -537,6 +515,5 @@ internal fun AppleLyricsSupplementHooks.updateSupplementActiveLine() {
 }
 
 internal fun AppleLyricsSupplementHooks.stopSupplementActiveLineUpdate() {
-    lastSupplementActiveLineIndex = -1
+    activeLineUpdateController.stop()
 }
-

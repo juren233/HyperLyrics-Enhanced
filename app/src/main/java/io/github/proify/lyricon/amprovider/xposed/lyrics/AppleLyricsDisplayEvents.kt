@@ -26,8 +26,7 @@ internal fun AppleLyricsSupplementHooks.onAppleLyricsDisplayTrackChanged(songId:
     clearPendingApplePronunciationRenderPlans()
     clearPendingAppleLyricsScrollRestore()
     presentationBinding.selectSong(songId)
-    appleLyricsScrollSnapshot = null
-    appleLyricsScrollSnapshotSongId = null
+    scrollPresentationState.clearSnapshot()
 }
 
 /** Native presentation has returned; retain the established restore-before-blur ordering. */

@@ -25,11 +25,11 @@ internal fun AppleInternalCatalogResolver.resolveCatalogIdentity(
     languages: List<String>,
     onResult: (CatalogIdentity) -> Unit
 ) {
-    caches.catalogIdentityCache[mediaId]?.takeIf { isUsefulCatalogIdentity(it) }?.let {
+    caches.catalogIdentity(mediaId)?.takeIf { isUsefulCatalogIdentity(it) }?.let {
         onResult(it)
         return
     }
-    caches.catalogIdentityCache.remove(mediaId)
+    caches.removeCatalogIdentity(mediaId)
     val ownsRequest = dispatch.attachCatalogIdentityCallback(mediaId, onResult)
     if (!ownsRequest) return
 
@@ -108,7 +108,7 @@ internal fun AppleInternalCatalogResolver.rememberCatalogIdentity(mediaId: Strin
 }
 
 internal fun AppleInternalCatalogResolver.finishCatalogIdentity(mediaId: String, identity: CatalogIdentity) {
-    val previous = caches.catalogIdentityCache[mediaId]
+    val previous = caches.catalogIdentity(mediaId)
     val merged = if (previous == null) identity else {
         CatalogIdentity(
             isrc = previous.isrc ?: identity.isrc,
@@ -119,9 +119,9 @@ internal fun AppleInternalCatalogResolver.finishCatalogIdentity(mediaId: String,
     }
     val cacheable = isUsefulCatalogIdentity(merged)
     if (cacheable) {
-        caches.catalogIdentityCache[mediaId] = merged
+        caches.putCatalogIdentity(mediaId, merged)
     } else {
-        caches.catalogIdentityCache.remove(mediaId)
+        caches.removeCatalogIdentity(mediaId)
     }
     MediaMetadataCache.updateCatalogGenres(mediaId, merged.genres)
     val callbacks = dispatch.drainCatalogIdentityCallbacks(mediaId)

@@ -3,7 +3,6 @@
  * Licensed under the Apache License, Version 2.0
  * http://www.apache.org/licenses/LICENSE-2.0
  */
-
 package io.github.proify.lyricon.amprovider.xposed
 
 /**
@@ -17,18 +16,23 @@ package io.github.proify.lyricon.amprovider.xposed
  * callback tables, and priority memory synchronizes on [requestPriorityByMediaId].
  * Batch sizes, delays, and running caps live beside the batch loops in
  * AppleInternalCatalogBatching.kt and must not be retuned here.
+ *
+ * All state is private: callers outside this file use the named operations below and
+ * immutable snapshots for diagnostics. The `*Locked` helpers that require the caller to
+ * already hold a queue monitor have been folded into the owning operations so no caller
+ * can enter a half-critical-section.
  */
 internal class AppleInternalCatalogDispatch {
 
     // ---- in-flight callback lanes (duplicate request merging) ----
 
-    val originalSongInFlight =
+    private val originalSongInFlight =
         mutableMapOf<String, MutableList<(OriginalResolution) -> Unit>>()
-    val originalCandidateCallbacks =
+    private val originalCandidateCallbacks =
         mutableMapOf<String, MutableList<(Alias) -> Unit>>()
-    val catalogIdentityInFlight =
+    private val catalogIdentityInFlight =
         mutableMapOf<String, MutableList<(CatalogIdentity) -> Unit>>()
-    val localizedInFlight =
+    private val localizedInFlight =
         mutableMapOf<String, MutableList<(Alias?) -> Unit>>()
 
     /** Returns false when a resolve for the same song is already in flight. */
@@ -94,15 +98,39 @@ internal class AppleInternalCatalogDispatch {
             catalogIdentityInFlight.remove(mediaId).orEmpty()
         }
 
+    /**
+     * Merges into an existing localized lane or opens a new one.
+     *
+     * [onMerged] runs **inside** the lane monitor, preserving the original lock nesting where
+     * priority promotion happened while the in-flight lane lock was held. Returns false when
+     * the request was merged, so the caller must not query again.
+     */
+    fun attachLocalizedCallback(
+        requestKey: String,
+        callback: (Alias?) -> Unit,
+        onMerged: () -> Unit,
+    ): Boolean {
+        synchronized(localizedInFlight) {
+            val callbacks = localizedInFlight[requestKey]
+            if (callbacks != null) {
+                callbacks += callback
+                onMerged()
+                return false
+            }
+            localizedInFlight[requestKey] = mutableListOf(callback)
+        }
+        return true
+    }
+
     fun drainLocalizedCallbacks(requestKey: String): List<(Alias?) -> Unit> =
         synchronized(localizedInFlight) { localizedInFlight.remove(requestKey).orEmpty() }
 
     // ---- original entity batch lane ----
 
-    val originalEntityPending = LinkedHashMap<String, OriginalEntityRequest>()
-    var originalEntityBatchScheduled = false
-    var originalEntityBatchesRunning = 0
-    var originalEntityBackgroundBatchesRunning = 0
+    private val originalEntityPending = LinkedHashMap<String, OriginalEntityRequest>()
+    private var originalEntityBatchScheduled = false
+    private var originalEntityBatchesRunning = 0
+    private var originalEntityBackgroundBatchesRunning = 0
 
     /** Merges duplicates into one queued request; true means the caller must post the batch. */
     fun submitOriginalEntityRequest(request: OriginalEntityRequest): Boolean {
@@ -201,8 +229,8 @@ internal class AppleInternalCatalogDispatch {
         return shouldSchedule
     }
 
-    /** Caller must hold the [originalEntityPending] lock. */
-    fun canStartOriginalEntityBatchLocked(): Boolean {
+    /** Capacity check for the original-entity lane; caller holds the queue monitor. */
+    private fun canStartOriginalEntityBatchLocked(): Boolean {
         val nextPriority = originalEntityPending.values
             .maxByOrNull { request -> request.priority.ordinal }
             ?.priority
@@ -218,10 +246,10 @@ internal class AppleInternalCatalogDispatch {
 
     // ---- localized batch lane ----
 
-    val localizedPending = LinkedHashMap<String, LocalizedRequest>()
-    var localizedBatchScheduled = false
-    var localizedBatchesRunning = 0
-    var localizedBackgroundBatchesRunning = 0
+    private val localizedPending = LinkedHashMap<String, LocalizedRequest>()
+    private var localizedBatchScheduled = false
+    private var localizedBatchesRunning = 0
+    private var localizedBackgroundBatchesRunning = 0
 
     /** Merges duplicates by request key; true means the caller must post the batch. */
     fun submitLocalizedRequest(request: LocalizedRequest): Boolean {
@@ -314,8 +342,8 @@ internal class AppleInternalCatalogDispatch {
         return shouldSchedule
     }
 
-    /** Caller must hold the [localizedPending] lock. */
-    fun canStartLocalizedBatchLocked(): Boolean {
+    /** Capacity check for the localized lane; caller holds the queue monitor. */
+    private fun canStartLocalizedBatchLocked(): Boolean {
         val nextPriority = localizedPending.values
             .maxByOrNull { request -> request.priority.ordinal }
             ?.priority
@@ -331,15 +359,19 @@ internal class AppleInternalCatalogDispatch {
 
     // ---- priority memory and request scope ----
 
-    val requestPriorityByMediaId =
+    private val requestPriorityByMediaId =
         object : LinkedHashMap<String, RequestPriority>(256, 0.75f, true) {
             override fun removeEldestEntry(
                 eldest: MutableMap.MutableEntry<String, RequestPriority>?,
             ): Boolean = size > REQUEST_PRIORITY_CACHE_SIZE
         }
+
     @Volatile
-    var requestScopeActive = false
-    var requestScopeRevision = -1L
+    private var requestScopeActive = false
+    private var requestScopeRevision = -1L
+
+    /** True once a request scope has been installed; promotion then follows scoped priorities. */
+    fun isRequestScopeActive(): Boolean = requestScopeActive
 
     /**
      * Installs a new scope generation; false means the revision was already
@@ -432,4 +464,92 @@ internal class AppleInternalCatalogDispatch {
         }
         return changed
     }
+
+    /**
+     * Promotes already-queued requests for [mediaIds] to at least [priority].
+     *
+     * Both queues are updated in one owner call, in the original order (localized then
+     * original), and each queue's monitor is taken and released exactly as the inline
+     * version did. Returns how many queued requests actually changed per lane.
+     */
+    fun promotePendingRequests(mediaIds: Set<String>, priority: RequestPriority): PromotionCounts {
+        var localizedPromoted = 0
+        synchronized(localizedPending) {
+            localizedPending.entries.forEach { entry ->
+                val request = entry.value
+                if (request.mediaId in mediaIds && request.priority.ordinal < priority.ordinal) {
+                    entry.setValue(request.copy(priority = priority))
+                    localizedPromoted += 1
+                }
+            }
+        }
+        var originalPromoted = 0
+        synchronized(originalEntityPending) {
+            originalEntityPending.entries.forEach { entry ->
+                val request = entry.value
+                if (request.mediaId in mediaIds && request.priority.ordinal < priority.ordinal) {
+                    entry.setValue(request.copy(priority = priority))
+                    originalPromoted += 1
+                }
+            }
+        }
+        return PromotionCounts(localized = localizedPromoted, original = originalPromoted)
+    }
+
+    // ---- immutable snapshots for diagnostics and tests ----
+
+    data class PromotionCounts(val localized: Int, val original: Int)
+
+    /** Queue depth plus running-slot counts for both lanes, read under their own monitors. */
+    data class LaneSnapshot(
+        val localizedPending: Int,
+        val localizedRunning: Int,
+        val originalPending: Int,
+        val originalRunning: Int,
+    )
+
+    data class BatchFlags(
+        val localizedScheduled: Boolean,
+        val originalScheduled: Boolean,
+        val originalTotalRunning: Int,
+        val originalBackgroundRunning: Int,
+        val localizedTotalRunning: Int,
+        val localizedBackgroundRunning: Int,
+    )
+
+    fun laneSnapshot(): LaneSnapshot {
+        val localized = synchronized(localizedPending) {
+            localizedPending.size to localizedBatchesRunning
+        }
+        val original = synchronized(originalEntityPending) {
+            originalEntityPending.size to originalEntityBatchesRunning
+        }
+        return LaneSnapshot(
+            localizedPending = localized.first,
+            localizedRunning = localized.second,
+            originalPending = original.first,
+            originalRunning = original.second,
+        )
+    }
+
+    fun batchFlags(): BatchFlags = BatchFlags(
+        localizedScheduled = synchronized(localizedPending) { localizedBatchScheduled },
+        originalScheduled = synchronized(originalEntityPending) { originalEntityBatchScheduled },
+        originalTotalRunning = synchronized(originalEntityPending) { originalEntityBatchesRunning },
+        originalBackgroundRunning = synchronized(originalEntityPending) {
+            originalEntityBackgroundBatchesRunning
+        },
+        localizedTotalRunning = synchronized(localizedPending) { localizedBatchesRunning },
+        localizedBackgroundRunning = synchronized(localizedPending) {
+            localizedBackgroundBatchesRunning
+        },
+    )
+
+    /** Copy of queued original-entity requests, for tests and diagnostics only. */
+    fun pendingOriginalEntityRequests(): List<OriginalEntityRequest> =
+        synchronized(originalEntityPending) { originalEntityPending.values.toList() }
+
+    /** Copy of queued localized requests, for tests and diagnostics only. */
+    fun pendingLocalizedRequests(): List<LocalizedRequest> =
+        synchronized(localizedPending) { localizedPending.values.toList() }
 }

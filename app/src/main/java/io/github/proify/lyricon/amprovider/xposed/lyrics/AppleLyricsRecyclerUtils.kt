@@ -329,9 +329,9 @@ internal fun AppleLyricsBlurHooks.appleLyricsChildAdapterPosition(recyclerView: 
     }.getOrNull()?.takeIf { it >= 0 }
     if (namedPosition != null) return namedPosition
 
-    val method = appleLyricsChildAdapterPositionMethods[recyclerViewAsView.javaClass]
+    val method = blurState.childAdapterPositionMethod(recyclerViewAsView.javaClass)
         ?: findAppleLyricsChildAdapterPositionMethod(recyclerViewAsView.javaClass)?.also {
-            appleLyricsChildAdapterPositionMethods[recyclerViewAsView.javaClass] = it
+            blurState.rememberChildAdapterPositionMethod(recyclerViewAsView.javaClass, it)
         }
         ?: return -1
     return runCatching {

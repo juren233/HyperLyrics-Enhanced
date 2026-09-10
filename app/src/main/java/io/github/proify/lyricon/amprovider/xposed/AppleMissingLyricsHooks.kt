@@ -17,7 +17,6 @@ import com.juren233.hyperlyricsenhanced.common.lyric.ChineseLyricsPolicy
 import com.juren233.hyperlyricsenhanced.lyric.model.Song
 import io.github.libxposed.api.XposedInterface.Chain
 import io.github.proify.lyricon.amprovider.xposed.internal.ThreadLocalStack
-import java.lang.ref.WeakReference
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -85,19 +84,14 @@ internal class AppleMissingLyricsHooks(
     private val nativeBuildRewriteHitLogged = AtomicBoolean(false)
     private val lyricsPageResumeHitLogged = AtomicBoolean(false)
     private val availabilityHookHitLogged = AtomicBoolean(false)
-    internal val nativeBuildLock = Any()
-    internal val nativeBuildScope = AppleMissingLyricsNativeBuildScope()
+    internal val nativeBuildState = AppleMissingLyricsNativeBuildState()
     internal val nativeTakeoverGate = AppleNativeLyricsTakeoverGate()
     private val nativeAvailabilityTracker = AppleNativeLyricsAvailabilityTracker()
-    internal val scheduledTakeoverRechecks = ConcurrentHashMap<String, Long>()
+    internal val takeoverRechecks = AppleMissingLyricsTakeoverRechecks()
     internal val lyricsSourceSelection = AppleLyricsSourceSelection()
     internal val nativeAlternatives = AppleLyricsNativeAlternatives(MAX_REMEMBERED_NATIVE_LYRICS_SONG_IDS)
 
-    @Volatile
-    internal var pendingNativeBuildKey: NativeBuildKey? = null
-
-    @Volatile
-    internal var lastAvailabilityDiagnostic: String? = null
+    internal val availabilityDiagnostics = AppleMissingLyricsAvailabilityDiagnostics()
 
     internal val playerLyricsAvailabilityHitLogged = AtomicBoolean(false)
     internal val playerSongBindingHitLogged = AtomicBoolean(false)
@@ -108,11 +102,6 @@ internal class AppleMissingLyricsHooks(
     internal data class NativeBuildKey(
         val contentRevision: Long,
         val identity: AppleMissingLyricsPlaybackIdentity,
-    )
-
-    internal data class PlaybackItemReference(
-        val identity: AppleMissingLyricsPlaybackIdentity,
-        val item: WeakReference<Any>,
     )
 
     internal data class PlayerSongBindingSnapshot(
@@ -133,8 +122,7 @@ internal class AppleMissingLyricsHooks(
         val parentEnabled: Boolean?,
     )
 
-    @Volatile
-    internal var currentPlaybackItemReference: PlaybackItemReference? = null
+    internal val playbackItemBinding = AppleMissingLyricsPlaybackItemBinding()
 
     fun installHooks() {
         runCatching {
@@ -397,13 +385,10 @@ internal class AppleMissingLyricsHooks(
         val decision = takeoverDecision(songId)
         val delayMs = decision.recheckAfterMs ?: return
         val targetAt = SystemClock.elapsedRealtime() + delayMs
-        val existing = scheduledTakeoverRechecks[songId]
-        if (existing != null && existing <= targetAt) return
-        scheduledTakeoverRechecks[songId] = targetAt
+        if (!takeoverRechecks.registerIfEarlier(songId, targetAt)) return
         mainHandler.postDelayed(
             {
-                if (scheduledTakeoverRechecks[songId] != targetAt) return@postDelayed
-                scheduledTakeoverRechecks.remove(songId, targetAt)
+                if (!takeoverRechecks.claim(songId, targetAt)) return@postDelayed
                 maybeActivateSupplement(songId, trigger = "resolution_recheck")
             },
             delayMs.coerceAtLeast(1L),

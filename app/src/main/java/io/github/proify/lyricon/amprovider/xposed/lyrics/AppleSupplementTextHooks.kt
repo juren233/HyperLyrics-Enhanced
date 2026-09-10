@@ -130,7 +130,7 @@ internal fun AppleLyricsSupplementHooks.ensureAppleLyricTextHooks(songNative: An
         pronunciationLanguages = pronunciationLanguages,
     )
     lines.forEach { line ->
-        applePronunciationContextByLyricObject[line] = pronunciationContext
+        pronunciationState.putContext(line, pronunciationContext)
     }
     logApplePronunciationDiagnostics(songNative, lines)
 
@@ -201,7 +201,7 @@ internal fun AppleLyricsSupplementHooks.ensureAppleNativeOnlineTranslationHooks(
         }.getOrNull() ?: return@forEach
         if (
             method.returnType != Boolean::class.javaPrimitiveType ||
-            !nativeOnlineTranslationHookedMethods.add(method)
+            !nativeTextInstallDedup.markInstalled(method)
         ) return@forEach
 
         // Apple Music 6.5.0 的歌词页会先用系统语言调用 setTranslation/hasTranslation，
@@ -267,7 +267,7 @@ internal fun AppleLyricsSupplementHooks.ensureAppleNativeOnlineTranslationHooks(
         }.getOrNull() ?: return@forEach
         if (
             method.returnType != Boolean::class.javaPrimitiveType ||
-            !nativeOnlineTranslationHookedMethods.add(method)
+            !nativeTextInstallDedup.markInstalled(method)
         ) return@forEach
 
         hookRegistrar.installResultOverrideHook(method) { chain, original ->

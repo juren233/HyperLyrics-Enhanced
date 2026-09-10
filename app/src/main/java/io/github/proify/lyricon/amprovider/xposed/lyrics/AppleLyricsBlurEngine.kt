@@ -95,10 +95,7 @@ import java.lang.reflect.Modifier
 import java.lang.ref.WeakReference
 import java.io.File
 import java.security.MessageDigest
-import java.util.Collections
 import java.util.IdentityHashMap
-import java.util.WeakHashMap
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -125,12 +122,8 @@ internal fun AppleLyricsBlurHooks.applyAppleLyricsBlur(view: View, mode: Int, ra
         clearAppleLyricsBlur(view)
         return
     }
-    val state = synchronized(appleLyricsBlurRuntimeStates) {
-        appleLyricsBlurRuntimeStates.getOrPut(view) {
-            AppleLyricsBlurRuntimeState()
-        }
-    }
-    appleLyricsBlurredViews.add(view)
+    val state = blurState.withRuntimeState(view) { it }
+    blurState.markBlurred(view)
     if (state.blurMode != null && state.blurMode != mode) {
         cancelAppleLyricsBlurAnimation(view, state, clearEffect = true)
         state.blurMode = null
@@ -249,7 +242,7 @@ internal fun AppleLyricsBlurHooks.applyAppleLyricsNativeBlur(view: View, radiusP
 }
 
 internal fun AppleLyricsBlurHooks.applyAppleLyricsHyperOsBlur(view: View, radiusPx: Int): Boolean {
-    val methods = appleLyricsHyperOsMethods(view)
+    val methods = resolveAppleLyricsHyperOsMethods(view)
     val setSelfBlur = methods.setSelfBlur ?: return false
     return runCatching {
         methods.setSelfBlurType?.invoke(view, AppleLyricsBlurHooks.APPLE_LYRICS_HYPER_OS_SELF_BLUR_TYPE)
@@ -267,9 +260,7 @@ internal fun AppleLyricsBlurHooks.clearAppleLyricsBlur(view: View) {
                 "view=${view.javaClass.simpleName}@${System.identityHashCode(view)}"
         )
     }
-    val state = synchronized(appleLyricsBlurRuntimeStates) {
-        appleLyricsBlurRuntimeStates[view]
-    }
+    val state = blurState.runtimeStateOrNull(view)
     state?.let {
         cancelAppleLyricsBlurAnimator(it)
         it.blurMode = null
@@ -278,12 +269,8 @@ internal fun AppleLyricsBlurHooks.clearAppleLyricsBlur(view: View) {
     }
     view.setRenderEffect(null)
     clearAppleLyricsHyperOsBlur(view)
-    appleLyricsBlurredViews.remove(view)
-    synchronized(appleLyricsBlurRuntimeStates) {
-        if (state != null && appleLyricsBlurRuntimeStates[view] === state) {
-            appleLyricsBlurRuntimeStates.remove(view)
-        }
-    }
+    blurState.unmarkBlurred(view)
+    if (state != null) blurState.removeRuntimeStateIf(view, state)
 }
 
 internal fun AppleLyricsBlurHooks.clearAppleLyricsBlurForRecycler(recyclerView: View) {
@@ -292,53 +279,49 @@ internal fun AppleLyricsBlurHooks.clearAppleLyricsBlurForRecycler(recyclerView: 
             container.getChildAt(index)?.let(::clearAppleLyricsBlur)
         }
     }
-    val affectedViews = synchronized(appleLyricsBlurredViews) {
-        appleLyricsBlurredViews.toList().also { appleLyricsBlurredViews.clear() }
-    }
+    val affectedViews = blurState.takeBlurredViews()
     affectedViews.forEach(::clearAppleLyricsBlur)
 }
 
 internal fun AppleLyricsBlurHooks.clearAppleLyricsHyperOsBlur(view: View) {
-    val methods = appleLyricsHyperOsMethods(view)
+    val methods = resolveAppleLyricsHyperOsMethods(view)
     runCatching {
         methods.setSelfBlur?.invoke(view, 0, ArrayList<Any>())
     }
 }
 
-internal fun AppleLyricsBlurHooks.appleLyricsHyperOsMethods(view: View): AppleLyricsHyperOsMethods =
-    synchronized(appleLyricsHyperOsMethods) {
-        appleLyricsHyperOsMethods.getOrPut(view.javaClass) {
-            fun findPublicMethod(name: String, vararg parameterTypes: Class<*>): Method? =
-                runCatching {
-                    view.javaClass.getMethod(name, *parameterTypes).apply {
-                        isAccessible = true
-                    }
-                }.getOrNull()
+internal fun AppleLyricsBlurHooks.resolveAppleLyricsHyperOsMethods(view: View): AppleLyricsHyperOsMethods =
+    blurState.hyperOsMethodsFor(view.javaClass) {
+        fun findPublicMethod(name: String, vararg parameterTypes: Class<*>): Method? =
+            runCatching {
+                view.javaClass.getMethod(name, *parameterTypes).apply {
+                    isAccessible = true
+                }
+            }.getOrNull()
 
-            AppleLyricsHyperOsMethods(
-                setSelfBlur = findPublicMethod(
-                    "setMiSelfBlur",
-                    Int::class.javaPrimitiveType!!,
-                    ArrayList::class.java,
-                ),
-                setSelfBlurType = findPublicMethod(
-                    "setMiSelfBlurType",
-                    Int::class.javaPrimitiveType!!,
-                ),
-            )
-        }
+        AppleLyricsHyperOsMethods(
+            setSelfBlur = findPublicMethod(
+                "setMiSelfBlur",
+                Int::class.javaPrimitiveType!!,
+                ArrayList::class.java,
+            ),
+            setSelfBlurType = findPublicMethod(
+                "setMiSelfBlurType",
+                Int::class.javaPrimitiveType!!,
+            ),
+        )
     }
 
 
 internal fun AppleLyricsBlurHooks.isAppleLyricsRecyclerView(recyclerView: Any): Boolean {
     val recyclerViewAsView = recyclerView as? View ?: return false
-    appleLyricsRecyclerViewClassifications[recyclerViewAsView]?.let { return it }
+    blurState.classificationOf(recyclerViewAsView)?.let { return it }
     val resourceEntryName = runCatching {
         recyclerViewAsView.resources.getResourceEntryName(recyclerViewAsView.id)
     }.getOrNull()
     val isLyrics = resourceEntryName == "lyrics_main_content" ||
         isAppleLyricsRecyclerAdapter(appleRecyclerAdapter(recyclerView))
-    appleLyricsRecyclerViewClassifications[recyclerViewAsView] = isLyrics
+    blurState.rememberClassification(recyclerViewAsView, isLyrics)
     return isLyrics
 }
 

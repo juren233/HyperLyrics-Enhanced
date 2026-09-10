@@ -113,7 +113,7 @@ internal fun AppleMissingLyricsHooks.logPlayerLyricsAvailabilityCalculation(
             AppleMusicRuntimeMember.PLAYER_LYRICS_ITEM_HAS_CUSTOM_LYRICS_METHOD
         ),
     )
-    val currentCapturedItem = currentPlaybackItemReference?.item?.get()
+    val currentCapturedItem = playbackItemBinding.snapshot()?.item?.get()
     val storeContent = store.hasContent(diagnosticSongId)
     val nativeKnown = diagnosticSongId?.let { hasKnownNativeLyrics(it) } == true
     val availabilityExposed =
@@ -175,7 +175,7 @@ internal fun AppleMissingLyricsHooks.capturePlayerSongBindingSnapshot(
     }
     val itemSongId = itemMediaId(item)?.takeIf(String::isNotBlank)
     val queueSongId = currentPlaybackQueueMediaId()?.takeIf(String::isNotBlank)
-    val currentCapturedItem = currentPlaybackItemReference?.item?.get()
+    val currentCapturedItem = playbackItemBinding.snapshot()?.item?.get()
     return AppleMissingLyricsHooks.PlayerSongBindingSnapshot(
         bindingIdentity = debugObjectIdentity(binding) ?: "null",
         itemIdentity = debugObjectIdentity(item),

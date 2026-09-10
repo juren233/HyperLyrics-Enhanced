@@ -135,7 +135,7 @@ private fun LyriconSource.applyMandarinPinyinPreferenceChange() {
 
 private fun LyriconSource.applyOriginalMetadataPreferenceChange() {
     val nativeSong = currentAppleSong ?: return
-    originalMetadataRequestKey = null
+    originalMetadataRequest.clear()
     cancelFallback(clearAppleSong = false, reason = "original_metadata_preference_changed")
     cancelOnlineTranslation(
         clearAttempt = true,

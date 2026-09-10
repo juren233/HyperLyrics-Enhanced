@@ -17,12 +17,11 @@ import com.juren233.hyperlyricsenhanced.common.lyric.ChineseLyricsPolicy
 import com.juren233.hyperlyricsenhanced.lyric.model.Song
 import io.github.libxposed.api.XposedInterface.Chain
 import io.github.proify.lyricon.amprovider.xposed.internal.ThreadLocalStack
-import java.lang.ref.WeakReference
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
 internal fun AppleMissingLyricsHooks.currentPlaybackItem(songId: String): Any? {
-    val reference = currentPlaybackItemReference ?: return null
+    val reference = playbackItemBinding.snapshot() ?: return null
     if (reference.identity.contentSongId != songId) return null
     if (store.playbackIdentity(songId) != reference.identity) return null
     return reference.item.get()

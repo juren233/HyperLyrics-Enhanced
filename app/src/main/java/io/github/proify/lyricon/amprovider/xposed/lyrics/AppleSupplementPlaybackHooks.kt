@@ -147,8 +147,7 @@ internal fun AppleLyricsSupplementHooks.hookLyricBuildMethod() {
                 clearPendingApplePronunciationRenderPlans()
                 clearPendingAppleLyricsScrollRestore()
                 presentationBinding.rememberPointer(null)
-                appleLyricsScrollSnapshot = null
-                appleLyricsScrollSnapshotSongId = null
+                scrollPresentationState.clearSnapshot()
                 presentationBinding.selectSong(loadedSongId)
             }
             playbackBinding.rememberLoad(chain.thisObject, item)
@@ -396,7 +395,7 @@ internal fun AppleLyricsSupplementHooks.hookAppleNativeLyricsPresentation() {
             }
             onAppleLyricsDisplayTrackChanged(songId)
             ensureAppleLyricTextHooks(songNative)
-            appleLyricsPresentationInFlight = true
+            scrollPresentationState.beginPresentation()
             songId?.let { ensureAppleLyricsScrollTracking(fragment, it) }
             logAppleLyricsUiState(
                 fragment = fragment,
@@ -406,14 +405,14 @@ internal fun AppleLyricsSupplementHooks.hookAppleNativeLyricsPresentation() {
         },
         after = { chain, _ ->
             val fragment = chain.thisObject ?: run {
-                appleLyricsPresentationInFlight = false
+                scrollPresentationState.finishPresentation()
                 return@installHook
             }
             // 保持 presentationInFlight 直到布局后滚动恢复完成。Apple 在原生
             // 呈现期间会先把第一行临时置为 0；过早清除该标志会让这个临时顶部
             // 覆盖掉切源前保存的当前句位置。
             val pointer = chain.args.firstOrNull() ?: run {
-                appleLyricsPresentationInFlight = false
+                scrollPresentationState.finishPresentation()
                 presentationBinding.rememberPointer(null)
                 stopSupplementActiveLineUpdate()
                 val queueSongId = currentPlaybackQueueMediaId()
@@ -423,11 +422,11 @@ internal fun AppleLyricsSupplementHooks.hookAppleNativeLyricsPresentation() {
             val songNative = runCatching {
                 lyricsNativeCall(pointer, AppleMusicRuntimeMember.LYRICS_NATIVE_POINTER_GET_METHOD)
             }.getOrNull() ?: run {
-                appleLyricsPresentationInFlight = false
+                scrollPresentationState.finishPresentation()
                 return@installHook
             }
             val songId = nativeSongId(songNative) ?: run {
-                appleLyricsPresentationInFlight = false
+                scrollPresentationState.finishPresentation()
                 return@installHook
             }
             onAppleLyricsDisplayTrackChanged(songId)
@@ -455,4 +454,3 @@ internal fun AppleLyricsSupplementHooks.hookAppleNativeLyricsPresentation() {
     )
     ProviderLogger.debug("Apple Music 原生歌词呈现 Hook 已安装")
 }
-

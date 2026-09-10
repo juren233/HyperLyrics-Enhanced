@@ -17,7 +17,7 @@ internal fun AppleLyricsSupplementHooks.hookAppleLyricTextGetter(clazz: Class<*>
     val method = runCatching {
         AppleReflection.findMethod(clazz, name, parameterCount = 0)
     }.getOrNull() ?: return
-    if (method.returnType != String::class.java || !lyricDisplayTextHookedMethods.add(method)) {
+    if (method.returnType != String::class.java || !lyricTextInstallDedup.markInstalled(method)) {
         return
     }
     hookRegistrar.installResultOverrideHook(method) { chain, original ->
@@ -28,7 +28,7 @@ internal fun AppleLyricsSupplementHooks.hookAppleLyricTextGetter(clazz: Class<*>
         }
         // 补全发音复用 Apple 主句原生 word；只在发音渲染调用栈内替换其显示文本。
         // 这样 word 仍保留原生父 LyricsLine、lineId、wordId 与主句时间轴。
-        val scopedPronunciationText = applePronunciationWordRenderContexts.current
+        val scopedPronunciationText = pronunciationState.currentWordRenderContext()
             ?.displayText(chain.thisObject)
         if (scopedPronunciationText != null) {
             return@installResultOverrideHook AppleLyricTextTransform.transform(
@@ -167,7 +167,7 @@ internal fun AppleLyricsSupplementHooks.hookApplePronunciationWordRendering() {
                 }
                 .toList()
             renderMethods.forEach { method ->
-                if (!applePronunciationRenderHookedMethods.add(method)) return@forEach
+                if (!pronunciationRenderInstallDedup.markInstalled(method)) return@forEach
                 method.isAccessible = true
                 hookRegistrar.installScopedHook(
                     executable = method,
@@ -206,11 +206,11 @@ internal fun AppleLyricsSupplementHooks.hookApplePronunciationWordRendering() {
                             dedupeKey = "render_plan_consumed:${method.name}:" +
                                 method.parameterCount,
                         )
-                        applePronunciationWordRenderContexts.push(context)
+                        pronunciationState.pushWordRenderContext(context)
                         true
                     },
                     after = { _, _ -> Unit },
-                    exit = { applePronunciationWordRenderContexts.pop() },
+                    exit = { pronunciationState.popWordRenderContext() },
                 )
                 ProviderLogger.debug(
                     "Apple Music 发音主句时间轴渲染 Hook 已安装: " +
@@ -232,7 +232,7 @@ private fun AppleLyricsSupplementHooks.hookApplePronunciationWordsGetter(
     val method = runCatching {
         AppleReflection.findMethod(clazz, methodName, parameterCount = parameterCount)
     }.getOrNull() ?: return
-    if (!nativeOnlineTranslationHookedMethods.add(method)) return
+    if (!nativeTextInstallDedup.markInstalled(method)) return
 
     hookRegistrar.installResultOverrideHook(method) { chain, original ->
         if (AppleLyricTextTransform.isRawReadActive()) {
@@ -397,7 +397,7 @@ internal fun AppleLyricsSupplementHooks.logApplePronunciationDiagnostics(songNat
         onlineTextLines,
         mainWordLines,
     ).joinToString("|")
-    if (!applePronunciationDiagnosticsLoggedSongIds.add(stateSignature)) return
+    if (!pronunciationDiagnostics.markSongSnapshotLogged(stateSignature)) return
     ProviderLogger.diagnostic(
         "Apple pronunciation: id=$songId, languages=$languages, " +
             "nativeTextLines=$nativeTextLines, nativeWordLines=$nativeWordLines, " +
@@ -423,7 +423,7 @@ internal fun AppleLyricsSupplementHooks.reportApplePronunciationRuntimeDiagnosti
 ) {
     if (!BuildConfig.DEBUG || !runtime.isAttached) return
     val normalizedSongId = songId?.takeIf(String::isNotBlank) ?: "unknown"
-    if (!applePronunciationRuntimeDiagnosticKeys.add("$normalizedSongId|$dedupeKey")) {
+    if (!pronunciationDiagnostics.markRuntimeReported(normalizedSongId, dedupeKey)) {
         return
     }
     val message = "stage=$stage, id=$normalizedSongId, $details"
@@ -587,7 +587,7 @@ internal fun AppleLyricsSupplementHooks.logApplePronunciationBindingDiagnostic(
 ) {
     if (!BuildConfig.DEBUG) return
     val songId = context.songId?.takeIf(String::isNotBlank) ?: "unknown"
-    if (!applePronunciationBindingDiagnosticKeys.add("$songId|$dedupeKey")) return
+    if (!pronunciationDiagnostics.markBindingReported(songId, dedupeKey)) return
     Log.i(
         "ApplePronunciationBindDiag",
         "stage=$stage, id=$songId, adapter=${context.adapterClass}@" +
@@ -648,24 +648,14 @@ private fun AppleLyricsSupplementHooks.registerApplePronunciationRenderPlan(
     vector: Any,
     pronunciation: String,
 ) {
-    synchronized(pendingApplePronunciationRenderPlans) {
-        if (pendingApplePronunciationRenderPlans.size >= 256) {
-            pendingApplePronunciationRenderPlans.clear()
-        }
-        pendingApplePronunciationRenderPlans[vector] =
-            ApplePronunciationRenderPlan(pronunciation)
-    }
+    pronunciationState.registerRenderPlan(vector, ApplePronunciationRenderPlan(pronunciation))
 }
 
 private fun AppleLyricsSupplementHooks.consumeApplePronunciationRenderPlan(vector: Any): ApplePronunciationRenderPlan? =
-    synchronized(pendingApplePronunciationRenderPlans) {
-        pendingApplePronunciationRenderPlans.remove(vector)
-    }
+    pronunciationState.consumeRenderPlan(vector)
 
 internal fun AppleLyricsSupplementHooks.clearPendingApplePronunciationRenderPlans() {
-    synchronized(pendingApplePronunciationRenderPlans) {
-        pendingApplePronunciationRenderPlans.clear()
-    }
+    pronunciationState.clearRenderPlans()
 }
 
 /**
@@ -781,6 +771,6 @@ internal fun AppleLyricsSupplementHooks.rememberApplePronunciationLanguages(
         .filter(String::isNotEmpty)
         .distinct()
     if (normalized.isNotEmpty()) {
-        applePronunciationLanguagesBySongId[songId] = normalized
+        pronunciationState.rememberLanguages(songId, normalized)
     }
 }

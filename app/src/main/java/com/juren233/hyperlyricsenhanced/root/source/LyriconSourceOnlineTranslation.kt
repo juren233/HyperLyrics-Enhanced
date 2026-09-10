@@ -224,11 +224,9 @@ internal fun LyriconSource.scheduleOnlineTranslation(baseSong: LocalSong): Boole
                     OnlineTranslationSourcePreferences.isAutoSelectBestSourceEnabled(prefs)
                 val preferredSource = configuredSources.first()
                 val alternativeSource = configuredSources.drop(1).firstOrNull()
-                val requestedFirstSource =
-                    pendingTranslationSourceRequest?.requestedSource
-                        ?: pendingPronunciationSourceRequest?.requestedSource
+                val requestedFirstSource = manualSourceRequests.requestedOnlineSource()
                 val raceEnabled = automaticSelection && requestedFirstSource == null &&
-                    temporaryTranslationSource == null && temporaryPronunciationSource == null
+                    !manualSourceRequests.hasTemporarySource
                 val firstSource = requestedFirstSource
                     ?.takeIf(configuredSources::contains)
                     ?: preferredSource
@@ -367,8 +365,9 @@ internal fun LyriconSource.scheduleOnlineTranslation(baseSong: LocalSong): Boole
                 } else {
                     remainingSources.forEachIndexed { index, source ->
                         val previous = fetchedCandidates.values.lastOrNull()
-                        val explicitlyRequested = temporaryTranslationSource == source ||
-                            temporaryPronunciationSource == source
+                        val explicitlyRequested =
+                            manualSourceRequests.requestedTranslationSource() == source ||
+                                manualSourceRequests.requestedPronunciationSource() == source
                         if (index > 0 && !automaticSelection && !explicitlyRequested &&
                             !OnlineTranslationSelector.shouldTryAlternative(previous, totalLineCount)
                         ) {
@@ -428,8 +427,8 @@ internal fun LyriconSource.scheduleOnlineTranslation(baseSong: LocalSong): Boole
                     requestedSources = remainingSources,
                     defaultTranslationSource = defaultTranslationCandidate?.source,
                     defaultPronunciationSource = defaultPronunciationCandidate?.source,
-                    forcedTranslationSource = temporaryTranslationSource,
-                    forcedPronunciationSource = temporaryPronunciationSource,
+                    forcedTranslationSource = manualSourceRequests.requestedTranslationSource(),
+                    forcedPronunciationSource = manualSourceRequests.requestedPronunciationSource(),
                     sourceOrder = if (automaticSelection) {
                         rankedCandidates.map { it.source }
                     } else {

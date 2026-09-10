@@ -22,8 +22,8 @@ internal fun LyriconSource.onDirectSongChanged(song: LyriconSong?) {
             "lyrics=${localSong?.lyrics.orEmpty().size}, " +
             "activeCentralPlayer=$activeCentralPlayerPackageName",
     )
-    currentDirectAppleSongId = localSong?.id
-    appleDirectPositionReference = null
+    applePositionState.setDirectSongId(localSong?.id)
+    applePositionState.setDirectReference(null)
     val acceptDirect = AppleDirectSongRecoveryPolicy.shouldAccept(
         activePlayerPackage = activeCentralPlayerPackageName,
         activeProviderPackage = activeProviderPackageName,
@@ -65,16 +65,13 @@ internal fun LyriconSource.onDirectPositionChanged(position: Long) {
     if (centralAppleProviderActive && !isBuiltInAppleCentralProviderActive()) return
     if (centralAppleProviderActive && !directSongMatchesCurrentAppleSong()) return
     val adjustedPosition = (position - activeProviderDelayMs).coerceAtLeast(0L)
-    appleDirectPositionReference = AppleCentralPositionPolicy.DirectReference(
-        songGeneration = appleSongGeneration,
+    applePositionState.setDirectReference(AppleCentralPositionPolicy.DirectReference(
+        songGeneration = applePositionState.songGeneration(),
         position = adjustedPosition,
         observedAtMs = SystemClock.elapsedRealtime(),
-    )
+    ))
     val resolution = resolveApplePosition(adjustedPosition, explicitSeek = false)
-    lastAdjustedPosition = AppleCentralPositionPolicy.restorablePosition(
-        previousPosition = lastAdjustedPosition,
-        resolution = resolution,
-    )
+    applePositionState.applyRestorablePosition(resolution)
     logAppleTimingDiagnostic(
         if (centralAppleProviderActive) "direct_primary" else "direct",
         position,
@@ -93,16 +90,13 @@ internal fun LyriconSource.onDirectSeekTo(position: Long) {
     if (centralAppleProviderActive && !isBuiltInAppleCentralProviderActive()) return
     if (centralAppleProviderActive && !directSongMatchesCurrentAppleSong()) return
     val adjustedPosition = (position - activeProviderDelayMs).coerceAtLeast(0L)
-    appleDirectPositionReference = AppleCentralPositionPolicy.DirectReference(
-        songGeneration = appleSongGeneration,
+    applePositionState.setDirectReference(AppleCentralPositionPolicy.DirectReference(
+        songGeneration = applePositionState.songGeneration(),
         position = adjustedPosition,
         observedAtMs = SystemClock.elapsedRealtime(),
-    )
+    ))
     val resolution = resolveApplePosition(adjustedPosition, explicitSeek = true)
-    lastAdjustedPosition = AppleCentralPositionPolicy.restorablePosition(
-        previousPosition = lastAdjustedPosition,
-        resolution = resolution,
-    )
+    applePositionState.applyRestorablePosition(resolution)
     logAppleTimingDiagnostic(
         "direct_seek",
         position,
@@ -117,7 +111,7 @@ internal fun LyriconSource.onDirectSeekTo(position: Long) {
 }
 
 private fun LyriconSource.directSongMatchesCurrentAppleSong(): Boolean {
-    val directSongId = currentDirectAppleSongId ?: return false
+    val directSongId = applePositionState.directSongId() ?: return false
     val currentSongId = currentAppleSong?.id ?: return false
     return directSongId == currentSongId
 }
@@ -134,12 +128,8 @@ internal fun LyriconSource.onDirectText(text: String?) {
 internal fun LyriconSource.activeSourceSwitchTraceRequest(songId: String?): OnlineSourceSwitchRequest? {
     val targetId = songId?.takeIf(String::isNotBlank) ?: return null
     val now = SystemClock.elapsedRealtime()
-    return listOfNotNull(
-        pendingLyricsSourceRequest,
-        pendingTranslationSourceRequest,
-        pendingPronunciationSourceRequest,
-        latestSourceSwitchTraceRequest,
-    ).firstOrNull { request ->
+    return (manualSourceRequests.pendingRequests() + listOfNotNull(latestSourceSwitchTraceRequest))
+        .firstOrNull { request ->
         request.songId == targetId &&
             now - request.startedAtMs <= LyriconSource.SOURCE_SWITCH_DIAGNOSTIC_WINDOW_MS
     }
@@ -192,7 +182,8 @@ internal fun LyriconSource.onDirectOnlineLyricContentSourceRequested(
         songId = songId,
         stage = "request_received",
         details = "contentType=${contentType ?: "none"},source=${sourceName ?: "none"}," +
-            "currentSongId=${nativeSong?.id ?: "none"},fallbackGeneration=$fallbackGeneration," +
+            "currentSongId=${nativeSong?.id ?: "none"}," +
+            "fallbackGeneration=${appleFallbackRequest.generation()}," +
             "onlineTranslationGeneration=$onlineTranslationGeneration",
     )
     if (
@@ -241,34 +232,31 @@ internal fun LyriconSource.onDirectOnlineLyricContentSourceRequested(
     sourceSwitchCoreStage(
         request = request,
         stage = "request_accepted",
-        details = "fallbackGeneration=$fallbackGeneration," +
+        details = "fallbackGeneration=${appleFallbackRequest.generation()}," +
             "onlineTranslationGeneration=$onlineTranslationGeneration",
     )
     when (contentType) {
         "translation" -> {
-            temporaryTranslationSource = requestedSource
-            pendingTranslationSourceRequest = request
+            manualSourceRequests.acceptTranslationRequest(request, requestedSource)
         }
         "pronunciation" -> {
-            temporaryPronunciationSource = requestedSource
-            pendingPronunciationSourceRequest = request
+            manualSourceRequests.acceptPronunciationRequest(request, requestedSource)
         }
         "lyrics" -> {
-            pendingLyricsSourceRequest = request
+            manualSourceRequests.acceptLyricsRequest(request)
             diagnostic(
                 "Apple Music 歌词来源切换接受: requestId=$requestId, " +
                     "songId=$songId, source=$requestedSource"
             )
-            val previousFallbackGeneration = fallbackGeneration
-            val previousFallbackJobActive = fallbackJob?.isActive == true
-            val previousFallbackDelayPending = fallbackDelayRunnable != null
+            val previousFallback = appleFallbackRequest.snapshot()
             cancelFallback(clearAppleSong = false, reason = "temporary_lyrics_source_switched")
             sourceSwitchCoreStage(
                 request = request,
                 stage = "previous_fallback_cancelled",
-                details = "generation=$previousFallbackGeneration->$fallbackGeneration," +
-                    "jobActive=$previousFallbackJobActive," +
-                    "delayPending=$previousFallbackDelayPending",
+                details = "generation=${previousFallback.generation}->" +
+                    "${appleFallbackRequest.generation()}," +
+                    "jobActive=${previousFallback.jobActive}," +
+                    "delayPending=${previousFallback.delayPending}",
             )
             // 歌词正文即将换成新来源，旧翻译任务必须作废并重新按新时间轴匹配；
             // 但已显示的翻译继续保留到新补充载荷到达，避免 Apple Music、超级岛
@@ -292,7 +280,7 @@ internal fun LyriconSource.onDirectOnlineLyricContentSourceRequested(
             sourceSwitchCoreStage(
                 request = request,
                 stage = "fallback_schedule_returned",
-                details = "fallbackGeneration=$fallbackGeneration",
+                details = "fallbackGeneration=${appleFallbackRequest.generation()}",
             )
             return
         }
@@ -366,8 +354,7 @@ internal fun LyriconSource.completePendingLyricsSourceRequest(
     song: LocalSong?,
     requestedSource: Source?,
 ) {
-    val request = pendingLyricsSourceRequest ?: return
-    if (requestedSource != null && request.requestedSource != requestedSource) return
+    val request = manualSourceRequests.lyricsRequestToComplete(requestedSource) ?: return
     val actualSource = song
         ?.metadata
         ?.getString(LyricMetadataKeys.APPLE_MISSING_LYRICS_SOURCE)
@@ -378,7 +365,7 @@ internal fun LyriconSource.completePendingLyricsSourceRequest(
         details = "requestedArgument=${requestedSource ?: "none"}," +
             "actual=${actualSource ?: "none"},lines=${song?.lyrics.orEmpty().size}",
     )
-    pendingLyricsSourceRequest = null
+    manualSourceRequests.clearLyricsRequest(request)
     if (actualSource == request.requestedSource) {
         publication.confirmLyricsSource(ConfirmedLyricsSourceSelection(
             songId = request.songId,
@@ -397,9 +384,9 @@ internal fun LyriconSource.completePendingOnlineSourceSwitchRequests(song: Local
         ?.metadata
         ?.getString(LyricMetadataKeys.ONLINE_PRONUNCIATION_SOURCE)
         ?.let { runCatching { Source.valueOf(it) }.getOrNull() }
-    listOfNotNull(
-        pendingTranslationSourceRequest?.let { it to translationSource },
-        pendingPronunciationSourceRequest?.let { it to pronunciationSource },
+    manualSourceRequests.onlineRequestsToComplete(
+        translationSource = translationSource,
+        pronunciationSource = pronunciationSource,
     ).forEach { (request, actualSource) ->
         sourceSwitchCoreStage(
             request = request,
@@ -408,8 +395,7 @@ internal fun LyriconSource.completePendingOnlineSourceSwitchRequests(song: Local
         )
         publishOnlineSourceSwitchResult(request, actualSource)
     }
-    pendingTranslationSourceRequest = null
-    pendingPronunciationSourceRequest = null
+    manualSourceRequests.clearOnlineRequests()
 }
 
 private fun LyriconSource.failPendingOnlineSourceSwitchRequest(request: OnlineSourceSwitchRequest) {
@@ -417,18 +403,7 @@ private fun LyriconSource.failPendingOnlineSourceSwitchRequest(request: OnlineSo
         request = request,
         stage = "source_switch_failed_before_publish",
     )
-    when (request.contentType) {
-        "translation" -> {
-            if (pendingTranslationSourceRequest?.requestId == request.requestId) {
-                pendingTranslationSourceRequest = null
-            }
-        }
-        "pronunciation" -> {
-            if (pendingPronunciationSourceRequest?.requestId == request.requestId) {
-                pendingPronunciationSourceRequest = null
-            }
-        }
-    }
+    manualSourceRequests.failRequest(request)
     publishOnlineSourceSwitchResult(request, actualSource = null)
 }
 

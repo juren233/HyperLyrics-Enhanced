@@ -96,67 +96,6 @@ import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
-internal fun AppleMusicProviderOrchestrator.initProvider() {
-    val directPlayer = AppleDirectPlayer(
-        context = application,
-        onOriginalMetadataRequested =
-            playbackMetadataCoordinator::resolveOriginalMetadataOnDemand,
-        onOnlineTranslationReceived = lyricsHooks::receiveNativeOnlineTranslation,
-        onOnlineTranslationCleared = lyricsHooks::clearNativeOnlineTranslation,
-        onMissingLyricsSupplementReceived = lyricsHooks::receiveMissingLyricsSupplement,
-        onMissingLyricsSupplementCleared = missingLyricsHooks::clearSupplement,
-        onOnlineTranslationSourceSwitchResult =
-            { requestId, songId, contentType, requestedSource, actualSource, successful ->
-                var effectiveActualSource = actualSource
-                var effectiveSuccessful = successful
-                if (contentType == "lyrics") {
-                    val appliedSource = missingLyricsHooks.onLyricsSourceSelectionChanged(
-                        songId = songId,
-                        source = actualSource,
-                        successful = successful,
-                    )
-                    if (successful && appliedSource != null) {
-                        effectiveActualSource = appliedSource
-                        if (requestedSource != null && appliedSource != requestedSource) {
-                            effectiveSuccessful = false
-                        }
-                    }
-                }
-                onlineSourceMenuHooks.receiveSourceSwitchResult(
-                    requestId,
-                    songId,
-                    contentType,
-                    requestedSource,
-                    effectiveActualSource,
-                    effectiveSuccessful,
-                )
-            },
-    ).also { it.start() }
-    this.directPlayer = directPlayer
-    val helper = runCatching {
-        LyriconFactory.createProvider(
-            context = application,
-            providerPackageName = Constants.PROVIDER_PACKAGE_NAME,
-            playerPackageName = APPLE_MUSIC_PACKAGE,
-            logo = ProviderLogo.fromBase64(Constants.ICON)
-        ).also { it.register() }
-    }.onFailure {
-        ProviderLogger.error("Lyricon Central 提供器注册失败，使用内置直连", it)
-    }.getOrNull()
-    val activePlayer = helper?.player?.let { CompositeRemotePlayer(it, directPlayer) }
-        ?: directPlayer
-    lyricRequester = LyricRequester(hookResolver, application)
-    PlaybackManager.init(
-        remotePlayer = activePlayer,
-        requester = lyricRequester,
-        hookResolver = hookResolver,
-        onMissingLyricsSupplementBuilt = lyricsHooks::receiveModuleMissingLyrics,
-        hasKnownNativeLyrics = missingLyricsHooks::hasKnownNativeLyricsFor,
-    )
-    playbackHooks.attachRemotePlayer(activePlayer)
-    playbackHooks.setDisplayTranslation(PreferencesMonitor.isTranslationSelected())
-}
-
 internal fun AppleMusicProviderOrchestrator.startHooks() {
     hookModules().asSequence()
         .filter { hookModule -> !hookModule.debugOnly || BuildConfig.DEBUG }
@@ -173,113 +112,113 @@ internal fun AppleMusicProviderOrchestrator.hookModuleIdsForBuild(debug: Boolean
 internal fun AppleMusicProviderOrchestrator.hookModules() = listOf(
     FunctionalAppleMusicHookModule(
         "hookMetadataSurfaceLifecycle",
-        installer = { metadataSurfaceRuntime.installLifecycleHooks() },
+        installer = { inAppMetadata.metadataSurfaceRuntime.installLifecycleHooks() },
     ),
     FunctionalAppleMusicHookModule(
         "hookTranslationPreference",
-        installer = { lyricsHooks.hookTranslationPreference() },
+        installer = { lyricsPlayback.lyricsHooks.hookTranslationPreference() },
     ),
     FunctionalAppleMusicHookModule(
         "hookMediaApiLocalization",
-        installer = { contentLocalizationHooks.installMediaApiLocalization() },
+        installer = { catalogLanguage.contentLocalizationHooks.installMediaApiLocalization() },
     ),
     FunctionalAppleMusicHookModule(
         "hookContentHttpLocalization",
-        installer = { contentLocalizationHooks.installContentHttpLocalization() },
+        installer = { catalogLanguage.contentLocalizationHooks.installContentHttpLocalization() },
     ),
     FunctionalAppleMusicHookModule(
         "hookExoMediaPlayer",
-        installer = { playbackHooks.installExoMediaPlayer() },
+        installer = { lyricsPlayback.playbackHooks.installExoMediaPlayer() },
     ),
     FunctionalAppleMusicHookModule(
         "hookAtmosVolumeDiagnostics",
         debugOnly = true,
-        installer = { atmosphereVolumeDiagnostics.installHooks() },
+        installer = { lyricsPlayback.atmosphereVolumeDiagnostics.installHooks() },
     ),
     FunctionalAppleMusicHookModule(
         "hookMediaMetadataChange",
-        installer = { playbackMetadataHooks.installHooks() },
+        installer = { lyricsPlayback.playbackMetadataHooks.installHooks() },
     ),
     FunctionalAppleMusicHookModule(
         "hookContentItemMetadata",
-        installer = { contentItemMetadataHooks.installHooks() },
+        installer = { inAppMetadata.contentItemMetadataHooks.installHooks() },
     ),
     FunctionalAppleMusicHookModule(
         "hookInAppLibraryEntities",
-        installer = { librarySurfaceHooks.installEntityHooks() },
+        installer = { inAppMetadata.librarySurfaceHooks.installEntityHooks() },
     ),
     FunctionalAppleMusicHookModule(
         "hookCollectionPageMetadataRefresh",
-        installer = { collectionSurfaceHooks.installHooks() },
+        installer = { inAppMetadata.collectionSurfaceHooks.installHooks() },
     ),
     FunctionalAppleMusicHookModule(
         "hookArtistProfileTopSongs",
-        installer = { artistSurfaceHooks.installTopSongHooks() },
+        installer = { inAppMetadata.artistSurfaceHooks.installTopSongHooks() },
     ),
     FunctionalAppleMusicHookModule(
         "hookArtistProfileMetadata",
-        installer = { artistSurfaceHooks.installProfileHooks() },
+        installer = { inAppMetadata.artistSurfaceHooks.installProfileHooks() },
     ),
     FunctionalAppleMusicHookModule(
         "hookRecentlySearchedMetadata",
-        installer = { mediaApiMetadataCoordinator.installRecentlySearchedHooks() },
+        installer = { inAppMetadata.mediaApiMetadataCoordinator.installRecentlySearchedHooks() },
     ),
     FunctionalAppleMusicHookModule(
         "hookInAppArtworkContinuity",
-        installer = { inAppArtworkContinuityHooks.installHooks() },
+        installer = { inAppMetadata.inAppArtworkContinuityHooks.installHooks() },
     ),
     FunctionalAppleMusicHookModule(
         "hookInAppListenNowArtworkContinuity",
-        installer = { listenNowHooks.installArtworkContinuityHooks() },
+        installer = { inAppMetadata.listenNowHooks.installArtworkContinuityHooks() },
     ),
     FunctionalAppleMusicHookModule(
         "hookInAppLibraryEpoxyRefresh",
-        installer = { librarySurfaceHooks.installEpoxyHooks() },
+        installer = { inAppMetadata.librarySurfaceHooks.installEpoxyHooks() },
     ),
     FunctionalAppleMusicHookModule(
         "hookInAppLibraryComposeRefresh",
-        installer = { librarySurfaceHooks.installComposeHooks() },
+        installer = { inAppMetadata.librarySurfaceHooks.installComposeHooks() },
     ),
     FunctionalAppleMusicHookModule(
         "hookDebugListenNowArtworkLifecycle",
         debugOnly = true,
-        installer = { listenNowHooks.installDebugArtworkLifecycleHooks() },
+        installer = { inAppMetadata.listenNowHooks.installDebugArtworkLifecycleHooks() },
     ),
     FunctionalAppleMusicHookModule(
         "hookVisibleMetadataDiagnostics",
         debugOnly = true,
-        installer = { visibleMetadataDiagnostics.installHooks() },
+        installer = { inAppMetadata.visibleMetadataDiagnostics.installHooks() },
     ),
     FunctionalAppleMusicHookModule(
         "hookInAppDataBindingRefresh",
-        installer = { dataBindingHooks.installDataBindingHooks() },
+        installer = { inAppMetadata.dataBindingHooks.installDataBindingHooks() },
     ),
     FunctionalAppleMusicHookModule(
         "hookInAppListenNowMetadataBinding",
-        installer = { listenNowHooks.installMetadataBindingHooks() },
+        installer = { inAppMetadata.listenNowHooks.installMetadataBindingHooks() },
     ),
     FunctionalAppleMusicHookModule(
         "hookRecyclerViewCentralBinding",
-        installer = { dataBindingHooks.installRecyclerHooks() },
+        installer = { inAppMetadata.dataBindingHooks.installRecyclerHooks() },
     ),
     FunctionalAppleMusicHookModule(
         "hookInAppMetadata",
-        installer = { queueMetadataHooks.installHooks() },
+        installer = { inAppMetadata.queueMetadataHooks.installHooks() },
     ),
     FunctionalAppleMusicHookModule(
         "hookInAppPlaybackItemConversion",
-        installer = { playbackItemConversionHooks.installHooks() },
+        installer = { inAppMetadata.playbackItemConversionHooks.installHooks() },
     ),
     FunctionalAppleMusicHookModule(
         "hookInAppActionSheetMetadata",
-        installer = { actionSheetMetadataHooks.installHooks() },
+        installer = { inAppMetadata.actionSheetMetadataHooks.installHooks() },
     ),
     FunctionalAppleMusicHookModule(
         "hookSettingsCellularDataEntry",
         installer = {
             io.github.proify.lyricon.amprovider.xposed.hooks.AppleCellularDataSettingsHooks(
                 runtime,
-                preferences = { contentUiLanguagePrefs },
+                preferences = { catalogLanguage.contentUiLanguagePrefs },
             ).install()
         },
     ),
@@ -288,82 +227,81 @@ internal fun AppleMusicProviderOrchestrator.hookModules() = listOf(
         installer = {
             io.github.proify.lyricon.amprovider.xposed.hooks.AppleCellularDataSettingsHooks(
                 runtime,
-                preferences = { contentUiLanguagePrefs },
+                preferences = { catalogLanguage.contentUiLanguagePrefs },
             ).installCellularAvailability()
         },
     ),
     FunctionalAppleMusicHookModule(
         "hookMediaSessionMetadata",
-        installer = { frameworkMetadataHooks.installMediaSessionMetadata() },
+        installer = { inAppMetadata.frameworkMetadataHooks.installMediaSessionMetadata() },
     ),
     FunctionalAppleMusicHookModule(
         "hookMediaSessionQueue",
-        installer = { frameworkMetadataHooks.installMediaSessionQueue() },
+        installer = { inAppMetadata.frameworkMetadataHooks.installMediaSessionQueue() },
     ),
     FunctionalAppleMusicHookModule(
         "hookPlaybackNotificationMetadata",
-        installer = { frameworkMetadataHooks.installPlaybackNotificationMetadata() },
+        installer = { inAppMetadata.frameworkMetadataHooks.installPlaybackNotificationMetadata() },
     ),
     FunctionalAppleMusicHookModule(
         "hookAppleOfficialPronunciationLanguageMatching",
-        installer = { lyricsHooks.hookAppleOfficialPronunciationLanguageMatching() },
+        installer = { lyricsPlayback.lyricsHooks.hookAppleOfficialPronunciationLanguageMatching() },
     ),
     FunctionalAppleMusicHookModule(
         "hookAppleLyricsPreferredLanguages",
-        installer = { lyricsHooks.hookAppleLyricsPreferredLanguages() },
+        installer = { lyricsPlayback.lyricsHooks.hookAppleLyricsPreferredLanguages() },
     ),
     FunctionalAppleMusicHookModule(
         "hookApplePronunciationWordRendering",
-        installer = { lyricsHooks.hookApplePronunciationWordRendering() },
+        installer = { lyricsPlayback.lyricsHooks.hookApplePronunciationWordRendering() },
     ),
     FunctionalAppleMusicHookModule(
         "hookLyricBuildMethod",
-        installer = { lyricsHooks.hookLyricBuildMethod() },
+        installer = { lyricsPlayback.lyricsHooks.hookLyricBuildMethod() },
     ),
     FunctionalAppleMusicHookModule(
         "hookAppleNativeLyricsPresentation",
-        installer = { lyricsHooks.hookAppleNativeLyricsPresentation() },
+        installer = { lyricsPlayback.lyricsHooks.hookAppleNativeLyricsPresentation() },
     ),
     FunctionalAppleMusicHookModule(
         "hookAppleSystemFontWeight",
-        installer = { lyricsHooks.hookAppleSystemFontWeight() },
+        installer = { lyricsPlayback.lyricsHooks.hookAppleSystemFontWeight() },
     ),
     FunctionalAppleMusicHookModule(
         "hookAppleLyricsBlurEffect",
-        installer = { lyricsHooks.hookAppleLyricsBlurEffect() },
+        installer = { lyricsPlayback.lyricsHooks.hookAppleLyricsBlurEffect() },
     ),
     FunctionalAppleMusicHookModule(
         "hookAppleLyricsUiDiagnostics",
         debugOnly = true,
-        installer = { lyricsHooks.hookAppleLyricsUiDiagnostics() },
+        installer = { lyricsPlayback.lyricsHooks.hookAppleLyricsUiDiagnostics() },
     ),
     FunctionalAppleMusicHookModule(
         "hookAppleLyricsBindingDiagnostics",
         debugOnly = true,
-        installer = { lyricsHooks.hookAppleLyricsBindingDiagnostics() },
+        installer = { lyricsPlayback.lyricsHooks.hookAppleLyricsBindingDiagnostics() },
     ),
     FunctionalAppleMusicHookModule(
         "hookAppleLyricsSourceMenu",
-        installer = { onlineSourceMenuHooks.installSourceMenu() },
+        installer = { lyricsPlayback.onlineSourceMenuHooks.installSourceMenu() },
     ),
     FunctionalAppleMusicHookModule(
         "hookAppleMissingLyricsSupplement",
-        installer = { missingLyricsHooks.installHooks() },
+        installer = { lyricsPlayback.missingLyricsHooks.installHooks() },
     ),
     FunctionalAppleMusicHookModule(
         "hookLyricsNetworkRequest",
         debugOnly = true,
-        installer = { debugNetworkHooks.installLyricsNetworkRequest() },
+        installer = { lyricsPlayback.debugNetworkHooks.installLyricsNetworkRequest() },
     ),
     FunctionalAppleMusicHookModule(
         "hookLyricsCookies",
         debugOnly = true,
-        installer = { debugNetworkHooks.installLyricsCookies() },
+        installer = { lyricsPlayback.debugNetworkHooks.installLyricsCookies() },
     ),
     FunctionalAppleMusicHookModule(
         "hookFinalLyricsHttp",
         debugOnly = true,
-        installer = { debugNetworkHooks.installFinalLyricsHttp() },
+        installer = { lyricsPlayback.debugNetworkHooks.installFinalLyricsHttp() },
     ),
 )
-

@@ -55,30 +55,29 @@ internal fun AppleInternalCatalogResolver.resolveOriginalMetadata(
         )
         return
     }
-    synchronized(caches.originalSongCache) {
-        caches.originalSongCache[metadata.id]?.let { alias ->
-            canonicalCachedOriginalAlias(alias)?.takeIf { cachedAlias ->
-                isReusableOriginalSongAlias(
+    val servedFromCache = caches.withReusableOriginalSongAlias(
+        mediaId = metadata.id,
+        canonicalize = ::canonicalCachedOriginalAlias,
+        isReusable = { cachedAlias ->
+            isReusableOriginalSongAlias(
+                alias = cachedAlias,
+                localizedTitle = metadata.title.orEmpty(),
+                localizedArtist = metadata.artist.orEmpty(),
+            )
+        },
+        onHit = { cachedAlias ->
+            onResolved(
+                OriginalResolution(
                     alias = cachedAlias,
-                    localizedTitle = metadata.title.orEmpty(),
-                    localizedArtist = metadata.artist.orEmpty(),
+                    language = cachedAlias.language.takeIf(String::isNotBlank),
+                    originKnown = true,
+                    artistIds = emptyList(),
+                    album = cachedAlias.album,
                 )
-            }?.let { cachedAlias ->
-                if (cachedAlias != alias) caches.originalSongCache[metadata.id] = cachedAlias
-                onResolved(
-                    OriginalResolution(
-                        alias = cachedAlias,
-                        language = cachedAlias.language.takeIf(String::isNotBlank),
-                        originKnown = true,
-                        artistIds = emptyList(),
-                        album = cachedAlias.album,
-                    )
-                )
-                return
-            }
-            caches.originalSongCache.remove(metadata.id)
-        }
-    }
+            )
+        },
+    )
+    if (servedFromCache) return
     onCandidate?.let { callback ->
         registerOriginalCandidateCallback(metadata.id, callback)
     }
@@ -95,7 +94,7 @@ internal fun AppleInternalCatalogResolver.resolveOriginalMetadata(
             )
         }
         if (reusableAlias != null) {
-            synchronized(caches.originalSongCache) { caches.originalSongCache[metadata.id] = reusableAlias }
+            caches.putOriginalSongAlias(metadata.id, reusableAlias)
             finishCachedOriginalResolve(metadata.id, reusableAlias)
         } else {
             if (persistentAlias != null) {
@@ -199,7 +198,7 @@ internal fun AppleInternalCatalogResolver.resolveOriginalMetadataFromCatalog(
                 }
                 if (exactAlias != null) {
                     val regionalArtistIds =
-                        caches.catalogIdentityCache[metadata.id]?.artistIds.orEmpty()
+                        caches.catalogArtistIds(metadata.id)
                     finishResolve(
                         metadata = metadata,
                         languages = listOf(language),

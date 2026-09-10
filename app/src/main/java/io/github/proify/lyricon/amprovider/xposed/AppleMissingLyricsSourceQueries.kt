@@ -17,7 +17,6 @@ import com.juren233.hyperlyricsenhanced.common.lyric.ChineseLyricsPolicy
 import com.juren233.hyperlyricsenhanced.lyric.model.Song
 import io.github.libxposed.api.XposedInterface.Chain
 import io.github.proify.lyricon.amprovider.xposed.internal.ThreadLocalStack
-import java.lang.ref.WeakReference
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -275,7 +274,7 @@ internal fun AppleMissingLyricsHooks.resolveStoredSupplementContentId(songId: St
 
 /** 判断指针是否为补充歌词生成的原生模型（不应被记为 Apple 原生歌词）。 */
 internal fun AppleMissingLyricsHooks.isSupplementPointer(pointer: Any?): Boolean =
-    nativeBuildScope.isActive() || isKnownSupplementPointer(
+    nativeBuildState.isScopeActive() || isKnownSupplementPointer(
         pointer = pointer,
         supplementPointers = store.knownNativeSongInfoPointers(),
         nativeAddress = ::nativePointerAddress,
@@ -320,7 +319,7 @@ internal fun AppleMissingLyricsHooks.onNativeLyricsState(songId: String?, hasLin
                 )
             candidates.revokeAcceptance(contentSongId)
             candidates.revokeAvailability(contentSongId)
-            scheduledTakeoverRechecks.remove(contentSongId)
+            takeoverRechecks.remove(contentSongId)
             if (retainLunaBeatAlternative) {
                 if (BuildConfig.DEBUG) {
                     ProviderLogger.diagnostic(
@@ -409,9 +408,7 @@ internal fun AppleMissingLyricsHooks.onCurrentPlaybackItem(contentSongId: String
         expectedContentSongId = contentSongId,
         queueIdOverride = queueId,
     ) ?: return
-    item?.let {
-        currentPlaybackItemReference = AppleMissingLyricsHooks.PlaybackItemReference(identity, WeakReference(it))
-    }
+    item?.let { playbackItemBinding.remember(identity, it) }
     val activated = maybeActivateSupplement(
         identity.contentSongId,
         trigger = "current_playback_item",
@@ -423,4 +420,3 @@ internal fun AppleMissingLyricsHooks.onCurrentPlaybackItem(contentSongId: String
         refreshNowPlaying(identity.contentSongId)
     }
 }
-

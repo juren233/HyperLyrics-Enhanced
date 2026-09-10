@@ -3,8 +3,6 @@ package com.juren233.hyperlyricsenhanced.root.source
 import android.app.Application
 import android.content.Context
 import android.content.Intent
-import android.media.AudioManager
-import android.media.session.MediaSessionManager
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -125,37 +123,21 @@ class LyriconSource : LyricSource {
     internal val onlineRaceFirstAcceptedGeneration get() = onlineTranslationRequest.snapshot().firstAccepted
 
     internal val mediaPositionScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    internal var fallbackJob: Job? = null
+    internal val appleFallbackRequest = AppleFallbackRequest()
     internal var mediaPositionJob: Job? = null
-    internal var fallbackDelayRunnable: Runnable? = null
-    internal var fallbackGeneration = 0
     internal val thirdPartyFallbackRequest = DelayedFallbackRequest<LocalSong?>(
         scope = fallbackScope,
         post = { task, delayMs -> mainHandler.postDelayed(task, delayMs) },
         remove = { task -> mainHandler.removeCallbacks(task) },
     )
-    internal var originalMetadataRequestKey: String? = null
-    internal var temporaryTranslationSource: Source? = null
-    internal var temporaryPronunciationSource: Source? = null
-    internal var pendingTranslationSourceRequest: OnlineSourceSwitchRequest? = null
-    internal var pendingPronunciationSourceRequest: OnlineSourceSwitchRequest? = null
-    internal var pendingLyricsSourceRequest: OnlineSourceSwitchRequest? = null
+    internal val originalMetadataRequest = AppleOriginalMetadataRequestKey()
+    internal val manualSourceRequests = AppleManualSourceRequestState()
     @Volatile
     internal var latestSourceSwitchTraceRequest: OnlineSourceSwitchRequest? = null
-    internal var lastAdjustedPosition = 0L
-    internal var appleSongGeneration = 0
-    @Volatile
-    internal var appleMediaPositionReference: AppleCentralPositionPolicy.MediaReference? = null
-    @Volatile
-    internal var appleDirectPositionReference: AppleCentralPositionPolicy.DirectReference? = null
-    @Volatile
-    internal var currentDirectAppleSongId: String? = null
-    internal var lastObservedMediaKey: String? = null
-    internal var lastMediaPlaybackState: Boolean? = null
+    internal val applePositionState = ApplePlaybackPositionState()
+    internal val lastAdjustedPosition get() = applePositionState.lastAdjustedPosition
     internal val centralPlaybackPositionWitness = CentralPlaybackPositionWitness()
-    internal var audioManager: AudioManager? = null
-    internal var mediaSessionManager: MediaSessionManager? = null
-    internal var localSessionsListener: MediaSessionManager.OnActiveSessionsChangedListener? = null
+    internal val localMediaSessionState = AppleLocalMediaSessionState()
     internal val activeMediaSessionGate = ActiveMediaSessionGate(
         nowElapsedMs = SystemClock::elapsedRealtime,
         nowWallClockMs = System::currentTimeMillis,
@@ -254,9 +236,7 @@ class LyriconSource : LyricSource {
             activeCentralPlayerPackageName = null
             activeProviderPackageName = null
             publication.reset()
-            appleMediaPositionReference = null
-            appleDirectPositionReference = null
-            currentDirectAppleSongId = null
+            applePositionState.clearReferences()
             subscriber = null
             centralPlaybackPositionWitness.reset()
             sink?.onStop()
@@ -679,7 +659,7 @@ internal val activePlayerListener = object : ActivePlayerListener {
             clearMatched = true,
             reason = "central_provider_changed"
         )
-        lastAdjustedPosition = 0L
+        applePositionState.lastAdjustedPosition = 0L
         centralPlaybackPositionWitness.onSinkStopped()
         sink?.onStop()
         centralAppleProviderActive =
@@ -851,10 +831,7 @@ internal val activePlayerListener = object : ActivePlayerListener {
         val adjustedPosition = (position - activeProviderDelayMs).coerceAtLeast(0L)
         if (centralAppleProviderActive) {
             val resolution = resolveApplePosition(adjustedPosition, explicitSeek = false)
-            lastAdjustedPosition = AppleCentralPositionPolicy.restorablePosition(
-                previousPosition = lastAdjustedPosition,
-                resolution = resolution,
-            )
+            applePositionState.applyRestorablePosition(resolution)
             logAppleTimingDiagnostic(
                 path = "central",
                 rawPosition = position,
@@ -910,10 +887,7 @@ internal val activePlayerListener = object : ActivePlayerListener {
         val adjustedPosition = (position - activeProviderDelayMs).coerceAtLeast(0L)
         if (centralAppleProviderActive) {
             val resolution = resolveApplePosition(adjustedPosition, explicitSeek = true)
-            lastAdjustedPosition = AppleCentralPositionPolicy.restorablePosition(
-                previousPosition = lastAdjustedPosition,
-                resolution = resolution,
-            )
+            applePositionState.applyRestorablePosition(resolution)
             logAppleTimingDiagnostic(
                 path = "central_seek",
                 rawPosition = position,
