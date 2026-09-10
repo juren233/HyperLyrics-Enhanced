@@ -126,11 +126,11 @@ internal fun AppleInternalCatalogResolver.logCatalogRequestDiagnostic(
     detail: String? = null,
 ) {
     if (!BuildConfig.DEBUG) return
-    val localizedState = synchronized(localizedPending) {
-        "${localizedPending.size}/$localizedBatchesRunning"
+    val localizedState = synchronized(dispatch.localizedPending) {
+        "${dispatch.localizedPending.size}/${dispatch.localizedBatchesRunning}"
     }
-    val originalState = synchronized(originalEntityPending) {
-        "${originalEntityPending.size}/$originalEntityBatchesRunning"
+    val originalState = synchronized(dispatch.originalEntityPending) {
+        "${dispatch.originalEntityPending.size}/${dispatch.originalEntityBatchesRunning}"
     }
     ProviderLogger.diagnostic(
         "AppleCatalogRequest: id=$requestId, token=${requestToken ?: "none"}, " +

@@ -7,6 +7,7 @@
 package io.github.proify.lyricon.amprovider.xposed
 
 import android.app.Activity
+import android.media.MediaMetadata
 import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
@@ -14,6 +15,7 @@ import com.juren233.hyperlyricsenhanced.BuildConfig
 import java.util.Collections
 import java.util.WeakHashMap
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 
 internal interface AppleVisibleMetadataDiagnosticsHost {
     fun activePlaybackIdentity(): ActivePlaybackMediaIdentity
@@ -174,4 +176,51 @@ internal class AppleVisibleMetadataDiagnostics(
         }
         return parents.joinToString(" <- ")
     }
+}
+
+/**
+ * 依赖显式注入的默认宿主。activeMetadataValues 的跨来源聚合是本诊断 owner 的
+ * 业务实现，随宿主一并落在 owner 文件；store/registry 为根单例构造期值可直捕。
+ */
+internal class DefaultAppleVisibleMetadataDiagnosticsHost(
+    private val activePlaybackIdentityFn: () -> ActivePlaybackMediaIdentity,
+    private val effectiveAliasFn: (String) -> Alias?,
+    private val frameworkMetadataFn: (String) -> MediaMetadata?,
+    private val overrideStore: AppleMetadataOverrideStore,
+    private val registry: AppleInAppMetadataRegistry,
+    private val traceSequence: AtomicLong,
+) : AppleVisibleMetadataDiagnosticsHost {
+    override fun activePlaybackIdentity(): ActivePlaybackMediaIdentity =
+        activePlaybackIdentityFn()
+
+    override fun effectiveAlias(mediaId: String): Alias? = effectiveAliasFn(mediaId)
+
+    override fun activeMetadataValues(mediaId: String): Set<String> {
+        val account = overrideStore.accountMetadata(mediaId)
+        val alias = effectiveAliasFn(mediaId)
+        val framework = frameworkMetadataFn(mediaId)
+        return buildSet {
+            listOf(
+                account?.title,
+                account?.artist,
+                alias?.title,
+                alias?.artist,
+                framework?.getString(MediaMetadata.METADATA_KEY_TITLE),
+                framework?.getString(MediaMetadata.METADATA_KEY_ARTIST),
+                framework?.getString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE),
+                framework?.getString(MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE),
+            ).filterNotNull()
+                .map(String::trim)
+                .filter(String::isNotEmpty)
+                .forEach(::add)
+            registry.livePlaybackItemRefs(mediaId).forEach { ref ->
+                ref.originalTitle?.toString()?.trim()
+                    ?.takeIf(String::isNotEmpty)?.let(::add)
+                ref.originalArtist?.toString()?.trim()
+                    ?.takeIf(String::isNotEmpty)?.let(::add)
+            }
+        }
+    }
+
+    override fun nextTraceSequence(): Long = traceSequence.incrementAndGet()
 }

@@ -38,26 +38,21 @@ internal fun AppleInternalCatalogResolver.applyContentUiLanguage(selection: Int)
 }
 
 internal fun AppleInternalCatalogResolver.setPersistentLocalizedCacheEnabled(enabled: Boolean) {
-    val wasEnabled = persistentLocalizedCacheEnabled
-    persistentLocalizedCacheEnabled = enabled
+    val wasEnabled = caches.persistentLocalizedCacheEnabled
+    caches.persistentLocalizedCacheEnabled = enabled
     persistentLocalizedCache.setEnabled(enabled)
     persistentOriginalCache.setEnabled(enabled)
     if (enabled) {
         warmPersistentOriginalCache()
         if (!wasEnabled) {
-            synchronized(warmedSelections) {
-                warmedSelections.remove(contentUiLanguageSelection)
-            }
-            synchronized(warmingSelections) {
-                warmingSelections.remove(contentUiLanguageSelection)
-            }
+            caches.resetLocalizedCacheWarm(contentUiLanguageSelection)
         }
         warmPersistentLocalizedCache(contentUiLanguageSelection)
     }
 }
 
 internal fun AppleInternalCatalogResolver.warmPersistentOriginalCache() {
-    if (!persistentLocalizedCacheEnabled) return
+    if (!caches.persistentLocalizedCacheEnabled) return
     persistentOriginalCache.warmRecentAsync { count ->
         if (count != null) {
             ProviderLogger.info("Apple 原地区元数据缓存预热完成: entries=$count")
@@ -73,8 +68,8 @@ internal fun AppleInternalCatalogResolver.cachedLocalizedArtist(selection: Int, 
         languageTags.map { language -> artistCacheKey(selection, key, language) } +
             if (languageTags.size == 1) listOf(artistCacheKey(selection, key)) else emptyList()
     }
-    return synchronized(localizedArtistAliasCache) {
-        keys.firstNotNullOfOrNull(localizedArtistAliasCache::get)
+    return synchronized(caches.localizedArtistAliasCache) {
+        keys.firstNotNullOfOrNull(caches.localizedArtistAliasCache::get)
     }
 }
 
@@ -93,8 +88,8 @@ internal fun AppleInternalCatalogResolver.cachedLocalizedMetadata(
     } else {
         emptyList()
     }
-    return synchronized(localizedCache) {
-        keys.firstNotNullOfOrNull(localizedCache::get)
+    return synchronized(caches.localizedCache) {
+        keys.firstNotNullOfOrNull(caches.localizedCache::get)
     }
 }
 
@@ -111,27 +106,23 @@ internal fun AppleInternalCatalogResolver.rememberLocalizedArtist(
         .distinct()
         .associateWith { alias }
     if (entries.isEmpty()) return
-    val changedEntries = synchronized(localizedArtistAliasCache) {
-        entries.filter { (key, value) -> localizedArtistAliasCache[key] != value }
-            .also(localizedArtistAliasCache::putAll)
+    val changedEntries = synchronized(caches.localizedArtistAliasCache) {
+        entries.filter { (key, value) -> caches.localizedArtistAliasCache[key] != value }
+            .also(caches.localizedArtistAliasCache::putAll)
     }
     persistentLocalizedCache.putMany(changedEntries)
 }
 
 internal fun AppleInternalCatalogResolver.warmPersistentLocalizedCache(selection: Int) {
-    if (!persistentLocalizedCacheEnabled) return
+    if (!caches.persistentLocalizedCacheEnabled) return
     if (storefrontForContentUiLanguage(selection) == null) return
-    val shouldWarm = synchronized(warmedSelections) {
-        if (selection in warmedSelections) false
-        else synchronized(warmingSelections) { warmingSelections.add(selection) }
-    }
-    if (!shouldWarm) return
+    if (!caches.beginLocalizedCacheWarm(selection)) return
     val prefix = "$selection:"
     persistentLocalizedCache.warmRecentAsync(prefix) { delayedAliases ->
         if (delayedAliases != null) {
             finishPersistentCacheWarm(selection, delayedAliases)
         } else {
-            synchronized(warmingSelections) { warmingSelections.remove(selection) }
+            caches.abandonLocalizedCacheWarm(selection)
             ProviderLogger.info("Apple 地区元数据缓存预热延后: selection=$selection")
         }
     }
@@ -142,12 +133,11 @@ internal fun AppleInternalCatalogResolver.finishPersistentCacheWarm(selection: I
     val metadataAliases = aliases.filterKeys { key ->
         !isLocalizedArtistAliasCacheKey(key)
     }
-    synchronized(localizedCache) { localizedCache.putAll(metadataAliases) }
-    synchronized(localizedArtistAliasCache) {
-        localizedArtistAliasCache.putAll(artistAliases)
+    synchronized(caches.localizedCache) { caches.localizedCache.putAll(metadataAliases) }
+    synchronized(caches.localizedArtistAliasCache) {
+        caches.localizedArtistAliasCache.putAll(artistAliases)
     }
-    synchronized(warmedSelections) { warmedSelections.add(selection) }
-    synchronized(warmingSelections) { warmingSelections.remove(selection) }
+    caches.completeLocalizedCacheWarm(selection)
     ProviderLogger.info(
         "Apple 地区元数据缓存预热完成: selection=$selection, " +
             "metadata=${metadataAliases.size}, artistAlias=${artistAliases.size}, " +
@@ -164,7 +154,7 @@ internal fun AppleInternalCatalogResolver.catalogRequestLocalization(token: Stri
 internal fun AppleInternalCatalogResolver.pendingCatalogRequestCount(): Int = pendingCatalogRequests.size
 
 internal fun AppleInternalCatalogResolver.cachedCatalogGenres(mediaId: String): List<String> =
-    catalogIdentityCache[mediaId]?.genres.orEmpty()
+    caches.catalogIdentityCache[mediaId]?.genres.orEmpty()
 
 internal fun AppleInternalCatalogResolver.accountStorefrontForPlaybackRequest(): String? {
     accountStorefront?.let { return it }

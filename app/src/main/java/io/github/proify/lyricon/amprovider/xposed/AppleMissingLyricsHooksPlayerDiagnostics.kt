@@ -117,9 +117,9 @@ internal fun AppleMissingLyricsHooks.logPlayerLyricsAvailabilityCalculation(
     val storeContent = store.hasContent(diagnosticSongId)
     val nativeKnown = diagnosticSongId?.let { hasKnownNativeLyrics(it) } == true
     val availabilityExposed =
-        diagnosticSongId != null && diagnosticSongId in supplementAvailabilitySongIds
+        diagnosticSongId != null && candidates.wasAvailable(diagnosticSongId)
     val presentationAccepted =
-        diagnosticSongId != null && diagnosticSongId in acceptedSupplementSongIds
+        diagnosticSongId != null && candidates.isAccepted(diagnosticSongId)
     val signature = listOf(
         debugObjectIdentity(item),
         itemSongId,

@@ -22,6 +22,10 @@ class AmbientFlowReleaseTest {
         assertTrue(release.contains("cleanupViews = { cleanup.run() }"))
         assertTrue(release.contains("clearStates = { binderStates.clear() }"))
         assertEquals(1, Regex("binderStates\\.clear\\(\\)").findAll(release).count())
+        // P5：全局图标取色路径必须在释放时失效，旧封面色不得在释放后落地。
+        assertTrue(release.contains("iconColorRequest.incrementAndGet()"))
+        assertTrue(release.contains("iconColorToken = null"))
+        assertTrue(release.contains("iconColorPalette = null"))
     }
 
     private class Fixture {

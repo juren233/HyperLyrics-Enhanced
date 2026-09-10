@@ -23,6 +23,7 @@ import java.util.LinkedHashMap
 import java.util.WeakHashMap
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.atomic.AtomicLong
 
 internal interface AppleDataBindingMetadataHost {
     fun contentItemMediaId(contentItem: Any): String?
@@ -151,4 +152,119 @@ internal fun isDataBindingRefreshCurrent(
     scheduledBindGeneration: Long,
 ): Boolean = currentMediaId == requestedMediaId &&
     currentBindGeneration == scheduledBindGeneration
+
+/**
+ * DataBinding 元数据 Hook 的默认宿主实现：orchestrator 依赖以 supplier 显式注入，保持原匿名
+ * 实现"调用期解析"的语义；registry/traceSequence 为根单例构造期值可直捕。
+ */
+internal class DefaultAppleDataBindingMetadataHost(
+    private val contentItemMediaIdFn: (Any) -> String?,
+    private val onBeginBindingModelFn: (Any) -> Unit,
+    private val onBindingMediaIdChangedFn: (Any, String?, String) -> Unit,
+    private val originalResolutionModeFn: (Any) -> InAppOriginalResolutionMode,
+    private val shouldInvalidateAppliedAliasFn: (
+        Any, String, AppliedMetadataAlias, AppliedMetadataAlias?, Collection<String>,
+    ) -> Boolean,
+    private val effectiveAliasFn: (String) -> Alias?,
+    private val aliasValuesFn: (String, Alias, Any?) -> DataBindingAliasValues,
+    private val isCurrentSurfaceMediaIdFn: (String) -> Boolean,
+    private val hasVisibleConsumerFn: (String) -> Boolean,
+    private val isRefreshableMediaIdFn: (String) -> Boolean,
+    private val enrichEntitiesForResolutionFn: (Collection<String>) -> Unit,
+    private val markMetadataVisibleFn: (Collection<String>) -> Unit,
+    private val scheduleMetadataResolutionFn: (
+        Collection<String>, RequestPriority, InAppOriginalResolutionMode,
+    ) -> Unit,
+    private val isAppleLyricsRecyclerAdapterFn: (Any?) -> Boolean,
+    private val isQueueAdapterFn: (Any) -> Boolean,
+    private val isArtistProfileRecyclerAdapterFn: (Any) -> Boolean,
+    private val entityMediaIdFn: (Any) -> String?,
+    private val attributeBindingMediaIdFn: (Any) -> String?,
+    private val liveEntitiesFn: (String) -> List<Any>,
+    private val registry: AppleInAppMetadataRegistry,
+    private val traceSequence: AtomicLong,
+) : AppleDataBindingMetadataHost {
+    override fun contentItemMediaId(contentItem: Any): String? =
+        contentItemMediaIdFn(contentItem)
+
+    override fun onBeginBindingModel(binding: Any) {
+        onBeginBindingModelFn(binding)
+    }
+
+    override fun onBindingMediaIdChanged(
+        binding: Any,
+        previousMediaId: String?,
+        mediaId: String,
+    ) {
+        onBindingMediaIdChangedFn(binding, previousMediaId, mediaId)
+    }
+
+    override fun originalResolutionMode(binding: Any): InAppOriginalResolutionMode =
+        originalResolutionModeFn(binding)
+
+    override fun shouldInvalidateAppliedAlias(
+        binding: Any,
+        mediaId: String,
+        appliedAlias: AppliedMetadataAlias,
+        pendingAlias: AppliedMetadataAlias?,
+        renderedTexts: Collection<String>,
+    ): Boolean = shouldInvalidateAppliedAliasFn(
+        binding, mediaId, appliedAlias, pendingAlias, renderedTexts,
+    )
+
+    override fun effectiveAlias(mediaId: String): Alias? =
+        effectiveAliasFn(mediaId)
+
+    override fun aliasValues(
+        mediaId: String,
+        alias: Alias,
+        binding: Any?,
+    ): DataBindingAliasValues = aliasValuesFn(mediaId, alias, binding)
+
+    override fun isCurrentSurfaceMediaId(mediaId: String): Boolean =
+        isCurrentSurfaceMediaIdFn(mediaId)
+
+    override fun hasVisibleConsumer(mediaId: String): Boolean =
+        hasVisibleConsumerFn(mediaId)
+
+    override fun isRefreshableMediaId(mediaId: String): Boolean =
+        isRefreshableMediaIdFn(mediaId)
+
+    override fun enrichEntitiesForResolution(mediaIds: Collection<String>) {
+        enrichEntitiesForResolutionFn(mediaIds)
+    }
+
+    override fun markMetadataVisible(mediaIds: Collection<String>) {
+        markMetadataVisibleFn(mediaIds)
+    }
+
+    override fun scheduleMetadataResolution(
+        mediaIds: Collection<String>,
+        priority: RequestPriority,
+        originalResolutionMode: InAppOriginalResolutionMode,
+    ) {
+        scheduleMetadataResolutionFn(mediaIds, priority, originalResolutionMode)
+    }
+
+    override fun isAppleLyricsRecyclerAdapter(adapter: Any?): Boolean =
+        isAppleLyricsRecyclerAdapterFn(adapter)
+
+    override fun isQueueAdapter(adapter: Any): Boolean =
+        isQueueAdapterFn(adapter)
+
+    override fun isArtistProfileRecyclerAdapter(adapter: Any): Boolean =
+        isArtistProfileRecyclerAdapterFn(adapter)
+
+    override fun nextMetadataTraceSequence(): Long =
+        traceSequence.incrementAndGet()
+
+    override fun bindingCandidateMediaId(value: Any): String? =
+        registry.metadataId(value)
+            ?: registry.playbackItemId(value)
+            ?: entityMediaIdFn(value)
+            ?: attributeBindingMediaIdFn(value)
+
+    override fun boundModelCandidates(mediaId: String): List<Any> =
+        registry.livePlaybackItems(mediaId) + liveEntitiesFn(mediaId)
+}
 

@@ -29,12 +29,11 @@ internal fun AppleMissingLyricsHooks.currentPlaybackItem(songId: String): Any? {
 }
 
 internal fun AppleMissingLyricsHooks.hasKnownNativeLyrics(songId: String, adamId: Long? = null): Boolean =
-    songId in nativeLyricsContentIds ||
-        adamId?.toString()?.let(nativeLyricsAdamIds::contains) == true ||
-        store.playbackIdentity(songId)
-            ?.adamId
-            ?.toString()
-            ?.let(nativeLyricsAdamIds::contains) == true
+    nativeLyricsKnowledge.contains(
+        contentId = songId,
+        adamId = adamId?.toString(),
+        storedAdamId = store.playbackIdentity(songId)?.adamId?.toString(),
+    )
 
 internal fun AppleMissingLyricsHooks.capturePlaybackIdentity(
     item: Any?,

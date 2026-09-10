@@ -318,3 +318,110 @@ internal class AppleActionSheetMetadataHooks(
         val notifyChange: String,
     )
 }
+
+/**
+ * ActionSheet 元数据 Hook 的默认宿主实现：orchestrator 依赖以 supplier 显式注入，保持原匿名
+ * 实现"调用期解析"的语义；overrideStore/registry 为根单例构造期值可直捕。
+ */
+internal class DefaultAppleActionSheetMetadataHost(
+    private val activePlaybackIdentityFn: () -> ActivePlaybackMediaIdentity,
+    private val markMetadataVisibleFn: (Collection<String>) -> Unit,
+    private val rawContentItemValueFn: (Any, AppleMusicRuntimeMember) -> Any?,
+    private val effectiveAliasFn: (String) -> Alias?,
+    private val shouldRequestOverrideFn: (String) -> Boolean,
+    private val ensureOverrideFn: (String, RequestPriority) -> Unit,
+    private val localizedTextFn: (VisibleTextField, Alias) -> String,
+    private val logMetadataIdentityFn: (String, ActivePlaybackMediaIdentity?, String) -> Unit,
+    private val contentItemArtistCacheKeysFn: (Any, String?) -> Set<String>,
+    private val mergePlaybackAssociatedArtistIdsFn: (
+        mediaId: String,
+        artistIds: Collection<String>,
+    ) -> Unit,
+    private val contentItemCatalogLookupIdsFn: (
+        contentItem: Any,
+        mediaId: String,
+    ) -> Set<String>,
+    private val overrideStore: AppleMetadataOverrideStore,
+    private val registry: AppleInAppMetadataRegistry,
+) : AppleActionSheetMetadataHost {
+    override fun activePlaybackIdentity(): ActivePlaybackMediaIdentity =
+        activePlaybackIdentityFn()
+
+    override fun markMetadataVisible(mediaIds: Collection<String>) {
+        markMetadataVisibleFn(mediaIds)
+    }
+
+    override fun rawContentItemValue(
+        contentItem: Any,
+        runtimeMember: AppleMusicRuntimeMember,
+    ): Any? = rawContentItemValueFn(contentItem, runtimeMember)
+
+    override fun recordArtistAssociation(
+        mediaId: String,
+        item: Any,
+        rawTitle: String?,
+    ) {
+        val artistKeys = contentItemArtistCacheKeysFn(item, rawTitle)
+        if (artistKeys.isNotEmpty()) {
+            overrideStore.mergeArtistKeys(mediaId, artistKeys)
+        }
+        mergePlaybackAssociatedArtistIdsFn(
+            mediaId,
+            artistIdsFromAssociationKeys(artistKeys) +
+                contentItemCatalogLookupIdsFn(item, "")
+                    .filterNot { it == mediaId },
+        )
+    }
+
+    override fun effectiveAlias(mediaId: String): Alias? =
+        effectiveAliasFn(mediaId)
+
+    override fun knownValues(
+        mediaId: String,
+        field: VisibleTextField,
+    ): Set<String> {
+        val alias = effectiveAliasFn(mediaId)
+        val account = overrideStore.accountMetadata(mediaId)
+        return buildSet {
+            when (field) {
+                VisibleTextField.ARTIST -> {
+                    account?.artist?.let(::add)
+                    alias?.artist?.let(::add)
+                    registry.livePlaybackItemRefs(mediaId).forEach { ref ->
+                        ref.originalArtist?.toString()?.let(::add)
+                    }
+                }
+                VisibleTextField.ALBUM -> {
+                    alias?.album?.let(::add)
+                    registry.livePlaybackItemRefs(mediaId).forEach { ref ->
+                        ref.originalCollectionName?.let(::add)
+                    }
+                }
+                VisibleTextField.TITLE -> Unit
+            }
+        }
+    }
+
+    override fun shouldRequestOverride(mediaId: String): Boolean =
+        shouldRequestOverrideFn(mediaId)
+
+    override fun ensureOverride(
+        mediaId: String,
+        priority: RequestPriority,
+    ) {
+        ensureOverrideFn(mediaId, priority)
+    }
+
+    override fun localizedText(
+        field: VisibleTextField,
+        alias: Alias,
+    ): String = localizedTextFn(field, alias)
+
+    override fun logMetadataIdentity(
+        event: String,
+        identity: ActivePlaybackMediaIdentity?,
+        details: String,
+    ) {
+        logMetadataIdentityFn(event, identity, details)
+    }
+}

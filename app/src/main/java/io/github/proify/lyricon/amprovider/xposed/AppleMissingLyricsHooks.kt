@@ -42,7 +42,7 @@ internal class AppleMissingLyricsHooks(
     private val currentVisibleLyricsSongId: () -> String?,
     internal val requestPresentationRefresh: (Any?, Any?, Any?) -> Unit,
     private val requestBlankNativeLyricsPageRecovery: (Any?) -> Unit,
-    internal val refreshVisibleSupplementTranslation: (String) -> Unit,
+    internal val refreshVisibleSupplementTranslation: (AppleMissingLyricsPresentationUpdate) -> Unit,
     internal val refreshNowPlaying: (String?) -> Unit,
 ) {
     internal companion object {
@@ -76,45 +76,22 @@ internal class AppleMissingLyricsHooks(
         runtime.hookResolver.resolveClass(AppleMusicHookPoint.APPLE_SONG_MODEL_CLASS).target
     }
 
-    internal val nativeLyricsAdamIds = java.util.Collections.newSetFromMap(
-        ConcurrentHashMap<String, Boolean>()
-    )
-    internal val nativeLyricsContentIds = java.util.Collections.newSetFromMap(
-        ConcurrentHashMap<String, Boolean>()
-    )
-    /** 记录本进程中已用三方候选把歌词按钮置为可用的歌曲。 */
-    internal val supplementAvailabilitySongIds = java.util.Collections.newSetFromMap(
-        ConcurrentHashMap<String, Boolean>()
-    )
+    internal val nativeLyricsKnowledge = AppleNativeLyricsKnowledge(MAX_REMEMBERED_NATIVE_LYRICS_SONG_IDS)
+    internal val candidates = AppleMissingLyricsCandidateState()
     private val loggedTtmlSampleKeys = java.util.Collections.newSetFromMap(
         ConcurrentHashMap<String, Boolean>()
     )
-    /** 冷启动时避免可用性回调反复重试同一首歌曲的磁盘恢复。 */
-    internal val attemptedDiskRestoreSongIds = java.util.Collections.newSetFromMap(
-        ConcurrentHashMap<String, Boolean>()
-    )
-    /**
-     * 记录上次尝试恢复时 Store 正在服务的歌曲。切歌后 Store 内容变化，
-     * 回到之前播放过的歌曲时必须允许重新尝试磁盘恢复。
-     */
-    @Volatile
-    internal var restoreAttemptContentSongId: String? = null
     private val resultPresentationHitLogged = AtomicBoolean(false)
+    private val nativeBuildRewriteHitLogged = AtomicBoolean(false)
+    private val lyricsPageResumeHitLogged = AtomicBoolean(false)
+    private val availabilityHookHitLogged = AtomicBoolean(false)
     internal val nativeBuildLock = Any()
     internal val nativeBuildScope = AppleMissingLyricsNativeBuildScope()
     internal val nativeTakeoverGate = AppleNativeLyricsTakeoverGate()
     private val nativeAvailabilityTracker = AppleNativeLyricsAvailabilityTracker()
-    internal val acceptedSupplementSongIds = java.util.Collections.newSetFromMap(
-        ConcurrentHashMap<String, Boolean>()
-    )
     internal val scheduledTakeoverRechecks = ConcurrentHashMap<String, Long>()
-    internal val manualLyricsSourceSelections = ConcurrentHashMap<String, String>()
-    internal val appleNativeLyricsPointers = ConcurrentHashMap<String, Any>()
-    internal val appleNativeLyricsTimingStats =
-        ConcurrentHashMap<String, AppleNativeLyricsTimingStats>()
-
-    @Volatile
-    internal var manualSelectionPlaybackSongId: String? = null
+    internal val lyricsSourceSelection = AppleLyricsSourceSelection()
+    internal val nativeAlternatives = AppleLyricsNativeAlternatives(MAX_REMEMBERED_NATIVE_LYRICS_SONG_IDS)
 
     @Volatile
     internal var pendingNativeBuildKey: NativeBuildKey? = null
@@ -187,6 +164,15 @@ internal class AppleMissingLyricsHooks(
                 AppleMusicHookPoint.LYRICS_VIEW_MODEL_BUILD
             ).method
             runtime.hookRegistrar.installArgumentRewriteHook(buildMethod) { chain ->
+                if (
+                    BuildConfig.DEBUG &&
+                    nativeBuildRewriteHitLogged.compareAndSet(false, true)
+                ) {
+                    ProviderLogger.diagnostic(
+                        "Apple Music 无歌词补充时间轴地图改写 Hook 首次命中: " +
+                            "viewModel=${chain.thisObject?.javaClass?.name}"
+                    )
+                }
                 rewriteNativeModelArgs(chain)
             }
             ProviderLogger.debug("Apple Music 无歌词补充时间轴地图改写 Hook 已安装")
@@ -199,6 +185,15 @@ internal class AppleMissingLyricsHooks(
                 AppleMusicHookPoint.LYRICS_UI_ON_RESUME
             ).method
             runtime.hookRegistrar.installHook(onResume, after = { chain, _ ->
+                if (
+                    BuildConfig.DEBUG &&
+                    lyricsPageResumeHitLogged.compareAndSet(false, true)
+                ) {
+                    ProviderLogger.diagnostic(
+                        "Apple Music 无歌词补充页面恢复 Hook 首次命中: " +
+                            "fragment=${chain.thisObject?.javaClass?.name}"
+                    )
+                }
                 val fragment = chain.thisObject
                 mainHandler.postDelayed(
                     {
@@ -221,6 +216,15 @@ internal class AppleMissingLyricsHooks(
             runCatching {
                 val method = runtime.hookResolver.resolveMethod(hookPoint).method
                 runtime.hookRegistrar.installResultOverrideHook(method) { chain, original ->
+                    if (
+                        BuildConfig.DEBUG &&
+                        availabilityHookHitLogged.compareAndSet(false, true)
+                    ) {
+                        ProviderLogger.diagnostic(
+                            "Apple Music 无歌词补充歌词可用性 Hook 首次命中: " +
+                                "item=${chain.thisObject?.javaClass?.name}"
+                        )
+                    }
                     recordNativeAvailability(
                         item = chain.thisObject,
                         hookPoint = hookPoint,
@@ -328,7 +332,7 @@ internal class AppleMissingLyricsHooks(
         }
         // 补充模型为了同步当前 PlaybackItem 也会再次调用 Apple ViewModel.loadLyrics；
         // 已经完成接管后的这类自触发调用不能重新把补充链锁回 loading。
-        if (contentSongId in acceptedSupplementSongIds || resolvedSongId in acceptedSupplementSongIds) {
+        if (candidates.isAccepted(contentSongId) || candidates.isAccepted(resolvedSongId)) {
             if (BuildConfig.DEBUG) {
                 ProviderLogger.debug(
                     "Apple Music 原生歌词请求忽略: id=$contentSongId, " +
@@ -425,7 +429,7 @@ internal class AppleMissingLyricsHooks(
             return false
         }
         if (!store.hasContent(songId)) return false
-        val newlyAccepted = acceptedSupplementSongIds.add(songId)
+        val newlyAccepted = candidates.accept(songId)
         AppleSourceSwitchPerformanceDiagnostics.record(
             songId = songId,
             event = "activation_allowed",

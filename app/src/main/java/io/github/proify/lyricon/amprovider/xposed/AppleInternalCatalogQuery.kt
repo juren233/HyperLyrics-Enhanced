@@ -25,21 +25,12 @@ internal fun AppleInternalCatalogResolver.resolveCatalogIdentity(
     languages: List<String>,
     onResult: (CatalogIdentity) -> Unit
 ) {
-    catalogIdentityCache[mediaId]?.takeIf { isUsefulCatalogIdentity(it) }?.let {
+    caches.catalogIdentityCache[mediaId]?.takeIf { isUsefulCatalogIdentity(it) }?.let {
         onResult(it)
         return
     }
-    catalogIdentityCache.remove(mediaId)
-    val ownsRequest = synchronized(catalogIdentityInFlight) {
-        val callbacks = catalogIdentityInFlight[mediaId]
-        if (callbacks != null) {
-            callbacks += onResult
-            false
-        } else {
-            catalogIdentityInFlight[mediaId] = mutableListOf(onResult)
-            true
-        }
-    }
+    caches.catalogIdentityCache.remove(mediaId)
+    val ownsRequest = dispatch.attachCatalogIdentityCallback(mediaId, onResult)
     if (!ownsRequest) return
 
     queryById(mediaId, null) { currentSong ->
@@ -117,7 +108,7 @@ internal fun AppleInternalCatalogResolver.rememberCatalogIdentity(mediaId: Strin
 }
 
 internal fun AppleInternalCatalogResolver.finishCatalogIdentity(mediaId: String, identity: CatalogIdentity) {
-    val previous = catalogIdentityCache[mediaId]
+    val previous = caches.catalogIdentityCache[mediaId]
     val merged = if (previous == null) identity else {
         CatalogIdentity(
             isrc = previous.isrc ?: identity.isrc,
@@ -128,14 +119,12 @@ internal fun AppleInternalCatalogResolver.finishCatalogIdentity(mediaId: String,
     }
     val cacheable = isUsefulCatalogIdentity(merged)
     if (cacheable) {
-        catalogIdentityCache[mediaId] = merged
+        caches.catalogIdentityCache[mediaId] = merged
     } else {
-        catalogIdentityCache.remove(mediaId)
+        caches.catalogIdentityCache.remove(mediaId)
     }
     MediaMetadataCache.updateCatalogGenres(mediaId, merged.genres)
-    val callbacks = synchronized(catalogIdentityInFlight) {
-        catalogIdentityInFlight.remove(mediaId).orEmpty()
-    }
+    val callbacks = dispatch.drainCatalogIdentityCallbacks(mediaId)
     if (callbacks.isNotEmpty()) {
         ProviderLogger.info(
             "Apple 内部歌曲身份已就绪: id=$mediaId, isrc=${merged.isrc}, " +

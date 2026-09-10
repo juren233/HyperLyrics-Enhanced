@@ -231,34 +231,24 @@ internal object AppleMusicProviderOrchestrator {
                 hookResolver = runtime.hookResolver,
                 catalogResolver = internalCatalogResolver,
                 metadataStore = metadataOverrideStore,
-                host = object : ApplePlaybackMetadataCoordinatorHost {
-                    override fun activePlayer(): Any? =
+                host = DefaultApplePlaybackMetadataCoordinatorHost(
+                    activePlayerFn = {
                         if (::playbackHooks.isInitialized) playbackHooks.activePlayer() else null
-
-                    override fun configuredContentUiLanguage(): Int =
-                        this@AppleMusicProviderOrchestrator.configuredContentUiLanguage()
-
-                    override fun shouldOverrideAccountLanguage(selection: Int): Boolean =
-                        this@AppleMusicProviderOrchestrator.shouldOverrideAccountLanguage(selection)
-
-                    override fun shouldRestoreCjkOriginalMetadata(
-                        metadata: MediaMetadataCache.Metadata,
-                    ): Boolean = this@AppleMusicProviderOrchestrator
-                        .shouldRestoreCjkOriginalMetadata(metadata)
-
-                    override fun ensureContentItemMetadataHooks(contentItemClass: Class<*>) {
+                    },
+                    configuredContentUiLanguageFn = { configuredContentUiLanguage() },
+                    shouldOverrideAccountLanguageFn = { selection ->
+                        shouldOverrideAccountLanguage(selection)
+                    },
+                    shouldRestoreCjkOriginalMetadataFn = { metadata ->
+                        shouldRestoreCjkOriginalMetadata(metadata)
+                    },
+                    ensureContentItemMetadataHooksFn = { contentItemClass ->
                         contentItemMetadataHooks.ensureHooks(contentItemClass)
-                    }
-
-                    override fun setMetadataPlaybackMediaId(mediaId: String) {
-                        this@AppleMusicProviderOrchestrator.setMetadataPlaybackMediaId(mediaId)
-                    }
-
-                    override fun onCurrentPlaybackItem(
-                        mediaId: String,
-                        playbackItem: Any,
-                        queueId: Long,
-                    ) {
+                    },
+                    setMetadataPlaybackMediaIdFn = { mediaId ->
+                        setMetadataPlaybackMediaId(mediaId)
+                    },
+                    onCurrentPlaybackItemFn = { mediaId, playbackItem, queueId ->
                         if (::missingLyricsHooks.isInitialized) {
                             missingLyricsHooks.onCurrentPlaybackItem(
                                 contentSongId = mediaId,
@@ -266,70 +256,43 @@ internal object AppleMusicProviderOrchestrator {
                                 queueId = queueId,
                             )
                         }
-                    }
-
-                    override fun effectiveMetadataAlias(
-                        mediaId: String,
-                    ): Alias? =
+                    },
+                    effectiveMetadataAliasFn = { mediaId ->
                         metadataResolutionCoordinator.effectiveAlias(mediaId)
-
-                    override fun applyPlaybackMetadataOverride(
-                        mediaId: String,
-                        alias: Alias,
-                        rememberLocalizedArtist: Boolean,
-                        originalMetadata: Boolean,
-                        originalMetadataConfirmed: Boolean,
-                    ) {
-                        this@AppleMusicProviderOrchestrator.applyPlaybackMetadataOverride(
+                    },
+                    applyPlaybackMetadataOverrideFn = {
+                        mediaId, alias, rememberLocalizedArtist, originalMetadata,
+                        originalMetadataConfirmed,
+                        ->
+                        applyPlaybackMetadataOverride(
                             mediaId = mediaId,
                             alias = alias,
                             rememberLocalizedArtist = rememberLocalizedArtist,
                             originalMetadata = originalMetadata,
                             originalMetadataConfirmed = originalMetadataConfirmed,
                         )
-                    }
-
-                    override fun logMetadataIdentity(event: String, details: String) {
+                    },
+                    logMetadataIdentityFn = { event, details ->
                         this@AppleMusicProviderOrchestrator.logMetadataIdentity(
                             event = event,
                             details = details,
                         )
-                    }
-
-                    override fun validatedOriginalSongAlias(
-                        alias: Alias?,
-                        localizedTitle: String?,
-                        localizedArtist: String?,
-                    ): Alias? =
-                        io.github.proify.lyricon.amprovider.xposed.validatedOriginalSongAlias(
-                            alias = alias,
-                            localizedTitle = localizedTitle,
-                            localizedArtist = localizedArtist,
-                        )
-
-                    override fun shouldShareOriginalSongLanguage(
-                        localizedTitle: String?,
-                        localizedArtist: String?,
-                        alias: Alias?,
-                    ): Boolean = metadataResolutionCoordinator.shouldShareOriginalSongLanguage(
+                    },
+                    shouldShareOriginalSongLanguageFn = { localizedTitle, localizedArtist, alias ->
+                        metadataResolutionCoordinator.shouldShareOriginalSongLanguage(
                             localizedTitle = localizedTitle,
                             localizedArtist = localizedArtist,
                             alias = alias,
                         )
-
-                    override fun rememberOriginalLanguageForArtist(
-                        mediaId: String,
-                        language: String,
-                    ) {
+                    },
+                    rememberOriginalLanguageForArtistFn = { mediaId, language ->
                         metadataResolutionCoordinator.rememberOriginalLanguageForArtist(
                             mediaId,
                             language,
                         )
-                    }
-
-                    override fun isRestoreOriginalMetadataEnabled(): Boolean =
-                        isRestoreCjkOriginalMetadataEnabled()
-                },
+                    },
+                    isRestoreOriginalMetadataEnabledFn = { isRestoreCjkOriginalMetadataEnabled() },
+                ),
             )
             contentLocalizationHooks = AppleContentLocalizationHooks(
                 runtime = runtime,
@@ -386,8 +349,8 @@ internal object AppleMusicProviderOrchestrator {
                 requestBlankNativeLyricsPageRecovery = { fragment ->
                     lyricsHooks.scheduleBlankNativeLyricsPageRecovery(fragment)
                 },
-                refreshVisibleSupplementTranslation = { songId ->
-                    lyricsHooks.refreshVisibleMissingLyricsTranslation(songId)
+                refreshVisibleSupplementTranslation = { update ->
+                    lyricsHooks.refreshVisibleMissingLyricsTranslation(update)
                 },
                 refreshNowPlaying = { mediaId ->
                     val refreshStartedAtNanos = SystemClock.elapsedRealtimeNanos()
@@ -531,38 +494,24 @@ internal object AppleMusicProviderOrchestrator {
             queueMetadataHooks = AppleQueueMetadataHooks(
                 runtime = runtime,
                 metadataStore = metadataOverrideStore,
-                host = object : AppleQueueMetadataHost {
-                    override fun activePlaybackIdentity(): ActivePlaybackMediaIdentity =
+                host = DefaultAppleQueueMetadataHost(
+                    activePlaybackIdentityFn = {
                         this@AppleMusicProviderOrchestrator.activePlaybackMediaIdentity()
-
-                    override fun logMetadataIdentity(
-                        event: String,
-                        identity: ActivePlaybackMediaIdentity,
-                        details: String,
-                    ) {
+                    },
+                    logMetadataIdentityFn = { event, identity, details ->
                         this@AppleMusicProviderOrchestrator.logMetadataIdentity(event, identity, details)
-                    }
-
-                    override fun media3MetadataId(
-                        metadata: Any,
-                        fallback: String?,
-                        trustedFallback: Boolean,
-                    ): String? = this@AppleMusicProviderOrchestrator.media3MetadataId(
-                        metadata = metadata,
-                        fallback = fallback,
-                        trustedFallback = trustedFallback,
-                    )
-
-                    override fun media3MetadataDetails(metadata: Any): String =
+                    },
+                    media3MetadataIdFn = { metadata, fallback, trustedFallback ->
+                        this@AppleMusicProviderOrchestrator.media3MetadataId(
+                            metadata = metadata,
+                            fallback = fallback,
+                            trustedFallback = trustedFallback,
+                        )
+                    },
+                    media3MetadataDetailsFn = { metadata ->
                         this@AppleMusicProviderOrchestrator.media3MetadataDetails(metadata)
-
-                    override fun registerMetadata(
-                        mediaId: String,
-                        metadata: Any,
-                        requestResolution: Boolean,
-                        preBind: Boolean,
-                        priority: RequestPriority,
-                    ) {
+                    },
+                    registerMetadataFn = { mediaId, metadata, requestResolution, preBind, priority ->
                         registerInAppMetadata(
                             mediaId = mediaId,
                             metadata = metadata,
@@ -570,119 +519,72 @@ internal object AppleMusicProviderOrchestrator {
                             preBind = preBind,
                             priority = priority,
                         )
-                    }
-
-                    override fun markPlaybackItemHistory(playbackItem: Any) {
-                        inAppMetadataRegistry.markPlaybackItemContract(
-                            playbackItem,
-                            InAppPlaybackItemContract.HISTORY,
-                        )
-                    }
-
-                    override fun registerPlaybackItem(
-                        mediaId: String,
-                        playbackItem: Any,
-                        notifyChange: Boolean,
-                        analyzeMetadata: Boolean,
-                    ) {
+                    },
+                    registerPlaybackItemFn = { mediaId, playbackItem, notifyChange, analyzeMetadata ->
                         registerInAppPlaybackItem(
                             mediaId = mediaId,
                             playbackItem = playbackItem,
                             notifyChange = notifyChange,
                             analyzeMetadata = analyzeMetadata,
                         )
-                    }
-
-                    override fun contentItemMediaId(
-                        contentItem: Any,
-                        refresh: Boolean,
-                    ): String? = contentItemMetadataHooks.mediaId(contentItem, refresh)
-
-                    override fun effectiveAlias(
-                        mediaId: String,
-                    ): Alias? =
+                    },
+                    contentItemMediaIdFn = { contentItem, refresh ->
+                        contentItemMetadataHooks.mediaId(contentItem, refresh)
+                    },
+                    effectiveAliasFn = { mediaId ->
                         metadataResolutionCoordinator.effectiveAlias(mediaId)
-
-                    override fun applyAliasToPlaybackItem(
-                        playbackItem: Any,
-                        alias: Alias,
-                        notifyChange: Boolean,
-                    ) {
+                    },
+                    applyAliasToPlaybackItemFn = { playbackItem, alias, notifyChange ->
                         applyAliasToInAppPlaybackItem(playbackItem, alias, notifyChange)
-                    }
-
-                    override fun shouldRequestOverride(mediaId: String): Boolean =
+                    },
+                    shouldRequestOverrideFn = { mediaId ->
                         shouldRequestInAppMetadataOverride(mediaId)
-
-                    override fun ensureOverride(
-                        mediaId: String,
-                        preBind: Boolean,
-                        priority: RequestPriority,
-                    ) {
+                    },
+                    ensureOverrideFn = { mediaId, preBind, priority ->
                         metadataResolutionCoordinator.ensureOverride(
                             mediaId = mediaId,
                             preBind = preBind,
                             priority = priority,
                         )
-                    }
-
-                    override fun ensureOverrides(
-                        mediaIds: Collection<String>,
-                        preBind: Boolean,
-                        originalResolutionLimit: Int,
-                    ) {
+                    },
+                    ensureOverridesFn = { mediaIds, preBind, originalResolutionLimit ->
                         metadataResolutionCoordinator.ensureOverrides(
                             mediaIds = mediaIds,
                             preBind = preBind,
                             originalResolutionLimit = originalResolutionLimit,
                         )
-                    }
-
-                    override fun readPlaybackItemValue(
-                        playbackItem: Any,
-                        field: InAppPlaybackItemField,
-                        contract: InAppPlaybackItemContract,
-                    ): String? = this@AppleMusicProviderOrchestrator.readInAppPlaybackItemValue(
-                        playbackItem = playbackItem,
-                        field = field,
-                        contract = contract,
-                    )
-
-                    override fun markMetadataVisible(mediaIds: Collection<String>) {
+                    },
+                    readPlaybackItemValueFn = { playbackItem, field, contract ->
+                        this@AppleMusicProviderOrchestrator.readInAppPlaybackItemValue(
+                            playbackItem = playbackItem,
+                            field = field,
+                            contract = contract,
+                        )
+                    },
+                    markMetadataVisibleFn = { mediaIds ->
                         this@AppleMusicProviderOrchestrator.markMetadataVisible(mediaIds)
-                    }
-
-                    override fun isCurrentMetadataSurfaceMediaId(mediaId: String): Boolean =
+                    },
+                    isCurrentMetadataSurfaceMediaIdFn = { mediaId ->
                         this@AppleMusicProviderOrchestrator.isCurrentMetadataSurfaceMediaId(mediaId)
-
-                    override fun hasLivePlaybackItem(mediaId: String): Boolean =
-                        inAppMetadataRegistry.hasLivePlaybackItem(mediaId)
-                },
+                    },
+                    registry = inAppMetadataRegistry,
+                ),
             )
             listenNowHooks = AppleListenNowHooks(
                 runtime = runtime,
                 metadataStore = metadataOverrideStore,
                 catalogResolver = internalCatalogResolver,
-                host = object : AppleListenNowHost {
-                    override fun mediaApiEntityAttributes(entity: Any): Any? =
+                host = DefaultAppleListenNowHost(
+                    mediaApiEntityAttributesFn = { entity ->
                         mediaApiMetadataCoordinator.entityAttributes(entity)
-
-                    override fun mediaApiEntityCatalogId(
-                        entity: Any,
-                        knownAttributes: Any?,
-                    ): String? = mediaApiMetadataCoordinator.entityCatalogId(
-                        entity,
-                        knownAttributes,
-                    )
-
-                    override fun registerLibraryEntity(
-                        mediaId: String,
-                        entity: Any,
-                        kind: InAppLibraryEntityKind,
-                        knownAttributes: Any?,
-                        requestResolution: Boolean,
-                        retainEntityRef: Boolean,
-                    ) {
+                    },
+                    mediaApiEntityCatalogIdFn = { entity, knownAttributes ->
+                        mediaApiMetadataCoordinator.entityCatalogId(
+                            entity,
+                            knownAttributes,
+                        )
+                    },
+                    registerLibraryEntityFn = { mediaId, entity, kind, knownAttributes, requestResolution, retainEntityRef ->
                         librarySurfaceHooks.registerEntity(
                             mediaId = mediaId,
                             entity = entity,
@@ -691,225 +593,151 @@ internal object AppleMusicProviderOrchestrator {
                             requestResolution = requestResolution,
                             retainEntityRef = retainEntityRef,
                         )
-                    }
-
-                    override fun enrichLibraryEntity(
-                        mediaId: String,
-                        entity: Any,
-                        kind: InAppLibraryEntityKind,
-                        attributes: Any,
-                    ) {
+                    },
+                    enrichLibraryEntityFn = { mediaId, entity, kind, attributes ->
                         librarySurfaceHooks.enrichEntity(mediaId, entity, kind, attributes)
-                    }
-
-                    override fun isRestoreOriginalMetadataEnabled(): Boolean =
-                        isRestoreCjkOriginalMetadataEnabled()
-
-                    override fun shouldRetryOriginalMetadataCacheProbe(
-                        mediaId: String,
-                    ): Boolean = this@AppleMusicProviderOrchestrator
-                        .shouldRetryOriginalMetadataCacheProbe(mediaId)
-
-                    override fun rememberOriginalMetadataOverride(
-                        mediaId: String,
-                        alias: Alias,
-                        confirmed: Boolean,
-                    ) {
+                    },
+                    isRestoreOriginalMetadataEnabledFn = { isRestoreCjkOriginalMetadataEnabled() },
+                    shouldRetryOriginalMetadataCacheProbeFn = { mediaId ->
+                        this@AppleMusicProviderOrchestrator
+                            .shouldRetryOriginalMetadataCacheProbe(mediaId)
+                    },
+                    rememberOriginalMetadataOverrideFn = { mediaId, alias, confirmed ->
                         metadataOverrideApplicationCoordinator.rememberOriginalMetadataOverride(
                             mediaId = mediaId,
                             alias = alias,
                             confirmed = confirmed,
                         )
-                    }
-
-                    override fun rememberOriginalLanguageForArtist(
-                        mediaId: String,
-                        language: String,
-                    ) {
+                    },
+                    rememberOriginalLanguageForArtistFn = { mediaId, language ->
                         metadataResolutionCoordinator.rememberOriginalLanguageForArtist(
                             mediaId,
                             language,
                         )
-                    }
-
-                    override fun resolveCachedOriginalEntityForInApp(
-                        mediaId: String,
-                        entityType: LocalizedEntityType,
-                        preBind: Boolean,
-                        priority: RequestPriority,
-                    ) {
+                    },
+                    resolveCachedOriginalEntityForInAppFn = { mediaId, entityType, preBind, priority ->
                         metadataResolutionCoordinator.resolveCachedOriginalEntity(
                             mediaId = mediaId,
                             entityType = entityType,
                             preBind = preBind,
                             priority = priority,
                         )
-                    }
-
-                    override fun effectiveAlias(
-                        mediaId: String,
-                    ): Alias? =
+                    },
+                    effectiveAliasFn = { mediaId ->
                         metadataResolutionCoordinator.effectiveAlias(mediaId)
-
-                    override fun applyAliasToLibraryEntity(
-                        entity: Any,
-                        kind: InAppLibraryEntityKind,
-                        alias: Alias,
-                    ): Boolean = librarySurfaceHooks.applyAliasToEntity(
-                        entity = entity,
-                        kind = kind,
-                        alias = alias,
-                    )
-
-                    override fun shouldRequestOverride(mediaId: String): Boolean =
+                    },
+                    applyAliasToLibraryEntityFn = { entity, kind, alias ->
+                        librarySurfaceHooks.applyAliasToEntity(
+                            entity = entity,
+                            kind = kind,
+                            alias = alias,
+                        )
+                    },
+                    shouldRequestOverrideFn = { mediaId ->
                         shouldRequestInAppMetadataOverride(mediaId)
-
-                    override fun markMetadataVisible(mediaIds: Collection<String>) {
+                    },
+                    markMetadataVisibleFn = { mediaIds ->
                         this@AppleMusicProviderOrchestrator.markMetadataVisible(mediaIds)
-                    }
-
-                    override fun scheduleMetadataResolution(
-                        mediaIds: Collection<String>,
-                        priority: RequestPriority,
-                        originalResolutionMode: InAppOriginalResolutionMode,
-                    ) {
+                    },
+                    scheduleMetadataResolutionFn = { mediaIds, priority, originalResolutionMode ->
                         metadataResolutionCoordinator.schedule(
                             mediaIds = mediaIds,
                             priority = priority,
                             originalResolutionMode = originalResolutionMode,
                         )
-                    }
-
-                    override fun nextMetadataTraceSequence(): Long =
-                        metadataTraceSequence.incrementAndGet()
-
-                    override fun logMetadataIdentity(event: String, details: String) {
+                    },
+                    logMetadataIdentityFn = { event, details ->
                         this@AppleMusicProviderOrchestrator.logMetadataIdentity(
                             event = event,
                             details = details,
                         )
-                    }
-
-                    override fun isDataBindingInstance(candidate: Any): Boolean =
+                    },
+                    isDataBindingInstanceFn = { candidate ->
                         dataBindingHooks.isBindingInstance(candidate)
-
-                    override fun dataBindingFromHolder(argument: Any?): Any? =
+                    },
+                    dataBindingFromHolderFn = { argument ->
                         dataBindingHooks.bindingFromHolder(argument)
-
-                    override fun beginDataBindingModelBind(binding: Any) {
+                    },
+                    beginDataBindingModelBindFn = { binding ->
                         dataBindingHooks.beginModelBind(binding)
-                    }
-
-                    override fun clearDataBindingMediaId(binding: Any) {
+                    },
+                    clearDataBindingMediaIdFn = { binding ->
                         dataBindingHooks.clearMediaId(binding)
-                    }
-
-                    override fun dataBindingGeneration(binding: Any): Long =
+                    },
+                    dataBindingGenerationFn = { binding ->
                         dataBindingHooks.generation(binding)
-
-                    override fun captureDataBinding(binding: Any) {
+                    },
+                    captureDataBindingFn = { binding ->
                         dataBindingHooks.capture(binding)
-                    }
-
-                    override fun registerDataBinding(mediaId: String, binding: Any) {
+                    },
+                    registerDataBindingFn = { mediaId, binding ->
                         dataBindingHooks.register(mediaId, binding)
-                    }
-
-                    override fun aliasValues(
-                        mediaId: String,
-                        alias: Alias,
-                        binding: Any?,
-                    ): DataBindingAliasValues = dataBindingAliasValues(
-                        mediaId = mediaId,
-                        alias = alias,
-                        binding = binding,
-                    )
-
-                    override fun renderedTexts(binding: Any): List<String> =
+                    },
+                    aliasValuesFn = { mediaId, alias, binding ->
+                        dataBindingAliasValues(
+                            mediaId = mediaId,
+                            alias = alias,
+                            binding = binding,
+                        )
+                    },
+                    renderedTextsFn = { binding ->
                         dataBindingHooks.renderedTexts(binding)
-
-                    override fun appliedAlias(binding: Any): AppliedMetadataAlias? =
+                    },
+                    appliedAliasFn = { binding ->
                         dataBindingHooks.appliedAlias(binding)
-
-                    override fun rememberAppliedAlias(
-                        binding: Any,
-                        alias: AppliedMetadataAlias,
-                    ) {
+                    },
+                    rememberAppliedAliasFn = { binding, alias ->
                         dataBindingHooks.rememberAppliedAlias(binding, alias)
-                    }
-
-                    override fun applyAliasVariables(
-                        binding: Any,
-                        values: DataBindingAliasValues,
-                    ): DataBindingVariableApplyResult =
+                    },
+                    applyAliasVariablesFn = { binding, values ->
                         dataBindingHooks.applyAliasVariables(binding, values)
-
-                    override fun invalidateDataBinding(binding: Any) {
+                    },
+                    invalidateDataBindingFn = { binding ->
                         dataBindingHooks.invalidate(binding)
-                    }
-
-                    override fun executePendingDataBindings(binding: Any) {
+                    },
+                    executePendingDataBindingsFn = { binding ->
                         dataBindingHooks.executePending(binding)
-                    }
-                },
+                    },
+                    traceSequence = metadataTraceSequence,
+                ),
             )
             librarySurfaceHooks = AppleLibrarySurfaceHooks(
                 runtime = runtime,
                 metadataStore = metadataOverrideStore,
-                host = object : AppleLibrarySurfaceHost {
-                    override fun contentItemMediaId(source: Any): String? =
+                host = DefaultAppleLibrarySurfaceHost(
+                    contentItemMediaIdFn = { source ->
                         contentItemMetadataHooks.mediaId(source)
-
-                    override fun primeLibrarySource(source: Any?) {
+                    },
+                    primeLibrarySourceFn = { source ->
                         mediaApiMetadataCoordinator.primeLibrarySource(source)
-                    }
-
-                    override fun mediaApiEntityAttributes(entity: Any): Any? =
+                    },
+                    mediaApiEntityAttributesFn = { entity ->
                         mediaApiMetadataCoordinator.entityAttributes(entity)
-
-                    override fun mediaApiEntityCatalogId(
-                        entity: Any,
-                        knownAttributes: Any?,
-                    ): String? = mediaApiMetadataCoordinator.entityCatalogId(
-                        entity,
-                        knownAttributes,
-                    )
-
-                    override fun mediaApiEntityLookupIds(
-                        entity: Any,
-                        knownAttributes: Any?,
-                    ): Set<String> = mediaApiMetadataCoordinator.entityLookupIds(
-                        entity,
-                        knownAttributes,
-                    )
-
-                    override fun mergePlaybackAccountMetadata(
-                        mediaId: String,
-                        title: String?,
-                        artist: String?,
-                    ) {
+                    },
+                    mediaApiEntityCatalogIdFn = { entity, knownAttributes ->
+                        mediaApiMetadataCoordinator.entityCatalogId(
+                            entity,
+                            knownAttributes,
+                        )
+                    },
+                    mediaApiEntityLookupIdsFn = { entity, knownAttributes ->
+                        mediaApiMetadataCoordinator.entityLookupIds(
+                            entity,
+                            knownAttributes,
+                        )
+                    },
+                    mergePlaybackAccountMetadataFn = { mediaId, title, artist ->
                         this@AppleMusicProviderOrchestrator.mergePlaybackAccountMetadata(
                             mediaId = mediaId,
                             title = title,
                             artist = artist,
                             reconcileArtistAssociations = false,
                         )
-                    }
-
-                    override fun requestPriorityForMediaId(
-                        mediaId: String,
-                    ): RequestPriority =
+                    },
+                    requestPriorityForMediaIdFn = { mediaId ->
                         this@AppleMusicProviderOrchestrator.requestPriorityForMediaId(mediaId)
-
-                    override fun enrichEntityAssociations(
-                        mediaId: String,
-                        entity: Any,
-                        kind: InAppLibraryEntityKind,
-                        attributes: Any,
-                        originalName: String?,
-                        originalArtist: String?,
-                        originalAlbum: String?,
-                    ) {
+                    },
+                    enrichEntityAssociationsFn = { mediaId, entity, kind, attributes, originalName, originalArtist, originalAlbum ->
                         mediaApiMetadataCoordinator.enrichLibraryEntityAssociations(
                             mediaId = mediaId,
                             entity = entity,
@@ -919,230 +747,167 @@ internal object AppleMusicProviderOrchestrator {
                             originalArtist = originalArtist,
                             originalAlbum = originalAlbum,
                         )
-                    }
-
-                    override fun recordCurrentRecyclerMediaId(mediaId: String) {
+                    },
+                    recordCurrentRecyclerMediaIdFn = { mediaId ->
                         this@AppleMusicProviderOrchestrator.recordCurrentRecyclerMediaId(mediaId)
-                    }
-
-                    override fun effectiveAlias(
-                        mediaId: String,
-                    ): Alias? =
+                    },
+                    effectiveAliasFn = { mediaId ->
                         metadataResolutionCoordinator.effectiveAlias(mediaId)
-
-                    override fun normalizeMediaIds(mediaIds: Collection<String>): List<String> =
+                    },
+                    normalizeMediaIdsFn = { mediaIds ->
                         normalizedRecyclerBindingMediaIds(mediaIds).toList()
-
-                    override fun markMetadataVisible(mediaIds: Collection<String>) {
+                    },
+                    markMetadataVisibleFn = { mediaIds ->
                         this@AppleMusicProviderOrchestrator.markMetadataVisible(mediaIds)
-                    }
-
-                    override fun applyAliasToMetadataRefs(
-                        mediaId: String,
-                        alias: Alias,
-                    ) {
+                    },
+                    applyAliasToMetadataRefsFn = { mediaId, alias ->
                         applyAliasToInAppMetadataRefs(
                             mediaId = mediaId,
                             alias = alias,
                             forceRebind = true,
                             notifyModelChange = true,
                         )
-                    }
-
-                    override fun scheduleMetadataResolution(
-                        mediaIds: Collection<String>,
-                        priority: RequestPriority,
-                    ) {
+                    },
+                    scheduleMetadataResolutionFn = { mediaIds, priority ->
                         metadataResolutionCoordinator.schedule(mediaIds, priority)
-                    }
-
-                    override fun isRefreshableMediaId(mediaId: String): Boolean =
+                    },
+                    isRefreshableMediaIdFn = { mediaId ->
                         isRefreshableInAppMediaId(mediaId)
-
-                    override fun nextMetadataTraceSequence(): Long =
-                        metadataTraceSequence.incrementAndGet()
-
-                    override fun logMetadataIdentity(event: String, details: String) {
+                    },
+                    logMetadataIdentityFn = { event, details ->
                         this@AppleMusicProviderOrchestrator.logMetadataIdentity(event = event, details = details)
-                    }
-
-                    override fun debugStackSummary(): String =
+                    },
+                    debugStackSummaryFn = {
                         visibleMetadataDiagnostics.stackSummary()
-
-                    override fun controllerBuildStrategy(
-                        controller: Any,
-                    ): InAppLibraryControllerBuildStrategy =
+                    },
+                    controllerBuildStrategyFn = { controller ->
                         inAppLibraryControllerBuildStrategy(
                             hasAlbumBuildData = collectionSurfaceHooks.hasAlbumBuildData(controller),
                             hasArtistBuildData = artistSurfaceHooks.hasBuildData(controller),
                             isPlaylistPageController =
                                 collectionSurfaceHooks.isPlaylistController(controller),
                         )
-
-                    override fun controllerAppliedAlias(
-                        controller: Any,
-                        mediaId: String,
-                        alias: Alias,
-                    ): AppliedMetadataAlias = collectionSurfaceHooks.controllerAppliedAlias(
-                        controller = controller,
-                        mediaId = mediaId,
-                        alias = alias,
-                    )
-
-                    override fun controllerAlbumTrackMediaIds(
-                        controller: Any,
-                    ): Collection<String> =
+                    },
+                    controllerAppliedAliasFn = { controller, mediaId, alias ->
+                        collectionSurfaceHooks.controllerAppliedAlias(
+                            controller = controller,
+                            mediaId = mediaId,
+                            alias = alias,
+                        )
+                    },
+                    controllerAlbumTrackMediaIdsFn = { controller ->
                         collectionSurfaceHooks.albumTrackMediaIds(controller)
-
-                    override fun requestControllerBuild(
-                        controller: Any,
-                        strategy: InAppLibraryControllerBuildStrategy,
-                    ) {
+                    },
+                    requestControllerBuildFn = { controller, strategy ->
                         requestInAppLibraryControllerBuild(controller, strategy)
-                    }
-
-                },
+                    },
+                    traceSequence = metadataTraceSequence,
+                ),
             )
             dataBindingHooks = AppleDataBindingMetadataHooks(
                 runtime = runtime,
-                host = object : AppleDataBindingMetadataHost {
-                    override fun contentItemMediaId(contentItem: Any): String? =
+                host = DefaultAppleDataBindingMetadataHost(
+                    contentItemMediaIdFn = { contentItem ->
                         contentItemMetadataHooks.mediaId(contentItem)
-
-                    override fun bindingCandidateMediaId(value: Any): String? =
-                        inAppMetadataRegistry.metadataId(value)
-                            ?: inAppMetadataRegistry.playbackItemId(value)
-                            ?: librarySurfaceHooks.entityMediaId(value)
-                            ?: librarySurfaceHooks.attributeBindingMediaId(value)
-
-                    override fun onBeginBindingModel(binding: Any) {
+                    },
+                    onBeginBindingModelFn = { binding ->
                         artistSurfaceHooks.onBeginBindingModel(binding)
-                    }
-
-                    override fun onBindingMediaIdChanged(
-                        binding: Any,
-                        previousMediaId: String?,
-                        mediaId: String,
-                    ) {
+                    },
+                    onBindingMediaIdChangedFn = { binding, previousMediaId, mediaId ->
                         artistSurfaceHooks.onBindingMediaIdChanged(binding, mediaId)
-                    }
-
-                    override fun originalResolutionMode(
-                        binding: Any,
-                    ): InAppOriginalResolutionMode =
+                    },
+                    originalResolutionModeFn = { binding ->
                         artistSurfaceHooks.originalResolutionMode(binding)
-
-                    override fun shouldInvalidateAppliedAlias(
-                        binding: Any,
-                        mediaId: String,
-                        appliedAlias: AppliedMetadataAlias,
-                        pendingAlias: AppliedMetadataAlias?,
-                        renderedTexts: Collection<String>,
-                    ): Boolean {
+                    },
+                    shouldInvalidateAppliedAliasFn = { binding, mediaId, appliedAlias, pendingAlias, renderedTexts ->
                         val effectiveAlias = metadataResolutionCoordinator.effectiveAlias(mediaId)
-                            ?: return false
-                        return artistSurfaceHooks.shouldInvalidateAppliedAlias(
-                            binding = binding,
-                            mediaId = mediaId,
-                            appliedAlias = appliedAlias,
-                            pendingAlias = pendingAlias,
-                            effectiveAlias = effectiveAlias,
-                            expectedTitle = dataBindingAliasValues(
-                                mediaId = mediaId,
-                                alias = effectiveAlias,
+                        if (effectiveAlias == null) {
+                            false
+                        } else {
+                            artistSurfaceHooks.shouldInvalidateAppliedAlias(
                                 binding = binding,
-                            ).title,
-                            renderedTexts = renderedTexts,
-                        )
-                    }
-
-                    override fun effectiveAlias(
-                        mediaId: String,
-                    ): Alias? =
+                                mediaId = mediaId,
+                                appliedAlias = appliedAlias,
+                                pendingAlias = pendingAlias,
+                                effectiveAlias = effectiveAlias,
+                                expectedTitle = dataBindingAliasValues(
+                                    mediaId = mediaId,
+                                    alias = effectiveAlias,
+                                    binding = binding,
+                                ).title,
+                                renderedTexts = renderedTexts,
+                            )
+                        }
+                    },
+                    effectiveAliasFn = { mediaId ->
                         metadataResolutionCoordinator.effectiveAlias(mediaId)
-
-                    override fun aliasValues(
-                        mediaId: String,
-                        alias: Alias,
-                        binding: Any?,
-                    ): DataBindingAliasValues = dataBindingAliasValues(mediaId, alias, binding)
-
-                    override fun isCurrentSurfaceMediaId(mediaId: String): Boolean =
+                    },
+                    aliasValuesFn = { mediaId, alias, binding ->
+                        dataBindingAliasValues(mediaId, alias, binding)
+                    },
+                    isCurrentSurfaceMediaIdFn = { mediaId ->
                         isCurrentMetadataSurfaceMediaId(mediaId)
-
-                    override fun hasVisibleConsumer(mediaId: String): Boolean =
+                    },
+                    hasVisibleConsumerFn = { mediaId ->
                         hasVisibleInAppConsumer(mediaId)
-
-                    override fun isRefreshableMediaId(mediaId: String): Boolean =
+                    },
+                    isRefreshableMediaIdFn = { mediaId ->
                         isRefreshableInAppMediaId(mediaId)
-
-                    override fun boundModelCandidates(mediaId: String): List<Any> =
-                        inAppMetadataRegistry.livePlaybackItems(mediaId) +
-                            librarySurfaceHooks.liveEntities(mediaId)
-
-                    override fun enrichEntitiesForResolution(mediaIds: Collection<String>) {
+                    },
+                    enrichEntitiesForResolutionFn = { mediaIds ->
                         librarySurfaceHooks.enrichEntitiesForResolution(mediaIds)
-                    }
-
-                    override fun markMetadataVisible(mediaIds: Collection<String>) {
+                    },
+                    markMetadataVisibleFn = { mediaIds ->
                         this@AppleMusicProviderOrchestrator.markMetadataVisible(mediaIds)
-                    }
-
-                    override fun scheduleMetadataResolution(
-                        mediaIds: Collection<String>,
-                        priority: RequestPriority,
-                        originalResolutionMode: InAppOriginalResolutionMode,
-                    ) {
+                    },
+                    scheduleMetadataResolutionFn = { mediaIds, priority, originalResolutionMode ->
                         metadataResolutionCoordinator.schedule(
                             mediaIds = mediaIds,
                             priority = priority,
                             originalResolutionMode = originalResolutionMode,
                         )
-                    }
-
-                    override fun isAppleLyricsRecyclerAdapter(adapter: Any?): Boolean =
+                    },
+                    isAppleLyricsRecyclerAdapterFn = { adapter ->
                         lyricsHooks.isAppleLyricsRecyclerAdapter(adapter)
-
-                    override fun isQueueAdapter(adapter: Any): Boolean =
+                    },
+                    isQueueAdapterFn = { adapter ->
                         queueMetadataHooks.isQueueAdapter(adapter)
-
-                    override fun isArtistProfileRecyclerAdapter(adapter: Any): Boolean =
+                    },
+                    isArtistProfileRecyclerAdapterFn = { adapter ->
                         artistSurfaceHooks.isRecyclerAdapter(adapter)
-
-                    override fun nextMetadataTraceSequence(): Long =
-                        metadataTraceSequence.incrementAndGet()
-                },
+                    },
+                    entityMediaIdFn = { value ->
+                        librarySurfaceHooks.entityMediaId(value)
+                    },
+                    attributeBindingMediaIdFn = { value ->
+                        librarySurfaceHooks.attributeBindingMediaId(value)
+                    },
+                    liveEntitiesFn = { mediaId ->
+                        librarySurfaceHooks.liveEntities(mediaId)
+                    },
+                    registry = inAppMetadataRegistry,
+                    traceSequence = metadataTraceSequence,
+                ),
             )
             collectionSurfaceHooks = AppleCollectionSurfaceHooks(
                 runtime = runtime,
                 metadataStore = metadataOverrideStore,
                 librarySurfaceHooks = librarySurfaceHooks,
                 dataBindingHooks = dataBindingHooks,
-                host = object : AppleCollectionSurfaceHost {
-                    override fun mediaApiEntityAttributes(entity: Any): Any? =
+                host = DefaultAppleCollectionSurfaceHost(
+                    mediaApiEntityAttributesFn = { entity ->
                         mediaApiMetadataCoordinator.entityAttributes(entity)
-
-                    override fun mediaApiEntityCatalogId(
-                        entity: Any,
-                        knownAttributes: Any?,
-                    ): String? = mediaApiMetadataCoordinator.entityCatalogId(
-                        entity,
-                        knownAttributes,
-                    )
-
-                    override fun mediaApiAttribute(
-                        attributes: Any,
-                        attribute: AppleMediaApiTextAttribute,
-                    ): String? = mediaApiMetadataCoordinator.attribute(attributes, attribute)
-
-                    override fun registerLibraryEntity(
-                        mediaId: String,
-                        entity: Any,
-                        kind: InAppLibraryEntityKind,
-                        knownAttributes: Any?,
-                        requestResolution: Boolean,
-                        retainEntityRef: Boolean,
-                    ) {
+                    },
+                    mediaApiEntityCatalogIdFn = { entity, knownAttributes ->
+                        mediaApiMetadataCoordinator.entityCatalogId(
+                            entity,
+                            knownAttributes,
+                        )
+                    },
+                    mediaApiAttributeFn = { attributes, attribute ->
+                        mediaApiMetadataCoordinator.attribute(attributes, attribute)
+                    },
+                    registerLibraryEntityFn = { mediaId, entity, kind, knownAttributes, requestResolution, retainEntityRef ->
                         mediaApiMetadataCoordinator.registerLibraryEntity(
                             mediaId = mediaId,
                             entity = entity,
@@ -1151,119 +916,81 @@ internal object AppleMusicProviderOrchestrator {
                             requestResolution = requestResolution,
                             retainEntityRef = retainEntityRef,
                         )
-                    }
-
-                    override fun markMetadataVisible(mediaIds: Collection<String>) {
+                    },
+                    markMetadataVisibleFn = { mediaIds ->
                         this@AppleMusicProviderOrchestrator.markMetadataVisible(mediaIds)
-                    }
-
-                    override fun enrichLibraryEntitiesForResolution(
-                        mediaIds: Collection<String>,
-                    ) {
+                    },
+                    enrichLibraryEntitiesForResolutionFn = { mediaIds ->
                         mediaApiMetadataCoordinator.enrichLibraryEntitiesForResolution(mediaIds)
-                    }
-
-                    override fun effectiveAlias(
-                        mediaId: String,
-                    ): Alias? =
+                    },
+                    effectiveAliasFn = { mediaId ->
                         metadataResolutionCoordinator.effectiveAlias(mediaId)
-
-                    override fun applyAliasToMetadataRefs(
-                        mediaId: String,
-                        alias: Alias,
-                        notifyModelChange: Boolean,
-                    ) {
+                    },
+                    applyAliasToMetadataRefsFn = { mediaId, alias, notifyModelChange ->
                         applyAliasToInAppMetadataRefs(
                             mediaId = mediaId,
                             alias = alias,
                             forceRebind = true,
                             notifyModelChange = notifyModelChange,
                         )
-                    }
-
-                    override fun shouldRequestOverride(mediaId: String): Boolean =
+                    },
+                    shouldRequestOverrideFn = { mediaId ->
                         shouldRequestInAppMetadataOverride(mediaId)
-
-                    override fun scheduleMetadataResolution(
-                        mediaIds: Collection<String>,
-                        priority: RequestPriority,
-                        originalResolutionMode: InAppOriginalResolutionMode,
-                    ) {
+                    },
+                    scheduleMetadataResolutionFn = { mediaIds, priority, originalResolutionMode ->
                         metadataResolutionCoordinator.schedule(
                             mediaIds = mediaIds,
                             priority = priority,
                             originalResolutionMode = originalResolutionMode,
                         )
-                    }
-
-                    override fun dataBindingAliasValues(
-                        mediaId: String,
-                        alias: Alias,
-                        binding: Any?,
-                    ): DataBindingAliasValues = this@AppleMusicProviderOrchestrator.dataBindingAliasValues(
-                        mediaId = mediaId,
-                        alias = alias,
-                        binding = binding,
-                    )
-
-                    override fun sharedAssociatedArtistId(mediaId: String): String? =
+                    },
+                    dataBindingAliasValuesFn = { mediaId, alias, binding ->
+                        this@AppleMusicProviderOrchestrator.dataBindingAliasValues(
+                            mediaId = mediaId,
+                            alias = alias,
+                            binding = binding,
+                        )
+                    },
+                    sharedAssociatedArtistIdFn = { mediaId ->
                         metadataResolutionCoordinator.sharedAssociatedArtistId(mediaId)
-
-                    override fun onMetadataPageAttached(owner: Any, recycler: RecyclerView) {
+                    },
+                    onMetadataPageAttachedFn = { owner, recycler ->
                         this@AppleMusicProviderOrchestrator.onMetadataPageAttached(owner, recycler)
-                    }
-
-                    override fun onMetadataPageDetached(owner: Any) {
+                    },
+                    onMetadataPageDetachedFn = { owner ->
                         this@AppleMusicProviderOrchestrator.onMetadataPageDetached(owner)
-                    }
-
-                    override fun handleArtistFinalBinding(
-                        model: Any,
-                        finalHolder: Any?,
-                        position: Int?,
-                    ) {
+                    },
+                    handleArtistFinalBindingFn = { model, finalHolder, position ->
                         artistSurfaceHooks.handleFinalBinding(model, finalHolder, position)
-                    }
-
-                    override fun nextMetadataTraceSequence(): Long =
-                        metadataTraceSequence.incrementAndGet()
-
-                    override fun logMetadataIdentity(event: String, details: String) {
+                    },
+                    logMetadataIdentityFn = { event, details ->
                         this@AppleMusicProviderOrchestrator.logMetadataIdentity(
                             event = event,
                             details = details,
                         )
-                    }
-                },
+                    },
+                    traceSequence = metadataTraceSequence,
+                ),
             )
             artistSurfaceHooks = AppleArtistSurfaceHooks(
                 runtime = runtime,
                 metadataStore = metadataOverrideStore,
                 librarySurfaceHooks = librarySurfaceHooks,
                 dataBindingHooks = dataBindingHooks,
-                host = object : AppleArtistSurfaceHost {
-                    override fun mediaApiEntityAttributes(entity: Any): Any? =
+                host = DefaultAppleArtistSurfaceHost(
+                    mediaApiEntityAttributesFn = { entity ->
                         mediaApiMetadataCoordinator.entityAttributes(entity)
-
-                    override fun mediaApiEntityCatalogId(
-                        entity: Any,
-                        knownAttributes: Any?,
-                    ): String? = mediaApiMetadataCoordinator.entityCatalogId(
-                        entity,
-                        knownAttributes,
-                    )
-
-                    override fun mediaApiAttribute(
-                        attributes: Any,
-                        attribute: AppleMediaApiTextAttribute,
-                    ): String? = mediaApiMetadataCoordinator.attribute(attributes, attribute)
-
-                    override fun registerLibraryEntity(
-                        mediaId: String,
-                        entity: Any,
-                        kind: InAppLibraryEntityKind,
-                        knownAttributes: Any?,
-                    ) {
+                    },
+                    mediaApiEntityCatalogIdFn = { entity, knownAttributes ->
+                        mediaApiMetadataCoordinator.entityCatalogId(
+                            entity,
+                            knownAttributes,
+                        )
+                    },
+                    mediaApiAttributeFn = { attributes, attribute ->
+                        mediaApiMetadataCoordinator.attribute(attributes, attribute)
+                    },
+                    registerLibraryEntityFn = { mediaId, entity, kind, knownAttributes ->
                         mediaApiMetadataCoordinator.registerLibraryEntity(
                             mediaId = mediaId,
                             entity = entity,
@@ -1272,230 +999,136 @@ internal object AppleMusicProviderOrchestrator {
                             requestResolution = false,
                             retainEntityRef = true,
                         )
-                    }
-
-                    override fun enrichLibraryEntity(
-                        mediaId: String,
-                        entity: Any,
-                        kind: InAppLibraryEntityKind,
-                        attributes: Any,
-                    ) {
+                    },
+                    enrichLibraryEntityFn = { mediaId, entity, kind, attributes ->
                         mediaApiMetadataCoordinator.enrichLibraryEntity(
                             mediaId,
                             entity,
                             kind,
                             attributes,
                         )
-                    }
-
-                    override fun markMetadataVisible(mediaIds: Collection<String>) {
+                    },
+                    markMetadataVisibleFn = { mediaIds ->
                         this@AppleMusicProviderOrchestrator.markMetadataVisible(mediaIds)
-                    }
-
-                    override fun enrichLibraryEntitiesForResolution(
-                        mediaIds: Collection<String>,
-                    ) {
+                    },
+                    enrichLibraryEntitiesForResolutionFn = { mediaIds ->
                         mediaApiMetadataCoordinator.enrichLibraryEntitiesForResolution(mediaIds)
-                    }
-
-                    override fun effectiveAlias(
-                        mediaId: String,
-                    ): Alias? =
+                    },
+                    effectiveAliasFn = { mediaId ->
                         metadataResolutionCoordinator.effectiveAlias(mediaId)
-
-                    override fun applyAliasToMetadataRefs(
-                        mediaId: String,
-                        alias: Alias,
-                        notifyModelChange: Boolean,
-                    ) {
+                    },
+                    applyAliasToMetadataRefsFn = { mediaId, alias, notifyModelChange ->
                         applyAliasToInAppMetadataRefs(
                             mediaId = mediaId,
                             alias = alias,
                             forceRebind = true,
                             notifyModelChange = notifyModelChange,
                         )
-                    }
-
-                    override fun shouldRequestOverride(mediaId: String): Boolean =
+                    },
+                    shouldRequestOverrideFn = { mediaId ->
                         shouldRequestInAppMetadataOverride(mediaId)
-
-                    override fun scheduleMetadataResolution(
-                        mediaIds: Collection<String>,
-                        priority: RequestPriority,
-                        originalResolutionMode: InAppOriginalResolutionMode,
-                    ) {
+                    },
+                    scheduleMetadataResolutionFn = { mediaIds, priority, originalResolutionMode ->
                         metadataResolutionCoordinator.schedule(
                             mediaIds = mediaIds,
                             priority = priority,
                             originalResolutionMode = originalResolutionMode,
                         )
-                    }
-
-                    override fun activeMetadataPageOwner(): Any? =
+                    },
+                    activeMetadataPageOwnerFn = {
                         metadataSurfaceRuntime.activePageOwner()
-
-                    override fun knownArtistProfileCredits(artistId: String): Set<String> =
+                    },
+                    knownArtistProfileCreditsFn = { artistId ->
                         mediaApiMetadataCoordinator.knownArtistProfileCredits(artistId)
-
-                    override fun onMetadataPageAttached(owner: Any, recycler: RecyclerView) {
+                    },
+                    onMetadataPageAttachedFn = { owner, recycler ->
                         this@AppleMusicProviderOrchestrator.onMetadataPageAttached(owner, recycler)
-                    }
-
-                    override fun onMetadataPageDetached(owner: Any) {
+                    },
+                    onMetadataPageDetachedFn = { owner ->
                         this@AppleMusicProviderOrchestrator.onMetadataPageDetached(owner)
-                    }
-
-                    override fun nextMetadataTraceSequence(): Long =
-                        metadataTraceSequence.incrementAndGet()
-
-                    override fun logMetadataIdentity(event: String, details: String) {
+                    },
+                    logMetadataIdentityFn = { event, details ->
                         this@AppleMusicProviderOrchestrator.logMetadataIdentity(
                             event = event,
                             details = details,
                         )
-                    }
-                },
+                    },
+                    traceSequence = metadataTraceSequence,
+                ),
             )
             metadataSurfaceRuntime = AppleMetadataSurfaceRuntime(
                 runtime = runtime,
-                host = object : AppleMetadataSurfaceHost {
-                    override fun catalogResolver(): AppleInternalCatalogResolver? =
+                host = DefaultAppleMetadataSurfaceHost(
+                    catalogResolverFn = {
                         if (::internalCatalogResolver.isInitialized) {
                             internalCatalogResolver
                         } else {
                             null
                         }
-
-                    override fun associatedArtistIds(mediaId: String): Collection<String> =
-                        metadataOverrideStore.associatedArtistIds(mediaId).orEmpty()
-
-                    override fun hasVisibleExactConsumer(mediaId: String): Boolean =
+                    },
+                    overrideStore = metadataOverrideStore,
+                    hasVisibleExactConsumerFn = { mediaId ->
                         dataBindingHooks.hasVisibleExactConsumer(mediaId)
-
-                    override fun hasGenericRecyclerConsumer(mediaId: String): Boolean =
+                    },
+                    hasGenericRecyclerConsumerFn = { mediaId ->
                         dataBindingHooks.hasGenericRecyclerRefs(mediaId)
-
-                    override fun detachController(owner: Any): Int =
+                    },
+                    detachControllerFn = { owner ->
                         librarySurfaceHooks.detachController(owner)
-
-                    override fun logMetadataIdentity(event: String, details: String) {
+                    },
+                    logMetadataIdentityFn = { event, details ->
                         this@AppleMusicProviderOrchestrator.logMetadataIdentity(
                             event = event,
                             details = details,
                         )
-                    }
-
-                    override fun describeView(view: View): String =
+                    },
+                    describeViewFn = { view ->
                         visibleMetadataDiagnostics.viewDescription(view)
-                },
+                    },
+                ),
             )
             inAppArtworkContinuityHooks = AppleInAppArtworkContinuityHooks(
                 runtime = runtime,
-                host = object : AppleInAppArtworkContinuityHost {
-                    override fun onArtworkDelegateResolved(
-                        delegate: Any,
-                        liveData: Any?,
-                        urls: List<String>,
-                    ) {
+                host = DefaultAppleInAppArtworkContinuityHost(
+                    onArtworkDelegateResolvedFn = { delegate, liveData, urls ->
                         listenNowHooks.onArtworkDelegateResolved(delegate, liveData, urls)
-                    }
-
-                    override fun logMetadataIdentity(event: String, details: String) {
+                    },
+                    logMetadataIdentityFn = { event, details ->
                         this@AppleMusicProviderOrchestrator.logMetadataIdentity(
                             event = event,
                             details = details,
                         )
-                    }
-                },
+                    },
+                ),
             )
             actionSheetMetadataHooks = AppleActionSheetMetadataHooks(
                 runtime = runtime,
-                host = object : AppleActionSheetMetadataHost {
-                    override fun activePlaybackIdentity(): ActivePlaybackMediaIdentity =
+                host = DefaultAppleActionSheetMetadataHost(
+                    activePlaybackIdentityFn = {
                         activePlaybackMediaIdentity()
-
-                    override fun markMetadataVisible(mediaIds: Collection<String>) {
+                    },
+                    markMetadataVisibleFn = { mediaIds ->
                         this@AppleMusicProviderOrchestrator.markMetadataVisible(mediaIds)
-                    }
-
-                    override fun rawContentItemValue(
-                        contentItem: Any,
-                        runtimeMember: AppleMusicRuntimeMember,
-                    ): Any? = this@AppleMusicProviderOrchestrator.rawContentItemValue(
-                        contentItem,
-                        runtimeMember,
-                    )
-
-                    override fun recordArtistAssociation(
-                        mediaId: String,
-                        item: Any,
-                        rawTitle: String?,
-                    ) {
-                        val artistKeys = contentItemArtistCacheKeys(item, rawTitle)
-                        if (artistKeys.isNotEmpty()) {
-                            metadataOverrideStore.mergeArtistKeys(mediaId, artistKeys)
-                        }
-                        metadataResolutionCoordinator.mergePlaybackAssociatedArtistIds(
-                            mediaId = mediaId,
-                            artistIds = artistIdsFromAssociationKeys(artistKeys) +
-                                contentItemCatalogLookupIds(item, mediaId = "")
-                                    .filterNot { it == mediaId },
+                    },
+                    rawContentItemValueFn = { contentItem, runtimeMember ->
+                        this@AppleMusicProviderOrchestrator.rawContentItemValue(
+                            contentItem,
+                            runtimeMember,
                         )
-                    }
-
-                    override fun effectiveAlias(
-                        mediaId: String,
-                    ): Alias? =
+                    },
+                    effectiveAliasFn = { mediaId ->
                         metadataResolutionCoordinator.effectiveAlias(mediaId)
-
-                    override fun knownValues(
-                        mediaId: String,
-                        field: VisibleTextField,
-                    ): Set<String> {
-                        val alias = metadataResolutionCoordinator.effectiveAlias(mediaId)
-                        val account = metadataOverrideStore.accountMetadata(mediaId)
-                        return buildSet {
-                            when (field) {
-                                VisibleTextField.ARTIST -> {
-                                    account?.artist?.let(::add)
-                                    alias?.artist?.let(::add)
-                                    inAppMetadataRegistry.livePlaybackItemRefs(mediaId)
-                                        .forEach { ref ->
-                                        ref.originalArtist?.toString()?.let(::add)
-                                    }
-                                }
-                                VisibleTextField.ALBUM -> {
-                                    alias?.album?.let(::add)
-                                    inAppMetadataRegistry.livePlaybackItemRefs(mediaId)
-                                        .forEach { ref ->
-                                        ref.originalCollectionName?.let(::add)
-                                    }
-                                }
-                                VisibleTextField.TITLE -> Unit
-                            }
-                        }
-                    }
-
-                    override fun shouldRequestOverride(mediaId: String): Boolean =
+                    },
+                    shouldRequestOverrideFn = { mediaId ->
                         shouldRequestInAppMetadataOverride(mediaId)
-
-                    override fun ensureOverride(
-                        mediaId: String,
-                        priority: RequestPriority,
-                    ) {
+                    },
+                    ensureOverrideFn = { mediaId, priority ->
                         metadataResolutionCoordinator.ensureOverride(mediaId = mediaId, priority = priority)
-                    }
-
-                    override fun localizedText(
-                        field: VisibleTextField,
-                        alias: Alias,
-                    ): String = localizedVisibleText(field, alias)
-
-                    override fun logMetadataIdentity(
-                        event: String,
-                        identity: ActivePlaybackMediaIdentity?,
-                        details: String,
-                    ) {
+                    },
+                    localizedTextFn = { field, alias ->
+                        localizedVisibleText(field, alias)
+                    },
+                    logMetadataIdentityFn = { event, identity, details ->
                         if (identity == null) {
                             this@AppleMusicProviderOrchestrator.logMetadataIdentity(
                                 event = event,
@@ -1508,186 +1141,139 @@ internal object AppleMusicProviderOrchestrator {
                                 details = details,
                             )
                         }
-                    }
-                },
+                    },
+                    contentItemArtistCacheKeysFn = { item, rawTitle ->
+                        contentItemArtistCacheKeys(item, rawTitle)
+                    },
+                    mergePlaybackAssociatedArtistIdsFn = { mediaId, artistIds ->
+                        metadataResolutionCoordinator.mergePlaybackAssociatedArtistIds(
+                            mediaId = mediaId,
+                            artistIds = artistIds,
+                        )
+                    },
+                    contentItemCatalogLookupIdsFn = { item, mediaId ->
+                        contentItemCatalogLookupIds(item, mediaId = mediaId)
+                    },
+                    overrideStore = metadataOverrideStore,
+                    registry = inAppMetadataRegistry,
+                ),
             )
             playbackItemConversionHooks = ApplePlaybackItemConversionHooks(
                 runtime = runtime,
-                host = object : ApplePlaybackItemConversionHost {
-                    override fun containerKind(containerItem: Any): InAppContainerKind? =
+                host = DefaultApplePlaybackItemConversionHost(
+                    containerKindFn = { containerItem ->
                         inAppContainerKind(containerItem)
-
-                    override fun metadataId(metadata: Any, fallback: String?): String? =
+                    },
+                    metadataIdFn = { metadata, fallback ->
                         media3MetadataId(metadata, fallback)
-
-                    override fun activePlaybackIdentity(): ActivePlaybackMediaIdentity =
+                    },
+                    activePlaybackIdentityFn = {
                         activePlaybackMediaIdentity()
-
-                    override fun metadataDetails(metadata: Any): String =
+                    },
+                    metadataDetailsFn = { metadata ->
                         media3MetadataDetails(metadata)
-
-                    override fun logMetadataIdentity(
-                        event: String,
-                        identity: ActivePlaybackMediaIdentity,
-                        details: String,
-                    ) {
+                    },
+                    logMetadataIdentityFn = { event, identity, details ->
                         this@AppleMusicProviderOrchestrator.logMetadataIdentity(
                             event = event,
                             identity = identity,
                             details = details,
                         )
-                    }
-
-                    override fun markContainerNavigationItem(
-                        containerItem: Any,
-                        kind: InAppContainerKind,
-                        mediaId: String,
-                    ) {
+                    },
+                    markContainerNavigationItemFn = { containerItem, kind, mediaId ->
                         markInAppContainerNavigationItem(containerItem, kind, mediaId)
-                    }
-
-                    override fun markMetadataVisible(mediaIds: Collection<String>) {
+                    },
+                    markMetadataVisibleFn = { mediaIds ->
                         this@AppleMusicProviderOrchestrator.markMetadataVisible(mediaIds)
-                    }
-
-                    override fun registerContainerItem(
-                        mediaId: String,
-                        containerItem: Any,
-                        kind: InAppContainerKind,
-                    ) {
+                    },
+                    registerContainerItemFn = { mediaId, containerItem, kind ->
                         registerInAppContainerItem(mediaId, containerItem, kind)
-                    }
-
-                    override fun effectiveAlias(
-                        mediaId: String,
-                    ): Alias? =
+                    },
+                    effectiveAliasFn = { mediaId ->
                         metadataResolutionCoordinator.effectiveAlias(mediaId)
-
-                    override fun applyAliasToContainerItem(
-                        containerItem: Any,
-                        kind: InAppContainerKind,
-                        alias: Alias,
-                    ) {
+                    },
+                    applyAliasToContainerItemFn = { containerItem, kind, alias ->
                         this@AppleMusicProviderOrchestrator.applyAliasToInAppContainerItem(
                             containerItem,
                             kind,
                             alias,
                         )
-                    }
-
-                    override fun contentItemMediaId(contentItem: Any): String? =
+                    },
+                    contentItemMediaIdFn = { contentItem ->
                         contentItemMetadataHooks.mediaId(contentItem)
-
-                    override fun registerPlaybackItem(mediaId: String, playbackItem: Any) {
+                    },
+                    registerPlaybackItemFn = { mediaId, playbackItem ->
                         registerInAppPlaybackItem(mediaId, playbackItem)
-                    }
-
-                    override fun applyAliasToPlaybackItem(
-                        playbackItem: Any,
-                        alias: Alias,
-                    ) {
+                    },
+                    applyAliasToPlaybackItemFn = { playbackItem, alias ->
                         this@AppleMusicProviderOrchestrator.applyAliasToInAppPlaybackItem(
                             playbackItem,
                             alias,
                         )
-                    }
-
-                    override fun shouldRequestOverride(mediaId: String): Boolean =
+                    },
+                    shouldRequestOverrideFn = { mediaId ->
                         shouldRequestInAppMetadataOverride(mediaId)
-
-                    override fun ensureOverride(
-                        mediaId: String,
-                        priority: RequestPriority,
-                    ) {
+                    },
+                    ensureOverrideFn = { mediaId, priority ->
                         metadataResolutionCoordinator.ensureOverride(mediaId = mediaId, priority = priority)
-                    }
-                },
+                    },
+                ),
             )
             contentItemMetadataHooks = AppleContentItemMetadataHooks(
                 runtime = runtime,
-                host = object : AppleContentItemMetadataHost {
-                    override fun containerNavigationBinding(
-                        contentItem: Any,
-                    ): InAppContainerNavigationRef? =
+                host = DefaultAppleContentItemMetadataHost(
+                    containerNavigationBindingFn = { contentItem ->
                         inAppContainerNavigationBinding(contentItem)
-
-                    override fun effectiveAlias(
-                        mediaId: String,
-                    ): Alias? =
+                    },
+                    effectiveAliasFn = { mediaId ->
                         metadataResolutionCoordinator.effectiveAlias(mediaId)
-
-                    override fun registerContainerItem(
-                        mediaId: String,
-                        contentItem: Any,
-                        kind: InAppContainerKind,
-                    ) {
+                    },
+                    registerContainerItemFn = { mediaId, contentItem, kind ->
                         registerInAppContainerItem(mediaId, contentItem, kind)
-                    }
-
-                    override fun localizedEntityType(
-                        contentItem: Any,
-                    ): LocalizedEntityType? =
+                    },
+                    localizedEntityTypeFn = { contentItem ->
                         contentItemLocalizedEntityType(contentItem)
-
-                    override fun recordComposeMediaId(mediaId: String) {
+                    },
+                    recordComposeMediaIdFn = { mediaId ->
                         librarySurfaceHooks.recordComposeMediaId(mediaId)
-                    }
-
-                    override fun recordCurrentRecyclerMediaId(mediaId: String) {
+                    },
+                    recordCurrentRecyclerMediaIdFn = { mediaId ->
                         this@AppleMusicProviderOrchestrator
                             .recordCurrentRecyclerMediaId(mediaId)
-                    }
-
-                    override fun requestPriority(
-                        mediaId: String,
-                    ): RequestPriority =
+                    },
+                    requestPriorityFn = { mediaId ->
                         requestPriorityForMediaId(mediaId)
-
-                    override fun shouldResolveFromGetter(
-                        priority: RequestPriority,
-                    ): Boolean = shouldResolveMetadataFromGetter(priority)
-
-                    override fun registerPlaybackItem(
-                        mediaId: String,
-                        playbackItem: Any,
-                        notifyChange: Boolean,
-                        analyzeMetadata: Boolean,
-                    ) {
+                    },
+                    shouldResolveFromGetterFn = { priority ->
+                        shouldResolveMetadataFromGetter(priority)
+                    },
+                    registerPlaybackItemFn = { mediaId, playbackItem, notifyChange, analyzeMetadata ->
                         registerInAppPlaybackItem(
                             mediaId = mediaId,
                             playbackItem = playbackItem,
                             notifyChange = notifyChange,
                             analyzeMetadata = analyzeMetadata,
                         )
-                    }
-
-                    override fun shouldRequestOverride(mediaId: String): Boolean =
+                    },
+                    shouldRequestOverrideFn = { mediaId ->
                         shouldRequestInAppMetadataOverride(mediaId)
-
-                    override fun applyAliasToPlaybackItem(
-                        playbackItem: Any,
-                        alias: Alias,
-                        notifyChange: Boolean,
-                    ) {
+                    },
+                    applyAliasToPlaybackItemFn = { playbackItem, alias, notifyChange ->
                         applyAliasToInAppPlaybackItem(
                             playbackItem = playbackItem,
                             alias = alias,
                             notifyChange = notifyChange,
                         )
-                    }
-
-                    override fun metadataOverride(
-                        entityType: LocalizedEntityType,
-                        getter: AppleContentItemGetter,
-                        alias: Alias,
-                        original: String?,
-                    ): String? = contentItemMetadataOverride(
-                        entityType = entityType,
-                        getter = getter,
-                        alias = alias,
-                        original = original,
-                    )
-                },
+                    },
+                    metadataOverrideFn = { entityType, getter, alias, original ->
+                        contentItemMetadataOverride(
+                            entityType = entityType,
+                            getter = getter,
+                            alias = alias,
+                            original = original,
+                        )
+                    },
+                ),
             )
             mediaApiMetadataCoordinator = AppleMediaApiMetadataCoordinator(
                 runtime = runtime,
@@ -1695,153 +1281,98 @@ internal object AppleMusicProviderOrchestrator {
                 catalogResolver = internalCatalogResolver,
                 librarySurfaceHooks = librarySurfaceHooks,
                 artistSurfaceHooks = artistSurfaceHooks,
-                host = object : AppleMediaApiMetadataHost {
-                    override fun contentItemMediaId(contentItem: Any): String? =
+                host = DefaultAppleMediaApiMetadataHost(
+                    contentItemMediaIdFn = { contentItem ->
                         contentItemMetadataHooks.mediaId(contentItem)
-
-                    override fun registerPlaybackItem(
-                        mediaId: String,
-                        playbackItem: Any,
-                        notifyChange: Boolean,
-                        analyzeMetadata: Boolean,
-                    ) {
+                    },
+                    registerPlaybackItemFn = { mediaId, playbackItem, notifyChange, analyzeMetadata ->
                         registerInAppPlaybackItem(
                             mediaId = mediaId,
                             playbackItem = playbackItem,
                             notifyChange = notifyChange,
                             analyzeMetadata = analyzeMetadata,
                         )
-                    }
-
-                    override fun effectiveAlias(
-                        mediaId: String,
-                    ): Alias? =
+                    },
+                    effectiveAliasFn = { mediaId ->
                         metadataResolutionCoordinator.effectiveAlias(mediaId)
-
-                    override fun applyAliasToPlaybackItem(
-                        playbackItem: Any,
-                        alias: Alias,
-                        notifyChange: Boolean,
-                    ) {
+                    },
+                    applyAliasToPlaybackItemFn = { playbackItem, alias, notifyChange ->
                         applyAliasToInAppPlaybackItem(playbackItem, alias, notifyChange)
-                    }
-
-                    override fun shouldShareOriginalSongLanguage(
-                        localizedTitle: String?,
-                        localizedArtist: String?,
-                        alias: Alias?,
-                    ): Boolean = metadataResolutionCoordinator.shouldShareOriginalSongLanguage(
+                    },
+                    shouldShareOriginalSongLanguageFn = { localizedTitle, localizedArtist, alias ->
+                        metadataResolutionCoordinator.shouldShareOriginalSongLanguage(
                             localizedTitle = localizedTitle,
                             localizedArtist = localizedArtist,
                             alias = alias,
                         )
-
-                    override fun rememberOriginalLanguageForArtist(
-                        mediaId: String,
-                        language: String,
-                    ) {
+                    },
+                    rememberOriginalLanguageForArtistFn = { mediaId, language ->
                         metadataResolutionCoordinator.rememberOriginalLanguageForArtist(
                             mediaId,
                             language,
                         )
-                    }
-
-                    override fun hydrateSharedArtistOverrides(mediaId: String) {
+                    },
+                    hydrateSharedArtistOverridesFn = { mediaId ->
                         metadataResolutionCoordinator.hydrateSharedArtistOverrides(mediaId)
-                    }
-
-                    override fun markMetadataVisible(mediaIds: Collection<String>) {
+                    },
+                    markMetadataVisibleFn = { mediaIds ->
                         this@AppleMusicProviderOrchestrator.markMetadataVisible(mediaIds)
-                    }
-
-                    override fun applyAliasToMetadataRefs(
-                        mediaId: String,
-                        alias: Alias,
-                        forceRebind: Boolean,
-                        notifyModelChange: Boolean,
-                    ) {
+                    },
+                    applyAliasToMetadataRefsFn = { mediaId, alias, forceRebind, notifyModelChange ->
                         applyAliasToInAppMetadataRefs(
                             mediaId = mediaId,
                             alias = alias,
                             forceRebind = forceRebind,
                             notifyModelChange = notifyModelChange,
                         )
-                    }
-
-                    override fun shouldRequestOverride(mediaId: String): Boolean =
+                    },
+                    shouldRequestOverrideFn = { mediaId ->
                         shouldRequestInAppMetadataOverride(mediaId)
-
-                    override fun scheduleMetadataResolution(
-                        mediaIds: Collection<String>,
-                        priority: RequestPriority,
-                        originalResolutionMode: InAppOriginalResolutionMode,
-                    ) {
+                    },
+                    scheduleMetadataResolutionFn = { mediaIds, priority, originalResolutionMode ->
                         metadataResolutionCoordinator.schedule(
                             mediaIds = mediaIds,
                             priority = priority,
                             originalResolutionMode = originalResolutionMode,
                         )
-                    }
-
-                    override fun configuredContentUiLanguage(): Int =
+                    },
+                    configuredContentUiLanguageFn = {
                         this@AppleMusicProviderOrchestrator.configuredContentUiLanguage()
-
-                    override fun nextTraceSequence(): Long =
-                        metadataTraceSequence.incrementAndGet()
-                },
+                    },
+                    traceSequence = metadataTraceSequence,
+                ),
             )
             metadataResolutionCoordinator = AppleInAppMetadataResolutionCoordinator(
                 runtime = runtime,
                 metadataStore = metadataOverrideStore,
                 catalogResolver = internalCatalogResolver,
-                host = object : AppleInAppMetadataResolutionHost {
-                    override fun currentPlaybackMetadataId(): String? =
+                host = DefaultAppleInAppMetadataResolutionHost(
+                    currentPlaybackMetadataIdFn = {
                         playbackMetadataCoordinator.currentMetadataId()
-
-                    override fun configuredContentUiLanguage(): Int =
-                        this@AppleMusicProviderOrchestrator.configuredContentUiLanguage()
-
-                    override fun shouldOverrideAccountLanguage(selection: Int): Boolean =
-                        this@AppleMusicProviderOrchestrator.shouldOverrideAccountLanguage(selection)
-
-                    override fun isRestoreOriginalEnabled(): Boolean =
-                        isRestoreCjkOriginalMetadataEnabled()
-
-                    override fun refreshRequestScope() {
-                        metadataSurfaceRuntime.refreshRequestScope()
-                    }
-
-                    override fun enrichLibraryEntitiesForResolution(
-                        mediaIds: Collection<String>,
-                    ) {
+                    },
+                    configuredContentUiLanguageFn = { configuredContentUiLanguage() },
+                    shouldOverrideAccountLanguageFn = { selection ->
+                        shouldOverrideAccountLanguage(selection)
+                    },
+                    isRestoreOriginalEnabledFn = { isRestoreCjkOriginalMetadataEnabled() },
+                    refreshRequestScopeFn = { metadataSurfaceRuntime.refreshRequestScope() },
+                    enrichLibraryEntitiesForResolutionFn = { mediaIds ->
                         mediaApiMetadataCoordinator.enrichLibraryEntitiesForResolution(mediaIds)
-                    }
-
-                    override fun applyAliasToMetadataRefs(
-                        mediaId: String,
-                        alias: Alias,
-                        forceRebind: Boolean,
-                        notifyModelChange: Boolean,
-                    ) {
+                    },
+                    applyAliasToMetadataRefsFn = { mediaId, alias, forceRebind, notifyModelChange ->
                         applyAliasToInAppMetadataRefs(
                             mediaId = mediaId,
                             alias = alias,
                             forceRebind = forceRebind,
                             notifyModelChange = notifyModelChange,
                         )
-                    }
-
-                    override fun applyPlaybackMetadataOverride(
-                        mediaId: String,
-                        alias: Alias,
-                        forceInAppRebind: Boolean,
-                        rememberLocalizedArtist: Boolean,
-                        originalMetadata: Boolean,
-                        originalMetadataConfirmed: Boolean,
-                        artistOnly: Boolean,
-                        propagateArtistEntity: Boolean,
-                    ) {
-                        this@AppleMusicProviderOrchestrator.applyPlaybackMetadataOverride(
+                    },
+                    applyPlaybackMetadataOverrideFn = {
+                        mediaId, alias, forceInAppRebind, rememberLocalizedArtist,
+                        originalMetadata, originalMetadataConfirmed, artistOnly,
+                        propagateArtistEntity,
+                        ->
+                        applyPlaybackMetadataOverride(
                             mediaId = mediaId,
                             alias = alias,
                             forceInAppRebind = forceInAppRebind,
@@ -1851,18 +1382,15 @@ internal object AppleMusicProviderOrchestrator {
                             artistOnly = artistOnly,
                             propagateArtistEntity = propagateArtistEntity,
                         )
-                    }
-
-                    override fun logMetadataIdentity(event: String, details: String) {
+                    },
+                    logMetadataIdentityFn = { event, details ->
                         this@AppleMusicProviderOrchestrator.logMetadataIdentity(
                             event = event,
                             details = details,
                         )
-                    }
-
-                    override fun nextTraceSequence(): Long =
-                        metadataTraceSequence.incrementAndGet()
-                },
+                    },
+                    traceSequence = metadataTraceSequence,
+                ),
             )
             frameworkMetadataHooks = AppleFrameworkMetadataHooks(
                 runtime = runtime,
@@ -1876,45 +1404,18 @@ internal object AppleMusicProviderOrchestrator {
             )
             visibleMetadataDiagnostics = AppleVisibleMetadataDiagnostics(
                 runtime = runtime,
-                host = object : AppleVisibleMetadataDiagnosticsHost {
-                    override fun activePlaybackIdentity(): ActivePlaybackMediaIdentity =
-                        activePlaybackMediaIdentity()
-
-                    override fun effectiveAlias(
-                        mediaId: String,
-                    ): Alias? =
+                host = DefaultAppleVisibleMetadataDiagnosticsHost(
+                    activePlaybackIdentityFn = { activePlaybackMediaIdentity() },
+                    effectiveAliasFn = { mediaId ->
                         metadataResolutionCoordinator.effectiveAlias(mediaId)
-
-                    override fun activeMetadataValues(mediaId: String): Set<String> {
-                        val account = metadataOverrideStore.accountMetadata(mediaId)
-                        val alias = metadataResolutionCoordinator.effectiveAlias(mediaId)
-                        val framework = frameworkMetadataHooks.originalMetadata(mediaId)
-                        return buildSet {
-                            listOf(
-                                account?.title,
-                                account?.artist,
-                                alias?.title,
-                                alias?.artist,
-                                framework?.getString(MediaMetadata.METADATA_KEY_TITLE),
-                                framework?.getString(MediaMetadata.METADATA_KEY_ARTIST),
-                                framework?.getString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE),
-                                framework?.getString(MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE),
-                            ).filterNotNull()
-                                .map(String::trim)
-                                .filter(String::isNotEmpty)
-                                .forEach(::add)
-                            inAppMetadataRegistry.livePlaybackItemRefs(mediaId).forEach { ref ->
-                                ref.originalTitle?.toString()?.trim()
-                                    ?.takeIf(String::isNotEmpty)?.let(::add)
-                                ref.originalArtist?.toString()?.trim()
-                                    ?.takeIf(String::isNotEmpty)?.let(::add)
-                            }
-                        }
-                    }
-
-                    override fun nextTraceSequence(): Long =
-                        metadataTraceSequence.incrementAndGet()
-                },
+                    },
+                    frameworkMetadataFn = { mediaId ->
+                        frameworkMetadataHooks.originalMetadata(mediaId)
+                    },
+                    overrideStore = metadataOverrideStore,
+                    registry = inAppMetadataRegistry,
+                    traceSequence = metadataTraceSequence,
+                ),
             )
             playbackHooks = ApplePlaybackHooks(
                 runtime = runtime,

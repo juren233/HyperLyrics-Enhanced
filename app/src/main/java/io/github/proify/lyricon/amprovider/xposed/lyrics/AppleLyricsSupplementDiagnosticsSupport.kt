@@ -112,7 +112,7 @@ internal fun AppleLyricsSupplementHooks.logAppleLyricsUiState(
         lyricsUiField(fragment, AppleMusicRuntimeMember.LYRICS_UI_ADAPTER_FIELD)
     }
     val fragmentAdapter = fragmentAdapterRead.getOrNull()
-    val lyricsPointer = appleLyricsSongPointerRef?.get()
+    val lyricsPointer = presentationBinding.pointer()
     val lyricsNative = lyricsPointer?.let { pointer ->
         runCatching {
             lyricsNativeCall(pointer, AppleMusicRuntimeMember.LYRICS_NATIVE_POINTER_GET_METHOD)

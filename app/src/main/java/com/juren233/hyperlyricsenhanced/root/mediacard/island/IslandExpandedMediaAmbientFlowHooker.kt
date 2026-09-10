@@ -236,6 +236,10 @@ object IslandExpandedMediaAmbientFlowHooker {
                 synchronized(binderStates) {
                     binderStates.values.forEach { it.request.incrementAndGet() }
                 }
+                // 全局图标取色路径同样失效：已排队/已回投的旧封面色不得在释放后落地。
+                iconColorRequest.incrementAndGet()
+                iconColorToken = null
+                iconColorPalette = null
             },
             cleanupViews = { cleanup.run() },
             clearStates = { binderStates.clear() },

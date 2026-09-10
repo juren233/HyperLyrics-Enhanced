@@ -46,14 +46,31 @@ internal class AppleNativeOnlineTranslationStore {
     @Volatile
     private var contentRevision = 0L
 
-    @Synchronized
-    fun update(song: Song): Boolean {
-        val updatedOverlay = buildOverlay(song) ?: return false
-        if (overlay == updatedOverlay) return false
+    /** Cache acceptance is not source selection or successful View binding. */
+    data class Receipt(
+        val updated: Boolean,
+        val displayContentChanged: Boolean,
+        val update: AppleLyricsPresentationUpdate,
+    )
 
-        overlay = updatedOverlay
-        contentRevision += 1
-        return true
+    fun update(song: Song): Boolean = receive(song).updated
+
+    /** Comparison, mutation and revision capture share the store monitor. */
+    @Synchronized
+    fun receive(song: Song): Receipt {
+        val next = buildOverlay(song)
+        val displayChanged = next != null &&
+            (overlay == null || overlay?.exactContent != next.exactContent)
+        val updated = next != null && overlay != next
+        if (updated) {
+            overlay = next
+            contentRevision += 1
+        }
+        return Receipt(
+            updated = updated,
+            displayContentChanged = displayChanged,
+            update = AppleLyricsPresentationUpdate(song.id, contentRevision),
+        )
     }
 
     /**

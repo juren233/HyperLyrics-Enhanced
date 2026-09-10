@@ -261,3 +261,17 @@ internal class AppleInAppArtworkContinuityHooks(
         }.getOrDefault(emptyList())
     }
 }
+
+/** 依赖显式注入的默认宿主；原匿名实现随宿主移入 owner 文件。 */
+internal class DefaultAppleInAppArtworkContinuityHost(
+    private val onArtworkDelegateResolvedFn: (Any, Any?, List<String>) -> Unit,
+    private val logMetadataIdentityFn: (String, String) -> Unit,
+) : AppleInAppArtworkContinuityHost {
+    override fun onArtworkDelegateResolved(delegate: Any, liveData: Any?, urls: List<String>) {
+        onArtworkDelegateResolvedFn(delegate, liveData, urls)
+    }
+
+    override fun logMetadataIdentity(event: String, details: String) {
+        logMetadataIdentityFn(event, details)
+    }
+}

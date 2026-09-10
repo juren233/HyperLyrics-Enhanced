@@ -68,7 +68,7 @@ import com.juren233.hyperlyricsenhanced.common.lyric.ApplePronunciationVisibilit
 import com.juren233.hyperlyricsenhanced.common.lyric.AppleSystemFontWeightPolicy
 
 internal fun AppleLyricsSupplementHooks.currentAppleLyricsNativeSong(songId: String): Any? {
-    val pointer = appleLyricsSongPointerRef?.get() ?: return null
+    val pointer = presentationBinding.pointer() ?: return null
     val songNative = runCatching {
         lyricsNativeCall(pointer, AppleMusicRuntimeMember.LYRICS_NATIVE_POINTER_GET_METHOD)
     }.getOrNull()
@@ -136,7 +136,7 @@ internal fun AppleLyricsSupplementHooks.recoverBlankNativeLyricsPage(
 ) {
     if (!missingLyricsSupplement().isEnabled()) return
     if (currentPlaybackQueueMediaId() != expectedSongId) return
-    val fragment = fragmentOverride ?: appleLyricsFragmentRef?.get() ?: run {
+    val fragment = fragmentOverride ?: presentationBinding.fragment() ?: run {
         ProviderLogger.debug(
             "Apple Music 原生歌词空白页自愈跳过: reason=fragment_missing, " +
                 "id=$expectedSongId"
@@ -251,7 +251,7 @@ internal fun AppleLyricsSupplementHooks.receiveNativeOnlineTranslation(compresse
         val markedAsSupplement = song.metadata
             ?.getString(LyricMetadataKeys.APPLE_MISSING_LYRICS_SUPPLEMENT)
             .toBoolean()
-        val visiblePointer = appleLyricsSongPointerRef?.get()
+        val visiblePointer = presentationBinding.pointer()
         val visiblePointerSongId = visiblePointer?.let { pointer ->
             runCatching {
                 nativeSongId(
@@ -312,9 +312,9 @@ internal fun AppleLyricsSupplementHooks.receiveNativeOnlineTranslation(compresse
                     stage = "translation_store_update_started",
                     details = "thread=${Thread.currentThread().name}"
                 )
-                val displayContentChanged =
-                    nativeOnlineTranslationStore.wouldChangeDisplayContent(song)
-                val updated = nativeOnlineTranslationStore.update(song)
+                val receipt = nativeOnlineTranslationStore.receive(song)
+                val displayContentChanged = receipt.displayContentChanged
+                val updated = receipt.updated
                 AppleSourceSwitchPerformanceDiagnostics.stageForSong(
                     songId = song.id,
                     stage = "translation_store_update_finished",
@@ -322,7 +322,6 @@ internal fun AppleLyricsSupplementHooks.receiveNativeOnlineTranslation(compresse
                         "elapsedMs=${(SystemClock.elapsedRealtimeNanos() - storeStartedAtNanos) / 1_000_000.0}"
                 )
                 if (updated) {
-                    val revision = nativeOnlineTranslationStore.revision()
                     clearPendingApplePronunciationRenderPlans()
                     ProviderLogger.info(
                         "Apple Music 原生在线翻译已接收: id=${song.id}, " +
@@ -336,8 +335,8 @@ internal fun AppleLyricsSupplementHooks.receiveNativeOnlineTranslation(compresse
                     song.id?.let(onlineSourceMenuHooks()::refreshActiveMenu)
                     if (displayContentChanged) {
                         refreshAppleLyricsSupplementPresentation(
-                            expectedSongId = song.id,
-                            expectedRevision = revision,
+                            expectedSongId = receipt.update.songId,
+                            expectedRevision = receipt.update.revision,
                         )
                     } else {
                         ProviderLogger.debug(

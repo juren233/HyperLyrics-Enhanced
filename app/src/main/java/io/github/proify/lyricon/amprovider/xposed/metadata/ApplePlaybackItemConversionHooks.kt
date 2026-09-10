@@ -143,3 +143,100 @@ internal class ApplePlaybackItemConversionHooks(
         }
     }
 }
+
+/**
+ * 容器跳转项/PlaybackItem 转换 Hook 的默认宿主实现：orchestrator 依赖以 supplier 显式注入，
+ * 保持原匿名实现"调用期解析"的语义。
+ */
+internal class DefaultApplePlaybackItemConversionHost(
+    private val containerKindFn: (Any) -> InAppContainerKind?,
+    private val metadataIdFn: (Any, String?) -> String?,
+    private val activePlaybackIdentityFn: () -> ActivePlaybackMediaIdentity,
+    private val metadataDetailsFn: (Any) -> String,
+    private val logMetadataIdentityFn: (String, ActivePlaybackMediaIdentity, String) -> Unit,
+    private val markContainerNavigationItemFn: (Any, InAppContainerKind, String) -> Unit,
+    private val markMetadataVisibleFn: (Collection<String>) -> Unit,
+    private val registerContainerItemFn: (String, Any, InAppContainerKind) -> Unit,
+    private val effectiveAliasFn: (String) -> Alias?,
+    private val applyAliasToContainerItemFn: (Any, InAppContainerKind, Alias) -> Unit,
+    private val contentItemMediaIdFn: (Any) -> String?,
+    private val registerPlaybackItemFn: (String, Any) -> Unit,
+    private val applyAliasToPlaybackItemFn: (Any, Alias) -> Unit,
+    private val shouldRequestOverrideFn: (String) -> Boolean,
+    private val ensureOverrideFn: (String, RequestPriority) -> Unit,
+) : ApplePlaybackItemConversionHost {
+    override fun containerKind(containerItem: Any): InAppContainerKind? =
+        containerKindFn(containerItem)
+
+    override fun metadataId(metadata: Any, fallback: String?): String? =
+        metadataIdFn(metadata, fallback)
+
+    override fun activePlaybackIdentity(): ActivePlaybackMediaIdentity =
+        activePlaybackIdentityFn()
+
+    override fun metadataDetails(metadata: Any): String =
+        metadataDetailsFn(metadata)
+
+    override fun logMetadataIdentity(
+        event: String,
+        identity: ActivePlaybackMediaIdentity,
+        details: String,
+    ) {
+        logMetadataIdentityFn(event, identity, details)
+    }
+
+    override fun markContainerNavigationItem(
+        containerItem: Any,
+        kind: InAppContainerKind,
+        mediaId: String,
+    ) {
+        markContainerNavigationItemFn(containerItem, kind, mediaId)
+    }
+
+    override fun markMetadataVisible(mediaIds: Collection<String>) {
+        markMetadataVisibleFn(mediaIds)
+    }
+
+    override fun registerContainerItem(
+        mediaId: String,
+        containerItem: Any,
+        kind: InAppContainerKind,
+    ) {
+        registerContainerItemFn(mediaId, containerItem, kind)
+    }
+
+    override fun effectiveAlias(mediaId: String): Alias? =
+        effectiveAliasFn(mediaId)
+
+    override fun applyAliasToContainerItem(
+        containerItem: Any,
+        kind: InAppContainerKind,
+        alias: Alias,
+    ) {
+        applyAliasToContainerItemFn(containerItem, kind, alias)
+    }
+
+    override fun contentItemMediaId(contentItem: Any): String? =
+        contentItemMediaIdFn(contentItem)
+
+    override fun registerPlaybackItem(mediaId: String, playbackItem: Any) {
+        registerPlaybackItemFn(mediaId, playbackItem)
+    }
+
+    override fun applyAliasToPlaybackItem(
+        playbackItem: Any,
+        alias: Alias,
+    ) {
+        applyAliasToPlaybackItemFn(playbackItem, alias)
+    }
+
+    override fun shouldRequestOverride(mediaId: String): Boolean =
+        shouldRequestOverrideFn(mediaId)
+
+    override fun ensureOverride(
+        mediaId: String,
+        priority: RequestPriority,
+    ) {
+        ensureOverrideFn(mediaId, priority)
+    }
+}

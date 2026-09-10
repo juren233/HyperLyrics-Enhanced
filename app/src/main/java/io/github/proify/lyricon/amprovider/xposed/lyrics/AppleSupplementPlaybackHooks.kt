@@ -147,10 +147,10 @@ internal fun AppleLyricsSupplementHooks.hookLyricBuildMethod() {
                 stopSupplementActiveLineUpdate()
                 clearPendingApplePronunciationRenderPlans()
                 clearPendingAppleLyricsScrollRestore()
-                appleLyricsSongPointerRef = null
+                presentationBinding.rememberPointer(null)
                 appleLyricsScrollSnapshot = null
                 appleLyricsScrollSnapshotSongId = null
-                currentAppleLyricsSongId = loadedSongId
+                presentationBinding.selectSong(loadedSongId)
             }
             chain.thisObject?.let { viewModel ->
                 appleLyricsViewModelRef = WeakReference(viewModel)
@@ -341,8 +341,8 @@ internal fun AppleLyricsSupplementHooks.hookAppleNativeLyricsPresentation() {
         ).method
         hookRegistrar.installHook(onCreateView, before = { chain ->
             val fragment = chain.thisObject ?: return@installHook
-            if (appleLyricsFragmentRef?.get() !== fragment) {
-                appleLyricsFragmentRef = WeakReference(fragment)
+            if (presentationBinding.fragment() !== fragment) {
+                presentationBinding.rememberFragment(fragment)
                 ProviderLogger.debug(
                     "Apple Music 歌词页 Fragment 已提前登记: " +
                         "class=${fragment.javaClass.name}"
@@ -377,10 +377,10 @@ internal fun AppleLyricsSupplementHooks.hookAppleNativeLyricsPresentation() {
         method,
         before = { chain ->
             val fragment = chain.thisObject ?: return@installHook
-            appleLyricsFragmentRef = WeakReference(fragment)
+            presentationBinding.rememberFragment(fragment)
             val pointer = chain.args.firstOrNull()
             if (pointer != null) {
-                appleLyricsSongPointerRef = WeakReference(pointer)
+                presentationBinding.rememberPointer(pointer)
             }
             val songNative = runCatching {
                 lyricsNativeCall(pointer, AppleMusicRuntimeMember.LYRICS_NATIVE_POINTER_GET_METHOD)
@@ -392,25 +392,13 @@ internal fun AppleLyricsSupplementHooks.hookAppleNativeLyricsPresentation() {
                 sourcePointer = pointer,
             )
             if (songNative == null) {
-                appleLyricsSongPointerRef = null
+                presentationBinding.rememberPointer(null)
                 stopSupplementActiveLineUpdate()
                 val queueSongId = currentPlaybackQueueMediaId()
-                if (currentAppleLyricsSongId != queueSongId) {
-                    clearPendingApplePronunciationRenderPlans()
-                    clearPendingAppleLyricsScrollRestore()
-                    currentAppleLyricsSongId = queueSongId
-                    appleLyricsScrollSnapshot = null
-                    appleLyricsScrollSnapshotSongId = null
-                }
+                onAppleLyricsDisplayTrackChanged(queueSongId)
                 return@installHook
             }
-            if (currentAppleLyricsSongId != songId) {
-                clearPendingApplePronunciationRenderPlans()
-                clearPendingAppleLyricsScrollRestore()
-                currentAppleLyricsSongId = songId
-                appleLyricsScrollSnapshot = null
-                appleLyricsScrollSnapshotSongId = null
-            }
+            onAppleLyricsDisplayTrackChanged(songId)
             ensureAppleLyricTextHooks(songNative)
             appleLyricsPresentationInFlight = true
             songId?.let { ensureAppleLyricsScrollTracking(fragment, it) }
@@ -430,16 +418,10 @@ internal fun AppleLyricsSupplementHooks.hookAppleNativeLyricsPresentation() {
             // 覆盖掉切源前保存的当前句位置。
             val pointer = chain.args.firstOrNull() ?: run {
                 appleLyricsPresentationInFlight = false
-                appleLyricsSongPointerRef = null
+                presentationBinding.rememberPointer(null)
                 stopSupplementActiveLineUpdate()
                 val queueSongId = currentPlaybackQueueMediaId()
-                if (currentAppleLyricsSongId != queueSongId) {
-                    clearPendingApplePronunciationRenderPlans()
-                    clearPendingAppleLyricsScrollRestore()
-                    currentAppleLyricsSongId = queueSongId
-                    appleLyricsScrollSnapshot = null
-                    appleLyricsScrollSnapshotSongId = null
-                }
+                onAppleLyricsDisplayTrackChanged(queueSongId)
                 return@installHook
             }
             val songNative = runCatching {
@@ -452,13 +434,7 @@ internal fun AppleLyricsSupplementHooks.hookAppleNativeLyricsPresentation() {
                 appleLyricsPresentationInFlight = false
                 return@installHook
             }
-            if (currentAppleLyricsSongId != songId) {
-                clearPendingApplePronunciationRenderPlans()
-                clearPendingAppleLyricsScrollRestore()
-                currentAppleLyricsSongId = songId
-                appleLyricsScrollSnapshot = null
-                appleLyricsScrollSnapshotSongId = null
-            }
+            onAppleLyricsDisplayTrackChanged(songId)
             ensureAppleLyricsScrollTracking(fragment, songId)
             logAppleLyricsUiState(
                 fragment = fragment,
@@ -470,8 +446,7 @@ internal fun AppleLyricsSupplementHooks.hookAppleNativeLyricsPresentation() {
                 ensureMissingLyricsTranslationButtonVisible(fragment)
                 scheduleSupplementActiveLineUpdate()
             }
-            restoreAppleLyricsScrollSnapshot(fragment, songId)
-            scheduleAppleLyricsBlur(resolveAppleLyricsRecyclerView(fragment))
+            onAppleLyricsPresentationCompleted(fragment, songId)
             mainHandler.post {
                 PlaybackManager.onLyricsBuilt(
                     nativeSongObj = songNative,

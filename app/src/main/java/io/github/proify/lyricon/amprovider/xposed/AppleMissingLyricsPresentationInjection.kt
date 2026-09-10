@@ -52,10 +52,6 @@ internal fun AppleMissingLyricsHooks.recordAppleNativePresentationResult(pointer
             lineCount = lineCount,
             wordTimedLineCount = wordTimedLineCount,
         )
-        if (appleNativeLyricsTimingStats.size >= AppleMissingLyricsHooks.MAX_REMEMBERED_NATIVE_LYRICS_SONG_IDS) {
-            appleNativeLyricsTimingStats.clear()
-        }
-        appleNativeLyricsTimingStats[songId] = stats
         val queueSongId = currentPlaybackQueueMediaId()?.takeIf(String::isNotBlank)
         val identity = store.playbackIdentity(queueSongId)
         val contentSongId = when {
@@ -63,7 +59,7 @@ internal fun AppleMissingLyricsHooks.recordAppleNativePresentationResult(pointer
             queueSongId == songId -> queueSongId
             else -> songId
         }
-        appleNativeLyricsTimingStats[contentSongId] = stats
+        nativeAlternatives.rememberTiming(songId, contentSongId, stats)
     }
     onNativeLyricsState(songId = songId, hasLines = lineCount > 0)
     if (BuildConfig.DEBUG) {
@@ -86,7 +82,7 @@ internal fun AppleMissingLyricsHooks.rewriteNativeModelArgs(chain: Chain): Array
         ?: currentSupplementSongId()
     if (isSupplementPointer(originalPointer)) {
         if (shouldPreferLunaBeat(songId)) return null
-        val nativePointer = songId?.let { appleNativeLyricsPointers.get(it) }
+        val nativePointer = songId?.let { nativeAlternatives.pointer(it) }
             ?.takeIf { readNativeLineCount(it) > 0 }
             ?: return null
         ProviderLogger.debug(
@@ -97,7 +93,7 @@ internal fun AppleMissingLyricsHooks.rewriteNativeModelArgs(chain: Chain): Array
     val hasNativeLyrics = originalPointer != null &&
         readNativeLineCount(originalPointer) > 0
     if (hasNativeLyrics && !songId.isNullOrBlank()) {
-        appleNativeLyricsPointers[songId] = requireNotNull(originalPointer)
+        nativeAlternatives.rememberPointer(songId, requireNotNull(originalPointer))
     }
     // LunaBeat 被临时选择时允许替换 Apple 原生模型；其他补充来源仍只服务无歌词歌曲。
     if (hasNativeLyrics && !shouldPreferLunaBeat(songId)) return null
@@ -114,7 +110,7 @@ internal fun AppleMissingLyricsHooks.supplementPointerForInjection(): Any? {
     val songId = currentPlaybackQueueMediaId()?.takeIf(String::isNotBlank)
         ?: currentSupplementSongId()
         ?: return null
-    if (songId !in acceptedSupplementSongIds) return null
+    if (!candidates.isAccepted(songId)) return null
     val identity = store.playbackIdentity(songId) ?: return null
     if (hasKnownNativeLyrics(songId, identity.adamId) && !shouldPreferLunaBeat(songId)) return null
     val pointer = store.nativeSongInfoPointer(songId) ?: return null
@@ -164,7 +160,7 @@ internal fun AppleMissingLyricsHooks.shouldExposeSupplementLyrics(item: Any?): B
     val takeoverDecision = songId?.let { takeoverDecision(it) }
         ?: AppleNativeLyricsTakeoverDecision(false, "song_id_missing")
     if (songId != null && hasContent && takeoverDecision.allowed) {
-        acceptedSupplementSongIds.add(songId)
+        candidates.accept(songId)
     } else if (songId != null) {
         scheduleTakeoverRecheck(songId)
     }
@@ -199,8 +195,8 @@ internal fun AppleMissingLyricsHooks.shouldExposeSupplementLyrics(item: Any?): B
         hasKnownNativeLyrics = nativeLyricsKnown,
     )
     if (shouldExpose) {
-        supplementAvailabilitySongIds.add(songId)
-        if (songId in acceptedSupplementSongIds) {
+        candidates.markAvailable(songId)
+        if (candidates.isAccepted(songId)) {
             scheduleNativeLyricsModel(songId)
         }
     }
@@ -214,8 +210,8 @@ internal fun AppleMissingLyricsHooks.shouldExposeSupplementLyrics(item: Any?): B
         nativeLyricsKnown = nativeLyricsKnown,
         shouldExpose = shouldExpose,
         supplementAvailabilityExposed =
-            songId != null && songId in supplementAvailabilitySongIds,
-        presentationAccepted = songId != null && songId in acceptedSupplementSongIds,
+            songId != null && candidates.wasAvailable(songId),
+        presentationAccepted = songId != null && candidates.isAccepted(songId),
         nativeResolutionReason = takeoverDecision.reason,
     )
     return shouldExpose

@@ -124,10 +124,9 @@ internal fun AppleMusicProviderOrchestrator.initializeContentUiLanguage() {
             RootConstants.KEY_HOOK_APPLE_MUSIC_LOCALIZED_METADATA_CACHE ->
                 applyConfiguredContentUiLanguage(changed)
             RootConstants.KEY_HOOK_APPLE_MUSIC_SIMPLIFY_TRADITIONAL_LYRICS ->
-                lyricsHooks.refreshAppleLyricsDisplay()
+                lyricsHooks.onAppleLyricsDisplayPreferenceChanged(AppleLyricsDisplayPreference.TEXT)
             RootConstants.KEY_HOOK_APPLE_MUSIC_HIDE_MANDARIN_PINYIN -> {
-                lyricsHooks.clearPendingApplePronunciationRenderPlans()
-                lyricsHooks.refreshAppleLyricsSupplementPresentation()
+                lyricsHooks.onAppleLyricsDisplayPreferenceChanged(AppleLyricsDisplayPreference.PRONUNCIATION)
             }
             RootConstants.KEY_HOOK_APPLE_MUSIC_LYRICS_BLUR_EFFECT,
             RootConstants.KEY_HOOK_APPLE_MUSIC_LYRICS_BLUR_ANIMATION,
@@ -135,10 +134,10 @@ internal fun AppleMusicProviderOrchestrator.initializeContentUiLanguage() {
             RootConstants.KEY_HOOK_APPLE_MUSIC_NATIVE_LYRICS_BLUR_MAX_RADIUS_DP,
             RootConstants.KEY_HOOK_APPLE_MUSIC_ADVANCED_LYRICS_BLUR_MIN_RADIUS_PX,
             RootConstants.KEY_HOOK_APPLE_MUSIC_ADVANCED_LYRICS_BLUR_MAX_RADIUS_PX ->
-                lyricsHooks.refreshAppleLyricsBlurEffect()
+                lyricsHooks.onAppleLyricsDisplayPreferenceChanged(AppleLyricsDisplayPreference.BLUR)
             RootConstants.KEY_HOOK_APPLE_MUSIC_FOLLOW_SYSTEM_FONT,
             RootConstants.KEY_HOOK_APPLE_MUSIC_FOLLOW_SYSTEM_FONT_WEIGHT ->
-                lyricsHooks.refreshAppleSystemFont()
+                lyricsHooks.onAppleLyricsDisplayPreferenceChanged(AppleLyricsDisplayPreference.FONT)
             RootConstants.KEY_HOOK_APPLE_MUSIC_VOLUME_BALANCE -> {
                 val enabled = changed.getBoolean(
                     key,

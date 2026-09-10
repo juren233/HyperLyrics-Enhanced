@@ -43,7 +43,7 @@ internal fun AppleInternalCatalogResolver.resolveOriginalMetadata(
     priority: RequestPriority = RequestPriority.ACTIVE_PAGE,
     onResolved: (OriginalResolution) -> Unit,
 ) {
-    rememberRequestPriority(metadata.id, priority)
+    dispatch.rememberRequestPriority(metadata.id, priority)
     if (!shouldResolve(metadata)) {
         onResolved(
             OriginalResolution(
@@ -55,8 +55,8 @@ internal fun AppleInternalCatalogResolver.resolveOriginalMetadata(
         )
         return
     }
-    synchronized(cache) {
-        cache[metadata.id]?.let { alias ->
+    synchronized(caches.originalSongCache) {
+        caches.originalSongCache[metadata.id]?.let { alias ->
             canonicalCachedOriginalAlias(alias)?.takeIf { cachedAlias ->
                 isReusableOriginalSongAlias(
                     alias = cachedAlias,
@@ -64,7 +64,7 @@ internal fun AppleInternalCatalogResolver.resolveOriginalMetadata(
                     localizedArtist = metadata.artist.orEmpty(),
                 )
             }?.let { cachedAlias ->
-                if (cachedAlias != alias) cache[metadata.id] = cachedAlias
+                if (cachedAlias != alias) caches.originalSongCache[metadata.id] = cachedAlias
                 onResolved(
                     OriginalResolution(
                         alias = cachedAlias,
@@ -76,19 +76,14 @@ internal fun AppleInternalCatalogResolver.resolveOriginalMetadata(
                 )
                 return
             }
-            cache.remove(metadata.id)
+            caches.originalSongCache.remove(metadata.id)
         }
     }
     onCandidate?.let { callback ->
         registerOriginalCandidateCallback(metadata.id, callback)
     }
-    synchronized(inFlight) {
-        val callbacks = inFlight[metadata.id]
-        if (callbacks != null) {
-            callbacks.add(onResolved)
-            return
-        }
-        inFlight[metadata.id] = mutableListOf(onResolved)
+    if (!dispatch.attachOriginalSongCallback(metadata.id, onResolved)) {
+        return
     }
 
     persistentOriginalCache.get(originalSongCacheKey(metadata.id)) { persistentAlias ->
@@ -100,7 +95,7 @@ internal fun AppleInternalCatalogResolver.resolveOriginalMetadata(
             )
         }
         if (reusableAlias != null) {
-            synchronized(cache) { cache[metadata.id] = reusableAlias }
+            synchronized(caches.originalSongCache) { caches.originalSongCache[metadata.id] = reusableAlias }
             finishCachedOriginalResolve(metadata.id, reusableAlias)
         } else {
             if (persistentAlias != null) {
@@ -124,7 +119,7 @@ internal fun AppleInternalCatalogResolver.resolveOriginalMetadataFromCatalog(
     }
     resolveCatalogIdentity(metadata.id, fallbackLanguages) { identity ->
         identity.fallbackAliases.firstOrNull()?.let { alias ->
-            publishOriginalCandidate(metadata.id, alias)
+            dispatch.publishOriginalCandidate(metadata.id, alias)
         }
         if (allowEmptyIdentityRetry && shouldRetryEmptyCatalogIdentity(
                 mediaId = metadata.id,
@@ -143,7 +138,7 @@ internal fun AppleInternalCatalogResolver.resolveOriginalMetadataFromCatalog(
                 resolveOriginalMetadataFromCatalog(
                     metadata = metadata,
                     allowEmptyIdentityRetry = false,
-                    priority = currentRequestPriority(metadata.id, priority),
+                    priority = dispatch.currentRequestPriority(metadata.id, priority),
                 )
             }
             return@resolveCatalogIdentity
@@ -192,7 +187,7 @@ internal fun AppleInternalCatalogResolver.resolveOriginalMetadataFromCatalog(
                 lookupIds = listOf(metadata.id),
                 entityType = LocalizedEntityType.SONG,
                 language = language,
-                priority = currentRequestPriority(metadata.id, priority),
+                priority = dispatch.currentRequestPriority(metadata.id, priority),
             ) { resolvedAlias ->
                 val exactAlias = resolvedAlias?.takeIf { alias ->
                     (alias.title.isNotBlank() || alias.artist.isNotBlank()) &&
@@ -204,7 +199,7 @@ internal fun AppleInternalCatalogResolver.resolveOriginalMetadataFromCatalog(
                 }
                 if (exactAlias != null) {
                     val regionalArtistIds =
-                        catalogIdentityCache[metadata.id]?.artistIds.orEmpty()
+                        caches.catalogIdentityCache[metadata.id]?.artistIds.orEmpty()
                     finishResolve(
                         metadata = metadata,
                         languages = listOf(language),
@@ -241,7 +236,7 @@ internal fun AppleInternalCatalogResolver.resolveOriginalEntityForLanguage(
     priority: RequestPriority = RequestPriority.ACTIVE_PAGE,
     onResolved: (Alias?) -> Unit,
 ) {
-    rememberRequestPriority(mediaId, priority)
+    dispatch.rememberRequestPriority(mediaId, priority)
     val targetLanguage = supportedOriginalLanguageOrNull(language)
     if (targetLanguage == null) {
         ProviderLogger.info(
@@ -290,7 +285,7 @@ internal fun AppleInternalCatalogResolver.resolveOriginalEntityForLanguage(
                     language = targetLanguage,
                     storefront = storefront,
                     directCacheKey = directCacheKey,
-                    priority = currentRequestPriority(mediaId, priority),
+                    priority = dispatch.currentRequestPriority(mediaId, priority),
                     callbacks = listOf(onResolved),
                 )
             )

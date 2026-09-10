@@ -171,9 +171,7 @@ internal class AppleLyricsSupplementHooks(
     internal val applePronunciationContextByLyricObject =
         WeakIdentityMap<Any, ApplePronunciationContext>()
     val nativeOnlineTranslationStore = AppleNativeOnlineTranslationStore()
-    internal var deferredNativeTranslationRefreshSongId: String? = null
-    internal var deferredNativeTranslationRefreshRevision: Long? = null
-    internal var deferredNativeTranslationRefreshScheduled = false
+    internal val deferredTranslationPresentation = AppleLyricsDeferredPresentation()
     internal val pendingApplePronunciationRenderPlans = Collections.synchronizedMap(
         IdentityHashMap<Any, ApplePronunciationRenderPlan>()
     )
@@ -191,12 +189,9 @@ internal class AppleLyricsSupplementHooks(
     internal var appleLyricsPresentationMethod: Method? = null
     @Volatile
     internal var appleLyricsResultPresentationMethod: Method? = null
-    @Volatile
-    internal var appleLyricsFragmentRef: WeakReference<Any>? = null
-    @Volatile
-    internal var appleLyricsSongPointerRef: WeakReference<Any>? = null
-    @Volatile
-    internal var currentAppleLyricsSongId: String? = null
+    internal val presentationBinding = AppleLyricsPresentationBinding()
+    internal val currentAppleLyricsSongId: String?
+        get() = presentationBinding.songId()
     private data class AppleLyricsPresentationPerformanceContext(
         val stagePrefix: String,
         val songId: String?,
@@ -268,7 +263,7 @@ internal class AppleLyricsSupplementHooks(
             runtime = runtime,
             preferences = preferences,
             playbackHooks = playbackHooks,
-            currentFragment = { appleLyricsFragmentRef?.get() },
+            currentFragment = { presentationBinding.fragment() },
         )
     }
     internal val diagnostics by lazy {
@@ -368,23 +363,44 @@ internal class AppleLyricsSupplementHooks(
             RootConstants.DEFAULT_HOOK_APPLE_MUSIC_SIMPLIFY_TRADITIONAL_LYRICS,
         ) == true
 
+    private val translationPreferenceHitLogged = AtomicBoolean(false)
+    private val pronunciationPreferenceHitLogged = AtomicBoolean(false)
+
     fun hookTranslationPreference() {
         val translationMethod = hookResolver.resolveMethod(
             AppleMusicHookPoint.LYRICS_TRANSLATION_PREFERENCE
         ).method
         hookRegistrar.installHook(translationMethod, after = { chain, _ ->
             (chain.args.firstOrNull() as? Boolean)?.let {
+                if (
+                    BuildConfig.DEBUG &&
+                    translationPreferenceHitLogged.compareAndSet(false, true)
+                ) {
+                    ProviderLogger.diagnostic(
+                        "Apple Music 歌词翻译偏好 Hook 首次命中: selected=$it"
+                    )
+                }
                 PreferencesMonitor.notifyTranslationSelectedChanged(it)
             }
         })
+        ProviderLogger.debug("Apple Music 歌词翻译偏好 Hook 已安装")
         val pronunciationMethod = hookResolver.resolveMethod(
             AppleMusicHookPoint.LYRICS_PRONUNCIATION_PREFERENCE
         ).method
         hookRegistrar.installHook(pronunciationMethod, after = { chain, _ ->
             (chain.args.firstOrNull() as? Boolean)?.let {
+                if (
+                    BuildConfig.DEBUG &&
+                    pronunciationPreferenceHitLogged.compareAndSet(false, true)
+                ) {
+                    ProviderLogger.diagnostic(
+                        "Apple Music 歌词发音偏好 Hook 首次命中: selected=$it"
+                    )
+                }
                 PreferencesMonitor.notifyPronunciationSelectedChanged(it)
             }
         })
+        ProviderLogger.debug("Apple Music 歌词发音偏好 Hook 已安装")
     }
 
 
@@ -597,12 +613,15 @@ internal class AppleLyricsSupplementHooks(
             expectedRevision = expectedRevision,
         )
 
+        val bindingTicket = presentationBinding.ticket()
         fun isRefreshCurrent(): Boolean =
-            expectedRevision == null ||
-                nativeOnlineTranslationStore.isCurrentRevision(
-                    songId = expectedSongId,
-                    revision = expectedRevision,
-                )
+            presentationBinding.isCurrent(bindingTicket) &&
+                (expectedSongId == null || bindingTicket.songId == expectedSongId) &&
+                (expectedRevision == null ||
+                    nativeOnlineTranslationStore.isCurrentRevision(
+                        songId = expectedSongId,
+                        revision = expectedRevision,
+                    ))
 
         val recyclerViewAsView = recyclerView as? View ?: return
 
@@ -656,7 +675,9 @@ internal class AppleLyricsSupplementHooks(
         recyclerView: Any,
         songId: String,
         retryAfterLayout: Boolean = true,
+        isCurrent: () -> Boolean = { true },
     ) {
+        if (!isCurrent()) return
         if (BuildConfig.DEBUG) {
             ProviderLogger.debug(
                 "[LyricsScrollDiag] refreshVisibleAppleLyricsRows: songId=$songId, retryAfterLayout=$retryAfterLayout"
@@ -673,6 +694,7 @@ internal class AppleLyricsSupplementHooks(
                         recyclerView = recyclerView,
                         songId = songId,
                         retryAfterLayout = false,
+                        isCurrent = isCurrent,
                     )
                 }
             }

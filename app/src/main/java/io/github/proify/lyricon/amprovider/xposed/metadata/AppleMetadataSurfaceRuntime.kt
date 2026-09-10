@@ -197,3 +197,33 @@ internal class AppleMetadataSurfaceRuntime(
         }
     }
 }
+
+/** 依赖显式注入的默认宿主；store 为根单例的构造期值，可安全直捕，其余调用期解析。 */
+internal class DefaultAppleMetadataSurfaceHost(
+    private val catalogResolverFn: () -> AppleInternalCatalogResolver?,
+    private val overrideStore: AppleMetadataOverrideStore,
+    private val hasVisibleExactConsumerFn: (String) -> Boolean,
+    private val hasGenericRecyclerConsumerFn: (String) -> Boolean,
+    private val detachControllerFn: (Any) -> Int,
+    private val logMetadataIdentityFn: (String, String) -> Unit,
+    private val describeViewFn: (View) -> String,
+) : AppleMetadataSurfaceHost {
+    override fun catalogResolver(): AppleInternalCatalogResolver? = catalogResolverFn()
+
+    override fun associatedArtistIds(mediaId: String): Collection<String> =
+        overrideStore.associatedArtistIds(mediaId).orEmpty()
+
+    override fun hasVisibleExactConsumer(mediaId: String): Boolean =
+        hasVisibleExactConsumerFn(mediaId)
+
+    override fun hasGenericRecyclerConsumer(mediaId: String): Boolean =
+        hasGenericRecyclerConsumerFn(mediaId)
+
+    override fun detachController(owner: Any): Int = detachControllerFn(owner)
+
+    override fun logMetadataIdentity(event: String, details: String) {
+        logMetadataIdentityFn(event, details)
+    }
+
+    override fun describeView(view: View): String = describeViewFn(view)
+}

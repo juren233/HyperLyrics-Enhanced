@@ -463,7 +463,7 @@ internal fun AppleLyricsSupplementHooks.scheduleSupplementActiveLineUpdate() {
  * 计算当前句，并在 index 变化时补发与 Apple 跳转歌词相同的行级 T 调用。
  */
 internal fun AppleLyricsSupplementHooks.updateSupplementActiveLine() {
-    val fragment = appleLyricsFragmentRef?.get() ?: run {
+    val fragment = presentationBinding.fragment() ?: run {
             stopSupplementActiveLineUpdate()
             return
         }

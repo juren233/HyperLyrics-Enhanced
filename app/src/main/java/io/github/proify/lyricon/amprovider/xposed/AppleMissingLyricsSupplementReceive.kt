@@ -67,23 +67,23 @@ internal fun AppleMissingLyricsHooks.receiveSupplement(song: Song) {
         return
     }
     if (lunaBeatSupplement) {
-        acceptedSupplementSongIds.add(songId)
+        candidates.accept(songId)
     }
-    val hadContent = store.hasContent(songId)
-    val revisionBefore = store.revision()
     val storeUpdateStartedAtNanos = SystemClock.elapsedRealtimeNanos()
     AppleSourceSwitchPerformanceDiagnostics.stageForSong(
         songId = songId,
         stage = "supplement_store_update_started",
-        details = "hadContent=$hadContent,revision=$revisionBefore," +
-            "thread=${Thread.currentThread().name}"
+        details = "thread=${Thread.currentThread().name}"
     )
-    val updateResult = store.updateDetailed(song)
+    val receipt = store.receive(song)
+    val updateResult = receipt.result
+    val hadContent = receipt.hadContent
+    val revisionBefore = receipt.revisionBefore
     AppleSourceSwitchPerformanceDiagnostics.stageForSong(
         songId = songId,
         stage = "supplement_store_update_finished",
         details = "kind=${updateResult.kind},changed=${updateResult.requiresNativeRebuild}," +
-            "revision=$revisionBefore->${store.revision()}," +
+            "revision=$revisionBefore->${receipt.nativeModelRevision}," +
             "elapsedMs=${(SystemClock.elapsedRealtimeNanos() - storeUpdateStartedAtNanos) / 1_000_000.0}," +
             "thread=${Thread.currentThread().name}"
     )
@@ -94,7 +94,7 @@ internal fun AppleMissingLyricsHooks.receiveSupplement(song: Song) {
         units = incomingLines.size.toLong(),
         details = "kind=${updateResult.kind}," +
             "changed=${updateResult.requiresNativeRebuild}," +
-            "revision=$revisionBefore->${store.revision()}",
+            "revision=$revisionBefore->${receipt.nativeModelRevision}",
     )
     if (updateResult.requiresNativeRebuild) {
         ProviderLogger.info(
@@ -171,7 +171,7 @@ internal fun AppleMissingLyricsHooks.receiveSupplement(song: Song) {
             songId = songId,
             event = "supplement_translation_visible_refresh_requested",
         )
-        refreshVisibleSupplementTranslation(songId)
+        refreshVisibleSupplementTranslation(receipt.presentation)
     }
     AppleSourceSwitchPerformanceDiagnostics.record(
         songId = songId,
@@ -189,11 +189,11 @@ internal fun AppleMissingLyricsHooks.receiveSupplement(song: Song) {
 }
 
 internal fun AppleMissingLyricsHooks.clearSupplement(songId: String?) {
-    restoreAttemptContentSongId = null
+    candidates.invalidateRestoreWindow()
     songId?.takeIf(String::isNotBlank)?.let { id ->
-        acceptedSupplementSongIds.remove(id)
-        supplementAvailabilitySongIds.remove(id)
-        attemptedDiskRestoreSongIds.remove(id)
+        candidates.revokeAcceptance(id)
+        candidates.revokeAvailability(id)
+        candidates.forgetRestore(id)
         DiskSongManager.deleteMissingLyrics(id)
     }
     if (store.clear(songId)) {
@@ -213,16 +213,7 @@ internal fun AppleMissingLyricsHooks.stripFullyChineseTranslations(song: Song): 
 internal fun AppleMissingLyricsHooks.restoreCachedSupplement(songId: String) {
     if (store.hasContent(songId)) return
     val currentContentSongId = store.contentSongId()
-    if (
-        songId in attemptedDiskRestoreSongIds &&
-        restoreAttemptContentSongId == currentContentSongId
-    ) {
-        // 同一 Store 内容窗口内已经尝试过该歌曲；切歌后 contentSongId 变化，
-        // 再切回来时必须允许重新恢复。
-        return
-    }
-    attemptedDiskRestoreSongIds.add(songId)
-    restoreAttemptContentSongId = currentContentSongId
+    if (!candidates.beginRestore(songId, currentContentSongId)) return
     val loaded = DiskSongManager.loadMissingLyrics(songId) ?: run {
         ProviderLogger.debug(
             "Apple Music 无歌词补充磁盘恢复未命中: id=$songId"
@@ -264,7 +255,7 @@ internal fun AppleMissingLyricsHooks.restoreCachedSupplement(songId: String) {
     }
     nativeTakeoverGate.observe(songId)
     if (!store.update(cached)) return
-    if (cachedLunaBeatEligible) acceptedSupplementSongIds.add(songId)
+    if (cachedLunaBeatEligible) candidates.accept(songId)
     ProviderLogger.info(
         "Apple Music 无歌词补充已从磁盘恢复: id=$songId, " +
             "lines=${cached.lyrics.orEmpty().size}"
@@ -273,16 +264,15 @@ internal fun AppleMissingLyricsHooks.restoreCachedSupplement(songId: String) {
 }
 
 internal fun AppleMissingLyricsHooks.onPreferenceChanged() {
-    attemptedDiskRestoreSongIds.clear()
-    restoreAttemptContentSongId = null
+    candidates.resetRestoreAttempts()
     val currentSongId = currentPlaybackQueueMediaId()
     val currentIsLunaBeat = store.sourceInfo(store.contentSongId())
         ?.selectedSource == AppleMissingLyricsHooks.Companion.SourceName.LUNA_BEAT
     if (!isLunaBeatWordLyricsEnabled() && currentIsLunaBeat) {
         currentSongId?.let {
-            manualLyricsSourceSelections.remove(it)
-            acceptedSupplementSongIds.remove(it)
-            supplementAvailabilitySongIds.remove(it)
+            lyricsSourceSelection.remove(it)
+            candidates.revokeAcceptance(it)
+            candidates.revokeAvailability(it)
         }
         if (store.clear()) refreshNowPlaying(currentSongId)
         return
@@ -290,8 +280,8 @@ internal fun AppleMissingLyricsHooks.onPreferenceChanged() {
     if (!isEnabled()) {
         val songId = currentSongId
         songId?.let {
-            acceptedSupplementSongIds.remove(it)
-            supplementAvailabilitySongIds.remove(it)
+            candidates.revokeAcceptance(it)
+            candidates.revokeAvailability(it)
             scheduledTakeoverRechecks.remove(it)
             nativeTakeoverGate.clear(it)
         }
@@ -307,7 +297,7 @@ internal fun AppleMissingLyricsHooks.scheduleNativeLyricsModel(songId: String) {
         event = "native_model_schedule_call",
         details = "revision=${store.revision()}",
     )
-    if (songId !in acceptedSupplementSongIds) {
+    if (!candidates.isAccepted(songId)) {
         AppleSourceSwitchPerformanceDiagnostics.record(
             songId = songId,
             event = "native_model_deferred",
@@ -403,7 +393,7 @@ internal fun AppleMissingLyricsHooks.buildNativeLyricsModel(key: AppleMissingLyr
     val songId = identity.contentSongId
     val totalStartedAtNanos = SystemClock.elapsedRealtimeNanos()
     if (!isEnabled() || key.contentRevision != store.revision()) return
-    if (songId !in acceptedSupplementSongIds) return
+    if (!candidates.isAccepted(songId)) return
     if (!store.isCurrentIdentity(identity)) return
     if (hasKnownNativeLyrics(songId, identity.adamId) && !shouldPreferLunaBeat(songId)) {
         ProviderLogger.debug(

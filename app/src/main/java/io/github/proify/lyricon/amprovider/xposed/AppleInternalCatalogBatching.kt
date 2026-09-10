@@ -26,72 +26,18 @@ internal fun AppleInternalCatalogResolver.invalidateOriginalEntity(mediaId: Stri
 
 internal fun AppleInternalCatalogResolver.enqueueOriginalEntityRequest(request: OriginalEntityRequest) {
     val prioritized = request.copy(
-        priority = currentRequestPriority(request.mediaId, request.priority),
+        priority = dispatch.currentRequestPriority(request.mediaId, request.priority),
     )
-    val shouldSchedule = synchronized(originalEntityPending) {
-        val existing = originalEntityPending[prioritized.requestKey]
-        originalEntityPending[prioritized.requestKey] = if (existing == null) {
-            prioritized
-        } else {
-            existing.copy(
-                priority = higherPriority(existing.priority, prioritized.priority),
-                callbacks = existing.callbacks + prioritized.callbacks,
-            )
-        }
-        if (
-            originalEntityBatchScheduled ||
-            !canStartOriginalEntityBatchLocked()
-        ) {
-            false
-        } else {
-            originalEntityBatchScheduled = true
-            true
-        }
-    }
-    if (shouldSchedule) {
+    if (dispatch.submitOriginalEntityRequest(prioritized)) {
         mainHandler.postDelayed(::processOriginalEntityBatch, ORIGINAL_ENTITY_BATCH_DELAY_MS)
     }
 }
 
 internal fun AppleInternalCatalogResolver.processOriginalEntityBatch() {
-    val batch = synchronized(originalEntityPending) {
-        originalEntityBatchScheduled = false
-        if (
-            originalEntityPending.isEmpty() ||
-            !canStartOriginalEntityBatchLocked()
-        ) return
-        val pendingValues = originalEntityPending.values.toList()
-        val first = pendingValues[
-            selectNextRequestIndex(pendingValues.map(OriginalEntityRequest::priority))
-                ?: return
-        ]
-        val selected = mutableListOf<OriginalEntityRequest>()
-        val selectedIds = linkedSetOf<String>()
-        originalEntityPending.values.forEach { request ->
-            if (
-                request.priority == first.priority &&
-                request.storefront == first.storefront &&
-                request.language == first.language &&
-                request.entityType == first.entityType
-            ) {
-                val newIds = request.lookupIds.filterNot(selectedIds::contains)
-                if (
-                    selected.isNotEmpty() &&
-                    selectedIds.size + newIds.size > ORIGINAL_ENTITY_BATCH_SIZE
-                ) return@forEach
-                selected += request
-                selectedIds += request.lookupIds
-            }
-        }
-        selected.forEach { originalEntityPending.remove(it.requestKey) }
-        originalEntityBatchesRunning += 1
-        if (first.priority == RequestPriority.BACKGROUND) {
-            originalEntityBackgroundBatchesRunning += 1
-        }
-        selected
-    }
-
+    val batch = dispatch.takeOriginalEntityBatch()
+    if (batch.isEmpty()) return
     val first = batch.first()
+
     queryByConfiguredRegion(
         mediaIds = batch.flatMap(OriginalEntityRequest::lookupIds).distinct(),
         entityType = first.entityType,
@@ -116,45 +62,14 @@ internal fun AppleInternalCatalogResolver.processOriginalEntityBatch() {
             )
             request.callbacks.forEach { callback -> callback(alias) }
         }
-        synchronized(originalEntityPending) {
-            originalEntityBatchesRunning -= 1
-            if (first.priority == RequestPriority.BACKGROUND) {
-                originalEntityBackgroundBatchesRunning -= 1
-            }
-        }
+        dispatch.endOriginalEntityBatch(first.priority)
         scheduleOriginalEntityBatchIfCapacity()
     }
     scheduleOriginalEntityBatchIfCapacity()
 }
 
 internal fun AppleInternalCatalogResolver.scheduleOriginalEntityBatchIfCapacity() {
-    val shouldSchedule = synchronized(originalEntityPending) {
-        if (
-            originalEntityPending.isEmpty() ||
-            originalEntityBatchScheduled ||
-            !canStartOriginalEntityBatchLocked()
-        ) {
-            false
-        } else {
-            originalEntityBatchScheduled = true
-            true
-        }
-    }
-    if (shouldSchedule) mainHandler.post(::processOriginalEntityBatch)
-}
-
-internal fun AppleInternalCatalogResolver.canStartOriginalEntityBatchLocked(): Boolean {
-    val nextPriority = originalEntityPending.values
-        .maxByOrNull { request -> request.priority.ordinal }
-        ?.priority
-        ?: return false
-    return canStartRequest(
-        priority = nextPriority,
-        totalRunning = originalEntityBatchesRunning,
-        backgroundRunning = originalEntityBackgroundBatchesRunning,
-        maxRunning = MAX_ORIGINAL_ENTITY_BATCHES_RUNNING,
-        maxBackgroundRunning = MAX_BACKGROUND_ORIGINAL_ENTITY_BATCHES_RUNNING,
-    )
+    if (dispatch.shouldScheduleOriginalEntityBatch()) mainHandler.post(::processOriginalEntityBatch)
 }
 
 
@@ -289,7 +204,7 @@ internal fun AppleInternalCatalogResolver.resolveManyForContentUiLanguageSingleL
                 mediaId,
                 language,
             )
-            rememberRequestPriority(mediaId, priority)
+            dispatch.rememberRequestPriority(mediaId, priority)
             LocalizedRequest(
                 cacheKey = cacheKey,
                 requestKey = "$cacheKey:${normalizedLookupIds.joinToString(",")}".trim(),
@@ -299,7 +214,7 @@ internal fun AppleInternalCatalogResolver.resolveManyForContentUiLanguageSingleL
                 selection = selection,
                 storefront = storefront,
                 language = language,
-                priority = currentRequestPriority(mediaId, priority),
+                priority = dispatch.currentRequestPriority(mediaId, priority),
             )
         }
         .distinctBy(LocalizedRequest::requestKey)
@@ -316,19 +231,19 @@ internal fun AppleInternalCatalogResolver.resolveManyForContentUiLanguageSingleL
     }
     val uncached = mutableListOf<LocalizedRequest>()
     requests.forEach { request ->
-        val cached = synchronized(localizedCache) { localizedCache[request.cacheKey] }
+        val cached = synchronized(caches.localizedCache) { caches.localizedCache[request.cacheKey] }
         if (cached != null) {
             complete(request, cached)
             return@forEach
         }
-        val ownsRequest = synchronized(localizedInFlight) {
-            val callbacks = localizedInFlight[request.requestKey]
+        val ownsRequest = synchronized(dispatch.localizedInFlight) {
+            val callbacks = dispatch.localizedInFlight[request.requestKey]
             if (callbacks != null) {
                 callbacks += { alias -> complete(request, alias) }
                 promotePendingRequests(listOf(request.mediaId), request.priority)
                 false
             } else {
-                localizedInFlight[request.requestKey] =
+                dispatch.localizedInFlight[request.requestKey] =
                     mutableListOf({ alias -> complete(request, alias) })
                 true
             }
@@ -346,10 +261,8 @@ internal fun AppleInternalCatalogResolver.resolveManyForContentUiLanguageSingleL
 }
 
 internal fun AppleInternalCatalogResolver.finishLocalizedCacheHit(request: LocalizedRequest, alias: Alias) {
-    synchronized(localizedCache) { localizedCache[request.cacheKey] = alias }
-    val callbacks = synchronized(localizedInFlight) {
-        localizedInFlight.remove(request.requestKey).orEmpty()
-    }
+    synchronized(caches.localizedCache) { caches.localizedCache[request.cacheKey] = alias }
+    val callbacks = dispatch.drainLocalizedCallbacks(request.requestKey)
     ProviderLogger.info(
         "Apple 地区元数据持久缓存命中: id=${request.mediaId}, " +
             "entityType=${request.entityType}, selection=${request.selection}"
@@ -359,68 +272,16 @@ internal fun AppleInternalCatalogResolver.finishLocalizedCacheHit(request: Local
 
 internal fun AppleInternalCatalogResolver.enqueueLocalizedRequest(request: LocalizedRequest) {
     val prioritized = request.copy(
-        priority = currentRequestPriority(request.mediaId, request.priority),
+        priority = dispatch.currentRequestPriority(request.mediaId, request.priority),
     )
-    val shouldSchedule = synchronized(localizedPending) {
-        val existing = localizedPending[prioritized.requestKey]
-        localizedPending[prioritized.requestKey] = if (existing == null) {
-            prioritized
-        } else {
-            existing.copy(
-                priority = higherPriority(existing.priority, prioritized.priority),
-            )
-        }
-        if (
-            localizedBatchScheduled ||
-            !canStartLocalizedBatchLocked()
-        ) {
-            false
-        } else {
-            localizedBatchScheduled = true
-            true
-        }
-    }
-    if (shouldSchedule) {
+    if (dispatch.submitLocalizedRequest(prioritized)) {
         mainHandler.postDelayed(::processLocalizedBatch, LOCALIZED_BATCH_DELAY_MS)
     }
 }
 
 internal fun AppleInternalCatalogResolver.processLocalizedBatch() {
-    val batch = synchronized(localizedPending) {
-        localizedBatchScheduled = false
-        if (
-            localizedPending.isEmpty() ||
-            !canStartLocalizedBatchLocked()
-        ) return
-        val pendingValues = localizedPending.values.toList()
-        val first = pendingValues[
-            selectNextRequestIndex(pendingValues.map(LocalizedRequest::priority))
-                ?: return
-        ]
-        val selected = mutableListOf<LocalizedRequest>()
-        val selectedIds = linkedSetOf<String>()
-        localizedPending.values.forEach { request ->
-            if (
-                request.priority == first.priority &&
-                request.storefront == first.storefront &&
-                request.language == first.language &&
-                request.entityType == first.entityType
-            ) {
-                val newIds = request.lookupIds.filterNot(selectedIds::contains)
-                if (selected.isNotEmpty() && selectedIds.size + newIds.size > LOCALIZED_BATCH_SIZE) {
-                    return@forEach
-                }
-                selected += request
-                selectedIds += request.lookupIds
-            }
-        }
-        selected.forEach { localizedPending.remove(it.requestKey) }
-        localizedBatchesRunning += 1
-        if (first.priority == RequestPriority.BACKGROUND) {
-            localizedBackgroundBatchesRunning += 1
-        }
-        selected
-    }
+    val batch = dispatch.takeLocalizedBatch()
+    if (batch.isEmpty()) return
 
     queryByConfiguredRegion(
         mediaIds = batch.flatMap(LocalizedRequest::lookupIds).distinct(),
@@ -437,45 +298,14 @@ internal fun AppleInternalCatalogResolver.processLocalizedBatch() {
             }
             finishLocalizedRequest(request, resolvedEntry?.first, alias)
         }
-        synchronized(localizedPending) {
-            localizedBatchesRunning -= 1
-            if (batch.first().priority == RequestPriority.BACKGROUND) {
-                localizedBackgroundBatchesRunning -= 1
-            }
-        }
+        dispatch.endLocalizedBatch(batch.first().priority)
         scheduleLocalizedBatchIfCapacity()
     }
     scheduleLocalizedBatchIfCapacity()
 }
 
 internal fun AppleInternalCatalogResolver.scheduleLocalizedBatchIfCapacity() {
-    val shouldSchedule = synchronized(localizedPending) {
-        if (
-            localizedPending.isEmpty() ||
-            localizedBatchScheduled ||
-            !canStartLocalizedBatchLocked()
-        ) {
-            false
-        } else {
-            localizedBatchScheduled = true
-            true
-        }
-    }
-    if (shouldSchedule) mainHandler.post(::processLocalizedBatch)
-}
-
-internal fun AppleInternalCatalogResolver.canStartLocalizedBatchLocked(): Boolean {
-    val nextPriority = localizedPending.values
-        .maxByOrNull { request -> request.priority.ordinal }
-        ?.priority
-        ?: return false
-    return canStartRequest(
-        priority = nextPriority,
-        totalRunning = localizedBatchesRunning,
-        backgroundRunning = localizedBackgroundBatchesRunning,
-        maxRunning = MAX_LOCALIZED_BATCHES_RUNNING,
-        maxBackgroundRunning = MAX_BACKGROUND_LOCALIZED_BATCHES_RUNNING,
-    )
+    if (dispatch.shouldScheduleLocalizedBatch()) mainHandler.post(::processLocalizedBatch)
 }
 
 internal fun AppleInternalCatalogResolver.promotePendingRequests(
@@ -487,19 +317,19 @@ internal fun AppleInternalCatalogResolver.promotePendingRequests(
         .filter(String::isNotEmpty)
         .toSet()
     if (normalizedIds.isEmpty()) return
-    if (requestScopeActive) {
-        val scopedPriorities = normalizedIds.associateWith(::currentScopedPriority)
-        updatePendingRequestPriorities(
+    if (dispatch.requestScopeActive) {
+        val scopedPriorities = normalizedIds.associateWith(dispatch::currentScopedPriority)
+        dispatch.updatePendingRequestPriorities(
             scopedPriorities = scopedPriorities,
             onlyMediaIds = normalizedIds,
         )
         return
     }
     if (priority == RequestPriority.BACKGROUND) return
-    normalizedIds.forEach { mediaId -> rememberRequestPriority(mediaId, priority) }
+    normalizedIds.forEach { mediaId -> dispatch.rememberRequestPriority(mediaId, priority) }
     var localizedPromoted = 0
-    synchronized(localizedPending) {
-        localizedPending.entries.forEach { entry ->
+    synchronized(dispatch.localizedPending) {
+        dispatch.localizedPending.entries.forEach { entry ->
             val request = entry.value
             if (request.mediaId in normalizedIds && request.priority.ordinal < priority.ordinal) {
                 entry.setValue(request.copy(priority = priority))
@@ -508,8 +338,8 @@ internal fun AppleInternalCatalogResolver.promotePendingRequests(
         }
     }
     var originalPromoted = 0
-    synchronized(originalEntityPending) {
-        originalEntityPending.entries.forEach { entry ->
+    synchronized(dispatch.originalEntityPending) {
+        dispatch.originalEntityPending.entries.forEach { entry ->
             val request = entry.value
             if (request.mediaId in normalizedIds && request.priority.ordinal < priority.ordinal) {
                 entry.setValue(request.copy(priority = priority))
@@ -534,22 +364,11 @@ internal fun AppleInternalCatalogResolver.updateRequestScope(
 ) {
     val visible = normalizeRequestScopeIds(visibleMediaIds)
     val activePage = normalizeRequestScopeIds(activePageMediaIds) - visible
-    synchronized(requestPriorityByMediaId) {
-        if (requestScopeActive && requestScopeRevision == revision) return
-        requestScopeActive = true
-        requestScopeRevision = revision
-        requestPriorityByMediaId.clear()
-        activePage.forEach { mediaId ->
-            requestPriorityByMediaId[mediaId] = RequestPriority.ACTIVE_PAGE
-        }
-        visible.forEach { mediaId ->
-            requestPriorityByMediaId[mediaId] = RequestPriority.VISIBLE
-        }
-    }
+    if (!dispatch.applyRequestScope(revision, visible, activePage)) return
     val scopedPriorities = (visible + activePage).associateWith { mediaId ->
         priorityForRequestScope(mediaId, visible, activePage)
     }
-    val changed = updatePendingRequestPriorities(scopedPriorities)
+    val changed = dispatch.updatePendingRequestPriorities(scopedPriorities)
     if (BuildConfig.DEBUG && changed > 0) {
         ProviderLogger.info(
             "Apple 元数据请求作用域同步: revision=$revision, " +
@@ -560,86 +379,16 @@ internal fun AppleInternalCatalogResolver.updateRequestScope(
     scheduleOriginalEntityBatchIfCapacity()
 }
 
-internal fun AppleInternalCatalogResolver.updatePendingRequestPriorities(
-    scopedPriorities: Map<String, RequestPriority>,
-    onlyMediaIds: Set<String>? = null,
-): Int {
-    var changed = 0
-    synchronized(localizedPending) {
-        localizedPending.entries.forEach { entry ->
-            val request = entry.value
-            if (onlyMediaIds != null && request.mediaId !in onlyMediaIds) {
-                return@forEach
-            }
-            val next = scopedPriorities[request.mediaId] ?: RequestPriority.BACKGROUND
-            if (request.priority != next) {
-                entry.setValue(request.copy(priority = next))
-                changed += 1
-            }
-        }
-    }
-    synchronized(originalEntityPending) {
-        originalEntityPending.entries.forEach { entry ->
-            val request = entry.value
-            if (onlyMediaIds != null && request.mediaId !in onlyMediaIds) {
-                return@forEach
-            }
-            val next = scopedPriorities[request.mediaId] ?: RequestPriority.BACKGROUND
-            if (request.priority != next) {
-                entry.setValue(request.copy(priority = next))
-                changed += 1
-            }
-        }
-    }
-    return changed
-}
-
-internal fun AppleInternalCatalogResolver.currentScopedPriority(mediaId: String): RequestPriority =
-    synchronized(requestPriorityByMediaId) {
-        requestPriorityByMediaId[mediaId.trim()] ?: RequestPriority.BACKGROUND
-    }
-
-internal fun AppleInternalCatalogResolver.rememberRequestPriority(mediaId: String, priority: RequestPriority) {
-    val normalizedId = mediaId.trim()
-    if (normalizedId.isEmpty()) return
-    synchronized(requestPriorityByMediaId) {
-        if (requestScopeActive) {
-            requestPriorityByMediaId.putIfAbsent(
-                normalizedId,
-                RequestPriority.BACKGROUND,
-            )
-            return
-        }
-        requestPriorityByMediaId[normalizedId] = higherPriority(
-            requestPriorityByMediaId[normalizedId] ?: RequestPriority.BACKGROUND,
-            priority,
-        )
-    }
-}
-
-internal fun AppleInternalCatalogResolver.currentRequestPriority(
-    mediaId: String,
-    fallback: RequestPriority,
-): RequestPriority = synchronized(requestPriorityByMediaId) {
-    if (requestScopeActive) {
-        requestPriorityByMediaId[mediaId.trim()] ?: RequestPriority.BACKGROUND
-    } else {
-        higherPriority(requestPriorityByMediaId[mediaId.trim()] ?: fallback, fallback)
-    }
-}
-
 internal fun AppleInternalCatalogResolver.finishLocalizedRequest(
     request: LocalizedRequest,
     resolvedLookupId: String?,
     alias: Alias?,
 ) {
     if (alias != null) {
-        synchronized(localizedCache) { localizedCache[request.cacheKey] = alias }
+        synchronized(caches.localizedCache) { caches.localizedCache[request.cacheKey] = alias }
         persistentLocalizedCache.put(request.cacheKey, alias)
     }
-    val callbacks = synchronized(localizedInFlight) {
-        localizedInFlight.remove(request.requestKey).orEmpty()
-    }
+    val callbacks = dispatch.drainLocalizedCallbacks(request.requestKey)
     ProviderLogger.info(
             "Apple 播放元数据地区查询完成: id=${request.mediaId}, " +
             "lookupIds=${request.lookupIds}, resolvedBy=$resolvedLookupId, " +
@@ -680,15 +429,15 @@ internal fun AppleInternalCatalogResolver.finishResolve(
     }
     val originalAlias = selected ?: confirmedRegionalAlias
     if (originalAlias != null) {
-        synchronized(cache) { cache[metadata.id] = originalAlias }
+        synchronized(caches.originalSongCache) { caches.originalSongCache[metadata.id] = originalAlias }
         persistentOriginalCache.put(originalSongCacheKey(metadata.id), originalAlias)
     }
     val resolvedAlbum = originalAlbumFromResolution(
         alias = originalAlias,
         acceptableResults = acceptableResults,
     )
-    discardOriginalCandidates(metadata.id)
-    val callbacks = synchronized(inFlight) { inFlight.remove(metadata.id).orEmpty() }
+    dispatch.discardOriginalCandidates(metadata.id)
+    val callbacks = dispatch.drainOriginalSongCallbacks(metadata.id)
     ProviderLogger.info(
         "Apple 内部原名查询完成: id=${metadata.id}, genre=${metadata.genre}, " +
             "languages=$canonicalLanguages, selected=${originalAlias?.title}/${originalAlias?.artist}"
@@ -705,8 +454,8 @@ internal fun AppleInternalCatalogResolver.finishResolve(
 }
 
 internal fun AppleInternalCatalogResolver.finishCachedOriginalResolve(mediaId: String, alias: Alias) {
-    discardOriginalCandidates(mediaId)
-    val callbacks = synchronized(inFlight) { inFlight.remove(mediaId).orEmpty() }
+    dispatch.discardOriginalCandidates(mediaId)
+    val callbacks = dispatch.drainOriginalSongCallbacks(mediaId)
     ProviderLogger.info(
         "Apple 原地区元数据缓存命中: id=$mediaId, language=${alias.language}"
     )
@@ -724,27 +473,11 @@ internal fun AppleInternalCatalogResolver.registerOriginalCandidateCallback(
     mediaId: String,
     callback: (Alias) -> Unit,
 ) {
-    synchronized(originalCandidateCallbacks) {
-        originalCandidateCallbacks.getOrPut(mediaId) { mutableListOf() }.add(callback)
-    }
-    catalogIdentityCache[mediaId]
+    dispatch.addOriginalCandidateCallback(mediaId, callback)
+    caches.catalogIdentityCache[mediaId]
         ?.fallbackAliases
         ?.firstOrNull()
-        ?.let { alias -> publishOriginalCandidate(mediaId, alias) }
-}
-
-internal fun AppleInternalCatalogResolver.publishOriginalCandidate(mediaId: String, alias: Alias) {
-    if (alias.title.isBlank() && alias.artist.isBlank()) return
-    val callbacks = synchronized(originalCandidateCallbacks) {
-        originalCandidateCallbacks.remove(mediaId).orEmpty()
-    }
-    callbacks.forEach { callback -> callback(alias) }
-}
-
-internal fun AppleInternalCatalogResolver.discardOriginalCandidates(mediaId: String) {
-    synchronized(originalCandidateCallbacks) {
-        originalCandidateCallbacks.remove(mediaId)
-    }
+        ?.let { alias -> dispatch.publishOriginalCandidate(mediaId, alias) }
 }
 
 

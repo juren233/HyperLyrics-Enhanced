@@ -123,14 +123,14 @@ internal fun AppleLyricsSupplementHooks.requestMissingLyricsPresentationRefresh(
         ProviderLogger.debug(
             "Apple Music 无歌词补充呈现刷新进入: method=" +
                 "${appleLyricsResultPresentationMethod != null}, fragmentRef=" +
-                "${appleLyricsFragmentRef?.get() != null}, override=" +
+                "${presentationBinding.fragment() != null}, override=" +
                 "${fragmentOverride != null}, supplement=${supplementPointer != null}, " +
                 "currentPlaybackItem=${currentPlaybackItem != null}"
         )
         val method = appleLyricsResultPresentationMethod ?: return@post
-        val fragment = fragmentOverride ?: appleLyricsFragmentRef?.get() ?: return@post
+        val fragment = fragmentOverride ?: presentationBinding.fragment() ?: return@post
         val pointer = supplementPointer
-            ?: appleLyricsSongPointerRef?.get()
+            ?: presentationBinding.pointer()
             ?: return@post
         if (supplementPointer != null) {
             if (!injectSupplementIntoViewModel(
@@ -518,8 +518,9 @@ internal fun AppleLyricsSupplementHooks.refreshAppleLyricsSupplementPresentation
         }
         onlineSourceMenuHooks().clearInactiveMenu()
         val method = appleLyricsPresentationMethod ?: return@post
-        val fragment = appleLyricsFragmentRef?.get() ?: return@post
-        val pointer = appleLyricsSongPointerRef?.get() ?: return@post
+        val binding = presentationBinding.snapshot()
+        val fragment = binding.fragment ?: return@post
+        val pointer = binding.pointer ?: return@post
         val songNative = runCatching {
             lyricsNativeCall(pointer, AppleMusicRuntimeMember.LYRICS_NATIVE_POINTER_GET_METHOD)
         }.getOrNull() ?: return@post
@@ -544,13 +545,7 @@ internal fun AppleLyricsSupplementHooks.refreshAppleLyricsSupplementPresentation
             )
             return@post
         }
-        if (currentAppleLyricsSongId != currentSongId) {
-            clearPendingApplePronunciationRenderPlans()
-            clearPendingAppleLyricsScrollRestore()
-            currentAppleLyricsSongId = currentSongId
-            appleLyricsScrollSnapshot = null
-            appleLyricsScrollSnapshotSongId = null
-        }
+        onAppleLyricsDisplayTrackChanged(currentSongId)
         currentSongId?.let { ensureAppleLyricsScrollTracking(fragment, it) }
         ensureAppleLyricTextHooks(songNative)
         applyAppleNativeSupplementSelection(songNative)
@@ -577,12 +572,14 @@ internal fun AppleLyricsSupplementHooks.refreshAppleLyricsSupplementPresentation
  * Apple 的文本 getter 会从 Store 动态读取翻译；这里不再重新调用完整呈现方法，
  * 也不发送带 payload 的 notify（Apple karaoke holder 会把翻译子行重复追加）。
  */
-internal fun AppleLyricsSupplementHooks.refreshVisibleMissingLyricsTranslation(expectedSongId: String) {
-    if (expectedSongId.isBlank()) return
+internal fun AppleLyricsSupplementHooks.refreshVisibleMissingLyricsTranslation(update: AppleMissingLyricsPresentationUpdate) {
+    val expectedSongId = update.songId?.takeIf(String::isNotBlank) ?: return
     mainHandler.post {
-        if (currentAppleLyricsSongId != expectedSongId) return@post
-        val fragment = appleLyricsFragmentRef?.get() ?: return@post
-        val pointer = appleLyricsSongPointerRef?.get() ?: return@post
+        if (!missingLyricsSupplement().store.isCurrentPresentation(update)) return@post
+        val binding = presentationBinding.snapshot()
+        if (binding.songId != expectedSongId) return@post
+        val fragment = binding.fragment ?: return@post
+        val pointer = binding.pointer ?: return@post
         if (!missingLyricsSupplement().isSupplementPointer(pointer)) return@post
         val songNative = runCatching {
             lyricsNativeCall(pointer, AppleMusicRuntimeMember.LYRICS_NATIVE_POINTER_GET_METHOD)
@@ -593,7 +590,11 @@ internal fun AppleLyricsSupplementHooks.refreshVisibleMissingLyricsTranslation(e
         applyAppleNativeSupplementSelection(songNative)
         ensureMissingLyricsTranslationButtonVisible(fragment)
         val recyclerView = resolveAppleLyricsRecyclerView(fragment) ?: return@post
-        refreshVisibleAppleLyricsRows(recyclerView, expectedSongId)
+        val ticket = presentationBinding.ticket()
+        refreshVisibleAppleLyricsRows(recyclerView, expectedSongId, isCurrent = {
+            presentationBinding.isCurrent(ticket) &&
+                missingLyricsSupplement().store.isCurrentPresentation(update)
+        })
     }
 }
 
@@ -601,30 +602,24 @@ internal fun AppleLyricsSupplementHooks.deferNativeTranslationPresentationRefres
     expectedSongId: String,
     expectedRevision: Long?,
 ) {
-    deferredNativeTranslationRefreshSongId = expectedSongId
-    deferredNativeTranslationRefreshRevision = expectedRevision
-    if (deferredNativeTranslationRefreshScheduled) return
-    deferredNativeTranslationRefreshScheduled = true
+    val update = AppleLyricsPresentationUpdate(expectedSongId, expectedRevision)
+    if (!deferredTranslationPresentation.offer(update)) return
     mainHandler.postDelayed(
         {
-            deferredNativeTranslationRefreshScheduled = false
-            val deferredSongId = deferredNativeTranslationRefreshSongId
-                ?: return@postDelayed
-            val deferredRevision = deferredNativeTranslationRefreshRevision
+            val deferred = deferredTranslationPresentation.take() ?: return@postDelayed
+            val deferredSongId = deferred.songId ?: return@postDelayed
             val popupStillShowing =
                 onlineSourceMenuHooks().isMenuShowingForSong(deferredSongId)
             if (popupStillShowing) {
                 deferNativeTranslationPresentationRefresh(
                     expectedSongId = deferredSongId,
-                    expectedRevision = deferredRevision,
+                    expectedRevision = deferred.revision,
                 )
                 return@postDelayed
             }
-            deferredNativeTranslationRefreshSongId = null
-            deferredNativeTranslationRefreshRevision = null
             refreshAppleLyricsSupplementPresentation(
                 expectedSongId = deferredSongId,
-                expectedRevision = deferredRevision,
+                expectedRevision = deferred.revision,
                 deferWhileSourceMenuShowing = false,
             )
         },

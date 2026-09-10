@@ -47,7 +47,7 @@ internal fun AppleMissingLyricsHooks.sourceInfo(songId: String?): AppleMissingLy
     songId?.takeIf(String::isNotBlank)?.let(::restoreCachedSupplement)
     val resolvedSongId = resolveStoredSupplementContentId(songId)
     val info = store.sourceInfo(resolvedSongId) ?: return null
-    val selected = resolvedSongId?.let({ manualLyricsSourceSelections.get(it) })
+    val selected = resolvedSongId?.let({ lyricsSourceSelection.selected(it) })
         ?: info.selectedSource
     return info.copy(selectedSource = selected)
 }
@@ -100,9 +100,9 @@ internal fun AppleMissingLyricsHooks.eligibleLunaBeatSourceInfo(
 }
 
 internal fun AppleMissingLyricsHooks.nativeLyricsTimingStats(songId: String): AppleNativeLyricsTimingStats? {
-    appleNativeLyricsTimingStats[songId]?.let { return it }
+    nativeAlternatives.timing(songId)?.let { return it }
     val identity = store.playbackIdentity(songId)
-    return identity?.adamId?.toString()?.let({ appleNativeLyricsTimingStats.get(it) })
+    return identity?.adamId?.toString()?.let({ nativeAlternatives.timing(it) })
 }
 
 internal fun AppleMissingLyricsHooks.isLunaBeatSupplement(song: Song): Boolean =
@@ -113,7 +113,7 @@ internal fun AppleMissingLyricsHooks.isLunaBeatSupplement(song: Song): Boolean =
 internal fun AppleMissingLyricsHooks.shouldPreferLunaBeat(songId: String?): Boolean {
     val contentSongId = songId?.takeIf(String::isNotBlank) ?: return false
     if (!isLunaBeatWordLyricsEnabled() || !store.hasContent(contentSongId)) return false
-    val selectedSource = manualLyricsSourceSelections[contentSongId]
+    val selectedSource = lyricsSourceSelection.selected(contentSongId)
         ?: store.sourceInfo(contentSongId)?.selectedSource
     return selectedSource == AppleMissingLyricsHooks.Companion.SourceName.LUNA_BEAT &&
         isLunaBeatEligibleForSong(contentSongId)
@@ -140,10 +140,10 @@ internal fun AppleMissingLyricsHooks.onLyricsSourceSelectionChanged(
     } else {
         requireNotNull(source)
     }
-    manualLyricsSourceSelections[contentSongId] = effectiveSource
+    lyricsSourceSelection.select(contentSongId, effectiveSource)
 
     val lunaBeatPointer = store.nativeSongInfoPointer(contentSongId)
-    val appleNativePointer = appleNativeLyricsPointers[contentSongId]
+    val appleNativePointer = nativeAlternatives.pointer(contentSongId)
         ?.takeIf { readNativeLineCount(it) > 0 }
     val action = appleLyricsSourcePresentationAction(
         source = effectiveSource,
@@ -152,7 +152,7 @@ internal fun AppleMissingLyricsHooks.onLyricsSourceSelectionChanged(
     )
     when (action) {
         AppleLyricsSourcePresentationAction.PRESENT_LUNA_BEAT -> {
-            acceptedSupplementSongIds.add(contentSongId)
+            candidates.accept(contentSongId)
             requestLyricsSourcePresentation(
                 songId = contentSongId,
                 source = AppleMissingLyricsHooks.Companion.SourceName.LUNA_BEAT,
@@ -160,7 +160,7 @@ internal fun AppleMissingLyricsHooks.onLyricsSourceSelectionChanged(
             )
         }
         AppleLyricsSourcePresentationAction.BUILD_LUNA_BEAT -> {
-            acceptedSupplementSongIds.add(contentSongId)
+            candidates.accept(contentSongId)
             scheduleNativeLyricsModel(contentSongId)
         }
         AppleLyricsSourcePresentationAction.PRESENT_APPLE_NATIVE -> {
@@ -260,7 +260,7 @@ internal fun AppleMissingLyricsHooks.hasSupplementContent(songId: String?): Bool
 }
 
 internal fun AppleMissingLyricsHooks.resolveSupplementContentId(songId: String?): String? =
-    songId?.takeIf { it in acceptedSupplementSongIds && store.hasContent(it) }
+    songId?.takeIf { candidates.isAccepted(it) && store.hasContent(it) }
 
 internal fun AppleMissingLyricsHooks.resolveStoredSupplementContentId(songId: String?): String? {
     val requestedSongId = songId?.takeIf(String::isNotBlank) ?: return null
@@ -292,25 +292,20 @@ internal fun AppleMissingLyricsHooks.onNativeLyricsState(songId: String?, hasLin
         else -> songId
     }
     if (hasLines) {
-        if (
-            nativeLyricsAdamIds.size >= AppleMissingLyricsHooks.MAX_REMEMBERED_NATIVE_LYRICS_SONG_IDS ||
-            nativeLyricsContentIds.size >= AppleMissingLyricsHooks.MAX_REMEMBERED_NATIVE_LYRICS_SONG_IDS
-        ) {
-            nativeLyricsAdamIds.clear()
-            nativeLyricsContentIds.clear()
-        }
-        nativeLyricsAdamIds.add(songId)
-        if (identity?.adamId?.toString() == songId) {
-            nativeLyricsContentIds.add(identity.contentSongId)
-        } else if (contentSongId == songId) {
-            nativeLyricsContentIds.add(contentSongId)
-        }
+        nativeLyricsKnowledge.remember(
+            adamId = songId,
+            contentId = when {
+                identity?.adamId?.toString() == songId -> identity.contentSongId
+                contentSongId == songId -> contentSongId
+                else -> null
+            },
+        )
         nativeTakeoverGate.onNativeResult(contentSongId, hasLyrics = true)
         if (songId != contentSongId) {
             nativeTakeoverGate.onNativeResult(songId, hasLyrics = true)
         }
         if (shouldPreferLunaBeat(contentSongId)) {
-            acceptedSupplementSongIds.add(contentSongId)
+            candidates.accept(contentSongId)
             scheduleNativeLyricsModel(contentSongId)
             mainHandler.post { refreshNowPlaying(contentSongId) }
         } else {
@@ -323,14 +318,14 @@ internal fun AppleMissingLyricsHooks.onNativeLyricsState(songId: String?, hasLin
                     lunaBeatEnabled = isLunaBeatWordLyricsEnabled(),
                     storedSourceInfo = storedSourceInfo,
                 )
-            acceptedSupplementSongIds.remove(contentSongId)
-            supplementAvailabilitySongIds.remove(contentSongId)
+            candidates.revokeAcceptance(contentSongId)
+            candidates.revokeAvailability(contentSongId)
             scheduledTakeoverRechecks.remove(contentSongId)
             if (retainLunaBeatAlternative) {
                 if (BuildConfig.DEBUG) {
                     ProviderLogger.diagnostic(
                         "Apple Music 原生歌词已呈现，保留 LunaBeat 备选: " +
-                            "id=$contentSongId, selected=${manualLyricsSourceSelections[contentSongId]}, " +
+                            "id=$contentSongId, selected=${lyricsSourceSelection.selected(contentSongId)}, " +
                             "stored=$storedSourceInfo"
                     )
                 }
@@ -403,11 +398,8 @@ internal fun AppleMissingLyricsHooks.onLyricsItem(item: Any?) {
  */
 internal fun AppleMissingLyricsHooks.onCurrentPlaybackItem(contentSongId: String, item: Any?, queueId: Long) {
     if (!isEnabled() || contentSongId.isBlank()) return
-    if (manualSelectionPlaybackSongId != contentSongId) {
-        manualLyricsSourceSelections.clear()
-        appleNativeLyricsPointers.keys.removeAll { it != contentSongId }
-        appleNativeLyricsTimingStats.keys.removeAll { it != contentSongId }
-        manualSelectionPlaybackSongId = contentSongId
+    if (lyricsSourceSelection.beginPlayback(contentSongId)) {
+        nativeAlternatives.retainTrack(contentSongId)
     }
     nativeTakeoverGate.observe(contentSongId)
     scheduleTakeoverRecheck(contentSongId)

@@ -657,3 +657,120 @@ internal class AppleQueueMetadataHooks(
         const val MEDIA3_METADATA_ID_KEY = Constants.APPLE_MEDIA3_METADATA_ID_KEY
     }
 }
+
+/**
+ * 队列元数据 Hook 的默认宿主实现：orchestrator 依赖以 supplier 显式注入，保持原匿名实现
+ * "调用期解析"的语义；inAppMetadataRegistry 为根单例构造期值可直捕。
+ */
+internal class DefaultAppleQueueMetadataHost(
+    private val activePlaybackIdentityFn: () -> ActivePlaybackMediaIdentity,
+    private val logMetadataIdentityFn: (String, ActivePlaybackMediaIdentity, String) -> Unit,
+    private val media3MetadataIdFn: (Any, String?, Boolean) -> String?,
+    private val media3MetadataDetailsFn: (Any) -> String,
+    private val registerMetadataFn: (String, Any, Boolean, Boolean, RequestPriority) -> Unit,
+    private val registerPlaybackItemFn: (String, Any, Boolean, Boolean) -> Unit,
+    private val contentItemMediaIdFn: (Any, Boolean) -> String?,
+    private val effectiveAliasFn: (String) -> Alias?,
+    private val applyAliasToPlaybackItemFn: (Any, Alias, Boolean) -> Unit,
+    private val shouldRequestOverrideFn: (String) -> Boolean,
+    private val ensureOverrideFn: (String, Boolean, RequestPriority) -> Unit,
+    private val ensureOverridesFn: (Collection<String>, Boolean, Int) -> Unit,
+    private val readPlaybackItemValueFn: (
+        Any, InAppPlaybackItemField, InAppPlaybackItemContract,
+    ) -> String?,
+    private val markMetadataVisibleFn: (Collection<String>) -> Unit,
+    private val isCurrentMetadataSurfaceMediaIdFn: (String) -> Boolean,
+    private val registry: AppleInAppMetadataRegistry,
+) : AppleQueueMetadataHost {
+    override fun activePlaybackIdentity(): ActivePlaybackMediaIdentity =
+        activePlaybackIdentityFn()
+
+    override fun logMetadataIdentity(
+        event: String,
+        identity: ActivePlaybackMediaIdentity,
+        details: String,
+    ) {
+        logMetadataIdentityFn(event, identity, details)
+    }
+
+    override fun media3MetadataId(metadata: Any, fallback: String?, trustedFallback: Boolean): String? =
+        media3MetadataIdFn(metadata, fallback, trustedFallback)
+
+    override fun media3MetadataDetails(metadata: Any): String =
+        media3MetadataDetailsFn(metadata)
+
+    override fun registerMetadata(
+        mediaId: String,
+        metadata: Any,
+        requestResolution: Boolean,
+        preBind: Boolean,
+        priority: RequestPriority,
+    ) {
+        registerMetadataFn(mediaId, metadata, requestResolution, preBind, priority)
+    }
+
+    override fun registerPlaybackItem(
+        mediaId: String,
+        playbackItem: Any,
+        notifyChange: Boolean,
+        analyzeMetadata: Boolean,
+    ) {
+        registerPlaybackItemFn(mediaId, playbackItem, notifyChange, analyzeMetadata)
+    }
+
+    override fun contentItemMediaId(contentItem: Any, refresh: Boolean): String? =
+        contentItemMediaIdFn(contentItem, refresh)
+
+    override fun effectiveAlias(mediaId: String): Alias? =
+        effectiveAliasFn(mediaId)
+
+    override fun applyAliasToPlaybackItem(
+        playbackItem: Any,
+        alias: Alias,
+        notifyChange: Boolean,
+    ) {
+        applyAliasToPlaybackItemFn(playbackItem, alias, notifyChange)
+    }
+
+    override fun shouldRequestOverride(mediaId: String): Boolean =
+        shouldRequestOverrideFn(mediaId)
+
+    override fun ensureOverride(
+        mediaId: String,
+        preBind: Boolean,
+        priority: RequestPriority,
+    ) {
+        ensureOverrideFn(mediaId, preBind, priority)
+    }
+
+    override fun ensureOverrides(
+        mediaIds: Collection<String>,
+        preBind: Boolean,
+        originalResolutionLimit: Int,
+    ) {
+        ensureOverridesFn(mediaIds, preBind, originalResolutionLimit)
+    }
+
+    override fun readPlaybackItemValue(
+        playbackItem: Any,
+        field: InAppPlaybackItemField,
+        contract: InAppPlaybackItemContract,
+    ): String? = readPlaybackItemValueFn(playbackItem, field, contract)
+
+    override fun markMetadataVisible(mediaIds: Collection<String>) {
+        markMetadataVisibleFn(mediaIds)
+    }
+
+    override fun isCurrentMetadataSurfaceMediaId(mediaId: String): Boolean =
+        isCurrentMetadataSurfaceMediaIdFn(mediaId)
+
+    override fun markPlaybackItemHistory(playbackItem: Any) {
+        registry.markPlaybackItemContract(
+            playbackItem,
+            InAppPlaybackItemContract.HISTORY,
+        )
+    }
+
+    override fun hasLivePlaybackItem(mediaId: String): Boolean =
+        registry.hasLivePlaybackItem(mediaId)
+}

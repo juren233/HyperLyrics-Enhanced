@@ -39,8 +39,10 @@ internal fun AppleLyricsSupplementHooks.hookAppleLyricTextGetter(clazz: Class<*>
             lyricsRuntimeMember(
                 AppleMusicRuntimeMember.LYRICS_NATIVE_TRANSLATION_TEXT_METHOD
             ) -> {
-                val text = AppleNativeOnlineTranslationStore.sanitizeContent(originalText)
-                    ?: onlineTranslationForNativeLine(chain.thisObject)
+                val text = selectAppleLyricsText(
+                    official = AppleNativeOnlineTranslationStore.sanitizeContent(originalText),
+                    fallback = { onlineTranslationForNativeLine(chain.thisObject) },
+                ).text
                 val result = AppleLyricTextTransform.transform(text) ?: original
                 if (BuildConfig.DEBUG) {
                     ProviderLogger.debug(
@@ -60,11 +62,10 @@ internal fun AppleLyricsSupplementHooks.hookAppleLyricTextGetter(clazz: Class<*>
                     originalText = nativeOriginalLineText(chain.thisObject),
                     pronunciation = originalText,
                 )
-                val onlineText = if (officialText == null) {
+                val selection = selectAppleLyricsText(officialText) {
                     onlinePronunciationForNativeLine(chain.thisObject)
-                } else {
-                    null
                 }
+                val onlineText = selection.text.takeIf { selection.fromFallback }
                 if (onlineText != null) {
                     reportApplePronunciationRuntimeDiagnostic(
                         stage = "line_text_overlay",
@@ -74,7 +75,7 @@ internal fun AppleLyricsSupplementHooks.hookAppleLyricTextGetter(clazz: Class<*>
                         ),
                     )
                 }
-                val text = officialText ?: onlineText
+                val text = selection.text
                 val displayText = ApplePronunciationPolicy.nonNullDisplayText(
                     AppleLyricTextTransform.transform(text)
                 )

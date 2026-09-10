@@ -96,6 +96,9 @@ internal class AppleMissingLyricsStore {
     @Volatile
     private var contentRevision = 0L
 
+    /** Every accepted content change, including translation-only and metadata-only updates. */
+    private var presentationRevision = 0L
+
     @Volatile
     private var playbackIdentity: AppleMissingLyricsPlaybackIdentity? = null
 
@@ -109,6 +112,33 @@ internal class AppleMissingLyricsStore {
      * 这些指针保留到 Apple Music 进程结束，由进程生命周期统一回收。
      */
     private val retainedNativePointers = ArrayList<Any>()
+
+    /** Native-model revision deliberately does not advance for translation-only updates. */
+    data class Receipt(
+        val songId: String?,
+        val hadContent: Boolean,
+        val revisionBefore: Long,
+        val nativeModelRevision: Long,
+        val result: AppleMissingLyricsUpdateResult,
+        val presentation: AppleMissingLyricsPresentationUpdate,
+    )
+
+    /** Capture acceptance and its before/after state without exposing mutable cache fields. */
+    @Synchronized
+    fun receive(song: Song): Receipt {
+        val hadContent = hasContent(song.id)
+        val before = contentRevision
+        val result = updateDetailed(song)
+        return Receipt(
+            song.id, hadContent, before, contentRevision, result,
+            AppleMissingLyricsPresentationUpdate(song.id, presentationRevision),
+        )
+    }
+
+    @Synchronized
+    fun isCurrentPresentation(update: AppleMissingLyricsPresentationUpdate): Boolean =
+        update.songId != null && content?.songId == update.songId &&
+            presentationRevision == update.revision
 
     fun update(song: Song): Boolean = updateDetailed(song).requiresNativeRebuild
 
@@ -230,6 +260,7 @@ internal class AppleMissingLyricsStore {
         }
         if (!lyricsChanged) {
             content = updated
+            presentationRevision += 1
             if (BuildConfig.DEBUG) {
                 ProviderLogger.debug(
                     "Apple Music 补充歌词覆盖层已更新并保留原生模型: " +
@@ -247,6 +278,7 @@ internal class AppleMissingLyricsStore {
         }
         clearNativeModelLocked()
         content = updated
+        presentationRevision += 1
         contentRevision += 1
         if (playbackIdentity?.contentSongId != songId) {
             playbackIdentity = null
@@ -438,6 +470,7 @@ internal class AppleMissingLyricsStore {
         if (playbackIdentity == identity) return false
         if (content != null && content?.songId != identity.contentSongId) {
             content = null
+            presentationRevision += 1
             contentRevision += 1
         }
         clearNativeModelLocked()
@@ -522,6 +555,7 @@ internal class AppleMissingLyricsStore {
         }
         if (!songId.isNullOrBlank() && current.songId != songId) return false
         content = null
+        presentationRevision += 1
         contentRevision += 1
         clearNativeModelLocked()
         return true

@@ -454,3 +454,92 @@ internal class ApplePlaybackMetadataCoordinator(
     private fun playbackMember(member: AppleMusicRuntimeMember): String =
         playbackTarget.runtimeMemberName(member)
 }
+
+/**
+ * 根编排的默认宿主实现：依赖以 supplier 显式注入，保持原匿名实现"调用期解析"
+ * 单例字段的语义（部分 Hook 在宿主构造之后才初始化）。
+ */
+internal class DefaultApplePlaybackMetadataCoordinatorHost(
+    private val activePlayerFn: () -> Any?,
+    private val configuredContentUiLanguageFn: () -> Int,
+    private val shouldOverrideAccountLanguageFn: (Int) -> Boolean,
+    private val shouldRestoreCjkOriginalMetadataFn: (MediaMetadataCache.Metadata) -> Boolean,
+    private val ensureContentItemMetadataHooksFn: (Class<*>) -> Unit,
+    private val setMetadataPlaybackMediaIdFn: (String) -> Unit,
+    private val onCurrentPlaybackItemFn: (String, Any, Long) -> Unit,
+    private val effectiveMetadataAliasFn: (String) -> Alias?,
+    private val applyPlaybackMetadataOverrideFn: (
+        String, Alias, Boolean, Boolean, Boolean,
+    ) -> Unit,
+    private val logMetadataIdentityFn: (String, String) -> Unit,
+    private val shouldShareOriginalSongLanguageFn: (String?, String?, Alias?) -> Boolean,
+    private val rememberOriginalLanguageForArtistFn: (String, String) -> Unit,
+    private val isRestoreOriginalMetadataEnabledFn: () -> Boolean,
+) : ApplePlaybackMetadataCoordinatorHost {
+    override fun activePlayer(): Any? = activePlayerFn()
+
+    override fun configuredContentUiLanguage(): Int = configuredContentUiLanguageFn()
+
+    override fun shouldOverrideAccountLanguage(selection: Int): Boolean =
+        shouldOverrideAccountLanguageFn(selection)
+
+    override fun shouldRestoreCjkOriginalMetadata(
+        metadata: MediaMetadataCache.Metadata,
+    ): Boolean = shouldRestoreCjkOriginalMetadataFn(metadata)
+
+    override fun ensureContentItemMetadataHooks(contentItemClass: Class<*>) {
+        ensureContentItemMetadataHooksFn(contentItemClass)
+    }
+
+    override fun setMetadataPlaybackMediaId(mediaId: String) {
+        setMetadataPlaybackMediaIdFn(mediaId)
+    }
+
+    override fun onCurrentPlaybackItem(mediaId: String, playbackItem: Any, queueId: Long) {
+        onCurrentPlaybackItemFn(mediaId, playbackItem, queueId)
+    }
+
+    override fun effectiveMetadataAlias(mediaId: String): Alias? =
+        effectiveMetadataAliasFn(mediaId)
+
+    override fun applyPlaybackMetadataOverride(
+        mediaId: String,
+        alias: Alias,
+        rememberLocalizedArtist: Boolean,
+        originalMetadata: Boolean,
+        originalMetadataConfirmed: Boolean,
+    ) {
+        applyPlaybackMetadataOverrideFn(
+            mediaId, alias, rememberLocalizedArtist, originalMetadata, originalMetadataConfirmed,
+        )
+    }
+
+    override fun logMetadataIdentity(event: String, details: String) {
+        logMetadataIdentityFn(event, details)
+    }
+
+    override fun validatedOriginalSongAlias(
+        alias: Alias?,
+        localizedTitle: String?,
+        localizedArtist: String?,
+    ): Alias? =
+        // 成员与同名顶层策略函数重名，Kotlin 成员优先；无限定调用会解析到自身形成无限递归。
+        io.github.proify.lyricon.amprovider.xposed.validatedOriginalSongAlias(
+            alias = alias,
+            localizedTitle = localizedTitle,
+            localizedArtist = localizedArtist,
+        )
+
+    override fun shouldShareOriginalSongLanguage(
+        localizedTitle: String?,
+        localizedArtist: String?,
+        alias: Alias?,
+    ): Boolean = shouldShareOriginalSongLanguageFn(localizedTitle, localizedArtist, alias)
+
+    override fun rememberOriginalLanguageForArtist(mediaId: String, language: String) {
+        rememberOriginalLanguageForArtistFn(mediaId, language)
+    }
+
+    override fun isRestoreOriginalMetadataEnabled(): Boolean =
+        isRestoreOriginalMetadataEnabledFn()
+}

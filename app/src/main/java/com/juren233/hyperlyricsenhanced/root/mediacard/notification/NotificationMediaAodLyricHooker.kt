@@ -512,6 +512,8 @@ object NotificationMediaAodLyricHooker {
     private fun removeOverlay(state: ControllerState) {
         val overlay = state.overlay ?: return
         overlay.lifetime.dispose()
+        // 宿主销毁即释放息屏绘制窗口；正常路径由 1s 超时兜底，这里消除残留窗口。
+        if (overlay.drawWakeLock.isHeld) overlay.drawWakeLock.release()
         restorePlayerHeight(overlay, state.fullAod)
         (overlay.root.parent as? ViewGroup)?.removeView(overlay.root)
         state.overlay = null
@@ -524,6 +526,7 @@ object NotificationMediaAodLyricHooker {
                 overlay.aodRoot.viewTreeObserver.removeOnPreDrawListener(listener)
             }
         }
+        if (overlay.drawWakeLock.isHeld) overlay.drawWakeLock.release()
         (overlay.root.parent as? ViewGroup)?.removeView(overlay.root)
         state.overlay = null
     }
