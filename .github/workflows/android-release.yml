@@ -97,7 +97,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [[ "$CHANNEL" == "stable" ]]; then
+          if [[ "$CHANNEL" == "stable" || "$CHANNEL" == "beta" ]]; then
             ./gradlew --no-daemon --max-workers=2 assembleDebug assembleRelease \
               --build-cache -PciVersionName="$FULL_NAME"
           else
@@ -155,7 +155,7 @@ jobs:
             --out "HyperLyrics Enhanced-debug-v${V_NAME}-${V_CODE}.apk" \
             debug-aligned.apk
 
-          if [[ "$CHANNEL" == "stable" ]]; then
+          if [[ "$CHANNEL" == "stable" || "$CHANNEL" == "beta" ]]; then
             RELEASE_IN=$(find app/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' -print -quit)
             test -n "$RELEASE_IN"
             $ZA -f -v -p 4 "$RELEASE_IN" release-aligned.apk
@@ -246,7 +246,9 @@ jobs:
           draft: false
           prerelease: true
           generate_release_notes: false
-          files: HyperLyrics Enhanced-debug-v${{ steps.gate.outputs.full_name }}-${{ steps.gate.outputs.code }}.apk
+          files: |
+            HyperLyrics Enhanced-debug-v${{ steps.gate.outputs.full_name }}-${{ steps.gate.outputs.code }}.apk
+            HyperLyrics Enhanced-release-v${{ steps.gate.outputs.full_name }}-${{ steps.gate.outputs.code }}.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
