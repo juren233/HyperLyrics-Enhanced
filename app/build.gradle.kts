@@ -51,6 +51,12 @@ android {
     }
 
     packaging {
+        dex {
+            // Compress classes.dex in the APK. Uncompressed (stored) dex is the AGP
+            // default for install-time read speed, but this module ships as a direct
+            // APK download, where deflating dex roughly halves the artifact size.
+            useLegacyPackaging = true
+        }
         jniLibs {
             // libxposed target processes load DexKit from the module's absolute
             // nativeLibraryDir, so the module .so must be extracted on install.
