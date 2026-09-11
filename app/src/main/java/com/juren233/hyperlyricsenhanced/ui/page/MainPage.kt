@@ -16,6 +16,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -23,6 +24,9 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.overscroll
 import androidx.compose.foundation.rememberOverscrollEffect
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -31,6 +35,7 @@ import androidx.compose.foundation.withoutVisualEffect
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
@@ -58,6 +63,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
@@ -75,8 +83,10 @@ import com.juren233.hyperlyricsenhanced.utils.UpdateData
 import com.juren233.hyperlyricsenhanced.root.utils.ShellUtils
 import com.juren233.hyperlyricsenhanced.service.LiveLyricService
 import com.juren233.hyperlyricsenhanced.ui.navigation.LocalNavigator
+import com.juren233.hyperlyricsenhanced.ui.navigation.PARALLEL_WINDOW_DIVIDER_ALPHA
 import com.juren233.hyperlyricsenhanced.ui.navigation.Route
 import com.juren233.hyperlyricsenhanced.ui.utils.rememberBlurBackdrop
+import com.juren233.hyperlyricsenhanced.ui.utils.rememberIsWideScreen
 import com.juren233.hyperlyricsenhanced.ui.page.main.AboutPage
 import com.juren233.hyperlyricsenhanced.ui.page.main.AboutHeroView
 import com.juren233.hyperlyricsenhanced.ui.page.main.AboutHeroVisualState
@@ -100,8 +110,14 @@ import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.NavigationBar
 import top.yukonga.miuix.kmp.basic.NavigationBarItem
 import top.yukonga.miuix.kmp.basic.NavigationItem
+import top.yukonga.miuix.kmp.basic.NavigationRail
+import top.yukonga.miuix.kmp.basic.NavigationRailDefaults
+import top.yukonga.miuix.kmp.basic.NavigationRailItem
+import top.yukonga.miuix.kmp.basic.rememberNavigationRailState
 import top.yukonga.miuix.kmp.basic.Scaffold
+import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
+import top.yukonga.miuix.kmp.basic.VerticalDivider
 import top.yukonga.miuix.kmp.blur.BlendColorEntry
 import top.yukonga.miuix.kmp.blur.BlurColors
 import top.yukonga.miuix.kmp.blur.highlight.Highlight
@@ -130,6 +146,16 @@ fun MainPage() {
     val snackbarHostState = remember { SnackbarHostState() }
     val sheetSnackbarHostState = remember { SnackbarHostState() }
     val availableUpdate by UpdateData.availableUpdate.collectAsState()
+    val isWideScreen = rememberIsWideScreen()
+    val navigationRailState = rememberNavigationRailState()
+    // 侧边栏文字透明度：展开渐显、收起渐隐，文字始终位于展开位，不参与 miuix 的形变布局
+    val railLabelAlpha = remember { Animatable(0f) }
+    LaunchedEffect(navigationRailState.isExpanded) {
+        railLabelAlpha.animateTo(
+            targetValue = if (navigationRailState.isExpanded) 1f else 0f,
+            animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
+        )
+    }
 
     // --- pager ---
     val pagerState = rememberPagerState(pageCount = { 3 })
@@ -159,6 +185,11 @@ fun MainPage() {
     var floatingNavBarEnabled by remember {
         mutableStateOf(prefs.getBoolean(UIConstants.KEY_FLOATING_NAV_BAR, UIConstants.DEFAULT_FLOATING_NAV_BAR))
     }
+    var parallelWindowUiEnabled by remember {
+        mutableStateOf(prefs.getBoolean(UIConstants.KEY_PARALLEL_WINDOW_UI, UIConstants.DEFAULT_PARALLEL_WINDOW_UI))
+    }
+    // 平行窗口 UI：仅宽屏且开关开启时启用（侧栏 + 双栏场景），关闭后回落为底部栏单栏布局
+    val parallelWindowUi = isWideScreen && parallelWindowUiEnabled
     var enableSuperIsland by remember {
         mutableStateOf(prefs.getBoolean(RootConstants.KEY_HOOK_ENABLE_SUPER_ISLAND, RootConstants.DEFAULT_HOOK_ENABLE_SUPER_ISLAND))
     }
@@ -208,6 +239,8 @@ fun MainPage() {
             when (key) {
                 UIConstants.KEY_FLOATING_NAV_BAR ->
                     floatingNavBarEnabled = p.getBoolean(UIConstants.KEY_FLOATING_NAV_BAR, UIConstants.DEFAULT_FLOATING_NAV_BAR)
+                UIConstants.KEY_PARALLEL_WINDOW_UI ->
+                    parallelWindowUiEnabled = p.getBoolean(UIConstants.KEY_PARALLEL_WINDOW_UI, UIConstants.DEFAULT_PARALLEL_WINDOW_UI)
                 RootConstants.KEY_HOOK_ENABLE_SUPER_ISLAND ->
                     enableSuperIsland = p.getBoolean(RootConstants.KEY_HOOK_ENABLE_SUPER_ISLAND, RootConstants.DEFAULT_HOOK_ENABLE_SUPER_ISLAND)
                 RootConstants.KEY_HOOK_ENABLE_DYNAMIC_ISLAND ->
@@ -565,7 +598,7 @@ fun MainPage() {
         modifier = Modifier.fillMaxSize(),
         bottomBar = {
             AnimatedVisibility(
-                visible = !floatingNavBarEnabled,
+                visible = !floatingNavBarEnabled && !parallelWindowUi,
                 enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
                 exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
             ) {
@@ -603,7 +636,7 @@ fun MainPage() {
                 }
             }
             AnimatedVisibility(
-                visible = floatingNavBarEnabled,
+                visible = floatingNavBarEnabled && !parallelWindowUi,
                 enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
                 exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
             ) {
@@ -647,96 +680,122 @@ fun MainPage() {
             }
         }
     ) { innerPadding ->
-        Box(
-            modifier = (if (outerBackdrop != null) Modifier.layerBackdrop(outerBackdrop) else Modifier)
-                .clipToBounds()
-                .overscroll(sharedOverscrollVisual),
-        ) {
-            AndroidView(
-                factory = { context -> AboutHeroView(context) },
-                update = { view ->
-                    view.bind(appName, darkMode)
-                    view.updateVisualState(
-                        active = aboutPageInvolved,
-                        backgroundAlpha = aboutHeroVisualState.backgroundAlpha,
-                        logoAlpha = aboutHeroVisualState.logoAlpha * aboutHeroEntryAlpha,
-                        logoScale = aboutHeroVisualState.logoScale,
-                        scrollOffsetPx = aboutHeroVisualState.scrollOffsetPx,
-                        pageOffsetFraction = aboutPageOffsetFraction,
-                    )
-                },
-                modifier = Modifier.fillMaxSize(),
-            )
-            HorizontalPager(
-                state = pagerState,
-                modifier = Modifier.imePadding(),
-                beyondViewportPageCount = 1,
-                verticalAlignment = Alignment.Top,
-                overscrollEffect = pagerOverscrollEvents,
-            ) { page ->
-                if (page == 0) {
-                    HomePage(
-                        outerPadding = innerPadding,
-                        availableUpdateVersion = availableUpdate?.displayVersion,
-                        enableSuperIsland = enableSuperIsland,
-                        onSuperIslandToggle = toggleSuperIsland,
-                        enableDynamicIsland = enableDynamicIsland,
-                        onDynamicIslandToggle = toggleDynamicIsland,
-                        enableAodLyrics = enableAodLyrics,
-                        onAodLyricsToggle = toggleAodLyrics,
-                        onSuperIslandConfigClick = { navigator.navigate(Route.HookSettings) },
-                        onMediaCardConfigClick = { navigator.navigate(Route.MediaCardSettings) },
-                        onDynamicIslandConfigClick = { navigator.navigate(Route.DynamicIslandNotification) },
-                        onLockScreenAodConfigClick = { navigator.navigate(Route.LockScreenAodSettings) },
-                        onClassicAodConfigClick = { navigator.navigate(Route.ClassicAodSettings) },
-                        onLyricSettingsClick = { navigator.navigate(Route.LyricSettings) },
-                        onRefreshClick = {
-                            oneTapRefreshSelectedIds = emptySet()
-                            oneTapRefreshMusicApps =
-                                OneTapRefreshCatalog.installedMusicApps(context.packageManager)
-                            oneTapRefreshHasRoot = null
-                            showOneTapRefreshDialog = true
-                            val rootCheckSequence = oneTapRefreshRootCheckSequence + 1L
-                            oneTapRefreshRootCheckSequence = rootCheckSequence
-                            scope.launch {
-                                val hasRootAccess = ShellUtils.hasRootAccess()
-                                if (oneTapRefreshRootCheckSequence == rootCheckSequence) {
-                                    oneTapRefreshHasRoot = hasRootAccess
+        Row(modifier = Modifier.fillMaxSize()) {
+            if (parallelWindowUi) {
+                Box {
+                    NavigationRail(state = navigationRailState, showDivider = false) {
+                        navItems.forEachIndexed { index, item ->
+                            RailNavItem(
+                                labelAlpha = { railLabelAlpha.value },
+                                item = item,
+                                selected = mainPagerState.selectedPage == index,
+                                onClick = { mainPagerState.animateToPage(index) },
+                            )
+                        }
+                    }
+                    // miuix 自带的侧栏分割线取纯主题色，无法调淡；关闭后自绘一条与栏间分割线同色的
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.CenterEnd)
+                            .fillMaxHeight(),
+                    ) {
+                        VerticalDivider(
+                            color = MiuixTheme.colorScheme.dividerLine.copy(alpha = PARALLEL_WINDOW_DIVIDER_ALPHA),
+                        )
+                    }
+                }
+            }
+            Box(
+                modifier = (if (outerBackdrop != null) Modifier.layerBackdrop(outerBackdrop) else Modifier)
+                    .clipToBounds()
+                    .overscroll(sharedOverscrollVisual)
+                    .then(if (parallelWindowUi) Modifier.weight(1f) else Modifier),
+            ) {
+                AndroidView(
+                    factory = { context -> AboutHeroView(context) },
+                    update = { view ->
+                        view.bind(appName, darkMode)
+                        view.updateVisualState(
+                            active = aboutPageInvolved,
+                            backgroundAlpha = aboutHeroVisualState.backgroundAlpha,
+                            logoAlpha = aboutHeroVisualState.logoAlpha * aboutHeroEntryAlpha,
+                            logoScale = aboutHeroVisualState.logoScale,
+                            scrollOffsetPx = aboutHeroVisualState.scrollOffsetPx,
+                            pageOffsetFraction = aboutPageOffsetFraction,
+                        )
+                    },
+                    modifier = Modifier.fillMaxSize(),
+                )
+                HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier.imePadding(),
+                    beyondViewportPageCount = 1,
+                    verticalAlignment = Alignment.Top,
+                    overscrollEffect = pagerOverscrollEvents,
+                ) { page ->
+                    if (page == 0) {
+                        HomePage(
+                            outerPadding = innerPadding,
+                            availableUpdateVersion = availableUpdate?.displayVersion,
+                            enableSuperIsland = enableSuperIsland,
+                            onSuperIslandToggle = toggleSuperIsland,
+                            enableDynamicIsland = enableDynamicIsland,
+                            onDynamicIslandToggle = toggleDynamicIsland,
+                            enableAodLyrics = enableAodLyrics,
+                            onAodLyricsToggle = toggleAodLyrics,
+                            onSuperIslandConfigClick = { navigator.navigate(Route.HookSettings) },
+                            onMediaCardConfigClick = { navigator.navigate(Route.MediaCardSettings) },
+                            onDynamicIslandConfigClick = { navigator.navigate(Route.DynamicIslandNotification) },
+                            onLockScreenAodConfigClick = { navigator.navigate(Route.LockScreenAodSettings) },
+                            onClassicAodConfigClick = { navigator.navigate(Route.ClassicAodSettings) },
+                            onLyricSettingsClick = { navigator.navigate(Route.LyricSettings) },
+                            onRefreshClick = {
+                                oneTapRefreshSelectedIds = emptySet()
+                                oneTapRefreshMusicApps =
+                                    OneTapRefreshCatalog.installedMusicApps(context.packageManager)
+                                showOneTapRefreshDialog = true
+                                val rootCheckSequence = oneTapRefreshRootCheckSequence + 1L
+                                oneTapRefreshRootCheckSequence = rootCheckSequence
+                                scope.launch {
+                                    val hasRootAccess = ShellUtils.hasRootAccess()
+                                    if (oneTapRefreshRootCheckSequence == rootCheckSequence) {
+                                        oneTapRefreshHasRoot = hasRootAccess
+                                    }
                                 }
-                            }
-                        },
-                        removeFocusWhitelist = removeFocusWhitelist,
-                        onRemoveFocusWhitelistToggle = toggleRemoveFocusWhitelist,
-                        removeIslandWhitelist = removeIslandWhitelist,
-                        onRemoveIslandWhitelistToggle = toggleRemoveIslandWhitelist,
-                        unlockIslandLength = unlockIslandLength,
-                        onUnlockIslandLengthToggle = toggleUnlockIslandLength,
-                        onAppSettingsClick = { navigator.navigate(Route.Settings) },
-                    )
-                } else if (page == 1) {
-                    AppleMusicOptimizationPage(
-                        outerPadding = innerPadding,
-                        showNavigationIcon = false,
-                    )
-                } else {
-                    AboutPage(
-                        outerPadding = innerPadding,
-                        aboutAppVersion = aboutAppVersion,
-                        availableUpdateVersion = availableUpdate?.displayVersion,
-                        aboutDeviceName = aboutDeviceName,
-                        aboutDeviceModel = aboutDeviceModel,
-                        aboutOsVersion = aboutOsVersion,
-                        aboutAndroidVersion = aboutAndroidVersion,
-                        onHelpClick = { navigator.navigate(Route.Help) },
-                        onLicensesClick = { navigator.navigate(Route.Licenses) },
-                        onChangelogClick = { navigator.navigate(Route.Changelog) },
-                        onContributorsClick = { navigator.navigate(Route.Contributors) },
-                        onHeroStateChanged = { state ->
-                            if (aboutHeroVisualState != state) {
-                                aboutHeroVisualState = state
-                            }
-                        },
-                    )
+                            },
+                            removeFocusWhitelist = removeFocusWhitelist,
+                            onRemoveFocusWhitelistToggle = toggleRemoveFocusWhitelist,
+                            removeIslandWhitelist = removeIslandWhitelist,
+                            onRemoveIslandWhitelistToggle = toggleRemoveIslandWhitelist,
+                            unlockIslandLength = unlockIslandLength,
+                            onUnlockIslandLengthToggle = toggleUnlockIslandLength,
+                            onAppSettingsClick = { navigator.navigate(Route.Settings) },
+                        )
+                    } else if (page == 1) {
+                        AppleMusicOptimizationPage(
+                            outerPadding = innerPadding,
+                            showNavigationIcon = false,
+                        )
+                    } else {
+                        AboutPage(
+                            outerPadding = innerPadding,
+                            aboutAppVersion = aboutAppVersion,
+                            availableUpdateVersion = availableUpdate?.displayVersion,
+                            aboutDeviceName = aboutDeviceName,
+                            aboutDeviceModel = aboutDeviceModel,
+                            aboutOsVersion = aboutOsVersion,
+                            aboutAndroidVersion = aboutAndroidVersion,
+                            onHelpClick = { navigator.navigate(Route.Help) },
+                            onLicensesClick = { navigator.navigate(Route.Licenses) },
+                            onChangelogClick = { navigator.navigate(Route.Changelog) },
+                            onContributorsClick = { navigator.navigate(Route.Contributors) },
+                            onHeroStateChanged = { state ->
+                                if (aboutHeroVisualState != state) {
+                                    aboutHeroVisualState = state
+                                }
+                            },
+                        )
+                    }
                 }
             }
         }
@@ -816,6 +875,51 @@ fun MainPage() {
     }
 }
 
+/** 侧边栏展开弹簧动画的参考时长，动画落定后才显示条目文字。 */
+private const val RAIL_LABEL_SHOW_DELAY = 500L
+
+/**
+ * 平板侧边栏条目：miuix 条目固定传空 label（其形变动画不会带动文字），
+ * 展开位文字由本组件自行叠加，透明度跟随展开状态渐显渐隐，与原版视觉参数一致。
+ */
+@Composable
+private fun RailNavItem(
+    labelAlpha: () -> Float,
+    item: NavigationItem,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Box(modifier = Modifier.fillMaxWidth()) {
+        NavigationRailItem(
+            selected = selected,
+            onClick = onClick,
+            icon = item.icon,
+            label = "",
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Text(
+            text = item.label,
+            modifier = Modifier
+                .align(Alignment.CenterStart)
+                .fillMaxWidth()
+                .padding(
+                    start = NavigationRailDefaults.ExpandedItemHorizontalMargin +
+                        NavigationRailDefaults.ExpandedItemContentHorizontalPadding +
+                        NavigationRailDefaults.IconSize +
+                        NavigationRailDefaults.ExpandedItemIconTextSpacing,
+                    end = NavigationRailDefaults.ExpandedItemHorizontalMargin +
+                        NavigationRailDefaults.ExpandedItemContentHorizontalPadding,
+                )
+                .graphicsLayer { alpha = labelAlpha() },
+            color = MiuixTheme.colorScheme.onSurfaceContainer,
+            fontSize = NavigationRailDefaults.ExpandedLabelFontSize,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
 /** 读取只读系统属性，获取失败时交由上层选择回退值。 */
 private fun getSystemProperty(key: String): String? {
     return try {
@@ -828,3 +932,4 @@ private fun getSystemProperty(key: String): String? {
         null
     }
 }
+

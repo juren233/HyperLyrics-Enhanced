@@ -3,11 +3,14 @@ package com.juren233.hyperlyricsenhanced.ui.navigation
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.navigation3.runtime.NavKey
 
-class Navigator(val backStack: MutableList<NavKey>) {
+class Navigator(val backStack: MutableList<NavKey>, private val replaceTop: Boolean = false) {
     fun navigate(route: NavKey) {
-        if (backStack.lastOrNull() != route) {
-            backStack.add(route)
+        if (backStack.lastOrNull() == route) return
+        if (replaceTop && backStack.size > 1) {
+            backStack.removeAt(backStack.lastIndex)
         }
+        if (backStack.lastOrNull() == route) return
+        backStack.add(route)
     }
 
     fun pop() {

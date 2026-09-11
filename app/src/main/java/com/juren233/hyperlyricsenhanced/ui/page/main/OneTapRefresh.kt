@@ -134,10 +134,11 @@ internal fun OneTapRefreshDialog(
 ) {
     WindowDialog(
         title = stringResource(R.string.title_one_tap_refresh),
-        summary = if (hasRootAccess == true) {
-            null
-        } else {
+        // 仅在确认无 root 时提示；null 表示检查进行中，保持上一次结果避免副标题闪现
+        summary = if (hasRootAccess == false) {
             stringResource(R.string.summary_one_tap_refresh_root_required)
+        } else {
+            null
         },
         show = show,
         onDismissRequest = onDismiss,

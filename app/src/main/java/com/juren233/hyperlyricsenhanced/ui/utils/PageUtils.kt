@@ -13,6 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import top.yukonga.miuix.kmp.basic.ScrollBehavior
@@ -25,6 +26,9 @@ import top.yukonga.miuix.kmp.blur.textureBlur
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
+
+/** 宽屏最小宽度（dp），达到即按平板布局渲染，与 Material 规范的 medium 断点一致。 */
+private const val WIDE_SCREEN_MIN_WIDTH_DP = 600
 
 fun Modifier.pageScrollModifiers(
     enableScrollEndHaptic: Boolean,
@@ -59,6 +63,12 @@ fun pageContentPadding(
             bottom = bottomPadding,
         )
     }
+}
+
+@Composable
+fun rememberIsWideScreen(): Boolean {
+    val configuration = LocalConfiguration.current
+    return remember(configuration) { configuration.screenWidthDp >= WIDE_SCREEN_MIN_WIDTH_DP }
 }
 
 @Composable

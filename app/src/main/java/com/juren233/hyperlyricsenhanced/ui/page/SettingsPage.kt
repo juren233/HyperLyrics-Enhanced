@@ -37,6 +37,7 @@ import com.juren233.hyperlyricsenhanced.ui.utils.BlurredBar
 import com.juren233.hyperlyricsenhanced.ui.utils.LocaleUtils
 import com.juren233.hyperlyricsenhanced.ui.utils.pageScrollModifiers
 import com.juren233.hyperlyricsenhanced.ui.utils.rememberBlurBackdrop
+import com.juren233.hyperlyricsenhanced.ui.utils.rememberIsWideScreen
 import com.juren233.hyperlyricsenhanced.utils.LOG_EXPORT_LEVEL_DEBUG
 import com.juren233.hyperlyricsenhanced.utils.LogExportEnvironmentCollector
 import com.juren233.hyperlyricsenhanced.utils.LogManager
@@ -273,8 +274,16 @@ private fun LazyListScope.settingsSections(
                     runCatching { org.lsposed.hiddenapibypass.HiddenApiBypass.addHiddenApiExemptions("Landroid/content/pm/ApplicationInfo;->setEnableOnBackInvokedCallback"); val m = android.content.pm.ApplicationInfo::class.java.getDeclaredMethod("setEnableOnBackInvokedCallback", Boolean::class.javaPrimitiveType); m.isAccessible = true; m.invoke(context.applicationInfo, it) }
                     activity?.recreate()
                 })
+                var parallelWindowUiEnabled by remember { mutableStateOf(prefs.getBoolean(UIConstants.KEY_PARALLEL_WINDOW_UI, UIConstants.DEFAULT_PARALLEL_WINDOW_UI)) }
+                val isWideScreen = rememberIsWideScreen()
+                // 平行窗口 UI 仅平板（宽屏）提供；开启期间底部栏导航不可用，隐藏悬浮底栏开关
+                if (isWideScreen) {
+                    SwitchPreference(title = stringResource(R.string.title_parallel_window_ui), checked = parallelWindowUiEnabled, onCheckedChange = { parallelWindowUiEnabled = it; prefs.edit { putBoolean(UIConstants.KEY_PARALLEL_WINDOW_UI, it) } })
+                }
                 var floatingNavBarEnabled by remember { mutableStateOf(prefs.getBoolean(UIConstants.KEY_FLOATING_NAV_BAR, UIConstants.DEFAULT_FLOATING_NAV_BAR)) }
-                SwitchPreference(title = stringResource(R.string.title_floating_nav), checked = floatingNavBarEnabled, onCheckedChange = { floatingNavBarEnabled = it; prefs.edit { putBoolean(UIConstants.KEY_FLOATING_NAV_BAR, it) } })
+                if (!(isWideScreen && parallelWindowUiEnabled)) {
+                    SwitchPreference(title = stringResource(R.string.title_floating_nav), checked = floatingNavBarEnabled, onCheckedChange = { floatingNavBarEnabled = it; prefs.edit { putBoolean(UIConstants.KEY_FLOATING_NAV_BAR, it) } })
+                }
                 var excludeFromRecents by remember { mutableStateOf(prefs.getBoolean(UIConstants.KEY_EXCLUDE_FROM_RECENTS, UIConstants.DEFAULT_EXCLUDE_FROM_RECENTS)) }
                 SwitchPreference(title = stringResource(R.string.title_exclude_from_recents), checked = excludeFromRecents, onCheckedChange = { excludeFromRecents = it; prefs.edit { putBoolean(UIConstants.KEY_EXCLUDE_FROM_RECENTS, it) }; setExcludeFromRecents(context, it) })
             }

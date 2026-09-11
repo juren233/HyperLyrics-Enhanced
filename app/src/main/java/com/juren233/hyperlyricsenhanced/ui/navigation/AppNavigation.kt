@@ -1,14 +1,22 @@
 package com.juren233.hyperlyricsenhanced.ui.navigation
 
+import android.content.Context
+import android.content.SharedPreferences
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberDecoratedNavEntries
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.ui.NavDisplay
+import com.juren233.hyperlyricsenhanced.common.UIConstants
 import com.juren233.hyperlyricsenhanced.ui.page.MainPage
 import com.juren233.hyperlyricsenhanced.ui.page.SetupPage
 import com.juren233.hyperlyricsenhanced.ui.page.LicensesPage
@@ -35,11 +43,34 @@ import com.juren233.hyperlyricsenhanced.ui.page.DynamicIslandNotificationPage
 import com.juren233.hyperlyricsenhanced.ui.page.HelpPage
 import com.juren233.hyperlyricsenhanced.ui.page.ChangelogPage
 import com.juren233.hyperlyricsenhanced.ui.page.ContributorsPage
+import com.juren233.hyperlyricsenhanced.ui.utils.rememberIsWideScreen
 
 @Composable
 fun AppNavigation(startRoute: Route) {
     val backStack = rememberNavBackStack(startRoute)
     val navigator = remember { Navigator(backStack) }
+    val isWideScreen = rememberIsWideScreen()
+    // 平行窗口 UI 开关（设置页可控）：与宽屏条件共同决定是否启用双栏场景
+    val context = LocalContext.current
+    val prefs = remember {
+        context.getSharedPreferences(UIConstants.PREF_NAME, Context.MODE_PRIVATE)
+    }
+    var parallelWindowUiEnabled by remember {
+        mutableStateOf(prefs.getBoolean(UIConstants.KEY_PARALLEL_WINDOW_UI, UIConstants.DEFAULT_PARALLEL_WINDOW_UI))
+    }
+    DisposableEffect(prefs) {
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { p, key ->
+            if (key == UIConstants.KEY_PARALLEL_WINDOW_UI) {
+                parallelWindowUiEnabled = p.getBoolean(UIConstants.KEY_PARALLEL_WINDOW_UI, UIConstants.DEFAULT_PARALLEL_WINDOW_UI)
+            }
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
+    val parallelWindowUi = isWideScreen && parallelWindowUiEnabled
+    val sceneStrategies = remember(parallelWindowUi) {
+        listOf(ParallelWorldSceneStrategy<NavKey>(parallelWindowUi))
+    }
 
     CompositionLocalProvider(LocalNavigator provides navigator) {
         val entryProvider = remember(backStack) {
@@ -86,7 +117,8 @@ fun AppNavigation(startRoute: Route) {
         
         NavDisplay(
             entries = entries,
-            onBack = { navigator.pop() }
+            onBack = { navigator.pop() },
+            sceneStrategies = sceneStrategies,
         )
     }
 }

@@ -11,6 +11,7 @@ object UIConstants {
     const val KEY_MONET_COLOR = "key_monet_color"
     const val KEY_PREDICTIVE_BACK_GESTURE = "key_predictive_back_gesture"
     const val KEY_FLOATING_NAV_BAR = "key_floating_nav_bar"
+    const val KEY_PARALLEL_WINDOW_UI = "key_parallel_window_ui"
     const val KEY_EXCLUDE_FROM_RECENTS = "key_exclude_from_recents"
     const val KEY_LOG_LEVEL = "key_log_level"
     const val KEY_LOG_LEVEL_BUILD_KIND = "key_log_level_build_kind"
@@ -24,6 +25,7 @@ object UIConstants {
     const val DEFAULT_MONET_COLOR = 0
     const val DEFAULT_PREDICTIVE_BACK_GESTURE = false
     const val DEFAULT_FLOATING_NAV_BAR = false
+    const val DEFAULT_PARALLEL_WINDOW_UI = true
     const val DEFAULT_EXCLUDE_FROM_RECENTS = false
     const val DEFAULT_LOG_LEVEL = LogLevelPolicy.LEVEL_NORMAL // Legacy fallback only.
 }
