@@ -263,4 +263,92 @@ internal object IslandWidthHooker {
             }?.invoke(this) as? Int
         }.getOrNull()
     }
+
+    /**
+     * 解除手机超级岛长度限制：Hook PhoneHelper.calculateBigIslandWidth，在上限截断时恢复未截断宽度。
+     *
+     * 手机插件 18.3.2.5.0 原始 DEX（Xiaomi 15 / OS4.0.0.8）核实：
+     * `DynamicIslandContentViewPhoneHelper.calculateBigIslandWidth(IslandContentViewCalculationParams)`，
+     * 宽度公式 `W = max(min(cutout + 2*max(左区, 右区), params.maxWidth), getBigIslandMinWidth())`。
+     * 手机上限 params.maxWidth 由宿主经 `extra_island_max_width` 下发（插件内没有手机端 dimen，
+     * 只有 big_island_max_width_pad）。截断时结果左右区被对称压缩为 `(W - cutout) / 2`，内容随之被裁。
+     *
+     * 手机岛必须围绕挖孔对称：x=(screenWidth-W)/2 时只有左右区等宽，挖孔才能对中，
+     * 因此改写保持原生未截断形状：`W' = cutout + 2*max(左, 右)`、left=right=max(左, 右)、
+     * x 按同一不变量重算；不加 margin（原生未截断公式亦无 margin）。
+     * 仅在 `W < W'`（上限实际截断）时改写：未截断结果与最小下限抬高的结果都满足 `W >= W'`，原样放行，
+     * 与动态长度下限（缩小方向）互不干扰。HasSmallIsland 字段与平板解锁同样保留原生值。
+     * Flip 外屏（FlipUtils.isFlipTiny，标识符已核对原始 DEX）的 810dp 上限是小屏物理约束，不改写。
+     */
+    class PhoneMaxWidthUnlockHook(
+        private val resultClass: Class<*>,
+    ) : Hooker {
+
+        internal companion object {
+            // 0=命中时开关关闭，1=已执行改写；仅记首个状态与状态翻转，避免刷屏。
+            @Volatile
+            var lastLoggedState: Int? = null
+        }
+
+        override fun intercept(chain: Chain): Any? {
+            val result = chain.proceed()
+            return runCatching {
+                if (!IslandViewHelper.isUnlockIslandLengthEnabled()) {
+                    if (lastLoggedState != 0) {
+                        lastLoggedState = 0
+                        HookLogger.i(TAG, "手机岛宽上限 Hook 已命中但开关读取为关闭，放行原生宽度")
+                    }
+                    return@runCatching result
+                }
+                if (isFlipTiny(chain.thisObject)) return@runCatching result
+                val params = chain.args.getOrNull(0) ?: return@runCatching result
+                val width = result.intGetter("BigIslandViewWidth") ?: return@runCatching result
+                val margin = result.intGetter("BigIslandMarginWidth") ?: return@runCatching result
+                val areaLeft = params.intGetter("BigIslandAreaLeftWidth") ?: return@runCatching result
+                val areaRight = params.intGetter("BigIslandAreaRightWidth") ?: return@runCatching result
+                val cutout = params.intGetter("CutoutWidth") ?: return@runCatching result
+                val maxSide = maxOf(areaLeft, areaRight)
+                val unlockedWidth = cutout + 2 * maxSide
+                if (width >= unlockedWidth) return@runCatching result
+                val screenWidth = params.intGetter("ScreenWidth") ?: return@runCatching result
+                // 原生不变量：x 是居中左边缘，保持 (screenWidth - W)/2 才能让胶囊、内容与挖孔对齐。
+                val centeredX = (screenWidth - unlockedWidth) / 2
+                val intType = Int::class.javaPrimitiveType ?: return@runCatching result
+                val constructor = resultClass.getConstructor(intType, intType, intType, intType, intType, intType, intType, intType, intType)
+                val swapped = constructor.newInstance(
+                    unlockedWidth,
+                    maxSide,
+                    maxSide,
+                    centeredX,
+                    margin,
+                    result.intGetter("BigIslandViewWidthHasSmallIsland") ?: 0,
+                    result.intGetter("BigIslandLeftWidthHasSmallIsland") ?: 0,
+                    result.intGetter("BigIslandRightWidthHasSmallIsland") ?: 0,
+                    result.intGetter("BigIslandXHasSmallIsland") ?: 0,
+                )
+                if (lastLoggedState != 1) {
+                    lastLoggedState = 1
+                    HookLogger.i(
+                        TAG,
+                        "手机岛宽上限已解除: $width -> $unlockedWidth " +
+                            "(x 居中重算 left=$maxSide right=$maxSide cutout=$cutout screen=$screenWidth)",
+                    )
+                }
+                swapped
+            }.getOrDefault(result)
+        }
+
+        private fun isFlipTiny(helper: Any?): Boolean = runCatching {
+            helper?.javaClass?.classLoader
+                ?.loadClass("miui.systemui.util.FlipUtils")
+                ?.getMethod("isFlipTiny")
+                ?.invoke(null) as? Boolean
+        }.getOrNull() == true
+
+        private fun Any.intGetter(suffix: String): Int? = runCatching {
+            javaClass.methods.firstOrNull {
+                it.name == "get$suffix" && it.parameterTypes.isEmpty()
+            }?.invoke(this) as? Int
+        }.getOrNull()
+    }
 }
