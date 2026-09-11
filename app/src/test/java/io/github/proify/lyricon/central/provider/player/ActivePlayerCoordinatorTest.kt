@@ -320,6 +320,42 @@ class ActivePlayerCoordinatorTest {
         assertEquals(listOf(1_200L), reconnect.positions)
     }
 
+    @Test
+    fun `syncAllListeners replays current snapshot without new provider events`() {
+        val coordinator = coordinator(officialProviderPreference = { true })
+        val listener = RecordingListener()
+        coordinator.addListener(listener)
+        val recorder = playingRecorder(officialInfo)
+        recorder.position = 35_163L
+        coordinator.onPlaybackStateChanged(recorder, true)
+        val song = Song().apply { id = "kept-song"; name = "Kept Song" }
+        recorder.song = song
+        coordinator.onSongChanged(recorder, song)
+        listener.positions.clear()
+        listener.songIds.clear()
+
+        // Gate recovery path: the subscriber lost one-shot events while blocked and asks
+        // Central for a fresh full snapshot; no provider traffic is involved.
+        coordinator.syncAllListeners()
+
+        assertEquals(listOf("kept-song"), listener.songIds)
+        assertEquals(true, listener.isPlaying)
+        assertEquals(listOf(35_163L), listener.positions)
+        assertEquals(officialInfo, listener.activeProvider)
+    }
+
+    @Test
+    fun `syncAllListeners without active provider leaves listeners untouched`() {
+        val coordinator = coordinator(officialProviderPreference = { true })
+        val listener = RecordingListener()
+        coordinator.addListener(listener)
+
+        coordinator.syncAllListeners()
+
+        assertNull(listener.activeProvider)
+        assertEquals(emptyList<String>(), listener.songIds)
+    }
+
     private fun playingRecorder(providerInfo: ProviderInfo) = PlayerRecorder(providerInfo).apply {
         isPlaying = true
     }

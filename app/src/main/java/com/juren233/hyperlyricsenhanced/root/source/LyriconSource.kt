@@ -143,7 +143,7 @@ class LyriconSource : LyricSource {
         nowWallClockMs = System::currentTimeMillis,
         isMusicActive = { isAnyMusicActive() },
     )
-    internal var mediaSessionGateStopIssued = false
+    internal val mediaSessionGateRecovery = MediaSessionGateRecoveryTracker()
 
     internal var lastTimingDiagnosticAtMs = 0L
     internal var lastTimingDiagnosticPosition = -1L

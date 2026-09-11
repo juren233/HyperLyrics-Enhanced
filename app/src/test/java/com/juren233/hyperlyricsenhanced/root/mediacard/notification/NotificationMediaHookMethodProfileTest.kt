@@ -8,6 +8,7 @@ package com.juren233.hyperlyricsenhanced.root.mediacard.notification
 
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -83,4 +84,55 @@ class NotificationMediaHookMethodProfileTest {
             returnTypeName = Void.TYPE.name,
             parameterCount = 0,
         )
+
+    @Test
+    fun `rejects the tinypanel updateMediaBackground alias as a media target`() {
+        // "updateMediaBackground" exists only on
+        // com.android.notification.tinypanel.FlipRowContainerController and never on any
+        // HyperOS 4 media controller dex (verified OS4.0.0.6/.0.0.8/.0.0.34, 2026-09-12).
+        assertFalse(
+            NotificationMediaHookMethodProfile.UPDATE_FOREGROUND_COLORS ==
+                NotificationMediaHookMethodProfile.REJECTED_GHOST_UPDATE_MEDIA_BACKGROUND
+        )
+        TARGET_METHOD_NAMES.forEach { name ->
+            assertNotEquals(
+                NotificationMediaHookMethodProfile.REJECTED_GHOST_UPDATE_MEDIA_BACKGROUND,
+                name,
+            )
+        }
+        NATIVE_BACKGROUND_UPDATE_METHODS.forEach { name ->
+            assertNotEquals(
+                NotificationMediaHookMethodProfile.REJECTED_GHOST_UPDATE_MEDIA_BACKGROUND,
+                name,
+            )
+        }
+    }
+
+    @Test
+    fun `lists the seven verified media material effects`() {
+        val effects = NotificationMediaHookMethodProfile.mediaViewEffectClassNames
+        assertEquals(7, effects.size)
+        assertTrue(
+            effects.all {
+                it.startsWith(NotificationMediaHookMethodProfile.MEDIA_VIEW_EFFECT_PACKAGE)
+            },
+        )
+        assertEquals(effects.size, effects.toSet().size)
+        assertTrue(effects.any { it.endsWith(".MediaViewNormalEffect") })
+        assertTrue(effects.any { it.endsWith(".MediaViewGlassEffect") })
+    }
+
+    @Test
+    fun `overrides only the night mode bits`() {
+        val uiMode = 0x01 or android.content.res.Configuration.UI_MODE_NIGHT_NO
+        val dark = NotificationMediaHookMethodProfile.overrideNightMode(uiMode, dark = true)
+        val light = NotificationMediaHookMethodProfile.overrideNightMode(uiMode, dark = false)
+        val mask = android.content.res.Configuration.UI_MODE_NIGHT_MASK
+        assertEquals(android.content.res.Configuration.UI_MODE_NIGHT_YES, dark and mask)
+        assertEquals(android.content.res.Configuration.UI_MODE_NIGHT_NO, light and mask)
+        assertEquals(
+            uiMode and mask.inv(),
+            dark and mask.inv(),
+        )
+    }
 }

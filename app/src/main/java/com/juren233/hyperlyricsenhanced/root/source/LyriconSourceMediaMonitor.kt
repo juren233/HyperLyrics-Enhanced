@@ -13,6 +13,7 @@ import com.juren233.hyperlyricsenhanced.common.media.MediaMetadataHelper
 import com.juren233.hyperlyricsenhanced.lyric.model.Song as LocalSong
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import com.juren233.hyperlyricsenhanced.root.utils.MediaCardDiagnosticLogger
+import io.github.proify.lyricon.central.CentralRuntime
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -232,15 +233,30 @@ internal fun LyriconSource.onActiveMediaSessionSnapshotChanged(raw: String?, rea
 /**
  * 活动播放者被门控阻断（Provider 僵尸发布、宿主已无 MediaSession）时，
  * 主动触发一次 sink 清除，恢复超级岛与经典 AOD 原生显示。
+ *
+ * 解除阻断（会话重新出现，如划掉后台后重新打开播放、会话抖动恢复）时，
+ * 被阻断窗口丢弃的歌曲回调不会自动补发：对同一播放者重放 Central 当前快照，
+ * 让原歌曲歌词无需切歌即回填。播放者已切换则不重放，切换路径自身会全量补发。
  */
 internal fun LyriconSource.evaluateActiveMediaSessionGate() {
     val player = activeCentralPlayerPackageName ?: return
     if (!activeMediaSessionGate.isBlocked(player)) {
-        mediaSessionGateStopIssued = false
+        if (mediaSessionGateRecovery.shouldReplayAfterRecovery(player)) {
+            HookLogger.i(
+                LyriconSource.TAG,
+                "活动播放者 MediaSession 已恢复，重放 Central 快照回填歌词: player=$player",
+            )
+            MediaCardDiagnosticLogger.log(
+                stage = "media_session",
+                event = "gate_recovered_snapshot_replay",
+                details = "player=${MediaCardDiagnosticLogger.sanitize(player)}",
+            )
+            // 主线程排队：保证排在本轮阻断发出的 sink 清除之后执行，避免清除反超重放。
+            mainHandler.post { CentralRuntime.activePlayers.syncAllListeners() }
+        }
         return
     }
-    if (mediaSessionGateStopIssued) return
-    mediaSessionGateStopIssued = true
+    if (!mediaSessionGateRecovery.shouldStop(player)) return
     HookLogger.i(LyriconSource.TAG, "活动播放者已无系统 MediaSession，清除歌词显示: player=$player")
     mainHandler.post { sink?.onStop() }
 }

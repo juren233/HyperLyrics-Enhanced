@@ -71,8 +71,7 @@ internal fun NotificationMediaAmbientFlowHooker.newColorExecutor() = Executors.n
 
 internal class CardThemeApi private constructor(
     private val contextField: Field,
-    private val updateForegroundColorsMethod: Method,
-    private val updateMediaBackgroundMethod: Method?
+    private val updateForegroundColorsMethod: Method
 ) {
     fun apply(controller: Any, theme: Int, refreshViews: Boolean) {
         val existingState = NotificationMediaAmbientFlowHooker.themeStates[controller]
@@ -98,7 +97,6 @@ internal class CardThemeApi private constructor(
 
         if (refreshViews) {
             updateForegroundColorsMethod.invoke(controller)
-            updateMediaBackgroundMethod?.invoke(controller)
         }
     }
 
@@ -125,12 +123,7 @@ internal class CardThemeApi private constructor(
                     controllerClass,
                     NotificationMediaHookMethodProfile.UPDATE_FOREGROUND_COLORS
                 ).single { it.parameterCount == 0 && it.returnType == Void.TYPE }
-                    .apply { isAccessible = true },
-                updateMediaBackgroundMethod = NotificationMediaAmbientFlowHooker.findNearestMethods(
-                    controllerClass,
-                    NotificationMediaHookMethodProfile.UPDATE_MEDIA_BACKGROUND
-                ).singleOrNull { it.parameterCount == 0 && it.returnType == Void.TYPE }
-                    ?.apply { isAccessible = true }
+                    .apply { isAccessible = true }
             )
         }
 
@@ -337,12 +330,12 @@ internal val TARGET_METHOD_NAMES = listOf(
     "attach",
     "detach",
     "bindMediaData",
-    NotificationMediaHookMethodProfile.UPDATE_FOREGROUND_COLORS,
-    NotificationMediaHookMethodProfile.UPDATE_MEDIA_BACKGROUND
+    NotificationMediaHookMethodProfile.UPDATE_FOREGROUND_COLORS
 )
+// Only updateForegroundColors is verified on every HyperOS 4 media controller dex
+// (2026-09-12); updateMediaBackground is a rejected tinypanel alias, see the profile.
 internal val NATIVE_BACKGROUND_UPDATE_METHODS = setOf(
-    NotificationMediaHookMethodProfile.UPDATE_FOREGROUND_COLORS,
-    NotificationMediaHookMethodProfile.UPDATE_MEDIA_BACKGROUND
+    NotificationMediaHookMethodProfile.UPDATE_FOREGROUND_COLORS
 )
 internal const val HYPER_PROGRESS_SEEK_BAR_CLASS =
     "miuix.miuixbasewidget.widget.HyperProgressSeekBar"

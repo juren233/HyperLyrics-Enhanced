@@ -151,3 +151,37 @@ class ActiveMediaSessionGate(
         const val FAST_BLOCK_GRACE_MS = 1_000L
     }
 }
+
+/**
+ * 记录“哪个播放者的 sink 曾被 [ActiveMediaSessionGate] 阻断清除”，供解除阻断后精确恢复。
+ *
+ * 门控阻断期间的一次性事件（歌曲/文本回调）被丢弃且不会自动补发：宿主划掉后台后
+ * 重新打开播放时，Provider 的首次发布常先于 SystemUI 本地会话集合更新到达，歌曲回调
+ * 被误阻断丢弃，之后会话恢复也不再有人补发，歌词只能等下一次切歌。解除阻断时若活跃
+ * 播放者就是当初被清除的那个，必须重放 Central 当前快照回填歌词；若播放者已切换，则
+ * 切换路径本身会全量补发新播放者的快照，无需重放（僵尸来源场景同样不重放）。
+ *
+ * 与旧的单布尔标记不同：不同播放者允许各发一次清除，避免“播放者 A 被清除后、
+ * 播放者 B 激活即被静默跳过”的窗口。
+ */
+internal class MediaSessionGateRecoveryTracker {
+
+    private var stoppedPlayer: String? = null
+
+    /** 该播放者尚未发过清除时返回 true（并登记），同一播放者不重复清除。 */
+    fun shouldStop(player: String): Boolean {
+        if (stoppedPlayer == player) return false
+        stoppedPlayer = player
+        return true
+    }
+
+    /**
+     * 门控解除时调用：存在清除记录则清除之，且仅当解除的播放者与被清除的一致时
+     * 返回 true（需要重放快照）。
+     */
+    fun shouldReplayAfterRecovery(player: String): Boolean {
+        val stopped = stoppedPlayer ?: return false
+        stoppedPlayer = null
+        return stopped == player
+    }
+}

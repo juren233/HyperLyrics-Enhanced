@@ -135,13 +135,16 @@ object NotificationMediaAmbientFlowHooker {
         )
         if (installedNativeUpdates.isEmpty()) {
             HookLogger.w(TAG, "通知中心原生背景接口不可用，跳过自定义背景 Hook")
-        } else if (!installedNativeUpdates.containsAll(NATIVE_BACKGROUND_UPDATE_METHODS)) {
-            HookLogger.i(
-                TAG,
-                "通知中心原生背景接口按可用方法安装: " +
-                    "installed=${installedNativeUpdates.sorted().joinToString()}, " +
-                    "missing=${(NATIVE_BACKGROUND_UPDATE_METHODS - installedNativeUpdates).sorted().joinToString()}"
-            )
+        }
+
+        // The native card background never re-reads the controller context; the material
+        // effects must be themed at their own apply entry or 卡片背景颜色 cannot reach it.
+        runCatching {
+            NotificationMediaMaterialThemeHooker.install(xposedModule, classLoader) {
+                currentCardTheme()
+            }
+        }.onFailure { error ->
+            HookLogger.w(TAG, "媒体材质主题接口不可用: reason=${error.message}")
         }
 
         runCatching {
@@ -172,8 +175,7 @@ object NotificationMediaAmbientFlowHooker {
         return when (method.name) {
             "attach", "detach" -> true
             "bindMediaData" -> method.parameterTypes.isNotEmpty()
-            NotificationMediaHookMethodProfile.UPDATE_FOREGROUND_COLORS,
-            NotificationMediaHookMethodProfile.UPDATE_MEDIA_BACKGROUND ->
+            NotificationMediaHookMethodProfile.UPDATE_FOREGROUND_COLORS ->
                 method.parameterCount == 0 && method.returnType == Void.TYPE
             else -> false
         }
@@ -186,8 +188,8 @@ object NotificationMediaAmbientFlowHooker {
             "attach" -> ControllerHook(Action.ATTACH)
             "detach" -> ControllerHook(Action.DETACH)
             "bindMediaData" -> ControllerHook(Action.BIND)
-            NotificationMediaHookMethodProfile.UPDATE_FOREGROUND_COLORS,
-            NotificationMediaHookMethodProfile.UPDATE_MEDIA_BACKGROUND -> NativeBackgroundUpdateHook(method.name)
+            NotificationMediaHookMethodProfile.UPDATE_FOREGROUND_COLORS ->
+                NativeBackgroundUpdateHook(method.name)
             "onDraw" -> ProgressDrawHook()
             else -> null
         }
@@ -200,6 +202,7 @@ object NotificationMediaAmbientFlowHooker {
         activeControllers.clear()
         colorExecutor.shutdownNow()
         NotificationMediaBackgroundController.releaseAll()
+        NotificationMediaMaterialThemeHooker.releaseAll()
         if (Looper.myLooper() == Looper.getMainLooper()) {
             cancelFlowKeepAliveInternal()
         } else {
@@ -345,6 +348,7 @@ object NotificationMediaAmbientFlowHooker {
                 }
                     .onFailure { HookLogger.e(TAG, "刷新通知中心媒体卡片主题失败", it) }
             }
+            NotificationMediaMaterialThemeHooker.refresh()
         }
         if (Looper.myLooper() == Looper.getMainLooper()) refresh.run()
         else Handler(Looper.getMainLooper()).post(refresh)

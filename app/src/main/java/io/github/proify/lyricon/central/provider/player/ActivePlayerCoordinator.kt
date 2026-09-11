@@ -69,6 +69,11 @@ internal class ActivePlayerCoordinator(
         dispatchSnapshot(snapshot, listener)
     }
 
+    /** Replays the current active snapshot to every subscriber (gate recovery, resync). */
+    fun syncAllListeners() {
+        listeners.forEach { syncLatestState(it) }
+    }
+
     fun notifyProviderInvalid(provider: ProviderInfo) {
         val shouldNotify = lock.write {
             if (activeInfo == provider) {
