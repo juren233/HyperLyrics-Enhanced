@@ -36,7 +36,15 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
-/** Big-island artwork background. It does not add a child to the horizontal big container. */
+/**
+ * Big-island artwork background. It does not add a child to the horizontal big container.
+ *
+ * ISLAND-GRADIENT-COVER-COLOR-001（真机+DEX 证据）：平板超级岛胶囊的填充是半透明的
+ * `#1fffffff` 叠在模糊壁纸上，不存在可取的静态底色。因此过渡区不做"渐变到某个岛底色"，
+ * 而是把溶解系数（1 - blackMix）直接折进过渡纹理的 alpha：封面像素向右逐渐变透明，
+ * 露出真实胶囊。黑色胶囊（手机）上两者逐像素等价（premultiplied 下黑色项为 0），
+ * 平板半透明胶囊上则自动融合。
+ */
 internal class EmbeddedIslandAlbumCoverDrawable(
     private val originalBackground: Drawable?,
     artwork: EmbeddedIslandArtwork,
@@ -44,10 +52,6 @@ internal class EmbeddedIslandAlbumCoverDrawable(
 ) : Drawable() {
     private val bitmapPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val transitionPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
-    private val shadePaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val terminalBlackPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.BLACK
-    }
     private val maskPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
         blendMode = BlendMode.DST_IN
     }
@@ -66,7 +70,6 @@ internal class EmbeddedIslandAlbumCoverDrawable(
     private var transitionCpuBlurredTextureBitmap: Bitmap? = null
     private var transitionMaskBitmap: Bitmap? = null
     private var transitionBlurMaskBitmap: Bitmap? = null
-    private var transitionShadeBitmap: Bitmap? = null
     private var transitionWidth: Int = -1
     private var transitionHeight: Int = -1
     private var transitionRenderNodeReady = false
@@ -107,7 +110,7 @@ internal class EmbeddedIslandAlbumCoverDrawable(
                         "drawCount=$drawCount",
                 )
             }
-            drawTerminalBlackMask(canvas)
+            // 无封面可画时不铺底色：胶囊本体（半透明）应保持原生观感。
             return
         }
         val width = bounds.width()
@@ -137,10 +140,7 @@ internal class EmbeddedIslandAlbumCoverDrawable(
             sourceHeight = source.height,
             targetWidth = coverWidth,
             targetHeight = height.toFloat(),
-        ) ?: run {
-            drawTerminalBlackMask(canvas)
-            return
-        }
+        ) ?: return
 
         canvas.save()
         clipPath.reset()
@@ -270,29 +270,6 @@ internal class EmbeddedIslandAlbumCoverDrawable(
                 }
                 canvas.restoreToCount(blurLayer)
             }
-            transitionShadeBitmap?.let { shade ->
-                canvas.drawBitmap(
-                    shade,
-                    rawSource,
-                    rawTarget,
-                    shadePaint,
-                )
-            }
-            val availableExtension = (bounds.right.toFloat() - coverRight).coerceAtLeast(0f)
-            val uncoveredBackgroundTail = (availableExtension - extensionWidth).coerceAtLeast(0f)
-            if (uncoveredBackgroundTail > 0f) {
-                // The native background remains visible after the capped transition width. Own
-                // that terminal region here so the final black gradient pixel never meets a
-                // second Drawable with a different alpha/rounding/compositing path.
-                val terminalTailStart = maxOf(coverRight, extensionEnd - 1f)
-                canvas.drawRect(
-                    terminalTailStart,
-                    canvasTop,
-                    bounds.right.toFloat(),
-                    canvasTop + height,
-                    terminalBlackPaint,
-                )
-            }
         }
         if (coverOnTop) {
             canvas.drawBitmap(source, coverSource, coverTarget, bitmapPaint)
@@ -314,34 +291,6 @@ internal class EmbeddedIslandAlbumCoverDrawable(
         )
 
         canvas.restore()
-        drawTerminalBlackMask(canvas)
-    }
-
-    /**
-     * Unconditional pure-black band over the last few columns of the drawable bounds. Runtime
-     * evidence (150182–150184) showed the reported cover-tinted terminal line lives inside the
-     * last two columns and that the fake-island twin of this drawable can overlap the real one
-     * with a 1–2px misalignment during width animations. Painting the tail black on every draw
-     * exit path (recycled bitmap, failed crop, and normal completion) physically covers all of
-     * those sources; the gradient already reaches >=97% black there, so the visual delta is
-     * imperceptible.
-     */
-    private fun drawTerminalBlackMask(canvas: Canvas) {
-        val width = bounds.width()
-        val height = bounds.height()
-        if (width <= 0 || height <= 0) return
-        val maskLeft = maxOf(
-            bounds.left.toFloat(),
-            bounds.right - TERMINAL_BLACK_MASK_WIDTH_PX,
-        )
-        if (maskLeft >= bounds.right.toFloat()) return
-        canvas.drawRect(
-            maskLeft,
-            bounds.top.toFloat(),
-            bounds.right.toFloat(),
-            bounds.top + height.toFloat(),
-            terminalBlackPaint,
-        )
     }
 
     private fun ensureTransitionBitmaps(
@@ -361,7 +310,6 @@ internal class EmbeddedIslandAlbumCoverDrawable(
         if (targetHeight <= 0 || cropRight <= cropLeft || cropBottom <= cropTop) return false
         if (transitionTextureBitmap != null && transitionCpuBlurredTextureBitmap != null &&
             transitionMaskBitmap != null && transitionBlurMaskBitmap != null &&
-            transitionShadeBitmap != null &&
             transitionWidth == width && transitionHeight == targetHeight
         ) {
             return true
@@ -384,7 +332,6 @@ internal class EmbeddedIslandAlbumCoverDrawable(
         var cpuBlurredTexture: Bitmap? = null
         var mask: Bitmap? = null
         var blurMask: Bitmap? = null
-        var shade: Bitmap? = null
         return try {
             val sourcePixels = IntArray(readable.width * readable.height)
             readable.getPixels(
@@ -399,10 +346,8 @@ internal class EmbeddedIslandAlbumCoverDrawable(
             val texturePixels = IntArray(width * targetHeight)
             val maskPixels = IntArray(width * targetHeight)
             val blurMaskPixels = IntArray(width * targetHeight)
-            val shadePixels = IntArray(width * targetHeight)
             val maskRow = IntArray(width)
             val blurMaskRow = IntArray(width)
-            val shadeRow = IntArray(width)
             val sourceWidth = cropRight - cropLeft
             val sourceHeight = cropBottom - cropTop
             val cacheInset = maxOf(transitionInset, blurInset)
@@ -472,12 +417,9 @@ internal class EmbeddedIslandAlbumCoverDrawable(
                     overlap = transitionInset,
                     hold = hold,
                 )
-                shadeRow[targetX] = Color.argb(
-                    (255f * blackMix).roundToInt().coerceIn(0, 255),
-                    0,
-                    0,
-                    0,
-                )
+                // 溶解系数折进纹理 alpha：1 - blackMix。黑色胶囊上与"叠黑"逐像素等价，
+                // 半透明胶囊（平板）上则让真实底色透出来。
+                val dissolveAlpha = (255f * (1f - blackMix)).roundToInt().coerceIn(0, 255)
 
                 for (targetY in 0 until targetHeight) {
                     val diffusedColor = verticallyDiffusedEdgeColor(
@@ -509,18 +451,20 @@ internal class EmbeddedIslandAlbumCoverDrawable(
                     } else {
                         diffusedColor
                     }
-                    texturePixels[targetY * width + targetX] = color
+                    texturePixels[targetY * width + targetX] =
+                        scaleColorAlpha(color, dissolveAlpha)
                 }
             }
             for (targetY in 0 until targetHeight) {
                 System.arraycopy(maskRow, 0, maskPixels, targetY * width, width)
                 System.arraycopy(blurMaskRow, 0, blurMaskPixels, targetY * width, width)
-                System.arraycopy(shadeRow, 0, shadePixels, targetY * width, width)
             }
 
             // Keep a blurred CPU copy for the rare fallback path. Normal hardware drawing uses
-            // the raw edge-smear texture through the Android-native RenderEffect below.
-            val cpuBlurredPixels = texturePixels.copyOf()
+            // the raw edge-smear texture through the Android-native RenderEffect below. The
+            // texture now carries varying alpha, so blur in premultiplied space to avoid
+            // color bleeding from transparent columns.
+            val cpuBlurredPixels = premultiplyArgb(texturePixels)
             blurArgbPixelsInPlace(
                 pixels = cpuBlurredPixels,
                 width = width,
@@ -530,6 +474,7 @@ internal class EmbeddedIslandAlbumCoverDrawable(
                 radiusY = IslandGradientCoverLayout.embeddedTransitionBlurRadiusY(density)
                     .roundToInt(),
             )
+            unpremultiplyArgbInPlace(cpuBlurredPixels)
 
             texture = Bitmap.createBitmap(
                 texturePixels,
@@ -555,17 +500,10 @@ internal class EmbeddedIslandAlbumCoverDrawable(
                 targetHeight,
                 Bitmap.Config.ARGB_8888,
             )
-            shade = Bitmap.createBitmap(
-                shadePixels,
-                width,
-                targetHeight,
-                Bitmap.Config.ARGB_8888,
-            )
             transitionTextureBitmap = texture
             transitionCpuBlurredTextureBitmap = cpuBlurredTexture
             transitionMaskBitmap = mask
             transitionBlurMaskBitmap = blurMask
-            transitionShadeBitmap = shade
             transitionWidth = width
             transitionHeight = targetHeight
             transitionRenderNodeReady = recordTransitionRenderNode(texture)
@@ -575,7 +513,6 @@ internal class EmbeddedIslandAlbumCoverDrawable(
             cpuBlurredTexture?.takeUnless { it.isRecycled }?.recycle()
             mask?.takeUnless { it.isRecycled }?.recycle()
             blurMask?.takeUnless { it.isRecycled }?.recycle()
-            shade?.takeUnless { it.isRecycled }?.recycle()
             false
         } finally {
             if (readable !== source && !readable.isRecycled) readable.recycle()
@@ -806,12 +743,10 @@ internal class EmbeddedIslandAlbumCoverDrawable(
         transitionCpuBlurredTextureBitmap?.takeUnless { it.isRecycled }?.recycle()
         transitionMaskBitmap?.takeUnless { it.isRecycled }?.recycle()
         transitionBlurMaskBitmap?.takeUnless { it.isRecycled }?.recycle()
-        transitionShadeBitmap?.takeUnless { it.isRecycled }?.recycle()
         transitionTextureBitmap = null
         transitionCpuBlurredTextureBitmap = null
         transitionMaskBitmap = null
         transitionBlurMaskBitmap = null
-        transitionShadeBitmap = null
         transitionWidth = -1
         transitionHeight = -1
         transitionRenderNodeReady = false
@@ -879,7 +814,6 @@ internal class EmbeddedIslandAlbumCoverDrawable(
             "cpuTexture=${bitmapDiagnostic(transitionCpuBlurredTextureBitmap)}," +
             "mask=${bitmapDiagnostic(transitionMaskBitmap)}," +
             "blurMask=${bitmapDiagnostic(transitionBlurMaskBitmap)}," +
-            "shade=${bitmapDiagnostic(transitionShadeBitmap)}," +
             "renderNodeReady=$transitionRenderNodeReady," +
             "renderNodeHasDisplayList=${runCatching { transitionRenderNode.hasDisplayList() }.getOrNull()}," +
             "algorithm=edge_smear_native_blur"
@@ -889,8 +823,6 @@ internal class EmbeddedIslandAlbumCoverDrawable(
         appliedAlpha = alpha
         bitmapPaint.alpha = alpha
         transitionPaint.alpha = alpha
-        shadePaint.alpha = alpha
-        terminalBlackPaint.alpha = alpha
         transitionRenderNodeReady = recordTransitionRenderNode(transitionTextureBitmap)
         if (BuildConfig.DEBUG) HookLogger.i(
             "EmbeddedIslandAlbumCover",
@@ -902,8 +834,6 @@ internal class EmbeddedIslandAlbumCoverDrawable(
     override fun setColorFilter(colorFilter: ColorFilter?) {
         bitmapPaint.colorFilter = colorFilter
         transitionPaint.colorFilter = colorFilter
-        shadePaint.colorFilter = colorFilter
-        terminalBlackPaint.colorFilter = colorFilter
         transitionRenderNodeReady = recordTransitionRenderNode(transitionTextureBitmap)
         if (BuildConfig.DEBUG) HookLogger.i(
             "EmbeddedIslandAlbumCover",
@@ -917,3 +847,46 @@ internal class EmbeddedIslandAlbumCoverDrawable(
     override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
 }
 
+
+/** 按 [alphaScale]/255 缩放 ARGB 颜色的 alpha，RGB 通道保持不变。 */
+internal fun scaleColorAlpha(color: Int, alphaScale: Int): Int {
+    if (alphaScale >= 255) return color
+    if (alphaScale <= 0) return color and 0x00FFFFFF
+    val alpha = ((color ushr 24) * alphaScale) / 255
+    return (alpha shl 24) or (color and 0x00FFFFFF)
+}
+
+/** 直通 ARGB → 预乘 ARGB。对带变 alpha 的纹理做盒模糊前必须预乘，避免透明像素渗色。 */
+internal fun premultiplyArgb(pixels: IntArray): IntArray {
+    for (index in pixels.indices) {
+        val color = pixels[index]
+        val alpha = color ushr 24
+        if (alpha == 255) continue
+        if (alpha == 0) {
+            // 透明像素的 RGB 必须清零：盒模糊按通道独立平均，残留 RGB 会让邻域渗色。
+            pixels[index] = 0
+            continue
+        }
+        pixels[index] = (alpha shl 24) or
+            (((color shr 16 and 0xFF) * alpha / 255) shl 16) or
+            (((color shr 8 and 0xFF) * alpha / 255) shl 8) or
+            ((color and 0xFF) * alpha / 255)
+    }
+    return pixels
+}
+
+/** [premultiplyArgb] 的逆变换（就近取整后再钳制，避免除法向下取整造成通道回退损失）。 */
+internal fun unpremultiplyArgbInPlace(pixels: IntArray) {
+    for (index in pixels.indices) {
+        val color = pixels[index]
+        val alpha = color ushr 24
+        if (alpha == 255 || alpha == 0) continue
+        fun unpremultiply(channel: Int): Int {
+            return (channel * 255 / alpha).coerceAtMost(255)
+        }
+        pixels[index] = (alpha shl 24) or
+            (unpremultiply(color shr 16 and 0xFF) shl 16) or
+            (unpremultiply(color shr 8 and 0xFF) shl 8) or
+            unpremultiply(color and 0xFF)
+    }
+}

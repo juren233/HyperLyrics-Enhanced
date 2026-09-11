@@ -10,6 +10,26 @@ import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 internal object IslandTextHookerSupport {
     const val TAG = "IslandTextHooker"
 
+    /**
+     * 运行时判定是否走"平板超级岛"路径。
+     *
+     * 手机出厂插件里同样携带 `DynamicIslandContentViewPadHelper`（真机 DEX 已核对），
+     * 原生是用 `CommonUtils.getIS_TABLET()` 在 Pad/Phone helper 之间选择的，
+     * 因此"类是否存在"不能作为平板判据。优先反射系统自身判定，失败时退回 sw600dp。
+     */
+    internal fun isTabletIslandDevice(cl: ClassLoader): Boolean {
+        runCatching {
+            val utils = cl.loadClass("miui.systemui.util.CommonUtils")
+            val instance = utils.getField("INSTANCE").get(null)
+            utils.getMethod("getIS_TABLET").invoke(instance) as? Boolean
+        }.getOrNull()?.let { return it }
+        return runCatching {
+            val metrics = android.content.res.Resources.getSystem().displayMetrics
+            val density = if (metrics.density > 0f) metrics.density else 1f
+            (minOf(metrics.widthPixels, metrics.heightPixels) / density) >= 600f
+        }.getOrDefault(false)
+    }
+
     fun extractMediaInfoFromContentOrReal(contentView: ViewGroup): IslandProbeUtils.MediaIslandInfo? {
         val currentData = IslandProbeUtils.getCurrentIslandData(contentView)
         val currentInfo = IslandProbeUtils.extractMediaIslandInfo(currentData)

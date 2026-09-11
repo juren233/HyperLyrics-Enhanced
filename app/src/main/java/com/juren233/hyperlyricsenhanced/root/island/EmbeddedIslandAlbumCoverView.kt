@@ -30,9 +30,6 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
-/** Width of the unconditional terminal black mask, in physical pixels. */
-internal const val TERMINAL_BLACK_MASK_WIDTH_PX = 10f
-
 /** Small-island artwork child. The host is a FrameLayout, so this child never consumes width. */
 internal class EmbeddedIslandAlbumCoverView(
     context: android.content.Context,

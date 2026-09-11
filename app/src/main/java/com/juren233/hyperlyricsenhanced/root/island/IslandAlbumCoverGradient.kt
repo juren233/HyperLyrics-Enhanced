@@ -338,7 +338,7 @@ internal fun GradientCoverState.applyLayout(
     fixIcon.invalidateOutline()
     fixIcon.foreground = RightEdgeGradientDrawable(
         bandFraction = placement.gradientBandFraction,
-        color = IslandAlbumCoverStyleHooker.resolveIslandColor(fixIcon),
+        color = resolveIslandBackgroundColor(fixIcon),
     )
 
     appliedSmall = false

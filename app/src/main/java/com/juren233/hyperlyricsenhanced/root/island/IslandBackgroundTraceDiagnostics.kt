@@ -35,6 +35,10 @@ internal object IslandBackgroundTraceDiagnostics {
     private const val BACKGROUND_VIEW_CLASS = "miui.systemui.dynamicisland.DynamicIslandBackgroundView"
     private const val FAKE_VIEW_NAME = "DynamicIslandContentFakeView"
     private const val CONTENT_VIEW_NAME = "DynamicIslandContentView"
+    private const val BIG_ISLAND_VIEW_NAME = "DynamicIslandBigIslandView"
+    private const val BIG_CONTAINER_ID_NAME = "big_container"
+    private const val AREA_LEFT_ID_NAME = "area_left"
+    private const val AREA_RIGHT_ID_NAME = "area_right"
     private const val MAX_FRAMES = 300
     private const val MAX_DURATION_MS = 6000L
     private const val MIN_LOG_INTERVAL_MS = 40L
@@ -51,6 +55,7 @@ internal object IslandBackgroundTraceDiagnostics {
     private val SYSTEMUI_PACKAGE_NAMES = listOf("miui.systemui.plugin", "com.android.systemui")
 
     private val intGetters = ConcurrentHashMap<String, java.lang.reflect.Method>()
+    private val floatGetters = ConcurrentHashMap<String, java.lang.reflect.Method>()
     private val floatFields = ConcurrentHashMap<String, java.lang.reflect.Field>()
     private val fakePartIds = WeakHashMap<View, Map<String, Int>>()
 
@@ -230,6 +235,62 @@ internal object IslandBackgroundTraceDiagnostics {
         append(" all=").append(allBackgroundStates())
         append(" | fake=").append(viewState(fake))
         append(" | content=").append(viewState(content))
+    }
+
+    /**
+     * Debug-only：宽度计算落地后输出一次"胶囊 vs 内容"对齐快照。
+     *
+     * PAD-ISLAND-MAX-WIDTH-001（平板解除长度限制后内容在岛内左移被裁切、右侧留白）必须同时看到
+     * 胶囊真实绘制矩形（`DynamicIslandBackgroundView.actualLeft/actualTop/actualWidth` 与
+     * 私有 drawable 的 bounds）与原生 `big_container/area_left/area_right`、模块注入槽位的窗口坐标，
+     * 才能判断错位发生在原生结果改写后的哪一环，而不是靠偏移量猜测。
+     */
+    fun logAlignmentSnapshot(reason: String, contentView: View, detail: String? = null) {
+        if (!BuildConfig.DEBUG) return
+        runCatching {
+            val root = topMostParent(contentView)
+            val capsules = ArrayList<View>(MAX_BACKGROUND_INSTANCES)
+            collectBackgrounds(root, 0, capsules)
+            val content = findViewBySimpleName(root, CONTENT_VIEW_NAME) ?: contentView
+            val pill = findViewBySimpleName(root, BIG_ISLAND_VIEW_NAME)
+            val container = findViewByNameId(content, BIG_CONTAINER_ID_NAME)
+            val areaLeft = findViewByNameId(content, AREA_LEFT_ID_NAME)
+            val areaRight = findViewByNameId(content, AREA_RIGHT_ID_NAME)
+            val line = buildString {
+                append("对齐快照: reason=").append(reason)
+                if (!detail.isNullOrEmpty()) append(' ').append(detail)
+                append(" | root=").append(geometry(root))
+                capsules.forEach { capsule ->
+                    append(" | capsule=").append(capsuleState(capsule)).append(' ')
+                        .append(geometry(capsule))
+                }
+                append(" | content=").append(geometry(content))
+                    .append(" x=").append(intGetter(content, "getBigIslandX"))
+                    .append(" viewWidth=").append(intGetter(content, "getBigIslandViewWidth"))
+                    .append(" left=").append(intGetter(content, "getBigIslandLeftWidth"))
+                    .append(" right=").append(intGetter(content, "getBigIslandRightWidth"))
+                    .append(" margin=").append(intGetter(content, "getBigIslandMarginWidth"))
+                    .append(" datePosX=").append(intGetter(content, "getStatusBarDatePosX"))
+                    .append(" padTransX=").append(floatGetter(content, "getPadIslandTransX"))
+                append(" | pill=").append(geometry(pill))
+                append(" | container=").append(geometry(container))
+                append(" | areaL=").append(geometry(areaLeft))
+                append(" | areaR=").append(geometry(areaRight))
+                append(" | injectedL=").append(injectedBounds(content, IslandProbeUtils.LEFT_TEST_VIEW_TAG))
+                append(" | injectedR=").append(injectedBounds(content, IslandProbeUtils.RIGHT_TEST_VIEW_TAG))
+            }
+            HookLogger.i(TAG, line)
+        }
+    }
+
+    private fun geometry(view: View?): String {
+        if (view == null) return "无"
+        val location = IntArray(2).also(view::getLocationInWindow)
+        return buildString {
+            append(instanceTag(view)).append(" loc=").append(location[0]).append(',').append(location[1])
+            append(" w=").append(view.width).append("x").append(view.height)
+            append(" trans=").append(view.translationX).append(',').append(view.translationY)
+        }
     }
 
     private fun instanceTag(view: View): String = "@" + System.identityHashCode(view)
@@ -442,6 +503,24 @@ internal object IslandBackgroundTraceDiagnostics {
         }
         (method.invoke(target) as? Number)?.toInt() ?: -1
     }.getOrDefault(-1)
+
+    private fun floatGetter(target: Any, name: String): Float = runCatching {
+        val key = target.javaClass.name + '#' + name
+        val method = floatGetters.getOrPut(key) {
+            target.javaClass.methods.first { it.name == name && it.parameterTypes.isEmpty() }
+        }
+        (method.invoke(target) as? Number)?.toFloat() ?: -1f
+    }.getOrDefault(-1f)
+
+    private fun findViewByNameId(root: View, name: String): View? {
+        val resources = root.resources
+        for (pkg in SYSTEMUI_PACKAGE_NAMES) {
+            val id = resources.getIdentifier(name, "id", pkg)
+            if (id == 0) continue
+            root.findViewById<View>(id)?.let { return it }
+        }
+        return null
+    }
 
     private fun floatField(target: Any, name: String): Float = runCatching {
         val key = target.javaClass.name + '#' + name

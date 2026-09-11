@@ -150,6 +150,13 @@ internal object IslandTextHooker {
      * Hook 永不触发（160042 真机已证伪）。手机插件缺该类时跳过；开关实时读取。
      */
     internal fun installPadMaxWidthUnlockHook(module: XposedModule, cl: ClassLoader) {
+        if (!IslandTextHookerSupport.isTabletIslandDevice(cl)) {
+            HookLogger.i(
+                TAG,
+                "平板岛宽上限 Hook 跳过: 当前设备走手机岛路径 (CommonUtils.getIS_TABLET=false)",
+            )
+            return
+        }
         val helperClass = runCatching { cl.loadClass(PAD_HELPER_CLASS) }.getOrNull()
         if (helperClass == null) {
             HookLogger.w(TAG, "平板岛宽上限 Hook 跳过: 未找到 DynamicIslandContentViewPadHelper")
@@ -172,6 +179,7 @@ internal object IslandTextHooker {
             module.deoptimize(method)
             module.hook(method).intercept(IslandWidthHooker.PadMaxWidthUnlockHook(resultClass))
         }
+        IslandWidthHooker.padIslandPathActive = true
         HookLogger.i(
             TAG,
             "已 Hook 平板岛宽上限 calculateBigIslandWidth: methods=${methods.size}, " +

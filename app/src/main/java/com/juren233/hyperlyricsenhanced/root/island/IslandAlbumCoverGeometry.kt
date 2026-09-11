@@ -18,7 +18,6 @@ import android.graphics.PixelFormat
 import android.graphics.Rect
 import android.graphics.Shader
 import android.graphics.drawable.BitmapDrawable
-import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.Drawable
 import android.os.Handler
 import android.os.Looper
@@ -142,7 +141,7 @@ internal fun IslandAlbumCoverStyleHooker.resolveInitializedContainerGeometry(
     height: Int,
     smallIsland: Boolean,
 ): IslandGradientGeometryCandidate? {
-    val associated = IslandAlbumCoverStyleHooker.findAssociatedBackgroundView(target) ?: return null
+    val associated = findIslandBackgroundView(target) ?: return null
     val background = associated.view
     if (!background.isAttachedToWindow ||
         background.visibility != View.VISIBLE ||
@@ -545,7 +544,7 @@ internal fun IslandAlbumCoverStyleHooker.resolveLocalBigSnapshot(imageView: Imag
             coverWidth = coverWidth,
             density = imageView.resources.displayMetrics.density,
         ),
-        islandColor = IslandAlbumCoverStyleHooker.resolveIslandColor(host),
+        islandColor = resolveIslandBackgroundColor(host),
     )
 }
 

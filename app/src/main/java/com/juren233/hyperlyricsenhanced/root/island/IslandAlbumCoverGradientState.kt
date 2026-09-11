@@ -18,7 +18,6 @@ import android.graphics.PixelFormat
 import android.graphics.Rect
 import android.graphics.Shader
 import android.graphics.drawable.BitmapDrawable
-import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.Drawable
 import android.os.Handler
 import android.os.Looper
@@ -52,30 +51,6 @@ import java.util.Collections
 import java.util.WeakHashMap
 import kotlin.math.abs
 import kotlin.math.roundToInt
-
-internal data class AssociatedBackground(
-    val view: View,
-    val ownerClass: String,
-)
-
-internal fun IslandAlbumCoverStyleHooker.findAssociatedBackgroundView(view: View): AssociatedBackground? {
-    var current: View? = view
-    while (current != null) {
-        if (current.javaClass.simpleName == "DynamicIslandBackgroundView") {
-            return AssociatedBackground(current, current.javaClass.name)
-        }
-        val background = runCatching {
-            current.javaClass.methods.firstOrNull {
-                it.name == "getBackgroundView" && it.parameterTypes.isEmpty()
-            }?.invoke(current) as? View
-        }.getOrNull()
-        if (background != null) {
-            return AssociatedBackground(background, current.javaClass.name)
-        }
-        current = current.parent as? View
-    }
-    return null
-}
 
 internal fun IslandAlbumCoverStyleHooker.isSmallIslandModule(module: View): Boolean {
     if (module.id == View.NO_ID) return false
@@ -152,26 +127,6 @@ internal class RightEdgeGradientDrawable(
 
     @Suppress("OVERRIDE_DEPRECATION")
     override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
-}
-
-internal fun IslandAlbumCoverStyleHooker.resolveIslandColor(view: View): Int {
-    val candidates = buildList {
-        add(view)
-        (view.parent as? View)?.let(::add)
-        ((view.parent as? View)?.parent as? View)?.let(::add)
-        add(view.rootView)
-    }
-    for (candidate in candidates) {
-        runCatching {
-            val solid = candidate.solidColor
-            if (solid != 0 && Color.alpha(solid) == 255) return solid
-        }
-        val background = candidate.background
-        if (background is ColorDrawable && Color.alpha(background.color) == 255) {
-            return background.color
-        }
-    }
-    return Color.BLACK
 }
 
 internal class GradientCoverState(
@@ -409,7 +364,7 @@ internal class GradientCoverState(
             coverHeight = placement.coverHeight,
             smallIsland = smallIsland,
             gradientBandFraction = placement.gradientBandFraction,
-            islandColor = IslandAlbumCoverStyleHooker.resolveIslandColor(fixIcon),
+            islandColor = resolveIslandBackgroundColor(fixIcon),
         )
         if (smallIsland) IslandAlbumCoverStyleHooker.cachedSmallVisual = snapshot else IslandAlbumCoverStyleHooker.cachedBigVisual = snapshot
     }
@@ -428,7 +383,7 @@ internal class GradientCoverState(
         val density = fixIcon.resources.displayMetrics.density
         val tolerance = maxOf((4f * density).roundToInt(), moduleHeight / 10)
         val smallIsland = IslandAlbumCoverStyleHooker.isSmallIslandModule(moduleView)
-        val associated = IslandAlbumCoverStyleHooker.findAssociatedBackgroundView(fixIcon)
+        val associated = findIslandBackgroundView(fixIcon)
         if (associated == null) {
             if (smallIsland && moduleView.isShown) {
                 val moduleLocation = moduleView.baseLocationInWindow()
