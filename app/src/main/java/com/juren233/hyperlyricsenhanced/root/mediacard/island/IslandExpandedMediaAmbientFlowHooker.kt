@@ -25,6 +25,7 @@ import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.root.HookEntry
 import com.juren233.hyperlyricsenhanced.root.SystemUiEnhancementGate
 import com.juren233.hyperlyricsenhanced.root.island.IslandAlbumCoverStyleHooker
+import com.juren233.hyperlyricsenhanced.root.island.IslandBackgroundTraceDiagnostics
 import com.juren233.hyperlyricsenhanced.root.island.IslandProbeUtils
 import com.juren233.hyperlyricsenhanced.root.mediacard.MediaAmbientFlowPalette
 import com.juren233.hyperlyricsenhanced.root.mediacard.MediaAmbientFlowPaletteExtractor
@@ -430,9 +431,15 @@ object IslandExpandedMediaAmbientFlowHooker {
                 view != null &&
                 IslandExpandedMediaBackgroundController.shouldSkipNativeBackgroundUpdate(view)
             ) {
+                if (BuildConfig.DEBUG) {
+                    IslandBackgroundTraceDiagnostics.event("updateBackgroundBg 跳过", view)
+                }
                 return null
             }
             val result = chain.proceed()
+            if (BuildConfig.DEBUG) {
+                IslandBackgroundTraceDiagnostics.event("updateBackgroundBg", view)
+            }
             if (view != null) {
                 runCatching { reapplyTrackedLightTheme(view) }.onFailure { error ->
                     HookLogger.e(TAG, "重放展开态浅色背景失败", error)
@@ -472,6 +479,9 @@ object IslandExpandedMediaAmbientFlowHooker {
             if (!SystemUiEnhancementGate.isEnabled()) return result
             runCatching {
                 val contentView = chain.thisObject as? View ?: return@runCatching
+                if (BuildConfig.DEBUG) {
+                    IslandBackgroundTraceDiagnostics.event("updateMiniBar", contentView)
+                }
                 applyContentViewTheme(contentView)
             }.onFailure { error ->
                 HookLogger.e(TAG, "恢复展开态 MiniBar 主题失败", error)

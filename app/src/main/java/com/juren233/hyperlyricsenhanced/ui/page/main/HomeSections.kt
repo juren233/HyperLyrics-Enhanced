@@ -33,6 +33,8 @@ fun LazyListScope.homePageSections(
     onRemoveFocusWhitelistToggle: (Boolean) -> Unit,
     removeIslandWhitelist: Boolean,
     onRemoveIslandWhitelistToggle: (Boolean) -> Unit,
+    unlockIslandLength: Boolean,
+    onUnlockIslandLengthToggle: (Boolean) -> Unit,
     onAppSettingsClick: () -> Unit,
 ) {
     item(key = "enhanced_version_notice") {
@@ -135,6 +137,11 @@ fun LazyListScope.homePageSections(
     item(key = "special_features_content") {
         Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
             Column {
+                SwitchPreference(
+                    title = stringResource(R.string.title_unlock_island_length),
+                    checked = unlockIslandLength,
+                    onCheckedChange = onUnlockIslandLengthToggle,
+                )
                 SwitchPreference(
                     title = stringResource(R.string.title_remove_focus_whitelist),
                     summary = stringResource(R.string.summary_remove_focus_whitelist),

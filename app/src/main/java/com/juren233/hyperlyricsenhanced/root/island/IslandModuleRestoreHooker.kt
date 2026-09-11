@@ -1,6 +1,7 @@
 package com.juren233.hyperlyricsenhanced.root.island
 
 import com.juren233.hyperlyricsenhanced.root.island.IslandTextHookerSupport.TAG
+import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import io.github.libxposed.api.XposedInterface.Chain
 import io.github.libxposed.api.XposedInterface.Hooker
@@ -26,6 +27,13 @@ internal object IslandModuleRestoreHooker {
                     return@runCatching
                 }
 
+                if (BuildConfig.DEBUG) {
+                    IslandBackgroundTraceDiagnostics.event(
+                        "adapter.updateView",
+                        holderRoot,
+                        "module=$moduleType",
+                    )
+                }
                 IslandTextHookerSupport.restoreAdapterModule(chain.thisObject, moduleType, "adapter.updateView")
             }.onFailure { e ->
                 HookLogger.e(TAG, "adapter.updateView 后恢复歌词视图失败", e)
@@ -55,6 +63,13 @@ internal object IslandModuleRestoreHooker {
                     return@runCatching
                 }
 
+                if (BuildConfig.DEBUG) {
+                    IslandBackgroundTraceDiagnostics.event(
+                        "updateModuleView",
+                        holderRoot,
+                        "module=$moduleType",
+                    )
+                }
                 IslandTextHookerSupport.restoreAdapterModule(adapter, moduleType, "updateModuleView")
             }.onFailure { e ->
                 HookLogger.e(TAG, "updateModuleView 后恢复歌词视图失败", e)

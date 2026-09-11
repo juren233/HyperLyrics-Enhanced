@@ -335,6 +335,10 @@ class HookEntry : XposedModule() {
                 param.defaultClassLoader,
                 lyricsOnly = lyricsOnlyAfterHotReload
             )
+            // NotificationSettingsManager 在插件 dex 中，主类加载器加载不到，
+            // 白名单 Hook 必须借插件类加载器安装。
+            UnlockIslandWhitelist.doHookInClassLoader(param.defaultClassLoader)
+            UnlockFocusWhitelist.doHookInClassLoader(param.defaultClassLoader)
         } else if (packageName == "com.apple.android.music") {
             runCatching {
                 AppleMusicProvider.install(this, param.defaultClassLoader)
@@ -874,6 +878,10 @@ class HookEntry : XposedModule() {
                     cl,
                     lyricsOnly = lyricsOnlyAfterHotReload
                 )
+                // 同步把白名单 Hook 挂到插件类加载器：PluginInstance.loadPlugin
+                // 反射转发在新系统上不可靠，两条路径内部各自按 cl 去重，可叠加。
+                UnlockIslandWhitelist.doHookInClassLoader(cl)
+                UnlockFocusWhitelist.doHookInClassLoader(cl)
             } catch (e: Exception) {
                 if (e is ClassNotFoundException || e is NoSuchMethodException) {
                     // HookLogger.w("HookEntry","插件中未找到超级岛相关类")

@@ -2,6 +2,7 @@ package com.juren233.hyperlyricsenhanced.root.island
 
 import android.view.View
 import android.view.ViewGroup
+import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.root.LyriconDataBridge
 import com.juren233.hyperlyricsenhanced.root.island.renderer.BaseIslandRenderer
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
@@ -53,7 +54,16 @@ internal object IslandTextHookerSupport {
         val changed = IslandLyricTextInjector.restoreExistingSlotsLightweight(realView)
         IslandLyricTextInjector.refreshCurrentContent(realView)
         realView.visibility = View.VISIBLE
-        (callNoArgMethodResult(realView, "getBackgroundView") as? View)?.visibility = View.VISIBLE
+        val backgroundView = callNoArgMethodResult(realView, "getBackgroundView") as? View
+        backgroundView?.visibility = View.VISIBLE
+        if (BuildConfig.DEBUG) {
+            IslandBackgroundTraceDiagnostics.event(
+                "fake过渡结束恢复真实岛",
+                backgroundView ?: realView,
+                "source=$source 重新布局=$changed background=${if (backgroundView == null) "未找到" else "VISIBLE"}",
+                background = backgroundView,
+            )
+        }
         realView.post {
             IslandLyricTextInjector.resumeInjectedContentMotion(
                 realView,

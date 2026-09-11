@@ -45,6 +45,7 @@
     <string name="title_classic_aod">经典AOD</string>
     <string name="title_dynamic_island_config">通知型灵动岛歌词自定义配置</string>
     <string name="title_special_features">特殊功能</string>
+    <string name="title_unlock_island_length">解除超级岛长度限制</string>
     <string name="title_remove_focus_whitelist">移除焦点通知白名单</string>
     <string name="summary_remove_focus_whitelist">不要和其他模块的相同功能冲突使用</string>
     <string name="title_remove_island_whitelist">移除下拉小窗白名单</string>

@@ -18,6 +18,7 @@ object UnlockIslandWhitelist {
     private val hookHandles = mutableMapOf<Method, HookHandle>()
     private val knownClassLoaders = mutableSetOf<ClassLoader>()
     private var prefsListener: SharedPreferences.OnSharedPreferenceChangeListener? = null
+    private val loggedFirstHit = java.util.concurrent.atomic.AtomicBoolean(false)
 
     fun hook(xposedModule: XposedModule, defaultClassLoader: ClassLoader) {
         module = xposedModule
@@ -68,6 +69,11 @@ object UnlockIslandWhitelist {
                 "UnlockIslandWhitelist",
                 "超级岛下拉小窗白名单 Hook 已安装: method=$TARGET_METHOD"
             )
+            } else if (method == null) {
+                HookLogger.d(
+                    "UnlockIslandWhitelist",
+                    "$TARGET_CLASS 存在但未找到方法 $TARGET_METHOD"
+                )
             }
         }.onFailure { e ->
             if (e !is ClassNotFoundException) {
@@ -91,6 +97,9 @@ object UnlockIslandWhitelist {
     class ReturnTrueHooker : Hooker {
         override fun intercept(chain: Chain): Any? {
             // hook 存在即代表功能开启，无需读取偏好
+            if (UnlockIslandWhitelist.loggedFirstHit.compareAndSet(false, true)) {
+                HookLogger.i("UnlockIslandWhitelist", "下拉小窗白名单 Hook 首次命中")
+            }
             return true
         }
     }

@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.view.View
 import android.view.ViewGroup
 import com.juren233.hyperlyricsenhanced.common.RootConstants
+import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.root.HookEntry
 import com.juren233.hyperlyricsenhanced.root.island.view.MaxWidthFrameLayout
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
@@ -172,6 +173,13 @@ object IslandViewHelper {
         ) == true
     }
 
+    internal fun isUnlockIslandLengthEnabled(): Boolean {
+        return HookEntry.instance?.prefs?.getBoolean(
+            RootConstants.KEY_HOOK_UNLOCK_ISLAND_LENGTH,
+            RootConstants.DEFAULT_HOOK_UNLOCK_ISLAND_LENGTH
+        ) == true
+    }
+
     /**
      * 动态长度开启时，在宽度重算前标记左右区域子树强制重新测量，
      * 覆盖 triggerSystemRelayout 与系统自发 calculateBigIslandWidth 两条路径。
@@ -211,6 +219,9 @@ object IslandViewHelper {
      */
     fun triggerSystemRelayout(islandView: ViewGroup) {
         if (isRelayouting.get() == true) return
+        if (BuildConfig.DEBUG) {
+            IslandBackgroundTraceDiagnostics.event("模块主动布局刷新", islandView)
+        }
         HookLogger.d("IslandViewHelper","正在触发布局刷新")
         isRelayouting.set(true)
         try {

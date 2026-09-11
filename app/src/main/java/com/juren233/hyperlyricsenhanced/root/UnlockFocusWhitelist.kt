@@ -27,6 +27,7 @@ object UnlockFocusWhitelist {
     private val whitelistHandles = mutableListOf<HookHandle>()
     private val knownClassLoaders = mutableSetOf<ClassLoader>()
     private var prefsListener: SharedPreferences.OnSharedPreferenceChangeListener? = null
+    private val loggedFirstFocusHit = java.util.concurrent.atomic.AtomicBoolean(false)
 
     fun hook(xposedModule: XposedModule, defaultClassLoader: ClassLoader) {
         module = xposedModule
@@ -72,7 +73,7 @@ object UnlockFocusWhitelist {
         doHookInClassLoader(defaultClassLoader)
     }
 
-    private fun doHookInClassLoader(cl: ClassLoader?) {
+    internal fun doHookInClassLoader(cl: ClassLoader?) {
         if (cl == null || !hookedClassLoaders.add(cl)) return
         knownClassLoaders.add(cl)
         installFocusSettingsHooks(cl)
@@ -192,11 +193,13 @@ object UnlockFocusWhitelist {
 
     class FocusSettingsHooker : Hooker {
         override fun intercept(chain: Chain): Any? {
-            return if (isWhitelistRemovalEnabled()) {
-                true
-            } else {
-                chain.proceed()
+            if (isWhitelistRemovalEnabled()) {
+                if (UnlockFocusWhitelist.loggedFirstFocusHit.compareAndSet(false, true)) {
+                    HookLogger.i("UnlockFocusWhitelist", "焦点通知白名单 Hook 首次命中")
+                }
+                return true
             }
+            return chain.proceed()
         }
     }
 

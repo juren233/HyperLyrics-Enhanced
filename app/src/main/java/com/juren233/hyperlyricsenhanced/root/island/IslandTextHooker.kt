@@ -23,6 +23,10 @@ internal object IslandTextHooker {
     private const val ADAPTER_CLASS = "miui.systemui.dynamicisland.module.IslandModuleViewHolderAdapter"
     private const val PHONE_HELPER_CLASS =
         "miui.systemui.dynamicisland.window.content.helpers.DynamicIslandContentViewPhoneHelper"
+    private const val PAD_HELPER_CLASS =
+        "miui.systemui.dynamicisland.window.content.helpers.DynamicIslandContentViewPadHelper"
+    private const val ISLAND_CALCULATION_RESULT_CLASS =
+        "miui.systemui.dynamicisland.model.IslandContentViewCalculationResult"
 
     fun hook(module: XposedModule, cl: ClassLoader, includeMediaHooks: Boolean = true) {
         installFeature("真实岛") {
@@ -43,6 +47,7 @@ internal object IslandTextHooker {
                 }
 
             installDynamicMinWidthHook(module, cl)
+            installPadMaxWidthUnlockHook(module, cl)
 
             contentViewClass.methods
                 .filter { it.name == "hideIslandLayout" || it.name == "showIslandLayout" }
@@ -104,6 +109,7 @@ internal object IslandTextHooker {
             if (includeMediaHooks) {
                 installMiniBarHook(module, cl)
             }
+            IslandBackgroundTraceDiagnostics.installDrawTracing(module, cl)
             cl.loadClass(TEMPLATE_BUILDER_CLASS).declaredMethods
                 .filter { it.name == "updateModuleView" && it.parameterTypes.size == 3 }
                 .forEach { method ->
@@ -136,6 +142,41 @@ internal object IslandTextHooker {
                 module.hook(method).intercept(IslandWidthHooker.BigIslandMinWidthHook())
                 HookLogger.d(TAG, "已 Hook getBigIslandMinWidth: $method")
             }
+    }
+
+    /**
+     * 解除平板超级岛长度限制：Hook 平板 helper 的宽度计算入口，改写返回结果。
+     * 不直接 Hook getBigIslandMaxWidth getter——ART AOT 会将其内联进调用方导致
+     * Hook 永不触发（160042 真机已证伪）。手机插件缺该类时跳过；开关实时读取。
+     */
+    internal fun installPadMaxWidthUnlockHook(module: XposedModule, cl: ClassLoader) {
+        val helperClass = runCatching { cl.loadClass(PAD_HELPER_CLASS) }.getOrNull()
+        if (helperClass == null) {
+            HookLogger.w(TAG, "平板岛宽上限 Hook 跳过: 未找到 DynamicIslandContentViewPadHelper")
+            return
+        }
+        val resultClass =
+            runCatching { cl.loadClass(ISLAND_CALCULATION_RESULT_CLASS) }.getOrNull()
+        if (resultClass == null) {
+            HookLogger.w(TAG, "平板岛宽上限 Hook 跳过: 未找到 IslandContentViewCalculationResult")
+            return
+        }
+        val methods = helperClass.methods.filter {
+            it.name == "calculateBigIslandWidth" && it.parameterTypes.size == 1
+        }
+        if (methods.isEmpty()) {
+            HookLogger.w(TAG, "平板岛宽上限 Hook 跳过: PadHelper 上未找到 calculateBigIslandWidth")
+            return
+        }
+        methods.forEach { method ->
+            module.deoptimize(method)
+            module.hook(method).intercept(IslandWidthHooker.PadMaxWidthUnlockHook(resultClass))
+        }
+        HookLogger.i(
+            TAG,
+            "已 Hook 平板岛宽上限 calculateBigIslandWidth: methods=${methods.size}, " +
+                "安装时开关状态=${if (IslandViewHelper.isUnlockIslandLengthEnabled()) "开启" else "关闭"}",
+        )
     }
 
     internal fun installMiniBarHook(module: XposedModule, cl: ClassLoader) {

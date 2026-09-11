@@ -187,6 +187,7 @@ object RootConstants {
     const val KEY_HOOK_MAX_LEFT_WIDTH = "key_hook_max_left_width"
     const val KEY_HOOK_REMOVE_FOCUS_WHITELIST = "key_hook_remove_focus_whitelist"
     const val KEY_HOOK_REMOVE_ISLAND_WHITELIST = "key_hook_remove_island_whitelist"
+    const val KEY_HOOK_UNLOCK_ISLAND_LENGTH = "key_hook_unlock_island_length"
 
     // ================= STYLE & TYPOGRAPHY KEYS =================
     const val KEY_HOOK_TEXT_SIZE = "key_hook_text_size"
@@ -447,6 +448,7 @@ object RootConstants {
     const val DEFAULT_HOOK_MAX_LEFT_WIDTH = 100
     const val DEFAULT_HOOK_REMOVE_FOCUS_WHITELIST = false
     const val DEFAULT_HOOK_REMOVE_ISLAND_WHITELIST = false
+    const val DEFAULT_HOOK_UNLOCK_ISLAND_LENGTH = false
     const val DEFAULT_HOOK_ISLAND_CONTENT_LEFT = 5
     const val DEFAULT_HOOK_ISLAND_CONTENT_RIGHT = 7
     const val DEFAULT_HOOK_ISLAND_LEFT_PADDING_LEFT = 5

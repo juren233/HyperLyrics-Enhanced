@@ -100,13 +100,64 @@ internal fun IslandExpandedMediaAmbientFlowHooker.applyFakeTransitionTheme(fakeC
     applyCustomFakeTransitionTheme(fakeContentView)
 }
 
+/**
+ * 原生过渡动画跑完后，再等这么久再把接管交回模块。
+ * 过渡阶段（fake 动画 / 原生接管）模块完全不碰岛背景；这 0.1s 是留给原生动画收尾。
+ */
+private const val MODULE_TAKEOVER_DELAY_MS = 100L
+
+private val moduleTakeoverHandler by lazy { Handler(Looper.getMainLooper()) }
+private val moduleTakeoverTokens = Collections.synchronizedMap(WeakHashMap<View, Long>())
+private val moduleTakeoverSequence = java.util.concurrent.atomic.AtomicLong()
+
+/**
+ * 原生阶段结束后恢复模块接管：等 [MODULE_TAKEOVER_DELAY_MS] 后走模块原有的
+ * [applyAppearance] 路径（流光 + 卡片主题），即"模块按自己原来的那套逻辑继续渲染"。
+ * 不插入任何额外视图、不改动超级岛背景。
+ */
+internal fun IslandExpandedMediaAmbientFlowHooker.scheduleModuleTakeoverAfterSettle(
+    settleView: View,
+    binder: Any
+) {
+    val token = moduleTakeoverSequence.incrementAndGet()
+    moduleTakeoverTokens[settleView] = token
+    moduleTakeoverHandler.postDelayed({
+        if (moduleTakeoverTokens[settleView] != token) return@postDelayed
+        moduleTakeoverTokens.remove(settleView)
+        runCatching {
+            if (!IslandProbeUtils.isSuperIslandEnabled()) return@runCatching
+            applyAppearance(binder, allowCoverColor = true)
+        }.onFailure { error ->
+            HookLogger.e(TAG, "原生阶段结束后恢复模块接管失败", error)
+        }
+    }, MODULE_TAKEOVER_DELAY_MS)
+    if (BuildConfig.DEBUG) {
+        HookLogger.d(
+            TAG,
+            "已排定原生动画结束后 ${MODULE_TAKEOVER_DELAY_MS}ms 恢复模块接管: " +
+                "view=@${System.identityHashCode(settleView)} binder=@${System.identityHashCode(binder)}"
+        )
+    }
+}
+
+internal fun IslandExpandedMediaAmbientFlowHooker.cancelModuleTakeover(settleView: View) {
+    moduleTakeoverTokens.remove(settleView)
+}
+
 internal fun IslandExpandedMediaAmbientFlowHooker.restoreFakeTransitionTheme(fakeContentView: ViewGroup) {
     val dataOwner = fakeContentView.javaClass.getMethod("getRealView").invoke(fakeContentView)
     if (!IslandProbeUtils.isMediaIsland(IslandProbeUtils.getCurrentIslandData(dataOwner))) return
     val api = nativeApi ?: return
     val target = api.findContentBackgroundTarget(fakeContentView) ?: return
+    val binder = findBinderForContentOwner(dataOwner as? View, api)
     restoreCustomFakeFlow(fakeContentView)
     IslandExpandedMediaBackgroundController.restoreFakeTransition(target, api)
+    // 原生阶段结束 → 等 0.1s（原生动画收尾）后把接管交回模块。
+    if (binder != null && !IslandExpandedMediaBackgroundController.isActive()) {
+        scheduleModuleTakeoverAfterSettle(fakeContentView, binder)
+    } else {
+        cancelModuleTakeover(fakeContentView)
+    }
 }
 
 internal fun IslandExpandedMediaAmbientFlowHooker.applyCustomFakeTransitionTheme(fakeContentView: ViewGroup) {
@@ -159,67 +210,20 @@ internal fun IslandExpandedMediaAmbientFlowHooker.applyCustomFakeFlow(
     target: IslandExpandedBackgroundTarget,
     api: NativeApi
 ) {
-    val binderState = binderStates[binder] ?: return
-    val artwork = binderState.customArtwork ?: return
-    val contentBounds = target.transitionContentBounds ?: return
-    val existing = fakeFlowStates[fakeContentView]
-    val state = if (
-        existing != null &&
-        existing.binder === binder &&
-        existing.target.customBackgroundView === target.customBackgroundView
-    ) {
-        existing
-    } else {
-        existing?.let { removeCustomFakeFlow(fakeContentView) }
-        val flowView = MediaFlowBackgroundView(
-            fakeContentView.context,
-            binderState.customTimeline,
-            appleMusicStyle = true
-        ).apply {
-            tag = CUSTOM_FAKE_FLOW_VIEW_TAG
-            visibility = View.GONE
-        }
-        fakeContentView.addView(
-            flowView,
-            0,
-            FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
-            )
-        )
-        FakeFlowState(
-            binder = binder,
-            target = target,
-            api = api,
-            flowView = flowView
-        ).also { fakeFlowStates[fakeContentView] = it }
-    }
-
-    if (state.active) restoreCustomFakeFlowState(state)
-    state.target = target
-    state.api = api
-    state.originalTransitionBackground = fakeContentView.background
-    state.originalOccludingBackgrounds = target.transitionOccludingViews.map { view ->
-        view to view.background
-    }
-    state.hiddenHolderFlows = binderState.customViews.values.filter { view ->
-        view !== state.flowView && view.isDescendantOf(fakeContentView)
-    }
-
-    api.prepareCustomBackground(target)
-    fakeContentView.background = null
-    state.originalOccludingBackgrounds.forEach { (view, _) -> view.background = null }
-    state.hiddenHolderFlows.forEach { it.visibility = View.INVISIBLE }
-    state.flowView.apply {
-        setTransitionViewport(contentBounds)
-        visibility = View.VISIBLE
-        update(
-            artwork = artwork,
-            tone = if (shouldUseLightTheme(binder)) MediaFlowTone.LIGHT else MediaFlowTone.DARK,
-            playing = api.isPlaying(binder)
+    // 160057：封面流光不再接管 fake 过渡期的背景。
+    // 旧实现会置空 fake 根视图 / fake_container 的原生背景、隐藏卡片内的封面流光视图，
+    // 再用自绘流光覆盖整片区域；真机结果：只有"封面流光"样式在关小窗/回岛过渡期丢失
+    // 超级岛背景（其余样式正常）。这里恢复为完全保留原生背景链与卡片内流光视图，
+    // fake 过渡只保留既有的歌词冻结逻辑。
+    restoreCustomFakeFlow(fakeContentView)
+    cancelModuleTakeover(fakeContentView)
+    if (BuildConfig.DEBUG) {
+        HookLogger.d(
+            TAG,
+            "fake 封面流光接管已停用（保留原生岛背景）: binder=@${System.identityHashCode(binder)} " +
+                "occluding=${target.transitionOccludingViews.size}"
         )
     }
-    state.active = true
 }
 
 internal fun IslandExpandedMediaAmbientFlowHooker.restoreCustomFakeFlow(fakeContentView: ViewGroup) {

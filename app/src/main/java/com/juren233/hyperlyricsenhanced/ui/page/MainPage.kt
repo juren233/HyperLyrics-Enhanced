@@ -174,6 +174,9 @@ fun MainPage() {
     var removeIslandWhitelist by remember {
         mutableStateOf(prefs.getBoolean(RootConstants.KEY_HOOK_REMOVE_ISLAND_WHITELIST, RootConstants.DEFAULT_HOOK_REMOVE_ISLAND_WHITELIST))
     }
+    var unlockIslandLength by remember {
+        mutableStateOf(prefs.getBoolean(RootConstants.KEY_HOOK_UNLOCK_ISLAND_LENGTH, RootConstants.DEFAULT_HOOK_UNLOCK_ISLAND_LENGTH))
+    }
 
     // --- dialogs ---
     var showOneTapRefreshDialog by remember { mutableStateOf(false) }
@@ -341,6 +344,27 @@ fun MainPage() {
             removeIslandWhitelist = false
             prefs.edit { putBoolean(RootConstants.KEY_HOOK_REMOVE_ISLAND_WHITELIST, false) }
             PrefsBridge.putBoolean(RootConstants.KEY_HOOK_REMOVE_ISLAND_WHITELIST, false)
+        }
+    } }
+
+    val toggleUnlockIslandLength: (Boolean) -> Unit = remember { { checked ->
+        if (checked) {
+            if (RootApplication.xposedService != null) {
+                unlockIslandLength = true
+                prefs.edit { putBoolean(RootConstants.KEY_HOOK_UNLOCK_ISLAND_LENGTH, true) }
+                PrefsBridge.putBoolean(RootConstants.KEY_HOOK_UNLOCK_ISLAND_LENGTH, true)
+            } else {
+                scope.launch {
+                    snackbarHostState.showSnackbar(
+                        message = msgXposedNotActive,
+                        duration = SnackbarDuration.Custom(2000L)
+                    )
+                }
+            }
+        } else {
+            unlockIslandLength = false
+            prefs.edit { putBoolean(RootConstants.KEY_HOOK_UNLOCK_ISLAND_LENGTH, false) }
+            PrefsBridge.putBoolean(RootConstants.KEY_HOOK_UNLOCK_ISLAND_LENGTH, false)
         }
     } }
 
@@ -685,6 +709,8 @@ fun MainPage() {
                         onRemoveFocusWhitelistToggle = toggleRemoveFocusWhitelist,
                         removeIslandWhitelist = removeIslandWhitelist,
                         onRemoveIslandWhitelistToggle = toggleRemoveIslandWhitelist,
+                        unlockIslandLength = unlockIslandLength,
+                        onUnlockIslandLengthToggle = toggleUnlockIslandLength,
                         onAppSettingsClick = { navigator.navigate(Route.Settings) },
                     )
                 } else if (page == 1) {
