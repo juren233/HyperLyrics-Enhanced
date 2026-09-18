@@ -554,6 +554,15 @@ internal const val QUERY_SLOW_RESPONSE_MS = 6_000L
 internal const val QUERY_TIMEOUT_MS = 30_000L
 internal const val ARTIST_ALIAS_CACHE_SCHEMA = "V2"
 internal const val CATALOG_REQUEST_TOKEN_PARAM = "hle_catalog_request"
+
+/**
+ * 常量网络层标记：目录 executor Hook 改写请求时写入查询表，executor 在此已剥掉
+ * 逐条 token；amp-api 网络拦截器 Hook（w8.d#a）看到该标记即放行，避免把 executor
+ * 按条设定的 storefront（如原地区查询 cn/kr）按配置地区二次改写。
+ * 取常量值保证 URL 稳定，不影响原生响应缓存键。
+ */
+internal const val AMP_HTTP_MODULE_MARKER_PARAM = "hle_catalog_module"
+internal const val AMP_HTTP_MODULE_MARKER_VALUE = "1"
 internal val ORIGINAL_LANGUAGE_PROBE_ORDER = listOf(
     "ja-JP",
     "ko-KR",

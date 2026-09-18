@@ -127,6 +127,14 @@ internal fun AppleMusicProviderOrchestrator.hookModules() = listOf(
         installer = { catalogLanguage.contentLocalizationHooks.installContentHttpLocalization() },
     ),
     FunctionalAppleMusicHookModule(
+        "hookAmpApiHttpLocalization",
+        installer = { catalogLanguage.contentLocalizationHooks.installAmpApiHttpLocalization() },
+    ),
+    FunctionalAppleMusicHookModule(
+        "hookCatalogRequestLocalization",
+        installer = { catalogLanguage.contentLocalizationHooks.installCatalogRequestLocalization() },
+    ),
+    FunctionalAppleMusicHookModule(
         "hookExoMediaPlayer",
         installer = { lyricsPlayback.playbackHooks.installExoMediaPlayer() },
     ),

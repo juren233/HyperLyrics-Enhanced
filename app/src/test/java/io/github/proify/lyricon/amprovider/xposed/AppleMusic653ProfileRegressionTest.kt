@@ -52,6 +52,72 @@ class AppleMusic653ProfileRegressionTest {
     }
 
     @Test
+    fun `catalog request executors rewrite the storefront argument across request shapes`() {
+        // 1599: storefront is always arg3 ("/v1/catalog/{arg3}/", "/v1/editorial/{arg3}/").
+        // d/e shapes carry the query at arg5; the v8.D.b batch shape (ids[i] built from
+        // arg4, headers at arg5) and the A5.l.c search shape carry it at arg4. Native
+        // library/browse batch loads dispatch to v8.D.b, so the d-only hook missed them.
+        val executors = targets(AppleMusicHookPoint.MEDIA_API_CATALOG_REQUEST_EXECUTOR)
+        assertEquals(
+            listOf(
+                "A5.l#c", "A5.l#d", "Ic.n#d", "Ic.n#e", "v8.D#b", "v8.D#d",
+            ),
+            executors.map { "${it.className}#${it.methodName}" }.sorted(),
+        )
+        executors.forEach { executor ->
+            assertEquals("java.lang.Object", executor.returnTypeName)
+            assertEquals(false, executor.isStatic)
+            assertFalse(executor.allowFirstMatch)
+            val names = executor.parameterTypeNames!!
+            assertEquals(executor.parameterCount, names.size)
+            assertEquals("Hg.c", names.last())
+            assertEquals("storefront must stay the 4th argument", "java.lang.String", names[3])
+        }
+        val single = executors.first { "${it.className}#${it.methodName}" == "v8.D#d" }
+        assertEquals("java.util.LinkedHashMap", names(single, 5))
+        val batch = executors.first { "${it.className}#${it.methodName}" == "v8.D#b" }
+        assertEquals("java.util.LinkedHashMap", names(batch, 4))
+        assertEquals("java.util.LinkedHashMap", names(batch, 5))
+        val search = executors.first { "${it.className}#${it.methodName}" == "A5.l#c" }
+        assertEquals(6, search.parameterCount)
+        assertEquals("java.util.LinkedHashMap", names(search, 4))
+    }
+
+    @Test
+    fun `amp-api network interceptor is the synchronized w8_d chain hook`() {
+        // 1599: w8.d.a(Li.f)Gi.D is the AMD-retry NETWORK interceptor on the amp-api
+        // media client (runtime evidence 2026-09-18: ART monitor contention named thread
+        // "OkHttp https://amp-api.music.apple.com/..." in w8.d.a). Browse/editorial
+        // URLs built outside the repository executors reach the network only here; the
+        // hooked ka.a cookie interceptor sees none of that traffic (201012 shape trace).
+        val interceptor = target(AppleMusicHookPoint.MEDIA_API_AMP_HTTP_INTERCEPTOR)
+        assertEquals("w8.d", interceptor.className)
+        assertEquals("a", interceptor.methodName)
+        assertEquals(1, interceptor.parameterCount)
+        assertEquals("Li.f", requireNotNull(interceptor.parameterTypeNames)[0])
+        assertEquals("Gi.D", interceptor.returnTypeName)
+        assertEquals(false, interceptor.isStatic)
+        assertFalse(interceptor.allowFirstMatch)
+        assertEquals(
+            "e",
+            interceptor.runtimeMemberName(
+                AppleMusicRuntimeMember.CONTENT_HTTP_CHAIN_REQUEST_FIELD
+            ),
+        )
+        assertEquals(
+            "a",
+            interceptor.runtimeMemberName(
+                AppleMusicRuntimeMember.CONTENT_HTTP_REQUEST_URL_FIELD
+            ),
+        )
+    }
+
+    private fun names(target: AppleMusicHookTarget, index: Int): String =
+        requireNotNull(target.parameterTypeNames)[index].let {
+            requireNotNull(it) { "null parameter type at $index" }
+        }
+
+    @Test
     fun `lyrics fields follow binding and active adapter instead of a word-only adapter`() {
         val ui = target(AppleMusicHookPoint.LYRICS_UI_ON_CREATE_VIEW)
         assertEquals("g0", ui.runtimeMemberName(AppleMusicRuntimeMember.LYRICS_UI_BINDING_FIELD))

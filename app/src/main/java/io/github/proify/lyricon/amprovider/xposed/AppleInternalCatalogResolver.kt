@@ -4,6 +4,8 @@ import android.content.Context
 import android.os.Handler
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
 internal class AppleInternalCatalogResolver(
@@ -33,4 +35,8 @@ internal class AppleInternalCatalogResolver(
     @Volatile
     internal var contentUiLanguageSelection =
         RootConstants.DEFAULT_HOOK_APPLE_MUSIC_CONTENT_UI_LANGUAGE
+    // 6.5.3 起 Application.onCreate 阶段 MediaApi 尚未就绪（applicationConnector 未初始化），
+    // storefront 应用需要延迟重试；门控与尝试计数供重试调度跨线程防重入。
+    internal val storefrontApplyRetryGate = AtomicBoolean()
+    internal val storefrontApplyRetryAttempts = AtomicInteger()
 }

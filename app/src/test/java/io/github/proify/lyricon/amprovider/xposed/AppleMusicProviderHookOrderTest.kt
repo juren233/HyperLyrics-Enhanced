@@ -79,6 +79,8 @@ class AppleMusicProviderHookOrderTest {
             "hookTranslationPreference",
             "hookMediaApiLocalization",
             "hookContentHttpLocalization",
+            "hookAmpApiHttpLocalization",
+            "hookCatalogRequestLocalization",
             "hookExoMediaPlayer",
             "hookAtmosVolumeDiagnostics",
             "hookMediaMetadataChange",

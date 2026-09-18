@@ -25,16 +25,62 @@ import java.util.concurrent.atomic.AtomicLong
  * The MediaApi storefront is also used by Apple Music for localized content, so
  * keeping this value in one place covers both startup and post-query recovery.
  */
+private const val STOREFRONT_APPLY_RETRY_DELAY_MS = 5_000L
+private const val STOREFRONT_APPLY_MAX_ATTEMPTS = 6
+
 internal fun AppleInternalCatalogResolver.applyContentUiLanguage(selection: Int) {
     contentUiLanguageSelection = selection
     warmPersistentLocalizedCache(selection)
     if (activeCatalogRequest.get() != null) return
+    if (!restoreStorefrontAccess(isFirstAttempt = true)) {
+        scheduleStorefrontApplyRetry()
+    }
+}
+
+/**
+ * storefront 应用成败只取决于 MediaApi 是否已就绪：6.5.3 在 Application.onCreate 阶段
+ * applicationConnector 尚未初始化，此时 createCatalogAccess 必然失败，只能延迟重试。
+ * 返回是否成功，供调用方决定是否继续排期。
+ */
+private fun AppleInternalCatalogResolver.restoreStorefrontAccess(isFirstAttempt: Boolean): Boolean =
     runCatching {
         val access = catalogAccess ?: createCatalogAccess().also { catalogAccess = it }
         restoreConfiguredStorefront(access)
     }.onFailure {
-        ProviderLogger.error("Apple 内容 UI storefront 应用失败: selection=$selection", it)
-    }
+        if (isFirstAttempt) {
+            ProviderLogger.error(
+                "Apple 内容 UI storefront 应用失败，已安排延迟重试: " +
+                    "selection=$contentUiLanguageSelection",
+                it,
+            )
+        } else {
+            ProviderLogger.info(
+                "Apple 内容 UI storefront 应用重试仍未就绪: " +
+                    "selection=$contentUiLanguageSelection, " +
+                    "error=${it.javaClass.simpleName}"
+            )
+        }
+    }.isSuccess
+
+internal fun AppleInternalCatalogResolver.scheduleStorefrontApplyRetry() {
+    if (!storefrontApplyRetryGate.compareAndSet(false, true)) return
+    mainHandler.postDelayed({
+        storefrontApplyRetryGate.set(false)
+        if (restoreStorefrontAccess(isFirstAttempt = false)) {
+            storefrontApplyRetryAttempts.set(0)
+            return@postDelayed
+        }
+        val attempts = storefrontApplyRetryAttempts.incrementAndGet()
+        if (attempts < STOREFRONT_APPLY_MAX_ATTEMPTS) {
+            scheduleStorefrontApplyRetry()
+        } else {
+            storefrontApplyRetryAttempts.set(0)
+            ProviderLogger.info(
+                "Apple 内容 UI storefront 应用重试放弃: attempts=$attempts, " +
+                    "selection=$contentUiLanguageSelection"
+            )
+        }
+    }, STOREFRONT_APPLY_RETRY_DELAY_MS)
 }
 
 internal fun AppleInternalCatalogResolver.setPersistentLocalizedCacheEnabled(enabled: Boolean) {
