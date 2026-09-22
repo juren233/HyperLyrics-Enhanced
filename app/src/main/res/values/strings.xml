@@ -71,6 +71,8 @@
     <string name="title_apple_music_app_display">App显示</string>
     <string name="title_apple_music_volume_balance">动态提升Dolby Atmos外放音量</string>
     <string name="summary_apple_music_volume_balance">开启Apple Music设置内“音量平衡”听感更佳，不建议开启系统沉浸声</string>
+    <string name="title_apple_music_prevent_network_auto_skip">弱网播放失败时不自动切歌</string>
+    <string name="summary_apple_music_prevent_network_auto_skip">保留当前歌曲并持续自动重试，网络恢复后自动继续播放</string>
     <string name="title_apple_music_notification_open_full_player">点击媒体通知直接跳转播放页</string>
     <string name="title_apple_music_simplify_traditional_lyrics">将繁体歌词转成简体</string>
     <string name="title_apple_music_native_online_translation">补全歌词翻译与发音</string>

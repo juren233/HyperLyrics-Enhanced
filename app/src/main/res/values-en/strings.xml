@@ -70,6 +70,8 @@
     <string name="title_apple_music_app_display">App Display</string>
     <string name="title_apple_music_volume_balance">Dynamic Dolby Atmos Speaker Boost</string>
     <string name="summary_apple_music_volume_balance">Enable “Sound Check” in Apple Music for better results. System spatial audio is not recommended.</string>
+    <string name="title_apple_music_prevent_network_auto_skip">Don\'t auto-skip on network playback failures</string>
+    <string name="summary_apple_music_prevent_network_auto_skip">Keep the current song and retry automatically until playback resumes</string>
     <string name="title_apple_music_notification_open_full_player">Open Player from Media Notification</string>
     <string name="title_apple_music_simplify_traditional_lyrics">Simplify Traditional Chinese Lyrics</string>
     <string name="title_apple_music_native_online_translation">Fill Translation &amp; Pronunciation Gaps</string>

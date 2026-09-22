@@ -13,6 +13,7 @@ import android.app.Application
 import android.app.Notification
 import android.app.PendingIntent
 import android.content.ComponentName
+import android.content.SharedPreferences
 import android.content.res.Resources
 import android.graphics.Canvas
 import android.graphics.Bitmap
@@ -130,6 +131,8 @@ internal class AppleOrchestratorLyricsPlaybackAssembly(
         private set
     internal lateinit var lyricRequester: LyricRequester
         private set
+    private var networkAutoSkipPreferenceListener:
+        SharedPreferences.OnSharedPreferenceChangeListener? = null
 
     private fun inAppMetadata(): AppleOrchestratorInAppMetadataAssembly = inAppMetadataProvider()
 
@@ -411,6 +414,12 @@ internal class AppleOrchestratorLyricsPlaybackAssembly(
             currentLyricsSongId = lyricsHooks::currentSongId,
             queueItemMediaId = playbackMetadataCoordinator::queueItemMediaId,
             refreshCurrentQueueItem = playbackMetadataCoordinator::refreshCurrentQueueItem,
+            isNetworkAutoSkipPreventionEnabled = {
+                catalogLanguage.contentUiLanguagePrefs?.getBoolean(
+                    RootConstants.KEY_HOOK_APPLE_MUSIC_PREVENT_NETWORK_AUTO_SKIP,
+                    RootConstants.DEFAULT_HOOK_APPLE_MUSIC_PREVENT_NETWORK_AUTO_SKIP,
+                ) ?: RootConstants.DEFAULT_HOOK_APPLE_MUSIC_PREVENT_NETWORK_AUTO_SKIP
+            },
             isVolumeBalanceEnabled = {
                 catalogLanguage.contentUiLanguagePrefs?.getBoolean(
                     RootConstants.KEY_HOOK_APPLE_MUSIC_VOLUME_BALANCE,
@@ -426,7 +435,28 @@ internal class AppleOrchestratorLyricsPlaybackAssembly(
         )
     }
 
+    private fun observeNetworkAutoSkipPreference() {
+        val prefs = catalogLanguage.contentUiLanguagePrefs ?: return
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (
+                key == null ||
+                key == RootConstants.KEY_HOOK_APPLE_MUSIC_PREVENT_NETWORK_AUTO_SKIP
+            ) {
+                playbackHooks.onNetworkAutoSkipPreferenceChanged()
+            }
+        }
+        networkAutoSkipPreferenceListener?.let { previous ->
+            runCatching { prefs.unregisterOnSharedPreferenceChangeListener(previous) }
+        }
+        networkAutoSkipPreferenceListener = listener
+        runCatching { prefs.registerOnSharedPreferenceChangeListener(listener) }
+            .onFailure {
+                ProviderLogger.error("Apple Music 弱网自动重试偏好监听注册失败", it)
+            }
+    }
+
     fun initializeProvider() {
+        observeNetworkAutoSkipPreference()
         val directPlayer = AppleDirectPlayer(
             context = runtime.application,
             onOriginalMetadataRequested =

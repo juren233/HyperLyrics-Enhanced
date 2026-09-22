@@ -130,6 +130,11 @@ internal enum class AppleMusicRuntimeMember {
     EXO_STOP_METHOD,
     EXO_RELEASE_METHOD,
     EXO_CURRENT_POSITION_METHOD,
+    EXO_SHOULD_SKIP_TO_NEXT_ITEM_METHOD,
+    EXO_PLAYER_ERROR_METHOD,
+    EXO_PLAYER_FIELD,
+    EXO_EVENT_HANDLER_FIELD,
+    EXO_PLAYER_RETRY_METHOD,
     DEBUG_FORMAT_HOLDER_FORMAT_FIELD,
     DEBUG_FORMAT_CODECS_FIELD,
     DEBUG_FORMAT_SAMPLE_MIME_TYPE_FIELD,
@@ -1992,6 +1997,17 @@ internal object AppleMusicHookProfiles {
         ),
     )
 
+    /**
+     * Original DEX evidence for Apple Music 6.5.3 (1599): ExoMediaPlayer declares the
+     * instance fields `player` (Lcom/google/android/exoplayer2/ExoPlayer;) and
+     * `eventHandler` (Landroid/os/Handler;), the public instance callback
+     * ->onPlayerError(Lcom/google/android/exoplayer2/ExoPlaybackException;)V, and the
+     * private static decision ->shouldSkipToNextItem(Ljava/lang/Exception;I
+     * Lcom/apple/android/music/playback/player/MediaPlayerContext;)Z. The retry target
+     * is the public abstract ->retry()V declared directly on the ExoPlayer interface
+     * held by the `player` field. 6.5.2 was additionally checked against local
+     * decompiled materials by the contributing PR author.
+     */
     private fun exoMediaPlayerTarget() = AppleMusicHookTarget(
         className = "com.apple.android.music.playback.player.ExoMediaPlayer",
         runtimeMemberNames = mapOf(
@@ -2001,6 +2017,12 @@ internal object AppleMusicHookProfiles {
             AppleMusicRuntimeMember.EXO_STOP_METHOD to "stop",
             AppleMusicRuntimeMember.EXO_RELEASE_METHOD to "release",
             AppleMusicRuntimeMember.EXO_CURRENT_POSITION_METHOD to "getCurrentPosition",
+            AppleMusicRuntimeMember.EXO_SHOULD_SKIP_TO_NEXT_ITEM_METHOD to
+                "shouldSkipToNextItem",
+            AppleMusicRuntimeMember.EXO_PLAYER_ERROR_METHOD to "onPlayerError",
+            AppleMusicRuntimeMember.EXO_PLAYER_FIELD to "player",
+            AppleMusicRuntimeMember.EXO_EVENT_HANDLER_FIELD to "eventHandler",
+            AppleMusicRuntimeMember.EXO_PLAYER_RETRY_METHOD to "retry",
         ),
     )
 

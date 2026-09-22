@@ -306,6 +306,8 @@ object RootConstants {
         "key_hook_apple_music_force_cellular_data_entry"
     const val KEY_HOOK_APPLE_MUSIC_VOLUME_BALANCE =
         "key_hook_apple_music_volume_balance"
+    const val KEY_HOOK_APPLE_MUSIC_PREVENT_NETWORK_AUTO_SKIP =
+        "key_hook_apple_music_prevent_network_auto_skip"
     const val KEY_HOOK_APPLE_MUSIC_SIMPLIFY_TRADITIONAL_LYRICS =
         "key_hook_apple_music_simplify_traditional_lyrics"
     const val KEY_HOOK_APPLE_MUSIC_NATIVE_ONLINE_TRANSLATION =
@@ -368,6 +370,7 @@ object RootConstants {
     const val DEFAULT_HOOK_APPLE_MUSIC_NOTIFICATION_OPEN_FULL_PLAYER = false
     const val DEFAULT_HOOK_APPLE_MUSIC_FORCE_CELLULAR_DATA_ENTRY = false
     const val DEFAULT_HOOK_APPLE_MUSIC_VOLUME_BALANCE = false
+    const val DEFAULT_HOOK_APPLE_MUSIC_PREVENT_NETWORK_AUTO_SKIP = false
     const val DEFAULT_HOOK_APPLE_MUSIC_SIMPLIFY_TRADITIONAL_LYRICS = false
     const val DEFAULT_HOOK_APPLE_MUSIC_NATIVE_ONLINE_TRANSLATION = false
     const val DEFAULT_HOOK_APPLE_MUSIC_FILL_MISSING_LYRICS = false

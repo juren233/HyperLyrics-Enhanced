@@ -10,6 +10,7 @@ import android.media.AudioRouting
 import android.media.AudioTrack
 import android.media.session.MediaSession
 import android.media.session.PlaybackState as AndroidPlaybackState
+import android.os.Handler
 import android.os.SystemClock
 import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.common.RootConstants
@@ -17,6 +18,7 @@ import io.github.proify.extensions.android.ScreenStateMonitor
 import io.github.proify.lyricon.amprovider.xposed.AppleMusicHookPoint
 import io.github.proify.lyricon.amprovider.xposed.AppleMusicHookTarget
 import io.github.proify.lyricon.amprovider.xposed.AppleMusicProviderRuntime
+import io.github.proify.lyricon.amprovider.xposed.AppleMusicOptimizationGate
 import io.github.proify.lyricon.amprovider.xposed.AppleMusicRuntimeMember
 import io.github.proify.lyricon.amprovider.xposed.AppleReflection
 import io.github.proify.lyricon.amprovider.xposed.PlaybackPositionSource
@@ -33,6 +35,11 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.lang.ref.WeakReference
+import java.lang.reflect.Field
+import java.lang.reflect.Method
+import java.lang.reflect.Modifier
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.abs
 
@@ -43,6 +50,7 @@ internal class ApplePlaybackHooks(
     private val currentLyricsSongId: () -> String?,
     private val queueItemMediaId: (Any) -> String?,
     private val refreshCurrentQueueItem: (Any?, String) -> Unit,
+    private val isNetworkAutoSkipPreventionEnabled: () -> Boolean,
     private val isVolumeBalanceEnabled: () -> Boolean,
 ) {
     @Volatile
@@ -58,6 +66,11 @@ internal class ApplePlaybackHooks(
     private var timelineAdvancing = false
     private val exoPlaybackSignals =
         WeakIdentityMap<Any, AppleExoPlaybackIntentPolicy.Resolution>()
+    private val networkErrorPlayer = ThreadLocal<Any?>()
+    private val networkRetryRequested = ThreadLocal<Boolean>()
+    private val networkRetryStates = WeakIdentityMap<Any, NetworkRetryState>()
+    private val networkRetryRevision = AtomicLong()
+    private var networkRetryAccess: NetworkRetryAccess? = null
     private var zeroPositionReadCount = 0
     private var hasLoggedNonZeroPosition = false
     private var lastTimingSamplePosition = -1L
@@ -125,6 +138,10 @@ internal class ApplePlaybackHooks(
         atmosphereVolumeProcessor.onPreferenceChanged()
     }
 
+    fun onNetworkAutoSkipPreferenceChanged() {
+        networkRetryRevision.incrementAndGet()
+    }
+
     fun installExoMediaPlayer() {
         val resolvedExo = runtime.hookResolver.resolveClass(AppleMusicHookPoint.EXO_MEDIA_PLAYER)
         exoTarget = resolvedExo.target
@@ -154,6 +171,13 @@ internal class ApplePlaybackHooks(
         )
         hookPlatformMediaSessionPlaybackState()
         hookExoPlaybackLifecycle(exoPlayerClass)
+        runCatching { hookNetworkAutoSkip(exoPlayerClass) }
+            .onFailure {
+                ProviderLogger.error(
+                    "Apple Music 弱网自动重试 Hook 安装失败，已禁用该可选功能",
+                    it,
+                )
+            }
         hookAtmosVolumeBalance()
 
         val seekMethod = AppleReflection.findMethod(
@@ -288,26 +312,194 @@ internal class ApplePlaybackHooks(
                 before = { chain ->
                     // The platform MediaSession PAUSED publication can happen inside these
                     // methods. Remove retained play intent before the original call so an
-                    // explicit pause/stop/release is never rewritten as BUFFERING.
-                    chain.thisObject?.let(exoPlaybackSignals::remove)
+                    // explicit pause/stop/release is never rewritten as BUFFERING or retried.
+                    chain.thisObject?.let { player ->
+                        exoPlaybackSignals.remove(player)
+                        cancelNetworkRetry(player)
+                    }
                 },
                 after = { chain, _ ->
-                if (runtimeMember == AppleMusicRuntimeMember.EXO_RELEASE_METHOD) {
-                    chain.thisObject?.let(atmosphereVolumeProcessor::onPlayerReleased)
-                }
-                if (playbackPositionSource?.player === chain.thisObject) {
-                    stopSyncAction()
                     if (runtimeMember == AppleMusicRuntimeMember.EXO_RELEASE_METHOD) {
-                        playbackPositionSource = null
-                        if (activePlaybackPlayer === chain.thisObject) {
-                            activePlaybackPlayer = null
+                        chain.thisObject?.let(atmosphereVolumeProcessor::onPlayerReleased)
+                    }
+                    if (playbackPositionSource?.player === chain.thisObject) {
+                        stopSyncAction()
+                        if (runtimeMember == AppleMusicRuntimeMember.EXO_RELEASE_METHOD) {
+                            playbackPositionSource = null
+                            if (activePlaybackPlayer === chain.thisObject) {
+                                activePlaybackPlayer = null
+                            }
                         }
                     }
-                }
                 },
             )
         }
         ProviderLogger.info("Apple Music 播放生命周期 Hook 已安装")
+    }
+
+    private fun hookNetworkAutoSkip(exoPlayerClass: Class<*>) {
+        val shouldSkipMethod = AppleReflection.findMethod(
+            exoPlayerClass,
+            member(AppleMusicRuntimeMember.EXO_SHOULD_SKIP_TO_NEXT_ITEM_METHOD),
+            parameterCount = 3,
+        )
+        check(
+            Modifier.isStatic(shouldSkipMethod.modifiers) &&
+                shouldSkipMethod.returnType == Boolean::class.javaPrimitiveType,
+        ) {
+            "Apple Music 自动切歌决策方法签名不符合预期: $shouldSkipMethod"
+        }
+
+        val onPlayerErrorMethod = AppleReflection.findMethod(
+            exoPlayerClass,
+            member(AppleMusicRuntimeMember.EXO_PLAYER_ERROR_METHOD),
+            parameterCount = 1,
+        )
+        check(
+            !Modifier.isStatic(onPlayerErrorMethod.modifiers) &&
+                onPlayerErrorMethod.returnType == Void.TYPE,
+        ) {
+            "Apple Music 播放错误方法签名不符合预期: $onPlayerErrorMethod"
+        }
+
+        val playerField = exoPlayerClass.getDeclaredField(
+            member(AppleMusicRuntimeMember.EXO_PLAYER_FIELD)
+        ).apply { isAccessible = true }
+        val eventHandlerField = exoPlayerClass.getDeclaredField(
+            member(AppleMusicRuntimeMember.EXO_EVENT_HANDLER_FIELD)
+        ).apply { isAccessible = true }
+        check(
+            !Modifier.isStatic(playerField.modifiers) &&
+                !Modifier.isStatic(eventHandlerField.modifiers) &&
+                Handler::class.java.isAssignableFrom(eventHandlerField.type),
+        ) {
+            "Apple Music 自动重试字段签名不符合预期: " +
+                "player=$playerField, eventHandler=$eventHandlerField"
+        }
+        val retryMethod = AppleReflection.findMethod(
+            playerField.type,
+            member(AppleMusicRuntimeMember.EXO_PLAYER_RETRY_METHOD),
+            parameterCount = 0,
+        )
+        check(
+            !Modifier.isStatic(retryMethod.modifiers) && retryMethod.returnType == Void.TYPE,
+        ) {
+            "ExoPlayer retry 方法签名不符合预期: $retryMethod"
+        }
+        networkRetryAccess = NetworkRetryAccess(
+            playerField = playerField,
+            eventHandlerField = eventHandlerField,
+            retryMethod = retryMethod,
+        )
+
+        runtime.hookRegistrar.installScopedHook(
+            onPlayerErrorMethod,
+            enter = { chain ->
+                val player = chain.thisObject ?: return@installScopedHook false
+                networkErrorPlayer.set(player)
+                networkRetryRequested.set(false)
+                true
+            },
+            after = { chain, _ ->
+                val player = chain.thisObject ?: return@installScopedHook
+                if (
+                    networkRetryRequested.get() == true &&
+                    isNetworkAutoSkipPreventionEnabled()
+                ) {
+                    scheduleNetworkRetry(player)
+                }
+            },
+            exit = {
+                networkRetryRequested.remove()
+                networkErrorPlayer.remove()
+            },
+        )
+        runtime.hookRegistrar.installResultOverrideHook(shouldSkipMethod) { chain, original ->
+            if (original != true || !isNetworkAutoSkipPreventionEnabled()) {
+                return@installResultOverrideHook original
+            }
+            val player = networkErrorPlayer.get() ?: return@installResultOverrideHook original
+            val exception = chain.args.getOrNull(0) as? Throwable
+            val errorType = (chain.args.getOrNull(1) as? Number)?.toInt()
+            if (!AppleNetworkAutoSkipPolicy.isTransientNetworkFailure(exception, errorType)) {
+                return@installResultOverrideHook original
+            }
+            networkRetryRequested.set(true)
+            ProviderLogger.diagnostic(
+                "Apple Music 弱网失败阻止自动切歌并等待重试: " +
+                    "player=${System.identityHashCode(player)}, " +
+                    "exception=${exception?.javaClass?.name}, errorType=$errorType"
+            )
+            false
+        }
+        ProviderLogger.info(
+            "Apple Music 弱网自动重试 Hook 已安装: " +
+                "${shouldSkipMethod.declaringClass.name}#${shouldSkipMethod.name}" +
+                "(Exception,int,MediaPlayerContext)"
+        )
+    }
+
+    private fun scheduleNetworkRetry(player: Any) {
+        val access = networkRetryAccess ?: return
+        val handler = access.eventHandlerField.get(player) as? Handler
+            ?: error("Apple Music ExoMediaPlayer eventHandler 不可用")
+        val previous = networkRetryStates[player]
+        previous?.handler?.get()?.removeCallbacks(previous.runnable)
+        val attempt = (previous?.attempt ?: 0) + 1
+        val delayMs = NETWORK_RETRY_DELAYS_MS[
+            (attempt - 1).coerceAtMost(NETWORK_RETRY_DELAYS_MS.lastIndex)
+        ]
+        val featureRevision = networkRetryRevision.get()
+        val optimizationRevision = AppleMusicOptimizationGate.revision()
+        val playerReference = WeakReference(player)
+        lateinit var retryTask: Runnable
+        retryTask = Runnable {
+            val currentPlayer = playerReference.get() ?: return@Runnable
+            val currentState = networkRetryStates[currentPlayer] ?: return@Runnable
+            if (currentState.runnable !== retryTask) return@Runnable
+            if (
+                featureRevision != networkRetryRevision.get() ||
+                optimizationRevision != AppleMusicOptimizationGate.revision() ||
+                !AppleMusicOptimizationGate.isEnabled() ||
+                !isNetworkAutoSkipPreventionEnabled() ||
+                exoPlaybackSignals[currentPlayer]?.playbackActive != true
+            ) {
+                cancelNetworkRetry(currentPlayer)
+                return@Runnable
+            }
+            runCatching {
+                val exoPlayer = access.playerField.get(currentPlayer)
+                    ?: error("Apple Music ExoPlayer 实例不可用")
+                access.retryMethod.invoke(exoPlayer)
+            }.onSuccess {
+                ProviderLogger.diagnostic(
+                    "Apple Music 弱网播放已发起自动重试: " +
+                        "player=${System.identityHashCode(currentPlayer)}, attempt=$attempt"
+                )
+            }.onFailure {
+                cancelNetworkRetry(currentPlayer)
+                ProviderLogger.error("Apple Music 弱网播放自动重试失败", it)
+            }
+        }
+        networkRetryStates[player] = NetworkRetryState(
+            handler = WeakReference(handler),
+            runnable = retryTask,
+            attempt = attempt,
+        )
+        if (!handler.postDelayed(retryTask, delayMs)) {
+            networkRetryStates.remove(player)
+            error("Apple Music 弱网播放自动重试任务提交失败")
+        }
+        ProviderLogger.diagnostic(
+            "Apple Music 弱网播放自动重试已安排: " +
+                "player=${System.identityHashCode(player)}, attempt=$attempt, delayMs=$delayMs"
+        )
+    }
+
+    private fun cancelNetworkRetry(player: Any) {
+        val state = networkRetryStates[player] ?: return
+        networkRetryStates.remove(player)
+        state.handler.get()?.removeCallbacks(state.runnable)
     }
 
     private fun hookPlatformMediaSessionPlaybackState() {
@@ -368,6 +560,9 @@ internal class ApplePlaybackHooks(
         state: Int,
     ) {
         val resolution = AppleExoPlaybackIntentPolicy.resolve(playWhenReady, state)
+        if (state == AppleExoPlaybackIntentPolicy.STATE_READY || !resolution.playbackActive) {
+            cancelNetworkRetry(player)
+        }
         exoPlaybackSignals[player] = resolution
         if (BuildConfig.DEBUG && exoPlayerStateCallbackHit.compareAndSet(false, true)) {
             ProviderLogger.diagnostic(
@@ -771,7 +966,20 @@ internal class ApplePlaybackHooks(
     private fun playbackMember(member: AppleMusicRuntimeMember): String =
         playbackTarget.runtimeMemberName(member)
 
+    private data class NetworkRetryAccess(
+        val playerField: Field,
+        val eventHandlerField: Field,
+        val retryMethod: Method,
+    )
+
+    private data class NetworkRetryState(
+        val handler: WeakReference<Handler>,
+        val runnable: Runnable,
+        val attempt: Int,
+    )
+
     private companion object {
         private const val PLAYBACK_ANCHOR_INTERVAL_MS = 5_000L
+        private val NETWORK_RETRY_DELAYS_MS = longArrayOf(1_000L, 2_000L, 4_000L, 8_000L)
     }
 }
