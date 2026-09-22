@@ -18,6 +18,66 @@ import org.junit.Test
 class LyricLineAssemblerTest {
 
     @Test
+    fun `text unit progress keeps English translation as complete words`() {
+        val result = LyricLineAssembler(
+            displayMode = com.juren233.hyperlyricsenhanced.common.RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_TRANSLATION,
+            secondaryTextUnitProgress = true,
+        ).buildSecondary(
+            RichLyricLine(
+                begin = 1_000,
+                end = 4_000,
+                text = "Main",
+                translation = "Hello, brave world!",
+            )
+        )
+
+        val words = result.line.normalize().words.orEmpty()
+        assertEquals(listOf("Hello, ", "brave ", "world!"), words.map { it.text })
+        assertEquals(listOf(1_000L, 2_000L, 3_000L), words.map { it.begin })
+        assertEquals(listOf(2_000L, 3_000L, 4_000L), words.map { it.end })
+        assertTrue(result.isScrollOnly)
+    }
+
+    @Test
+    fun `text unit progress preserves source timing while splitting pronunciation glyphs`() {
+        val result = LyricLineAssembler(
+            displayMode = com.juren233.hyperlyricsenhanced.common.RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_PRONUNCIATION,
+            secondaryTextUnitProgress = true,
+        ).buildSecondary(
+            RichLyricLine(
+                begin = 2_000,
+                end = 4_000,
+                text = "Main",
+                roma = "かな",
+            )
+        )
+
+        val words = result.line.normalize().words.orEmpty()
+        assertEquals(listOf("か", "な"), words.map { it.text })
+        assertEquals(2_000L, words.first().begin)
+        assertEquals(4_000L, words.last().end)
+    }
+
+    @Test
+    fun `text unit progress keeps Latin words intact in mixed translation`() {
+        val result = LyricLineAssembler(
+            displayMode = com.juren233.hyperlyricsenhanced.common.RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_TRANSLATION,
+            secondaryTextUnitProgress = true,
+        ).buildSecondary(
+            RichLyricLine(
+                begin = 1_000,
+                end = 4_000,
+                text = "Main",
+                translation = "我 love 你",
+            )
+        )
+
+        val words = result.line.normalize().words.orEmpty()
+        assertEquals(listOf("我", " love ", "你"), words.map { it.text })
+        assertEquals("我 love 你", words.joinToString("") { it.text.orEmpty() })
+    }
+
+    @Test
     fun `keeps delayed secondary vocals visible with their original timing`() {
         val source = RichLyricLine(
             begin = 1000,
@@ -242,4 +302,39 @@ class LyricLineAssemblerTest {
         )
         assertFalse(offAssembler.buildSecondary(lineWithBoth).alwaysShow)
     }
+    @Test
+    fun `new timeline line preempts a running preview promotion`() {
+        val promoted = RichLyricLine(begin = 1_000, end = 1_180, text = "Second")
+        val incoming = RichLyricLine(begin = 1_180, end = 1_360, text = "Third")
+
+        assertTrue(
+            shouldFinishRunningPromotionBeforeApplying(
+                promotionRunning = true,
+                promotedLine = promoted,
+                incomingLine = incoming,
+            )
+        )
+    }
+
+    @Test
+    fun `same timeline line refresh does not preempt promotion`() {
+        val promoted = RichLyricLine(begin = 1_000, end = 2_000, text = "Second")
+        val refreshed = RichLyricLine(begin = 1_000, end = 2_000, text = "Second updated")
+
+        assertFalse(
+            shouldFinishRunningPromotionBeforeApplying(
+                promotionRunning = true,
+                promotedLine = promoted,
+                incomingLine = refreshed,
+            )
+        )
+        assertFalse(
+            shouldFinishRunningPromotionBeforeApplying(
+                promotionRunning = false,
+                promotedLine = promoted,
+                incomingLine = RichLyricLine(begin = 2_000, end = 3_000, text = "Third"),
+            )
+        )
+    }
+
 }

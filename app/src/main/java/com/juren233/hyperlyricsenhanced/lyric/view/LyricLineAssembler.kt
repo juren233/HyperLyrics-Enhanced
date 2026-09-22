@@ -36,6 +36,12 @@ internal fun hasLyricLineAdvanced(
         previousLine.duration != targetLine.duration
     )
 
+internal fun shouldFinishRunningPromotionBeforeApplying(
+    promotionRunning: Boolean,
+    promotedLine: IRichLyricLine?,
+    incomingLine: IRichLyricLine?
+): Boolean = promotionRunning && hasLyricLineAdvanced(promotedLine, incomingLine)
+
 internal fun canAnimateNextLinePromotion(
     wasPreview: Boolean,
     currentMainText: String?,
@@ -64,6 +70,7 @@ internal class LyricLineAssembler(
     private var hideSecondaryContent: Boolean = false,
     private var enableRelativeProgress: Boolean = false,
     private var enableRelativeHighlight: Boolean = false,
+    private var secondaryTextUnitProgress: Boolean = false,
 ) {
     private val wordBuilder = RelativeWordBuilder()
 
@@ -79,6 +86,10 @@ internal class LyricLineAssembler(
         this.hideSecondaryContent = hideSecondaryContent
         this.enableRelativeProgress = enableRelativeProgress
         this.enableRelativeHighlight = enableRelativeHighlight
+    }
+
+    fun setSecondaryTextUnitProgress(enabled: Boolean) {
+        secondaryTextUnitProgress = enabled
     }
 
     fun updateFlags(
@@ -173,19 +184,31 @@ internal class LyricLineAssembler(
                         words = emptyList()
                         metadata = lyricMetadataOf(METADATA_NEXT_LINE_PREVIEW to "true")
                     } else {
-                        words = wordBuilder.build(source, source.secondary, source.secondaryWords)
+                        words = if (secondaryTextUnitProgress) {
+                            wordBuilder.buildByTextUnit(source, source.secondary, source.secondaryWords)
+                        } else {
+                            wordBuilder.build(source, source.secondary, source.secondaryWords)
+                        }
                         generated = words !== source.secondaryWords
                     }
                 }
                 effectiveSecondary == SecondaryChoice.Translation -> {
                     text = source.translation
-                    words = wordBuilder.build(source, source.translation, source.translationWords)
+                    words = if (secondaryTextUnitProgress) {
+                        wordBuilder.buildByTextUnit(source, source.translation, source.translationWords)
+                    } else {
+                        wordBuilder.build(source, source.translation, source.translationWords)
+                    }
                     metadata = lyricMetadataOf("translation" to "true")
                     generated = words !== source.translationWords
                 }
                 effectiveSecondary == SecondaryChoice.Roma -> {
                     text = source.roma
-                    words = wordBuilder.build(source, source.roma, null)
+                    words = if (secondaryTextUnitProgress) {
+                        wordBuilder.buildByTextUnit(source, source.roma, null)
+                    } else {
+                        wordBuilder.build(source, source.roma, null)
+                    }
                     metadata = lyricMetadataOf("roma" to "true")
                     generated = true
                 }

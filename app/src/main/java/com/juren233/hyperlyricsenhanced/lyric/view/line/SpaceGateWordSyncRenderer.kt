@@ -12,9 +12,12 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Typeface
 import android.text.TextPaint
+import com.juren233.hyperlyricsenhanced.BuildConfig
+import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import com.juren233.hyperlyricsenhanced.lyric.view.LyricPlayListener
 import com.juren233.hyperlyricsenhanced.lyric.view.line.model.LyricModel
 import com.juren233.hyperlyricsenhanced.lyric.view.line.model.WordModel
+import kotlin.math.abs
 
 internal class SpaceGateWordSyncRenderer(private val view: SpaceGateLyricLineView) : LineRenderer {
 
@@ -82,6 +85,8 @@ internal class SpaceGateWordSyncRenderer(private val view: SpaceGateLyricLineVie
 
     var lastPosition = Long.MIN_VALUE
         private set
+
+    private var lastTraceOffset = Float.NaN
 
     override val isPlaying get() = progressAnimator.isAnimating
     override val isFinished get() = progressAnimator.hasFinished
@@ -190,6 +195,7 @@ internal class SpaceGateWordSyncRenderer(private val view: SpaceGateLyricLineVie
         progressAnimator.reset()
         state.reset()
         lastPosition = Long.MIN_VALUE
+        lastTraceOffset = Float.NaN
         textDrawer.clearShaderCache()
     }
 
@@ -215,6 +221,21 @@ internal class SpaceGateWordSyncRenderer(private val view: SpaceGateLyricLineVie
         state.scrollOffset = offset
         if (progressAnimator.hasFinished) {
             state.isScrollFinished = true
+        }
+        if (BuildConfig.DEBUG) {
+            val finished = progressAnimator.hasFinished
+            if (finished || lastTraceOffset.isNaN() || abs(offset - lastTraceOffset) >= 2f) {
+                lastTraceOffset = offset
+                HookLogger.d(
+                    "IslandScroll",
+                    "sync view=${Integer.toHexString(System.identityHashCode(view))} right=${view.isRightSide} " +
+                        "offset=$offset hw=$highlightWidth visHl=$visualHighlight content=$contentWidth " +
+                        "vw=$viewWidth finished=$finished " +
+                        "split=${split?.let {
+                            "k=${it.splitCharIndex} runA=${it.runAWidth} hole=${it.holeWidth} holed=${it.holedWidth}"
+                        } ?: "null"}"
+                )
+            }
         }
     }
 

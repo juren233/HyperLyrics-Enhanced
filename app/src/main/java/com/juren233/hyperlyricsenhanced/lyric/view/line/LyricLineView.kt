@@ -50,6 +50,18 @@ open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
 
     private val interludeDotsRenderer = InterludeDotsRenderer()
 
+    /**
+     * 分离歌词右槽：仍绑定整条间奏指示器行（保持测量宽度与状态机一致），
+     * 但不重复绘制第二组指示点——整岛只保留左槽（条带起点）的一组，
+     * 与全岛歌词一致。
+     */
+    var hideInterludeIndicator: Boolean = false
+        set(value) {
+            if (field == value) return
+            field = value
+            invalidate()
+        }
+
     val lineWidth: Float
         get() = if (interludeDotsRenderer.isIndicator(_model)) {
             interludeDotsRenderer.width(textPaint.textSize)
@@ -80,6 +92,14 @@ open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
     val isPlaying: Boolean get() = activeRenderer.isPlaying
     val isFinished: Boolean get() = activeRenderer.isFinished
     val isStarted: Boolean get() = activeRenderer.isStarted
+
+    /** Read-only, Debug-only call site: correlate drawn text with the island viewport. */
+    internal fun overlapDiagnosticState(): String =
+        "text=${_model.text.length}/${_model.text.hashCode()} plain=$isPlainText " +
+            "lineW=$lineWidth scrollW=$scrollWidth overflow=$isOverflow " +
+            "offset=${lineState.scrollOffset} progress=${scrollRenderer.scrollProgress} " +
+            "unlocked=$scrollUnlocked started=$scrollStarted renderer=$isStarted/$isPlaying/$isFinished " +
+            "static=$isStaticPreview align=$alignRight center=$centerIfPossible textX=${currentTextStartX()}"
 
     var isScrollOnly: Boolean = false
         set(value) {
@@ -171,11 +191,7 @@ open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
     private var narrowTypeface: Typeface? = null
 
     private val currentTypefaceSelector: ((Char) -> Typeface)?
-        get() {
-            val narrow = narrowTypeface ?: return null
-            val base = baseTypeface
-            return { ch -> if (ch.isCjk()) base else narrow }
-        }
+        get() = MixedTypefaceText.typefaceSelector(baseTypeface, narrowTypeface)
 
     private var activeRenderer: LineRenderer = scrollRenderer
 
@@ -213,13 +229,23 @@ open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
         centerIfPossibleOverride: Boolean? = null,
         alignRightOverride: Boolean? = null,
         availableWidthOverride: Float? = null
-    ): Float {
-        // 必须与 LyricModel.updateSizes 同管线测宽：混排窄体开启时英数走窄字体
-        // （≈0.8×宽），朴素 measureText 全按基础字体会高估 ~25%，提升动画的
-        // 横向目标被算小/误判溢出锚到左缘，落地按模型真宽居中即视觉跳变。
+    ): Float = resolveTextStartX(
+        measureLineTextWidth(text),
+        isAlignedRight,
+        centerIfPossibleOverride,
+        alignRightOverride,
+        availableWidthOverride
+    )
+
+    /**
+     * 与 LyricModel.updateSizes 同管线测宽：混排窄体开启时英数走窄字体
+     * （≈0.8×宽），朴素 measureText 全按基础字体会高估 ~25%。供提升动画
+     * 计算落定文本锚点（中点/右缘）使用。
+     */
+    fun measureLineTextWidth(text: String?): Float {
         val raw = text.orEmpty()
         val selector = currentTypefaceSelector
-        val measuredWidth = if (selector != null) {
+        return if (selector != null) {
             MixedTypefaceText.measureText(textPaint, raw, selector)
         } else {
             val measureWidth = textPaint.measureText(raw)
@@ -227,13 +253,6 @@ open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
             textPaint.getTextBounds(raw, 0, raw.length, bounds)
             if (bounds.right > measureWidth) bounds.right.toFloat() else measureWidth
         }
-        return resolveTextStartX(
-            measuredWidth,
-            isAlignedRight,
-            centerIfPossibleOverride,
-            alignRightOverride,
-            availableWidthOverride
-        )
     }
 
     fun setTextSize(size: Float) {
@@ -569,16 +588,18 @@ open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
 
     override fun onDraw(canvas: Canvas) {
         if (interludeDotsRenderer.isIndicator(_model)) {
-            interludeDotsRenderer.draw(
-                canvas,
-                _model,
-                textPaint,
-                scrollWidth,
-                measuredHeight,
-                centerIfPossible,
-                alignRight
-            )
-            if (playbackActive && !isStaticPreview && isShown) postInvalidateOnAnimation()
+            if (!hideInterludeIndicator) {
+                interludeDotsRenderer.draw(
+                    canvas,
+                    _model,
+                    textPaint,
+                    scrollWidth,
+                    measuredHeight,
+                    centerIfPossible,
+                    alignRight
+                )
+                if (playbackActive && !isStaticPreview && isShown) postInvalidateOnAnimation()
+            }
         } else {
             drawShadowAndContent(canvas, scrollWidth)
         }
@@ -870,17 +891,4 @@ open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
             }
         }
     }
-}
-
-private fun Char.isCjk(): Boolean {
-    val block = Character.UnicodeBlock.of(this)
-    return block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS ||
-        block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_A ||
-        block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_B ||
-        block == Character.UnicodeBlock.CJK_COMPATIBILITY_IDEOGRAPHS ||
-        block == Character.UnicodeBlock.HIRAGANA ||
-        block == Character.UnicodeBlock.KATAKANA ||
-        block == Character.UnicodeBlock.HANGUL_SYLLABLES ||
-        block == Character.UnicodeBlock.HANGUL_JAMO ||
-        block == Character.UnicodeBlock.HANGUL_COMPATIBILITY_JAMO
 }

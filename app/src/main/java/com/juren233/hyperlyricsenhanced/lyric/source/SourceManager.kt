@@ -40,7 +40,7 @@ class SourceManager(
         activeSource = source
         (sink as? SourceSelectionAwareSink)?.onSourceSelected(source.id)
         logger.i("SourceManager", "启动歌词源: ${source.displayName}")
-        source.start(contentOnlySink(source.id))
+        source.start(contentOnlySink(source))
         diagnostic("stage=start_returned, active=${source.id}/${source.displayName}")
     }
 
@@ -75,7 +75,7 @@ class SourceManager(
         activeSource = source
         (sink as? SourceSelectionAwareSink)?.onSourceSelected(source.id)
         logger.i("SourceManager", "切换歌词源: ${source.displayName}")
-        source.start(contentOnlySink(source.id))
+        source.start(contentOnlySink(source))
         diagnostic("stage=switch_returned, active=${source.id}/${source.displayName}")
     }
 
@@ -94,10 +94,11 @@ class SourceManager(
     }
 
     /** 停止来源的迟到回调也会因活动来源身份不匹配而被拒绝。 */
-    private fun contentOnlySink(sourceId: String): LyricSink = ContentOnlySourceSink(
-        sourceId = sourceId,
+    private fun contentOnlySink(source: LyricSource): LyricSink = ContentOnlySourceSink(
+        sourceId = source.id,
         isActive = { activeSource?.id == it },
         delegate = sink,
+        allowSourceClock = source.providesLyricClock,
     )
 
     private fun diagnostic(message: String) {

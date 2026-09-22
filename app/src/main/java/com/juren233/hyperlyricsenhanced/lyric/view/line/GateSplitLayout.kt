@@ -7,7 +7,7 @@ import com.juren233.hyperlyricsenhanced.lyric.view.line.model.LyricModel
 import com.juren233.hyperlyricsenhanced.lyric.view.line.model.WordModel
 
 /**
- * 分离模式（SpaceGate）的“挖孔”布局。
+ * 全岛歌词模式（SpaceGate）的“挖孔”布局。
  *
  * 连续文本带在左右视口边界处会被摄像头区域隔断：如果一个字形恰好横跨
  * 边界，就会出现“摄像头两边各半截字”。挖孔在字符/词边界处把条带断开，
@@ -23,7 +23,7 @@ import com.juren233.hyperlyricsenhanced.lyric.view.line.model.WordModel
  * 条带原点）与默认左对齐的静态行。静态居中/靠右的前段不在条带原点，
  * 挖孔无法落位，返回 null 交给摄像头两侧渐变兜底。
  */
-internal class GateSplitLayout private constructor(
+internal class GateSplitLayout internal constructor(
     /** 后段起始字符索引（相对 model.text / wordText）。 */
     val splitCharIndex: Int,
     /** 前段条带宽度（后段首字符的未挖孔条带 x）。 */
@@ -120,6 +120,11 @@ internal class GateSplitLayout private constructor(
                 charCount += word.text.length
                 wordCount++
             }
+            // 首词放不下（词组 timing 首单元超过左槽宽）时返回 null 不挖孔：
+            // 强行"前段留空、整行右移"会让整行从右槽起笔、条带被抬高一个
+            // 左槽宽，滚动行程多出一个孔宽（真机 210052 取证：k=0/hole=159-187
+            // 的主行从右侧起笔并持续左滚，用户判定恶性 bug）。此时退回连续
+            // 条带从左侧起笔，摄像头处按连续条带裁切。
             if (wordCount <= 0 || wordCount >= words.size) return null // 首词放不下或全装得下
             return build(charCount, runA.coerceAtMost(splitLimit), textWidth, splitLimit)
         }

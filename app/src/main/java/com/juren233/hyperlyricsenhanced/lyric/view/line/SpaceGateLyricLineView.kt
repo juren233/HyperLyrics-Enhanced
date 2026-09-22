@@ -50,6 +50,18 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
     var isRightSide = false
     var siblingView: SpaceGateLyricLineView? = null
     var spaceGateEnabled = true
+        set(value) {
+            if (field == value) return
+            field = value
+            if (value && !isRightSide) {
+                // 全岛歌词只允许右侧 Master 驱动帧循环。
+                animator.stop()
+            } else if (playbackActive) {
+                // 切到分离歌词后，原先的左侧 Slave 也要立即恢复独立进度。
+                resumePlaybackAnimation()
+            }
+            invalidate()
+        }
 
     /** 分离模式挖孔布局；null 表示当前几何/内容下不挖孔。 */
     private var cachedGateSplit: GateSplitLayout? = null
@@ -88,6 +100,15 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
     val isPlaying: Boolean get() = activeRenderer.isPlaying
     val isFinished: Boolean get() = activeRenderer.isFinished
     val isStarted: Boolean get() = activeRenderer.isStarted
+
+    /** Read-only, Debug-only call site: correlate drawn text with the island viewport. */
+    internal fun overlapDiagnosticState(): String =
+        "text=${_model.text.length}/${_model.text.hashCode()} plain=$isPlainText " +
+            "lineW=$lineWidth scrollW=$scrollWidth overflow=$isOverflow " +
+            "offset=${lineState.scrollOffset} progress=${scrollRenderer.scrollProgress} " +
+            "unlocked=$scrollUnlocked started=$scrollStarted renderer=$isStarted/$isPlaying/$isFinished " +
+            "static=$isStaticPreview rightSide=$isRightSide gate=$spaceGateEnabled " +
+            "align=$alignRight center=$centerIfPossible textX=${currentTextStartX()}"
 
     var isScrollOnly: Boolean = false
         set(value) {
@@ -180,11 +201,7 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
     private var narrowTypeface: Typeface? = null
 
     private val currentTypefaceSelector: ((Char) -> Typeface)?
-        get() {
-            val narrow = narrowTypeface ?: return null
-            val base = baseTypeface
-            return { ch -> if (ch.isCjk()) base else narrow }
-        }
+        get() = MixedTypefaceText.typefaceSelector(baseTypeface, narrowTypeface)
 
     internal var activeRenderer: LineRenderer = scrollRenderer
 
@@ -214,6 +231,62 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
 
     val textSize: Float get() = textPaint.textSize
 
+    fun currentTextStartX(availableWidthOverride: Float? = null): Float =
+        resolveTextStartX(lineWidth, _model.isAlignedRight, availableWidthOverride = availableWidthOverride)
+
+    fun textStartX(
+        text: String?,
+        isAlignedRight: Boolean,
+        centerIfPossibleOverride: Boolean? = null,
+        alignRightOverride: Boolean? = null,
+        availableWidthOverride: Float? = null
+    ): Float = resolveTextStartX(
+        measureLineTextWidth(text),
+        isAlignedRight,
+        centerIfPossibleOverride,
+        alignRightOverride,
+        availableWidthOverride
+    )
+
+    /**
+     * 与 LyricModel.updateSizes 同管线测宽：混排窄体开启时英数走窄字体，
+     * 朴素 measureText 会高估宽度（见 LyricLineView 同名方法）。供提升动画
+     * 计算落定文本锚点（中点/右缘）使用。
+     */
+    fun measureLineTextWidth(text: String?): Float {
+        val raw = text.orEmpty()
+        val selector = currentTypefaceSelector
+        return if (selector != null) {
+            MixedTypefaceText.measureText(textPaint, raw, selector)
+        } else {
+            val measureWidth = textPaint.measureText(raw)
+            val bounds = android.graphics.Rect()
+            textPaint.getTextBounds(raw, 0, raw.length, bounds)
+            if (bounds.right > measureWidth) bounds.right.toFloat() else measureWidth
+        }
+    }
+
+    private fun resolveTextStartX(
+        textWidth: Float,
+        isAlignedRight: Boolean,
+        centerIfPossibleOverride: Boolean? = null,
+        alignRightOverride: Boolean? = null,
+        availableWidthOverride: Float? = null
+    ): Float {
+        // availableWidthOverride 供提升动画按落定宽度（pendingHugWidth）预算横向
+        // 目标；语义与 LineRenderer.resolvePlainTextOffset / LyricLineView.resolveTextStartX 一致。
+        val availableWidth = availableWidthOverride ?: scrollWidth.toFloat()
+        val centerFlag = centerIfPossibleOverride ?: centerIfPossible
+        val rightFlag = alignRightOverride ?: alignRight
+        return when {
+            textWidth >= availableWidth -> 0f
+            rightFlag -> availableWidth - textWidth
+            centerFlag -> (availableWidth - textWidth) / 2f
+            isAlignedRight -> availableWidth - textWidth
+            else -> 0f
+        }
+    }
+
     fun setTextSize(size: Float) {
         val needsUpdate = textPaint.textSize != size || syncRenderer.bgPaint.textSize != size
         if (!needsUpdate) return
@@ -242,6 +315,14 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
         _model = line?.normalize()?.createModel() ?: emptyLyricModel()
         applyCurrentTypeface()
         activeRenderer = if (_model.isPlainText) scrollRenderer else syncRenderer
+        if (BuildConfig.DEBUG && _model.text.isNotEmpty()) {
+            HookLogger.d(
+                "IslandScroll",
+                "bind view=${Integer.toHexString(System.identityHashCode(this))} right=$isRightSide " +
+                    "plain=${_model.isPlainText} width=${_model.width} " +
+                    "len=${_model.text.length} hash=${_model.text.hashCode()}"
+            )
+        }
         refreshSizes()
         updateColorsIfReady()
         traceSwitch("after_bind")
@@ -645,6 +726,17 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
         cachedGateSplit = computed
         scrollRenderer.gateSplit = computed
         syncRenderer.gateSplit = computed
+        if (BuildConfig.DEBUG) {
+            HookLogger.d(
+                "IslandScroll",
+                "gate view=${Integer.toHexString(System.identityHashCode(this))} right=$isRightSide " +
+                    "left=$leftWidth rightW=$rightWidth virtual=${maxOf(scrollWidth, leftWidth + rightWidth)} " +
+                    "textW=${_model.width} plain=${_model.isPlainText} " +
+                    "result=${computed?.let {
+                        "k=${it.splitCharIndex} runA=${it.runAWidth} hole=${it.holeWidth} holed=${it.holedWidth}"
+                    } ?: "null"}"
+            )
+        }
     }
 
     private fun clearGateSplit() {
@@ -977,17 +1069,4 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
             }
         }
     }
-}
-
-private fun Char.isCjk(): Boolean {
-    val block = Character.UnicodeBlock.of(this)
-    return block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS ||
-        block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_A ||
-        block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_B ||
-        block == Character.UnicodeBlock.CJK_COMPATIBILITY_IDEOGRAPHS ||
-        block == Character.UnicodeBlock.HIRAGANA ||
-        block == Character.UnicodeBlock.KATAKANA ||
-        block == Character.UnicodeBlock.HANGUL_SYLLABLES ||
-        block == Character.UnicodeBlock.HANGUL_JAMO ||
-        block == Character.UnicodeBlock.HANGUL_COMPATIBILITY_JAMO
 }

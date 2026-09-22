@@ -30,7 +30,7 @@ internal object IslandLyricPosition {
         lyricMode: Int,
         leftContent: Int,
         rightContent: Int
-    ): Boolean = lyricMode == RootConstants.DEFAULT_HOOK_LYRIC_MODE &&
+    ): Boolean = lyricMode == RootConstants.HOOK_LYRIC_MODE_SINGLE_SIDE &&
         (leftContent == 7 || rightContent == 7)
 
     fun resolveSide(

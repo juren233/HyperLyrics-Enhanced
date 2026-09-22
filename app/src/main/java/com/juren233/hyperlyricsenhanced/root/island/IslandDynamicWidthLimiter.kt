@@ -86,7 +86,10 @@ internal object IslandDynamicWidthLimiter {
                 HookLogger.i("IslandDynamicLimit",
                     "动态上限${if (firstHit) "首次" else ""}计算: pad=$pad anchor=$anchor " +
                         "contentHeight=${content.height} pillHeight=$pillHeight floor=$pillFloor " +
-                        "obstacles=$obstacles candidateWidth=${original[0]} width=${values[0]}")
+                        "obstacles=$obstacles candidate=${original.take(4)} " +
+                        "final=${values.take(4)} smallCandidate=${original.slice(5..8)} " +
+                        "smallFinal=${values.slice(5..8)} " +
+                        "native=${runCatching { api.getters.map { it.invoke(native) as Int }.take(4) }.getOrNull()}")
             }
             if (values == original) candidate else api.constructor.newInstance(*values.toTypedArray())
         }.onFailure {

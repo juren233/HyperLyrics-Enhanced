@@ -8,9 +8,9 @@ import org.junit.Test
 
 class ContentOnlySourceSinkTest {
     @Test
-    fun `source clock events never reach system timeline`() {
+    fun `source without clock capability cannot drive timeline`() {
         val delegate = RecordingSink()
-        val boundary = ContentOnlySourceSink("lyricon", { true }, delegate)
+        val boundary = ContentOnlySourceSink("superlyric", { true }, delegate)
 
         boundary.onMetadata("title", "artist", "album", "publisher")
         boundary.onPlaybackStateChanged(true)
@@ -18,6 +18,32 @@ class ContentOnlySourceSinkTest {
         boundary.onSeekTo(456L)
 
         assertTrue(delegate.events.isEmpty())
+    }
+
+    @Test
+    fun `active clock source forwards position and seek through timeline`() {
+        val delegate = RecordingSink()
+        val boundary = ContentOnlySourceSink("lyricon", { true }, delegate, allowSourceClock = true)
+
+        boundary.onPlaybackStateChanged(true)
+        boundary.onPositionChanged(123L)
+        boundary.onSeekTo(456L)
+
+        assertEquals(listOf("position:123", "seek:456"), delegate.events)
+    }
+
+    @Test
+    fun `inactive clock source cannot change timeline`() {
+        var active = true
+        val delegate = RecordingSink()
+        val boundary = ContentOnlySourceSink("lyricon", { active }, delegate, allowSourceClock = true)
+        boundary.onPositionChanged(123L)
+        active = false
+
+        boundary.onPositionChanged(456L)
+        boundary.onSeekTo(789L)
+
+        assertEquals(listOf("position:123"), delegate.events)
     }
 
     @Test
@@ -76,7 +102,7 @@ class ContentOnlySourceSinkTest {
         }
         override fun onPlaybackStateChanged(isPlaying: Boolean) { events += "playback" }
         override fun currentPlaybackState(): Boolean = true
-        override fun onPositionChanged(position: Long) { events += "position" }
-        override fun onSeekTo(position: Long) { events += "seek" }
+        override fun onPositionChanged(position: Long) { events += "position:$position" }
+        override fun onSeekTo(position: Long) { events += "seek:$position" }
     }
 }

@@ -2,6 +2,11 @@ package com.juren233.hyperlyricsenhanced.root.island
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.graphics.Paint
+import android.graphics.Rect
+import android.graphics.Typeface
+import android.text.TextPaint
+import android.util.TypedValue
 import android.view.View
 import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.root.utils.AppleMetadataFlowDiagnostics
@@ -9,6 +14,7 @@ import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.common.IslandLyricPosition
 import com.juren233.hyperlyricsenhanced.common.lyric.CjkLyricWhitespacePolicy
 import com.juren233.hyperlyricsenhanced.common.lyric.LyricMetadataKeys
+import com.juren233.hyperlyricsenhanced.common.lyric.RichLyricLineSplitter
 import com.juren233.hyperlyricsenhanced.common.media.MediaMetadataHelper
 import com.juren233.hyperlyricsenhanced.lyric.model.LyricWord
 import com.juren233.hyperlyricsenhanced.lyric.model.RichLyricLine
@@ -19,6 +25,7 @@ import com.juren233.hyperlyricsenhanced.lyric.view.METADATA_NEXT_LINE_PREVIEW_AL
 import com.juren233.hyperlyricsenhanced.lyric.view.METADATA_NEXT_LINE_PREVIEW_CENTERED
 import com.juren233.hyperlyricsenhanced.lyric.view.RichLyricLineView
 import com.juren233.hyperlyricsenhanced.lyric.view.SpaceGateRichLyricLineView
+import com.juren233.hyperlyricsenhanced.lyric.view.line.MixedTypefaceText
 import com.juren233.hyperlyricsenhanced.root.island.view.MaxWidthFrameLayout
 import com.juren233.hyperlyricsenhanced.lyric.view.LyricViewStyle
 import com.juren233.hyperlyricsenhanced.lyric.view.isTitleLine
@@ -30,12 +37,40 @@ import com.juren233.hyperlyricsenhanced.provider.OfficialProviderCatalog
 import com.juren233.hyperlyricsenhanced.root.LyriconDataBridge
 import com.juren233.hyperlyricsenhanced.root.utils.CoverColorHelper
 import com.juren233.hyperlyricsenhanced.root.utils.CoverColorDiagnostics
+import com.juren233.hyperlyricsenhanced.root.utils.FontHelper
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import com.juren233.hyperlyricsenhanced.root.utils.LyricStyleHelper
 import com.juren233.hyperlyricsenhanced.root.utils.TranslationHelper
+import java.io.File
 import java.util.WeakHashMap
 
 internal object IslandSlotContentAssembler {
+    private data class SplitFontKey(
+        val weight: Int,
+        val italic: Boolean,
+        val customPath: String,
+        val customModified: Long,
+        val customLength: Long,
+        val narrowLatin: Boolean,
+    )
+
+    private data class SplitFonts(
+        val key: SplitFontKey,
+        val base: Typeface,
+        val narrow: Typeface?,
+    )
+
+    private data class SplitMeasureKey(
+        val fontKey: SplitFontKey,
+        val textSizePx: Float,
+    )
+
+    /** 分离模式测宽环境：Paint 持有原生资源，Rect 供 getTextBounds 反复写入，按字体+字号复用。 */
+    private class SplitMeasureEnv(val paint: TextPaint, val bounds: Rect)
+
+    private var splitFontCache: SplitFonts? = null
+    private var splitMeasureEnvCache: Pair<SplitMeasureKey, SplitMeasureEnv>? = null
+
     private val lastContentSignatures = WeakHashMap<View, String>()
     private val lastStyleSignatures = WeakHashMap<View, String>()
     // Keep the applied value across global invalidations so equal refreshes do not rebind style.
@@ -496,11 +531,103 @@ internal object IslandSlotContentAssembler {
         config: IslandSlotRuntimeConfig,
         isLeft: Boolean
     ): IRichLyricLine? {
-        // 分离模式：左右两槽绑定同一整行，由 SpaceGate 主从视口各自裁出
-        // 自己的一窗，文本带横跨整座岛连续滚动/排布，中段仅被挖孔区域隔开。
-        // 不再做按像素宽的静态文本切分。
-        return displayLyricLine(prefs, processedRawLine(prefs, config, isLeft))
+        val rawLine = displayLyricLine(prefs, processedRawLine(prefs, config, isLeft))
+        if (!config.isSeparatedMode || rawLine == null || rawLine.text.isNullOrEmpty()) {
+            // 全岛歌词：左右两槽绑定同一整行，由 SpaceGate 主从视口裁出连续文本带。
+            // 单侧歌词：按槽位原样绑定当前行。
+            return rawLine
+        }
+        if (isInterludeIndicatorLine(rawLine)) {
+            // 间奏指示器不参与对半切分：整行同绑两槽，时间窗与全岛歌词一致；
+            // 右槽由 hideInterludeIndicator 只保留测量宽度，不重复画第二组指示点。
+            return rawLine
+        }
+
+        // 分离歌词：把当前行按视觉宽度均分为左右两段。词级 timing 由
+        // RichLyricLineSplitter 保留，因此播放进度会先走完左段，再进入右段。
+        val density = view.resources.displayMetrics.density
+        val leftMaxPx = config.contentWidthPx(
+            view.resources.displayMetrics.widthPixels,
+            density,
+            isLeft = true
+        )?.toFloat() ?: 0f
+        val fonts = splitFonts(prefs, config)
+        val selector = MixedTypefaceText.typefaceSelector(fonts.base, fonts.narrow)
+        val measureEnv = splitMeasureEnv(
+            fonts,
+            TypedValue.applyDimension(
+                TypedValue.COMPLEX_UNIT_SP,
+                config.textSizeSp.toFloat(),
+                view.resources.displayMetrics,
+            ),
+        )
+        val textPaint = measureEnv.paint
+        val bounds = measureEnv.bounds
+        val measureWidth: (Paint, String) -> Float = { paint, text ->
+            if (text.isEmpty()) 0f
+            else if (selector != null) MixedTypefaceText.measureText(paint, text, selector)
+            else {
+                val advance = paint.measureText(text)
+                paint.getTextBounds(text, 0, text.length, bounds)
+                maxOf(advance, bounds.right.toFloat())
+            }
+        }
+        val splitPx = separatedSplitWidthPx(
+            textWidthPx = measureWidth(textPaint, rawLine.text.orEmpty()),
+            leftMaxWidthPx = leftMaxPx
+        )
+        val splitResult = RichLyricLineSplitter.split(
+            rawLine,
+            textPaint,
+            splitPx,
+            config.textSizeRatio,
+            centerLyric = true,
+            measureWidth = measureWidth,
+        )
+        return if (isLeft) splitResult.left else splitResult.right
     }
+
+    internal fun separatedSplitWidthPx(textWidthPx: Float, leftMaxWidthPx: Float): Float =
+        (textWidthPx / 2f).coerceAtMost(leftMaxWidthPx).coerceAtLeast(0f)
+
+    private fun splitFonts(prefs: SharedPreferences, config: IslandSlotRuntimeConfig): SplitFonts {
+        val customPath = config.customFontPath
+        val customFile = customPath.takeIf { it.isNotBlank() }?.let(::File)
+        val key = SplitFontKey(
+            weight = config.fontWeight,
+            italic = config.fontItalic,
+            customPath = customPath,
+            customModified = customFile?.lastModified() ?: 0L,
+            customLength = customFile?.length() ?: 0L,
+            narrowLatin = config.narrowLatinFont,
+        )
+        return synchronized(this) {
+            splitFontCache?.takeIf { it.key == key }
+                ?: SplitFonts(
+                    key = key,
+                    base = FontHelper.loadBaseTypeface(prefs),
+                    narrow = FontHelper.loadNarrowTypeface(prefs),
+                ).also { splitFontCache = it }
+        }
+    }
+
+    /** 行绑定在主线程同步执行，测宽环境跨调用复用安全；仅字体或字号变化时重建。 */
+    private fun splitMeasureEnv(fonts: SplitFonts, textSizePx: Float): SplitMeasureEnv {
+        val key = SplitMeasureKey(fontKey = fonts.key, textSizePx = textSizePx)
+        return synchronized(this) {
+            splitMeasureEnvCache?.takeIf { it.first == key }?.second
+                ?: SplitMeasureEnv(
+                    paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+                        textSize = textSizePx
+                        typeface = fonts.base
+                    },
+                    bounds = Rect(),
+                ).also { splitMeasureEnvCache = key to it }
+        }
+    }
+
+    internal fun isInterludeIndicatorLine(line: IRichLyricLine?): Boolean =
+        line?.metadata?.getBoolean(LyricMetadataKeys.INSTRUMENTAL) == true
 
     fun processedRawLine(
         prefs: SharedPreferences,
@@ -590,9 +717,9 @@ internal object IslandSlotContentAssembler {
             }
         )
         val isLeft = view.tag == IslandProbeUtils.LEFT_TEST_VIEW_TAG
-        // 分离模式下两槽画的是同一条文本带，居中/靠右必须两侧一致，
+        // 全岛歌词下两槽画的是同一条文本带，居中/靠右必须两侧一致，
         // 统一采用左槽的位置偏好（带的原点是岛左缘），否则两个视口错位。
-        val alignmentIsLeft = if (config.isSplitMode) true else isLeft
+        val alignmentIsLeft = if (config.isFullIslandMode) true else isLeft
         val centerCurrentLine = shouldCenterLine(config, targetLine, alignmentIsLeft)
         val isNextLinePreview = targetLine?.metadata?.getBoolean(
             METADATA_NEXT_LINE_PREVIEW
@@ -695,9 +822,8 @@ internal object IslandSlotContentAssembler {
             (willAnimateNextLinePromotion && !lyricsJustBecameAvailable) ||
             view.parent == null ||
             !view.isAttachedToWindow
-        // 动态长度：预览提升动画会把内容更新延迟到动画结束时落地。动画开始前
-        // 先让视图按目标行落定后的实测宽度参与岛宽测量，使岛宽与上浮动画同步
-        // 过渡；内容落地时 pendingHugWidth 清除并由 onDeferredContentApplied 实测兜底。
+        // 动态长度：预览提升会延迟内容落地。提前提供目标宽度；长句上浮时
+        // 视图只把它作为岛宽预算，子行仍以旧宽绘制。内容落地后实测兜底。
         if (config.dynamicWidthEnabled) {
             val deferredByPromotion = deferAlignmentToPromotionLanding
             when (view) {
@@ -979,6 +1105,11 @@ internal object IslandSlotContentAssembler {
         }
         when (view) {
             is RichLyricLineView -> {
+                view.setSecondaryTextUnitProgress(config.isSeparatedMode)
+                // 分离歌词右槽不画间奏指示器：整岛只显示左槽（条带起点）的一组，
+                // 与全岛歌词一致；内容绑定与 hug 测量保持原样，避免间奏期间岛宽抖动。
+                view.hideInterludeIndicator = config.isSeparatedMode &&
+                    view.tag != IslandProbeUtils.LEFT_TEST_VIEW_TAG
                 view.setDisplayOptions(
                     options.displayMode,
                     options.fallback,
@@ -991,14 +1122,15 @@ internal object IslandSlotContentAssembler {
                 }
             }
             is SpaceGateRichLyricLineView -> {
+                view.setSecondaryTextUnitProgress(config.isFullIslandMode)
                 view.setDisplayOptions(
                     options.displayMode,
                     options.fallback,
                     options.hideSecondaryContent
                 )
-                // 分离模式两槽共享同一整行，hug 收缩会让两侧都量出整行宽、
+                // 全岛歌词两槽共享同一整行，hug 收缩会让两侧都量出整行宽、
                 // 把岛宽计算撑大一倍；整带几何要求每槽恒占满自己的槽宽。
-                view.hugContentWidth = config.dynamicWidthEnabled && !config.isSplitMode
+                view.hugContentWidth = config.dynamicWidthEnabled && !config.isFullIslandMode
                 view.applyDuetFixedLength(duetSongLyrics, duetWidthCapOf(view))
                 view.onDeferredContentApplied = {
                     IslandViewHelper.triggerSystemRelayoutForDescendant(view)

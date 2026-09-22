@@ -8,6 +8,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.juren233.hyperlyricsenhanced.R
+import com.juren233.hyperlyricsenhanced.common.RootConstants
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text
@@ -101,7 +102,7 @@ fun LazyListScope.lyricScrollSections(
                     )
                 }
             }
-            if (lyricMode == 0) {
+            if (lyricMode == RootConstants.HOOK_LYRIC_MODE_SINGLE_SIDE) {
                 Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
                     Column {
                         SwitchPreference(

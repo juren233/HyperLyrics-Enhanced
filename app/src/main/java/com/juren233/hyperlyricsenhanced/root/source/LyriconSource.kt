@@ -86,6 +86,7 @@ class LyriconSource : LyricSource {
     }
 
     override val id = "lyricon"
+    override val providesLyricClock = true
     override val displayName = "Lyricon"
 
     @Volatile
@@ -899,6 +900,7 @@ internal val activePlayerListener = object : ActivePlayerListener {
                 return
             }
             maybeCommitPendingOnlineTranslation(resolvedPosition)
+            sink?.onPositionChanged(resolvedPosition)
             logCentralPositionDiagnostic(position, resolvedPosition, "forwarded_apple")
             MediaCardDiagnosticLogger.log(
                 stage = "central",
@@ -909,6 +911,7 @@ internal val activePlayerListener = object : ActivePlayerListener {
             return
         }
         maybeCommitPendingOnlineTranslation(adjustedPosition)
+        sink?.onPositionChanged(adjustedPosition)
         logCentralPositionDiagnostic(position, adjustedPosition, "forwarded_non_apple")
         MediaCardDiagnosticLogger.log(
             stage = "central",
@@ -952,15 +955,17 @@ internal val activePlayerListener = object : ActivePlayerListener {
                 return
             }
             maybeCommitPendingOnlineTranslation(resolvedPosition)
+            sink?.onSeekTo(resolvedPosition)
             MediaCardDiagnosticLogger.log(
                 stage = "central",
                 event = "seek_forwarded",
-                details = "rawPosition=$position,forwardedPosition=$resolvedPosition,apple=true",
+                details = "rawPosition=$position,forwardedPosition=$resolvedPosition,apple=true,sink=${sink != null}",
                 positionSample = true,
             )
             return
         }
         maybeCommitPendingOnlineTranslation(adjustedPosition)
+        sink?.onSeekTo(adjustedPosition)
         MediaCardDiagnosticLogger.log(
             stage = "central",
             event = "seek_forwarded",

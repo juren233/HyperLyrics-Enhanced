@@ -183,8 +183,9 @@
     <string name="export_all_logs">导出全部日志</string>
 
     <!-- ———————————————————————— HookSettingsPage ———————————————————————— -->
-    <string name="lyric_mode_verbatim">逐字歌词</string>
-    <string name="lyric_mode_separated">分离歌词</string>
+    <string name="lyric_mode_single_side">单侧滚动</string>
+    <string name="lyric_mode_full_island">全岛滚动</string>
+    <string name="lyric_mode_separated">对半分离滚动</string>
     <string name="title_lyric_mode">歌词模式</string>
     <string name="title_lyric_source">歌词源</string>
     <string name="summary_lyric_source_apple_music_builtin">Apple Music用户可直接选用Lyricon源，无需额外模块，其余音乐App用户也推荐使用Lyricon源，内置插件更方便</string>
@@ -750,7 +751,7 @@
     <string name="option_lyric_position_right">靠右</string>
     <string name="title_center_group_vocals">合唱歌词居中显示</string>
     <string name="title_adjacent_background_translation">含伴唱的歌词翻译临时显示在隔壁</string>
-    <string name="summary_adjacent_background_translation">仅在逐字歌词模式且仅一侧设为歌词时可用</string>
+    <string name="summary_adjacent_background_translation">仅在单侧滚动模式且仅一侧设为歌词时可用</string>
     
     <!-- Shizuku 绕过限制相关 -->
     <string name="title_bypass_focus_limit">绕过焦点通知限制</string>

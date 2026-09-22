@@ -1,8 +1,11 @@
 package com.juren233.hyperlyricsenhanced.root.island
 
 import com.juren233.hyperlyricsenhanced.common.RootConstants
+import com.juren233.hyperlyricsenhanced.common.lyric.LyricMetadataKeys
+import com.juren233.hyperlyricsenhanced.common.lyric.RichLyricLineSplitter
 import com.juren233.hyperlyricsenhanced.lyric.model.LyricWord
 import com.juren233.hyperlyricsenhanced.lyric.model.RichLyricLine
+import com.juren233.hyperlyricsenhanced.lyric.model.lyricMetadataOf
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -10,6 +13,74 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class IslandSlotContentAssemblerTest {
+    @Test
+    fun `separated split timeline uses the main lyric word boundary`() {
+        val line = RichLyricLine(begin = 1_000, end = 5_000, text = "ABCD")
+        val splitTime = RichLyricLineSplitter.resolveSplitTime(
+            line = line,
+            splitIndex = 2,
+            textLength = 4,
+            leftWords = listOf(LyricWord(begin = 1_000, end = 2_800, text = "AB")),
+            rightWords = listOf(LyricWord(begin = 2_800, end = 5_000, text = "CD")),
+        )
+
+        assertEquals(2_800L, splitTime)
+    }
+
+    @Test
+    fun `separated split timeline interpolates when main lyric has no word timing`() {
+        val line = RichLyricLine(begin = 1_000, end = 5_000, text = "ABCD")
+
+        assertEquals(
+            3_000L,
+            RichLyricLineSplitter.resolveSplitTime(
+                line = line,
+                splitIndex = 2,
+                textLength = 4,
+                leftWords = emptyList(),
+                rightWords = emptyList(),
+            )
+        )
+    }
+
+    @Test
+    fun `separated mode splits at half text width when both halves fit`() {
+        assertEquals(
+            120f,
+            IslandSlotContentAssembler.separatedSplitWidthPx(
+                textWidthPx = 240f,
+                leftMaxWidthPx = 180f,
+            ),
+            0f,
+        )
+    }
+
+    @Test
+    fun `separated mode caps the left half at the available slot width`() {
+        assertEquals(
+            90f,
+            IslandSlotContentAssembler.separatedSplitWidthPx(
+                textWidthPx = 240f,
+                leftMaxWidthPx = 90f,
+            ),
+            0f,
+        )
+    }
+
+    @Test
+    fun `interlude indicator lines skip separated splitting`() {
+        val indicator = RichLyricLine(
+            begin = 1_000,
+            end = 8_000,
+            text = "•••",
+            metadata = lyricMetadataOf(LyricMetadataKeys.INSTRUMENTAL to "true")
+        )
+
+        assertTrue(IslandSlotContentAssembler.isInterludeIndicatorLine(indicator))
+        assertFalse(IslandSlotContentAssembler.isInterludeIndicatorLine(RichLyricLine(text = "歌词")))
+        assertFalse(IslandSlotContentAssembler.isInterludeIndicatorLine(null))
+    }
+
 
     @Test
     fun `artwork is kept when lyric and media titles differ only by spacing or suffix`() {

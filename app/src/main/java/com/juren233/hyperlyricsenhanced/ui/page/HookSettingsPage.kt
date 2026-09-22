@@ -103,7 +103,8 @@ private fun LazyListScope.hookSettingsSections() {
         val prefs = remember { context.getSharedPreferences(UIConstants.PREF_NAME, Context.MODE_PRIVATE) }
         var lyricMode by remember { mutableIntStateOf(prefs.getInt(RootConstants.KEY_HOOK_LYRIC_MODE, RootConstants.DEFAULT_HOOK_LYRIC_MODE)) }
         val lyricModeOptions = listOf(
-            stringResource(R.string.lyric_mode_verbatim),
+            stringResource(R.string.lyric_mode_single_side),
+            stringResource(R.string.lyric_mode_full_island),
             stringResource(R.string.lyric_mode_separated)
         )
         Card(modifier = Modifier.padding(horizontal = 12.dp).fillMaxWidth()) {

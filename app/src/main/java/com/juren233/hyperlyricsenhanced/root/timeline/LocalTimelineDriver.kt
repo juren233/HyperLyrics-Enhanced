@@ -8,6 +8,7 @@ package com.juren233.hyperlyricsenhanced.root.timeline
 
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.lyric.model.Song
 import com.juren233.hyperlyricsenhanced.lyric.model.RichLyricLine
@@ -30,8 +31,10 @@ import kotlinx.coroutines.launch
  * SystemUI 中唯一的歌词时间轴拥有者。
  *
  * 歌词源只能通过 [onTimelineContent] 提交一份完整、不可变的歌词内容；曲目身份校验、
- * 内容替换、播放状态、位置外推、逐行滚动与渲染清理由本类统一完成。来源回调里的位置、
- * seek、单行歌词和纯文本都不会再进入渲染管线，因此不存在两套时钟并行写状态。
+ * 内容替换、播放状态、位置外推、逐行滚动与渲染清理由本类统一完成。来源回调里的
+ * 位置与 seek 不再直接驱动渲染，而是作为源时钟锚点被本类接受（歌词同步时钟权威
+ * 是歌词源；MediaSession 锚点作兜底与外推），全流程仍单点写入渲染层，不存在两套
+ * 时钟并行写状态。
  */
 class LocalTimelineDriver(
     private val anchor: SystemMediaPlaybackAnchor,
@@ -84,6 +87,7 @@ class LocalTimelineDriver(
             pendingContent = null
             appliedContentCache.clear()
             clearStreamingContent()
+            resetSourceClock()
             anchorPlaying = false
             hintPlaying = false
             hintPackage = null
@@ -105,6 +109,7 @@ class LocalTimelineDriver(
             activeSourceId = sourceId
             pendingContent = null
             clearStreamingContent()
+            resetSourceClock()
             clearTimeline(showTrackFallback = true)
             diagnostic("活动来源=$sourceId")
         }
@@ -116,6 +121,7 @@ class LocalTimelineDriver(
             activeSourceId = null
             pendingContent = null
             clearStreamingContent()
+            resetSourceClock()
             clearTimeline(showTrackFallback = false)
         }
     }
@@ -165,7 +171,7 @@ class LocalTimelineDriver(
     override fun onPlainText(text: String?) {
         val value = text?.takeIf { it.isNotBlank() } ?: return
         runOnMain {
-            val position = anchor.estimatedPosition()?.coerceAtLeast(0L) ?: 0L
+            val position = timelinePosition()?.coerceAtLeast(0L) ?: 0L
             clearStreamingContent()
             applyStreamingLine(
                 RichLyricLine(
@@ -177,8 +183,123 @@ class LocalTimelineDriver(
             )
         }
     }
-    override fun onPositionChanged(position: Long) = rejectSourceClockEvent("position")
-    override fun onSeekTo(position: Long) = rejectSourceClockEvent("seek")
+    /**
+     * 歌词源位置：作为时间轴锚点接受，而不是拒绝。歌词同步的时钟权威是
+     * 歌词源（app 自报的歌词时钟），它与公开 MediaSession 位置可能存在固定
+     * 相差（真机实测 salt 音乐恒定 ~400ms；MIUI 息屏会话回调丢失时偏差更大），
+     * 只信 MediaSession 会让岛歌词与实际演唱错位。仍经 driver 单点写入渲染层，
+     * 不恢复"两套时钟并行写状态"；播放状态与滚动仍归锚点。
+     */
+    override fun onPositionChanged(position: Long) {
+        runOnMain { acceptSourceClock(position, "position") }
+    }
+
+    override fun onSeekTo(position: Long) {
+        runOnMain { acceptSourceClock(position, "seek") }
+    }
+
+    /** 源时钟锚点：活动源最近一次上报的（位置, 单调时刻）。 */
+    @Volatile
+    private var sourceAnchorPosition: Long? = null
+
+    @Volatile
+    private var sourceAnchorElapsedMs: Long = 0L
+
+    private var sourceClockAcceptedSinceDiag = 0
+    private var sourceClockDuplicatesSinceDiag = 0
+    private var sourceClockBacktracksSinceDiag = 0
+    private var lastSourceClockDiagAtMs = 0L
+
+    private fun acceptSourceClock(position: Long, event: String) {
+        if (appliedTrackKey == null) return
+        val anchored = position.coerceAtLeast(0L)
+        val now = SystemClock.elapsedRealtime()
+        val projected = projectedSourcePosition(now)
+        val action = SourceClockUpdatePolicy.decide(
+            explicitSeek = event == "seek",
+            previousAnchorPosition = sourceAnchorPosition,
+            projectedPosition = projected,
+            incomingPosition = anchored,
+        )
+        when (action) {
+            SourceClockUpdatePolicy.Action.IGNORE_DUPLICATE -> {
+                sourceClockDuplicatesSinceDiag++
+                logSourceClockSummaryIfNeeded(now, action, anchored, projected)
+                return
+            }
+            SourceClockUpdatePolicy.Action.IGNORE_BACKTRACK -> {
+                sourceClockBacktracksSinceDiag++
+                logSourceClockSummaryIfNeeded(now, action, anchored, projected)
+                return
+            }
+            SourceClockUpdatePolicy.Action.ANCHOR,
+            SourceClockUpdatePolicy.Action.SEEK -> {
+                sourceAnchorPosition = anchored
+                sourceAnchorElapsedMs = now
+                sourceClockAcceptedSinceDiag++
+                logSourceClockSummaryIfNeeded(now, action, anchored, projected)
+            }
+        }
+
+        if (action == SourceClockUpdatePolicy.Action.SEEK) {
+            renderSink.onSeekTo(anchored)
+        } else if (renderedPlaying != true) {
+            // 播放中由 33ms 单一位置循环驱动渲染；来源回调只校准锚点，避免
+            // 高频来源与本地循环同时写 UI。暂停态没有循环，仍立即刷新位置。
+            renderSink.onPositionChanged(anchored)
+        }
+    }
+
+    private fun logSourceClockSummaryIfNeeded(
+        now: Long,
+        action: SourceClockUpdatePolicy.Action,
+        incoming: Long,
+        projected: Long?,
+    ) {
+        if (!BuildConfig.DEBUG) return
+        val urgent = action == SourceClockUpdatePolicy.Action.SEEK ||
+            action == SourceClockUpdatePolicy.Action.IGNORE_BACKTRACK
+        if (!urgent && now - lastSourceClockDiagAtMs < SOURCE_CLOCK_DIAG_INTERVAL_MS) return
+        HookLogger.d(
+            TAG,
+            "[TIMELINE] 源时钟采样: action=$action, incoming=$incoming, projected=$projected, " +
+                "accepted=$sourceClockAcceptedSinceDiag, duplicates=$sourceClockDuplicatesSinceDiag, " +
+                "backtracks=$sourceClockBacktracksSinceDiag"
+        )
+        sourceClockAcceptedSinceDiag = 0
+        sourceClockDuplicatesSinceDiag = 0
+        sourceClockBacktracksSinceDiag = 0
+        lastSourceClockDiagAtMs = now
+    }
+
+    private fun resetSourceClock() {
+        sourceAnchorPosition = null
+        sourceAnchorElapsedMs = 0L
+        sourceClockAcceptedSinceDiag = 0
+        sourceClockDuplicatesSinceDiag = 0
+        sourceClockBacktracksSinceDiag = 0
+        lastSourceClockDiagAtMs = 0L
+    }
+
+    /**
+     * 当前渲染位置：源时钟新鲜（TTL 内）时按其线性外推（歌词时钟即墙钟，
+     * 速度恒 1），播放态复用合成播放语义；过期或缺席回退 MediaSession 锚点外推。
+     */
+    private fun timelinePosition(): Long? =
+        projectedSourcePosition(SystemClock.elapsedRealtime()) ?: anchor.estimatedPosition()
+
+    private fun projectedSourcePosition(now: Long): Long? {
+        val src = sourceAnchorPosition ?: return null
+        val age = now - sourceAnchorElapsedMs
+        if (age !in 0..SOURCE_CLOCK_TTL_MS) return null
+        val effective = PlaybackSmoothingPolicy.effectivePlaying(
+            anchorPlaying = anchorPlaying,
+            hintPlaying = hintPlaying,
+            hintPackage = hintPackage,
+            anchorPackage = anchor.currentTrack?.packageName,
+        )
+        return if (effective) src + age else src
+    }
     override fun onMetadata(title: String?, artist: String?, album: String?, publisher: String?) = Unit
     override fun currentPlaybackState(): Boolean = renderedPlaying ?: anchorPlaying
 
@@ -204,6 +325,8 @@ class LocalTimelineDriver(
             )
             if (!preserveHost) renderedPlaying = null
             clearStreamingContent()
+            // 曲目身份已变：旧曲的源时钟锚点必须作废，外推不得跨曲延续。
+            resetSourceClock()
             if (preserveHost && track != null) {
                 prepareTrackTransition(track)
             } else {
@@ -291,7 +414,7 @@ class LocalTimelineDriver(
             startPositionLoop()
         } else {
             stopPositionLoop()
-            anchor.estimatedPosition()?.let(renderSink::onPositionChanged)
+            timelinePosition()?.let(renderSink::onPositionChanged)
         }
     }
 
@@ -350,7 +473,8 @@ class LocalTimelineDriver(
             renderSink.onSongChanged(song)
         }
         renderSink.onMetadata(track.title, track.artist, track.album, track.packageName)
-        anchor.estimatedPosition()?.let(renderSink::onPositionChanged)
+        resetSourceClock()
+        timelinePosition()?.let(renderSink::onPositionChanged)
         refreshRenderPlaybackState()
         HookLogger.i(
             TAG,
@@ -405,6 +529,7 @@ class LocalTimelineDriver(
         appliedTrackKey = null
         appliedPackageName = null
         renderedPlaying = null
+        resetSourceClock()
         renderSink.onStop()
         if (showTrackFallback) {
             anchor.currentTrack?.let { track ->
@@ -478,7 +603,7 @@ class LocalTimelineDriver(
                     renderedPlaying = renderedPlaying,
                 )
             ) {
-                anchor.estimatedPosition()?.let(renderSink::onPositionChanged)
+                timelinePosition()?.let(renderSink::onPositionChanged)
                 delay(POSITION_INTERVAL_MS)
             }
         }
@@ -487,10 +612,6 @@ class LocalTimelineDriver(
     private fun stopPositionLoop() {
         positionJob?.cancel()
         positionJob = null
-    }
-
-    private fun rejectSourceClockEvent(event: String) {
-        diagnostic("拒绝来源侧显示/时钟事件: source=$activeSourceId, event=$event")
     }
 
     private fun diagnostic(message: String) {
@@ -506,6 +627,14 @@ class LocalTimelineDriver(
         private const val POSITION_INTERVAL_MS = 33L
         private const val MAX_STREAMING_LINES = 256
         private const val MAX_CACHED_TRACKS = 8
+
+        /**
+         * 源时钟新鲜窗口：源位置推送停止（暂停/后台停止推送）超过此时长后，
+         * 渲染位置回退 MediaSession 锚点外推。须覆盖正常推送间隔（真机 2-5s）
+         * 加丢包余量，同时远小于一首歌时长，防止跨曲外推。
+         */
+        private const val SOURCE_CLOCK_TTL_MS = 15_000L
+        private const val SOURCE_CLOCK_DIAG_INTERVAL_MS = 2_000L
 
         val appliedTrackKeyForDiag: String?
             get() = activeInstance?.appliedTrackKey

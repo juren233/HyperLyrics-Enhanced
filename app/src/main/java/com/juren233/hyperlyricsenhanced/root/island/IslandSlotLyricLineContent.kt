@@ -168,7 +168,7 @@ internal fun IslandSlotContentAssembler.isNextLinePreviewEnabled(
     config: IslandSlotRuntimeConfig,
     currentLine: IRichLyricLine? = LyriconDataBridge.currentLyricLine
 ): Boolean {
-    if (!config.nextLyricLine || config.isSplitMode) return false
+    if (!config.nextLyricLine || config.usesBothLyricSlots) return false
     if (LyriconDataBridge.isTextMode) return false
     val source = prefs.getString(RootConstants.KEY_HOOK_LYRIC_SOURCE, RootConstants.DEFAULT_HOOK_LYRIC_SOURCE)
     if (source != "lyricon" && source != "lyricinfo") return false

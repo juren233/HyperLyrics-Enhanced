@@ -12,8 +12,11 @@ import android.graphics.Typeface
 import android.text.TextPaint
 import android.view.animation.LinearInterpolator
 import androidx.core.graphics.withTranslation
+import com.juren233.hyperlyricsenhanced.BuildConfig
+import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import com.juren233.hyperlyricsenhanced.lyric.view.dp
 import com.juren233.hyperlyricsenhanced.lyric.view.line.model.LyricModel
+import kotlin.math.abs
 
 internal class SpaceGateScrollTextRenderer : LineRenderer {
 
@@ -66,6 +69,7 @@ internal class SpaceGateScrollTextRenderer : LineRenderer {
     ): Boolean {
         lastViewWidth = viewWidth
         lastLyricWidth = model.width
+        if (BuildConfig.DEBUG) logPlainTrace(state, contentWidthOf(model), viewWidth.toFloat())
 
         if (finished) return false
 
@@ -287,6 +291,24 @@ internal class SpaceGateScrollTextRenderer : LineRenderer {
         finished = true
         state.isScrollFinished = true
     }
+
+    /** Debug-only 纯文本跑马灯轨迹：状态翻转或位移 ≥8px 时输出一条。 */
+    private fun logPlainTrace(state: LineState, contentWidth: Float, vw: Float) {
+        val flags =
+            "run=$isRunning pend=$isPendingDelay fin=$finished rep=$currentRepeat/${repeatCount}c stopEnd=$stopAtEnd"
+        if (flags != lastTraceFlags || abs(currentUnitOffset - lastTraceUnitOffset) >= 8f) {
+            lastTraceFlags = flags
+            lastTraceUnitOffset = currentUnitOffset
+            HookLogger.d(
+                "IslandScroll",
+                "plain unitOffset=$currentUnitOffset unit=${contentWidth + ghostSpacing} " +
+                    "content=$contentWidth vw=$vw scrollOffset=${state.scrollOffset} $flags"
+            )
+        }
+    }
+
+    private var lastTraceUnitOffset = Float.NaN
+    private var lastTraceFlags = ""
 
     private fun pxPerMs(dpPerSec: Float): Float {
         return (dpPerSec * Resources.getSystem().displayMetrics.density) / 1000f

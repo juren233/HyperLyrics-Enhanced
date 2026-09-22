@@ -347,8 +347,10 @@ object RootConstants {
     const val KEY_HOOK_AI_TRANS_MAX_TOKENS = "key_hook_ai_trans_max_tokens"
 
     // ================= DEFAULTS =================
-    const val DEFAULT_HOOK_LYRIC_MODE = 0
-    const val HOOK_LYRIC_MODE_SPLIT = 1
+    const val HOOK_LYRIC_MODE_SINGLE_SIDE = 0
+    const val HOOK_LYRIC_MODE_FULL_ISLAND = 1
+    const val HOOK_LYRIC_MODE_SEPARATED = 2
+    const val DEFAULT_HOOK_LYRIC_MODE = HOOK_LYRIC_MODE_SINGLE_SIDE
     const val DEFAULT_HOOK_LYRICON_PROVIDER_DELAY = 0
     const val DEFAULT_HOOK_REMOVE_CJK_LYRIC_SPACES = false
     const val APPLE_MUSIC_CONTENT_UI_LANGUAGE_NONE = 0

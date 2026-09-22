@@ -579,7 +579,7 @@ fun SuperIslandSettingsPage() {
                         }
                     }
                 }
-                if (lyricMode == 0) {
+                if (lyricMode == RootConstants.HOOK_LYRIC_MODE_SINGLE_SIDE) {
                     item(key = "content_options") {
                         Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
                             Column {

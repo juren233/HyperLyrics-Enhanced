@@ -97,25 +97,52 @@ class IslandSlotRuntimeConfigTest {
     }
 
     @Test
-    fun `split mode treats both side lyric positions as default`() {
+    fun `full island and separated modes force both lyric slots and default positions`() {
+        listOf(
+            RootConstants.HOOK_LYRIC_MODE_FULL_ISLAND,
+            RootConstants.HOOK_LYRIC_MODE_SEPARATED,
+        ).forEach { mode ->
+            val config = IslandSlotRuntimeConfig.from(preferences(mapOf(
+                RootConstants.KEY_HOOK_LYRIC_MODE to mode,
+                RootConstants.KEY_HOOK_ISLAND_CONTENT_LEFT to 5,
+                RootConstants.KEY_HOOK_ISLAND_CONTENT_RIGHT to 6,
+                RootConstants.KEY_HOOK_ISLAND_LEFT_LYRIC_POSITION to
+                    RootConstants.ISLAND_LYRIC_POSITION_CENTER,
+                RootConstants.KEY_HOOK_ISLAND_RIGHT_LYRIC_POSITION to
+                    RootConstants.ISLAND_LYRIC_POSITION_RIGHT,
+            )))
+            assertEquals(7, config.leftMode)
+            assertEquals(7, config.rightMode)
+            assertTrue(config.usesBothLyricSlots)
+            assertEquals(mode == RootConstants.HOOK_LYRIC_MODE_FULL_ISLAND, config.isFullIslandMode)
+            assertEquals(mode == RootConstants.HOOK_LYRIC_MODE_SEPARATED, config.isSeparatedMode)
+            assertEquals(config.isFullIslandMode, config.usesSpaceGateView)
+            assertFalse(config.centerLyric(true))
+            assertFalse(config.centerLyric(false))
+            assertFalse(config.rightAlignLyric(true))
+            assertFalse(config.rightAlignLyric(false))
+            assertEquals(android.view.Gravity.START, config.wrapperHorizontalGravity(true))
+            assertEquals(android.view.Gravity.START, config.wrapperHorizontalGravity(false))
+            assertEquals(
+                config.wrapperHorizontalGravity(false),
+                config.wrapperHorizontalGravity(false, true)
+            )
+        }
+    }
+
+    @Test
+    fun `single side mode preserves configured slot content`() {
         val config = IslandSlotRuntimeConfig.from(preferences(mapOf(
-            RootConstants.KEY_HOOK_LYRIC_MODE to RootConstants.HOOK_LYRIC_MODE_SPLIT,
-            RootConstants.KEY_HOOK_ISLAND_LEFT_LYRIC_POSITION to
-                RootConstants.ISLAND_LYRIC_POSITION_CENTER,
-            RootConstants.KEY_HOOK_ISLAND_RIGHT_LYRIC_POSITION to
-                RootConstants.ISLAND_LYRIC_POSITION_RIGHT,
+            RootConstants.KEY_HOOK_LYRIC_MODE to RootConstants.HOOK_LYRIC_MODE_SINGLE_SIDE,
+            RootConstants.KEY_HOOK_ISLAND_CONTENT_LEFT to 5,
+            RootConstants.KEY_HOOK_ISLAND_CONTENT_RIGHT to 6,
         )))
-        assertTrue(config.isSplitMode)
-        assertFalse(config.centerLyric(true))
-        assertFalse(config.centerLyric(false))
-        assertFalse(config.rightAlignLyric(true))
-        assertFalse(config.rightAlignLyric(false))
-        assertEquals(android.view.Gravity.START, config.wrapperHorizontalGravity(true))
-        assertEquals(android.view.Gravity.START, config.wrapperHorizontalGravity(false))
-        assertEquals(
-            config.wrapperHorizontalGravity(false),
-            config.wrapperHorizontalGravity(false, true)
-        )
+
+        assertTrue(config.isSingleSideMode)
+        assertFalse(config.usesBothLyricSlots)
+        assertFalse(config.usesSpaceGateView)
+        assertEquals(5, config.leftMode)
+        assertEquals(6, config.rightMode)
     }
 
     private fun preferences(values: Map<String, Any>): SharedPreferences {

@@ -74,7 +74,14 @@ class IslandLyricPositionTest {
         )
         assertFalse(
             IslandLyricPosition.supportsGroupVocalCentering(
-                lyricMode = 1,
+                lyricMode = RootConstants.HOOK_LYRIC_MODE_FULL_ISLAND,
+                leftContent = 7,
+                rightContent = 7
+            )
+        )
+        assertFalse(
+            IslandLyricPosition.supportsGroupVocalCentering(
+                lyricMode = RootConstants.HOOK_LYRIC_MODE_SEPARATED,
                 leftContent = 7,
                 rightContent = 7
             )

@@ -75,18 +75,29 @@ internal data class IslandSlotRuntimeConfig(
     val translationDisplay: Boolean
         get() = translationDisplayMode != RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_OFF
 
-    val isSplitMode: Boolean
-        get() = activeMode == RootConstants.HOOK_LYRIC_MODE_SPLIT
+    val isSingleSideMode: Boolean
+        get() = activeMode == RootConstants.HOOK_LYRIC_MODE_SINGLE_SIDE
+
+    val isFullIslandMode: Boolean
+        get() = activeMode == RootConstants.HOOK_LYRIC_MODE_FULL_ISLAND
+
+    val isSeparatedMode: Boolean
+        get() = activeMode == RootConstants.HOOK_LYRIC_MODE_SEPARATED
+
+    val usesBothLyricSlots: Boolean
+        get() = isFullIslandMode || isSeparatedMode
+
+    val usesSpaceGateView: Boolean
+        get() = isFullIslandMode
 
     fun lyricPosition(isLeft: Boolean): Int = if (isLeft) leftLyricPosition else rightLyricPosition
 
-    // 分离模式两槽是同一条文本带，两侧位置显示整体按默认处理：
-    // 任意一侧被居中/靠右偏好单独挪动都会撕开拼接视口。
+    // 双槽歌词模式由模式本身决定两侧布局，不消费单侧歌词的位置偏好。
     fun centerLyric(isLeft: Boolean): Boolean =
-        !isSplitMode && IslandLyricPosition.centers(lyricPosition(isLeft))
+        !usesBothLyricSlots && IslandLyricPosition.centers(lyricPosition(isLeft))
 
     fun rightAlignLyric(isLeft: Boolean): Boolean =
-        !isSplitMode && IslandLyricPosition.alignsRight(lyricPosition(isLeft))
+        !usesBothLyricSlots && IslandLyricPosition.alignsRight(lyricPosition(isLeft))
 
     /**
      * Horizontal placement for content-width slots. Apply this at both the
@@ -109,9 +120,8 @@ internal data class IslandSlotRuntimeConfig(
      */
     fun wrapperHorizontalGravity(isLeft: Boolean, duetLineAlignedRight: Boolean?): Int {
         val base = wrapperHorizontalGravity(isLeft)
-        // 分离模式两槽共享同一条文本带，任一侧 wrapper 被对唱锚点单独挪动
-        // 都会让两个视口错位；对唱方向交给行级 isAlignedRight 在带内表达。
-        if (isSplitMode) return base
+        // 双槽歌词由模式固定左右槽的位置，不再让单槽对唱锚点移动任一侧 wrapper。
+        if (usesBothLyricSlots) return base
         if (duetLineAlignedRight != true || !dynamicWidthEnabled) return base
         if (centerLyric(isLeft) || rightAlignLyric(isLeft)) return base
         val isLyricSlot = (if (isLeft) leftMode else rightMode) == 7
@@ -366,16 +376,16 @@ internal data class IslandSlotRuntimeConfig(
             )
             return IslandSlotRuntimeConfig(
                 activeMode = activeMode,
-                leftMode = if (activeMode == 1) 7 else runtimeInt(
+                leftMode = if (activeMode == RootConstants.HOOK_LYRIC_MODE_SINGLE_SIDE) runtimeInt(
                     prefs,
                     RootConstants.KEY_HOOK_ISLAND_CONTENT_LEFT,
                     RootConstants.DEFAULT_HOOK_ISLAND_CONTENT_LEFT
-                ),
-                rightMode = if (activeMode == 1) 7 else runtimeInt(
+                ) else 7,
+                rightMode = if (activeMode == RootConstants.HOOK_LYRIC_MODE_SINGLE_SIDE) runtimeInt(
                     prefs,
                     RootConstants.KEY_HOOK_ISLAND_CONTENT_RIGHT,
                     RootConstants.DEFAULT_HOOK_ISLAND_CONTENT_RIGHT
-                ),
+                ) else 7,
                 showAlbum = prefs.getBoolean(RootConstants.KEY_HOOK_ISLAND_LEFT_ALBUM, RootConstants.DEFAULT_HOOK_ISLAND_LEFT_ALBUM),
                 showRhythm = prefs.getBoolean(RootConstants.KEY_HOOK_ISLAND_RIGHT_ICON, RootConstants.DEFAULT_HOOK_ISLAND_RIGHT_ICON),
                 leftPaddingLeftDp = prefs.getInt(RootConstants.KEY_HOOK_ISLAND_LEFT_PADDING_LEFT, RootConstants.DEFAULT_HOOK_ISLAND_LEFT_PADDING_LEFT),

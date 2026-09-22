@@ -182,8 +182,9 @@
     <string name="export_all_logs">Export All Logs</string>
 
     <!-- ———————————————————————— HookSettingsPage ———————————————————————— -->
-    <string name="lyric_mode_verbatim">Lyricon Verbatim Lyrics</string>
-    <string name="lyric_mode_separated">Lyricon Separated Lyrics</string>
+    <string name="lyric_mode_single_side">Single-side Scroll</string>
+    <string name="lyric_mode_full_island">Full-Island Scroll</string>
+    <string name="lyric_mode_separated">Half-Split Scroll</string>
     <string name="title_lyric_mode">Lyrics Mode</string>
     <string name="title_lyric_source">Lyrics Source</string>
     <string name="summary_lyric_source_apple_music_builtin">Apple Music uses Lyricon without another module. Lyricon is also recommended for other music apps because built-in plugins simplify setup.</string>
@@ -747,7 +748,7 @@
     <string name="option_lyric_position_right">Right</string>
     <string name="title_center_group_vocals">Center Group Vocals</string>
     <string name="title_adjacent_background_translation">Backing-Vocal Translation on Other Side</string>
-    <string name="summary_adjacent_background_translation">Temporarily shown in Verbatim Lyrics mode when exactly one side displays lyrics</string>
+    <string name="summary_adjacent_background_translation">Temporarily shown in Single-side Scroll mode when exactly one side displays lyrics</string>
     
     <!-- Shizuku Bypass Limits -->
     <string name="title_bypass_focus_limit">Bypass Notification Spotlight Limit</string>
