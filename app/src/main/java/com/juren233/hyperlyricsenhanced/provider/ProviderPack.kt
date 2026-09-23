@@ -51,7 +51,9 @@ object ProviderPackVerifier {
     private const val SIGNATURE_SEPARATOR: Byte = 0
     private val allowedEntries = setOf(MANIFEST_ENTRY, DEX_ENTRY, SIGNATURE_ENTRY)
     private val json = Json {
-        ignoreUnknownKeys = false
+        // 新版 Pack 的清单可能新增字段；旧版 App 忽略未知字段而不是拒绝整个 Pack。
+        // 真正的兼容边界由 schemaVersion / pluginApiVersion / minCoreVersionCode 承担。
+        ignoreUnknownKeys = true
         isLenient = false
     }
 
@@ -92,12 +94,16 @@ object ProviderPackVerifier {
                 OfficialProviderCatalog.OFFICIAL_PROVIDER_PACKAGE_PREFIX + manifest.pluginId
         ) { "Provider 来源标识无效" }
 
-        val definition = requireNotNull(
+        requireNotNull(
             OfficialProviderCatalog.definitionForId(manifest.pluginId)
         ) { "Provider 不在内置允许列表" }
-        require(manifest.targetPackages.toSet() == definition.targetPackages) {
-            "Provider 目标软件与内置允许列表不一致"
-        }
+        // 前向兼容：新版 Pack 可能给既有插件新增目标包名（新音乐 App）。
+        // 旧版 App 放行并忽略不认识的包名，只拒绝把其他插件的包名声明进来。
+        require(
+            manifest.targetPackages.isNotEmpty() && manifest.targetPackages.all {
+                OfficialProviderCatalog.isTargetPackageCompatible(manifest.pluginId, it)
+            },
+        ) { "Provider 目标软件与内置允许列表不一致" }
         require(OfficialProviderCatalog.APPLE_MUSIC_PACKAGE_NAME !in manifest.targetPackages) {
             "Apple Music 只能使用内置 Provider"
         }

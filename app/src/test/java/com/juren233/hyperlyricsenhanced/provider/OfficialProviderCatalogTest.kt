@@ -270,4 +270,25 @@ class OfficialProviderCatalogTest {
         assertFalse(damagedItem.updateAvailable)
         assertTrue(damagedItem.needsRepair)
     }
+
+    @Test
+    fun `treats target packages unknown to this app as compatible for newer releases`() {
+        assertTrue(
+            OfficialProviderCatalog.isTargetPackageCompatible("kuwo", "cn.kuwo.player")
+        )
+        // 旧版 App 不认识的新包：放行（只在更新 App 后生效），不拒绝目录或插件
+        assertTrue(
+            OfficialProviderCatalog.isTargetPackageCompatible("kuwo", "cn.example.futuremusic")
+        )
+    }
+
+    @Test
+    fun `rejects target packages owned by another or unknown provider`() {
+        assertFalse(
+            OfficialProviderCatalog.isTargetPackageCompatible("kuwo", "com.tencent.qqmusic")
+        )
+        assertFalse(
+            OfficialProviderCatalog.isTargetPackageCompatible("unknown-plugin", "cn.kuwo.player")
+        )
+    }
 }

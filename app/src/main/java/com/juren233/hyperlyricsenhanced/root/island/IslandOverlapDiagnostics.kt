@@ -220,7 +220,7 @@ internal object IslandOverlapDiagnostics {
     private fun gap(left: View?, right: View?): Int? {
         val a = bounds(left) ?: return null
         val b = bounds(right) ?: return null
-        return b.left - a.right
+        return horizontalGap(a, b)
     }
 
     private fun visibleGap(left: View?, right: View?): Int? {
@@ -228,7 +228,14 @@ internal object IslandOverlapDiagnostics {
         val b = Rect()
         if (runCatching { left?.getGlobalVisibleRect(a) }.getOrNull() != true ||
             runCatching { right?.getGlobalVisibleRect(b) }.getOrNull() != true) return null
-        return b.left - a.right
+        return horizontalGap(a, b)
+    }
+
+    /** Positive is the separation in either screen order; negative is actual overlap width. */
+    private fun horizontalGap(first: Rect, second: Rect): Int = when {
+        first.right <= second.left -> second.left - first.right
+        second.right <= first.left -> first.left - second.right
+        else -> -(minOf(first.right, second.right) - maxOf(first.left, second.left))
     }
 
     private fun overhang(wrapper: View?, area: View?, leftSide: Boolean): Int? {

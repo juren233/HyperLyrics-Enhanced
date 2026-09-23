@@ -55,6 +55,10 @@ internal object IslandLyricTextInjector {
         ) || changed
         IslandHostFacade.applyHostSettings(rootView, prefs)
         IslandViewRegistry.refreshInjectedViews(rootView)
+        IslandNativeTextCollisionGuard.sync(
+            root = rootView,
+            enabled = config.usesSpaceGateView && config.shouldInjectLeft && config.shouldInjectRight,
+        )
         if (changed) {
             IslandAlbumCoverStyleHooker.refreshLeftContentTextShadows()
         }

@@ -202,7 +202,8 @@ internal class SpaceGateScrollTextRenderer : LineRenderer {
             drawRun(canvas, model.text, 0, k, 0f, paint, selector)
         }
         canvas.withTranslation(x = startX) {
-            drawRun(canvas, model.text, k, model.text.length, split.runBStripStart - split.runAWidth, paint, selector)
+            // drawRun starts the substring at local x=0; runBStripStart is its absolute strip x.
+            drawRun(canvas, model.text, k, model.text.length, split.runBStripStart, paint, selector)
         }
     }
 
