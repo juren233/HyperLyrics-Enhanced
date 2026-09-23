@@ -108,7 +108,8 @@ object OfficialProviderRepository {
         .callTimeout(90, TimeUnit.SECONDS)
         .build()
     private val json = Json {
-        ignoreUnknownKeys = false
+        // 新版目录可能新增字段；旧版 App 忽略未知字段而不是让整个插件页报错。
+        ignoreUnknownKeys = true
         isLenient = false
     }
 
@@ -163,15 +164,27 @@ object OfficialProviderRepository {
             catalog.catalogBytes.toString(Charsets.UTF_8),
         )
         require(document.schemaVersion == 1) { "Provider 目录格式不兼容" }
-        val entriesById = document.providers.associateBy { entry ->
-            validateCatalogEntry(entry)
-            entry.id
-        }
+        // 目录由签名整体担保，但内容按前向兼容解读：新版目录新增插件 ID、或给既有插件
+        // 新增目标包名时，旧版 App 忽略新增部分继续工作，而不是让整个插件页报错。
+        // 只有真正的数据错误（重复插件、缺少内置插件、包名归属冲突）才判定目录无效。
+        val entriesById = document.providers.associateBy { entry -> entry.id }
         require(entriesById.size == document.providers.size) {
             "Provider 目录包含重复插件"
         }
-        require(entriesById.keys == OfficialProviderCatalog.definitions.map { it.id }.toSet()) {
-            "Provider 目录与内置允许列表不一致"
+        document.providers.forEach { entry ->
+            if (OfficialProviderCatalog.definitionForId(entry.id) == null) {
+                OfficialProviderAcquisitionLog.warn(
+                    "插件目录包含当前 App 版本未知的插件，已忽略: id=${entry.id} " +
+                        "app=${BuildConfig.VERSION_NAME}(${BuildConfig.VERSION_CODE})",
+                )
+            } else {
+                validateCatalogEntry(entry)
+            }
+        }
+        OfficialProviderCatalog.definitions.forEach { definition ->
+            require(definition.id in entriesById) {
+                "Provider 目录与内置允许列表不一致"
+            }
         }
 
         return OfficialProviderCatalog.definitions.map { definition ->
@@ -368,12 +381,16 @@ object OfficialProviderRepository {
     }
 
     private fun validateCatalogEntry(entry: ProviderCatalogEntry) {
-        val definition = requireNotNull(OfficialProviderCatalog.definitionForId(entry.id)) {
+        requireNotNull(OfficialProviderCatalog.definitionForId(entry.id)) {
             "Provider 目录包含未知插件"
         }
-        require(entry.targetPackages.toSet() == definition.targetPackages) {
-            "Provider 目录目标包名无效"
-        }
+        require(
+            entry.targetPackages.isNotEmpty() &&
+                entry.targetPackages.all {
+                    OfficialProviderCatalog.isTargetPackageCompatible(entry.id, it)
+                } &&
+                OfficialProviderCatalog.APPLE_MUSIC_PACKAGE_NAME !in entry.targetPackages,
+        ) { "Provider 目录目标包名无效" }
         if (entry.available) {
             require(!entry.versionName.isNullOrBlank())
             require((entry.versionCode ?: 0) > 0)

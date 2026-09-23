@@ -134,6 +134,17 @@ object OfficialProviderCatalog {
         return definitionForId(pluginId)?.targetPackages?.contains(playerPackageName) == true
     }
 
+    /**
+     * 目标包名与插件的兼容判定（前向兼容）：包名属于该插件，或属于当前 App 版本
+     * 尚不认识的任意新包。新包只在用户更新 App 后生效，旧版 App 忽略即可，
+     * 不得因此拒绝整个目录或插件；把其他插件的包名声明进来仍然无效。
+     */
+    fun isTargetPackageCompatible(pluginId: String, targetPackage: String): Boolean {
+        if (definitionForId(pluginId) == null) return false
+        val owner = definitionForPackage(targetPackage) ?: return true
+        return owner.id == pluginId
+    }
+
     fun shouldLoadIntoProcess(packageName: String, processName: String): Boolean {
         if (definitionForPackage(packageName)?.systemMediaRuntime == true) return false
         if (processName == packageName) return true
