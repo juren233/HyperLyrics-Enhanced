@@ -96,4 +96,49 @@ class TimelineContentPolicyTest {
                 .matchesAvailableFields(anchor),
         )
     }
+
+    @Test
+    fun `QQ HD treats changed title as a new track despite reused media session id`() {
+        val previous = TrackIdentity(
+            packageName = "com.tencent.qqmusicpad",
+            mediaId = "2354",
+            title = "iPad",
+            artist = "The Chainsmokers",
+        )
+        val next = previous.copy(title = "Dreamland", artist = "Glass Animals")
+
+        assertFalse(previous.normalizedKey() == next.normalizedKey())
+        assertFalse(previous.matches(next))
+        assertEquals(
+            TimelineContentPolicy.Decision.DROP_WRONG_TRACK,
+            TimelineContentPolicy.decide(
+                "lyricon",
+                next,
+                TimelineContent(sourceId = "lyricon", track = previous.copy(mediaId = null), song = null),
+            ),
+        )
+    }
+
+    @Test
+    fun `QQ HD ignores session id and album refresh within the same song`() {
+        val track = TrackIdentity(
+            packageName = "com.tencent.qqmusicpad",
+            mediaId = "4137",
+            title = "Dreamland",
+            artist = "Glass Animals",
+            album = "Old Album",
+        )
+        val refreshed = track.copy(mediaId = "4209", album = "Dreamland")
+
+        assertEquals(track.normalizedKey(), refreshed.normalizedKey())
+        assertTrue(track.matches(refreshed))
+        assertTrue(track.copy(mediaId = null).matchesAvailableFields(refreshed))
+        assertFalse(track.copy(artist = "").matchesAvailableFields(refreshed))
+        assertTrue(
+            track.copy(title = "Dream Land (Live)", artist = "Glass Animals!")
+                .matchesAvailableFields(
+                    refreshed.copy(title = "Dream Land（Live）", artist = "Glass Animals"),
+                ),
+        )
+    }
 }

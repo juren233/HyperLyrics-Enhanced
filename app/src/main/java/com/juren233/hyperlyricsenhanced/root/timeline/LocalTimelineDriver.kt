@@ -10,6 +10,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import com.juren233.hyperlyricsenhanced.BuildConfig
+import com.juren233.hyperlyricsenhanced.common.IslandMusicAppCatalog
 import com.juren233.hyperlyricsenhanced.lyric.model.Song
 import com.juren233.hyperlyricsenhanced.lyric.model.RichLyricLine
 import com.juren233.hyperlyricsenhanced.lyric.source.LyricSink
@@ -60,6 +61,9 @@ class LocalTimelineDriver(
     @Volatile
     private var hintPackage: String? = null
 
+    private var anchorInactiveSinceMs: Long? = null
+    private var sourceProgressWhileAnchorInactiveAtMs: Long = 0L
+
     /** 最近一次下发给渲染层的合成播放态；null=尚未下发过。 */
     private var renderedPlaying: Boolean? = null
 
@@ -91,6 +95,8 @@ class LocalTimelineDriver(
             anchorPlaying = false
             hintPlaying = false
             hintPackage = null
+            anchorInactiveSinceMs = null
+            sourceProgressWhileAnchorInactiveAtMs = 0L
             renderedPlaying = null
             renderSink.onStop()
             registerActiveInstance(null)
@@ -214,6 +220,7 @@ class LocalTimelineDriver(
         if (appliedTrackKey == null) return
         val anchored = position.coerceAtLeast(0L)
         val now = SystemClock.elapsedRealtime()
+        val previous = sourceAnchorPosition
         val projected = projectedSourcePosition(now)
         val action = SourceClockUpdatePolicy.decide(
             explicitSeek = event == "seek",
@@ -236,6 +243,13 @@ class LocalTimelineDriver(
             SourceClockUpdatePolicy.Action.SEEK -> {
                 sourceAnchorPosition = anchored
                 sourceAnchorElapsedMs = now
+                if (
+                    anchorInactiveSinceMs != null && event == "position" &&
+                    previous != null && anchored > previous &&
+                    anchored - previous <= MAX_CONTINUOUS_SOURCE_STEP_MS
+                ) {
+                    sourceProgressWhileAnchorInactiveAtMs = now
+                }
                 sourceClockAcceptedSinceDiag++
                 logSourceClockSummaryIfNeeded(now, action, anchored, projected)
             }
@@ -275,6 +289,7 @@ class LocalTimelineDriver(
     private fun resetSourceClock() {
         sourceAnchorPosition = null
         sourceAnchorElapsedMs = 0L
+        sourceProgressWhileAnchorInactiveAtMs = 0L
         sourceClockAcceptedSinceDiag = 0
         sourceClockDuplicatesSinceDiag = 0
         sourceClockBacktracksSinceDiag = 0
@@ -285,20 +300,30 @@ class LocalTimelineDriver(
      * 当前渲染位置：源时钟新鲜（TTL 内）时按其线性外推（歌词时钟即墙钟，
      * 速度恒 1），播放态复用合成播放语义；过期或缺席回退 MediaSession 锚点外推。
      */
-    private fun timelinePosition(): Long? =
-        projectedSourcePosition(SystemClock.elapsedRealtime()) ?: anchor.estimatedPosition()
+    private fun timelinePosition(): Long? {
+        val now = SystemClock.elapsedRealtime()
+        val sourcePosition = projectedSourcePosition(now)
+        val systemPosition = anchor.estimatedPosition(now)
+        if (SourceClockUpdatePolicy.preferSystemAfterSeek(
+                packageName = anchor.currentTrack?.packageName,
+                sourcePosition = sourcePosition,
+                sourceSampleAtMs = sourceAnchorElapsedMs,
+                systemPosition = systemPosition,
+                systemStateUpdatedAtMs = anchor.anchor()?.stateUpdatedAtMs ?: 0L,
+            )
+        ) {
+            return systemPosition
+        }
+        return sourcePosition ?: systemPosition
+    }
 
     private fun projectedSourcePosition(now: Long): Long? {
         val src = sourceAnchorPosition ?: return null
         val age = now - sourceAnchorElapsedMs
         if (age !in 0..SOURCE_CLOCK_TTL_MS) return null
-        val effective = PlaybackSmoothingPolicy.effectivePlaying(
-            anchorPlaying = anchorPlaying,
-            hintPlaying = hintPlaying,
-            hintPackage = hintPackage,
-            anchorPackage = anchor.currentTrack?.packageName,
-        )
-        return if (effective) src + age else src
+        // Session PAUSED/BUFFERING cannot be turned into an advancing clock by a stale
+        // source activity hint. Fresh source samples still move the anchor explicitly.
+        return if (anchor.anchor()?.isPlaying == true) src + age else src
     }
     override fun onMetadata(title: String?, artist: String?, album: String?, publisher: String?) = Unit
     override fun currentPlaybackState(): Boolean = renderedPlaying ?: anchorPlaying
@@ -364,6 +389,15 @@ class LocalTimelineDriver(
     }
 
     override fun onPlaybackStateChanged(isPlaying: Boolean) {
+        if (isPlaying) {
+            anchorInactiveSinceMs = null
+            sourceProgressWhileAnchorInactiveAtMs = 0L
+        } else if (anchorPlaying || anchorInactiveSinceMs == null) {
+            anchorInactiveSinceMs = SystemClock.elapsedRealtime()
+            sourceProgressWhileAnchorInactiveAtMs = 0L
+            // Keep the last source value for duplicate rejection, but stop projecting it.
+            sourceAnchorElapsedMs = 0L
+        }
         anchorPlaying = isPlaying
         runOnMain {
             if (appliedTrackKey == null) return@runOnMain
@@ -388,9 +422,10 @@ class LocalTimelineDriver(
     }
 
     private fun refreshRenderPlaybackState() {
+        val now = SystemClock.elapsedRealtime()
         val effective = PlaybackSmoothingPolicy.effectivePlaying(
             anchorPlaying = anchorPlaying,
-            hintPlaying = hintPlaying,
+            hintPlaying = hintPlaying && sourceHintAllowed(now),
             hintPackage = hintPackage,
             anchorPackage = anchor.currentTrack?.packageName,
         )
@@ -417,6 +452,14 @@ class LocalTimelineDriver(
             timelinePosition()?.let(renderSink::onPositionChanged)
         }
     }
+
+    private fun sourceHintAllowed(nowMs: Long): Boolean =
+        PlaybackSmoothingPolicy.allowsSourceHint(
+            inactiveAnchorAgeMs = anchorInactiveSinceMs?.let { nowMs - it },
+            sourceProgressAgeMs = sourceProgressWhileAnchorInactiveAtMs
+                .takeIf { it > 0L }
+                ?.let { nowMs - it },
+        )
 
     private fun handleTimelineContent(content: TimelineContent) {
         when (TimelineContentPolicy.decide(activeSourceId, anchor.currentTrack, content)) {
@@ -497,7 +540,10 @@ class LocalTimelineDriver(
 
             PlaybackSmoothingPolicy.EmptyLyricsFallbackAction.PRESERVE_HOST -> {
                 stopPositionLoop()
-                appliedTrackKey = null
+                // The track is still playing even when its lyric payload is empty.
+                // Keep its clock alive so the Island progress does not freeze at
+                // the last position dispatched before this fallback.
+                appliedTrackKey = trackKey
                 appliedPackageName = track.packageName
                 renderSink.onTrackTransition(
                     title = track.title,
@@ -518,6 +564,10 @@ class LocalTimelineDriver(
         LyriconDataBridge.updateLyricPackage(track.packageName)
         LyriconDataBridge.currentSongName = fallbackTitle.ifBlank { track.title }
         renderSink.onMetadata(track.title, track.artist, track.album, track.packageName)
+        if (fallbackAction == PlaybackSmoothingPolicy.EmptyLyricsFallbackAction.PRESERVE_HOST) {
+            timelinePosition()?.let(renderSink::onPositionChanged)
+            if (renderedPlaying == true) startPositionLoop()
+        }
         diagnostic(
             "空歌词内容回退: action=$fallbackAction, pkg=${track.packageName}, " +
                 "title=${track.title}, renderedPlaying=$renderedPlaying"
@@ -532,7 +582,17 @@ class LocalTimelineDriver(
         resetSourceClock()
         renderSink.onStop()
         if (showTrackFallback) {
-            anchor.currentTrack?.let { track ->
+            // 标题回退只服务模块作用域内的音乐 App（含汽水的系统媒体路径）。
+            // 非作用域 App（视频/投屏等）拿到锚点时不写入任何元数据，
+            // 岛交给系统原生显示（2026-09-24 issue #39）。
+            val fallbackTrack = anchor.currentTrack
+                ?.takeIf { IslandMusicAppCatalog.isSupported(it.packageName) }
+            if (fallbackTrack == null && BuildConfig.DEBUG) {
+                anchor.currentTrack?.let { track ->
+                    diagnostic("非作用域锚点，跳过标题回退: pkg=${track.packageName}")
+                }
+            }
+            fallbackTrack?.let { track ->
                 LyriconDataBridge.updateLyricPackage(track.packageName)
                 LyriconDataBridge.currentSongName = track.title
                 renderSink.onMetadata(track.title, track.artist, track.album, track.packageName)
@@ -542,7 +602,9 @@ class LocalTimelineDriver(
 
     private fun prepareTrackTransition(track: TrackIdentity) {
         stopPositionLoop()
-        appliedTrackKey = null
+        // A same-player track change must keep its position clock even while
+        // waiting for the new song's lyrics to arrive.
+        appliedTrackKey = track.normalizedKey()
         appliedPackageName = track.packageName
         renderSink.onTrackTransition(
             title = track.title,
@@ -550,6 +612,8 @@ class LocalTimelineDriver(
             album = track.album,
             publisher = track.packageName,
         )
+        timelinePosition()?.let(renderSink::onPositionChanged)
+        if (renderedPlaying == true) startPositionLoop()
         diagnostic("同包切歌保留岛宿主: pkg=${track.packageName}, title=${track.title}")
     }
 
@@ -603,6 +667,10 @@ class LocalTimelineDriver(
                     renderedPlaying = renderedPlaying,
                 )
             ) {
+                if (!anchorPlaying && !sourceHintAllowed(SystemClock.elapsedRealtime())) {
+                    refreshRenderPlaybackState()
+                    if (!isActive || renderedPlaying != true) break
+                }
                 timelinePosition()?.let(renderSink::onPositionChanged)
                 delay(POSITION_INTERVAL_MS)
             }
@@ -635,6 +703,7 @@ class LocalTimelineDriver(
          */
         private const val SOURCE_CLOCK_TTL_MS = 15_000L
         private const val SOURCE_CLOCK_DIAG_INTERVAL_MS = 2_000L
+        private const val MAX_CONTINUOUS_SOURCE_STEP_MS = 10_000L
 
         val appliedTrackKeyForDiag: String?
             get() = activeInstance?.appliedTrackKey

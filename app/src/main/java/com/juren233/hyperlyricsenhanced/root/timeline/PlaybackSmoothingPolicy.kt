@@ -22,6 +22,17 @@ package com.juren233.hyperlyricsenhanced.root.timeline
  */
 internal object PlaybackSmoothingPolicy {
 
+    /** A stale source activity hint may bridge a brief false pause, but cannot own playback forever. */
+    const val INACTIVE_ANCHOR_GRACE_MS = 8_000L
+    const val SOURCE_PROGRESS_FRESH_MS = 7_000L
+
+    fun allowsSourceHint(
+        inactiveAnchorAgeMs: Long?,
+        sourceProgressAgeMs: Long?,
+    ): Boolean = inactiveAnchorAgeMs == null ||
+        inactiveAnchorAgeMs in 0..INACTIVE_ANCHOR_GRACE_MS ||
+        sourceProgressAgeMs?.let { it in 0..SOURCE_PROGRESS_FRESH_MS } == true
+
     enum class EmptyLyricsFallbackAction {
         KEEP_CURRENT_CONTENT,
         PRESERVE_HOST,

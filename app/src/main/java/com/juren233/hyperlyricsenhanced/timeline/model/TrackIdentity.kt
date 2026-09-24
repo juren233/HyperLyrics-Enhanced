@@ -7,6 +7,7 @@
 package com.juren233.hyperlyricsenhanced.timeline.model
 
 import kotlinx.serialization.Serializable
+import java.util.Locale
 
 /**
  * 时间轴快照的曲目身份。
@@ -40,10 +41,20 @@ data class TrackIdentity(
      */
     private fun compositeKey(): String = normalizedParts().joinToString(SEPARATOR.toString())
 
-    /**
-     * 规范化键。mediaId 非空时优先（包名 + mediaId），否则退回组合键。
-     */
+    /** QQ HD 的 MediaSession ID 是会话序号，不能作为切歌身份。 */
+    private fun qqMusicHdKey(): String? {
+        if (packageName.trim() != QQ_MUSIC_HD_PACKAGE) return null
+        return listOf(packageName.trim(), qqMusicHdText(title), qqMusicHdText(artist))
+            .joinToString(SEPARATOR.toString())
+    }
+
+    private fun qqMusicHdText(value: String): String = value
+        .lowercase(Locale.ROOT)
+        .filter(Char::isLetterOrDigit)
+
+    /** 规范化键。QQ HD 使用歌名和歌手，其余播放器优先使用 mediaId。 */
     fun normalizedKey(): String {
+        qqMusicHdKey()?.let { return it }
         val id = mediaId?.trim().orEmpty()
         return if (id.isNotEmpty()) {
             listOf(packageName.trim(), id).joinToString(SEPARATOR.toString())
@@ -59,6 +70,11 @@ data class TrackIdentity(
      *   因此这里必须用组合键而不是 [normalizedKey]，后者会被自身的 mediaId 短路）。
      */
     fun matches(other: TrackIdentity): Boolean {
+        if (packageName.trim() == QQ_MUSIC_HD_PACKAGE ||
+            other.packageName.trim() == QQ_MUSIC_HD_PACKAGE
+        ) {
+            return qqMusicHdKey() != null && qqMusicHdKey() == other.qqMusicHdKey()
+        }
         val selfId = mediaId?.trim().orEmpty()
         val otherId = other.mediaId?.trim().orEmpty()
         if (selfId.isNotEmpty() && otherId.isNotEmpty()) {
@@ -76,6 +92,17 @@ data class TrackIdentity(
         val otherPackage = other.packageName.trim()
         if (selfPackage.isNotEmpty() && otherPackage.isNotEmpty() && selfPackage != otherPackage) {
             return false
+        }
+
+        if (selfPackage == QQ_MUSIC_HD_PACKAGE || otherPackage == QQ_MUSIC_HD_PACKAGE) {
+            val selfTitle = qqMusicHdText(title)
+            val otherTitle = qqMusicHdText(other.title)
+            val selfArtist = qqMusicHdText(artist)
+            val otherArtist = other.qqMusicHdText(other.artist)
+            return selfPackage == otherPackage &&
+                selfTitle.isNotEmpty() && otherTitle.isNotEmpty() &&
+                selfArtist.isNotEmpty() && otherArtist.isNotEmpty() &&
+                selfTitle == otherTitle && selfArtist == otherArtist
         }
 
         val selfId = mediaId?.trim().orEmpty()
@@ -100,5 +127,6 @@ data class TrackIdentity(
 
     companion object {
         private const val SEPARATOR = '\u001F'
+        private const val QQ_MUSIC_HD_PACKAGE = "com.tencent.qqmusicpad"
     }
 }

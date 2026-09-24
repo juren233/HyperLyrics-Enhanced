@@ -11,6 +11,39 @@ import org.junit.Test
 
 class SourceClockUpdatePolicyTest {
     @Test
+    fun `newer QQ HD system seek overrides stale source but normal offset does not`() {
+        assertEquals(
+            true,
+            SourceClockUpdatePolicy.preferSystemAfterSeek(
+                packageName = "com.tencent.qqmusicpad",
+                sourcePosition = 1_240,
+                sourceSampleAtMs = 1_074_837_251L,
+                systemPosition = 129_346,
+                systemStateUpdatedAtMs = 1_074_857_873L,
+            ),
+        )
+        assertEquals(
+            false,
+            SourceClockUpdatePolicy.preferSystemAfterSeek(
+                packageName = "com.tencent.qqmusicpad",
+                sourcePosition = 129_000,
+                sourceSampleAtMs = 1_074_837_251L,
+                systemPosition = 129_346,
+                systemStateUpdatedAtMs = 1_074_857_873L,
+            ),
+        )
+        assertEquals(
+            false,
+            SourceClockUpdatePolicy.preferSystemAfterSeek(
+                packageName = "com.apple.android.music",
+                sourcePosition = 1_240,
+                sourceSampleAtMs = 1_074_837_251L,
+                systemPosition = 129_346,
+                systemStateUpdatedAtMs = 1_074_857_873L,
+            ),
+        )
+    }
+    @Test
     fun `duplicate source samples do not reanchor the clock`() {
         assertEquals(
             SourceClockUpdatePolicy.Action.IGNORE_DUPLICATE,
@@ -20,6 +53,19 @@ class SourceClockUpdatePolicyTest {
                 projectedPosition = 10_016,
                 incomingPosition = 10_000,
             )
+        )
+    }
+
+    @Test
+    fun `expired duplicate source sample does not restart a frozen clock`() {
+        assertEquals(
+            SourceClockUpdatePolicy.Action.IGNORE_DUPLICATE,
+            SourceClockUpdatePolicy.decide(
+                explicitSeek = false,
+                previousAnchorPosition = 1_240,
+                projectedPosition = null,
+                incomingPosition = 1_240,
+            ),
         )
     }
 

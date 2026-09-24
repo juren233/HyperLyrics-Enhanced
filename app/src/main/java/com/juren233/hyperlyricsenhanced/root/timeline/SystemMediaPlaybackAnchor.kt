@@ -42,6 +42,7 @@ class SystemMediaPlaybackAnchor(
         val elapsedRealtimeMs: Long,
         val speed: Float,
         val isPlaying: Boolean,
+        val stateUpdatedAtMs: Long,
     )
 
     interface Listener {
@@ -273,6 +274,7 @@ class SystemMediaPlaybackAnchor(
                 elapsedRealtimeMs = SystemClock.elapsedRealtime(),
                 speed = state?.playbackSpeed ?: 1.0f,
                 isPlaying = advancing,
+                stateUpdatedAtMs = state?.lastPositionUpdateTime ?: 0L,
             )
         }
         // 播放面活动与时间轴推进必须分开：BUFFERING 保留歌词面，但

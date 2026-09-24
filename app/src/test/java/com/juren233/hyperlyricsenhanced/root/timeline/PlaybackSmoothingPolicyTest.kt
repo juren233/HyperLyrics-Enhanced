@@ -13,6 +13,14 @@ import org.junit.Test
 class PlaybackSmoothingPolicyTest {
 
     @Test
+    fun `short false pause keeps same package source hint but stale pause expires`() {
+        assertTrue(PlaybackSmoothingPolicy.allowsSourceHint(3_400L, null))
+        assertFalse(PlaybackSmoothingPolicy.allowsSourceHint(80_000L, null))
+        assertTrue(PlaybackSmoothingPolicy.allowsSourceHint(80_000L, 5_000L))
+        assertFalse(PlaybackSmoothingPolicy.allowsSourceHint(80_000L, 8_000L))
+    }
+
+    @Test
     fun `anchor playing always wins`() {
         assertTrue(
             PlaybackSmoothingPolicy.effectivePlaying(
