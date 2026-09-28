@@ -100,6 +100,7 @@ object OnlineLyricTargeter {
         album: String? = null,
         originalAlbum: String? = null,
         collectSourceStatuses: Boolean = false,
+        allowArtistIdentityNearMiss: Boolean = false,
     ): FetchOutcome {
         val outcome = performSearch(
             context = context,
@@ -118,6 +119,7 @@ object OnlineLyricTargeter {
             album = album,
             originalAlbum = originalAlbum,
             collectSourceStatuses = collectSourceStatuses,
+            allowArtistIdentityNearMiss = allowArtistIdentityNearMiss,
         )
         if (outcome.lines != null) {
             return FetchOutcome(
@@ -196,6 +198,7 @@ object OnlineLyricTargeter {
         album: String?,
         originalAlbum: String?,
         collectSourceStatuses: Boolean,
+        allowArtistIdentityNearMiss: Boolean = false,
     ): SearchOutcome {
         val ne = LyricApiProvider.getNeSource(context)
         val qm = LyricApiProvider.qmSource
@@ -258,6 +261,7 @@ object OnlineLyricTargeter {
                 album = album,
                 originalAlbum = originalAlbum,
                 collectSourceStatuses = collectSourceStatuses,
+                allowArtistIdentityNearMiss = allowArtistIdentityNearMiss,
                 statusSources = if (index == 0) statusOnlySources else emptyList(),
             )
             if (collectSourceStatuses) {
@@ -306,6 +310,7 @@ object OnlineLyricTargeter {
         originalAlbum: String?,
         collectSourceStatuses: Boolean,
         statusSources: List<SearchSource> = emptyList(),
+        allowArtistIdentityNearMiss: Boolean = false,
     ): SearchOutcome {
 
         val keyword = "$title $artist"
@@ -426,13 +431,14 @@ object OnlineLyricTargeter {
             if (attempt.song != null) {
                 if (attempt.score > bestScore) bestScore = attempt.score
                 if (!attempt.passAttempted) {
-                    nearMissFor(source, attempt, multiCredit)?.let { nearMiss ->
-                        bestNearMiss = if (bestNearMiss == null) {
-                            nearMiss
-                        } else {
-                            preferNearMiss(bestNearMiss, nearMiss)
+                    nearMissFor(source, attempt, multiCredit, allowArtistIdentityNearMiss)
+                        ?.let { nearMiss ->
+                            bestNearMiss = if (bestNearMiss == null) {
+                                nearMiss
+                            } else {
+                                preferNearMiss(bestNearMiss, nearMiss)
+                            }
                         }
-                    }
                 }
             }
         }
@@ -502,6 +508,35 @@ object OnlineLyricTargeter {
             cleanLocalAlbum = cleanLocalAlbum,
         )
         statuses += attempt.status
+        if (allowFallbackRetry && attempt.lines == null && !attempt.passAttempted) {
+            for (variant in artistSearchVariants(artist)) {
+                val variantKeyword = if (source.sourceType == Source.KUGOU) {
+                    "$variant - $title"
+                } else {
+                    "$title $variant"
+                }
+                LogManager.d(
+                    "OnlineTargeter",
+                    "候选未命中，使用歌手净化关键词重试: " +
+                        "源=${source.javaClass.simpleName}, 关键词=\"$variantKeyword\"",
+                )
+                val retry = scoreSource(
+                    context = context,
+                    source = source,
+                    keyword = variantKeyword,
+                    durationMs = durationMs,
+                    requireTranslation = requireTranslation,
+                    metadataLabel = metadataLabel,
+                    cleanLocalTitle = cleanLocalTitle,
+                    localArtists = localArtists,
+                    localFeatures = localFeatures,
+                    cleanLocalAlbum = cleanLocalAlbum,
+                )
+                statuses += retry.status
+                attempt = betterSourceAttempt(attempt, retry)
+                if (attempt.lines != null || attempt.passAttempted) break
+            }
+        }
         if (
             allowFallbackRetry &&
             multiCredit &&
@@ -662,6 +697,9 @@ object OnlineLyricTargeter {
                         wordLines = toWordLines(lyricsResult),
                         song = bestSong,
                         score = localBestScore,
+                        titleMatched = titleMatched,
+                        durationClose = durationClose,
+                        artistMatched = artistMatched,
                         status = statusFor(source.sourceType, lyricsResult, list),
                     )
                 }

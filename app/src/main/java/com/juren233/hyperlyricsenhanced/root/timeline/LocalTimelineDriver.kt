@@ -383,6 +383,20 @@ class LocalTimelineDriver(
 
     override fun onTrackMetadataRefreshed(track: TrackIdentity) {
         runOnMain {
+            val appliedContent = appliedContentCache[track.normalizedKey()]
+                ?.takeIf { it.sourceId == activeSourceId }
+            if (!XiaomiMusicMetadataRefreshPolicy.shouldForward(
+                    packageName = track.packageName,
+                    sameAppliedTrack = appliedTrackKey == track.normalizedKey(),
+                    activeSong = appliedContent?.song,
+                    title = track.title,
+                    artist = track.artist,
+                )
+            ) {
+                // 小米音乐车载歌词逐行改写 MediaSession 标题；完整歌词已在屏时
+                // 继续传给 RootLyricSink 会失效并重绑同一句，逐字进度因此闪回。
+                return@runOnMain
+            }
             // 同一曲展示信息刷新（如原名恢复）：只更新标题元数据，时间轴与歌词保持不动。
             renderSink.onMetadata(track.title, track.artist, track.album, track.packageName)
         }

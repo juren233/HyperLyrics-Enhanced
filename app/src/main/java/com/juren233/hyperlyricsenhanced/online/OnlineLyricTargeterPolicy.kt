@@ -30,6 +30,7 @@ internal fun OnlineLyricTargeter.nearMissFor(
     source: SearchSource,
     attempt: SourceAttempt,
     multiCredit: Boolean,
+    allowArtistIdentityNearMiss: Boolean = false,
 ): NearMiss? {
     val song = attempt.song ?: return null
     return when {
@@ -39,6 +40,7 @@ internal fun OnlineLyricTargeter.nearMissFor(
             titleMatched = attempt.titleMatched,
             multiCredit = multiCredit,
             durationClose = attempt.durationClose,
+            artistMatched = allowArtistIdentityNearMiss && attempt.artistMatched,
         ) -> NearMiss(source, song, attempt.score, durationVerified = false)
         else -> null
     }
@@ -48,6 +50,9 @@ internal fun OnlineLyricTargeter.betterSourceAttempt(first: SourceAttempt, retry
     when {
         retry.song == null -> first
         first.song == null -> retry
+        // 带词结果是实打实的命中，任何标志位差异都不得把它换成无词候选
+        retry.lines != null && first.lines == null -> retry
+        first.lines != null && retry.lines == null -> first
         retry.durationClose && !first.durationClose -> retry
         first.durationClose && !retry.durationClose -> first
         retry.score > first.score -> retry
@@ -162,11 +167,17 @@ internal fun OnlineLyricTargeter.hasCommonArtist(
     }
 }
 
+/**
+ * 时长未对上的候选改用行级歌词配对兜底。multiCredit 为既有通道（歌手署名分歧）；
+ * artistMatched 通道只对显式开启的调用方生效，用于本地时长输入可能失真的纯文本
+ * 原生替换场景——开启方必须自行用正文重叠校验做最终身份把关。
+ */
 internal fun OnlineLyricTargeter.isLyricFallbackEligible(
     titleMatched: Boolean,
     multiCredit: Boolean,
     durationClose: Boolean,
-): Boolean = titleMatched && multiCredit && !durationClose
+    artistMatched: Boolean = false,
+): Boolean = titleMatched && !durationClose && (multiCredit || artistMatched)
 
 internal fun OnlineLyricTargeter.shouldRetryWithOriginalMetadata(
     title: String,
@@ -416,4 +427,61 @@ internal data class SearchMetadata(
     val artist: String,
     val label: String,
 )
+
+/**
+ * 歌手搜索关键词的降级变体：Apple 元数据常带「角色名 (CV: 声优)」注记，在线源
+ * 搜索对这种长混合关键词召回极差（正确歌曲根本不进首页候选）。依次给出
+ * 「剥掉括号注释段」「只保留首个 token」两级变体；与原样相同或为空时不返回。
+ */
+internal fun OnlineLyricTargeter.artistSearchVariants(artist: String): List<String> {
+    val original = artist.trim()
+    if (original.isEmpty()) return emptyList()
+    val withoutBrackets = stripBracketedAnnotations(original)
+    if (withoutBrackets.isEmpty()) return emptyList()
+    val variants = mutableListOf<String>()
+    if (withoutBrackets != original) {
+        variants += withoutBrackets
+    }
+    val firstToken = withoutBrackets
+        .split(Regex("\\s+"))
+        .firstOrNull { it.isNotBlank() }
+        .orEmpty()
+    if (firstToken.isNotEmpty() && firstToken != withoutBrackets) {
+        variants += firstToken
+    }
+    return variants.distinct()
+}
+
+/**
+ * 剥掉半角/全角圆、方、花括号及其包裹内容。不使用正则：剥括号正则
+ * `\\(.*?\\)|（.*?）|\\[.*?]|\\{.*?}` 在 Android 的 ICU regex 上编译失败
+ * （PatternSyntaxException，真机 210126 实证）而 JVM 单测通过，属于两个
+ * regex 实现的方言差异；`\\s+` 等已真机验证过的简单模式不受影响。
+ */
+internal fun stripBracketedAnnotations(value: String): String {
+    val closeToOpen = mapOf(
+        ')' to '(',
+        ']' to '[',
+        '}' to '{',
+        '）' to '（',
+        '］' to '［',
+        '｝' to '｛',
+    )
+    val openers = closeToOpen.values.toSet()
+    val builder = StringBuilder(value.length)
+    val openStack = ArrayDeque<Char>()
+    for (ch in value) {
+        when {
+            ch in openers -> {
+                // 括号段以空格占位，避免「MILGRAM（注记）コトコ」粘连成单 token
+                if (builder.isEmpty() || builder.last() != ' ') builder.append(' ')
+                openStack.addLast(ch)
+            }
+            !openStack.isEmpty() && closeToOpen[ch] == openStack.last() -> openStack.removeLast()
+            openStack.isEmpty() -> builder.append(ch)
+            // 括号内的其余字符（含嵌套开括号后的正文）一律丢弃
+        }
+    }
+    return builder.toString().replace(Regex("\\s+"), " ").trim()
+}
 

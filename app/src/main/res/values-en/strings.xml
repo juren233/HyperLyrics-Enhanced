@@ -166,7 +166,9 @@
     <string name="monet_pink">Pink</string>
     <string name="title_monet">Accent Color</string>
     <string name="title_predictive_back">Predictive Back Gesture</string>
+    <string name="title_swipe_back_gesture">Swipe Back Gesture</string>
     <string name="title_parallel_window_ui">Parallel Window UI</string>
+    <string name="title_top_bar_progressive_blur">Progressive Blur</string>
     <string name="title_floating_nav">Floating Navigation Bar</string>
     <string name="title_exclude_from_recents">Hide from Recents</string>
     <string name="title_hide_app_icon">Hide App Icon</string>

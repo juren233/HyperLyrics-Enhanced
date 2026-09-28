@@ -2,6 +2,14 @@ package com.juren233.hyperlyricsenhanced.common.lyric
 
 object LyricMetadataKeys {
     const val APPLE_CATALOG_GENRE = "appleCatalogGenre"
+
+    /**
+     * Provider 携带的 MediaSession MEDIA_ID（小米音乐专用通道）。小米音乐车载歌词
+     * 会持续把会话标题/歌手改写成歌词行，锚点侧唯一逐曲稳定且不被污染的身份是
+     * mediaId；Provider 在发布歌曲时把它写入该键，Source 用它参与 TrackIdentity
+     * 匹配（两侧都有 mediaId 时按 包名+mediaId 严格判定）。
+     */
+    const val SESSION_MEDIA_ID = "hleSessionMediaId"
     const val APPLE_PRONUNCIATION_LANGUAGES = "applePronunciationLanguages"
     const val APPLE_ORIGINAL_TITLE = "appleOriginalTitle"
     const val APPLE_ORIGINAL_ARTIST = "appleOriginalArtist"
@@ -9,6 +17,7 @@ object LyricMetadataKeys {
     const val APPLE_ORIGINAL_METADATA_RESOLVED = "appleOriginalMetadataResolved"
     const val APPLE_LYRICS_CACHE_SOURCE = "appleLyricsCacheSource"
     const val APPLE_NATIVE_LYRICS_CONFIRMED = "appleNativeLyricsConfirmed"
+    const val APPLE_NATIVE_LYRICS_UNTIMED = "appleNativeLyricsUntimed"
     const val ONLINE_TRANSLATION_SOURCE = "onlineTranslationSource"
     const val ONLINE_TRANSLATION_MATCH_STATS = "onlineTranslationMatchStats"
     const val ONLINE_PRONUNCIATION_SOURCE = "onlinePronunciationSource"

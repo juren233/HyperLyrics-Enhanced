@@ -16,7 +16,7 @@ class OfficialProviderCatalogTest {
 
     @Test
     fun `uses canonical provider display names without spaces`() {
-        assertEquals("QQ音乐", OfficialProviderCatalog.definitionForId("qqmusic")?.displayName)
+        assertEquals("QQ音乐 & 小米音乐", OfficialProviderCatalog.definitionForId("qqmusic")?.displayName)
         assertNull(OfficialProviderCatalog.definitionForId("qqmusic-hd"))
         assertEquals("LX音乐", OfficialProviderCatalog.definitionForId("lxmusic")?.displayName)
         assertEquals("椒盐音乐", OfficialProviderCatalog.definitionForId("salt-player")?.displayName)
@@ -37,6 +37,15 @@ class OfficialProviderCatalogTest {
         assertEquals("QQ音乐", definition.displayNameForPackage("com.tencent.qqmusic"))
         assertEquals("QQ音乐HD", definition.displayNameForPackage("com.tencent.qqmusicpad"))
         assertEquals("小米音乐", definition.displayNameForPackage("com.miui.player"))
+    }
+
+    @Test
+    fun `merges Kuwo and Bodian into one provider while keeping per-app names`() {
+        val definition = requireNotNull(OfficialProviderCatalog.definitionForId("kuwo"))
+
+        assertEquals("酷我音乐 & 波点音乐", definition.displayName)
+        assertEquals("酷我音乐", definition.displayNameForPackage("cn.kuwo.player"))
+        assertEquals("波点音乐", definition.displayNameForPackage("cn.wenyu.bodian"))
     }
 
     @Test

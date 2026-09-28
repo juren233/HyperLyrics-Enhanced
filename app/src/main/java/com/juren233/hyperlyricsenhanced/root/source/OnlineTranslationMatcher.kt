@@ -226,6 +226,62 @@ internal object OnlineTranslationMatcher {
     }
 
     /**
+     * 纯文本原生歌词与在线时间轴候选的行重叠比对：不搬运翻译/发音，只统计
+     * 原生行在候选中找到文本对应的行数与平均相似度，供纯文本兜底在替换正文前
+     * 校验候选确为同一首歌。原生行无时间轴，比对跳过时间窗与内容贡献要求。
+     */
+    fun matchUntimed(song: Song, onlineLines: List<LrcLine>): Result {
+        val candidates = onlineLines
+            .asSequence()
+            .sortedBy(LrcLine::startTimeMs)
+            .mapIndexed { index, line ->
+                Candidate(
+                    originalIndex = index,
+                    line = line,
+                    normalizedVariants = normalizedVariants(line.content),
+                )
+            }
+            .filter { it.normalizedVariants.isNotEmpty() }
+            .toList()
+        if (candidates.isEmpty()) return Result(song, 0, 0.0)
+
+        val nativeLyrics = song.lyrics ?: return Result(song, 0, 0.0)
+        var nativeIndex = 0
+        var candidateStart = 0
+        var matchedCount = 0
+        var matchScoreSum = 0.0
+        val lineMatchScores = mutableMapOf<Int, Double>()
+        while (nativeIndex < nativeLyrics.size) {
+            if (normalizedVariants(nativeLyrics[nativeIndex].text.orEmpty()).isEmpty()) {
+                nativeIndex++
+                continue
+            }
+            val plan = findBestPlan(
+                nativeLyrics,
+                nativeIndex,
+                candidates,
+                candidateStart,
+                untimedNative = true,
+            )
+            if (plan == null) {
+                nativeIndex++
+                continue
+            }
+            matchedCount++
+            matchScoreSum += plan.score
+            lineMatchScores[nativeIndex] = plan.score
+            nativeIndex += plan.nativeSpan
+            candidateStart = plan.candidateIndex + plan.candidateSpan
+        }
+        return Result(
+            song = song,
+            matchedCount = matchedCount,
+            averageMatchScore = if (matchedCount == 0) 0.0 else matchScoreSum / matchedCount,
+            lineMatchScores = lineMatchScores,
+        )
+    }
+
+    /**
      * Keeps the selected source authoritative and only fills lines it could not match.
      * This lets QQ and NetEase complement each other without replacing a preferred
      * source's already matched translations.
@@ -486,7 +542,8 @@ internal object OnlineTranslationMatcher {
         nativeLyrics: List<com.juren233.hyperlyricsenhanced.lyric.model.RichLyricLine>,
         nativeIndex: Int,
         candidates: List<Candidate>,
-        candidateStart: Int
+        candidateStart: Int,
+        untimedNative: Boolean = false,
     ): MatchPlan? {
         var bestPlan: MatchPlan? = null
         val maxNativeSpan = min(MAX_GROUP_SPAN, nativeLyrics.size - nativeIndex)
@@ -494,7 +551,7 @@ internal object OnlineTranslationMatcher {
             val timeDistance = abs(
                 nativeLyrics[nativeIndex].begin - candidates[candidateIndex].line.startTimeMs
             )
-            if (timeDistance > MATCH_TIME_WINDOW_MS) {
+            if (!untimedNative && timeDistance > MATCH_TIME_WINDOW_MS) {
                 if (candidates[candidateIndex].line.startTimeMs > nativeLyrics[nativeIndex].begin) break
                 continue
             }
@@ -508,6 +565,7 @@ internal object OnlineTranslationMatcher {
                 for (candidateSpan in 1..maxCandidateSpan) {
                     if (nativeSpan > 1 && candidateSpan > 1) continue
                     if (
+                        !untimedNative &&
                         nativeSpan == 1 &&
                         candidateSpan == 1 &&
                         shouldPreferExpandedNativePronunciationGroup(
@@ -529,7 +587,7 @@ internal object OnlineTranslationMatcher {
                         }
                     }
                     if (textScore < MIN_TEXT_SIMILARITY) continue
-                    val timePenalty = min(
+                    val timePenalty = if (untimedNative) 0.0 else min(
                         MAX_TIME_PENALTY,
                         timeDistance.toDouble() / MATCH_TIME_WINDOW_MS * MAX_TIME_PENALTY
                     )
@@ -546,15 +604,17 @@ internal object OnlineTranslationMatcher {
                     ) {
                         continue
                     }
-                    val hasTranslation = distributeTranslations(nativeGroup, candidateGroup).any {
-                        OnlineTranslationContentPolicy.isMeaningful(it?.main)
-                    }
-                    val hasRomanization = distributeRomanizations(
-                        nativeGroup,
-                        candidateGroup
-                    ).any { !it.isNullOrBlank() }
-                    if (!hasTranslation && !hasRomanization) {
-                        continue
+                    if (!untimedNative) {
+                        val hasTranslation = distributeTranslations(nativeGroup, candidateGroup).any {
+                            OnlineTranslationContentPolicy.isMeaningful(it?.main)
+                        }
+                        val hasRomanization = distributeRomanizations(
+                            nativeGroup,
+                            candidateGroup
+                        ).any { !it.isNullOrBlank() }
+                        if (!hasTranslation && !hasRomanization) {
+                            continue
+                        }
                     }
                     if (bestPlan == null || score > bestPlan.score) {
                         bestPlan = MatchPlan(

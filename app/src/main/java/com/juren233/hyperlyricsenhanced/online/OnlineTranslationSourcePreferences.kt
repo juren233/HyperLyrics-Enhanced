@@ -112,6 +112,16 @@ object OnlineTranslationSourcePreferences {
             ?: appDefaultEnabled(packageValue)
     }
 
+    /**
+     * 在线取词是否允许用于该包：「启用App」未收录的包（无对应开关）不受
+     * 该门禁约束；已收录的包必须显式启用，否则不得经三方在线源取词。
+     */
+    fun isOnlineLyricsAllowedForApp(prefs: SharedPreferences?, packageName: String?): Boolean {
+        if (packageName.isNullOrBlank()) return true
+        if (appPreferenceKey(packageName) == null) return true
+        return isAppEnabled(prefs, packageName)
+    }
+
     fun isSourcePreference(key: String?): Boolean = key in setOf(
         RootConstants.KEY_HOOK_ONLINE_TRANSLATION_SOURCE_ORDER,
         RootConstants.KEY_HOOK_ONLINE_TRANSLATION_AUTO_SELECT_BEST_SOURCE,

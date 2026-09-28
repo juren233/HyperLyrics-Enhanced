@@ -568,8 +568,18 @@ object BaseIslandRenderer : IslandRenderer {
         config: IslandSlotRuntimeConfig,
         mediaInfo: MediaMetadataHelper.MediaInfo
     ): Boolean {
-        if (isSlotReservedByNextSongPreview(cv, tag)) return false
-        val view = cv.findViewWithTag<View>(tag) ?: return false
+        if (isSlotReservedByNextSongPreview(cv, tag)) {
+            if (BuildConfig.DEBUG) {
+                HookLogger.i("BaseIslandRenderer", "[PreviewEndDiag] updateSlot $tag skipped: reserved")
+            }
+            return false
+        }
+        val view = cv.findViewWithTag<View>(tag) ?: run {
+            if (BuildConfig.DEBUG) {
+                HookLogger.i("BaseIslandRenderer", "[PreviewEndDiag] updateSlot $tag skipped: view not found")
+            }
+            return false
+        }
         val isLeft = tag == IslandProbeUtils.LEFT_TEST_VIEW_TAG
         val adjacentTranslation = IslandSlotContentAssembler.buildAdjacentTranslationLine(
             prefs = prefs,
@@ -598,7 +608,7 @@ object BaseIslandRenderer : IslandRenderer {
         )
     }
 
-    private fun isSlotReservedByNextSongPreview(cv: ViewGroup, tag: String): Boolean {
+    fun isSlotReservedByNextSongPreview(cv: ViewGroup, tag: String): Boolean {
         val state = synchronized(nextSongPreviewActive) {
             nextSongPreviewActive[cv]
         } ?: return false
@@ -653,8 +663,26 @@ object BaseIslandRenderer : IslandRenderer {
             synchronized(nextSongPreviewFailures) { nextSongPreviewFailures.remove(cv) }
             if (previewState == null) return false
             synchronized(nextSongPreviewActive) { nextSongPreviewActive.remove(cv) }
-            updateSlot(cv, IslandProbeUtils.LEFT_TEST_VIEW_TAG, config.leftMode, prefs, config, mediaInfo)
-            updateSlot(cv, IslandProbeUtils.RIGHT_TEST_VIEW_TAG, config.rightMode, prefs, config, mediaInfo)
+            if (BuildConfig.DEBUG) {
+                val leftView = cv.findViewWithTag<View>(IslandProbeUtils.LEFT_TEST_VIEW_TAG)
+                val rightView = cv.findViewWithTag<View>(IslandProbeUtils.RIGHT_TEST_VIEW_TAG)
+                HookLogger.i(
+                    "BaseIslandRenderer",
+                    "[PreviewEndDiag] cv=${System.identityHashCode(cv).toString(16)}, " +
+                        "leftView=${leftView?.let { System.identityHashCode(it).toString(16) }}, " +
+                        "rightView=${rightView?.let { System.identityHashCode(it).toString(16) }}, " +
+                        "leftMode=${config.leftMode}, rightMode=${config.rightMode}, " +
+                        "position=$position, duration=$duration, attached=${cv.isAttachedToWindow}"
+                )
+            }
+            val leftRestored = updateSlot(cv, IslandProbeUtils.LEFT_TEST_VIEW_TAG, config.leftMode, prefs, config, mediaInfo)
+            val rightRestored = updateSlot(cv, IslandProbeUtils.RIGHT_TEST_VIEW_TAG, config.rightMode, prefs, config, mediaInfo)
+            if (BuildConfig.DEBUG) {
+                HookLogger.i(
+                    "BaseIslandRenderer",
+                    "[PreviewEndDiag] restored left=$leftRestored, right=$rightRestored"
+                )
+            }
             HookLogger.i("BaseIslandRenderer", "已结束下首歌曲信息预览")
             return false
         }

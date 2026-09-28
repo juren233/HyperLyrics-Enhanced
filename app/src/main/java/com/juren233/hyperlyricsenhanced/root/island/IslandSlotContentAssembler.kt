@@ -736,6 +736,20 @@ internal object IslandSlotContentAssembler {
         val contentChanged = hasViewLineContentChanged(view, targetLine)
         val lyricsJustBecameAvailable = recordLyricAvailability(view, targetLine)
         val viewContentLost = isLyricViewContentLost(view, targetLine)
+        if (BuildConfig.DEBUG &&
+            lastContentSignatures[view]?.startsWith("next-song") == true
+        ) {
+            HookLogger.i(
+                "IslandSlotContentAssembler",
+                "[PreviewEndDiag] lyric view=${System.identityHashCode(view).toString(16)}, " +
+                    "cached=${lastContentSignatures[view]}, contentChanged=$contentChanged, " +
+                    "viewContentLost=$viewContentLost, viewLine=${when (view) {
+                        is RichLyricLineView -> view.line?.let { "text=${it.text}, secondary=${it.secondary}" }
+                        is SpaceGateRichLyricLineView -> view.line?.let { "text=${it.text}, secondary=${it.secondary}" }
+                        else -> null
+                    }}, attached=${view.isAttachedToWindow}"
+            )
+        }
         if (shouldSkipContentRefresh(force, lastContentSignatures[view], signature, viewContentLost)) {
             // The target signature is recorded when its exit animation starts, while the
             // View still draws the previous line until the animation callback. A position or
@@ -895,6 +909,21 @@ internal object IslandSlotContentAssembler {
         val newLine = buildMetadataLine(mode, songName, artistName, albumName)
         val contentChanged = hasViewLineContentChanged(view, newLine)
         val viewContentLost = isLyricViewContentLost(view, newLine)
+        if (BuildConfig.DEBUG &&
+            lastContentSignatures[view]?.startsWith("next-song") == true
+        ) {
+            HookLogger.i(
+                "IslandSlotContentAssembler",
+                "[PreviewEndDiag] metadata view=${System.identityHashCode(view).toString(16)}, " +
+                    "mode=$mode, cached=${lastContentSignatures[view]}, target=$signature, " +
+                    "contentChanged=$contentChanged, viewContentLost=$viewContentLost, " +
+                    "viewLine=${when (view) {
+                        is RichLyricLineView -> view.line?.let { "text=${it.text}, secondary=${it.secondary}" }
+                        is SpaceGateRichLyricLineView -> view.line?.let { "text=${it.text}, secondary=${it.secondary}" }
+                        else -> null
+                    }}, attached=${view.isAttachedToWindow}"
+            )
+        }
         if (shouldSkipContentRefresh(force, lastContentSignatures[view], signature, viewContentLost)) return false
 
         applyContentUpdate(view, config, suppressAnimation, contentChanged) { target ->

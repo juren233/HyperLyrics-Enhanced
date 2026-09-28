@@ -1,6 +1,7 @@
 package com.juren233.hyperlyricsenhanced.lyric
 
 import android.content.Context
+import com.juren233.hyperlyricsenhanced.common.UIConstants
 import com.juren233.hyperlyricsenhanced.common.lyric.LrcParser
 import com.juren233.hyperlyricsenhanced.online.LrcCacheManager
 import com.juren233.hyperlyricsenhanced.online.OnlineLyricTargeter
@@ -13,6 +14,16 @@ class LyricProviderImpl(private val context: Context) : ILyricProvider {
 
     override suspend fun fetchLyrics(params: LyricSearchParams): List<LrcLine>? {
         return withContext(Dispatchers.IO) {
+            // 三方在线源取词受「启用App」开关约束；未收录开关的包保持原行为。
+            val prefs = context.getSharedPreferences(UIConstants.PREF_NAME, Context.MODE_PRIVATE)
+            if (!OnlineTranslationSourcePreferences.isOnlineLyricsAllowedForApp(
+                    prefs,
+                    params.packageName,
+                )
+            ) {
+                LogManager.d("LyricProvider", "在线歌词受启用App开关限制: pkg=${params.packageName}")
+                return@withContext null
+            }
             LogManager.d("LyricProvider", "正在获取歌词: 标题=${params.title}, 艺术家=${params.artist}, 专辑=${params.album}, pkg=${params.packageName}, 时长=${params.duration}ms")
 
             // 1. 尝试从缓存获取

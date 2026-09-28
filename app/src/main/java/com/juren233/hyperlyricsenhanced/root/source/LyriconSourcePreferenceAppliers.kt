@@ -49,12 +49,20 @@ private fun LyriconSource.applyLunaBeatWordLyricsPreferenceChange() {
     val nativeSong = currentAppleNativeSong ?: currentAppleSong ?: return
     cancelFallback(clearAppleSong = false, reason = "lunabeat_preference_changed")
     if (isLunaBeatWordLyricsEnabled()) {
-        scheduleFallback(
-            baseSong = nativeSong,
-            delayMs = 0L,
-            preferredSourceOverride = Source.LB,
-            strictSource = hasAppleNativeLyrics(nativeSong) || !isFillMissingLyricsEnabled(),
-        )
+        if (hasUntimedAppleNativeLyrics(nativeSong)) {
+            scheduleFallback(baseSong = nativeSong, delayMs = 0L)
+        } else {
+            scheduleFallback(
+                baseSong = nativeSong,
+                delayMs = 0L,
+                preferredSourceOverride = Source.LB,
+                strictSource = hasAppleNativeLyrics(nativeSong) || !isFillMissingLyricsEnabled(),
+            )
+        }
+        return
+    }
+    if (hasUntimedAppleNativeLyrics(nativeSong)) {
+        scheduleFallback(baseSong = nativeSong, delayMs = 0L)
         return
     }
     if (currentAppleSong?.metadata
@@ -123,9 +131,15 @@ private fun LyriconSource.applyMandarinPinyinPreferenceChange() {
         clearMatched = true,
         reason = "mandarin_pinyin_preference_changed",
     )
-    publishAppleSong(nativeSong, restorePosition = true)
+    val displaySong = if (hasUntimedAppleNativeLyrics(nativeSong) && fallbackSongActive) {
+        currentPublishedAppleSong ?: nativeSong
+    } else {
+        nativeSong
+    }
+    publishAppleSong(displaySong, restorePosition = true)
     if (
         isAppleTranslationEnrichmentEnabled() &&
+        !hasUntimedAppleNativeLyrics(nativeSong) &&
         !nativeSong.lyrics.isNullOrEmpty() &&
         needsOnlineEnrichment(nativeSong)
     ) {
@@ -151,7 +165,8 @@ private fun LyriconSource.applyOriginalMetadataPreferenceChange() {
     if (
         !originalMetadataPlan.waitForResult &&
         needsMissingLyricsSourceRecovery(nativeSong) &&
-        isOnlineTranslationEnabledFor(LyriconSource.APPLE_MUSIC_PACKAGE)
+        (isOnlineTranslationEnabledFor(LyriconSource.APPLE_MUSIC_PACKAGE) ||
+            hasUntimedAppleNativeLyrics(nativeSong))
     ) {
         scheduleFallback(nativeSong, 0L)
     } else if (
@@ -186,8 +201,11 @@ private fun LyriconSource.applyOnlineTranslationPreferenceChange(key: String) {
     val sourcePreferenceChanged = OnlineTranslationSourcePreferences.isSourcePreference(key)
     val overlayEnabled = isOnlineTranslationEnabledFor(LyriconSource.APPLE_MUSIC_PACKAGE)
     val nativeEnabled = isNativeOnlineTranslationEnabled()
+    val untimedNativeFallback = hasUntimedAppleNativeLyrics(nativeSong)
 
-    if (!overlayEnabled && !nativeEnabled && !isFillMissingLyricsEnabled()) {
+    if (!overlayEnabled && !nativeEnabled && !isFillMissingLyricsEnabled() &&
+        !untimedNativeFallback
+    ) {
         val shouldRestoreNative = fallbackSongActive || onlineMatchedTranslationActive
         cancelFallback(clearAppleSong = false, reason = "online_translation_disabled")
         cancelOnlineTranslation(
@@ -202,7 +220,7 @@ private fun LyriconSource.applyOnlineTranslationPreferenceChange(key: String) {
     }
 
     if (needsMissingLyricsSourceRecovery(nativeSong)) {
-        if (!overlayEnabled && !isFillMissingLyricsEnabled()) return
+        if (!overlayEnabled && !isFillMissingLyricsEnabled() && !untimedNativeFallback) return
         val delayMs = if (sourcePreferenceChanged && fallbackSongActive) {
             0L
         } else {

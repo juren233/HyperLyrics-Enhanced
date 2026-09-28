@@ -167,7 +167,9 @@
     <string name="monet_pink">粉色</string>
     <string name="title_monet">强调色</string>
     <string name="title_predictive_back">预测性返回手势</string>
+    <string name="title_swipe_back_gesture">滑动手势返回上一页</string>
     <string name="title_parallel_window_ui">平行窗口UI</string>
+    <string name="title_top_bar_progressive_blur">渐进模糊</string>
     <string name="title_floating_nav">悬浮底栏</string>
     <string name="title_exclude_from_recents">隐藏后台卡片</string>
     <string name="title_hide_app_icon">隐藏应用图标</string>

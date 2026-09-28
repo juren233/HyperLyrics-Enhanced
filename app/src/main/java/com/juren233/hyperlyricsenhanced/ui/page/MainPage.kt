@@ -82,8 +82,10 @@ import com.juren233.hyperlyricsenhanced.service.LiveLyricService
 import com.juren233.hyperlyricsenhanced.ui.navigation.LocalNavigator
 import com.juren233.hyperlyricsenhanced.ui.navigation.PARALLEL_WINDOW_DIVIDER_ALPHA
 import com.juren233.hyperlyricsenhanced.ui.navigation.Route
+import com.juren233.hyperlyricsenhanced.ui.utils.blurFadeExtension
 import com.juren233.hyperlyricsenhanced.ui.utils.rememberBlurBackdrop
 import com.juren233.hyperlyricsenhanced.ui.utils.rememberIsWideScreen
+import com.juren233.hyperlyricsenhanced.ui.utils.rememberProgressiveBlurEnabled
 import com.juren233.hyperlyricsenhanced.ui.page.main.AboutPage
 import com.juren233.hyperlyricsenhanced.ui.page.main.AboutHeroView
 import com.juren233.hyperlyricsenhanced.ui.page.main.AboutHeroVisualState
@@ -118,8 +120,10 @@ import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.VerticalDivider
 import top.yukonga.miuix.kmp.blur.BlendColorEntry
 import top.yukonga.miuix.kmp.blur.BlurColors
+import top.yukonga.miuix.kmp.blur.ProgressiveBlur
 import top.yukonga.miuix.kmp.blur.highlight.Highlight
 import top.yukonga.miuix.kmp.blur.layerBackdrop
+import top.yukonga.miuix.kmp.blur.progressiveTextureBlur
 import top.yukonga.miuix.kmp.blur.textureBlur
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Info
@@ -129,6 +133,9 @@ import top.yukonga.miuix.kmp.interfaces.ExperimentalScrollBarApi
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.window.WindowDialog
 import androidx.core.net.toUri
+
+/** 底栏渐进模糊向上延伸的渐隐高度，与顶栏 PageUtils.TOP_BAR_BLUR_FADE_HEIGHT 一致。 */
+private val BOTTOM_BAR_BLUR_FADE_HEIGHT = 16.dp
 
 @Composable
 fun MainPage() {
@@ -499,28 +506,47 @@ fun MainPage() {
                 enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
                 exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
             ) {
+                val progressiveBlurEnabled = rememberProgressiveBlurEnabled()
                 Box(
                     modifier = Modifier
                         .then(
                             if (outerBlurActive) {
-                                Modifier.textureBlur(
-                                    backdrop = outerBackdrop,
-                                    shape = RectangleShape,
-                                    blurRadius = 25f,
-                                    colors = BlurColors(
-                                        blendColors = listOf(
-                                            BlendColorEntry(color = MiuixTheme.colorScheme.surface.copy(0.8f)),
+                                if (progressiveBlurEnabled) {
+                                    Modifier
+                                        // 渐隐带不计入测量高度：渐变仍按「栏高 + 渐隐带」计算，导航项仍位于原来的坐标，
+                                        // 页面内容不再被推下；溢出的渐隐带作为浮层盖在内容区底部。
+                                        .blurFadeExtension(extension = BOTTOM_BAR_BLUR_FADE_HEIGHT, extendUp = true)
+                                        .progressiveTextureBlur(
+                                            backdrop = outerBackdrop,
+                                            shape = RectangleShape,
+                                            blurRadius = 12f,
+                                            gradient = ProgressiveBlur.Bottom.copy(startFraction = 0.5f),
+                                            colors = BlurColors(
+                                                blendColors = listOf(
+                                                    BlendColorEntry(color = MiuixTheme.colorScheme.surface.copy(0.8f)),
+                                                ),
+                                            ),
+                                        )
+                                        .padding(top = BOTTOM_BAR_BLUR_FADE_HEIGHT)
+                                } else {
+                                    Modifier.textureBlur(
+                                        backdrop = outerBackdrop,
+                                        shape = RectangleShape,
+                                        blurRadius = 12f,
+                                        colors = BlurColors(
+                                            blendColors = listOf(
+                                                BlendColorEntry(color = MiuixTheme.colorScheme.surface.copy(0.8f)),
+                                            ),
                                         ),
-                                    ),
-                                )
+                                    )
+                                }
                             } else {
                                 Modifier
                             },
                         )
                         .background(outerBarColor)
                 ) {
-                    NavigationBar(color = outerBarColor
-                    ) {
+                    NavigationBar(color = outerBarColor, showDivider = false) {
                         navItems.forEachIndexed { index, item ->
                             NavigationBarItem(
                                 selected = mainPagerState.selectedPage == index,
@@ -549,7 +575,7 @@ fun MainPage() {
                             .textureBlur(
                                 backdrop = outerBackdrop,
                                 shape = floatingBarShape,
-                                blurRadius = 25f,
+                                blurRadius = 12f,
                                 colors = BlurColors(
                                     blendColors = listOf(
                                         BlendColorEntry(color = MiuixTheme.colorScheme.surfaceContainer.copy(0.6f)),

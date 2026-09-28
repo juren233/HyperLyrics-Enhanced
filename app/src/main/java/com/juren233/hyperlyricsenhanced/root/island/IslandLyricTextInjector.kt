@@ -13,6 +13,7 @@ import com.juren233.hyperlyricsenhanced.root.LyriconDataBridge
 import com.juren233.hyperlyricsenhanced.lyric.view.RichLyricLineView
 import com.juren233.hyperlyricsenhanced.lyric.view.SpaceGateRichLyricLineView
 import com.juren233.hyperlyricsenhanced.lyric.view.line.LyricTextPaintOwner
+import com.juren233.hyperlyricsenhanced.root.island.renderer.BaseIslandRenderer
 import com.juren233.hyperlyricsenhanced.root.island.view.MaxWidthFrameLayout
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 
@@ -644,6 +645,11 @@ internal object IslandLyricTextInjector {
         suppressAnimation: Boolean,
         mediaInfo: MediaMetadataHelper.MediaInfo
     ): Boolean {
+        // 下首歌曲预览占用槽位期间（含预览自身淡出→落地的动画窗口），轻量刷新
+        // 不得触碰该槽：视图此刻仍是旧内容（预览行未落地），常规内容会误判
+        // "已是目标内容"而只改写装配器缓存，预览落地后缓存与视图永久错位，
+        // 单曲循环无切歌刷新兜底，表现为预览残留（ISLAND-NEXT-PREVIEW-002）。
+        if (BaseIslandRenderer.isSlotReservedByNextSongPreview(rootView, viewTag)) return false
         val view = rootView.findViewWithTag<View>(viewTag) ?: return false
         val isLeft = viewTag == IslandProbeUtils.LEFT_TEST_VIEW_TAG
         // The adjacent-translation slot is temporarily converted from its

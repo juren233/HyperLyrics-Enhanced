@@ -289,6 +289,7 @@ class LyriconSource : LyricSource {
     internal fun needsMissingLyricsSourceRecovery(song: LocalSong?): Boolean =
         song != null && (
             song.lyrics.isNullOrEmpty() ||
+                hasUntimedAppleNativeLyrics(song) ||
                 (
                     isMissingLyricsSupplement(song) &&
                         song.metadata
@@ -451,7 +452,12 @@ class LyriconSource : LyricSource {
             ?: if (currentAppleSong != null) APPLE_MUSIC_PACKAGE else "",
         // Lyricon 的 Song.id 属于歌词提供器命名空间，不等同于 MediaSession mediaId。
         // 不能把两者当作同一个运行时标识；本地来源按包名/标题/歌手做确定性匹配。
-        mediaId = null,
+        // 例外：Provider 通过元数据显式携带会话 mediaId（小米音乐车载歌词会持续
+        // 污染标题/歌手，mediaId 是唯一逐曲稳定身份），此时两侧都有 mediaId，
+        // 匹配按 包名+mediaId 严格判定，污染不再影响身份判定。
+        mediaId = song.metadata
+            ?.getString(LyricMetadataKeys.SESSION_MEDIA_ID)
+            ?.takeIf(String::isNotBlank),
         title = song.name.orEmpty(),
         artist = song.artist.orEmpty(),
         durationMs = song.duration,

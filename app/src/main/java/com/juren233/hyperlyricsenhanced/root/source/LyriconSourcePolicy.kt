@@ -7,6 +7,7 @@
 package com.juren233.hyperlyricsenhanced.root.source
 
 import com.juren233.hyperlyricsenhanced.common.lyric.LyricMetadataKeys
+import com.juren233.hyperlyricsenhanced.lyric.LrcLine
 import com.juren233.hyperlyricsenhanced.lyric.model.Song as LocalSong
 import com.juren233.hyperlyricsenhanced.lyric.model.lyricMetadataOf
 import com.juren233.hyperlyricsenhanced.online.model.Source
@@ -41,11 +42,82 @@ internal fun acceptsAppleOnlineLyricResult(
     currentSongHasNativeLyrics: Boolean,
     manualSourceSwitch: Boolean,
     automaticLunaBeatOverride: Boolean = false,
+    untimedNativeFallback: Boolean = false,
 ): Boolean = generation == currentGeneration &&
     sameTrack &&
     (!(currentNativeLyrics || currentSongHasNativeLyrics) ||
         manualSourceSwitch ||
-        automaticLunaBeatOverride)
+        automaticLunaBeatOverride ||
+        untimedNativeFallback)
+
+/**
+ * 纯文本无时间轴原生的在线补充与其它在线歌词增强同源，必须跟随
+ * 「启用App」开关（该 App 允许使用三方在线源取词）。
+ */
+internal fun allowsUntimedAppleOnlineFallback(
+    appOnlineEnabled: Boolean,
+    untimedNative: Boolean,
+): Boolean = appOnlineEnabled && untimedNative
+
+/**
+ * Native text remains available in Apple Music, but cannot drive timed SystemUI lyrics.
+ * 必须携带真实歌词行：纯文本替换的正文重叠校验以原生文本为身份基准，
+ * 「仅 UNTIMED 标志、歌词行为空」的竞态快照（如中央 lines=0 发布经元数据合并
+ * 保留标志）不得进入该路径——无原生文本时重叠校验必然 matched=0 拒掉正确候选，
+ * 应等待数毫秒后带词快照的后续调度。
+ */
+internal fun hasUntimedAppleNativeLyrics(song: LocalSong?): Boolean =
+    song != null &&
+        (song.metadata?.getString(LyricMetadataKeys.APPLE_LYRICS_CACHE_SOURCE) == "apple" ||
+            song.metadata
+                ?.getString(LyricMetadataKeys.APPLE_NATIVE_LYRICS_CONFIRMED)
+                .toBoolean() ||
+            song.metadata
+                ?.getString(LyricMetadataKeys.APPLE_NATIVE_LYRICS_UNTIMED)
+                .toBoolean()) &&
+        !song.lyrics.isNullOrEmpty() &&
+        !song.metadata
+            ?.getString(LyricMetadataKeys.APPLE_MISSING_LYRICS_SUPPLEMENT)
+            .toBoolean() &&
+        song.lyrics.orEmpty().none { line ->
+            line.end > line.begin ||
+                line.words.orEmpty().any { word -> word.end > word.begin }
+        }
+
+/** A source with every line at one timestamp cannot drive the island or AOD timeline. */
+internal fun hasUsableTimedOnlineLyricsForUntimedApple(
+    nativeLineCount: Int,
+    durationMs: Long,
+    lines: List<LrcLine>?,
+): Boolean {
+    val starts = lines.orEmpty()
+        .asSequence()
+        .filter { it.startTimeMs >= 0L && it.content.isNotBlank() }
+        .map(LrcLine::startTimeMs)
+        .distinct()
+        .sorted()
+        .toList()
+    val minimumLines = (nativeLineCount / 8).coerceIn(2, 4)
+    if (starts.size < minimumLines) return false
+    val minimumSpanMs = if (durationMs > 0L) {
+        (durationMs / 3L).coerceAtLeast(1_000L)
+    } else {
+        1_000L
+    }
+    return starts.last() - starts.first() >= minimumSpanMs
+}
+
+/**
+ * 纯文本原生歌词的三方替换候选必须与原生文本行重叠达标才放行，防止同名错歌
+ * 替换正文；覆盖率/置信度阈值复用在线翻译近失校验的既定标准。
+ */
+internal fun acceptsUntimedAppleOnlineLyrics(
+    meaningfulNativeLineCount: Int,
+    match: OnlineTranslationMatcher.Result,
+): Boolean = meaningfulNativeLineCount > 0 &&
+    match.matchedCount.toDouble() / meaningfulNativeLineCount >=
+    AppleOnlineTranslationNearMissPolicy.MIN_COVERAGE &&
+    match.averageMatchScore >= AppleOnlineTranslationNearMissPolicy.MIN_CONFIDENCE
 
 internal fun hasConfirmedAppleNativeLyrics(song: LocalSong?): Boolean =
     song != null &&
