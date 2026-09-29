@@ -395,10 +395,15 @@ internal fun NotificationMediaAodLyricHooker.updatePositionPolling() {
 }
 }
 
-internal fun NotificationMediaAodLyricHooker.schedulePositionPoll() {
+internal fun NotificationMediaAodLyricHooker.schedulePositionPoll(
+    intervalMs: Long = NotificationMediaAodLyricHooker.POSITION_POLL_INTERVAL_MS,
+) {
     if (NotificationMediaAodLyricHooker.positionPollScheduled) return
     positionPollScheduled = true
-    NotificationMediaAodLyricHooker.mainHandler.postDelayed(NotificationMediaAodLyricHooker.positionPollRunnable, NotificationMediaAodLyricHooker.POSITION_POLL_INTERVAL_MS)
+    NotificationMediaAodLyricHooker.mainHandler.postDelayed(
+        NotificationMediaAodLyricHooker.positionPollRunnable,
+        intervalMs.coerceAtLeast(NotificationMediaAodLyricHooker.POSITION_POLL_INTERVAL_MS),
+    )
 }
 
 internal fun NotificationMediaAodLyricHooker.scheduleAodPluginInitialRefresh(aodView: Any, state: AodPluginState) {

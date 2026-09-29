@@ -65,7 +65,17 @@ internal object EmbeddedIslandAlbumCoverController {
     private val smallStates = WeakHashMap<FrameLayout, SmallState>()
     private val bigStates = WeakHashMap<View, BigState>()
     private val originalVisibility = WeakHashMap<ImageView, Int>()
-    private val backgroundDiagnosticListeners = WeakHashMap<View, ViewTreeObserver.OnPreDrawListener>()
+    private val backgroundDiagnosticListeners = WeakHashMap<View, OwnershipDiagnostic>()
+
+    /** 持有注册时的 observer 引用：宿主离屏后 target.viewTreeObserver 是浮空实例，用它摘除会静默失败。 */
+    private class OwnershipDiagnostic(
+        val listener: ViewTreeObserver.OnPreDrawListener,
+        private val registeredObserver: ViewTreeObserver,
+    ) {
+        fun detach() {
+            runCatching { registeredObserver.removeOnPreDrawListener(listener) }
+        }
+    }
     @Volatile
     private var playbackActive = true
 
@@ -145,9 +155,7 @@ internal object EmbeddedIslandAlbumCoverController {
             bigStates.clear()
         }
         synchronized(backgroundDiagnosticListeners) {
-            backgroundDiagnosticListeners.forEach { (target, listener) ->
-                target.viewTreeObserver.takeIf { it.isAlive }?.removeOnPreDrawListener(listener)
-            }
+            backgroundDiagnosticListeners.values.forEach { it.detach() }
             backgroundDiagnosticListeners.clear()
         }
         synchronized(originalVisibility) {
@@ -261,10 +269,19 @@ internal object EmbeddedIslandAlbumCoverController {
         if (!BuildConfig.DEBUG) return
         synchronized(backgroundDiagnosticListeners) {
             backgroundDiagnosticListeners.remove(target)?.let { old ->
-                target.viewTreeObserver.takeIf { it.isAlive }?.removeOnPreDrawListener(old)
+                old.detach()
             }
+            // 宿主已离屏时不再注册：多 App 轮流切换会累积失效 fake/real 宿主，
+            // 为它们注册诊断只会把监听器越挂越多（2026-09-29 真机：≥10 个宿主同时泵）。
+            if (!target.isAttachedToWindow) return
             var frames = 0
             lateinit var listener: ViewTreeObserver.OnPreDrawListener
+            // 注册时保存 observer 引用：宿主离屏后 target.viewTreeObserver 返回新建的
+            // 浮空实例（isAlive=false），用它摘除会静默失败——监听器永久滞留在窗口
+            // 共享 observer 上，每帧回调并重复打退出日志，还把死宿主视图树钉死无法
+            // 回收（真机：死宿主泵到 frame=24872、lastDrawAgeMs≈48min）。摘除必须用
+            // 注册时的那个 observer。
+            val registeredObserver = target.viewTreeObserver
             listener = ViewTreeObserver.OnPreDrawListener {
                 frames += 1
                 val current = target.background
@@ -284,9 +301,12 @@ internal object EmbeddedIslandAlbumCoverController {
                     )
                 }
                 if (replaced || frames >= 240 || !target.isAttachedToWindow) {
-                    target.viewTreeObserver.takeIf { it.isAlive }?.removeOnPreDrawListener(listener)
+                    runCatching { registeredObserver.removeOnPreDrawListener(listener) }
+                    target.viewTreeObserver
+                        .takeIf { it.isAlive && it !== registeredObserver }
+                        ?.removeOnPreDrawListener(listener)
                     synchronized(backgroundDiagnosticListeners) {
-                        if (backgroundDiagnosticListeners[target] === listener) {
+                        if (backgroundDiagnosticListeners[target]?.listener === listener) {
                             backgroundDiagnosticListeners.remove(target)
                         }
                     }
@@ -313,8 +333,8 @@ internal object EmbeddedIslandAlbumCoverController {
                 }
                 true
             }
-            backgroundDiagnosticListeners[target] = listener
-            target.viewTreeObserver.takeIf { it.isAlive }?.addOnPreDrawListener(listener)
+            backgroundDiagnosticListeners[target] = OwnershipDiagnostic(listener, registeredObserver)
+            registeredObserver.takeIf { it.isAlive }?.addOnPreDrawListener(listener)
         }
     }
 

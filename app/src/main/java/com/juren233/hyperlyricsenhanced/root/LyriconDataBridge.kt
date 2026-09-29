@@ -244,6 +244,37 @@ object LyriconDataBridge : StateResetter {
     fun estimatedPosition(): Long? =
         playbackPositionEstimator.estimate(monotonicTimeMs())
 
+    /**
+     * 预计显示行下一次可能变化的最早时刻（歌词时间轴毫秒），供位置轮询「到期唤醒」。
+     * 行进、提前预览、间奏的切换点全部落在「当前行结束、下一行起点」及其预览提前量
+     * 附近；这里保守取四者的最小值——宁可早醒一次空转再重排，不可晚醒漏切句。
+     * 无歌词/纯文本模式返回 null，由调用方退回各自的慢档节拍。
+     */
+    fun nextDisplayChangeMs(position: Long): Long? {
+        if (isTextMode) return null
+        if (timingNavigator.size == 0) return null
+        val found = timingNavigator.lineAtOrPrevious(position)
+        val advanceMs = earlyNextLinePreviewMs ?: 0L
+        var best: Long? = null
+        fun consider(candidateMs: Long) {
+            if (candidateMs > position && (best == null || candidateMs < best!!)) {
+                best = candidateMs
+            }
+        }
+        if (found == null) {
+            val first = timingNavigator.source.firstOrNull() ?: return null
+            consider(first.begin)
+            if (advanceMs > 0) consider(first.begin - advanceMs)
+        } else {
+            consider(found.end)
+            if (advanceMs > 0) consider(found.end - advanceMs)
+            val next = found.next ?: return best
+            consider(next.begin)
+            if (advanceMs > 0) consider(next.begin - advanceMs)
+        }
+        return best
+    }
+
     fun updatePlaybackState(isPlaying: Boolean) {
         MediaCardDiagnosticLogger.log(
             stage = "bridge",

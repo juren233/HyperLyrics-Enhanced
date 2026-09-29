@@ -685,8 +685,14 @@ class LocalTimelineDriver(
                     refreshRenderPlaybackState()
                     if (!isActive || renderedPlaying != true) break
                 }
-                timelinePosition()?.let(renderSink::onPositionChanged)
-                delay(POSITION_INTERVAL_MS)
+                val position = timelinePosition()
+                val lineBeforeChange = LyriconDataBridge.currentLyricLine
+                position?.let(renderSink::onPositionChanged)
+                if (position != null && LyriconDataBridge.currentLyricLine !== lineBeforeChange) {
+                    // 换句时刻：稳定窗内恢复 33ms 快档，喂换句动画与跑马灯闩锁重试。
+                    lastLineChangeAtMs = SystemClock.uptimeMillis()
+                }
+                delay(nextPositionIntervalMs(position))
             }
         }
     }
@@ -694,6 +700,28 @@ class LocalTimelineDriver(
     private fun stopPositionLoop() {
         positionJob?.cancel()
         positionJob = null
+    }
+
+    /** 最近一次派发引起显示行切换的单调时刻；0 表示尚未发生过。主线程限定。 */
+    private var lastLineChangeAtMs = 0L
+
+    /**
+     * 位置环自适应节拍：逐字行与换句后稳定窗内维持 33ms 平滑填充；普通行句中
+     * 放宽到 250ms 并睡到下一个显示行切换点之前（边界到期唤醒），句间主线程唤醒
+     * 从 30 次/秒降到约 4-5 次/秒且切句精度不损失。边界与逐字判定读派发后刚更新
+     * 的桥状态（渲染 sink 同步写桥）。
+     */
+    private fun nextPositionIntervalMs(position: Long?): Long {
+        if (position == null) return TimelineCadencePolicy.MID_LINE_INTERVAL_MS
+        val msSinceLineChange = lastLineChangeAtMs.takeIf { it > 0L }
+            ?.let { SystemClock.uptimeMillis() - it }
+        return TimelineCadencePolicy.nextIntervalMs(
+            positionMs = position,
+            currentLineWordSync = LyriconDataBridge.currentLyricLine?.words?.isNotEmpty() == true,
+            nextBoundaryMs = LyriconDataBridge.nextDisplayChangeMs(position),
+            nextLineWordSync = LyriconDataBridge.currentNextLyricLine?.words?.isNotEmpty() == true,
+            msSinceLineChange = msSinceLineChange,
+        )
     }
 
     private fun diagnostic(message: String) {
@@ -706,7 +734,6 @@ class LocalTimelineDriver(
 
     companion object {
         private const val TAG = "LocalTimelineDriver"
-        private const val POSITION_INTERVAL_MS = 33L
         private const val MAX_STREAMING_LINES = 256
         private const val MAX_CACHED_TRACKS = 8
 

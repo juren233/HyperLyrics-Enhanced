@@ -16,6 +16,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import com.juren233.hyperlyricsenhanced.BuildConfig
+import com.juren233.hyperlyricsenhanced.common.IslandMusicAppCatalog
 import com.juren233.hyperlyricsenhanced.common.media.MediaMetadataHelper
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import com.juren233.hyperlyricsenhanced.timeline.model.TrackIdentity
@@ -77,7 +78,14 @@ class SystemMediaPlaybackAnchor(
     val playing: Boolean
         get() = timelineAdvancing
 
+    private val appContext = context.applicationContext
     private val manager = context.getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
+
+    /** 真实发声跟踪（播放器事件流，与 AOSP 按键仲裁器同源）；选择策略另行分层。 */
+    private val audioTracker = AudioPlaybackActivityTracker(mainHandler)
+
+    /** 包名 → uid 缓存，把会话与逐 uid 发声簿记对齐。 */
+    private val sessionUids = ConcurrentHashMap<String, Int>()
     private val trackedControllers = ConcurrentHashMap<MediaController, MediaController.Callback>()
     @Volatile
     private var activeController: MediaController? = null
@@ -118,6 +126,13 @@ class SystemMediaPlaybackAnchor(
         }.onFailure {
             HookLogger.w(TAG, "会话监听注册失败: ${it.javaClass.simpleName}")
         }
+        audioTracker.addListener(object : AudioPlaybackActivityTracker.Listener {
+            override fun onAudibleUidsChanged() {
+                // 推送式重选：起播/停声立即生效，不必等 2s 轮询。
+                mainHandler.post { refreshControllers() }
+            }
+        })
+        audioTracker.start(appContext)
         refreshControllers()
         mainHandler.removeCallbacks(pollRunnable)
         mainHandler.postDelayed(pollRunnable, POLL_INTERVAL_MS)
@@ -130,6 +145,8 @@ class SystemMediaPlaybackAnchor(
             runCatching { controller.unregisterCallback(trackedControllers[controller] ?: return@forEach) }
         }
         trackedControllers.clear()
+        audioTracker.stop()
+        sessionUids.clear()
         activeController = null
         currentAnchor = null
         currentTrack = null
@@ -203,19 +220,10 @@ class SystemMediaPlaybackAnchor(
             playStartedAtMs.keys.retainAll(aliveTokens)
             lastObservedState.keys.retainAll(aliveTokens)
 
-            // 会话选择：持有且播放中 → 保持；持有但非播放（缓冲/暂停）→ 仅当其他
-            // 会话新近起播才让位；无持有会话 → 优先播放中，再退回首会话。
-            // 详见 MediaSessionSelectionPolicy。
-            val decision = MediaSessionSelectionPolicy.select(
-                sessions = controllers,
-                keyOf = { it.sessionToken },
-                heldKey = activeController?.sessionToken,
-                isPlaying = { it.playbackState?.state == PlaybackState.STATE_PLAYING },
-                playStartedAtMs = { controller -> playStartedAtMs[controller.sessionToken] },
-                nowMs = now,
-                playStartWindowMs = PLAY_START_WINDOW_MS,
-            )
-            val preferred = decision.selected
+            // 会话选择：音频真值策略（发声排序×音乐目录×静默超时）先行；音频层裁决不了
+            // （跟踪不可用/目录内无人发声）时回退纯会话规则：持有且播放中→保持；持有但
+            // 非播放→仅当其他会话新近起播才让位；无持有→优先播放中再退回首会话。
+            val preferred = selectController(controllers, now)
             if (preferred?.sessionToken != activeController?.sessionToken) {
                 activeController = preferred
                 if (BuildConfig.DEBUG) {
@@ -288,6 +296,57 @@ class SystemMediaPlaybackAnchor(
         listeners.forEach { it.onPlaybackStateChanged(active) }
     }
 
+    /**
+     * 会话选择入口：音频真值策略先行（发声排序×音乐目录×静默超时），其返回 null
+     * （跟踪不可用/目录内无人发声）时回退既有纯会话规则，行为与升级前一致。
+     */
+    private fun selectController(controllers: List<MediaController>, nowMs: Long): MediaController? {
+        val audibleSelection = if (audioTracker.available) {
+            AudibleSessionSelectionPolicy.select(
+                sessions = controllers,
+                keyOf = { it.sessionToken },
+                heldKey = activeController?.sessionToken,
+                inMusicCatalog = { IslandMusicAppCatalog.isSupported(it.packageName) },
+                audioAvailable = true,
+                isAudible = { controller ->
+                    uidOf(controller.packageName)?.let(audioTracker::isAudible) == true
+                },
+                lastAudibleAtMs = { controller ->
+                    uidOf(controller.packageName)?.let(audioTracker::lastAudibleAt)
+                },
+                audioStartedAtMs = { controller ->
+                    uidOf(controller.packageName)?.let(audioTracker::startedAt)
+                },
+                nowMs = nowMs,
+                silentHoldYieldMs = SILENT_HOLD_YIELD_MS,
+                freshStartWindowMs = PLAY_START_WINDOW_MS,
+            )
+        } else {
+            null
+        }
+        audibleSelection?.let { return it.selected }
+        return MediaSessionSelectionPolicy.select(
+            sessions = controllers,
+            keyOf = { it.sessionToken },
+            heldKey = activeController?.sessionToken,
+            isPlaying = { it.playbackState?.state == PlaybackState.STATE_PLAYING },
+            playStartedAtMs = { controller -> playStartedAtMs[controller.sessionToken] },
+            nowMs = nowMs,
+            playStartWindowMs = PLAY_START_WINDOW_MS,
+        ).selected
+    }
+
+    /** 包名 → uid 解析（含缓存）；不可解析的会话按「无音频信息」处理，不参与发声判定。 */
+    private fun uidOf(packageName: String?): Int? {
+        if (packageName == null) return null
+        sessionUids[packageName]?.let { return it }
+        val uid = runCatching {
+            appContext.packageManager.getApplicationInfo(packageName, 0).uid
+        }.getOrNull() ?: return null
+        sessionUids[packageName] = uid
+        return uid
+    }
+
     companion object {
         private const val TAG = "SystemMediaAnchor"
 
@@ -300,6 +359,13 @@ class SystemMediaPlaybackAnchor(
          * 远超窗口，持有会话缓冲期上报暂停时不会被它们挤走。
          */
         private const val PLAY_START_WINDOW_MS = 8_000L
+
+        /**
+         * 持有者连续不发声多久后让位给目录内仍在发声的会话。取宽以覆盖换曲间隙与
+         * 缓冲误报暂停（2026-09-20 计时宽限否决教训）；音频真值下这只影响盲区交接的
+         * 解锁延迟，正常 A→B 切换由「最近发声者胜」即时完成，不被此阈值拖慢。
+         */
+        private const val SILENT_HOLD_YIELD_MS = 15_000L
 
         /**
          * 与应用进程 MetadataSource.syncToGlobalData 完全一致的规范化：

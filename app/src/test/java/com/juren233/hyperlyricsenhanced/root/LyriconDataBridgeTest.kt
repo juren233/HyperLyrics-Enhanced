@@ -638,6 +638,44 @@ class LyriconDataBridgeTest {
         assertEquals("Second", LyriconDataBridge.currentSongName)
     }
 
+    @Test
+    fun `next display change defaults to current line end without preview`() {
+        preparePreviewSong()
+        // 无预览（mode 0 = null）：候选只剩当前行结束与下一行起点。
+        assertEquals(2_000L, LyriconDataBridge.nextDisplayChangeMs(1_200))
+        assertEquals(4_000L, LyriconDataBridge.nextDisplayChangeMs(2_500))
+        assertEquals(7_000L, LyriconDataBridge.nextDisplayChangeMs(6_100))
+    }
+
+    @Test
+    fun `next display change accounts for preview lead`() {
+        preparePreviewSong()
+        LyriconDataBridge.configureEarlyNextLinePreview(4, 300)
+        // 预览提前量让候选提前到 end-300 / next.begin-300。
+        assertEquals(1_700L, LyriconDataBridge.nextDisplayChangeMs(1_200))
+        assertEquals(3_700L, LyriconDataBridge.nextDisplayChangeMs(2_500))
+    }
+
+    @Test
+    fun `next display change returns null past last line or in text mode`() {
+        preparePreviewSong()
+        assertEquals(null, LyriconDataBridge.nextDisplayChangeMs(8_000))
+        // 无词歌：预处理器补「歌名」占位行延伸到远期，边界极远但存在，由调用方收敛到最大间隔。
+        LyriconDataBridge.updateSong(Song(name = "Song"))
+        assertEquals(Long.MAX_VALUE, LyriconDataBridge.nextDisplayChangeMs(500))
+        LyriconDataBridge.updateLyric("纯文本歌词")
+        assertEquals(null, LyriconDataBridge.nextDisplayChangeMs(500))
+    }
+
+    @Test
+    fun `next display change before first line accounts for title placeholder`() {
+        preparePreviewSong()
+        // 首行前有预处理器补的「歌名」占位行（0..999），最早的切换候选是它的结束。
+        assertEquals(999L, LyriconDataBridge.nextDisplayChangeMs(0))
+        LyriconDataBridge.configureEarlyNextLinePreview(4, 300)
+        assertEquals(699L, LyriconDataBridge.nextDisplayChangeMs(0))
+    }
+
     private fun useAppleMusic() {
         LyriconDataBridge.updateLyricPackage(
             OfficialProviderCatalog.APPLE_MUSIC_PACKAGE_NAME
