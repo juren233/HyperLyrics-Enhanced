@@ -13,7 +13,9 @@ import com.juren233.hyperlyricsenhanced.root.HookEntry
 import com.juren233.hyperlyricsenhanced.root.LyriconDataBridge
 import com.juren233.hyperlyricsenhanced.root.island.IslandAlbumCoverStyleHooker
 import com.juren233.hyperlyricsenhanced.root.island.IslandHostFacade
+import com.juren233.hyperlyricsenhanced.root.island.IslandHostRetirementPolicy
 import com.juren233.hyperlyricsenhanced.root.island.IslandLyricTextInjector
+import com.juren233.hyperlyricsenhanced.root.island.IslandMediaReinstater
 import com.juren233.hyperlyricsenhanced.root.island.IslandMusicWaveColorHooker
 import com.juren233.hyperlyricsenhanced.root.island.IslandProbeUtils
 import com.juren233.hyperlyricsenhanced.root.island.IslandProgressGlowController
@@ -45,6 +47,10 @@ object BaseIslandRenderer : IslandRenderer {
     private val pauseRestoreRunnable = Runnable { commitDeferredNativeRestore() }
     private val nextSongPreviewActive = WeakHashMap<ViewGroup, NextSongPreviewState>()
     private val nextSongPreviewFailures = WeakHashMap<ViewGroup, String>()
+
+    // 宿主仍附着但注入锚点丢失时重注入必败；连续失败计数用于区分暂态窗口
+    // （fake/real 过渡、原生重排）与结构性失效，达到阈值才注销并触发重挂。
+    private val injectionRecoveryFailures = WeakHashMap<ViewGroup, Int>()
 
     private data class NextSongPreviewState(
         val style: Int,
@@ -170,6 +176,8 @@ object BaseIslandRenderer : IslandRenderer {
         }
         if (activeViews.isEmpty()) {
             DisplayDiagnosticLogger.log("ISLAND", "skipped", "no_attached_view")
+            // 双播冲突断供窗口：重挂无目标时用最后一次媒体数据驱动原生重建媒体岛。
+            IslandMediaReinstater.reinstateIfEligible(lyricPkg, reason = "no_attached_view")
             return
         }
         val config = IslandSlotRuntimeConfig.from(prefs)
@@ -247,6 +255,8 @@ object BaseIslandRenderer : IslandRenderer {
         }
         if (activeViews.isEmpty()) {
             DisplayDiagnosticLogger.log("ISLAND", "skipped", "no_attached_view")
+            // 双播冲突断供窗口：重挂无目标时用最后一次媒体数据驱动原生重建媒体岛。
+            IslandMediaReinstater.reinstateIfEligible(lyricPkg, reason = "no_attached_view")
             return
         }
         activeViews.forEach { (cv, _) ->
@@ -264,11 +274,34 @@ object BaseIslandRenderer : IslandRenderer {
                         )
                         injectionRecovered = IslandLyricTextInjector.hasInjectedLyricView(cv)
                         if (!injectionRecovered) {
+                            val consecutiveFailures = (injectionRecoveryFailures[cv] ?: 0) + 1
+                            if (BuildConfig.DEBUG) {
+                                HookLogger.d(
+                                    "IslandRecoveryDiag",
+                                    "注入恢复失败: host=${cv.javaClass.simpleName}@${System.identityHashCode(cv).toString(16)}, " +
+                                        "锚点=${IslandLyricTextInjector.describeAnchorState(cv)}, " +
+                                        "连续失败=$consecutiveFailures/${IslandHostRetirementPolicy.RETIRE_THRESHOLD}",
+                                )
+                            }
+                            if (IslandHostRetirementPolicy.shouldRetire(consecutiveFailures)) {
+                                injectionRecoveryFailures.remove(cv)
+                                IslandViewRegistry.unregister(cv)
+                                val reattached = IslandReattachAssistant.tryReattach(lyricPkg)
+                                HookLogger.i(
+                                    "IslandRecovery",
+                                    "连续注入失败已达阈值，已注销失效宿主并尝试重挂: package=$lyricPkg, " +
+                                        "阈值=${IslandHostRetirementPolicy.RETIRE_THRESHOLD}, 重挂=$reattached, " +
+                                        "剩余注册=${IslandViewRegistry.snapshotAttached(lyricPkg).size}",
+                                )
+                            } else {
+                                injectionRecoveryFailures[cv] = consecutiveFailures
+                            }
                             DisplayDiagnosticLogger.log(
                                 channel = "ISLAND",
                                 result = "skipped",
                                 reason = "injected_view_recovery_failed",
-                                extra = "targetViews=${activeViews.size}, injectionChanged=$injectionChanged",
+                                extra = "targetViews=${activeViews.size}, injectionChanged=$injectionChanged, " +
+                                    "consecutiveFailures=$consecutiveFailures",
                                 dedupeKey = "ISLAND/line",
                             )
                             return@post
@@ -287,6 +320,8 @@ object BaseIslandRenderer : IslandRenderer {
                     } else if (config.dynamicWidthEnabled && contentChanged) {
                         IslandHostFacade.triggerLyricContentRelayout(cv)
                     }
+                    // 任意健康路径（重注入成功或视图本就存在）都清零暂态失败计数。
+                    injectionRecoveryFailures.remove(cv)
                     DisplayDiagnosticLogger.log(
                         channel = "ISLAND",
                         result = "shown",

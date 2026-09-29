@@ -178,6 +178,42 @@ internal object IslandLyricTextInjector {
             rootView.findViewWithTag<View>(IslandProbeUtils.RIGHT_TEST_VIEW_TAG) != null
     }
 
+    /** 采集宿主子树注入锚点可达性；与 injectSlot 的查找路径保持同一判定。 */
+    fun probeAnchorState(rootView: ViewGroup): IslandAnchorState {
+        fun hasParent(parentName: String): Boolean =
+            IslandViewHelper.findViewByName(rootView, parentName) != null
+
+        fun hasContainer(parentName: String): Boolean {
+            val parent = IslandViewHelper.findViewByName(rootView, parentName) as? ViewGroup ?: return false
+            return IslandViewHelper.findViewByName(parent, IslandProbeUtils.TEXT_CONTAINER_NAME) != null
+        }
+
+        return IslandAnchorState(
+            leftParent = hasParent(IslandProbeUtils.LEFT_PARENT_NAME),
+            leftContainer = hasContainer(IslandProbeUtils.LEFT_PARENT_NAME),
+            rightParent = hasParent(IslandProbeUtils.RIGHT_PARENT_NAME),
+            rightContainer = hasContainer(IslandProbeUtils.RIGHT_PARENT_NAME),
+        )
+    }
+
+    /** 当前配置需要注入的每一侧锚点是否都可达；失效宿主判定与重挂候选过滤共用。 */
+    fun hasInjectableAnchors(rootView: ViewGroup): Boolean {
+        val prefs = HookEntry.instance?.prefs ?: return false
+        val config = IslandSlotRuntimeConfig.from(prefs)
+        return IslandHostRetirementPolicy.isAnchorStateInjectable(
+            state = probeAnchorState(rootView),
+            shouldInjectLeft = config.shouldInjectLeft,
+            shouldInjectRight = config.shouldInjectRight,
+        )
+    }
+
+    /** Debug 诊断：区分失效宿主缺失的是父容器还是文本容器。 */
+    fun describeAnchorState(rootView: ViewGroup): String {
+        val state = probeAnchorState(rootView)
+        return "left(parent=${state.leftParent}, text=${state.leftContainer}), " +
+            "right(parent=${state.rightParent}, text=${state.rightContainer})"
+    }
+
     /** wrapper 仍在但真正歌词 View 已被系统重建移除时，也必须判定为需要重新注入。 */
     fun hasInjectedLyricView(rootView: ViewGroup): Boolean {
         return rootView.findViewWithTag<View>(IslandProbeUtils.LEFT_TEST_VIEW_TAG) != null ||

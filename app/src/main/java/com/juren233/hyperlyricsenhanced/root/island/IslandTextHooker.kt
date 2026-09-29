@@ -27,6 +27,14 @@ internal object IslandTextHooker {
         "miui.systemui.dynamicisland.window.content.helpers.DynamicIslandContentViewPadHelper"
     private const val ISLAND_CALCULATION_RESULT_CLASS =
         "miui.systemui.dynamicisland.model.IslandContentViewCalculationResult"
+    private const val PROMOTED_PARAM_UTILS_CLASS =
+        "miui.systemui.util.liveupdate.PromotedNotificationParamUtils"
+    private const val EVENT_COORDINATOR_CLASS =
+        "miui.systemui.dynamicisland.event.DynamicIslandEventCoordinator"
+    private const val WINDOW_VIEW_CONTROLLER_CLASS =
+        "miui.systemui.dynamicisland.window.DynamicIslandWindowViewController"
+    private const val WINDOW_VIEW_CLASS =
+        "miui.systemui.dynamicisland.window.DynamicIslandWindowView"
 
     fun hook(module: XposedModule, cl: ClassLoader, includeMediaHooks: Boolean = true) {
         installFeature("真实岛") {
@@ -67,6 +75,60 @@ internal object IslandTextHooker {
                     HookLogger.d(TAG, "已 Hook ${method.name}: $method")
                 }
 
+        }
+
+        installFeature("断供媒体提升放行") {
+            if (!IslandPromotedMediaHooker.ENABLED) {
+                HookLogger.d(TAG, "断供媒体提升放行已停用，跳过 Hook 安装")
+                return@installFeature
+            }
+            cl.loadClass(PROMOTED_PARAM_UTILS_CLASS).declaredMethods
+                .filter { it.name == "isNotificationPromotedOngoing" && it.parameterTypes.size == 1 }
+                .forEach { method ->
+                    method.isAccessible = true
+                    module.deoptimize(method)
+                    module.hook(method).intercept(IslandPromotedMediaHooker.PromotedOngoingGateHook())
+                    HookLogger.d(TAG, "已 Hook isNotificationPromotedOngoing: $method")
+                }
+        }
+
+        installFeature("岛自愈误删守卫") {
+            cl.loadClass(WINDOW_VIEW_CONTROLLER_CLASS).declaredMethods
+                .filter { it.name == "removeDynamicIslandView" && it.parameterTypes.size == 2 }
+                .forEach { method ->
+                    method.isAccessible = true
+                    module.deoptimize(method)
+                    module.hook(method).intercept(IslandSelfHealGuardHooker.RemoveDynamicIslandViewHook())
+                    HookLogger.d(TAG, "已 Hook removeDynamicIslandView(合法移除标记): $method")
+                }
+
+            val guardContentViewClass = cl.loadClass(CONTENT_VIEW_CLASS)
+            cl.loadClass(EVENT_COORDINATOR_CLASS).declaredMethods
+                .filter {
+                    it.name == "dispatchEvent" &&
+                        it.parameterTypes.size == 2 &&
+                        guardContentViewClass.isAssignableFrom(it.parameterTypes[1])
+                }
+                .forEach { method ->
+                    method.isAccessible = true
+                    module.deoptimize(method)
+                    module.hook(method).intercept(IslandSelfHealGuardHooker.DispatchEventHook())
+                    HookLogger.d(TAG, "已 Hook dispatchEvent(自愈误删守卫): $method")
+                }
+
+            cl.loadClass(WINDOW_VIEW_CLASS).declaredMethods
+                .filter { it.name == "clearAfterDelete" && it.parameterTypes.size == 3 }
+                .forEach { method ->
+                    method.isAccessible = true
+                    module.deoptimize(method)
+                    module.hook(method).intercept(IslandSelfHealGuardHooker.ClearAfterDeleteHook())
+                    HookLogger.d(TAG, "已 Hook clearAfterDelete(自愈误删守卫): $method")
+                }
+
+        }
+
+        installFeature("岛背景重入移除守卫") {
+            IslandReentrantBackgroundRemovalHooker.install(module)
         }
 
         installFeature("fake view 过渡") {

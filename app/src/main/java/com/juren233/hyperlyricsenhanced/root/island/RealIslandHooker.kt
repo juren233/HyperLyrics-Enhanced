@@ -22,6 +22,10 @@ internal object RealIslandHooker {
                 val data = chain.args.getOrNull(0)
                 if (IslandProbeUtils.isSuperIslandEnabled()) {
                     mediaInfo = IslandProbeUtils.extractMediaIslandInfo(data)
+                    if (mediaInfo != null && data != null) {
+                        // 双播冲突断供窗口的重放来源：缓存最后一次带媒体信息的数据。
+                        IslandMediaReinstater.rememberMediaData(data, mediaInfo.packageName)
+                    }
                     if (mediaInfo?.let(IslandTextHookerSupport::isCurrentLyricIsland) == true) {
                         if (!IslandTextHookerSupport.shouldRenderInjectedIsland()) {
                             IslandTextHookerSupport.clearInjectedIsland(contentView)

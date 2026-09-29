@@ -41,6 +41,18 @@ internal object IslandReattachAssistant {
                 )
             }
             if (info?.packageName == lyricPkg) {
+                // 岛数据包名匹配不代表子树仍可注入：失效宿主（媒体模块被原生重排、
+                // 锚点不可达）必须跳过，否则注销后会被立即注册回来形成抖动。
+                if (!IslandLyricTextInjector.hasInjectableAnchors(candidate)) {
+                    if (BuildConfig.DEBUG) {
+                        HookLogger.d(
+                            TAG,
+                            "重挂候选缺少注入锚点，跳过: 候选=${candidate.javaClass.simpleName}@${System.identityHashCode(candidate).toString(16)}, " +
+                                "锚点=${IslandLyricTextInjector.describeAnchorState(candidate)}, 岛包名=${info.packageName}",
+                        )
+                    }
+                    return@forEach
+                }
                 IslandViewRegistry.register(candidate, lyricPkg)
                 reattached = true
             }
