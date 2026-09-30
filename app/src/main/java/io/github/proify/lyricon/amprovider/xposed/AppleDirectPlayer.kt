@@ -142,22 +142,29 @@ internal class AppleDirectPlayer(
             }
             when (intent.action) {
                 AppleDirectBridgeContract.ACTION_REGISTER -> {
+                    // getSentFromUid()/getSentFromPackage() 是 API 34 才有的方法，安卓13 上
+                    // 执行调用即抛 NoSuchMethodError 并炸掉宿主进程（issue 41）；
+                    // 字符串模板是急切求值，必须整体留在版本分支内。
+                    val senderInfo = if (Build.VERSION.SDK_INT >= 34) {
+                        "uid=$sentFromUid, package=$sentFromPackage"
+                    } else {
+                        "uid=unknown, package=unknown"
+                    }
                     val binder = intent.extras
                         ?.getBinder(AppleDirectBridgeContract.EXTRA_BINDER)
                         ?: run {
                             ProviderLogger.diagnostic(
-                                "直连诊断: stage=registration_missing_binder, " +
-                                    "uid=$sentFromUid, package=$sentFromPackage",
+                                "直连诊断: stage=registration_missing_binder, $senderInfo",
                             )
                             return
                         }
                     ProviderLogger.diagnostic(
-                        "直连诊断: stage=registration_received, alive=${binder.isBinderAlive}, " +
-                            "uid=$sentFromUid, package=$sentFromPackage",
+                        "直连诊断: stage=registration_received, " +
+                        "alive=${binder.isBinderAlive}, $senderInfo",
                     )
                     pronunciationDiagnostic(
                         "stage=bridge_registration_received, " +
-                            "alive=${binder.isBinderAlive}, uid=$sentFromUid"
+                        "alive=${binder.isBinderAlive}, $senderInfo"
                     )
                     connect(binder)
                 }
