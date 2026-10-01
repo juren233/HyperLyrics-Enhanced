@@ -1,0 +1,323 @@
+#!/usr/bin/env python3
+"""Verify exported CURRENT Kotlin targets against an original APK (not JADX aliases).
+Copyright 2026 juren233. Licensed under the Apache License, Version 2.0.
+
+Run AppleMusicProfileBinaryTest with HLE_APPLE_MUSIC_APK set, or supply its JSON export.
+Checks every target, inherited descriptors, modifiers and explicit multi-owner member
+chains used by settings. This is a binary check, NOT proof of runtime callbacks or UI.
+"""
+import argparse
+import json
+import sys
+from verify_apple_music_profiles import ApkDexContext, to_dex_type
+
+
+def binary_name(descriptor):
+    return descriptor[1:-1].replace('/', '.') if descriptor.startswith('L') else descriptor
+
+
+def lineage(ctx, name):
+    seen = set()
+    while name and name not in seen:
+        seen.add(name)
+        cls = ctx.find_class(name)
+        if cls is None:
+            return
+        yield cls
+        name = binary_name(cls.superclass_descriptor) if cls.superclass_descriptor else None
+
+
+def all_methods(ctx, name, include_synthetic=False):
+    seen = set()
+    for cls in lineage(ctx, name):
+        for method in cls.methods:
+            if method.name.startswith('<'):
+                continue
+            if not include_synthetic and (method.is_bridge or method.is_synthetic):
+                continue
+            key = method.name, tuple(method.param_types)
+            if key not in seen:
+                seen.add(key)
+                yield method
+
+
+def matching_methods(ctx, target):
+    matched = []
+    for method in all_methods(ctx, target['className'], target.get('includeSynthetic', False)):
+        if target.get('methodName') is not None and method.name != target['methodName']:
+            continue
+        count = target.get('parameterCount')
+        if count is not None and len(method.param_types) != count:
+            continue
+        params = target.get('parameterTypeNames')
+        if params is not None and (len(params) != len(method.param_types) or any(
+            wanted is not None and to_dex_type(wanted) != actual
+            for wanted, actual in zip(params, method.param_types)
+        )):
+            continue
+        ret = target.get('returnTypeName')
+        if ret is not None and method.return_type != to_dex_type(ret):
+            continue
+        if target.get('isStatic') is not None and method.is_static != target['isStatic']:
+            continue
+        matched.append(method)
+    return matched
+
+
+def verify_profile(ctx, profile):
+    points = profile['hookPoints']
+    errors = []
+    checked = 0
+    member_checks = 0
+
+    def require(condition, message):
+        if not condition:
+            errors.append(message)
+
+    def field(owner, name, expected=None):
+        nonlocal member_checks
+        member_checks += 1
+        found = next((f for c in lineage(ctx, owner) for f in c.fields if f.name == name), None)
+        require(found is not None, f'{owner}.{name}: missing field')
+        if found and expected:
+            require(found.type_descriptor == to_dex_type(expected),
+                    f'{owner}.{name}: expected {expected}, got {found.type_descriptor}')
+        return binary_name(found.type_descriptor) if found else None
+
+    def method(owner, name, params=None, returns=None, static=None):
+        nonlocal member_checks
+        member_checks += 1
+        t = dict(className=owner, methodName=name, parameterTypeNames=params,
+                 returnTypeName=returns, isStatic=static)
+        found = matching_methods(ctx, t) if owner else []
+        require(len(found) == 1, f'{owner}#{name}: expected one matching member, got {len(found)}')
+        return found[0] if len(found) == 1 else None
+
+    def one(point):
+        return points[point][0]
+
+    # HTTP members belong to the request chain's typed objects, not the interceptor.
+    for point in ['CONTENT_HTTP_LOCALIZATION', 'MEDIA_API_AMP_HTTP_INTERCEPTOR']:
+        target = one(point)
+        names = target['runtimeMemberNames']
+        chain = target['parameterTypeNames'][0]
+        request = field(chain, names['CONTENT_HTTP_CHAIN_REQUEST_FIELD'])
+        field(request, names['CONTENT_HTTP_REQUEST_URL_FIELD'],
+              one('LYRICS_COOKIE_JAR')['parameterTypeNames'][0])
+        headers = field(request, names['CONTENT_HTTP_REQUEST_HEADERS_FIELD'])
+        method(headers, names['CONTENT_HTTP_HEADERS_GET_METHOD'], ['java.lang.String'],
+               'java.lang.String', False)
+        field(headers, names['CONTENT_HTTP_HEADERS_VALUES_FIELD'], '[Ljava.lang.String;')
+        builder_getter = method(request, names['CONTENT_HTTP_REQUEST_NEW_BUILDER_METHOD'], [], static=False)
+        if builder_getter:
+            builder = binary_name(builder_getter.return_type)
+            method(builder, names['CONTENT_HTTP_REQUEST_BUILDER_URL_METHOD'], ['java.lang.String'], 'void', False)
+            method(builder, names['CONTENT_HTTP_REQUEST_BUILDER_HEADER_METHOD'],
+                   ['java.lang.String', 'java.lang.String'], 'void', False)
+            method(builder, names['CONTENT_HTTP_REQUEST_BUILDER_BUILD_METHOD'], [], request, False)
+        response = target['returnTypeName']
+        field(response, names['CONTENT_HTTP_RESPONSE_STATUS_FIELD'], 'int')
+        field(response, names['CONTENT_HTTP_RESPONSE_REQUEST_FIELD'], request)
+        field(response, names['CONTENT_HTTP_RESPONSE_HEADERS_FIELD'], headers)
+
+    # A reused name is insufficient: f(q.B,int,float)V is not the old f()V resolver.
+    custom = one('APPLE_CUSTOM_TEXT_VIEW')
+    names = custom['runtimeMemberNames']
+    parent = binary_name(ctx.find_class(custom['className']).superclass_descriptor)
+    method(parent, names['CUSTOM_TEXT_VIEW_FUTURE_RESOLVE_METHOD'], [], 'void', False)
+    require(any(f.type_descriptor == 'Ljava/util/concurrent/Future;'
+                for f in ctx.find_class(parent).fields), f'{parent}: Future field missing')
+    method(parent, names['CUSTOM_TEXT_VIEW_SET_TYPEFACE_METHOD'],
+           ['android.graphics.Typeface', 'int'], 'void', False)
+    method(custom['className'], names['CUSTOM_TEXT_VIEW_SET_TEXT_METHOD'],
+           ['java.lang.CharSequence', 'android.widget.TextView$BufferType'], 'void', False)
+    method(custom['className'], names['CUSTOM_TEXT_VIEW_ON_DRAW_METHOD'],
+           ['android.graphics.Canvas'], 'void', False)
+
+    text_utils = one('APPLE_TEXT_STYLE_UTILS')
+    factories = [m for m in all_methods(ctx, text_utils['className'])
+                 if m.is_static and m.return_type == 'Landroid/graphics/Typeface;'
+                 and len(m.param_types) == 4 and m.param_types[0] == 'Landroid/content/Context;']
+    require(len(factories) == 1, f'{text_utils["className"]}: Typeface factory ambiguous or missing')
+    method(text_utils['className'], text_utils['runtimeMemberNames']['APPLE_TEXT_STYLE_EXPLICIT_TITLE_METHOD'],
+           [custom['className'], 'java.lang.String', 'boolean'], 'void', True)
+    for target in points['COMPOSE_TEXT_LAYOUT']:
+        constructors = [m for m in ctx.find_class(target['className']).methods if m.name == '<init>'
+                        and m.param_types and m.param_types[0] == 'Ljava/lang/CharSequence;'
+                        and 'Landroid/text/TextPaint;' in m.param_types]
+        require(bool(constructors), f'{target["className"]}: no CharSequence/TextPaint constructor')
+    word_adapter = one('LYRICS_WORD_RENDER_ADAPTER')['className']
+    require(any(m.return_type == 'Landroid/util/ArrayMap;' and m.param_types
+                and m.param_types[0] == to_dex_type(one('LYRICS_WORD_VECTOR_CLASS')['className'])
+                for m in all_methods(ctx, word_adapter)), f'{word_adapter}: word-measurement methods missing')
+
+    binding = one('PLAYER_SONG_BINDING_EXECUTE')
+    names = binding['runtimeMemberNames']
+    field(binding['className'], names['PLAYER_SONG_BINDING_PLAYBACK_ITEM_FIELD'],
+          'com.apple.android.music.model.PlaybackItem')
+    field(binding['className'], names['PLAYER_SONG_BINDING_LYRICS_BUTTON_FIELD'], 'android.widget.ImageView')
+
+    preferred = ctx.find_class(one('LYRICS_PREFERRED_LANGUAGES_REQUEST')['className'])
+    require(any(m.name == '<init>' and m.param_types.count('[Ljava/lang/String;') == 2
+                for m in preferred.methods), f'{preferred.binary_name}: lyrics-language constructor missing')
+
+    exo = one('EXO_MEDIA_PLAYER')
+    names = exo['runtimeMemberNames']
+    for key in ['EXO_PLAY_METHOD', 'EXO_PAUSE_METHOD', 'EXO_STOP_METHOD', 'EXO_RELEASE_METHOD']:
+        method(exo['className'], names[key], [], 'void', False)
+    method(exo['className'], names['EXO_SEEK_METHOD'], ['long'], 'void', False)
+    method(exo['className'], names['EXO_CURRENT_POSITION_METHOD'], [], 'long', False)
+    method(exo['className'], names['EXO_SHOULD_SKIP_TO_NEXT_ITEM_METHOD'],
+           ['java.lang.Exception', 'int', 'com.apple.android.music.playback.player.MediaPlayerContext'], 'boolean', True)
+    method(exo['className'], names['EXO_PLAYER_ERROR_METHOD'],
+           ['com.google.android.exoplayer2.ExoPlaybackException'], 'void', False)
+    field(exo['className'], names['EXO_EVENT_HANDLER_FIELD'], 'android.os.Handler')
+    player = field(exo['className'], names['EXO_PLAYER_FIELD'])
+    method(player, names['EXO_PLAYER_RETRY_METHOD'], [], 'void', False)
+
+    for point in ['ATMOS_FORMAT_COPY_WITH_LOUDNESS', 'ATMOS_FORMAT_COPY_WITH_MANIFEST_INFO']:
+        target = one(point)
+        names = target['runtimeMemberNames']
+        for key, typ in [('ATMOS_FORMAT_ID_FIELD', 'java.lang.String'),
+                         ('ATMOS_FORMAT_CODECS_FIELD', 'java.lang.String'),
+                         ('ATMOS_FORMAT_SAMPLE_MIME_TYPE_FIELD', 'java.lang.String'),
+                         ('ATMOS_FORMAT_LOUDNESS_FIELD', 'float'),
+                         ('ATMOS_FORMAT_CHANNEL_COUNT_FIELD', 'int'),
+                         ('ATMOS_FORMAT_SAMPLE_RATE_FIELD', 'int'),
+                         ('ATMOS_FORMAT_BITRATE_FIELD', 'int')]:
+            field(target['className'], names[key], typ)
+    ludt = one('ATMOS_TRACK_LOUDNESS_METADATA')
+    names = ludt['runtimeMemberNames']
+    info_array = field(ludt['className'], names['ATMOS_LUDT_TRACK_LOUDNESS_INFO_FIELD'])
+    info = binary_name(info_array[1:])
+    for key in ['ATMOS_LUDT_LOUDNESS_FIELD', 'ATMOS_LUDT_TRUE_PEAK_FIELD', 'ATMOS_LUDT_SAMPLE_PEAK_FIELD']:
+        field(info, names[key], 'float')
+
+    for point, targets in points.items():
+        require(bool(targets), f'{point}: empty group')
+        for target in targets:
+            checked += 1
+            owner = target['className']
+            require(ctx.find_class(owner) is not None, f'{point}: missing class {owner}')
+            if target.get('methodName') is not None:
+                found = matching_methods(ctx, target)
+                require(len(found) == 1 or bool(found) and target.get('allowFirstMatch', False),
+                        f'{point}: {owner}#{target["methodName"]}: {len(found)} matches')
+            for key, value in target.get('runtimeMemberNames', {}).items():
+                if key.endswith(('_CLASS', '_CLASS_NAME')):
+                    require(ctx.find_class(value) is not None, f'{point}.{key}: missing class {value}')
+
+    # Verify fields on THEIR ACTUAL OWNERS, not a two-hop bag of matching field letters.
+    ui = one('LYRICS_UI_ON_CREATE_VIEW')
+    names = ui['runtimeMemberNames']
+    binding = field(ui['className'], names['LYRICS_UI_BINDING_FIELD'])
+    field(binding, names['LYRICS_UI_BINDING_RECYCLER_FIELD'], 'androidx.recyclerview.widget.RecyclerView')
+    field(ui['className'], names['LYRICS_UI_VIEW_MODEL_FIELD'],
+          'com.apple.android.music.player.viewmodel.PlayerLyricsViewModel')
+    adapter = field(ui['className'], names['LYRICS_UI_ADAPTER_FIELD'])
+    for item in points['LYRICS_RECYCLER_ADAPTER']:
+        require(adapter in [c.binary_name for c in lineage(ctx, item['className'])],
+                f'{ui["className"]}: active adapter field does not accept {item["className"]}')
+        members = item['runtimeMemberNames']
+        lines = method(item['className'], members['LYRICS_ADAPTER_LYRICS_METHOD'], [])
+        if lines:
+            owner = binary_name(lines.return_type)
+            method(owner, members['LYRICS_ADAPTER_LINE_COUNT_METHOD'], [], 'int')
+            method(owner, members['LYRICS_ADAPTER_LINE_AT_METHOD'], ['int'])
+        method(item['className'], members['LYRICS_ADAPTER_ACTIVE_POSITIONS_METHOD'], [], 'java.util.TreeSet')
+        method(item['className'], members['LYRICS_ADAPTER_ITEM_COUNT_METHOD'], [], 'int')
+        method(item['className'], members['LYRICS_ADAPTER_ITEM_VIEW_TYPE_METHOD'], ['int'], 'int')
+        method(item['className'], members['LYRICS_ADAPTER_NOTIFY_DATA_CHANGED_METHOD'], [], 'void')
+        method(item['className'], members['LYRICS_ADAPTER_ACTIVE_LINES_UPDATE_METHOD'],
+               ['java.util.List', 'int', '[Landroid.util.Pair;'], 'void')
+        for key in ['LYRICS_ADAPTER_TRANSLATION_SELECTED_FIELD', 'LYRICS_ADAPTER_PRONUNCIATION_SELECTED_FIELD']:
+            field(item['className'], members[key], 'boolean')
+
+    bindings = points['DATA_BINDING_RUNTIME_CLASSES']
+    binding = next(t for t in bindings if t['runtimeMemberNames']['DATA_BINDING_RUNTIME_ROLE'] == 'binding')
+    observable = next(t for t in bindings if t['runtimeMemberNames']['DATA_BINDING_RUNTIME_ROLE'] == 'observable')
+    names = binding['runtimeMemberNames']
+    method(binding['className'], names['DATA_BINDING_REGISTRATION_METHOD'], ['int', observable['className']], 'void')
+    method(binding['className'], names['DATA_BINDING_INVALIDATE_METHOD'], [], 'void')
+    method(binding['className'], names['DATA_BINDING_EXECUTE_METHOD'], [], 'void')
+    method(binding['className'], names['DATA_BINDING_SET_VARIABLE_METHOD'], ['int', 'java.lang.Object'], 'boolean')
+
+    listener = matching_methods(ctx, one('IN_APP_NOW_PLAYING_METADATA_LISTENER'))
+    metadata = binary_name(listener[0].param_types[0]) if len(listener) == 1 else None
+    queue = one('IN_APP_QUEUE_ADAPTER_SUBMIT')
+    names = queue['runtimeMemberNames']
+    method(queue['className'], names['QUEUE_ADAPTER_DISPLAYED_ENTRY_METHOD'], ['int'])
+    field(queue['className'], names['QUEUE_ADAPTER_SUBMITTED_ENTRIES_FIELD'], 'java.util.ArrayList')
+    for key, expected in [('MEDIA3_METADATA_BUNDLE_FIELD', 'android.os.Bundle'),
+                          ('MEDIA3_METADATA_TITLE_FIELD', 'java.lang.CharSequence'),
+                          ('MEDIA3_METADATA_ARTIST_FIELD', 'java.lang.CharSequence')]:
+        field(metadata, names[key], expected)
+    util = one('APPLE_PLAYER_UTIL_CLASS')
+    for key, returns in [('APPLE_PLAYER_UTIL_CONTAINER_METHOD', 'com.apple.android.music.model.BaseContentItem'),
+                         ('APPLE_PLAYER_UTIL_PLAYBACK_ITEM_METHOD', 'com.apple.android.music.model.PlaybackItem')]:
+        method(util['className'], util['runtimeMemberNames'][key], [metadata], returns, True)
+    history = one('IN_APP_HISTORY_UPDATE')['runtimeMemberNames']['QUEUE_HISTORY_ENTRY_CLASS_NAME']
+    field(history, names['QUEUE_ENTRY_ITEM_FIELD'], 'com.apple.android.music.model.CollectionItemView')
+
+    preferences = one('APPLE_SHARED_PREFERENCES_CLASS')
+    names = preferences['runtimeMemberNames']
+    for key in ['LYRICS_PREFERENCES_TRANSLATION_GETTER', 'LYRICS_PREFERENCES_PRONUNCIATION_GETTER']:
+        if key in names:
+            method(preferences['className'], names[key], [], 'boolean', True)
+    if 'LYRICS_PREFERENCES_STORE_GETTER' in names:
+        field(preferences['className'], names['LYRICS_PREFERENCES_PRONUNCIATION_CACHE_FIELD'], 'java.lang.Boolean')
+        key_type = field(preferences['className'], names['LYRICS_PREFERENCES_PRONUNCIATION_KEY_FIELD'])
+        getter = method(preferences['className'], names['LYRICS_PREFERENCES_STORE_GETTER'], [], static=True)
+        if getter:
+            method(binary_name(getter.return_type), names['LYRICS_PREFERENCES_STORE_READ_METHOD'],
+                   [key_type, 'java.lang.Object'], 'java.lang.Object', False)
+
+    holder = one('MEDIA_API_REPOSITORY_HOLDER_CLASS')
+    names = holder['runtimeMemberNames']
+    companion = next((f for f in ctx.find_class(holder['className']).fields
+                      if f.is_static and f.type_descriptor.endswith('$Companion;')), None)
+    require(companion is not None, 'MediaApiRepositoryHolder companion missing')
+    if companion:
+        getter = method(binary_name(companion.type_descriptor), names['MEDIA_API_HOLDER_GET_MEDIA_API_METHOD'], [])
+        if getter:
+            method(binary_name(getter.return_type), names['MEDIA_API_DIRECT_QUERY_METHOD'],
+                   ['java.lang.String', 'java.util.Map', 'kotlin.coroutines.Continuation'], 'java.lang.Object')
+    field(one('MEDIA_API_LOCALIZATION')['className'], names['MEDIA_API_STOREFRONT_FIELD'], 'java.lang.String')
+
+    for point in ['COLLECTION_SURFACE_CLASSES', 'ARTIST_SURFACE_CLASSES']:
+        for target in points[point]:
+            for key, value in target['runtimeMemberNames'].items():
+                if key.endswith('_FIELD'):
+                    field(target['className'], value, 'java.lang.String')
+                elif key.endswith('_METHOD'):
+                    require(any(m.name == value for m in all_methods(ctx, target['className'], True)),
+                            f'{target["className"]}#{value}: missing surface member')
+    # The old l1 also extends Epoxy; the captured callback owner distinguishes it.
+    model = one('LISTEN_NOW_MODEL')
+    require(any(f.type_descriptor == 'Lcom/apple/android/music/listennow/ListenNowEpoxyController$R;'
+                for c in lineage(ctx, model['className']) for f in c.fields),
+            f'{model["className"]}: not the ListenNow callback-bearing model')
+    return dict(profile=profile['id'], groups=len(points), targets=checked, memberChecks=member_checks, errors=errors,
+                scope='DEX descriptors and member chains; not runtime or UI acceptance')
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--apk', required=True)
+    parser.add_argument('--profiles-json', required=True)
+    parser.add_argument('--profile-id', default='am-6.5.3-1599')
+    args = parser.parse_args()
+    with open(args.profiles_json) as stream:
+        profiles = json.load(stream)
+    if isinstance(profiles, dict):
+        profiles = [profiles]
+    profile = next((p for p in profiles if p['id'] == args.profile_id), None)
+    if profile is None:
+        parser.error(f'Profile {args.profile_id} not in export')
+    result = verify_profile(ApkDexContext(args.apk), profile)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 1 if result['errors'] else 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

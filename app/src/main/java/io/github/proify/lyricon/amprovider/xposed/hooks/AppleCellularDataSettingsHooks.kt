@@ -37,6 +37,10 @@ internal class AppleCellularDataSettingsHooks(
     }
 
     fun install() {
+        if (runtime.hookResolver.profile?.settingsDataCategoryHasNoSimGate == true) {
+            ProviderLogger.info("Apple Music 原生设置入口无 SIM 门禁；登录及偏好就绪条件保留")
+            return
+        }
         val build = runtime.hookResolver.resolveMethod(
             AppleMusicHookPoint.SETTINGS_DATA_CATEGORY_BUILD,
         ).method
