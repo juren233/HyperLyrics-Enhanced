@@ -19,14 +19,23 @@ import org.junit.Test
 class AppleMusicProfileBinaryTest {
     @Test
     fun `all current 1599 targets and member chains match the original APK`() {
-        val apk = System.getenv("HLE_APPLE_MUSIC_APK")
-        assumeTrue("Set HLE_APPLE_MUSIC_APK to the original 6.5.3 (1599) base.apk", !apk.isNullOrBlank())
+        verify(AppleMusicVersion("6.5.3", 1599L), "HLE_APPLE_MUSIC_APK", "HLE_APPLE_PROFILE_EXPORT")
+    }
+
+    @Test
+    fun `all current 1606 targets and member chains match the original APK`() {
+        verify(AppleMusicVersion("7.0.0-beta", 1606L), "HLE_APPLE_MUSIC_700_APK", "HLE_APPLE_PROFILE_700_EXPORT")
+    }
+
+    private fun verify(version: AppleMusicVersion, apkVariable: String, exportVariable: String) {
+        val apk = System.getenv(apkVariable)
+        assumeTrue("Set $apkVariable to the original ${version.displayName} base.apk", !apk.isNullOrBlank())
         assertTrue("APK does not exist", File(requireNotNull(apk)).isFile)
-        val version = AppleMusicVersion("6.5.3", 1599L)
         val json = buildJsonObject {
             put("id", AppleMusicHookProfiles.profileFor(version)!!.id)
             put("hookPoints", buildJsonObject {
                 AppleMusicHookPoint.entries.forEach { point ->
+                    if (AppleMusicHookProfiles.exactTargets(version, point).isEmpty()) return@forEach
                     put(point.name, buildJsonArray {
                         AppleMusicHookProfiles.exactTargets(version, point).forEach { target ->
                             add(buildJsonObject {
@@ -51,17 +60,51 @@ class AppleMusicProfileBinaryTest {
                 }
             })
         }
-        val export = System.getenv("HLE_APPLE_PROFILE_EXPORT")?.let(::File)
-            ?: File.createTempFile("apple-1599-profile-", ".json").apply { deleteOnExit() }
+        val export = System.getenv(exportVariable)?.let(::File)
+            ?: File.createTempFile("apple-${version.versionCode}-profile-", ".json").apply { deleteOnExit() }
         export.writeText(json.toString())
         val root = generateSequence(File(requireNotNull(System.getProperty("user.dir")))) { it.parentFile }
             .first { File(it, "scripts/verify_apple_music_profile_export.py").isFile }
         val process = ProcessBuilder(
             "python3", File(root, "scripts/verify_apple_music_profile_export.py").absolutePath,
             "--apk", requireNotNull(apk), "--profiles-json", export.absolutePath,
+            "--profile-id", AppleMusicHookProfiles.profileFor(version)!!.id,
         ).redirectErrorStream(true).start()
         val output = process.inputStream.bufferedReader().use { it.readText() }
         assertEquals(output, 0, process.waitFor())
         println(output)
+        if (version.versionCode == 1606L) {
+            // The old names still exist, but their DEX signatures/types have different roles.
+            val mutations = listOf(
+                Triple("CUSTOM_TEXT_VIEW_FUTURE_RESOLVE_METHOD", "f", "q.B#f"),
+                Triple("CONTENT_HTTP_HEADERS_GET_METHOD", "e", "kk.t#e"),
+                Triple("PLAYER_SONG_BINDING_PLAYBACK_ITEM_FIELD", "g0", "q8.v2.g0"),
+                Triple("PLAYER_SONG_BINDING_LYRICS_BUTTON_FIELD", "Y", "q8.v2.Y"),
+            )
+            val corrupted = File.createTempFile("apple-stale-settings-", ".json")
+            try {
+                for ((member, oldName, expectedError) in mutations) {
+                    val currentName = AppleMusicHookPoint.entries.asSequence()
+                        .flatMap { AppleMusicHookProfiles.exactTargets(version, it).asSequence() }
+                        .flatMap { it.runtimeMemberNames.entries.asSequence() }
+                        .first { it.key.name == member }.value
+                    val changed = json.toString().replace(
+                        "\"$member\":\"$currentName\"", "\"$member\":\"$oldName\"",
+                    )
+                    assertTrue("Mutation did not change $member", changed != json.toString())
+                    corrupted.writeText(changed)
+                    val rejected = ProcessBuilder(
+                        "python3", File(root, "scripts/verify_apple_music_profile_export.py").absolutePath,
+                        "--apk", requireNotNull(apk), "--profiles-json", corrupted.absolutePath,
+                        "--profile-id", AppleMusicHookProfiles.profileFor(version)!!.id,
+                    ).redirectErrorStream(true).start()
+                    val rejection = rejected.inputStream.bufferedReader().use { it.readText() }
+                    assertEquals("Old member was accepted: $member\n$rejection", 1, rejected.waitFor())
+                    assertTrue(rejection, rejection.contains(expectedError))
+                }
+            } finally {
+                corrupted.delete()
+            }
+        }
     }
 }
