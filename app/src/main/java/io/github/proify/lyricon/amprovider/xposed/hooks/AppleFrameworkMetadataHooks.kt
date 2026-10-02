@@ -8,8 +8,6 @@ package io.github.proify.lyricon.amprovider.xposed.hooks
 
 import android.app.Notification
 import android.app.PendingIntent
-import android.content.ComponentName
-import android.content.Intent
 import android.content.SharedPreferences
 import android.media.MediaDescription
 import android.media.MediaMetadata
@@ -17,7 +15,6 @@ import android.media.session.MediaSession
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import io.github.proify.lyricon.amprovider.xposed.AppleInternalCatalogResolver
 import io.github.proify.lyricon.amprovider.xposed.Alias
-import io.github.proify.lyricon.amprovider.xposed.AppleMusicHookPoint
 import io.github.proify.lyricon.amprovider.xposed.AppleMetadataOverrideStore
 import io.github.proify.lyricon.amprovider.xposed.AppleMusicProviderRuntime
 import io.github.proify.lyricon.amprovider.xposed.ActivePlaybackMediaIdentity
@@ -47,11 +44,7 @@ internal class AppleFrameworkMetadataHooks(
     @Volatile
     private var currentMediaQueueRefresh: FrameworkMediaQueueRefresh? = null
     private val mediaQueueRefreshInProgress = AtomicBoolean(false)
-    private val mainContentActivityClassName by lazy {
-        runtime.hookResolver.configuredClassNames(
-            AppleMusicHookPoint.APPLE_MAIN_CONTENT_ACTIVITY
-        ).single()
-    }
+    private val mediaLaunchHooks = AppleMediaLaunchHooks(runtime, ::shouldOpenFullPlayerFromMediaNotification)
 
     fun installMediaSessionMetadata() {
         runCatching {
@@ -150,6 +143,7 @@ internal class AppleFrameworkMetadataHooks(
     }
 
     fun installPlaybackNotificationMetadata() {
+        mediaLaunchHooks.install()
         runCatching {
             listOf(
                 "setContentTitle" to true,
@@ -240,18 +234,7 @@ internal class AppleFrameworkMetadataHooks(
                 extras.containsKey("androidx.media3.session")
         } == true
         if (!shouldOpenFullPlayerFromNotification(notification.category, hasMediaSession)) return
-        val intent = Intent().apply {
-            component = ComponentName(
-                Constants.APPLE_MUSIC_PACKAGE_NAME,
-                mainContentActivityClassName,
-            )
-            putExtra(APPLE_MUSIC_SHOW_FULL_PLAYER_EXTRA, true)
-            addFlags(
-                Intent.FLAG_ACTIVITY_NEW_TASK or
-                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                    Intent.FLAG_ACTIVITY_SINGLE_TOP
-            )
-        }
+        val intent = mediaLaunchHooks.notificationIntent() ?: return
         notification.contentIntent = PendingIntent.getActivity(
             runtime.application,
             MEDIA_NOTIFICATION_REQUEST_CODE,
@@ -425,8 +408,6 @@ internal class AppleFrameworkMetadataHooks(
     }
 
     private companion object {
-        const val APPLE_MUSIC_SHOW_FULL_PLAYER_EXTRA =
-            "com.apple.android.music.intent.showfullplayer"
         const val MEDIA_NOTIFICATION_REQUEST_CODE = 0x484C
     }
 }

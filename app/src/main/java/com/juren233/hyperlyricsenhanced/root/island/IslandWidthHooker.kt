@@ -279,7 +279,8 @@ internal object IslandWidthHooker {
                 }
                 swapped
             }.getOrDefault(result)
-            return IslandDynamicWidthLimiter.apply(result, candidate, chain.args.getOrNull(0), pad = true, helper = chain.thisObject)
+            val limited = IslandDynamicWidthLimiter.apply(result, candidate, chain.args.getOrNull(0), pad = true, helper = chain.thisObject)
+            return IslandFullIslandDynamicWidth.apply(limited, chain.args.getOrNull(0), chain.thisObject, pad = true)
         }
 
         private fun Any.intGetter(suffix: String): Int? = runCatching {
@@ -361,7 +362,8 @@ internal object IslandWidthHooker {
                 }
                 swapped
             }.getOrDefault(result)
-            return IslandDynamicWidthLimiter.apply(result, candidate, chain.args.getOrNull(0), pad = false, helper = chain.thisObject)
+            val limited = IslandDynamicWidthLimiter.apply(result, candidate, chain.args.getOrNull(0), pad = false, helper = chain.thisObject)
+            return IslandFullIslandDynamicWidth.apply(limited, chain.args.getOrNull(0), chain.thisObject, pad = false)
         }
 
         private fun isFlipTiny(helper: Any?): Boolean = runCatching {

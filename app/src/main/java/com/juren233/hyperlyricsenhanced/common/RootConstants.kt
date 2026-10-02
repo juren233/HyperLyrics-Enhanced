@@ -195,6 +195,7 @@ object RootConstants {
     const val KEY_HOOK_TEXT_SIZE = "key_hook_text_size"
     const val KEY_HOOK_TEXT_SIZE_RATIO = "key_hook_text_size_ratio"
     const val KEY_HOOK_FONT_WEIGHT = "key_hook_font_weight"
+    const val KEY_HOOK_FONT_WEIGHT_MODE = "key_hook_font_weight_mode"
     const val KEY_HOOK_FONT_ITALIC = "key_hook_font_italic"
     const val KEY_HOOK_FADING_EDGE_LENGTH = "key_hook_fading_edge_length"
     const val KEY_HOOK_GRADIENT_PROGRESS = "key_hook_gradient_progress"
@@ -204,6 +205,7 @@ object RootConstants {
     const val KEY_HOOK_ISLAND_RIGHT_LYRIC_POSITION = "key_hook_island_right_lyric_position"
     const val KEY_HOOK_CENTER_GROUP_VOCALS = "key_hook_center_group_vocals"
     const val KEY_HOOK_ISLAND_RIGHT_ICON = "key_hook_island_right_icon"
+    const val KEY_HOOK_ISLAND_SHORT_LYRIC_SONG_INFO = "key_hook_island_short_lyric_song_info"
     const val KEY_HOOK_ISLAND_MUSIC_WAVE_COLOR = "key_hook_island_music_wave_color"
     const val KEY_HOOK_ISLAND_MUSIC_WAVE_GRADIENT = "key_hook_island_music_wave_gradient"
     const val KEY_HOOK_ISLAND_MUSIC_WAVE_COLOR_MODE = "key_hook_island_music_wave_color_mode"
@@ -241,6 +243,7 @@ object RootConstants {
     const val KEY_HOOK_TRANSLATION_ONLY = "key_hook_translation_only"
     const val KEY_HOOK_SWAP_TRANSLATION = "key_hook_swap_translation"
     const val KEY_HOOK_NEXT_LYRIC_LINE = "key_hook_next_lyric_line"
+    const val KEY_HOOK_ISLAND_NEXT_LINE_MODE = "key_hook_island_next_line_mode"
     const val KEY_HOOK_AUTO_SWITCH_TRANSLATION = "key_hook_auto_switch_translation"
     const val KEY_HOOK_ADJACENT_BACKGROUND_TRANSLATION =
         "key_hook_adjacent_background_translation"
@@ -250,6 +253,7 @@ object RootConstants {
     const val KEY_HOOK_EXTRACT_COVER_TEXT_GRADIENT = "key_hook_extract_cover_text_gradient"
     const val KEY_HOOK_CUSTOM_TEXT_COLOR_ENABLED = "key_hook_custom_text_color_enabled"
     const val KEY_HOOK_CUSTOM_TEXT_COLOR = "key_hook_custom_text_color"
+    const val KEY_HOOK_STATUS_BAR_TEXT_COLOR = "key_hook_status_bar_text_color"
     const val KEY_HOOK_MONET_TEXT_COLOR = "key_hook_monet_text_color"
     const val KEY_HOOK_ISLAND_GLOW_EXTRACT_COLOR = "key_hook_island_glow_extract_color"
     const val KEY_HOOK_ISLAND_PROGRESS_GLOW = "key_hook_island_progress_glow"
@@ -566,6 +570,7 @@ object RootConstants {
     const val DEFAULT_HOOK_CENTER_LYRIC = false
     const val DEFAULT_HOOK_CENTER_GROUP_VOCALS = false
     const val DEFAULT_HOOK_ISLAND_RIGHT_ICON = false
+    const val DEFAULT_HOOK_ISLAND_SHORT_LYRIC_SONG_INFO = true
     const val DEFAULT_HOOK_ISLAND_MUSIC_WAVE_COLOR = false
     const val DEFAULT_HOOK_ISLAND_MUSIC_WAVE_GRADIENT = false
     const val ISLAND_MUSIC_WAVE_COLOR_MODE_DISABLED = 0
@@ -628,6 +633,7 @@ object RootConstants {
     const val DEFAULT_HOOK_EXTRACT_COVER_TEXT_GRADIENT = false
     const val DEFAULT_HOOK_CUSTOM_TEXT_COLOR_ENABLED = false
     const val DEFAULT_HOOK_CUSTOM_TEXT_COLOR = -1
+    const val DEFAULT_HOOK_STATUS_BAR_TEXT_COLOR = false
     const val DEFAULT_HOOK_MONET_TEXT_COLOR = false
     const val DEFAULT_HOOK_ISLAND_GLOW_EXTRACT_COLOR = false
     const val DEFAULT_HOOK_ISLAND_PROGRESS_GLOW = false

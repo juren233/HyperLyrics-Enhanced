@@ -14,6 +14,17 @@ import org.junit.Test
 
 class IslandSlotContentAssemblerTest {
     @Test
+    fun `native tint changes invalidate a same-song style cache`() {
+        fun signature(tint: Int?) = IslandSlotContentAssembler.buildStyleCacheSignature(
+            styleSignature = "same", mode = 7, mediaColorKey = "same-song",
+            artworkContentKey = 0, statusBarTextColor = tint,
+        )
+        assertNotEquals(signature(-1), signature(0xFF000000.toInt()))
+        assertNotEquals(signature(null), signature(-1))
+        assertEquals(signature(-1), signature(-1))
+    }
+
+    @Test
     fun `separated split timeline uses the main lyric word boundary`() {
         val line = RichLyricLine(begin = 1_000, end = 5_000, text = "ABCD")
         val splitTime = RichLyricLineSplitter.resolveSplitTime(

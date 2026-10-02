@@ -12,7 +12,10 @@ class SourceManager(
     private val defaultSourceId: String,
     private val logger: HyperLogger
 ) {
+    @Volatile
     private var activeSource: LyricSource? = null
+    @Volatile
+    private var sourceGeneration = 0L
 
     fun start() {
         val current = activeSource
@@ -40,7 +43,7 @@ class SourceManager(
         activeSource = source
         (sink as? SourceSelectionAwareSink)?.onSourceSelected(source.id)
         logger.i("SourceManager", "启动歌词源: ${source.displayName}")
-        source.start(contentOnlySink(source))
+        startContentSource(source)
         diagnostic("stage=start_returned, active=${source.id}/${source.displayName}")
     }
 
@@ -58,9 +61,7 @@ class SourceManager(
             return
         }
 
-        current?.stop()
-        current?.let { (sink as? SourceSelectionAwareSink)?.onSourceStopped(it.id) }
-        activeSource = null
+        stopActiveSource()
 
         val source = sources.find { it.id == sourceId && it.isAvailable() }
             ?: sources.firstOrNull { it.isAvailable() }
@@ -75,7 +76,7 @@ class SourceManager(
         activeSource = source
         (sink as? SourceSelectionAwareSink)?.onSourceSelected(source.id)
         logger.i("SourceManager", "切换歌词源: ${source.displayName}")
-        source.start(contentOnlySink(source))
+        startContentSource(source)
         diagnostic("stage=switch_returned, active=${source.id}/${source.displayName}")
     }
 
@@ -86,17 +87,39 @@ class SourceManager(
             "stage=stop_requested, " +
                 "current=${activeSource?.id}/${activeSource?.displayName}",
         )
-        val current = activeSource
-        current?.stop()
-        current?.let { (sink as? SourceSelectionAwareSink)?.onSourceStopped(it.id) }
-        activeSource = null
+        stopActiveSource()
         diagnostic("stage=stop_completed")
     }
 
-    /** 停止来源的迟到回调也会因活动来源身份不匹配而被拒绝。 */
-    private fun contentOnlySink(source: LyricSource): LyricSink = ContentOnlySourceSink(
+    private fun stopActiveSource() {
+        val current = activeSource
+        try {
+            // Preserve the source's synchronous stop notification before invalidation.
+            current?.stop()
+        } finally {
+            activeSource = null
+            sourceGeneration++
+            current?.let { (sink as? SourceSelectionAwareSink)?.onSourceStopped(it.id) }
+        }
+    }
+
+    private fun startContentSource(source: LyricSource) {
+        val generation = ++sourceGeneration
+        try {
+            source.start(contentOnlySink(source, generation))
+        } catch (failure: Throwable) {
+            activeSource = null
+            sourceGeneration++
+            runCatching { source.stop() }.onFailure(failure::addSuppressed)
+            (sink as? SourceSelectionAwareSink)?.onSourceStopped(source.id)
+            throw failure
+        }
+    }
+
+    /** A later activation of the same source must not revive this activation's callbacks. */
+    private fun contentOnlySink(source: LyricSource, generation: Long): LyricSink = ContentOnlySourceSink(
         sourceId = source.id,
-        isActive = { activeSource?.id == it },
+        isActive = { activeSource === source && sourceGeneration == generation },
         delegate = sink,
         allowSourceClock = source.providesLyricClock,
     )

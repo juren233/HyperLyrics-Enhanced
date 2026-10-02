@@ -11,6 +11,14 @@ import org.junit.Test
 
 class FontColorModeTest {
     @Test
+    fun `status bar color precedes custom and wins over stale legacy switches`() {
+        assertEquals(4, FONT_COLOR_MODE_STATUS_BAR)
+        assertEquals(5, FONT_COLOR_MODE_CUSTOM)
+        assertEquals(FONT_COLOR_MODE_STATUS_BAR, resolveFontColorMode(true, true, true, true, true))
+        assertEquals(FONT_COLOR_MODE_DEFAULT, resolveFontColorMode(false, false, false, false, false))
+    }
+
+    @Test
     fun `custom mode takes precedence over monet and legacy cover switches`() {
         assertEquals(
             FONT_COLOR_MODE_CUSTOM,

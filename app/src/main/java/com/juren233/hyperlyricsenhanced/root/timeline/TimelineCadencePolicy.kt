@@ -40,8 +40,9 @@ internal object TimelineCadencePolicy {
         nextBoundaryMs: Long?,
         nextLineWordSync: Boolean,
         msSinceLineChange: Long?,
+        activeConsumerWordSync: Boolean = false,
     ): Long {
-        if (currentLineWordSync) return WORD_SYNC_INTERVAL_MS
+        if (currentLineWordSync || activeConsumerWordSync) return WORD_SYNC_INTERVAL_MS
         if (msSinceLineChange != null && msSinceLineChange < SETTLE_WINDOW_MS) {
             return WORD_SYNC_INTERVAL_MS
         }

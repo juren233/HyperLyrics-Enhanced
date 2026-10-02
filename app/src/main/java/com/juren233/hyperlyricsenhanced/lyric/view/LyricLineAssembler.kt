@@ -15,6 +15,10 @@ import com.juren233.hyperlyricsenhanced.lyric.model.lyricMetadataOf
 internal const val METADATA_NEXT_LINE_PREVIEW = "nextLinePreview"
 internal const val METADATA_NEXT_LINE_PREVIEW_ALIGNED_RIGHT = "nextLinePreviewAlignedRight"
 internal const val METADATA_NEXT_LINE_PREVIEW_CENTERED = "nextLinePreviewCentered"
+internal const val METADATA_NEXT_LINE_RIGHT_TEXT = "nextLineRightText"
+
+internal fun shouldHandoffRightPreview(previewText: String?, incomingText: String?, lineAdvanced: Boolean): Boolean =
+    lineAdvanced && !previewText.isNullOrBlank() && previewText == incomingText
 
 internal fun shouldPromoteNextLinePreview(
     wasPreview: Boolean,
@@ -114,6 +118,20 @@ internal class LyricLineAssembler(
 
     data class MainResult(val line: LyricLine, val isScrollOnly: Boolean)
 
+    /** Use the same row selection as binding, with each row's own drawing metrics. */
+    fun measureVisibleContentWidth(
+        source: IRichLyricLine,
+        measureMain: (LyricLine) -> Int,
+        measureSecondary: (LyricLine) -> Int,
+    ): Int {
+        val main = buildMain(source)
+        val secondary = buildSecondary(source)
+        return maxOf(
+            measureMain(main.line),
+            if (secondary.alwaysShow) measureSecondary(secondary.line) else 0,
+        )
+    }
+
     fun buildMain(source: IRichLyricLine?): MainResult {
         if (source == null) return MainResult(LyricLine(), false)
 
@@ -212,6 +230,19 @@ internal class LyricLineAssembler(
                     metadata = lyricMetadataOf("roma" to "true")
                     generated = true
                 }
+            }
+        }
+
+        // 分离后的主行时间窗不能截断有独立 timing 的伴唱/翻译，否则在词间隙
+        // position >= line.end 会被渲染器判为整行完成。无 timing 的内容仍由
+        // wordBuilder 按主行半句窗口生成；预览没有 words，保留静态预览语义。
+        line.words?.takeIf { it.isNotEmpty() }?.let { words ->
+            val begin = words.minOf { it.begin }
+            val end = words.maxOf { it.end }
+            if (end > begin) {
+                line.begin = begin
+                line.end = end
+                line.duration = end - begin
             }
         }
 

@@ -417,6 +417,9 @@
     <string name="title_size">大小</string>
     <string name="label_size_range">范围：8 ~ 16</string>
     <string name="title_font_weight">字重</string>
+    <string name="option_font_weight_system">跟随系统</string>
+    <string name="option_font_weight_custom">自定义</string>
+    <string name="title_custom_font_weight">字重自定义</string>
     <string name="label_font_weight_range">范围：100 ~ 900</string>
     <string name="title_fading_edge">羽化边缘长度</string>
     <string name="label_fading_edge_range">范围：0 ~ 100</string>
@@ -459,6 +462,9 @@
     <string name="title_translation_only">仅显示翻译</string>
     <string name="title_swap_translation">原词翻译对调位置</string>
     <string name="title_next_lyric_line">显示下一句歌词</string>
+    <string name="island_next_line_off">不显示</string>
+    <string name="island_next_line_second_line">第二行</string>
+    <string name="island_next_line_right">右侧</string>
     <string name="summary_next_lyric_line">显示翻译时将不显示下句歌词</string>
     <string name="title_aod_main_text_size">主句字号</string>
     <string name="title_aod_backing_text_size">伴唱字号</string>
@@ -504,6 +510,7 @@
     <string name="option_font_color_cover">封面色</string>
     <string name="option_font_color_cover_gradient">封面渐变色</string>
     <string name="option_font_color_custom">自定义</string>
+    <string name="option_font_color_status_bar">跟随状态栏颜色</string>
     <string name="title_custom_font_color">自定义颜色</string>
     <string name="summary_custom_font_color_picker">调整颜色与透明度</string>
     <string name="title_word_motion">字词上浮动画</string>
@@ -601,6 +608,8 @@
     <string name="title_island_album_cover_whitelist_loading">获取应用列表中</string>
     <string name="option_audio_cover_style_hidden">隐藏封面</string>
     <string name="title_audio_rhythm">音频律动</string>
+    <string name="title_island_short_lyric_song_info">短歌词显示歌曲信息</string>
+    <string name="summary_island_short_lyric_song_info">长歌词恢复全岛滚动</string>
     <string name="title_audio_rhythm_cover_color">音频律动封面色</string>
     <string name="option_music_wave_color_mode_off">不开启</string>
     <string name="option_music_wave_color_mode_cover">封面色</string>
@@ -750,6 +759,7 @@
     <string name="title_center_lyric">位置显示</string>
     <string name="title_left_lyric_position">左侧位置显示</string>
     <string name="title_right_lyric_position">右侧位置显示</string>
+    <string name="summary_lyric_position_non_scrolling">仅非滚动歌词生效</string>
     <string name="option_lyric_position_default">默认</string>
     <string name="option_lyric_position_center">居中</string>
     <string name="option_lyric_position_right">靠右</string>

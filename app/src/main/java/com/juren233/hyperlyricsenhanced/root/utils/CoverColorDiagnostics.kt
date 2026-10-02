@@ -117,6 +117,7 @@ internal object CoverColorDiagnostics {
             TAG,
             event("style_apply") +
                 " target=$target" +
+                " statusBarEnabled=${resolution.useStatusBarColor}" +
                 " monetEnabled=${resolution.useMonetColor}" +
                 " coverEnabled=${resolution.useCoverColor}" +
                 " coverGradient=${resolution.useCoverGradient}" +

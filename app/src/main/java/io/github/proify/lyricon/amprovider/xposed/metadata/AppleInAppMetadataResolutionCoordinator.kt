@@ -528,6 +528,12 @@ internal class AppleInAppMetadataResolutionCoordinator(
             metadataStore.originalLanguage(key) != canonicalLanguage
         }
         if (!changed) return
+        if (BuildConfig.DEBUG) {
+            host.logMetadataIdentity(
+                event = "original_artist_language_remembered",
+                details = "contentId=$mediaId, artistKeys=$regionKeys, language=$canonicalLanguage",
+            )
+        }
         regionKeys.forEach { key ->
             metadataStore.rememberOriginalLanguage(key, canonicalLanguage)
         }

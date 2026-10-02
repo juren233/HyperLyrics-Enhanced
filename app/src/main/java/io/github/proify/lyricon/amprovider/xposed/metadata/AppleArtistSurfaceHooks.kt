@@ -77,7 +77,23 @@ internal class AppleArtistSurfaceHooks(
     private val librarySurfaceHooks: AppleLibrarySurfaceHooks,
     private val dataBindingHooks: AppleDataBindingMetadataHooks,
     private val host: AppleArtistSurfaceHost,
+    catalogResolver: AppleInternalCatalogResolver,
+    originalMetadataEnabled: () -> Boolean,
 ) {
+    private val composeMetadataHooks = AppleArtistComposeMetadataHooks(runtime, host)
+    private val albumComposeMetadataHooks = AppleAlbumComposeMetadataHooks(runtime, host)
+    private val browseMetadataHooks = AppleBrowseMetadataHooks(
+        runtime, host, dataBindingHooks, metadataStore, catalogResolver, originalMetadataEnabled,
+    )
+
+    fun installBrowseHooks() = browseMetadataHooks.install()
+
+    fun clearBrowseState() = browseMetadataHooks.clear()
+
+    fun refreshComposeMetadata(mediaId: String, alias: Alias): Int =
+        composeMetadataHooks.refresh(mediaId, alias) + albumComposeMetadataHooks.refresh(mediaId, alias) +
+            browseMetadataHooks.refresh(mediaId, alias)
+
     private val pageBuildData = Collections.synchronizedMap(WeakHashMap<Any, ArtistPageBuildData>())
     private val topSongModels = WeakIdentityMap<Any, ArtistTopSongModelSnapshot>()
     private val topSongBindings = WeakIdentityMap<Any, ArtistTopSongModelSnapshot>()
@@ -92,6 +108,8 @@ internal class AppleArtistSurfaceHooks(
     private var latestProfileMediaId: String? = null
 
     fun installTopSongHooks() {
+        composeMetadataHooks.install()
+        albumComposeMetadataHooks.install()
         val classes = artistClasses() ?: return
         val recycler = checkNotNull(classes["recycler"])
         val mediaEntity = checkNotNull(classes["media_entity"])

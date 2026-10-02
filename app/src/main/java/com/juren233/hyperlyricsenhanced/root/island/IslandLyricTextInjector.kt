@@ -664,6 +664,9 @@ internal object IslandLyricTextInjector {
             RichLyricLineView(rootView.context)
         }
         view.tag = tagValue
+        if (view is SpaceGateRichLyricLineView && tagValue == IslandProbeUtils.RIGHT_TEST_VIEW_TAG) {
+            IslandShortLyricLayout.observeWidth(view)
+        }
 
         if (prefs != null) {
             IslandSlotContentAssembler.applySlotContent(view, prefs, config, mode, force = true, suppressAnimation = true)
@@ -717,10 +720,8 @@ internal object IslandLyricTextInjector {
 
         if (leftView == null || rightView == null) {
             // 同步链路需要左右两槽都在；缺一侧时退回普通单槽渲染。
-            listOf(leftView, rightView).forEach { view ->
-                view?.main?.spaceGateEnabled = false
-                view?.secondary?.spaceGateEnabled = false
-            }
+            leftView?.setSpaceGateConfig(isRightSide = false, sibling = null)
+            rightView?.setSpaceGateConfig(isRightSide = true, sibling = null)
             return
         }
 
@@ -729,10 +730,8 @@ internal object IslandLyricTextInjector {
         // 完整文本带，中间挖孔区域不属于任何视口，文本在视觉上被其隔断。
         leftView.setSpaceGateConfig(isRightSide = false, sibling = rightView)
         rightView.setSpaceGateConfig(isRightSide = true, sibling = leftView)
-        leftView.main.spaceGateEnabled = true
-        leftView.secondary.spaceGateEnabled = true
-        rightView.main.spaceGateEnabled = true
-        rightView.secondary.spaceGateEnabled = true
+        // Each view keeps its applied content role. Width-only reinjection must
+        // not reconnect the belt while the slots show metadata and a gap indicator.
 
         IslandHostFacade.logCameraCutoutInfo(rootView)
     }

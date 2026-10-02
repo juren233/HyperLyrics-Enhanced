@@ -24,7 +24,8 @@ data class LyricsWord(
 data class LyricsLine(
     val start: Long,
     val end: Long,
-    val words: List<LyricsWord>
+    val words: List<LyricsWord>,
+    val secondaryWords: List<LyricsWord> = emptyList(),
 ) : Parcelable
 
 

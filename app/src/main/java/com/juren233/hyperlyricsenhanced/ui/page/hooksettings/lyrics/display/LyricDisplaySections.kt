@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.juren233.hyperlyricsenhanced.R
+import com.juren233.hyperlyricsenhanced.common.IslandFontWeightMode
 import com.juren233.hyperlyricsenhanced.ui.component.CustomFontColorPreview
 import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.Card
@@ -38,6 +39,8 @@ fun LazyListScope.lyricDisplaySections(
     customFontPath: String,
     onFontPathClick: () -> Unit,
     fontWeight: Int,
+    fontWeightMode: Int,
+    onFontWeightModeChange: (Int) -> Unit,
     onFontWeightClick: () -> Unit,
     fontItalic: Boolean,
     onFontItalicChange: (Boolean) -> Unit,
@@ -50,7 +53,8 @@ fun LazyListScope.lyricDisplaySections(
     centerGroupVocals: Boolean,
     onCenterGroupVocalsChange: (Boolean) -> Unit,
     showCenterGroupVocals: Boolean,
-    showSideLyricPositions: Boolean
+    showSideLyricPositions: Boolean,
+    sideLyricPositionsNonScrollingOnly: Boolean
 ) {
     item(key = "lyric_display") {
         Column {
@@ -101,14 +105,19 @@ fun LazyListScope.lyricDisplaySections(
                         exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
                     ) {
                         Column {
+                            val positionSummary = if (sideLyricPositionsNonScrollingOnly) {
+                                stringResource(R.string.summary_lyric_position_non_scrolling)
+                            } else null
                             OverlayDropdownPreference(
                                 title = stringResource(id = R.string.title_left_lyric_position),
+                                summary = positionSummary,
                                 items = positionOptions,
                                 selectedIndex = leftLyricPosition.coerceIn(0, positionOptions.lastIndex),
                                 onSelectedIndexChange = onLeftLyricPositionChange
                             )
                             OverlayDropdownPreference(
                                 title = stringResource(id = R.string.title_right_lyric_position),
+                                summary = positionSummary,
                                 items = positionOptions,
                                 selectedIndex = rightLyricPosition.coerceIn(0, positionOptions.lastIndex),
                                 onSelectedIndexChange = onRightLyricPositionChange
@@ -131,6 +140,7 @@ fun LazyListScope.lyricDisplaySections(
                         stringResource(id = R.string.option_font_color_monet),
                         stringResource(id = R.string.option_font_color_cover),
                         stringResource(id = R.string.option_font_color_cover_gradient),
+                        stringResource(id = R.string.option_font_color_status_bar),
                         stringResource(id = R.string.option_font_color_custom),
                     )
                     OverlayDropdownPreference(
@@ -172,17 +182,32 @@ fun LazyListScope.lyricDisplaySections(
                         },
                         onClick = onFontPathClick
                     )
-                    ArrowPreference(
+                    OverlayDropdownPreference(
                         title = stringResource(id = R.string.title_font_weight),
-                        endActions = {
-                            Text(
-                                fontWeight.toString(),
-                                fontSize = MiuixTheme.textStyles.body2.fontSize,
-                                color = MiuixTheme.colorScheme.onSurfaceVariantActions
-                            )
-                        },
-                        onClick = onFontWeightClick
+                        items = listOf(
+                            stringResource(R.string.option_font_weight_system),
+                            stringResource(R.string.option_font_weight_custom),
+                        ),
+                        selectedIndex = fontWeightMode,
+                        onSelectedIndexChange = onFontWeightModeChange,
                     )
+                    AnimatedVisibility(
+                        visible = fontWeightMode == IslandFontWeightMode.CUSTOM,
+                        enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
+                        exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
+                    ) {
+                        ArrowPreference(
+                            title = stringResource(R.string.title_custom_font_weight),
+                            endActions = {
+                                Text(
+                                    fontWeight.toString(),
+                                    fontSize = MiuixTheme.textStyles.body2.fontSize,
+                                    color = MiuixTheme.colorScheme.onSurfaceVariantActions,
+                                )
+                            },
+                            onClick = onFontWeightClick,
+                        )
+                    }
                     SwitchPreference(
                         title = stringResource(id = R.string.title_italic),
                         checked = fontItalic,

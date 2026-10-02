@@ -287,6 +287,8 @@ internal fun AppleOnlineSourceMenuHooks.currentSource(songId: String?, contentTy
         storedSource = storedSource(songId, contentType),
         confirmedSource = confirmedSource,
         onlineContentConsumed = hasOnlineContentConsumption(songId, contentType),
+        isLyricsSource = contentType == "lyrics",
+        presentedLyricsSource = if (contentType == "lyrics") currentPresentedLyricsSource(songId) else null,
     )
 }
 

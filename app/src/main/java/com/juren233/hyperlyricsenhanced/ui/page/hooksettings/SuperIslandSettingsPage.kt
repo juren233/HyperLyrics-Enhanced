@@ -28,6 +28,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.edit
 import com.juren233.hyperlyricsenhanced.common.IslandMusicWaveColorMode
+import com.juren233.hyperlyricsenhanced.common.IslandNextLineMode
 import com.juren233.hyperlyricsenhanced.common.IslandProgressColorMode
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.common.UIConstants
@@ -83,6 +84,12 @@ fun SuperIslandSettingsPage() {
             )
         )
     }
+    var fullIslandNextLineMode by remember {
+        mutableIntStateOf(IslandNextLineMode.resolve(
+            prefs.getInt(RootConstants.KEY_HOOK_ISLAND_NEXT_LINE_MODE, IslandNextLineMode.UNSPECIFIED),
+            nextLyricLine,
+        ))
+    }
     var audioCover by remember { mutableStateOf(prefs.getBoolean(RootConstants.KEY_HOOK_ISLAND_LEFT_ALBUM, RootConstants.DEFAULT_HOOK_ISLAND_LEFT_ALBUM)) }
     var audioCoverStyle by remember {
         mutableIntStateOf(
@@ -96,6 +103,12 @@ fun SuperIslandSettingsPage() {
         )
     }
     var audioRhythm by remember { mutableStateOf(prefs.getBoolean(RootConstants.KEY_HOOK_ISLAND_RIGHT_ICON, RootConstants.DEFAULT_HOOK_ISLAND_RIGHT_ICON)) }
+    var shortLyricSongInfo by remember {
+        mutableStateOf(prefs.getBoolean(
+            RootConstants.KEY_HOOK_ISLAND_SHORT_LYRIC_SONG_INFO,
+            RootConstants.DEFAULT_HOOK_ISLAND_SHORT_LYRIC_SONG_INFO,
+        ))
+    }
     var musicWaveColorMode by remember {
         mutableIntStateOf(
             IslandMusicWaveColorMode.resolve(
@@ -496,6 +509,17 @@ fun SuperIslandSettingsPage() {
                                     }
                                 }
                             }
+                            if (lyricMode == RootConstants.HOOK_LYRIC_MODE_FULL_ISLAND) {
+                                SwitchPreference(
+                                    title = stringResource(R.string.title_island_short_lyric_song_info),
+                                    summary = stringResource(R.string.summary_island_short_lyric_song_info),
+                                    checked = shortLyricSongInfo,
+                                    onCheckedChange = {
+                                        shortLyricSongInfo = it
+                                        saveConfig(RootConstants.KEY_HOOK_ISLAND_SHORT_LYRIC_SONG_INFO, it)
+                                    },
+                                )
+                            }
                             SwitchPreference(title = stringResource(id = R.string.title_audio_rhythm), checked = audioRhythm, onCheckedChange = { audioRhythm = it; saveConfig(RootConstants.KEY_HOOK_ISLAND_RIGHT_ICON, it) })
                             AnimatedVisibility(visible = audioRhythm) {
                                 Column {
@@ -512,6 +536,41 @@ fun SuperIslandSettingsPage() {
                                         }
                                     )
                                 }
+                            }
+                        }
+                    }
+                }
+                if ((lyricMode == RootConstants.HOOK_LYRIC_MODE_FULL_ISLAND ||
+                        lyricMode == RootConstants.HOOK_LYRIC_MODE_SEPARATED) &&
+                    (lyricSource == "lyricon" || lyricSource == "lyricinfo")
+                ) {
+                    item(key = "island_next_lyric") {
+                        Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
+                            if (lyricMode == RootConstants.HOOK_LYRIC_MODE_FULL_ISLAND) {
+                                OverlayDropdownPreference(
+                                    title = stringResource(id = R.string.title_next_lyric_line),
+                                    summary = stringResource(id = R.string.summary_next_lyric_line),
+                                    items = listOf(
+                                        stringResource(R.string.island_next_line_off),
+                                        stringResource(R.string.island_next_line_second_line),
+                                        stringResource(R.string.island_next_line_right),
+                                    ),
+                                    selectedIndex = fullIslandNextLineMode,
+                                    onSelectedIndexChange = {
+                                        fullIslandNextLineMode = it
+                                        saveConfig(RootConstants.KEY_HOOK_ISLAND_NEXT_LINE_MODE, it)
+                                    }
+                                )
+                            } else {
+                                SwitchPreference(
+                                    title = stringResource(id = R.string.title_next_lyric_line),
+                                    summary = stringResource(id = R.string.summary_next_lyric_line),
+                                    checked = nextLyricLine,
+                                    onCheckedChange = {
+                                        nextLyricLine = it
+                                        saveConfig(RootConstants.KEY_HOOK_NEXT_LYRIC_LINE, it)
+                                    }
+                                )
                             }
                         }
                     }

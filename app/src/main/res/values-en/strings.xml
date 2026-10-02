@@ -416,6 +416,9 @@
     <string name="title_size">Size</string>
     <string name="label_size_range">Range: 8–16</string>
     <string name="title_font_weight">Font Weight</string>
+    <string name="option_font_weight_system">Follow System</string>
+    <string name="option_font_weight_custom">Custom</string>
+    <string name="title_custom_font_weight">Custom Font Weight</string>
     <string name="label_font_weight_range">Range: 100–900</string>
     <string name="title_fading_edge">Fading Edge Length</string>
     <string name="label_fading_edge_range">Range: 0–100</string>
@@ -458,6 +461,9 @@
     <string name="title_translation_only">Translation Only</string>
     <string name="title_swap_translation">Swap Original Lyrics and Translation</string>
     <string name="title_next_lyric_line">Show Next Lyric Line</string>
+    <string name="island_next_line_off">Hidden</string>
+    <string name="island_next_line_second_line">Second Line</string>
+    <string name="island_next_line_right">Right Side</string>
     <string name="summary_next_lyric_line">The next lyric line is hidden while a translation is shown</string>
     <string name="title_aod_main_text_size">Main Lyric Size</string>
     <string name="title_aod_backing_text_size">Backing-Vocal Text Size</string>
@@ -503,6 +509,7 @@
     <string name="option_font_color_cover">Cover Color</string>
     <string name="option_font_color_cover_gradient">Cover Gradient</string>
     <string name="option_font_color_custom">Custom</string>
+    <string name="option_font_color_status_bar">Follow status bar color</string>
     <string name="title_custom_font_color">Custom Color</string>
     <string name="summary_custom_font_color_picker">Adjust color and opacity</string>
     <string name="title_word_motion">Word Lift Animation</string>
@@ -599,6 +606,8 @@
     <string name="title_island_album_cover_whitelist_loading">Loading Apps</string>
     <string name="option_audio_cover_style_hidden">Hide cover</string>
     <string name="title_audio_rhythm">Audio Rhythm</string>
+    <string name="title_island_short_lyric_song_info">Show song info for short lyrics</string>
+    <string name="summary_island_short_lyric_song_info">Long lyrics return to full-island scrolling</string>
     <string name="title_audio_rhythm_cover_color">Audio Rhythm Cover Color</string>
     <string name="option_music_wave_color_mode_off">Off</string>
     <string name="option_music_wave_color_mode_cover">Cover color</string>
@@ -747,6 +756,7 @@
     <string name="title_center_lyric">Lyrics Position</string>
     <string name="title_left_lyric_position">Left-Side Lyrics Position</string>
     <string name="title_right_lyric_position">Right-Side Lyrics Position</string>
+    <string name="summary_lyric_position_non_scrolling">Only applies to non-scrolling lyrics</string>
     <string name="option_lyric_position_default">Default</string>
     <string name="option_lyric_position_center">Center</string>
     <string name="option_lyric_position_right">Right</string>

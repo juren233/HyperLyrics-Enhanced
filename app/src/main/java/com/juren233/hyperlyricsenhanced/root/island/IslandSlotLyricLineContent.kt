@@ -24,6 +24,7 @@ import com.juren233.hyperlyricsenhanced.lyric.model.interfaces.IRichLyricLine
 import com.juren233.hyperlyricsenhanced.lyric.view.METADATA_NEXT_LINE_PREVIEW
 import com.juren233.hyperlyricsenhanced.lyric.view.METADATA_NEXT_LINE_PREVIEW_ALIGNED_RIGHT
 import com.juren233.hyperlyricsenhanced.lyric.view.METADATA_NEXT_LINE_PREVIEW_CENTERED
+import com.juren233.hyperlyricsenhanced.lyric.view.METADATA_NEXT_LINE_RIGHT_TEXT
 import com.juren233.hyperlyricsenhanced.lyric.view.RichLyricLineView
 import com.juren233.hyperlyricsenhanced.lyric.view.SpaceGateRichLyricLineView
 import com.juren233.hyperlyricsenhanced.lyric.view.LyricViewStyle
@@ -168,7 +169,7 @@ internal fun IslandSlotContentAssembler.isNextLinePreviewEnabled(
     config: IslandSlotRuntimeConfig,
     currentLine: IRichLyricLine? = LyriconDataBridge.currentLyricLine
 ): Boolean {
-    if (!config.nextLyricLine || config.usesBothLyricSlots) return false
+    if (!config.nextLineEnabled) return false
     if (LyriconDataBridge.isTextMode) return false
     val source = prefs.getString(RootConstants.KEY_HOOK_LYRIC_SOURCE, RootConstants.DEFAULT_HOOK_LYRIC_SOURCE)
     if (source != "lyricon" && source != "lyricinfo") return false
@@ -209,25 +210,50 @@ internal fun IslandSlotContentAssembler.shouldUseNextLinePreview(
     return shouldUseNextLinePreview(mode, false, currentLine)
 }
 
+/** Split previews with their future main-row geometry, not the current line's secondary width. */
+internal fun IslandSlotContentAssembler.splitSeparatedLyricLine(
+    line: IRichLyricLine,
+    split: (IRichLyricLine) -> RichLyricLineSplitter.SplitLineResult,
+): RichLyricLineSplitter.SplitLineResult {
+    if (line.metadata?.getBoolean(METADATA_NEXT_LINE_PREVIEW) != true) return split(line)
+
+    val centerNextLine = line.metadata?.getBoolean(METADATA_NEXT_LINE_PREVIEW_CENTERED) == true
+    val current = split(line.withNextLinePreview(null, centerNextLine))
+    // Both passes use main-row font metrics and the same slot capacity. Each preview
+    // half therefore matches the text that the existing promotion animation will receive.
+    val next = line.secondary?.takeIf { it.isNotBlank() }
+        ?.let { split(RichLyricLine(
+            text = it,
+            words = emptyList(),
+            isAlignedRight = line.metadata?.getBoolean(METADATA_NEXT_LINE_PREVIEW_ALIGNED_RIGHT) == true,
+        )) }
+    return RichLyricLineSplitter.SplitLineResult(
+        current.left.withNextLinePreview(next?.left, centerNextLine),
+        current.right.withNextLinePreview(next?.right, centerNextLine),
+    )
+}
+
 internal fun IRichLyricLine.withNextLinePreview(
     nextLine: IRichLyricLine?,
-    centerNextLine: Boolean
+    centerNextLine: Boolean,
+    onRight: Boolean = false,
 ): IRichLyricLine {
     val nextText = nextLine?.text?.takeIf { it.isNotBlank() }
     return RichLyricLine(
         begin = begin,
         end = end,
         duration = duration,
-        isAlignedRight = isAlignedRight,
+        isAlignedRight = if (onRight) false else isAlignedRight,
         metadata = lyricMetadataOf(
             *(metadata?.entries?.map { it.key to it.value } ?: emptyList()).toTypedArray(),
-            METADATA_NEXT_LINE_PREVIEW to "true",
+            METADATA_NEXT_LINE_PREVIEW to (!onRight).toString(),
+            METADATA_NEXT_LINE_RIGHT_TEXT to if (onRight) nextText else null,
             METADATA_NEXT_LINE_PREVIEW_ALIGNED_RIGHT to nextLine?.isAlignedRight.toString(),
             METADATA_NEXT_LINE_PREVIEW_CENTERED to centerNextLine.toString()
         ),
         text = text,
         words = words,
-        secondary = nextText,
+        secondary = if (onRight) null else nextText,
         secondaryWords = emptyList(),
         translation = null,
         translationWords = null,

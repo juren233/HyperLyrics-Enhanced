@@ -219,16 +219,16 @@ class AppleInternalCatalogResolverTest {
 
         assertEquals(
             listOf(
-                "V2:ALBUM:200",
-                "V2:ALBUM:201",
-                "V2:ALBUM:zh-Hans-CN:200",
-                "V2:ALBUM:zh-CN:200",
-                "V2:ALBUM:zh-cn:200",
-                "V2:ALBUM:zh-hans-cn:200",
-                "V2:ALBUM:zh-Hans-CN:201",
-                "V2:ALBUM:zh-CN:201",
-                "V2:ALBUM:zh-cn:201",
-                "V2:ALBUM:zh-hans-cn:201",
+                "V3:ALBUM:200",
+                "V3:ALBUM:201",
+                "V3:ALBUM:zh-Hans-CN:200",
+                "V3:ALBUM:zh-CN:200",
+                "V3:ALBUM:zh-cn:200",
+                "V3:ALBUM:zh-hans-cn:200",
+                "V3:ALBUM:zh-Hans-CN:201",
+                "V3:ALBUM:zh-CN:201",
+                "V3:ALBUM:zh-cn:201",
+                "V3:ALBUM:zh-hans-cn:201",
             ),
             keys,
         )
@@ -315,23 +315,23 @@ class AppleInternalCatalogResolverTest {
     }
 
     @Test
-    fun `original metadata cache keys use the post hook pollution schema`() {
+    fun `original metadata cache keys use the language validated schema`() {
         assertTrue(
             originalSongCacheKey("1542953977")
-                .startsWith("V2:"),
+                .startsWith("V3:"),
         )
         assertTrue(
             originalDirectEntityCacheKey(
                 LocalizedEntityType.ARTIST,
                 "18756224",
-            ).startsWith("V2:"),
+            ).startsWith("V3:"),
         )
         assertTrue(
             originalEntityCacheKey(
                 entityType = LocalizedEntityType.ARTIST,
                 language = "ja-JP",
                 mediaId = "18756224",
-            ).startsWith("V2:"),
+            ).startsWith("V3:"),
         )
     }
 

@@ -9,6 +9,7 @@ package io.github.proify.lyricon.central.provider.player
 import android.os.SystemClock
 import android.util.Log
 import com.juren233.hyperlyricsenhanced.BuildConfig
+import io.github.proify.lyricon.central.ProviderFlowDiagnostics
 import com.juren233.hyperlyricsenhanced.provider.OfficialProviderControlProtocol
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import io.github.proify.lyricon.central.Constants
@@ -142,7 +143,7 @@ internal class ActivePlayerCoordinator(
 
     override fun onSongChanged(recorder: PlayerRecorder, song: Song?) {
         if (debug) Log.d(TAG, "onSongChanged: $song")
-        dispatchIfActive(recorder, allowDuplicateIfSwitching = false) {
+        dispatchIfActive(recorder, allowDuplicateIfSwitching = false, diagnosticSong = true) {
             it.onSongChanged(song)
         }
     }
@@ -195,6 +196,10 @@ internal class ActivePlayerCoordinator(
     }
 
     private fun dispatchSnapshot(snapshot: ActivePlayerSnapshot, listener: ActivePlayerListener) {
+        ProviderFlowDiagnostics.log("snapshot_delivery", snapshot.providerInfo) {
+            "listener=${ProviderFlowDiagnostics.id(listener)}, songId=${snapshot.song?.id}, " +
+                "lyricType=${snapshot.lyricType}, playing=${snapshot.isPlaying}"
+        }
         listener.onActiveProviderChanged(snapshot.providerInfo)
         listener.onPlaybackStateChanged(snapshot.isPlaying)
 
@@ -213,6 +218,7 @@ internal class ActivePlayerCoordinator(
         recorder: PlayerRecorder,
         allowDuplicateIfSwitching: Boolean = true,
         diagnosticPosition: Long? = null,
+        diagnosticSong: Boolean = false,
         reportsPlaybackState: Boolean = false,
         crossinline notifier: (ActivePlayerListener) -> Unit
     ) {
@@ -336,6 +342,15 @@ internal class ActivePlayerCoordinator(
             logSourceDecisionOnce(recorderInfo, decision)
         }
 
+        if (diagnosticSong) {
+            ProviderFlowDiagnostics.log("central_song_route", recorderInfo) {
+                "recorder=${ProviderFlowDiagnostics.id(recorder)}, songId=${recorder.song?.id}, " +
+                    "decision=$decision, switched=$isSwitched, broadcast=$shouldBroadcastOriginal, " +
+                    "reportedPlaying=$reportedPlaying, effectivePlaying=$recorderPlaying, " +
+                    "audioConflict=$audioConflict, audioSuppressed=$audioSuppressed, " +
+                    "active=${resultingInfo?.playerPackageName}, listeners=${listeners.size}"
+            }
+        }
         diagnosticPosition?.let { position ->
             logPositionDiagnostic(
                 recorderInfo = recorderInfo,
@@ -450,6 +465,9 @@ internal class ActivePlayerCoordinator(
             try {
                 notifier(listener)
             } catch (e: Exception) {
+                ProviderFlowDiagnostics.log("subscriber_dispatch_failed") {
+                    "listener=${ProviderFlowDiagnostics.id(listener)}, error=${e.javaClass.name}"
+                }
                 if (debug) Log.e(TAG, "Dispatch failed for listener: ${listener.javaClass.name}", e)
             }
         }

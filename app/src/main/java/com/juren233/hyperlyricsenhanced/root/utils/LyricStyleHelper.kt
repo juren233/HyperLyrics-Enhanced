@@ -29,6 +29,7 @@ object LyricStyleHelper {
 
     internal data class ColorResolution(
         val useMonetColor: Boolean,
+        val useStatusBarColor: Boolean,
         val useCoverColor: Boolean,
         val useCoverGradient: Boolean,
         val paletteSource: CoverColorHelper.PaletteSource?,
@@ -62,6 +63,17 @@ object LyricStyleHelper {
         )
     }
 
+    internal fun withStatusBarTextColor(style: LyricViewStyle, color: Int): LyricViewStyle {
+        val palette = customTextColorPalette(color)
+        return style.copy(
+            primary = style.primary.copy(color = palette.primary),
+            secondary = style.secondary.copy(
+                color = if (style.secondary.size > 0f) palette.primary else intArrayOf(Color.TRANSPARENT),
+            ),
+            highlight = style.highlight.copy(background = palette.background, foreground = palette.highlight),
+        )
+    }
+
     internal fun monetTextColorPalette(color: Int): CustomTextColorPalette =
         customTextColorPalette(color)
 
@@ -92,7 +104,8 @@ object LyricStyleHelper {
         res: Resources,
         mode: Int,
         albumBitmap: Bitmap? = null,
-        mediaColorKey: String? = CoverColorHelper.currentMediaKey()
+        mediaColorKey: String? = CoverColorHelper.currentMediaKey(),
+        statusBarTextColor: Int = Color.WHITE,
     ): StyleBuildResult {
         val fontSize = prefs.getInt(RootConstants.KEY_HOOK_TEXT_SIZE, RootConstants.DEFAULT_HOOK_TEXT_SIZE)
         val baseTf = FontHelper.loadBaseTypeface(prefs)
@@ -138,7 +151,12 @@ object LyricStyleHelper {
             true
         }
 
-        // Determine text colors: use cover colors if enabled, otherwise white
+        val useStatusBarColor = IslandRuntimePreferenceReader.getBoolean(
+            prefs,
+            RootConstants.KEY_HOOK_STATUS_BAR_TEXT_COLOR,
+            RootConstants.DEFAULT_HOOK_STATUS_BAR_TEXT_COLOR,
+        )
+        // Resolve the selected font color without changing the renderer.
         val useCustomColor = IslandRuntimePreferenceReader.getBoolean(
             prefs,
             RootConstants.KEY_HOOK_CUSTOM_TEXT_COLOR_ENABLED,
@@ -183,7 +201,15 @@ object LyricStyleHelper {
         val contrastAdjustment: CoverGradientTextContrastOptimizer.Adjustment?
         val fallbackReason: FallbackReason?
 
-        if (useCustomColor) {
+        if (useStatusBarColor) {
+            val palette = customTextColorPalette(statusBarTextColor)
+            resolvedPalette = null
+            contrastAdjustment = null
+            primaryColors = palette.primary
+            bgColors = palette.background
+            hlColors = palette.highlight
+            fallbackReason = null
+        } else if (useCustomColor) {
             val customPalette = customTextColorPalette(customTextColor)
             resolvedPalette = null
             contrastAdjustment = null
@@ -292,9 +318,10 @@ object LyricStyleHelper {
         return StyleBuildResult(
             style = style,
             colorResolution = ColorResolution(
-                useMonetColor = !useCustomColor && useMonetColor,
-                useCoverColor = !useCustomColor && !useMonetColor && useCoverColor,
-                useCoverGradient = !useCustomColor && !useMonetColor && useCoverColor && useCoverGradient,
+                useStatusBarColor = useStatusBarColor,
+                useMonetColor = !useStatusBarColor && !useCustomColor && useMonetColor,
+                useCoverColor = !useStatusBarColor && !useCustomColor && !useMonetColor && useCoverColor,
+                useCoverGradient = !useStatusBarColor && !useCustomColor && !useMonetColor && useCoverColor && useCoverGradient,
                 paletteSource = resolvedPalette?.source,
                 requestedKey = resolvedPalette?.requestedKey,
                 resolvedKey = resolvedPalette?.resolvedKey,

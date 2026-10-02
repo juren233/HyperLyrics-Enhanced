@@ -9,8 +9,10 @@ package com.juren233.hyperlyricsenhanced.lyric.view
 import android.annotation.SuppressLint
 import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
+import android.animation.LayoutTransition
 import android.content.Context
 import android.graphics.Canvas
+import android.graphics.Picture
 import android.view.Gravity
 import android.view.View
 import android.widget.LinearLayout
@@ -21,6 +23,8 @@ import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.lyric.model.RichLyricLine
 import com.juren233.hyperlyricsenhanced.lyric.model.interfaces.IRichLyricLine
 import com.juren233.hyperlyricsenhanced.lyric.view.line.LyricLineView
+import com.juren233.hyperlyricsenhanced.lyric.view.line.SpaceGatePromotionSnapshot
+import com.juren233.hyperlyricsenhanced.lyric.view.yoyo.YoYoAnimation
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 
 @SuppressLint("ViewConstructor")
@@ -36,6 +40,83 @@ class RichLyricLineView(
     val secondary = LyricLineView(context).apply { visibleIfChanged = false }
 
     var alwaysShowSecondary = false
+
+    internal var cancelLayoutRoleTransition: (() -> Unit)? = null
+    internal var layoutRoleDrawing: ((Canvas) -> Unit)? = null
+    private var applyingLayoutRoleContent = false
+    private var layoutRoleLayoutTransition: LayoutTransition? = null
+    private var layoutRoleTransitionCaptured = false
+
+    internal fun applyLayoutRoleContent(apply: () -> Unit) {
+        applyingLayoutRoleContent = true
+        try {
+            layoutRoleLayoutTransition = layoutTransition
+            layoutRoleTransitionCaptured = true
+            layoutTransition = null
+            YoYoAnimation.cancelAnimation(this)
+            cancelNextLinePromotion()
+            alpha = 1f
+            apply()
+        } finally {
+            applyingLayoutRoleContent = false
+        }
+    }
+
+    internal fun layoutRoleMain(line: IRichLyricLine?) = assembler.buildMain(line).line
+
+    internal fun layoutRoleSnapshot(preview: Boolean = false, incoming: IRichLyricLine? = null): SpaceGatePromotionSnapshot? {
+        if (preview && !secondaryIsNextLinePreview) return null
+        val row = if (preview) secondary else main
+        val snapshot = row.layoutRoleSnapshot(incoming?.let { assembler.buildMain(it).line }) ?: return null
+        fun x(value: Float) = translationX + pivotX +
+            (row.left + row.translationX + row.pivotX + (value - row.pivotX) * row.scaleX - pivotX) * scaleX
+        val baseline = row.top + row.translationY + row.pivotY +
+            (snapshot.baseline - row.pivotY) * row.scaleY
+        return snapshot.copy(
+            geometry = snapshot.geometry.copy(glyphs = snapshot.geometry.glyphs.map {
+                it.copy(start = x(it.start), end = x(it.end))
+            }),
+            baseline = translationY + pivotY + (baseline - pivotY) * scaleY,
+            textScaleY = row.scaleY * scaleY,
+        )
+    }
+
+    internal fun recordLayoutRoleFrame(
+        hideMain: Boolean = false,
+        hideSecondary: Boolean = false,
+        draw: ((Canvas) -> Unit)? = null,
+    ): Picture {
+        val picture = Picture()
+        val canvas = picture.beginRecording(width.coerceAtLeast(1), height.coerceAtLeast(1))
+        val mainAlpha = main.alpha
+        val secondaryAlpha = secondary.alpha
+        try {
+            if (hideMain) main.alpha = 0f
+            if (hideSecondary) secondary.alpha = 0f
+            val layer = canvas.saveLayerAlpha(0f, 0f, width.toFloat(), height.toFloat(), (255 * alpha).toInt())
+            canvas.translate(translationX, translationY)
+            canvas.scale(scaleX, scaleY, pivotX, pivotY)
+            if (draw != null) draw(canvas) else drawLyricContent(canvas)
+            canvas.restoreToCount(layer)
+        } finally {
+            main.alpha = mainAlpha
+            secondary.alpha = secondaryAlpha
+            picture.endRecording()
+        }
+        return picture
+    }
+
+    internal fun pauseLayoutRoleContent(paused: Boolean) {
+        main.setLayoutRolePaused(paused)
+        secondary.setLayoutRolePaused(paused)
+        if (!paused) {
+            if (layoutRoleTransitionCaptured) layoutTransition = layoutRoleLayoutTransition
+            layoutRoleLayoutTransition = null
+            layoutRoleTransitionCaptured = false
+            lastPosition = Long.MIN_VALUE
+            if (requestMarquee) requestStartMarquee()
+        }
+    }
 
     /**
      * 分离歌词右槽不绘制间奏指示器，见 [LyricLineView.hideInterludeIndicator]。
@@ -234,6 +315,7 @@ class RichLyricLineView(
         targetLine: IRichLyricLine?,
         previousLine: IRichLyricLine? = rawLine
     ): Boolean {
+        if (applyingLayoutRoleContent) return false
         val nextMainText = assembler.buildMain(targetLine).line.text
         return canAnimateNextLinePromotion(
             wasPreview = secondaryIsNextLinePreview,
@@ -250,6 +332,9 @@ class RichLyricLineView(
     var line: IRichLyricLine?
         get() = rawLine
         set(value) {
+            if (!applyingLayoutRoleContent && cancelLayoutRoleTransition != null && !YoYoAnimation.isRunning(this)) {
+                cancelLayoutRoleTransition?.invoke()
+            }
             if (shouldFinishRunningPromotionBeforeApplying(nextLineTransitionRunning, rawLine, value)) {
                 if (BuildConfig.DEBUG) {
                     HookLogger.d(
@@ -294,6 +379,7 @@ class RichLyricLineView(
     }
 
     fun reset() {
+        cancelLayoutRoleTransition?.invoke()
         cancelNextLinePromotion()
         line = null
         renderScale = 1.0f
@@ -313,6 +399,7 @@ class RichLyricLineView(
     }
 
     fun beginAnimationTransition() {
+        cancelLayoutRoleTransition?.invoke()
         cancelNextLinePromotion()
         animationTransition = true
     }
@@ -372,6 +459,7 @@ class RichLyricLineView(
     }
 
     fun seekTo(position: Long) {
+        cancelLayoutRoleTransition?.invoke()
         if (animationTransition) {
             pendingPosition = position; return
         }
@@ -403,6 +491,7 @@ class RichLyricLineView(
 
     fun requestStartMarquee() {
         requestMarquee = true
+        if (layoutRoleDrawing != null) return
         main.requestScroll()
         if (!secondaryIsNextLinePreview) secondary.requestScroll()
     }
@@ -629,6 +718,11 @@ class RichLyricLineView(
     }
 
     override fun dispatchDraw(canvas: Canvas) {
+        layoutRoleDrawing?.let { it(canvas); return }
+        drawLyricContent(canvas)
+    }
+
+    private fun drawLyricContent(canvas: Canvas) {
         if (renderScale != 1.0f) {
             canvas.withScale(renderScale, renderScale, 0f, height / 2f) {
                 super.dispatchDraw(this)
@@ -699,7 +793,9 @@ class RichLyricLineView(
     }
 
     private fun updateLayoutTransitionX(config: String? = LayoutTransitionX.TRANSITION_CONFIG_SMOOTH) {
-        layoutTransition = LayoutTransitionX(config).apply { setAnimateParentHierarchy(true) }
+        val transition = LayoutTransitionX(config).apply { setAnimateParentHierarchy(true) }
+        if (layoutRoleDrawing != null) layoutRoleLayoutTransition = transition
+        else layoutTransition = transition
     }
 
     private fun animateNextLinePromotion(nextMainText: String?, nextMainAlignedRight: Boolean) {

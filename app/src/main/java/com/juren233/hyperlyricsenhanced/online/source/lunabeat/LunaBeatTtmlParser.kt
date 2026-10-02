@@ -8,7 +8,6 @@ package com.juren233.hyperlyricsenhanced.online.source.lunabeat
 
 import com.juren233.hyperlyricsenhanced.lyric.LrcLine
 import com.juren233.hyperlyricsenhanced.online.model.LyricsLine
-import com.juren233.hyperlyricsenhanced.online.model.LyricsWord
 import org.w3c.dom.Element
 import org.w3c.dom.Node
 import java.io.ByteArrayInputStream
@@ -22,7 +21,6 @@ internal data class LunaBeatParsedLyrics(
 /** Parses the Apple-compatible TTML subset published by LunaBeat TTML Hub. */
 internal object LunaBeatTtmlParser {
     private const val ITUNES_NAMESPACE = "http://music.apple.com/lyric-ttml-internal"
-    private const val TTM_NAMESPACE = "http://www.w3.org/ns/ttml#metadata"
     private const val MAX_LINES = 2_000
     private const val MAX_WORDS = 30_000
 
@@ -67,15 +65,18 @@ internal object LunaBeatTtmlParser {
                 ?: continue
             val key = paragraph.getAttributeNS(ITUNES_NAMESPACE, "key")
                 .ifBlank { paragraph.getAttribute("itunes:key") }
-            val words = timedWords(paragraph, begin, end)
-            totalWords += words.size
+            val vocals = LunaBeatVocalParser.parse(paragraph, begin, end)
+            // A standalone background-only paragraph still has visible content.
+            val words = vocals.primary.ifEmpty { vocals.secondary }
+            val secondaryWords = if (vocals.primary.isEmpty()) emptyList() else vocals.secondary
+            totalWords += words.size + secondaryWords.size
             if (totalWords > MAX_WORDS) return null
-            if (words.size >= 2) hasRealWordTiming = true
+            if (vocals.hasWordTiming) hasRealWordTiming = true
             if (words.isEmpty()) continue
             val text = words.joinToString("") { it.text }
                 .ifBlank { paragraph.textContent.orEmpty().trim() }
             if (text.isBlank()) continue
-            wordLines += LyricsLine(start = begin, end = end, words = words)
+            wordLines += LyricsLine(start = begin, end = end, words = words, secondaryWords = secondaryWords)
             lrcLines += LrcLine(
                 startTimeMs = begin,
                 content = text,
@@ -88,61 +89,6 @@ internal object LunaBeatTtmlParser {
             wordLines = wordLines.sortedBy(LyricsLine::start),
             lrcLines = lrcLines.sortedBy(LrcLine::startTimeMs),
         )
-    }
-
-    private fun timedWords(paragraph: Element, lineBegin: Long, lineEnd: Long): List<LyricsWord> {
-        val spans = paragraph.getElementsByTagNameNS("*", "span")
-        val result = ArrayList<LyricsWord>(spans.length)
-        for (index in 0 until spans.length) {
-            val span = spans.item(index) as? Element ?: continue
-            if (isBackgroundContainer(span)) continue
-            val begin = parseTimeMs(span.getAttribute("begin")) ?: continue
-            val end = parseTimeMs(span.getAttribute("end"))
-                ?.takeIf { it > begin }
-                ?: continue
-            val text = span.textContent.orEmpty()
-            if (text.isEmpty()) continue
-            val separator = inlineSeparatorBefore(span)
-            if (separator.isNotEmpty() && result.isNotEmpty()) {
-                val previousIndex = result.lastIndex
-                val previous = result[previousIndex]
-                result[previousIndex] = previous.copy(text = previous.text + separator)
-            }
-            result += LyricsWord(
-                start = begin.coerceAtLeast(lineBegin),
-                end = end.coerceIn(begin + 1, lineEnd.coerceAtLeast(begin + 1)),
-                text = text,
-            )
-        }
-        return result
-            .sortedBy(LyricsWord::start)
-            .distinctBy { Triple(it.start, it.end, it.text) }
-    }
-
-    /**
-     * Apple TTML commonly stores a word separator as a text node between adjacent timed spans:
-     * `<span>I've</span> <span>said</span>`. Keep that separator on the previous word so both
-     * the common lyric model and Apple's line wrapping retain the source text. Pretty-print
-     * indentation containing a line break is structural XML whitespace and is intentionally ignored.
-     */
-    private fun inlineSeparatorBefore(element: Element): String {
-        val chunks = ArrayDeque<String>()
-        var sibling = element.previousSibling
-        while (sibling != null &&
-            (sibling.nodeType == Node.TEXT_NODE || sibling.nodeType == Node.CDATA_SECTION_NODE)
-        ) {
-            chunks.addFirst(sibling.nodeValue.orEmpty())
-            sibling = sibling.previousSibling
-        }
-        val separator = chunks.joinToString("")
-        return separator.takeUnless { '\n' in it || '\r' in it }.orEmpty()
-    }
-
-    /** A role-only wrapper contains timed child spans and is not itself a lyric word. */
-    private fun isBackgroundContainer(element: Element): Boolean {
-        val role = element.getAttributeNS(TTM_NAMESPACE, "role")
-            .ifBlank { element.getAttribute("ttm:role") }
-        return role == "x-bg" && element.getAttribute("begin").isBlank()
     }
 
     private fun metadataTextByLineKey(

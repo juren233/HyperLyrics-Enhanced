@@ -12,14 +12,23 @@ internal class ScrollStepper {
         lineWidth: Float,
         viewWidth: Float,
         isFinished: Boolean,
-        isScrollFinished: Boolean
+        isScrollFinished: Boolean,
+        followAnchor: Float = viewWidth / 2f,
     ): Float {
         if (lineWidth <= viewWidth) return 0f
         val minScroll = -(lineWidth - viewWidth)
         if (isFinished) return minScroll
-        val halfWidth = viewWidth / 2f
-        return if (highlightWidth > halfWidth) {
-            (halfWidth - highlightWidth).coerceIn(minScroll, 0f)
+        val anchor = followAnchor.coerceIn(0f, viewWidth.coerceAtLeast(0f))
+        return if (highlightWidth > anchor) {
+            (anchor - highlightWidth).coerceIn(minScroll, 0f)
         } else 0f
     }
+}
+
+/** 全岛按实际右槽定位跟随点；无有效接缝时保留普通逐字行的中点语义。 */
+internal fun resolveSpaceGateFollowAnchor(viewWidth: Float, seamX: Float?): Float {
+    if (seamX == null || !seamX.isFinite() || seamX <= 0f || seamX >= viewWidth) {
+        return viewWidth / 2f
+    }
+    return seamX + (viewWidth - seamX) / 2f
 }

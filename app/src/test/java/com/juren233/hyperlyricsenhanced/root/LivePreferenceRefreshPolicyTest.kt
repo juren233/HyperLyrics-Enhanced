@@ -13,6 +13,27 @@ import org.junit.Test
 
 class LivePreferenceRefreshPolicyTest {
     @Test
+    fun `font weight selection and custom value refresh SystemUI immediately`() {
+        assertTrue(LivePreferenceRefreshPolicy.contains(RootConstants.KEY_HOOK_FONT_WEIGHT_MODE))
+        assertTrue(LivePreferenceRefreshPolicy.contains(RootConstants.KEY_HOOK_FONT_WEIGHT))
+    }
+
+    @Test
+    fun `next lyric line toggle refreshes SystemUI immediately`() {
+        assertTrue(LivePreferenceRefreshPolicy.contains(RootConstants.KEY_HOOK_NEXT_LYRIC_LINE))
+        assertTrue(LivePreferenceRefreshPolicy.contains(RootConstants.KEY_HOOK_ISLAND_NEXT_LINE_MODE))
+    }
+
+    @Test
+    fun `status bar font color refreshes SystemUI immediately`() {
+        assertTrue(LivePreferenceRefreshPolicy.contains(RootConstants.KEY_HOOK_STATUS_BAR_TEXT_COLOR))
+    }
+
+    @Test
+    fun `short lyric song info toggle refreshes SystemUI immediately`() {
+        assertTrue(LivePreferenceRefreshPolicy.contains(RootConstants.KEY_HOOK_ISLAND_SHORT_LYRIC_SONG_INFO))
+    }
+    @Test
     fun `dynamic limit toggle refreshes SystemUI immediately`() {
         assertTrue(LivePreferenceRefreshPolicy.contains(RootConstants.KEY_HOOK_ISLAND_DYNAMIC_LIMIT))
     }

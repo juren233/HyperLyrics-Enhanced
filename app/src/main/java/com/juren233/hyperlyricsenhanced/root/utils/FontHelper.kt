@@ -3,10 +3,13 @@ package com.juren233.hyperlyricsenhanced.root.utils
 import android.content.SharedPreferences
 import android.content.res.AssetManager
 import android.graphics.Typeface
+import android.graphics.Paint
 import android.graphics.fonts.Font
 import android.graphics.fonts.FontFamily
 import android.graphics.fonts.FontStyle
 import com.juren233.hyperlyricsenhanced.common.RootConstants
+import com.juren233.hyperlyricsenhanced.common.IslandFontWeightMode
+import com.juren233.hyperlyricsenhanced.root.island.IslandRuntimePreferenceReader
 import com.juren233.hyperlyricsenhanced.root.HookEntry
 import java.io.File
 import java.util.Collections
@@ -50,8 +53,12 @@ object FontHelper {
     }
 
     private fun readFontConfig(prefs: SharedPreferences): FontConfig {
+        val followSystem = IslandRuntimePreferenceReader.getFontWeightMode(prefs) == IslandFontWeightMode.SYSTEM
         return FontConfig(
-            weight = prefs.getInt(
+            followSystem = followSystem,
+            textSizeSp = prefs.getInt(RootConstants.KEY_HOOK_TEXT_SIZE, RootConstants.DEFAULT_HOOK_TEXT_SIZE),
+            weight = if (followSystem) IslandSystemFontWeight.state.standardWeight else IslandRuntimePreferenceReader.getInt(
+                prefs,
                 RootConstants.KEY_HOOK_FONT_WEIGHT,
                 RootConstants.DEFAULT_HOOK_FONT_WEIGHT
             ).coerceIn(FontStyle.FONT_WEIGHT_MIN, FontStyle.FONT_WEIGHT_MAX),
@@ -93,6 +100,16 @@ object FontHelper {
         }
 
         val finalBaseTf = baseTf ?: Typeface.DEFAULT
+
+        if (config.followSystem && baseTf == null) {
+            return IslandSystemFontWeight.typeface(config.italic, config.textSizeSp)
+        }
+        if (config.followSystem) {
+            return Paint().apply {
+                typeface = Typeface.create(finalBaseTf, config.weight, config.italic)
+                setFontVariationSettings("'wght' ${config.weight}")
+            }.typeface
+        }
 
         return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
             Typeface.create(finalBaseTf, config.weight, config.italic)
@@ -247,6 +264,8 @@ object FontHelper {
     }
 
     private data class FontConfig(
+        val followSystem: Boolean,
+        val textSizeSp: Int,
         val weight: Int,
         val italic: Boolean,
         val customFontPath: String?

@@ -83,8 +83,14 @@ internal fun regionalOriginalAliases(
 
 internal fun isAcceptableOriginalAlias(alias: Alias, sourceLanguage: String): Boolean {
     if (alias.title.isBlank() && alias.artist.isBlank()) return false
+    if (!matchesOriginalLanguage(alias, sourceLanguage)) return false
     if (canonicalOriginalLanguage(sourceLanguage) != "zh-Hans-CN") return true
     return containsHanCharacters(alias.title) || containsHanCharacters(alias.artist)
+}
+
+internal fun matchesOriginalLanguage(alias: Alias, sourceLanguage: String): Boolean {
+    val expected = supportedOriginalLanguageOrNull(sourceLanguage) ?: return false
+    return supportedOriginalLanguageOrNull(alias.language) == expected
 }
 
 internal fun selectExactOriginalEntityAlias(
@@ -94,7 +100,8 @@ internal fun selectExactOriginalEntityAlias(
     sourceLanguage: String,
 ): Alias? {
     resolved[mediaId.trim()]?.takeIf { alias ->
-        alias.title.isNotBlank() || alias.artist.isNotBlank()
+        matchesOriginalLanguage(alias, sourceLanguage) &&
+            (alias.title.isNotBlank() || alias.artist.isNotBlank())
     }?.let { return it }
     return lookupIds.asSequence()
         .map(String::trim)

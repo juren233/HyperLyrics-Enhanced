@@ -42,13 +42,25 @@ internal class SpaceGateScrollTextRenderer : LineRenderer {
 
     var typefaceSelector: ((Char) -> Typeface)? = null
 
-    /** 分离模式挖孔布局；null 表示未挖孔，条带连续。 */
-    var gateSplit: GateSplitLayout? = null
+    /** 纯遮挡接缝布局；null 表示非拼接模式，条带连续绘制。 */
+    var seamLayout: SeamOcclusionLayout? = null
+
+    /** 接缝（虚拟坐标）＝左槽宽；仅 [seamLayout] 非空时有意义。 */
+    var seamX: Float = 0f
+    var nextLineOnRight: Boolean = false
+    private fun hasRightPreview(viewWidth: Int): Boolean =
+        nextLineOnRight && seamX >= 0f && seamX < viewWidth
 
     val scrollProgress get() = currentUnitOffset
 
-    private fun contentWidthOf(model: LyricModel): Float =
-        gateSplit?.holedWidth ?: model.width
+    private fun layoutFor(model: LyricModel, viewWidth: Int) = SpaceGateLineLayout(
+        model.width, viewWidth.toFloat(), seamLayout, seamX,
+        model.isAlignedRight, centerIfPossible, alignRight,
+        nextLineOnRight = nextLineOnRight,
+    )
+
+    override fun layoutWidthFor(model: LyricModel, viewWidth: Int): Float =
+        layoutFor(model, viewWidth).scrollWidth
 
     var isRunning = false
     var isPendingDelay = false
@@ -69,13 +81,13 @@ internal class SpaceGateScrollTextRenderer : LineRenderer {
     ): Boolean {
         lastViewWidth = viewWidth
         lastLyricWidth = model.width
-        if (BuildConfig.DEBUG) logPlainTrace(state, contentWidthOf(model), viewWidth.toFloat())
+        if (BuildConfig.DEBUG) logPlainTrace(state, layoutWidthFor(model, viewWidth), viewWidth.toFloat())
 
         if (finished) return false
 
         val vw = viewWidth.toFloat()
-        val contentWidth = contentWidthOf(model)
-        if (contentWidth <= vw) {
+        val contentWidth = layoutWidthFor(model, viewWidth)
+        if (contentWidth <= vw && !hasRightPreview(viewWidth)) {
             state.scrollOffset = 0f
             state.isScrollFinished = true
             markFinished(state)
@@ -98,6 +110,16 @@ internal class SpaceGateScrollTextRenderer : LineRenderer {
         val unit = contentWidth + ghostSpacing
         val deltaPx = scrollSpeed * (deltaNanos / 1_000_000f)
         currentUnitOffset += deltaPx
+
+        if (hasRightPreview(viewWidth)) {
+            // The upcoming line replaces the repeated ghost. A short current line
+            // stays in place while the same clock slides its preview into spare room.
+            val travel = maxOf(contentWidth - vw, (vw - seamX) / 2f)
+            currentUnitOffset = minOf(currentUnitOffset, travel)
+            state.scrollOffset = -minOf(currentUnitOffset, (contentWidth - vw).coerceAtLeast(0f))
+            if (currentUnitOffset >= travel) markFinished(state)
+            return true
+        }
 
         val isLastRepeat = repeatCount > 0 && (currentRepeat + 1) >= repeatCount
 
@@ -143,15 +165,12 @@ internal class SpaceGateScrollTextRenderer : LineRenderer {
         viewHeight: Int
     ) {
         val vw = viewWidth.toFloat()
-        val contentWidth = contentWidthOf(model)
-        val offset = resolvePlainTextOffset(
-            contentWidth,
-            vw,
-            state.scrollOffset,
-            model.isAlignedRight,
-            centerIfPossible,
-            alignRight
-        )
+        val layout = layoutFor(model, viewWidth)
+        val contentWidth = layout.scrollWidth
+        val drawnOffset = layout.textOrigin(state.scrollOffset)
+        // 接缝方案（静止绕孔分段/滚动边缘滑过渐隐）由共享行布局纯函数给出，
+        // 主从两槽与阴影同输入同结果。
+        val plan = layout.plan(state.scrollOffset)
 
         if (cachedViewHeight != viewHeight) {
             val fm = paint.fontMetrics
@@ -159,35 +178,40 @@ internal class SpaceGateScrollTextRenderer : LineRenderer {
             cachedViewHeight = viewHeight
         }
 
-        val visible = offset < vw && offset + contentWidth > 0
+        val visible = drawnOffset < vw && drawnOffset + contentWidth > 0
         if (visible) {
-            drawStrip(canvas, model, paint, offset)
+            drawStrip(canvas, model, paint, drawnOffset, plan)
         }
 
         // Space gate doesn't loop ghost texts across the portal, but keep it for normal marquee
-        if (contentWidth > vw) {
-            val rightEdge = offset + contentWidth
+        if (contentWidth > vw && !hasRightPreview(viewWidth)) {
+            val rightEdge = drawnOffset + contentWidth
             if (rightEdge < vw) {
                 val ghostX = rightEdge + ghostSpacing
                 if (ghostX < vw) {
-                    drawStrip(canvas, model, paint, ghostX)
+                    // ghost 仅存在于滚动中：纯过缝方案（无段带），跨缝渐隐同正文。
+                    val ghostPlan = seamLayout?.let { SeamStripPlan.transit(it, ghostX, seamX) }
+                    drawStrip(canvas, model, paint, ghostX, ghostPlan)
                 }
             }
         }
     }
 
-    /** 挖孔时按字符边界拆两段绘制，后段从 [GateSplitLayout.runBStripStart] 起笔。 */
+    /**
+     * 按接缝方案分段绘制：每段带在自身平移量内以自然条带坐标起笔（shader/
+     * 坐标系恒自然），跨缝单元在所属段内以多数侧裁剪＋渐隐绘制。
+     */
     private fun drawStrip(
         canvas: Canvas,
         model: LyricModel,
         paint: TextPaint,
-        startX: Float
+        startX: Float,
+        plan: SeamStripPlan?
     ) {
-        val split = gateSplit
+        val text = model.text
+        if (text.isEmpty()) return
         val selector = typefaceSelector
-        if (split == null || split.holeWidth <= 0f || split.splitCharIndex <= 0) {
-            val text = model.text
-            if (text.isEmpty()) return
+        if (plan == null) {
             canvas.withTranslation(x = startX) {
                 if (selector != null) {
                     MixedTypefaceText.drawText(canvas, text, 0f, cachedBaseline, paint, selector)
@@ -197,13 +221,25 @@ internal class SpaceGateScrollTextRenderer : LineRenderer {
             }
             return
         }
-        val k = split.splitCharIndex.coerceIn(0, model.text.length)
         canvas.withTranslation(x = startX) {
-            drawRun(canvas, model.text, 0, k, 0f, paint, selector)
-        }
-        canvas.withTranslation(x = startX) {
-            // drawRun starts the substring at local x=0; runBStripStart is its absolute strip x.
-            drawRun(canvas, model.text, k, model.text.length, split.runBStripStart, paint, selector)
+            for (band in plan.bands) {
+                if (band.charEnd <= band.charStart) continue
+                canvas.withTranslation(x = band.delta) {
+                    val st = plan.straddler
+                    if (st != null && st.unit.charStart >= band.charStart && st.unit.charEnd <= band.charEnd) {
+                        val fade = plan.fadeAt(startX, band.delta)
+                        if (st.unit.charStart > band.charStart) {
+                            drawRun(canvas, text, band.charStart, st.unit.charStart, band.startAdvance, paint, selector, null)
+                        }
+                        drawRun(canvas, text, st.unit.charStart, st.unit.charEnd, st.unit.start, paint, selector, fade)
+                        if (st.unit.charEnd < band.charEnd) {
+                            drawRun(canvas, text, st.unit.charEnd, band.charEnd, st.unit.end, paint, selector, null)
+                        }
+                    } else {
+                        drawRun(canvas, text, band.charStart, band.charEnd, band.startAdvance, paint, selector, null)
+                    }
+                }
+            }
         }
     }
 
@@ -212,16 +248,19 @@ internal class SpaceGateScrollTextRenderer : LineRenderer {
         text: String,
         start: Int,
         end: Int,
-        extraShift: Float,
+        x: Float,
         paint: TextPaint,
-        selector: ((Char) -> Typeface)?
+        selector: ((Char) -> Typeface)?,
+        fade: SeamStripPlan.SeamFade?
     ) {
         if (end <= start) return
-        canvas.withTranslation(x = extraShift) {
-            if (selector != null) {
-                MixedTypefaceText.drawText(canvas, text.substring(start, end), 0f, cachedBaseline, paint, selector)
-            } else {
-                drawText(text, start, end, 0f, cachedBaseline, paint)
+        canvas.withSeamFade(fade, paint) {
+            canvas.withTranslation(x = x) {
+                if (selector != null) {
+                    MixedTypefaceText.drawText(canvas, text.substring(start, end), 0f, cachedBaseline, paint, selector)
+                } else {
+                    drawText(text, start, end, 0f, cachedBaseline, paint)
+                }
             }
         }
     }
@@ -314,6 +353,9 @@ internal class SpaceGateScrollTextRenderer : LineRenderer {
     private fun pxPerMs(dpPerSec: Float): Float {
         return (dpPerSec * Resources.getSystem().displayMetrics.density) / 1000f
     }
+
+    override fun seamPlanFor(model: LyricModel, state: LineState, viewWidth: Int): SeamStripPlan? =
+        layoutFor(model, viewWidth).plan(state.scrollOffset)
 
     fun syncFrom(other: SpaceGateScrollTextRenderer) {
         this.isRunning = other.isRunning

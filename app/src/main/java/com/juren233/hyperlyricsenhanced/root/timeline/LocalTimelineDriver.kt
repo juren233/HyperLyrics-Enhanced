@@ -16,6 +16,7 @@ import com.juren233.hyperlyricsenhanced.lyric.model.RichLyricLine
 import com.juren233.hyperlyricsenhanced.lyric.source.LyricSink
 import com.juren233.hyperlyricsenhanced.lyric.source.SourceSelectionAwareSink
 import com.juren233.hyperlyricsenhanced.lyric.source.TimelineContent
+import com.juren233.hyperlyricsenhanced.lyric.view.line.PositionUpdateDemand
 import com.juren233.hyperlyricsenhanced.root.LyriconDataBridge
 import com.juren233.hyperlyricsenhanced.root.SystemUiEnhancementGate
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
@@ -575,13 +576,7 @@ class LocalTimelineDriver(
                 renderSink.onStop()
             }
         }
-        LyriconDataBridge.updateLyricPackage(track.packageName)
-        LyriconDataBridge.currentSongName = fallbackTitle.ifBlank { track.title }
-        renderSink.onMetadata(track.title, track.artist, track.album, track.packageName)
-        if (fallbackAction == PlaybackSmoothingPolicy.EmptyLyricsFallbackAction.PRESERVE_HOST) {
-            timelinePosition()?.let(renderSink::onPositionChanged)
-            if (renderedPlaying == true) startPositionLoop()
-        }
+        publishTitleFallback(track, fallbackTitle)
         diagnostic(
             "空歌词内容回退: action=$fallbackAction, pkg=${track.packageName}, " +
                 "title=${track.title}, renderedPlaying=$renderedPlaying"
@@ -595,7 +590,7 @@ class LocalTimelineDriver(
         renderedPlaying = null
         resetSourceClock()
         renderSink.onStop()
-        if (showTrackFallback) {
+        if (showTrackFallback && SystemUiEnhancementGate.isLyricRuntimeEnabled()) {
             // 标题回退只服务模块作用域内的音乐 App（含汽水的系统媒体路径）。
             // 非作用域 App（视频/投屏等）拿到锚点时不写入任何元数据，
             // 岛交给系统原生显示（2026-09-24 issue #39）。
@@ -607,11 +602,22 @@ class LocalTimelineDriver(
                 }
             }
             fallbackTrack?.let { track ->
-                LyriconDataBridge.updateLyricPackage(track.packageName)
-                LyriconDataBridge.currentSongName = track.title
-                renderSink.onMetadata(track.title, track.artist, track.album, track.packageName)
+                publishTitleFallback(track, track.title)
             }
         }
+    }
+
+    private fun publishTitleFallback(track: TrackIdentity, fallbackTitle: String) {
+        // Metadata-only presentation owns a track too. Leaving this null after onStop()
+        // prevents later playback callbacks from ever resuming the title placeholder.
+        appliedTrackKey = track.normalizedKey()
+        appliedPackageName = track.packageName
+        LyriconDataBridge.updateLyricPackage(track.packageName)
+        LyriconDataBridge.currentSongName = fallbackTitle.ifBlank { track.title }
+        renderSink.onMetadata(track.title, track.artist, track.album, track.packageName)
+        timelinePosition()?.let(renderSink::onPositionChanged)
+        refreshRenderPlaybackState()
+        diagnostic("标题回退已绑定: pkg=${track.packageName}, key=$appliedTrackKey, playing=$renderedPlaying")
     }
 
     private fun prepareTrackTransition(track: TrackIdentity) {
@@ -721,6 +727,8 @@ class LocalTimelineDriver(
             nextBoundaryMs = LyriconDataBridge.nextDisplayChangeMs(position),
             nextLineWordSync = LyriconDataBridge.currentNextLyricLine?.words?.isNotEmpty() == true,
             msSinceLineChange = msSinceLineChange,
+            // Raw source words omit generated progress and timed secondary content.
+            activeConsumerWordSync = PositionUpdateDemand.active.requiresFrequentUpdates(),
         )
     }
 

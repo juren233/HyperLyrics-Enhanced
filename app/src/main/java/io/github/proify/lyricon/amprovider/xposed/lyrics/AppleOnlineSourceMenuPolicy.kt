@@ -12,7 +12,37 @@ internal fun effectiveOnlineSourceSelection(
     storedSource: String?,
     confirmedSource: String?,
     onlineContentConsumed: Boolean,
-): String? = if (onlineContentConsumed) confirmedSource ?: storedSource else null
+    isLyricsSource: Boolean = false,
+    presentedLyricsSource: String? = null,
+): String? = when {
+    // A successful request or stored candidate does not identify the displayed lyrics.
+    isLyricsSource -> presentedLyricsSource
+    onlineContentConsumed -> confirmedSource ?: storedSource
+    else -> null
+}
+
+/** Classify the same-song visible model, without treating a cached candidate as a binding. */
+internal fun presentedLyricsSource(
+    requestedSongId: String?,
+    modelSongId: String?,
+    hasLines: Boolean,
+    pointer: Any?,
+    knownSupplementPointers: List<Any>,
+    currentSupplementPointer: Any?,
+    supplementSource: String?,
+    nativeAddress: (Any) -> Long?,
+): String? {
+    if (requestedSongId.isNullOrBlank() || requestedSongId != modelSongId || !hasLines || pointer == null) {
+        return null
+    }
+    if (!isKnownSupplementPointer(pointer, knownSupplementPointers, nativeAddress)) return "APPLE"
+    // Retained models can still be visible while a new model is being built. Do not
+    // attribute the new Store source to an old pointer, or guess that it is native.
+    if (!isKnownSupplementPointer(pointer, listOfNotNull(currentSupplementPointer), nativeAddress)) {
+        return null
+    }
+    return supplementSource?.takeIf { it.isNotBlank() && it != "APPLE" }
+}
 
 internal fun sourceMenuPresentation(
     actualSource: String?,

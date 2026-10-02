@@ -10,6 +10,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.stringResource
 import com.juren233.hyperlyricsenhanced.R
 import com.juren233.hyperlyricsenhanced.common.IslandLyricPosition
+import com.juren233.hyperlyricsenhanced.common.IslandFontWeightMode
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.ui.component.CustomFontColorPickerDialog
 import com.juren233.hyperlyricsenhanced.ui.component.NumberInputDialog
@@ -22,14 +23,17 @@ internal const val FONT_COLOR_MODE_DEFAULT = 0
 internal const val FONT_COLOR_MODE_MONET = 1
 internal const val FONT_COLOR_MODE_COVER = 2
 internal const val FONT_COLOR_MODE_COVER_GRADIENT = 3
-internal const val FONT_COLOR_MODE_CUSTOM = 4
+internal const val FONT_COLOR_MODE_STATUS_BAR = 4
+internal const val FONT_COLOR_MODE_CUSTOM = 5
 
 internal fun resolveFontColorMode(
     customEnabled: Boolean,
     monetEnabled: Boolean,
     coverEnabled: Boolean,
     coverGradient: Boolean,
+    statusBarEnabled: Boolean = false,
 ): Int = when {
+    statusBarEnabled -> FONT_COLOR_MODE_STATUS_BAR
     customEnabled -> FONT_COLOR_MODE_CUSTOM
     monetEnabled -> FONT_COLOR_MODE_MONET
     !coverEnabled -> FONT_COLOR_MODE_DEFAULT
@@ -69,9 +73,16 @@ fun LyricDisplayPage() {
             )
         )
     }
+    var statusBarFontColorEnabled by remember {
+        mutableStateOf(prefs.getBoolean(
+            RootConstants.KEY_HOOK_STATUS_BAR_TEXT_COLOR,
+            RootConstants.DEFAULT_HOOK_STATUS_BAR_TEXT_COLOR,
+        ))
+    }
     var fontColorMode by remember {
         mutableIntStateOf(
             resolveFontColorMode(
+                statusBarEnabled = statusBarFontColorEnabled,
                 customEnabled = customFontColorEnabled,
                 monetEnabled = monetFontColorEnabled,
                 coverEnabled = prefs.getBoolean(
@@ -95,6 +106,7 @@ fun LyricDisplayPage() {
         )
     }
     var fontWeight by remember { mutableIntStateOf(prefs.getInt(RootConstants.KEY_HOOK_FONT_WEIGHT, RootConstants.DEFAULT_HOOK_FONT_WEIGHT)) }
+    var fontWeightMode by remember { mutableIntStateOf(IslandFontWeightMode.read(prefs)) }
     var fontItalic by remember { mutableStateOf(prefs.getBoolean(RootConstants.KEY_HOOK_FONT_ITALIC, RootConstants.DEFAULT_HOOK_FONT_ITALIC)) }
     val legacyLyricPosition = remember {
         IslandLyricPosition.resolve(
@@ -128,8 +140,8 @@ fun LyricDisplayPage() {
     }
     var centerGroupVocals by remember { mutableStateOf(prefs.getBoolean(RootConstants.KEY_HOOK_CENTER_GROUP_VOCALS, RootConstants.DEFAULT_HOOK_CENTER_GROUP_VOCALS)) }
     val lyricMode = prefs.getInt(RootConstants.KEY_HOOK_LYRIC_MODE, RootConstants.DEFAULT_HOOK_LYRIC_MODE)
-    // 全岛/分离歌词都固定使用左右歌词槽；单侧位置设置只对单侧歌词生效。
-    val showSideLyricPositions = lyricMode == RootConstants.HOOK_LYRIC_MODE_SINGLE_SIDE
+    val isSeparatedMode = lyricMode == RootConstants.HOOK_LYRIC_MODE_SEPARATED
+    val showSideLyricPositions = lyricMode == RootConstants.HOOK_LYRIC_MODE_SINGLE_SIDE || isSeparatedMode
     val leftContent = prefs.getInt(RootConstants.KEY_HOOK_ISLAND_CONTENT_LEFT, RootConstants.DEFAULT_HOOK_ISLAND_CONTENT_LEFT)
     val rightContent = prefs.getInt(RootConstants.KEY_HOOK_ISLAND_CONTENT_RIGHT, RootConstants.DEFAULT_HOOK_ISLAND_CONTENT_RIGHT)
     val showCenterGroupVocals = IslandLyricPosition.supportsGroupVocalCentering(
@@ -230,6 +242,8 @@ fun LyricDisplayPage() {
             fontColorMode = fontColorMode,
             onFontColorModeChange = { mode ->
                 fontColorMode = mode
+                statusBarFontColorEnabled = mode == FONT_COLOR_MODE_STATUS_BAR
+                saveConfig(RootConstants.KEY_HOOK_STATUS_BAR_TEXT_COLOR, statusBarFontColorEnabled)
                 when (mode) {
                     FONT_COLOR_MODE_MONET -> {
                         monetFontColorEnabled = true
@@ -277,6 +291,11 @@ fun LyricDisplayPage() {
             customFontPath = customFontPath,
             onFontPathClick = { showFontPathDialog = true },
             fontWeight = fontWeight,
+            fontWeightMode = fontWeightMode,
+            onFontWeightModeChange = {
+                fontWeightMode = it
+                saveConfig(RootConstants.KEY_HOOK_FONT_WEIGHT_MODE, it)
+            },
             onFontWeightClick = { showFontWeightDialog = true },
             fontItalic = fontItalic,
             onFontItalicChange = {
@@ -301,6 +320,7 @@ fun LyricDisplayPage() {
             centerGroupVocals = centerGroupVocals,
             showCenterGroupVocals = showCenterGroupVocals,
             showSideLyricPositions = showSideLyricPositions,
+            sideLyricPositionsNonScrollingOnly = isSeparatedMode,
             onCenterGroupVocalsChange = {
                 centerGroupVocals = it
                 saveConfig(RootConstants.KEY_HOOK_CENTER_GROUP_VOCALS, it)

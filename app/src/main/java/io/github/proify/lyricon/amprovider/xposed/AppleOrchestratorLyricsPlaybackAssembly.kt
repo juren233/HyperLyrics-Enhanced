@@ -330,6 +330,7 @@ internal class AppleOrchestratorLyricsPlaybackAssembly(
             visibleLyricsSongId = lyricsHooks::currentSongId,
             shouldHideMandarinPronunciation = lyricsHooks::shouldHideMandarinPronunciation,
             hasOnlineContentConsumption = lyricsHooks::hasCurrentOnlineContentConsumption,
+            currentPresentedLyricsSource = lyricsHooks::currentPresentedLyricsSource,
             missingLyricsSourceInfo = { songId ->
                 if (this::missingLyricsHooks.isInitialized) {
                     missingLyricsHooks.sourceInfo(songId)

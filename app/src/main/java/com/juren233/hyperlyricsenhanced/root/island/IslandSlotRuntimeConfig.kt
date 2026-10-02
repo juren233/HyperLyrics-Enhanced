@@ -4,6 +4,9 @@ import android.content.SharedPreferences
 import android.view.View
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.common.IslandLyricPosition
+import com.juren233.hyperlyricsenhanced.common.IslandNextLineMode
+import com.juren233.hyperlyricsenhanced.common.IslandFontWeightMode
+import com.juren233.hyperlyricsenhanced.root.utils.IslandSystemFontWeight
 import com.juren233.hyperlyricsenhanced.common.lyric.AdjacentTranslationPolicy
 
 internal data class IslandSlotRuntimeConfig(
@@ -63,6 +66,7 @@ internal data class IslandSlotRuntimeConfig(
     val customTextColorEnabled: Boolean,
     val customTextColor: Int,
     val monetTextColorEnabled: Boolean,
+    val statusBarTextColorEnabled: Boolean = RootConstants.DEFAULT_HOOK_STATUS_BAR_TEXT_COLOR,
     val customFontPath: String,
     val narrowLatinFont: Boolean,
     val wordMotionEnabled: Boolean,
@@ -71,7 +75,17 @@ internal data class IslandSlotRuntimeConfig(
     val wordMotionLatinLift: Float,
     val wordMotionLatinWave: Float,
     val dynamicLimitEnabled: Boolean = false,
+    val shortLyricSongInfo: Boolean = RootConstants.DEFAULT_HOOK_ISLAND_SHORT_LYRIC_SONG_INFO,
+    val fullIslandNextLineMode: Int = IslandNextLineMode.resolve(IslandNextLineMode.UNSPECIFIED, nextLyricLine),
+    val fontWeightMode: Int = IslandFontWeightMode.CUSTOM,
+    val systemFontWeight: IslandSystemFontWeight.State? = null,
 ) {
+    val nextLineEnabled: Boolean
+        get() = if (isFullIslandMode) fullIslandNextLineMode != IslandNextLineMode.OFF else nextLyricLine
+
+    val nextLineOnRight: Boolean
+        get() = isFullIslandMode && fullIslandNextLineMode == IslandNextLineMode.RIGHT
+
     val translationDisplay: Boolean
         get() = translationDisplayMode != RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_OFF
 
@@ -92,12 +106,12 @@ internal data class IslandSlotRuntimeConfig(
 
     fun lyricPosition(isLeft: Boolean): Int = if (isLeft) leftLyricPosition else rightLyricPosition
 
-    // 双槽歌词模式由模式本身决定两侧布局，不消费单侧歌词的位置偏好。
+    // 全岛共用连续文本带；对半分离的两槽可独立对齐，渲染器仅对不溢出的行生效。
     fun centerLyric(isLeft: Boolean): Boolean =
-        !usesBothLyricSlots && IslandLyricPosition.centers(lyricPosition(isLeft))
+        !isFullIslandMode && IslandLyricPosition.centers(lyricPosition(isLeft))
 
     fun rightAlignLyric(isLeft: Boolean): Boolean =
-        !usesBothLyricSlots && IslandLyricPosition.alignsRight(lyricPosition(isLeft))
+        !isFullIslandMode && IslandLyricPosition.alignsRight(lyricPosition(isLeft))
 
     /**
      * Horizontal placement for content-width slots. Apply this at both the
@@ -141,12 +155,15 @@ internal data class IslandSlotRuntimeConfig(
 
     val styleSignature: String = listOf(
         activeMode,
+        shortLyricSongInfo,
         textSizeSp,
         dynamicWidthEnabled,
         duetFixedLengthEnabled,
         dynamicLimitEnabled,
         textSizeRatio,
         fontWeight,
+        fontWeightMode,
+        systemFontWeight,
         fontItalic,
         fadingEdgeLength,
         gradientProgress,
@@ -175,6 +192,7 @@ internal data class IslandSlotRuntimeConfig(
         translationOnly,
         swapTranslation,
         nextLyricLine,
+        fullIslandNextLineMode,
         adjacentBackgroundTranslation,
         forceNextSongAtEnd,
         nextSongDurationSeconds,
@@ -186,6 +204,7 @@ internal data class IslandSlotRuntimeConfig(
         customTextColorEnabled,
         customTextColor,
         monetTextColorEnabled,
+        statusBarTextColorEnabled,
         customFontPath,
         narrowLatinFont,
         wordMotionEnabled,
@@ -376,6 +395,11 @@ internal data class IslandSlotRuntimeConfig(
             )
             return IslandSlotRuntimeConfig(
                 activeMode = activeMode,
+                shortLyricSongInfo = runtimeBoolean(
+                    prefs,
+                    RootConstants.KEY_HOOK_ISLAND_SHORT_LYRIC_SONG_INFO,
+                    RootConstants.DEFAULT_HOOK_ISLAND_SHORT_LYRIC_SONG_INFO,
+                ),
                 leftMode = if (activeMode == RootConstants.HOOK_LYRIC_MODE_SINGLE_SIDE) runtimeInt(
                     prefs,
                     RootConstants.KEY_HOOK_ISLAND_CONTENT_LEFT,
@@ -428,7 +452,11 @@ internal data class IslandSlotRuntimeConfig(
                 ),
                 textSizeSp = prefs.getInt(RootConstants.KEY_HOOK_TEXT_SIZE, RootConstants.DEFAULT_HOOK_TEXT_SIZE),
                 textSizeRatio = prefs.getFloat(RootConstants.KEY_HOOK_TEXT_SIZE_RATIO, RootConstants.DEFAULT_HOOK_TEXT_SIZE_RATIO),
-                fontWeight = prefs.getInt(RootConstants.KEY_HOOK_FONT_WEIGHT, RootConstants.DEFAULT_HOOK_FONT_WEIGHT),
+                fontWeight = runtimeInt(prefs, RootConstants.KEY_HOOK_FONT_WEIGHT, RootConstants.DEFAULT_HOOK_FONT_WEIGHT),
+                fontWeightMode = IslandRuntimePreferenceReader.getFontWeightMode(prefs),
+                systemFontWeight = IslandSystemFontWeight.state.takeIf {
+                    IslandRuntimePreferenceReader.getFontWeightMode(prefs) == IslandFontWeightMode.SYSTEM
+                },
                 fontItalic = prefs.getBoolean(RootConstants.KEY_HOOK_FONT_ITALIC, RootConstants.DEFAULT_HOOK_FONT_ITALIC),
                 fadingEdgeLength = prefs.getInt(RootConstants.KEY_HOOK_FADING_EDGE_LENGTH, RootConstants.DEFAULT_HOOK_FADING_EDGE_LENGTH),
                 gradientProgress = prefs.getBoolean(RootConstants.KEY_HOOK_GRADIENT_PROGRESS, RootConstants.DEFAULT_HOOK_GRADIENT_PROGRESS),
@@ -466,7 +494,15 @@ internal data class IslandSlotRuntimeConfig(
                 translationFallback = com.juren233.hyperlyricsenhanced.root.utils.TranslationHelper.isTranslationFallback(prefs),
                 translationOnly = prefs.getBoolean(RootConstants.KEY_HOOK_TRANSLATION_ONLY, RootConstants.DEFAULT_HOOK_TRANSLATION_ONLY),
                 swapTranslation = prefs.getBoolean(RootConstants.KEY_HOOK_SWAP_TRANSLATION, RootConstants.DEFAULT_HOOK_SWAP_TRANSLATION),
-                nextLyricLine = prefs.getBoolean(RootConstants.KEY_HOOK_NEXT_LYRIC_LINE, RootConstants.DEFAULT_HOOK_NEXT_LYRIC_LINE),
+                nextLyricLine = runtimeBoolean(
+                    prefs,
+                    RootConstants.KEY_HOOK_NEXT_LYRIC_LINE,
+                    RootConstants.DEFAULT_HOOK_NEXT_LYRIC_LINE,
+                ),
+                fullIslandNextLineMode = IslandNextLineMode.resolve(
+                    runtimeInt(prefs, RootConstants.KEY_HOOK_ISLAND_NEXT_LINE_MODE, IslandNextLineMode.UNSPECIFIED),
+                    runtimeBoolean(prefs, RootConstants.KEY_HOOK_NEXT_LYRIC_LINE, RootConstants.DEFAULT_HOOK_NEXT_LYRIC_LINE),
+                ),
                 adjacentBackgroundTranslation = prefs.getBoolean(RootConstants.KEY_HOOK_ADJACENT_BACKGROUND_TRANSLATION, RootConstants.DEFAULT_HOOK_ADJACENT_BACKGROUND_TRANSLATION),
                 extractCoverTextColor = runtimeBoolean(
                     prefs,
@@ -492,6 +528,11 @@ internal data class IslandSlotRuntimeConfig(
                     prefs,
                     RootConstants.KEY_HOOK_MONET_TEXT_COLOR,
                     RootConstants.DEFAULT_HOOK_MONET_TEXT_COLOR
+                ),
+                statusBarTextColorEnabled = runtimeBoolean(
+                    prefs,
+                    RootConstants.KEY_HOOK_STATUS_BAR_TEXT_COLOR,
+                    RootConstants.DEFAULT_HOOK_STATUS_BAR_TEXT_COLOR,
                 ),
                 customFontPath = prefs.getString(RootConstants.KEY_HOOK_CUSTOM_FONT_PATH, null).orEmpty(),
                 narrowLatinFont = prefs.getBoolean(

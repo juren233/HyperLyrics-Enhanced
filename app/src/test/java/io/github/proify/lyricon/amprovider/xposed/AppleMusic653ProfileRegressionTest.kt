@@ -17,7 +17,47 @@ class AppleMusic653ProfileRegressionTest {
     @Test
     fun `1599 has exact targets for every hook group without losing multi-class groups`() {
         AppleMusicHookPoint.entries.forEach { point ->
-            assertTrue("Missing exact 1599 group: $point", targets(point).isNotEmpty())
+            // profiles2 is a 1606 surface; 1599 must keep its original Epoxy targets.
+            if (point in setOf(
+                    AppleMusicHookPoint.SEARCH_RESULTS_MODEL_BOUND,
+                    AppleMusicHookPoint.SEARCH_CONTROLLER_ADAPTER,
+                    AppleMusicHookPoint.SEARCH_ADAPTER_MODEL,
+                    AppleMusicHookPoint.RECYCLER_NOTIFY_ITEM_CHANGED,
+                    AppleMusicHookPoint.BROWSE_COMPOSE_ITEM,
+                    AppleMusicHookPoint.BROWSE_COMPOSER_SCOPE,
+                    AppleMusicHookPoint.BROWSE_COMPOSER_USE_SCOPE,
+                    AppleMusicHookPoint.BROWSE_SCOPE_INVALIDATE,
+                    AppleMusicHookPoint.RADIO_STATION_CLASS,
+                    AppleMusicHookPoint.RADIO_SEARCH_SESSION,
+                    AppleMusicHookPoint.RADIO_SEARCH_START,
+                    AppleMusicHookPoint.RADIO_SEARCH_RESULT,
+                    AppleMusicHookPoint.RADIO_SEARCH_CANCEL,
+                    AppleMusicHookPoint.RADIO_SEARCH_RESPONSE_RESULTS,
+                    AppleMusicHookPoint.RADIO_SEARCH_ARTISTS,
+                    AppleMusicHookPoint.RADIO_SEARCH_ENTITIES,
+                    AppleMusicHookPoint.ALBUM_COMPOSE_RESUME,
+                    AppleMusicHookPoint.ALBUM_COMPOSE_CONTENT,
+                    AppleMusicHookPoint.ALBUM_COMPOSE_VIEW_MODEL_GETTER,
+                    AppleMusicHookPoint.ALBUM_COMPOSE_PAGE_ID,
+                    AppleMusicHookPoint.ALBUM_COMPOSE_CURRENT_DATA,
+                    AppleMusicHookPoint.ALBUM_COMPOSE_TRACK_MAPPER,
+                    AppleMusicHookPoint.ALBUM_COMPOSE_TRACK_COMPARATOR,
+                    AppleMusicHookPoint.ALBUM_COMPOSE_REFRESH,
+                    AppleMusicHookPoint.ALBUM_COMPOSE_ROW,
+                    AppleMusicHookPoint.ALBUM_COMPOSE_ENTITY_ID,
+                    AppleMusicHookPoint.ARTIST_COMPOSE_CONTENT,
+                    AppleMusicHookPoint.ARTIST_COMPOSE_VIEW_MODEL_GETTER,
+                    AppleMusicHookPoint.ARTIST_COMPOSE_DATA,
+                    AppleMusicHookPoint.ARTIST_COMPOSE_CURRENT_DATA,
+                    AppleMusicHookPoint.ARTIST_COMPOSE_ENTITY_TITLE,
+                    AppleMusicHookPoint.ARTIST_COMPOSE_ENTITY_TYPE,
+                    AppleMusicHookPoint.ARTIST_COMPOSE_ENTITY_VIEWS,
+                    AppleMusicHookPoint.ARTIST_COMPOSE_ENTITY_RELATIONSHIPS,
+                    AppleMusicHookPoint.ARTIST_COMPOSE_RELATIONSHIP_ENTITIES,
+                    AppleMusicHookPoint.ARTIST_COMPOSE_FRAGMENT_RESUMED,
+                )
+            ) assertTrue(targets(point).isEmpty())
+            else assertTrue("Missing exact 1599 group: $point", targets(point).isNotEmpty())
         }
         assertEquals(2, targets(AppleMusicHookPoint.LYRICS_RECYCLER_ADAPTER).size)
         assertEquals(8, targets(AppleMusicHookPoint.COLLECTION_SURFACE_CLASSES).size)

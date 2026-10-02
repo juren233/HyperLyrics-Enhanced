@@ -9,6 +9,9 @@ object YoYoAnimation {
     private const val KEY_ANIM_LOCK = 0x7F_114514
     private const val KEY_ANIM_HANDLE = 0x7F_191981
 
+    /** Includes the old-content completion callback, before the entrance animation starts. */
+    internal fun isRunning(target: View): Boolean = target.getTag(KEY_ANIM_LOCK) == true
+
     fun <T : View> switchContent(
         target: T,
         outConfig: AnimConfig,

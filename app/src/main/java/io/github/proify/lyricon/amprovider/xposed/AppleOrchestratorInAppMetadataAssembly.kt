@@ -638,6 +638,8 @@ internal class AppleOrchestratorInAppMetadataAssembly(
             metadataStore = metadataOverrideStore,
             librarySurfaceHooks = librarySurfaceHooks,
             dataBindingHooks = dataBindingHooks,
+            catalogResolver = catalogLanguage.internalCatalogResolver,
+            originalMetadataEnabled = catalogLanguage::isRestoreCjkOriginalMetadataEnabled,
             host = DefaultAppleArtistSurfaceHost(
                 mediaApiEntityAttributesFn = { entity ->
                     mediaApiMetadataCoordinator.entityAttributes(entity)
@@ -1137,6 +1139,7 @@ internal class AppleOrchestratorInAppMetadataAssembly(
         metadataConfigurationDispatcher = AppleMetadataConfigurationDispatcher(
             clearStateOwners = listOf(
                 metadataOverrideStore::onConfigurationChanged,
+                artistSurfaceHooks::clearBrowseState,
                 librarySurfaceHooks::clearConfigurationState,
                 dataBindingHooks::clearConfigurationState,
                 listenNowHooks::clearMetadataState,

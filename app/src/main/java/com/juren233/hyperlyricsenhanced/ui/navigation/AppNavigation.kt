@@ -11,9 +11,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import top.yukonga.miuix.kmp.nav.core.NavDisplay
+import top.yukonga.miuix.kmp.nav.core.NavDisplayEffects
 import top.yukonga.miuix.kmp.nav.core.NavEntryBuilder
 import top.yukonga.miuix.kmp.nav.core.NavKey
 import top.yukonga.miuix.kmp.nav.core.rememberNavBackStack
+import top.yukonga.miuix.kmp.nav.core.rememberNavSystemCornerRadius
 import top.yukonga.miuix.kmp.nav.transition.NavSwipeDirection
 import kotlin.reflect.KClass
 import com.juren233.hyperlyricsenhanced.common.UIConstants
@@ -150,6 +152,10 @@ fun AppNavigation(startRoute: Route) {
             NavDisplay(
                 backStack = backStack,
                 onBack = { navigator.pop() },
+                // 默认半径为 0；转场页面的可见边缘应跟随设备屏幕圆角。
+                effects = NavDisplayEffects(
+                    cornerClipRadius = rememberNavSystemCornerRadius(),
+                ),
                 content = entryBuilder,
             )
         }

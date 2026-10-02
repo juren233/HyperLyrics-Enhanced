@@ -6,6 +6,8 @@
 
 package com.juren233.hyperlyricsenhanced.lyric.view.line
 
+import com.juren233.hyperlyricsenhanced.lyric.view.METADATA_NEXT_LINE_RIGHT_TEXT
+
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
@@ -39,20 +41,30 @@ import kotlin.math.abs
 import kotlin.math.ceil
 
 open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null) :
-    View(context, attrs), UpdatableColor, LyricTextPaintOwner {
+    View(context, attrs), UpdatableColor, LyricTextPaintOwner, PositionUpdateConsumer {
+
+    // Keep the requested length when switching between the belt and independent slots.
+    private var configuredFadingEdgeLength = 10.dp
+    private var fullIslandFadingEdges = SpaceGateFadingEdges.NONE
 
     init {
         isHorizontalFadingEdgeEnabled = true
-        setFadingEdgeLength(10.dp)
+        setFadingEdgeLength(configuredFadingEdgeLength)
     }
 
     // Space Gate synchronization settings
     var isRightSide = false
+        set(value) {
+            field = value
+            updateRightPreviewMode()
+        }
     var siblingView: SpaceGateLyricLineView? = null
     var spaceGateEnabled = true
         set(value) {
             if (field == value) return
             field = value
+            updateRightPreviewMode()
+            updateFadingEdges()
             if (value && !isRightSide) {
                 // 全岛歌词只允许右侧 Master 驱动帧循环。
                 animator.stop()
@@ -63,9 +75,12 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
             invalidate()
         }
 
-    /** 分离模式挖孔布局；null 表示当前几何/内容下不挖孔。 */
-    private var cachedGateSplit: GateSplitLayout? = null
-    private var gateSplitKey: List<Any?>? = null
+    /** 纯遮挡接缝布局；null 表示非拼接模式（无对端槽），条带连续绘制。 */
+    private var cachedSeamLayout: SeamOcclusionLayout? = null
+    private var seamLayoutKey: List<Any?>? = null
+
+    /** 最近一次分发到渲染器的接缝（虚拟坐标）＝左槽宽；-1 表示未分发。 */
+    private var distributedSeamX: Int = -1
 
 
     override val textPaint: TextPaint = TextPaintX().apply { textSize = 24f.sp }
@@ -91,12 +106,11 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
     val isPlainText: Boolean get() = _model.isPlainText
     val isInterludeIndicator: Boolean get() = interludeDotsRenderer.isIndicator(_model)
     val isWordSync: Boolean get() = !isPlainText
-    // 溢出判定与滚动使用同一内容宽度：挖孔把条带撑宽了 holeWidth，
-    // 只看未挖孔行宽会让“未挖孔装得下、挖孔后尾巴出界”的行永远不滚动。
-    val isOverflow: Boolean get() = marqueeContentWidth() > getSpaceGateVirtualWidth()
-
-    private fun marqueeContentWidth(): Float =
-        cachedGateSplit?.holedWidth ?: lineWidth
+    // 溢出按真实行宽加避让需求判定：静止行绕孔分段避让摄像头（用户拍板），
+    // 右段平移后行尾会超出岛缘的行改走正常滚动。右对齐/居中行由方案内
+    // 自行处理，不参与右移超尾判定。接缝布局未就绪时退化为纯行宽判定。
+    val isOverflow: Boolean
+        get() = hasRightPreview || getSpaceGateVirtualWidth().let { vw -> activeRenderer.layoutWidthFor(_model, vw) > vw }
     val isPlaying: Boolean get() = activeRenderer.isPlaying
     val isFinished: Boolean get() = activeRenderer.isFinished
     val isStarted: Boolean get() = activeRenderer.isStarted
@@ -189,6 +203,17 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
     internal val scrollRenderer = SpaceGateScrollTextRenderer()
     internal val syncRenderer = SpaceGateWordSyncRenderer(this)
     private val lineShadowRenderer = LineShadowRenderer()
+    private val rightPreview = SpaceGateRightPreviewRenderer()
+    private val hasRightPreview: Boolean
+        get() = rightPreview.hasText && if (spaceGateEnabled) {
+            cachedSeamLayout != null && distributedSeamX > 0
+        } else isRightSide
+
+    private fun updateRightPreviewMode() {
+        val enabled = (spaceGateEnabled || isRightSide) && rightPreview.hasText
+        scrollRenderer.nextLineOnRight = enabled
+        syncRenderer.nextLineOnRight = enabled
+    }
 
     override fun forEachDrawingTextPaint(action: (TextPaint) -> Unit) {
         // Host shadow parameters live only on textPaint. Word-sync color paints remain untouched.
@@ -313,6 +338,8 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
         scrollStarted = false
 
         _model = line?.normalize()?.createModel() ?: emptyLyricModel()
+        rightPreview.bind(_model.metadata?.get(METADATA_NEXT_LINE_RIGHT_TEXT))
+        updateRightPreviewMode()
         applyCurrentTypeface()
         activeRenderer = if (_model.isPlainText) scrollRenderer else syncRenderer
         if (BuildConfig.DEBUG && _model.text.isNotEmpty()) {
@@ -351,18 +378,18 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
         }
         ghostSpacing = marquee.spacing
 
-        if (spaceGateEnabled || fadingEdge <= 0) {
-            setFadingEdgeLength(0)
-            isHorizontalFadingEdgeEnabled = false
-        } else {
-            setFadingEdgeLength(fadingEdge)
-            isHorizontalFadingEdgeEnabled = true
-        }
+        configuredFadingEdgeLength = fadingEdge.coerceAtLeast(0)
+        updateFadingEdges()
 
         refreshSizes()
         animator.stop()
         if (!isStaticPreview && playbackActive) animator.startIfNeeded()
         invalidate()
+    }
+
+    private fun updateFadingEdges() {
+        setFadingEdgeLength(configuredFadingEdgeLength)
+        isHorizontalFadingEdgeEnabled = configuredFadingEdgeLength > 0
     }
 
     fun requestScroll() {
@@ -383,6 +410,12 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
      * 替换前像素级静止；新内容落地后由正常进度 tick 恢复。
      */
     private var contentSwitchPaused = false
+    private var layoutRolePaused = false
+
+    internal fun setLayoutRolePaused(paused: Boolean) {
+        layoutRolePaused = paused
+        if (paused) animator.stop() else resumePlaybackAnimation()
+    }
     private val switchTrace = if (BuildConfig.DEBUG) LyricSwitchTrace(this) else null
 
     private fun traceSwitch(event: String, dumpHistory: Boolean = false) {
@@ -410,7 +443,7 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
     }
 
     fun seekTo(posMs: Long) {
-        if (contentSwitchPaused || isStaticPreview) return
+        if (contentSwitchPaused || layoutRolePaused || isStaticPreview) return
         if (isInterludeIndicator) {
             interludeDotsRenderer.updatePosition(posMs)
             invalidate()
@@ -433,7 +466,7 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
     }
 
     fun updatePosition(posMs: Long) {
-        if (contentSwitchPaused || isStaticPreview) return
+        if (contentSwitchPaused || layoutRolePaused || isStaticPreview) return
         if (isInterludeIndicator) {
             interludeDotsRenderer.updatePosition(posMs)
             if (playbackActive) {
@@ -485,7 +518,7 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
     }
 
     private fun resumePlaybackAnimation() {
-        if (contentSwitchPaused) {
+        if (contentSwitchPaused || layoutRolePaused) {
             traceSwitch("resume_blocked_while_switch_paused")
             return
         }
@@ -503,11 +536,12 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
 
     fun refreshSizes() {
         _model.updateSizes(textPaint, currentTypefaceSelector)
+        rightPreview.configure(textPaint, currentTypefaceSelector, backgroundColors, currentFontSignature())
     }
 
     fun relayout() {
         traceSwitch("before_relayout")
-        ensureGateSplit()
+        ensureSeamLayout()
         if (isWordSync) syncRenderer.updateLayout(_model, lineState, getSpaceGateVirtualWidth(), measuredHeight)
         traceSwitch("after_relayout")
     }
@@ -519,6 +553,7 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
 
         updatePlainTextColors()
         syncRenderer.setColors(background, highlight)
+        rightPreview.configure(textPaint, currentTypefaceSelector, backgroundColors, currentFontSignature())
         invalidate()
     }
 
@@ -529,6 +564,8 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
         scrollRenderer.reset(lineState)
         syncRenderer.reset(lineState)
         lineShadowRenderer.clear()
+        rightPreview.bind(null)
+        updateRightPreviewMode()
         _model = emptyLyricModel()
         activeRenderer = scrollRenderer
         lastWidthOverflow = null
@@ -635,6 +672,47 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
         startScrolling()
     }
 
+    override fun draw(canvas: Canvas) {
+        // View asks for fading strengths before onDraw copies the master's state.
+        // Resolve once per draw from the live master, including band displacement,
+        // then let View fade both the glyphs and their shadows at the physical edges.
+        if (spaceGateEnabled) fullIslandFadingEdges = resolveFullIslandFadingEdges()
+        super.draw(canvas)
+    }
+
+    private fun resolveFullIslandFadingEdges(): SpaceGateFadingEdges {
+        if (configuredFadingEdgeLength <= 0) return SpaceGateFadingEdges.NONE
+        val master = if (isRightSide) this else siblingView ?: return SpaceGateFadingEdges.NONE
+        master.ensureSeamLayout()
+        val vw = master.getSpaceGateVirtualWidth()
+        val renderer = master.activeRenderer
+        val model = master._model
+        val renderedScrollWidth = renderer.layoutWidthFor(model, vw)
+        if (renderedScrollWidth <= vw && !master.hasRightPreview) return SpaceGateFadingEdges.NONE
+        val offset = master.lineState.scrollOffset
+        val seam = if (isRightSide) siblingView?.scrollWidth else scrollWidth
+        val edges = SpaceGateFadingEdges.resolve(
+            textWidth = maxOf(model.width, master.cachedSeamLayout?.totalAdvance ?: 0f),
+            scrollWidth = renderedScrollWidth,
+            viewWidth = vw.toFloat(),
+            seam = seam?.toFloat() ?: 0f,
+            offset = offset,
+            edgeLength = configuredFadingEdgeLength.toFloat(),
+            plan = renderer.seamPlanFor(model, master.lineState, vw),
+            ghostStart = resolveShadowGhostStartX(
+                primaryStartX = offset,
+                textWidth = renderedScrollWidth,
+                viewWidth = vw.toFloat(),
+                ghostSpacing = master.ghostSpacing,
+                isPlainText = master.isPlainText && !master.hasRightPreview,
+            ),
+        )
+        val previewStart = master.rightPreviewStart(vw) ?: return edges
+        if (previewStart >= vw) return edges
+        return edges.copy(outerRight = maxOf(edges.outerRight,
+            ((previewStart + master.rightPreview.width - vw) / configuredFadingEdgeLength).coerceIn(0f, 1f)))
+    }
+
     override fun onDraw(canvas: Canvas) {
         if (!spaceGateEnabled) {
             drawContent(canvas, scrollWidth)
@@ -643,12 +721,12 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
 
         val master = if (isRightSide) this else siblingView
         if (master == null) {
-            // 无对端时退回单槽渲染，挖孔引用一并清掉，避免残留分段绘制。
-            if (gateSplitKey != null) clearGateSplit()
+            // 无对端时退回单槽渲染，接缝布局引用一并清掉，避免残留遮挡绘制。
+            if (seamLayoutKey != null || distributedSeamX >= 0) clearSeamLayout()
             drawContent(canvas, scrollWidth)
             return
         }
-        ensureGateSplit()
+        ensureSeamLayout()
 
         val sibling = siblingView
         val (leftView, rightView) = if (isRightSide) {
@@ -685,65 +763,133 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
     }
 
     /**
-     * 计算并缓存挖孔布局。左右两槽基于同一行内容与同一组几何输入独立计算，
-     * 结果确定性一致；键命中即跳过。失效后同步清空两个渲染器的挖孔引用。
+     * 计算并缓存纯遮挡接缝布局。布局只依赖文本与绘制参数（与槽宽/对齐
+     * 无关，键因此更小）；接缝（左槽宽）单独探测并分发。左右两槽基于同
+     * 一行内容与同一组输入独立计算，结果确定性一致；键命中即跳过。失效
+     * 后同步清空两个渲染器的布局与接缝引用。
      */
-    private fun ensureGateSplit() {
+    private fun ensureSeamLayout() {
         val sibling = siblingView
         if (!spaceGateEnabled || sibling == null) {
-            if (gateSplitKey != null) clearGateSplit()
+            if (seamLayoutKey != null || distributedSeamX >= 0) clearSeamLayout()
             return
         }
         val leftView = if (isRightSide) sibling else this
-        val rightView = if (isRightSide) this else sibling
         fun laidOutWidth(view: SpaceGateLyricLineView): Int =
             view.width.takeIf { it > 0 } ?: view.measuredWidth
-        val leftWidth = laidOutWidth(leftView)
-        val rightWidth = laidOutWidth(rightView)
+        val seam = laidOutWidth(leftView)
+
         val key = listOf<Any?>(
             _model.text,
             _model.wordText,
             _model.width.toBits(),
             textPaint.textSize.toBits(),
-            leftWidth,
-            rightWidth,
-            centerIfPossible,
-            alignRight,
-            _model.isAlignedRight,
         )
-        if (key == gateSplitKey) return
-        gateSplitKey = key
-        val computed = GateSplitLayout.compute(
-            model = _model,
-            paint = textPaint,
-            typefaceSelector = currentTypefaceSelector,
-            leftWidth = leftWidth,
-            rightWidth = rightWidth,
-            virtualWidth = maxOf(scrollWidth, leftWidth + rightWidth),
-            centerIfPossible = centerIfPossible,
-            alignRight = alignRight,
-        )
-        cachedGateSplit = computed
-        scrollRenderer.gateSplit = computed
-        syncRenderer.gateSplit = computed
-        if (BuildConfig.DEBUG) {
-            HookLogger.d(
-                "IslandScroll",
-                "gate view=${Integer.toHexString(System.identityHashCode(this))} right=$isRightSide " +
-                    "left=$leftWidth rightW=$rightWidth virtual=${maxOf(scrollWidth, leftWidth + rightWidth)} " +
-                    "textW=${_model.width} plain=${_model.isPlainText} " +
-                    "result=${computed?.let {
-                        "k=${it.splitCharIndex} runA=${it.runAWidth} hole=${it.holeWidth} holed=${it.holedWidth}"
-                    } ?: "null"}"
-            )
+        val layoutChanged = key != seamLayoutKey
+        val seamChanged = seam != distributedSeamX
+        if (layoutChanged) {
+            seamLayoutKey = key
+            cachedSeamLayout = buildSeamLayout()
+            scrollRenderer.seamLayout = cachedSeamLayout
+            syncRenderer.seamLayout = cachedSeamLayout
+            if (BuildConfig.DEBUG) {
+                HookLogger.d(
+                    "IslandScroll",
+                    "seamLayout view=${Integer.toHexString(System.identityHashCode(this))} right=$isRightSide " +
+                        "seam=$seam textW=${_model.width} plain=${_model.isPlainText} " +
+                        "built=${cachedSeamLayout != null}"
+                )
+            }
+        }
+        if (seamChanged) {
+            distributedSeamX = seam
+            scrollRenderer.seamX = seam.toFloat()
+            syncRenderer.seamX = seam.toFloat()
+        }
+        // Both layout and seam must reach the renderer before capacity is evaluated.
+        if (layoutChanged || seamChanged) onAvailableWidthChanged()
+    }
+
+    /** 与绘制同管线度量逐字符 advance 后构建单元表；退化输入返回 null（连续绘制）。 */
+    private fun buildSeamLayout(model: LyricModel = _model): SeamOcclusionLayout? {
+        val text = if (model.isPlainText) model.text else model.wordText
+        if (text.isEmpty()) return null
+        val selector = currentTypefaceSelector
+        return if (model.isPlainText) {
+            val widths = FloatArray(text.length)
+            if (selector != null) {
+                MixedTypefaceText.getTextWidths(textPaint, text, selector, widths)
+            } else {
+                textPaint.getTextWidths(text, widths)
+            }
+            SeamOcclusionLayout.build(text, widths)
+        } else {
+            // 逐字行：拼接各词的逐字 advance，与逐字绘制坐标系同源。
+            val widths = FloatArray(text.length)
+            var filled = 0
+            for (word in model.words) {
+                val wordLength = word.text.length
+                if (filled + wordLength > widths.size) return null
+                word.charWidths.copyInto(widths, filled)
+                filled += wordLength
+            }
+            if (filled != widths.size) return null
+            SeamOcclusionLayout.build(text, widths)
         }
     }
 
-    private fun clearGateSplit() {
-        gateSplitKey = null
-        cachedGateSplit = null
-        scrollRenderer.gateSplit = null
-        syncRenderer.gateSplit = null
+    /** Uses the same normalized model, font advances and seam layout as the first bound frame. */
+    internal fun promotionSnapshot(
+        incoming: LyricLine? = null,
+        center: Boolean = centerIfPossible,
+        right: Boolean = alignRight,
+        includeIndependent: Boolean = false,
+    ): SpaceGatePromotionSnapshot? {
+        val sibling = siblingView ?: return null
+        if (!spaceGateEnabled && !includeIndependent) return null
+        val model = if (incoming != null) {
+            incoming.normalize().createModel().apply { updateSizes(textPaint, currentTypefaceSelector) }
+        } else _model
+        val units = buildSeamLayout(model) ?: return null
+        val master = if (!spaceGateEnabled || isRightSide) this else sibling
+        val seam = (if (isRightSide) sibling else this).scrollWidth.toFloat()
+        val width = (scrollWidth + sibling.scrollWidth).toFloat()
+        if (seam <= 0f || seam >= width) return null
+        val endpoint = SpaceGatePromotionGeometry.endpoint(
+            units, model.width, if (spaceGateEnabled) width else scrollWidth.toFloat(),
+            if (spaceGateEnabled) seam else 0f, model.isAlignedRight, center, right,
+            scrollOffset = if (incoming == null) master.lineState.scrollOffset else 0f,
+            nextLineOnRight = !model.metadata?.get(METADATA_NEXT_LINE_RIGHT_TEXT).isNullOrBlank(),
+        )
+        val fm = textPaint.fontMetrics
+        return SpaceGatePromotionSnapshot(
+            text = if (model.isPlainText) model.text else model.wordText,
+            geometry = if (spaceGateEnabled) endpoint else
+                SpaceGatePromotionGeometry.inIsland(endpoint, seam, width - seam, isRightSide),
+            // The moving line has not landed in the progress renderer yet. Both endpoints use
+            // the unplayed palette; never brighten the preview towards the primary text alpha.
+            paint = TextPaint(textPaint).apply {
+                color = backgroundColors.firstOrNull() ?: syncRenderer.bgPaint.color
+                shader = if (backgroundColors.size > 1) {
+                    LinearGradient(0f, 0f, model.width.coerceAtLeast(1f), 0f,
+                        backgroundColors, null, Shader.TileMode.CLAMP)
+                } else null
+            },
+            typefaceSelector = currentTypefaceSelector,
+            baseline = (measuredHeight - (fm.descent - fm.ascent)) / 2f - fm.ascent,
+            fadingEdgeLength = configuredFadingEdgeLength.toFloat(),
+            fontSignature = currentFontSignature(),
+        )
+    }
+
+    private fun clearSeamLayout() {
+        seamLayoutKey = null
+        cachedSeamLayout = null
+        distributedSeamX = -1
+        scrollRenderer.seamLayout = null
+        syncRenderer.seamLayout = null
+        scrollRenderer.seamX = 0f
+        syncRenderer.seamX = 0f
     }
 
     private fun drawContent(canvas: Canvas, availableWidth: Int) {
@@ -768,6 +914,8 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
 
     private fun drawShadowAndContent(canvas: Canvas, availableWidth: Int) {
         traceSwitch("draw")
+        // 接缝方案由活动渲染器按当前状态求值（静止绕孔分段/滚动边缘滑过渐
+        // 隐），正文在 renderer.draw 内部以同一纯函数重算，两处同输入同结果。
         lineShadowRenderer.draw(
             canvas = canvas,
             model = _model,
@@ -780,11 +928,51 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
             centerIfPossible = centerIfPossible,
             alignRight = alignRight,
             ghostSpacing = ghostSpacing,
-            gateSplit = cachedGateSplit,
+            seamPlan = activeRenderer.seamPlanFor(_model, lineState, availableWidth),
+            seamLayout = cachedSeamLayout,
+            layoutWidth = activeRenderer.layoutWidthFor(_model, availableWidth),
+            drawGhost = !hasRightPreview,
         )
         textPaint.withoutShadowLayer {
             activeRenderer.draw(canvas, _model, textPaint, lineState, availableWidth, measuredHeight)
         }
+        rightPreviewStart(availableWidth)?.let { start ->
+            rightPreview.draw(canvas, start, previewSeam(), availableWidth, measuredHeight, textPaint)
+        }
+    }
+
+    private fun previewSeam(): Float = if (spaceGateEnabled) distributedSeamX.toFloat() else 0f
+
+    private fun rightPreviewStart(availableWidth: Int): Float? {
+        val seam = previewSeam()
+        if (!hasRightPreview || seam >= availableWidth) return null
+        val layout = SpaceGateLineLayout(_model.width, availableWidth.toFloat(), if (spaceGateEnabled) cachedSeamLayout else null,
+            seam, _model.isAlignedRight, centerIfPossible, alignRight,
+            nextLineOnRight = true)
+        val end = maxOf(_model.width, cachedSeamLayout?.totalAdvance ?: 0f)
+        val offset = lineState.scrollOffset
+        val drawnEnd = layout.textOrigin(offset) + end + (layout.plan(offset)?.shiftAt(end) ?: 0f)
+        val reveal = if (end > availableWidth) 1f else if (isWordSync) {
+            syncRenderer.progressAnimator.currentWidth / end.coerceAtLeast(1f)
+        } else {
+            scrollRenderer.currentUnitOffset / ((availableWidth - seam) / 2f).coerceAtLeast(1f)
+        }
+        return SpaceGateRightPreviewGeometry.previewStart(drawnEnd, availableWidth.toFloat(),
+            seam, textSize, reveal)
+    }
+
+    internal fun rightPreviewSnapshot(expectedText: String?): SpaceGatePromotionSnapshot? {
+        if (expectedText.isNullOrBlank() || rightPreview.text != expectedText) return null
+        val sibling = siblingView ?: return null
+        val width = getSpaceGateVirtualWidth()
+        val start = rightPreviewStart(width) ?: return null
+        val seam = (if (isRightSide) sibling else this).scrollWidth.toFloat()
+        val islandWidth = (scrollWidth + sibling.scrollWidth).toFloat()
+        if (seam <= 0f || seam >= islandWidth) return null
+        return rightPreview.snapshot(
+            start + if (!spaceGateEnabled && isRightSide) seam else 0f,
+            seam, islandWidth, measuredHeight, configuredFadingEdgeLength.toFloat(),
+        )
     }
 
     internal fun currentFontSignature(): Int =
@@ -825,7 +1013,13 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
     }
 
     override fun getLeftFadingEdgeStrength(): Float {
+        if (spaceGateEnabled) {
+            return if (isRightSide) fullIslandFadingEdges.camera else fullIslandFadingEdges.outerLeft
+        }
         val vw = getSpaceGateVirtualWidth()
+        if (hasRightPreview && horizontalFadingEdgeLength > 0) {
+            return (-lineState.scrollOffset / horizontalFadingEdgeLength).coerceIn(0f, 1f)
+        }
         if (lineWidth <= vw || horizontalFadingEdgeLength <= 0) return 0f
         val edgeL = horizontalFadingEdgeLength.toFloat()
 
@@ -841,7 +1035,16 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
     }
 
     override fun getRightFadingEdgeStrength(): Float {
+        if (spaceGateEnabled) {
+            return if (isRightSide) fullIslandFadingEdges.outerRight else fullIslandFadingEdges.camera
+        }
         val vw = getSpaceGateVirtualWidth()
+        if (hasRightPreview && horizontalFadingEdgeLength > 0) {
+            val previewStart = rightPreviewStart(vw)
+            val previewEnd = if (previewStart != null && previewStart < vw) previewStart + rightPreview.width else 0f
+            val end = maxOf(lineWidth + lineState.scrollOffset, previewEnd)
+            return ((end - vw) / horizontalFadingEdgeLength).coerceIn(0f, 1f)
+        }
         if (lineWidth <= vw || horizontalFadingEdgeLength <= 0) return 0f
         val viewW = vw.toFloat()
         val edgeL = horizontalFadingEdgeLength.toFloat()
@@ -937,7 +1140,19 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
         }
     }
 
+    override val needsFrequentPositionUpdates: Boolean
+        get() = isAttachedToWindow && isShown && playbackActive &&
+            !isStaticPreview && !contentSwitchPaused && !layoutRolePaused && isWordSync &&
+            !syncRenderer.isFinished && (isRightSide || !spaceGateEnabled) &&
+            !(syncRenderer.isScrollOnly && !isOverflow)
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        PositionUpdateDemand.active.attach(this)
+    }
+
     override fun onDetachedFromWindow() {
+        PositionUpdateDemand.active.detach(this)
         super.onDetachedFromWindow()
         MarqueeDiag.i(this, "detached") {
             "reset 会清空 unlocked/started/宽度基线：overflow=$isOverflow"
@@ -946,6 +1161,7 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
     }
 
     private fun startScrolling() {
+        if (layoutRolePaused) return
         if (!isRightSide && spaceGateEnabled) return // Slave delegates animation
         // See LyricLineView.startScrolling: the overflow test must gate the latch, otherwise
         // the marquee is permanently unavailable when the first request ran before the final
@@ -1019,6 +1235,7 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
         val isFrameLoopRunning: Boolean get() = running
 
         fun startIfNeeded() {
+            if (layoutRolePaused) return
             if (!isRightSide && spaceGateEnabled) return // Slave doesn't run frame callback
             if (playbackActive && !running && isAttachedToWindow && isShown) {
                 running = true
@@ -1035,12 +1252,12 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
         }
 
         override fun doFrame(frameTimeNanos: Long) {
-            if (!running || !playbackActive || !isAttachedToWindow || !isShown) {
+            if (!running || !playbackActive || layoutRolePaused || !isAttachedToWindow || !isShown) {
                 running = false
                 return
             }
 
-            ensureGateSplit()
+            ensureSeamLayout()
             val virtualWidth = getSpaceGateVirtualWidth()
             val deltaNanos = if (lastFrameNanos == 0L) 0L else frameTimeNanos - lastFrameNanos
             lastFrameNanos = frameTimeNanos
@@ -1061,7 +1278,18 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
             }
             lastReportedFinished = finishedNow
 
-            if (running && renderer.isPlaying) {
+            // 词间空转保活：逐字行一词一目标，词内由帧钟驱动平滑推进；词斜坡
+            // 到底时 isPlaying 短暂为 false，若此刻停帧循环，下一词要等位置
+            // tick＋post 跳板＋重启帧零增量才恢复——每个词边界一次可感停顿
+            // （真机「歌词进度掉帧」）。行未唱完且仍会收到动画目标期间保持
+            // 帧回调存活；空转帧 step 返回 false，不触发重绘。滚动模式非溢出
+            // 行永无动画目标，不保活。
+            val keepAlive = renderer.isPlaying || (
+                playbackActive && renderer === syncRenderer &&
+                    !renderer.isFinished &&
+                    !(syncRenderer.isScrollOnly && !isOverflow)
+                )
+            if (running && keepAlive) {
                 Choreographer.getInstance().postFrameCallback(this)
             } else {
                 running = false

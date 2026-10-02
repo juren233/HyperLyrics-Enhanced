@@ -31,6 +31,11 @@ internal class AppleDataBindingMetadataHooks(
     private companion object {
         const val MAX_GENERIC_RECYCLER_MEDIA_IDS = 512
     }
+    private val profiledNotifyItemChanged by lazy {
+        val point = AppleMusicHookPoint.RECYCLER_NOTIFY_ITEM_CHANGED
+        if (AppleMusicHookProfiles.exactTargets(runtime.hookResolver.version, point).isEmpty()) null
+        else runtime.hookResolver.resolveMethod(point).method
+    }
 
     private val bindingRefs =
         ConcurrentHashMap<String, ConcurrentLinkedQueue<WeakReference<Any>>>()
@@ -642,7 +647,14 @@ internal class AppleDataBindingMetadataHooks(
                         isRootVisible(root),
                     )
                 ) {
-                    runCatching { AppleReflection.call(adapter, "notifyItemChanged", ref.position) }
+                    runCatching {
+                        val notifyMethod = profiledNotifyItemChanged
+                        if (notifyMethod != null) {
+                            notifyMethod.invoke(adapter, ref.position)
+                        } else {
+                            AppleReflection.call(adapter, "notifyItemChanged", ref.position)
+                        }
+                    }
                         .onFailure {
                             ProviderLogger.error(
                                 "Apple Music RecyclerView 精确刷新失败: " +

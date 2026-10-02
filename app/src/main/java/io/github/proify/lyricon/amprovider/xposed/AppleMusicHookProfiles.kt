@@ -24,6 +24,10 @@ internal data class AppleMusicVersion(
  * 新版 Apple Music 适配应优先只修改本文件中的版本档案；业务 Hook 不应再直接写死这些类名。
  */
 internal enum class AppleMusicHookPoint {
+    ACTIVITY_THEME_CREATE,
+    ACTIVITY_THEME_RESTART,
+    THEME_MODE_EMIT,
+    APP_COMPAT_THEME_STATE,
     SETTINGS_DATA_CATEGORY_BUILD,
     SETTINGS_CELLULAR_SIM_CHECK,
     CELLULAR_AVAILABILITY,
@@ -85,7 +89,32 @@ internal enum class AppleMusicHookPoint {
     RECENTLY_SEARCHED_CONTROLLER,
     RECENTLY_SEARCHED_MODEL_BOUND,
     RECENTLY_SEARCHED_MEDIA_ENTITY,
+    SEARCH_RESULTS_MODEL_BOUND,
+    SEARCH_CONTROLLER_ADAPTER,
+    SEARCH_ADAPTER_MODEL,
+    RECYCLER_NOTIFY_ITEM_CHANGED,
+    BROWSE_COMPOSE_ITEM,
+    BROWSE_COMPOSER_SCOPE,
+    BROWSE_COMPOSER_USE_SCOPE,
+    BROWSE_SCOPE_INVALIDATE,
+    RADIO_STATION_CLASS,
+    RADIO_SEARCH_SESSION,
+    RADIO_SEARCH_START,
+    RADIO_SEARCH_RESULT,
+    RADIO_SEARCH_CANCEL,
+    RADIO_SEARCH_RESPONSE_RESULTS,
+    RADIO_SEARCH_ARTISTS,
+    RADIO_SEARCH_ENTITIES,
     APPLE_MAIN_CONTENT_ACTIVITY,
+    APPLE_MEDIA_LEGACY_ACTIVITY,
+    APPLE_MEDIA_SESSION_SERVICE,
+    APPLE_MEDIA_MAIN_NEW_INTENT,
+    APPLE_MEDIA_MAIN_POST_RESUME,
+    APPLE_MEDIA_MAIN_VIEW_MODEL,
+    APPLE_MEDIA_PLAYER_VIEW_CREATED,
+    APPLE_MEDIA_PLAYER_VIEW_DESTROYED,
+    APPLE_MEDIA_PLAYER_VIEW_MODEL,
+    APPLE_MEDIA_PLAYER_EXPAND,
     APPLE_SHARED_PREFERENCES_CLASS,
     APPLE_SONG_MODEL_CLASS,
     APPLE_PLAYER_UTIL_CLASS,
@@ -104,6 +133,26 @@ internal enum class AppleMusicHookPoint {
     DATA_BINDING_RUNTIME_CLASSES,
     COLLECTION_SURFACE_CLASSES,
     ARTIST_SURFACE_CLASSES,
+    ALBUM_COMPOSE_RESUME,
+    ALBUM_COMPOSE_CONTENT,
+    ALBUM_COMPOSE_VIEW_MODEL_GETTER,
+    ALBUM_COMPOSE_PAGE_ID,
+    ALBUM_COMPOSE_CURRENT_DATA,
+    ALBUM_COMPOSE_TRACK_MAPPER,
+    ALBUM_COMPOSE_TRACK_COMPARATOR,
+    ALBUM_COMPOSE_REFRESH,
+    ALBUM_COMPOSE_ROW,
+    ALBUM_COMPOSE_ENTITY_ID,
+    ARTIST_COMPOSE_CONTENT,
+    ARTIST_COMPOSE_VIEW_MODEL_GETTER,
+    ARTIST_COMPOSE_DATA,
+    ARTIST_COMPOSE_CURRENT_DATA,
+    ARTIST_COMPOSE_ENTITY_TITLE,
+    ARTIST_COMPOSE_ENTITY_TYPE,
+    ARTIST_COMPOSE_ENTITY_VIEWS,
+    ARTIST_COMPOSE_ENTITY_RELATIONSHIPS,
+    ARTIST_COMPOSE_RELATIONSHIP_ENTITIES,
+    ARTIST_COMPOSE_FRAGMENT_RESUMED,
     LISTEN_NOW_MODEL_BUILDER,
     LISTEN_NOW_BOUND_LISTENER,
     LISTEN_NOW_MODEL,
@@ -115,6 +164,17 @@ internal enum class AppleMusicHookPoint {
 }
 
 internal enum class AppleMusicRuntimeMember {
+    ACTIVITY_THEME_MODE_FIELD,
+    APP_COMPAT_THEME_MODE_FIELD,
+    RADIO_SEARCH_SESSION_KIND_CLASS,
+    RADIO_SEARCH_MEDIA_API_CLASS,
+    RADIO_SEARCH_SCOPE_CLASS,
+    RADIO_SEARCH_SESSION_KIND_FIELD,
+    RADIO_SEARCH_CATALOG_KIND_FIELD,
+    RADIO_SEARCH_ARTISTS_KIND_FIELD,
+    RADIO_SEARCH_SCOPE_CONTEXT_METHOD,
+    ALBUM_COMPOSE_ROW_KEY_FIELD,
+    ALBUM_COMPOSE_KEY_ID_FIELD,
     LYRICS_PREFERENCES_TRANSLATION_GETTER,
     LYRICS_PREFERENCES_PRONUNCIATION_GETTER,
     LYRICS_PREFERENCES_PRONUNCIATION_CACHE_FIELD,
@@ -289,6 +349,8 @@ internal enum class AppleMusicRuntimeMember {
     APPLE_TEXT_STYLE_EXPLICIT_TITLE_METHOD,
     EPOXY_FINAL_HOLDER_MODEL_HOLDER_METHOD,
     ARTIST_RUNTIME_ROLE,
+    ARTIST_COMPOSE_GENERIC_KIND,
+    ARTIST_COMPOSE_SIMPLIFIED_KIND,
     ARTIST_TOP_SONG_BUILD_METHOD,
     ARTIST_PROFILE_BUILD_METHOD,
     ARTIST_MODEL_BIND_METHOD,
@@ -1504,6 +1566,340 @@ internal object AppleMusicHookProfiles {
             AppleMusicHookPoint.SETTINGS_DATA_CATEGORY_BUILD,
             AppleMusicHookPoint.SETTINGS_CELLULAR_SIM_CHECK,
         ) + mapOf(
+            // 1606 binary Manifest registers MainActivity, NOT MainContentActivity.
+            // The latter remains in DEX but cannot be launched (device START=-92).
+            AppleMusicHookPoint.APPLE_MAIN_CONTENT_ACTIVITY to listOf(
+                AppleMusicHookTarget("com.apple.android.music.common.MainActivity"),
+            ),
+            // Original classes2.dex MediaPlaybackService.onCreate, 0x4f3bd4:
+            // getActivity(service, 0, Intent(service, MainContentActivity), IMMUTABLE).
+            AppleMusicHookPoint.APPLE_MEDIA_LEGACY_ACTIVITY to listOf(
+                AppleMusicHookTarget("com.apple.android.music.common.MainContentActivity"),
+            ),
+            AppleMusicHookPoint.APPLE_MEDIA_SESSION_SERVICE to listOf(
+                AppleMusicHookTarget(
+                    "com.apple.android.music.player.MediaPlaybackService", "onCreate", 0,
+                    emptyList(), "void", false,
+                ),
+            ),
+            AppleMusicHookPoint.APPLE_MEDIA_MAIN_NEW_INTENT to listOf(
+                AppleMusicHookTarget(
+                    "com.apple.android.music.common.MainActivity", "onNewIntent", 1,
+                    listOf("android.content.Intent"), "void", false,
+                ),
+            ),
+            AppleMusicHookPoint.APPLE_MEDIA_MAIN_POST_RESUME to listOf(
+                AppleMusicHookTarget(
+                    "com.apple.android.music.common.MainActivity", "onPostResume", 0,
+                    emptyList(), "void", false,
+                ),
+            ),
+            // Raw DEX 0x2cbcac: i1() returns the activity's shared MainActivityViewModel.
+            AppleMusicHookPoint.APPLE_MEDIA_MAIN_VIEW_MODEL to listOf(
+                AppleMusicHookTarget(
+                    "com.apple.android.music.common.MainActivity", "i1", 0,
+                    emptyList(), "com.apple.android.music.common.MainActivityViewModel", false,
+                ),
+            ),
+            // onViewCreated starts MusicContentFragment$q collecting the non-replaying
+            // playerSheetSignalChannel; q1() returns the SAME activity ViewModel.
+            AppleMusicHookPoint.APPLE_MEDIA_PLAYER_VIEW_CREATED to listOf(
+                AppleMusicHookTarget(
+                    "com.apple.android.music.common.fragment.MusicContentFragment", "onViewCreated", 2,
+                    listOf("android.view.View", "android.os.Bundle"), "void", false,
+                ),
+            ),
+            AppleMusicHookPoint.APPLE_MEDIA_PLAYER_VIEW_DESTROYED to listOf(
+                AppleMusicHookTarget(
+                    "com.apple.android.music.common.fragment.MusicContentFragment", "onDestroyView", 0,
+                    emptyList(), "void", false,
+                ),
+            ),
+            AppleMusicHookPoint.APPLE_MEDIA_PLAYER_VIEW_MODEL to listOf(
+                AppleMusicHookTarget(
+                    "com.apple.android.music.common.fragment.MusicContentFragment", "q1", 0,
+                    emptyList(), "com.apple.android.music.common.MainActivityViewModel", false,
+                ),
+            ),
+            // Raw DEX 0x2cb9a4 -> MainActivityViewModel$d emits EXPAND (0x2cb560).
+            AppleMusicHookPoint.APPLE_MEDIA_PLAYER_EXPAND to listOf(
+                AppleMusicHookTarget(
+                    "com.apple.android.music.common.MainActivityViewModel", "requestPlayerSheetExpand", 0,
+                    emptyList(), "void", false,
+                ),
+            ),
+            // Original 1606 classes2.dex: BaseActivity.onCreate stores k.f.b in J0;
+            // onRestart compares those ints and calls Activity.recreate when unequal.
+            // D$a.emit(Object, Continuation) writes k.f.b from the theme preference Flow.
+            // k.f.<clinit> in classes.dex initializes b to -100. These are raw DEX names.
+            AppleMusicHookPoint.ACTIVITY_THEME_CREATE to listOf(
+                AppleMusicHookTarget(
+                    className = "com.apple.android.music.common.activity.BaseActivity",
+                    methodName = "onCreate", parameterCount = 1, parameterTypeNames = listOf("android.os.Bundle"),
+                    returnTypeName = "void", isStatic = false,
+                    runtimeMemberNames = mapOf(AppleMusicRuntimeMember.ACTIVITY_THEME_MODE_FIELD to "J0"),
+                ),
+            ),
+            AppleMusicHookPoint.ACTIVITY_THEME_RESTART to listOf(
+                AppleMusicHookTarget(
+                    className = "com.apple.android.music.common.activity.BaseActivity",
+                    methodName = "onRestart", parameterCount = 0, parameterTypeNames = emptyList(),
+                    returnTypeName = "void", isStatic = false,
+                ),
+            ),
+            AppleMusicHookPoint.THEME_MODE_EMIT to listOf(
+                AppleMusicHookTarget(
+                    className = "com.apple.android.music.D\$a", methodName = "emit",
+                    parameterCount = 2,
+                    parameterTypeNames = listOf("java.lang.Object", "kotlin.coroutines.Continuation"),
+                    returnTypeName = "java.lang.Object", isStatic = false,
+                ),
+            ),
+            AppleMusicHookPoint.APP_COMPAT_THEME_STATE to listOf(
+                AppleMusicHookTarget(
+                    className = "k.f",
+                    runtimeMemberNames = mapOf(AppleMusicRuntimeMember.APP_COMPAT_THEME_MODE_FIELD to "b"),
+                ),
+            ),
+            // Original 1606 DEX: Rb.E4 calls Yb.g.a for List[index], not the whole shelf.
+            // These concrete renderers read MediaEntity text inside the native item composition.
+            // z0.o.y -> f0 returns the current scope; q(P0) marks it used; R0.invalidate
+            // schedules that composition again. Do not replace this with page/network reloads.
+            AppleMusicHookPoint.BROWSE_COMPOSE_ITEM to listOf("Yb.f", "O9.j", "oa.i", "oa.s", "Yb.n").map { name ->
+                AppleMusicHookTarget(
+                    className = name, methodName = "a",
+                    parameterCount = 11, parameterTypeNames = listOf("O0.j", "int", "java.util.List", "W8.d", "boolean", "java.lang.String", "pi.q", "pi.p", "boolean", "z0.m", "int"),
+                    returnTypeName = "void", isStatic = false,
+                )
+            },
+            AppleMusicHookPoint.BROWSE_COMPOSER_SCOPE to listOf(
+                AppleMusicHookTarget("z0.m", "y", parameterCount = 0, parameterTypeNames = emptyList(), returnTypeName = "z0.R0", isStatic = false),
+            ),
+            AppleMusicHookPoint.BROWSE_COMPOSER_USE_SCOPE to listOf(
+                AppleMusicHookTarget("z0.m", "q", parameterCount = 1, parameterTypeNames = listOf("z0.P0"), returnTypeName = "void", isStatic = false),
+            ),
+            AppleMusicHookPoint.BROWSE_SCOPE_INVALIDATE to listOf(
+                AppleMusicHookTarget("z0.R0", "invalidate", parameterCount = 0, parameterTypeNames = emptyList(), returnTypeName = "void", isStatic = false),
+            ),
+            AppleMusicHookPoint.SEARCH_RESULTS_MODEL_BOUND to listOf(
+                AppleMusicHookTarget(
+                    "com.apple.android.music.search.fragments.viewpager.SearchResultsEpoxyController", "onModelBound",
+                    parameterCount = 4, parameterTypeNames = listOf("com.airbnb.epoxy.J", "com.airbnb.epoxy.w", "int", "com.airbnb.epoxy.w"),
+                    returnTypeName = "void", isStatic = false,
+                ),
+            ),
+            // DEX: r.adapter:s; s.G reads the current model list. RecyclerView$f.h calls
+            // RecyclerView$g.d(position, 1, null), the single-item change notification.
+            AppleMusicHookPoint.SEARCH_CONTROLLER_ADAPTER to listOf(
+                AppleMusicHookTarget("com.airbnb.epoxy.r", "getAdapter", parameterCount = 0, parameterTypeNames = emptyList(), returnTypeName = "com.airbnb.epoxy.s", isStatic = false),
+            ),
+            AppleMusicHookPoint.SEARCH_ADAPTER_MODEL to listOf(
+                AppleMusicHookTarget("com.airbnb.epoxy.s", "G", parameterCount = 1, parameterTypeNames = listOf("int"), returnTypeName = "com.airbnb.epoxy.w", isStatic = false),
+            ),
+            AppleMusicHookPoint.RECYCLER_NOTIFY_ITEM_CHANGED to listOf(
+                AppleMusicHookTarget("androidx.recyclerview.widget.RecyclerView\$f", "h", parameterCount = 1, parameterTypeNames = listOf("int"), returnTypeName = "void", isStatic = false),
+            ),
+            AppleMusicHookPoint.RADIO_STATION_CLASS to listOf(
+                AppleMusicHookTarget("com.apple.android.music.mediaapi.models.RadioStation"),
+            ),
+            // Original constructors and descriptors, including the host's shaded CoroutineScope.
+            // An isolated search session supplies candidates only; artist.station must prove identity.
+            AppleMusicHookPoint.RADIO_SEARCH_SESSION to listOf(
+                AppleMusicHookTarget(
+                    "com.apple.android.music.mediaapi.repository.MediaApiSearchSessionImpl",
+                    runtimeMemberNames = mapOf(
+                        AppleMusicRuntimeMember.RADIO_SEARCH_SESSION_KIND_CLASS to "com.apple.android.music.mediaapi.repository.MediaApiRepository\$SearchSessionType",
+                        AppleMusicRuntimeMember.RADIO_SEARCH_MEDIA_API_CLASS to "w9.a",
+                        AppleMusicRuntimeMember.RADIO_SEARCH_SCOPE_CLASS to "Oj.F",
+                        AppleMusicRuntimeMember.RADIO_SEARCH_SESSION_KIND_FIELD to "CATALOGUE",
+                        AppleMusicRuntimeMember.RADIO_SEARCH_CATALOG_KIND_FIELD to "STORE",
+                        AppleMusicRuntimeMember.RADIO_SEARCH_ARTISTS_KIND_FIELD to "ARTISTS",
+                        AppleMusicRuntimeMember.RADIO_SEARCH_SCOPE_CONTEXT_METHOD to "getCoroutineContext",
+                    ),
+                ),
+            ),
+            AppleMusicHookPoint.RADIO_SEARCH_START to listOf(
+                AppleMusicHookTarget(
+                    "com.apple.android.music.mediaapi.repository.MediaApiSearchSessionImpl", "searchCatalogue",
+                    parameterCount = 4, parameterTypeNames = listOf("java.lang.String", "z9.f", "com.apple.android.music.mediaapi.repository.MediaApiRepository\$CATALOGUE_TYPE", "java.util.Map"),
+                    returnTypeName = "void", isStatic = false,
+                ),
+            ),
+            AppleMusicHookPoint.RADIO_SEARCH_RESULT to listOf(
+                AppleMusicHookTarget(
+                    "com.apple.android.music.mediaapi.repository.MediaApiSearchSessionImpl", "postSearchCatalogueResults",
+                    parameterCount = 4, parameterTypeNames = listOf("com.apple.android.music.mediaapi.repository.MediaApiSearchResultsResponse", "z9.f", "com.apple.android.music.mediaapi.repository.MediaApiRepository\$CATALOGUE_TYPE", "com.apple.android.music.mediaapi.repository.MediaApiRepository\$SearchSessionType"),
+                    returnTypeName = "void", isStatic = false,
+                ),
+            ),
+            AppleMusicHookPoint.RADIO_SEARCH_CANCEL to listOf(
+                AppleMusicHookTarget("com.apple.android.music.mediaapi.repository.MediaApiSearchSessionImpl", "cancelAllSearches", parameterCount = 0, parameterTypeNames = emptyList(), returnTypeName = "void", isStatic = false),
+            ),
+            AppleMusicHookPoint.RADIO_SEARCH_RESPONSE_RESULTS to listOf(
+                AppleMusicHookTarget("com.apple.android.music.mediaapi.repository.MediaApiSearchResultsResponse", "getResults", parameterCount = 0, parameterTypeNames = emptyList(), returnTypeName = "com.apple.android.music.mediaapi.models.internals.SearchResultsResponse", isStatic = false),
+            ),
+            AppleMusicHookPoint.RADIO_SEARCH_ARTISTS to listOf(
+                AppleMusicHookTarget("com.apple.android.music.mediaapi.models.internals.SearchResultsResponse", "getArtist", parameterCount = 0, parameterTypeNames = emptyList(), returnTypeName = "com.apple.android.music.mediaapi.models.internals.SearchResultsResponse\$SearchSectionResultResponse", isStatic = false),
+            ),
+            AppleMusicHookPoint.RADIO_SEARCH_ENTITIES to listOf(
+                AppleMusicHookTarget("com.apple.android.music.mediaapi.models.internals.SearchResultsResponse\$SearchSectionResultResponse", "getData", parameterCount = 0, parameterTypeNames = emptyList(), returnTypeName = "java.util.List", isStatic = false),
+            ),
+            // Original 1606 DEX (album-row-dex.txt): collection2 copies text to D7.l.
+            // refreshState republishes selection into the existing result combine. Unlike
+            // refreshData, it does not switch loadTrigger away from the in-flight repository.
+            // The identity comparator invalidates only an owned album whose alias changed.
+            AppleMusicHookPoint.ALBUM_COMPOSE_RESUME to listOf(
+                AppleMusicHookTarget(
+                    className = "com.apple.android.music.collection2.fragment.AlbumPageFragment", methodName = "onResume",
+                    parameterTypeNames = listOf(), returnTypeName = "void", isStatic = false,
+                ),
+            ),
+            AppleMusicHookPoint.ALBUM_COMPOSE_CONTENT to listOf(
+                AppleMusicHookTarget(
+                    className = "com.apple.android.music.collection2.fragment.AlbumPageFragment", methodName = "r1",
+                    parameterTypeNames = listOf("z0.m"), returnTypeName = "void",
+                    isStatic = false,
+                ),
+            ),
+            AppleMusicHookPoint.ALBUM_COMPOSE_VIEW_MODEL_GETTER to listOf(
+                AppleMusicHookTarget(
+                    className = "com.apple.android.music.collection2.fragment.AlbumPageFragment", methodName = "G1",
+                    parameterTypeNames = listOf(), returnTypeName = "com.apple.android.music.collection2.viewmodel.AlbumViewModel",
+                    isStatic = false,
+                ),
+            ),
+            // Original 1606 BaseCollectionViewModel.id is the navigation identity;
+            // LibraryAlbum.getId is l.* and need not expose a catalog ID.
+            AppleMusicHookPoint.ALBUM_COMPOSE_PAGE_ID to listOf(
+                AppleMusicHookTarget(
+                    className = "com.apple.android.music.collection2.viewmodel.BaseCollectionViewModel", methodName = "getId",
+                    parameterTypeNames = listOf(), returnTypeName = "java.lang.String", isStatic = false,
+                ),
+            ),
+            AppleMusicHookPoint.ALBUM_COMPOSE_CURRENT_DATA to listOf(
+                AppleMusicHookTarget(
+                    className = "com.apple.android.music.collection2.viewmodel.BaseCollectionViewModel", methodName = "getData",
+                    parameterTypeNames = listOf(), returnTypeName = "com.apple.android.music.mediaapi.models.MediaEntity",
+                    isStatic = false,
+                ),
+            ),
+            AppleMusicHookPoint.ALBUM_COMPOSE_TRACK_MAPPER to listOf(
+                AppleMusicHookTarget(
+                    className = "com.apple.android.music.collection2.viewmodel.AlbumViewModel", methodName = "transformToTrackList",
+                    parameterTypeNames = listOf("com.apple.android.music.mediaapi.models.Album"), returnTypeName = "java.util.List",
+                    isStatic = false,
+                ),
+            ),
+            AppleMusicHookPoint.ALBUM_COMPOSE_TRACK_COMPARATOR to listOf(
+                AppleMusicHookTarget(
+                    className = "com.apple.android.music.collection2.viewmodel.BaseCollectionViewModel", methodName = "trackDisplayItems_delegate\$lambda\$14\$lambda\$12",
+                    parameterTypeNames = listOf("com.apple.android.music.mediaapi.models.MediaEntity", "com.apple.android.music.mediaapi.models.MediaEntity"), returnTypeName = "boolean",
+                    isStatic = true,
+                ),
+            ),
+            AppleMusicHookPoint.ALBUM_COMPOSE_REFRESH to listOf(
+                AppleMusicHookTarget(
+                    className = "com.apple.android.music.collection2.viewmodel.BaseCollectionViewModel", methodName = "refreshState",
+                    parameterTypeNames = listOf(), returnTypeName = "void",
+                    isStatic = false,
+                ),
+            ),
+            AppleMusicHookPoint.ALBUM_COMPOSE_ROW to listOf(
+                AppleMusicHookTarget(
+                    className = "y7.n", methodName = "a",
+                    parameterTypeNames = listOf("O0.j", "D7.i", "D7.t", "Rb.x5", "Vb.t", "Rb.w5", "Rb.y5", "int", "boolean", "D7.o", "D7.p", "pi.l", "pi.p", "pi.p", "z0.m", "int"), returnTypeName = "void",
+                    isStatic = true,
+                    // D7.i.a:LD7/q; -> D7.q.a:Ljava/lang/String; (raw ID, not c's duplicate key).
+                    runtimeMemberNames = mapOf(
+                        AppleMusicRuntimeMember.ALBUM_COMPOSE_ROW_KEY_FIELD to "a",
+                        AppleMusicRuntimeMember.ALBUM_COMPOSE_KEY_ID_FIELD to "a",
+                    ),
+                ),
+            ),
+            AppleMusicHookPoint.ALBUM_COMPOSE_ENTITY_ID to listOf(
+                AppleMusicHookTarget(
+                    className = "com.apple.android.music.mediaapi.models.MediaEntity", methodName = "getId",
+                    parameterTypeNames = listOf(), returnTypeName = "java.lang.String",
+                    isStatic = false,
+                ),
+            ),
+            // Original 1606 DEX: profiles2 replaces the artist Epoxy surface with Compose.
+            // handleProfileData rebuilds the success state and increments responseRevision;
+            // replaying that exact response updates text without a network/page reload.
+            AppleMusicHookPoint.ARTIST_COMPOSE_CONTENT to listOf(
+                AppleMusicHookTarget(
+                    className = "com.apple.android.music.profiles2.ArtistFragment", methodName = "r1",
+                    parameterTypeNames = listOf("z0.m"), returnTypeName = "void",
+                    isStatic = false,
+                ),
+            ),
+            AppleMusicHookPoint.ARTIST_COMPOSE_VIEW_MODEL_GETTER to listOf(
+                AppleMusicHookTarget(
+                    className = "com.apple.android.music.profiles2.ArtistFragment", methodName = "G1",
+                    parameterTypeNames = listOf(), returnTypeName = "com.apple.android.music.profiles2.ArtistViewModel",
+                    isStatic = false,
+                ),
+            ),
+            AppleMusicHookPoint.ARTIST_COMPOSE_DATA to listOf(
+                AppleMusicHookTarget(
+                    className = "com.apple.android.music.profiles2.GenericProfileViewModel", methodName = "handleProfileData",
+                    parameterTypeNames = listOf("[Lcom.apple.android.music.mediaapi.models.MediaEntity;", "com.apple.android.music.profiles2.GenericProfileViewModel\$a"), returnTypeName = "void",
+                    isStatic = false,
+                    runtimeMemberNames = mapOf(
+                        AppleMusicRuntimeMember.ARTIST_COMPOSE_GENERIC_KIND to "GENERIC_PROFILE",
+                        AppleMusicRuntimeMember.ARTIST_COMPOSE_SIMPLIFIED_KIND to "SIMPLIFIED_RESPONSE",
+                    ),
+                ),
+            ),
+            AppleMusicHookPoint.ARTIST_COMPOSE_CURRENT_DATA to listOf(
+                AppleMusicHookTarget(
+                    className = "com.apple.android.music.profiles2.GenericProfileViewModel", methodName = "getData",
+                    parameterTypeNames = listOf(), returnTypeName = "com.apple.android.music.mediaapi.models.MediaEntity",
+                    isStatic = false,
+                ),
+            ),
+            AppleMusicHookPoint.ARTIST_COMPOSE_ENTITY_TITLE to listOf(
+                AppleMusicHookTarget(
+                    className = "com.apple.android.music.mediaapi.models.MediaEntity", methodName = "getTitle",
+                    parameterTypeNames = listOf(), returnTypeName = "java.lang.String",
+                    isStatic = false,
+                ),
+            ),
+            AppleMusicHookPoint.ARTIST_COMPOSE_ENTITY_TYPE to listOf(
+                AppleMusicHookTarget(
+                    className = "com.apple.android.music.mediaapi.models.MediaEntity", methodName = "getType",
+                    parameterTypeNames = listOf(), returnTypeName = "java.lang.String",
+                    isStatic = false,
+                ),
+            ),
+            AppleMusicHookPoint.ARTIST_COMPOSE_ENTITY_VIEWS to listOf(
+                AppleMusicHookTarget(
+                    className = "com.apple.android.music.mediaapi.models.MediaEntity", methodName = "getViews",
+                    parameterTypeNames = listOf(), returnTypeName = "java.util.Map",
+                    isStatic = false,
+                ),
+            ),
+            AppleMusicHookPoint.ARTIST_COMPOSE_ENTITY_RELATIONSHIPS to listOf(
+                AppleMusicHookTarget(
+                    className = "com.apple.android.music.mediaapi.models.MediaEntity", methodName = "getRelationships",
+                    parameterTypeNames = listOf(), returnTypeName = "java.util.Map",
+                    isStatic = false,
+                ),
+            ),
+            AppleMusicHookPoint.ARTIST_COMPOSE_RELATIONSHIP_ENTITIES to listOf(
+                AppleMusicHookTarget(
+                    className = "com.apple.android.music.mediaapi.models.internals.Relationship", methodName = "getEntities",
+                    parameterTypeNames = listOf(), returnTypeName = "[Lcom.apple.android.music.mediaapi.models.MediaEntity;",
+                    isStatic = false,
+                ),
+            ),
+            AppleMusicHookPoint.ARTIST_COMPOSE_FRAGMENT_RESUMED to listOf(
+                AppleMusicHookTarget(
+                    className = "androidx.fragment.app.m", methodName = "isResumed",
+                    parameterTypeNames = listOf(), returnTypeName = "boolean",
+                    isStatic = false,
+                ),
+            ),
             // Original 1606 classes2.dex: w9.Q.q0(Map)LinkedHashMap adds the locale query.
             AppleMusicHookPoint.MEDIA_API_LOCALIZATION to listOf(
                 target(AppleMusicHookPoint.MEDIA_API_LOCALIZATION).copy(
@@ -3484,7 +3880,10 @@ internal class AppleMusicHookResolver(
         baselineClassName: String,
         recordTrustedBaseline: Boolean,
     ): ResolvedAppleMusicHookClass {
-        val repairedTarget = dexKitResolver?.repairRuntimeMembers(
+        // A binary-verified exact profile outranks cross-version member baselines.
+        // Otherwise a still-existing old obfuscated name can replace the new member,
+        // then be persisted below as a trusted baseline for this exact version.
+        val repairedTarget = if (recordTrustedBaseline) resolved.target else dexKitResolver?.repairRuntimeMembers(
             hookPoint = hookPoint,
             target = resolved.target,
             clazz = resolved.clazz,
@@ -3510,7 +3909,7 @@ internal class AppleMusicHookResolver(
         baselineClassName: String,
         recordTrustedBaseline: Boolean,
     ): ResolvedAppleMusicHookMethod {
-        val repairedTarget = dexKitResolver?.repairRuntimeMembers(
+        val repairedTarget = if (recordTrustedBaseline) resolved.target else dexKitResolver?.repairRuntimeMembers(
             hookPoint = hookPoint,
             target = resolved.target,
             clazz = resolved.method.declaringClass,
@@ -3594,6 +3993,20 @@ internal class AppleMusicHookResolver(
             return false
         }
         return when (hookPoint) {
+            AppleMusicHookPoint.APPLE_MEDIA_LEGACY_ACTIVITY,
+            AppleMusicHookPoint.APPLE_MEDIA_SESSION_SERVICE,
+            AppleMusicHookPoint.APPLE_MEDIA_MAIN_NEW_INTENT,
+            AppleMusicHookPoint.APPLE_MEDIA_MAIN_POST_RESUME,
+            AppleMusicHookPoint.APPLE_MEDIA_MAIN_VIEW_MODEL,
+            AppleMusicHookPoint.APPLE_MEDIA_PLAYER_VIEW_CREATED,
+            AppleMusicHookPoint.APPLE_MEDIA_PLAYER_VIEW_DESTROYED,
+            AppleMusicHookPoint.APPLE_MEDIA_PLAYER_VIEW_MODEL,
+            AppleMusicHookPoint.APPLE_MEDIA_PLAYER_EXPAND,
+            AppleMusicHookPoint.ACTIVITY_THEME_CREATE,
+            AppleMusicHookPoint.ACTIVITY_THEME_RESTART,
+            AppleMusicHookPoint.THEME_MODE_EMIT,
+            AppleMusicHookPoint.APP_COMPAT_THEME_STATE -> true
+
             AppleMusicHookPoint.MEDIA_API_LOCALIZATION ->
                 Map::class.java.isAssignableFrom(method.returnType)
 
@@ -3641,6 +4054,22 @@ internal class AppleMusicHookResolver(
             AppleMusicHookPoint.LYRICS_GRADIENT_MASK_UPDATE -> true
 
             AppleMusicHookPoint.IN_APP_GLOBAL_METADATA_DISPATCHER,
+            AppleMusicHookPoint.SEARCH_RESULTS_MODEL_BOUND,
+            AppleMusicHookPoint.SEARCH_CONTROLLER_ADAPTER,
+            AppleMusicHookPoint.SEARCH_ADAPTER_MODEL,
+            AppleMusicHookPoint.RECYCLER_NOTIFY_ITEM_CHANGED,
+            AppleMusicHookPoint.BROWSE_COMPOSE_ITEM,
+            AppleMusicHookPoint.BROWSE_COMPOSER_SCOPE,
+            AppleMusicHookPoint.BROWSE_COMPOSER_USE_SCOPE,
+            AppleMusicHookPoint.BROWSE_SCOPE_INVALIDATE,
+            AppleMusicHookPoint.RADIO_STATION_CLASS,
+            AppleMusicHookPoint.RADIO_SEARCH_SESSION,
+            AppleMusicHookPoint.RADIO_SEARCH_START,
+            AppleMusicHookPoint.RADIO_SEARCH_RESULT,
+            AppleMusicHookPoint.RADIO_SEARCH_CANCEL,
+            AppleMusicHookPoint.RADIO_SEARCH_RESPONSE_RESULTS,
+            AppleMusicHookPoint.RADIO_SEARCH_ARTISTS,
+            AppleMusicHookPoint.RADIO_SEARCH_ENTITIES,
             AppleMusicHookPoint.IN_APP_NOW_PLAYING_METADATA_LISTENER,
             AppleMusicHookPoint.IN_APP_QUEUE_UPDATE,
             AppleMusicHookPoint.IN_APP_HISTORY_UPDATE,
@@ -3652,7 +4081,27 @@ internal class AppleMusicHookResolver(
             AppleMusicHookPoint.LIBRARY_ENTITY_CLASSES,
             AppleMusicHookPoint.DATA_BINDING_RUNTIME_CLASSES,
             AppleMusicHookPoint.COLLECTION_SURFACE_CLASSES,
-            AppleMusicHookPoint.ARTIST_SURFACE_CLASSES -> true
+            AppleMusicHookPoint.ARTIST_SURFACE_CLASSES,
+            AppleMusicHookPoint.ARTIST_COMPOSE_CONTENT,
+            AppleMusicHookPoint.ARTIST_COMPOSE_VIEW_MODEL_GETTER,
+            AppleMusicHookPoint.ARTIST_COMPOSE_DATA,
+            AppleMusicHookPoint.ARTIST_COMPOSE_CURRENT_DATA,
+            AppleMusicHookPoint.ARTIST_COMPOSE_ENTITY_TITLE,
+            AppleMusicHookPoint.ARTIST_COMPOSE_ENTITY_TYPE,
+            AppleMusicHookPoint.ARTIST_COMPOSE_ENTITY_VIEWS,
+            AppleMusicHookPoint.ARTIST_COMPOSE_ENTITY_RELATIONSHIPS,
+            AppleMusicHookPoint.ARTIST_COMPOSE_RELATIONSHIP_ENTITIES,
+            AppleMusicHookPoint.ALBUM_COMPOSE_RESUME,
+            AppleMusicHookPoint.ALBUM_COMPOSE_CONTENT,
+            AppleMusicHookPoint.ALBUM_COMPOSE_VIEW_MODEL_GETTER,
+            AppleMusicHookPoint.ALBUM_COMPOSE_PAGE_ID,
+            AppleMusicHookPoint.ALBUM_COMPOSE_CURRENT_DATA,
+            AppleMusicHookPoint.ALBUM_COMPOSE_TRACK_MAPPER,
+            AppleMusicHookPoint.ALBUM_COMPOSE_TRACK_COMPARATOR,
+            AppleMusicHookPoint.ALBUM_COMPOSE_REFRESH,
+            AppleMusicHookPoint.ALBUM_COMPOSE_ROW,
+            AppleMusicHookPoint.ALBUM_COMPOSE_ENTITY_ID,
+            AppleMusicHookPoint.ARTIST_COMPOSE_FRAGMENT_RESUMED -> true
 
             AppleMusicHookPoint.CONTENT_ITEM_METADATA_CLASSES,
             AppleMusicHookPoint.RECENTLY_SEARCHED_MEDIA_ENTITY -> true
