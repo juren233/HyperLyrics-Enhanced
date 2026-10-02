@@ -40,8 +40,8 @@ android {
         applicationId = "com.juren233.hyperlyricsenhanced"
         minSdk = 33
         targetSdk = 37
-        versionCode = 202007
-        versionName = ciVersionName ?: "8.0.3"
+        versionCode = 210239
+        versionName = ciVersionName ?: "8.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -109,8 +109,9 @@ android {
     }
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+        // miuix-nav 0.9.4 以 JVM 21 字节码发布且含 inline API，本项目必须对齐 21
+        sourceCompatibility = JavaVersion.VERSION_21
+        targetCompatibility = JavaVersion.VERSION_21
     }
 
     buildFeatures {
@@ -171,8 +172,7 @@ dependencies {
     implementation(libs.miuix.preference.android)
     implementation(libs.miuix.blur.android)
     implementation(libs.miuix.icons.android)
-    implementation(libs.miuix.navigation3.ui.android)
-    implementation(libs.androidx.navigation3.runtime)
+    implementation(libs.miuix.nav.android)
 
 
     // --- 调试工具 ---

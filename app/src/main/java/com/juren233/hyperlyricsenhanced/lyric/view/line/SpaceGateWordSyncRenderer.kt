@@ -12,9 +12,12 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Typeface
 import android.text.TextPaint
+import com.juren233.hyperlyricsenhanced.BuildConfig
+import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import com.juren233.hyperlyricsenhanced.lyric.view.LyricPlayListener
 import com.juren233.hyperlyricsenhanced.lyric.view.line.model.LyricModel
 import com.juren233.hyperlyricsenhanced.lyric.view.line.model.WordModel
+import kotlin.math.abs
 
 internal class SpaceGateWordSyncRenderer(private val view: SpaceGateLyricLineView) : LineRenderer {
 
@@ -24,9 +27,23 @@ internal class SpaceGateWordSyncRenderer(private val view: SpaceGateLyricLineVie
     val progressAnimator = SpaceGateProgressAnimator()
     private val scrollStepper = ScrollStepper()
     private val textDrawer = TextDrawer()
+    private val progressDiagnostics = if (BuildConfig.DEBUG) SpaceGateProgressDiagnostics() else null
 
-    /** 分离模式挖孔布局；null 表示未挖孔，条带连续。 */
-    var gateSplit: GateSplitLayout? = null
+    /** 纯遮挡接缝布局；null 表示非拼接模式，条带连续绘制。 */
+    var seamLayout: SeamOcclusionLayout? = null
+
+    /** 接缝（虚拟坐标）＝左槽宽；仅 [seamLayout] 非空时有意义。 */
+    var seamX: Float = 0f
+    var nextLineOnRight: Boolean = false
+
+    private fun layoutFor(model: LyricModel, viewWidth: Int) = SpaceGateLineLayout(
+        model.width, viewWidth.toFloat(), seamLayout, seamX,
+        model.isAlignedRight, centerIfPossible, alignRight,
+        nextLineOnRight = nextLineOnRight,
+    )
+
+    override fun layoutWidthFor(model: LyricModel, viewWidth: Int): Float =
+        layoutFor(model, viewWidth).scrollWidth
 
     var isScrollOnly = false
     override var centerIfPossible = false
@@ -83,6 +100,8 @@ internal class SpaceGateWordSyncRenderer(private val view: SpaceGateLyricLineVie
     var lastPosition = Long.MIN_VALUE
         private set
 
+    private var lastTraceOffset = Float.NaN
+
     override val isPlaying get() = progressAnimator.isAnimating
     override val isFinished get() = progressAnimator.hasFinished
     override val isStarted get() = progressAnimator.hasStarted
@@ -122,6 +141,11 @@ internal class SpaceGateWordSyncRenderer(private val view: SpaceGateLyricLineVie
         viewHeight: Int
     ) {
         val target = exactTargetWidth(posMs, model)
+        if (BuildConfig.DEBUG && view.isRightSide) {
+            progressDiagnostics?.reset(System.identityHashCode(view))
+            val word = model.wordTimingNavigator.first(posMs)
+            progressDiagnostics?.tick(posMs, word?.begin, word?.end)
+        }
         progressAnimator.jumpTo(target)
         updateScrollState(model, state, viewWidth)
         lastPosition = posMs
@@ -141,6 +165,9 @@ internal class SpaceGateWordSyncRenderer(private val view: SpaceGateLyricLineVie
         }
 
         val word = model.wordTimingNavigator.first(posMs)
+        if (BuildConfig.DEBUG && view.isRightSide) {
+            progressDiagnostics?.tick(posMs, word?.begin, word?.end)
+        }
         val target = animationTargetWidth(posMs, model, word)
 
         if (word != null && progressAnimator.currentWidth == 0f) {
@@ -158,12 +185,19 @@ internal class SpaceGateWordSyncRenderer(private val view: SpaceGateLyricLineVie
         state: LineState,
         viewWidth: Int
     ): Boolean {
-        if (progressAnimator.step(deltaNanos)) {
+        val changed = progressAnimator.step(deltaNanos)
+        if (changed) {
             updateScrollState(model, state, viewWidth)
             notifyProgress(model)
-            return true
         }
-        return false
+        if (BuildConfig.DEBUG && view.isRightSide && layoutWidthFor(model, viewWidth) > viewWidth) {
+            progressDiagnostics?.frame(
+                System.identityHashCode(view), model.begin, deltaNanos,
+                progressAnimator.currentWidth, progressAnimator.targetWidth,
+                state.scrollOffset, progressAnimator.isAnimating, changed,
+            )
+        }
+        return changed
     }
 
     override fun draw(
@@ -174,22 +208,27 @@ internal class SpaceGateWordSyncRenderer(private val view: SpaceGateLyricLineVie
         viewWidth: Int,
         viewHeight: Int
     ) {
-        // 溢出标志同样按挖孔后宽度判定：未挖孔装得下、挖孔后超出的行
-        // 也要走 scrollX 偏移，否则滚动推进了而绘制停在对齐位置。
-        val contentWidth = gateSplit?.holedWidth ?: model.width
+        // 接缝方案（静止绕孔分段/滚动边缘滑过渐隐）由共享行布局纯函数给
+        // 出；主从两槽与阴影同输入同结果。
+        val layout = layoutFor(model, viewWidth)
         textDrawer.draw(
             canvas, model, viewWidth, viewHeight,
-            state.scrollOffset, contentWidth > viewWidth,
+            state.scrollOffset, layout.isOverflow,
             progressAnimator.currentWidth,
             isGradientEnabled, isScrollOnly, isCharMotionEnabled, centerIfPossible, alignRight,
-            bgPaint, hlPaint, paint, gateSplit
+            bgPaint, hlPaint, paint, layout.plan(state.scrollOffset), layout.textOrigin(state.scrollOffset)
         )
+        if (BuildConfig.DEBUG && view.isRightSide) {
+            progressDiagnostics?.draw(progressAnimator.currentWidth)
+        }
     }
 
     override fun reset(state: LineState) {
+        if (BuildConfig.DEBUG) progressDiagnostics?.reset(System.identityHashCode(view))
         progressAnimator.reset()
         state.reset()
         lastPosition = Long.MIN_VALUE
+        lastTraceOffset = Float.NaN
         textDrawer.clearShaderCache()
     }
 
@@ -200,23 +239,47 @@ internal class SpaceGateWordSyncRenderer(private val view: SpaceGateLyricLineVie
     }
 
     private fun updateScrollState(model: LyricModel, state: LineState, viewWidth: Int) {
-        // 滚动目标必须与绘制同坐标系：挖孔后条带可见总宽是 holedWidth，
-        // 高亮边缘越过分割点后绘制位置右移 holeWidth。继续用未挖孔宽度，
-        // 行尾收尾滚动会差一个挖孔宽度，尾字停在右缘外被裁掉。
-        val split = gateSplit
+        // 按每帧真实高亮位置跟随右槽：滚速自然随唱词快慢变化，词间不漂移。
+        // 使用实际接缝而非全岛中点，避免高亮长期落在摄像头边缘。
         val highlightWidth = progressAnimator.currentWidth
-        val visualHighlight =
-            if (split != null) highlightWidth + split.shiftFor(highlightWidth) else highlightWidth
-        val contentWidth = split?.holedWidth ?: model.width
-        val offset = scrollStepper.compute(
-            visualHighlight, contentWidth,
-            viewWidth.toFloat(), progressAnimator.hasFinished, state.isScrollFinished
+        val layout = layoutFor(model, viewWidth)
+        var followAnchor = resolveSpaceGateFollowAnchor(
+            viewWidth.toFloat(), seamX.takeIf { seamLayout != null },
         )
+        var offset = scrollStepper.compute(
+            highlightWidth, layout.scrollWidth,
+            viewWidth.toFloat(), progressAnimator.hasFinished, state.isScrollFinished,
+            followAnchor = followAnchor,
+        )
+        if (!progressAnimator.hasFinished) {
+            layout.followProgress(highlightWidth, followAnchor)?.let { followed ->
+                offset = followed.offset
+                followAnchor = followed.anchor
+            }
+        }
         state.scrollOffset = offset
         if (progressAnimator.hasFinished) {
             state.isScrollFinished = true
         }
+        if (BuildConfig.DEBUG) {
+            val finished = progressAnimator.hasFinished
+            if (finished || lastTraceOffset.isNaN() || abs(offset - lastTraceOffset) >= 2f) {
+                lastTraceOffset = offset
+                val drawnProgress = highlightWidth + offset +
+                    (layout.plan(offset)?.shiftAt(highlightWidth) ?: 0f)
+                HookLogger.d(
+                    "IslandScroll",
+                    "sync view=${Integer.toHexString(System.identityHashCode(view))} right=${view.isRightSide} " +
+                        "offset=$offset hw=$highlightWidth content=${model.width} scrollW=${layout.scrollWidth} " +
+                        "vw=$viewWidth finished=$finished gate=${seamLayout != null} seam=$seamX " +
+                        "follow=$followAnchor naturalProgressX=${highlightWidth + offset} drawnProgressX=$drawnProgress"
+                )
+            }
+        }
     }
+
+    override fun seamPlanFor(model: LyricModel, state: LineState, viewWidth: Int): SeamStripPlan? =
+        layoutFor(model, viewWidth).plan(state.scrollOffset)
 
     private fun exactTargetWidth(posMs: Long, model: LyricModel, word: WordModel? = null): Float {
         val w = word ?: model.wordTimingNavigator.first(posMs)

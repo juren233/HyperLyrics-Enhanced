@@ -16,7 +16,6 @@ import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import com.juren233.hyperlyricsenhanced.root.utils.MediaCardDiagnosticLogger
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.lyric.model.Song
-import com.juren233.hyperlyricsenhanced.lyric.model.interfaces.IRichLyricLine
 import com.juren233.hyperlyricsenhanced.lyric.style.AiTranslationConfigs
 import com.juren233.hyperlyricsenhanced.lyric.style.AiTranslationProvider
 import kotlinx.coroutines.CoroutineScope
@@ -120,39 +119,58 @@ class RootLyricSink(
     }
 
     override fun onLyricLine(line: Any?) {
-        if (line is IRichLyricLine) {
-            MediaCardDiagnosticLogger.log(
-                stage = "root_sink",
-                event = "lyric_line_callback",
-                details = "line=${MediaCardDiagnosticLogger.identity(line)},begin=${line.begin},end=${line.end},textLen=${line.text?.length ?: 0}",
-            )
-            LyriconDataBridge.updateLyricLine(line)
-            renderer.updateLyricLine()
-            NotificationMediaAodLyricHooker.onLyricChanged()
-            MediaCardDiagnosticLogger.log(
-                stage = "root_sink",
-                event = "lyric_line_render_dispatched",
-                details = "renderer=${MediaCardDiagnosticLogger.identity(renderer)}",
-            )
-        } else {
-            MediaCardDiagnosticLogger.log(
-                stage = "root_sink",
-                event = "lyric_line_dropped",
-                reason = "not_rich_line",
-                details = "line=${MediaCardDiagnosticLogger.identity(line)}",
-            )
-        }
+        MediaCardDiagnosticLogger.log(
+            stage = "root_sink",
+            event = "lyric_line_dropped",
+            reason = "complete_timeline_required",
+            details = "line=${MediaCardDiagnosticLogger.identity(line)}",
+        )
     }
 
     override fun onPlainText(text: String?) {
         MediaCardDiagnosticLogger.log(
             stage = "root_sink",
-            event = "plain_text_callback",
+            event = "plain_text_dropped",
+            reason = "complete_timeline_required",
             details = "textLen=${text?.length ?: 0}",
         )
-        LyriconDataBridge.updateLyric(text)
-        renderer.updateLyricLine()
+    }
+
+    @Synchronized
+    override fun onTrackTransition(
+        title: String?,
+        artist: String?,
+        album: String?,
+        publisher: String?,
+    ) {
+        MediaCardDiagnosticLogger.log(
+            stage = "root_sink",
+            event = "track_transition_begin",
+            details = "title=${MediaCardDiagnosticLogger.sanitize(title)}," +
+                "publisher=${MediaCardDiagnosticLogger.sanitize(publisher)}," +
+                "playbackActive=$playbackActive",
+        )
+        activeAiTranslationJob?.cancel()
+        activeAiTranslationJob = null
+        cancelPendingPositionDispatch()
+        lastReceivedPosition = Long.MIN_VALUE
+        lastDispatchedPosition = Long.MIN_VALUE
+
+        // 同包切歌只清旧曲内容。岛宿主与 renderer 播放态必须保留，否则几十毫秒后的
+        // 新曲内容到达前会先触发 pause_policy/clearAllViews，造成肉眼可见的收回再展开。
+        val retainedPlaybackState = playbackActive
+        LyriconDataBridge.clearState()
+        LyriconDataBridge.updatePlaybackState(retainedPlaybackState)
+        if (title != null) LyriconDataBridge.currentSongName = title
+        if (!publisher.isNullOrEmpty()) LyriconDataBridge.updateLyricPackage(publisher)
+        IslandSlotContentAssembler.invalidate()
+        renderer.refreshActiveIsland()
         NotificationMediaAodLyricHooker.onLyricChanged()
+        MediaCardDiagnosticLogger.log(
+            stage = "root_sink",
+            event = "track_transition_complete",
+            details = "playbackActive=$retainedPlaybackState",
+        )
     }
 
     @Synchronized

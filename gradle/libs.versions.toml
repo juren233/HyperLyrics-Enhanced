@@ -8,10 +8,9 @@ constraintlayout = "2.2.1"
 kotlinComposePlugin = "2.3.21"
 activityCompose = "1.12.4"
 composeBom = "2026.04.01"
-miuix = "0.9.3"
+miuix = "0.9.4"
 palette = "1.0.0"
 kotlin = "2.3.21"
-androidx-navigation3 = "1.1.0"
 retrofit = "2.11.0"
 okhttp = "4.12.0"
 kotlinxSerializationJson = "1.6.3"
@@ -61,10 +60,7 @@ miuix-ui-android = { group = "top.yukonga.miuix.kmp", name = "miuix-ui-android",
 miuix-preference-android = { group = "top.yukonga.miuix.kmp", name = "miuix-preference-android", version.ref = "miuix" }
 miuix-blur-android = { group = "top.yukonga.miuix.kmp", name = "miuix-blur-android", version.ref = "miuix" }
 miuix-icons-android = { group = "top.yukonga.miuix.kmp", name = "miuix-icons-android", version.ref = "miuix" }
-miuix-navigation3-ui-android = { group = "top.yukonga.miuix.kmp", name = "miuix-navigation3-ui-android", version.ref = "miuix" }
-
-# --- Navigation3 ---
-androidx-navigation3-runtime = { module = "androidx.navigation3:navigation3-runtime", version.ref = "androidx-navigation3" }
+miuix-nav-android = { group = "top.yukonga.miuix.kmp", name = "miuix-nav-android", version.ref = "miuix" }
 
 # --- Network & Serialization ---
 retrofit2-retrofit = { group = "com.squareup.retrofit2", name = "retrofit", version.ref = "retrofit" }

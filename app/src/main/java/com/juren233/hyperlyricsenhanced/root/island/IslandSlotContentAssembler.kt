@@ -2,6 +2,11 @@ package com.juren233.hyperlyricsenhanced.root.island
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.graphics.Paint
+import android.graphics.Rect
+import android.graphics.Typeface
+import android.text.TextPaint
+import android.util.TypedValue
 import android.view.View
 import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.root.utils.AppleMetadataFlowDiagnostics
@@ -9,6 +14,7 @@ import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.common.IslandLyricPosition
 import com.juren233.hyperlyricsenhanced.common.lyric.CjkLyricWhitespacePolicy
 import com.juren233.hyperlyricsenhanced.common.lyric.LyricMetadataKeys
+import com.juren233.hyperlyricsenhanced.common.lyric.RichLyricLineSplitter
 import com.juren233.hyperlyricsenhanced.common.media.MediaMetadataHelper
 import com.juren233.hyperlyricsenhanced.lyric.model.LyricWord
 import com.juren233.hyperlyricsenhanced.lyric.model.RichLyricLine
@@ -17,27 +23,73 @@ import com.juren233.hyperlyricsenhanced.lyric.model.interfaces.IRichLyricLine
 import com.juren233.hyperlyricsenhanced.lyric.view.METADATA_NEXT_LINE_PREVIEW
 import com.juren233.hyperlyricsenhanced.lyric.view.METADATA_NEXT_LINE_PREVIEW_ALIGNED_RIGHT
 import com.juren233.hyperlyricsenhanced.lyric.view.METADATA_NEXT_LINE_PREVIEW_CENTERED
+import com.juren233.hyperlyricsenhanced.lyric.view.METADATA_NEXT_LINE_RIGHT_TEXT
 import com.juren233.hyperlyricsenhanced.lyric.view.RichLyricLineView
 import com.juren233.hyperlyricsenhanced.lyric.view.SpaceGateRichLyricLineView
+import com.juren233.hyperlyricsenhanced.lyric.view.line.MixedTypefaceText
 import com.juren233.hyperlyricsenhanced.root.island.view.MaxWidthFrameLayout
 import com.juren233.hyperlyricsenhanced.lyric.view.LyricViewStyle
 import com.juren233.hyperlyricsenhanced.lyric.view.isTitleLine
+import com.juren233.hyperlyricsenhanced.lyric.view.yoyo.AnimConfig
 import com.juren233.hyperlyricsenhanced.lyric.view.yoyo.YoYoPresets
 import com.juren233.hyperlyricsenhanced.lyric.view.yoyo.animateEntrance
 import com.juren233.hyperlyricsenhanced.lyric.view.yoyo.animateUpdate
+import com.juren233.hyperlyricsenhanced.provider.OfficialProviderCatalog
 import com.juren233.hyperlyricsenhanced.root.LyriconDataBridge
 import com.juren233.hyperlyricsenhanced.root.utils.CoverColorHelper
 import com.juren233.hyperlyricsenhanced.root.utils.CoverColorDiagnostics
+import com.juren233.hyperlyricsenhanced.root.utils.FontHelper
+import com.juren233.hyperlyricsenhanced.root.utils.IslandSystemFontWeight
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import com.juren233.hyperlyricsenhanced.root.utils.LyricStyleHelper
 import com.juren233.hyperlyricsenhanced.root.utils.TranslationHelper
+import java.io.File
 import java.util.WeakHashMap
 
 internal object IslandSlotContentAssembler {
+    private data class SplitFontKey(
+        val weight: Int,
+        val weightMode: Int,
+        val systemWeight: IslandSystemFontWeight.State?,
+        val textSizeSp: Int,
+        val italic: Boolean,
+        val customPath: String,
+        val customModified: Long,
+        val customLength: Long,
+        val narrowLatin: Boolean,
+    )
+
+    private data class SplitFonts(
+        val key: SplitFontKey,
+        val base: Typeface,
+        val narrow: Typeface?,
+    )
+
+    private data class SplitMeasureKey(
+        val fontKey: SplitFontKey,
+        val textSizePx: Float,
+    )
+
+    /** 分离模式测宽环境：Paint 持有原生资源，Rect 供 getTextBounds 反复写入，按字体+字号复用。 */
+    private class SplitMeasureEnv(val paint: TextPaint, val bounds: Rect)
+
+    private var splitFontCache: SplitFonts? = null
+    private var splitMeasureEnvCache: Pair<SplitMeasureKey, SplitMeasureEnv>? = null
+
     private val lastContentSignatures = WeakHashMap<View, String>()
     private val lastStyleSignatures = WeakHashMap<View, String>()
     // Keep the applied value across global invalidations so equal refreshes do not rebind style.
     private val lastAppliedStyles = WeakHashMap<View, LyricViewStyle>()
+    private val statusBarColorViews = WeakHashMap<View, Unit>()
+    private val statusBarColorLayoutListener = View.OnLayoutChangeListener { view, _, _, _, _, _, _, _, _ ->
+        refreshStatusBarColor(view)
+    }
+    private val statusBarColorAttachListener = object : View.OnAttachStateChangeListener {
+        override fun onViewAttachedToWindow(view: View) {
+            refreshStatusBarColor(view)
+        }
+        override fun onViewDetachedFromWindow(view: View) = Unit
+    }
     // Keep this across global refreshes so delayed fallback lyrics can detect the prior placeholder state.
     internal val lastLyricAvailability = WeakHashMap<View, LyricAvailability>()
 
@@ -63,6 +115,8 @@ internal object IslandSlotContentAssembler {
         synchronized(lastContentSignatures) { lastContentSignatures.remove(view) }
         synchronized(lastStyleSignatures) { lastStyleSignatures.remove(view) }
         synchronized(lastAppliedStyles) { lastAppliedStyles.remove(view) }
+        IslandSeparatedLyricTransition.forget(view)
+        followStatusBarColor(view, false)
         synchronized(lastLyricAvailability) { lastLyricAvailability.remove(view) }
     }
 
@@ -74,6 +128,10 @@ internal object IslandSlotContentAssembler {
         mediaInfo: MediaMetadataHelper.MediaInfo = currentMediaInfo(view.context),
         force: Boolean = false
     ) {
+        followStatusBarColor(view, config.statusBarTextColorEnabled)
+        val statusBarColor = if (config.statusBarTextColorEnabled) {
+            IslandStatusBarColorMonitor.colorFor(view)
+        } else null
         applyDynamicDisplayOptions(view, prefs, config)
         val lyricSong = LyriconDataBridge.currentSong
         val lyricTitle = lyricSong?.name?.takeIf { it.isNotBlank() }
@@ -104,7 +162,8 @@ internal object IslandSlotContentAssembler {
             styleSignature = config.styleSignature,
             mode = mode,
             mediaColorKey = mediaColorKey,
-            artworkContentKey = artworkContentKey
+            artworkContentKey = artworkContentKey,
+            statusBarTextColor = statusBarColor,
         )
 
         val previousSignature = lastStyleSignatures[view]
@@ -148,7 +207,8 @@ internal object IslandSlotContentAssembler {
             res = view.resources,
             mode = mode,
             albumBitmap = albumBitmap,
-            mediaColorKey = mediaColorKey
+            mediaColorKey = mediaColorKey,
+            statusBarTextColor = statusBarColor ?: android.graphics.Color.WHITE,
         )
         val style = buildResult.style
         val styleChanged = synchronized(lastAppliedStyles) {
@@ -163,6 +223,10 @@ internal object IslandSlotContentAssembler {
                     view.setStyle(style)
                 }
             }
+            if (BuildConfig.DEBUG && config.systemFontWeight != null) {
+                HookLogger.i("IslandFontWeight", "consumed state=${config.systemFontWeight} target=${view.tag} " +
+                    "base=${style.primary.typeface.weight} narrow=${style.primary.narrowTypeface?.weight}")
+            }
         }
         synchronized(lastAppliedStyles) { lastAppliedStyles[view] = style }
         lastStyleSignatures[view] = signature
@@ -175,16 +239,55 @@ internal object IslandSlotContentAssembler {
         }
     }
 
+    /** Native tint animation updates colors only, preserving lyric progress and layout. */
+    fun refreshStatusBarColors() {
+        statusBarColorViews.keys.toList().forEach(::refreshStatusBarColor)
+    }
+
+    private fun followStatusBarColor(view: View, enabled: Boolean) {
+        if (enabled) {
+            if (statusBarColorViews.put(view, Unit) == null) {
+                view.addOnLayoutChangeListener(statusBarColorLayoutListener)
+                view.addOnAttachStateChangeListener(statusBarColorAttachListener)
+            }
+        } else if (statusBarColorViews.remove(view) != null) {
+            view.removeOnLayoutChangeListener(statusBarColorLayoutListener)
+            view.removeOnAttachStateChangeListener(statusBarColorAttachListener)
+        }
+    }
+
+    private fun refreshStatusBarColor(view: View) {
+        if (!view.isAttachedToWindow || !statusBarColorViews.containsKey(view)) return
+        val previous = synchronized(lastAppliedStyles) { lastAppliedStyles[view] } ?: return
+        val color = IslandStatusBarColorMonitor.colorFor(view)
+        val style = LyricStyleHelper.withStatusBarTextColor(previous, color)
+        if (style == previous) return
+        when (view) {
+            is RichLyricLineView -> {
+                view.main.updateColor(style.primary.color, style.highlight.background, style.highlight.foreground)
+                view.secondary.updateColor(style.secondary.color, style.highlight.background, style.highlight.foreground)
+            }
+            is SpaceGateRichLyricLineView -> {
+                view.main.updateColor(style.primary.color, style.highlight.background, style.highlight.foreground)
+                view.secondary.updateColor(style.secondary.color, style.highlight.background, style.highlight.foreground)
+            }
+        }
+        synchronized(lastAppliedStyles) { lastAppliedStyles[view] = style }
+        lastStyleSignatures.remove(view)
+    }
+
     internal fun buildStyleCacheSignature(
         styleSignature: String,
         mode: Int,
         mediaColorKey: String,
-        artworkContentKey: Int
+        artworkContentKey: Int,
+        statusBarTextColor: Int? = null,
     ): String = listOf(
         styleSignature,
         mode,
         mediaColorKey,
-        artworkContentKey
+        artworkContentKey,
+        statusBarTextColor,
     ).joinToString("|")
 
     private fun normalizeMediaText(value: String): String {
@@ -236,13 +339,85 @@ internal object IslandSlotContentAssembler {
         force: Boolean = false,
         playbackActive: Boolean = true,
         suppressAnimation: Boolean = false,
-        mediaInfo: MediaMetadataHelper.MediaInfo = currentMediaInfo(view.context)
+        mediaInfo: MediaMetadataHelper.MediaInfo = currentMediaInfo(view.context),
+        separatedMorphCommit: Boolean = false,
     ): Boolean {
-        configureView(view, prefs, config, mode, mediaInfo, force)
-        return if (mode == 7) {
+        // Cancelling an older YoYo bind can synchronously request native layout. Its
+        // reentrant refresh must not interrupt the pair that is being committed now.
+        if (IslandSeparatedLyricTransition.isApplying(view) && !separatedMorphCommit) return false
+        val independentSlots = usesIndependentLyricSlots(view, prefs, config)
+        if (!IslandSeparatedLyricTransition.isApplying(view)) {
+            val previewEnabled = isNextLinePreviewEnabled(prefs, config)
+            if (config.isSeparatedMode && mode == 7 && !suppressAnimation &&
+                (config.lyricAnimationEnabled || previewEnabled)
+            ) {
+                applyPlaybackActive(view, playbackActive)
+                val wholeLine = displayLyricLine(prefs, processedRawLine(prefs, config))
+                val key = listOf(!independentSlots, LyriconDataBridge.versionCounter.get(),
+                    lineContentSignature(wholeLine), config.styleSignature,
+                    mediaInfo.title, mediaInfo.artist, mediaInfo.album).joinToString("|")
+                val result = IslandSeparatedLyricTransition.update(
+                    view, !independentSlots, key,
+                    if (previewEnabled) 220L else (300L * config.switchAnimRateFactor).toLong().coerceAtLeast(1L),
+                    wholeLine,
+                    incoming = { slot, isLeft -> buildSlotLyricLine(slot, prefs, config, isLeft) },
+                ) { slot, incoming ->
+                    applySlotContent(slot, prefs, config, mode, incoming, force = true,
+                        playbackActive = playbackActive, suppressAnimation = true, mediaInfo = mediaInfo,
+                        separatedMorphCommit = true)
+                }
+                if (result != IslandShortLyricTransition.UpdateResult.NOT_HANDLED) return result.contentChanged
+            } else {
+                IslandSeparatedLyricTransition.cancel(view)
+            }
+        }
+        if (!IslandShortLyricTransition.isApplying(view)) {
+            val previewEnabled = config.isFullIslandMode && isNextLinePreviewEnabled(prefs, config)
+            val canTransitionRoles = config.isFullIslandMode && (config.shortLyricSongInfo || config.nextLineOnRight) &&
+                mode == 7 && !suppressAnimation &&
+                (config.lyricAnimationEnabled || previewEnabled) &&
+                hasVisibleLyricContent(LyriconDataBridge.currentLyricLine) &&
+                !isInterludeIndicatorLine(LyriconDataBridge.currentLyricLine)
+            if (canTransitionRoles) {
+                applyPlaybackActive(view, playbackActive)
+                val key = listOf(
+                    !independentSlots, LyriconDataBridge.versionCounter.get(),
+                    lineContentSignature(lineOverride ?: processedRawLine(prefs, config)),
+                    config.styleSignature, mediaInfo.title, mediaInfo.artist, mediaInfo.album,
+                ).joinToString("|")
+                val duration = if (previewEnabled || config.nextLineOnRight) 220L
+                    else (300L * config.switchAnimRateFactor).toLong().coerceAtLeast(1L)
+                val transitionResult = IslandShortLyricTransition.update(
+                        view, !independentSlots, key, duration,
+                        lineOverride ?: buildSlotLyricLine(view, prefs, config, isLeft = false),
+                        allowRightPreviewHandoff = config.nextLineOnRight,
+                    ) { slot, forceBind ->
+                        applySlotContent(slot, prefs, config, mode, lineOverride,
+                            force = forceBind, playbackActive = playbackActive, suppressAnimation = true,
+                            mediaInfo = mediaInfo)
+                        if (slot.main.isRightSide && config.dynamicWidthEnabled) {
+                            // Native relayout can reenter slot binding; leave the atomic commit first.
+                            slot.post { relayoutAfterDeferredContent(slot, config) }
+                        }
+                    }
+                if (transitionResult != IslandShortLyricTransition.UpdateResult.NOT_HANDLED) {
+                    return transitionResult.contentChanged
+                }
+            } else {
+                IslandShortLyricTransition.cancel(view)
+            }
+        }
+        val effectiveMode = IslandFullIslandGapPolicy.contentMode(
+            mode = mode,
+            isLeft = view.tag == IslandProbeUtils.LEFT_TEST_VIEW_TAG,
+            independentSlots = independentSlots
+        )
+        configureView(view, prefs, config, effectiveMode, mediaInfo, force)
+        return if (effectiveMode == 7) {
             applyLyricContent(view, prefs, config, lineOverride, force, playbackActive, suppressAnimation)
         } else {
-            applyMetadataContent(view, config, mode, force, mediaInfo, suppressAnimation)
+            applyPlaybackActive(view, playbackActive)
+            applyMetadataContent(view, prefs, config, effectiveMode, force, mediaInfo, suppressAnimation)
         }
     }
 
@@ -253,6 +428,18 @@ internal object IslandSlotContentAssembler {
         lineOverride: IRichLyricLine?,
         playbackActive: Boolean = true
     ): Boolean {
+        // Line-only updates must also enter/leave the temporary metadata slot and
+        // restore its lyric style; a full metadata refresh is not required at a gap boundary.
+        if (config.usesBothLyricSlots) {
+            return applySlotContent(
+                view = view,
+                prefs = prefs,
+                config = config,
+                mode = 7,
+                lineOverride = lineOverride,
+                playbackActive = playbackActive
+            )
+        }
         applyDynamicDisplayOptions(view, prefs, config)
         return applyLyricContent(
             view = view,
@@ -377,6 +564,9 @@ internal object IslandSlotContentAssembler {
         marquee: Boolean,
         playbackActive: Boolean
     ): Boolean {
+        IslandShortLyricTransition.cancel(view)
+        IslandSeparatedLyricTransition.cancel(view)
+        IslandSeparatedLyricTransition.contentApplied(view, null)
         configureView(view, prefs, config, mode = 5)
         val signature = listOf(
             signaturePrefix,
@@ -398,6 +588,7 @@ internal object IslandSlotContentAssembler {
                     if (marquee) applyMetadataMarquee(target, config, force = true)
                 }
                 is SpaceGateRichLyricLineView -> {
+                    target.continuousSpaceGate = false
                     target.line = line
                     target.setPlaybackActive(playbackActive)
                     if (marquee) applyMetadataMarquee(target, config, force = true)
@@ -494,11 +685,120 @@ internal object IslandSlotContentAssembler {
         config: IslandSlotRuntimeConfig,
         isLeft: Boolean
     ): IRichLyricLine? {
-        // 分离模式：左右两槽绑定同一整行，由 SpaceGate 主从视口各自裁出
-        // 自己的一窗，文本带横跨整座岛连续滚动/排布，中段仅被挖孔区域隔开。
-        // 不再做按像素宽的静态文本切分。
-        return displayLyricLine(prefs, processedRawLine(prefs, config, isLeft))
+        val rawLine = displayLyricLine(prefs, processedRawLine(prefs, config, isLeft))
+        if (!config.isSeparatedMode || rawLine == null || rawLine.text.isNullOrEmpty()) {
+            // 全岛歌词：左右两槽绑定同一整行，由 SpaceGate 主从视口裁出连续文本带。
+            // 单侧歌词：按槽位原样绑定当前行。
+            return rawLine
+        }
+        if (IslandFullIslandGapPolicy.usesIndependentSlots(
+                config.activeMode, LyriconDataBridge.currentLyricLine
+            )) {
+            // 前奏占位与间奏指示器沿用全岛的独立槽布局，不拆分正文或时间窗。
+            // applySlotContent 将左槽替换为歌曲信息，右槽保留完整当前行。
+            return rawLine
+        }
+
+        // 分离歌词：把当前行按视觉宽度均分为左右两段。词级 timing 由
+        // RichLyricLineSplitter 保留，因此播放进度会先走完左段，再进入右段。
+        val density = view.resources.displayMetrics.density
+        val leftMaxPx = config.contentWidthPx(
+            view.resources.displayMetrics.widthPixels,
+            density,
+            isLeft = true
+        )?.toFloat() ?: 0f
+        val fonts = splitFonts(prefs, config)
+        val selector = MixedTypefaceText.typefaceSelector(fonts.base, fonts.narrow)
+        val measureEnv = splitMeasureEnv(
+            fonts,
+            TypedValue.applyDimension(
+                TypedValue.COMPLEX_UNIT_SP,
+                config.textSizeSp.toFloat(),
+                view.resources.displayMetrics,
+            ),
+        )
+        val textPaint = measureEnv.paint
+        val bounds = measureEnv.bounds
+        val measureWidth: (Paint, String) -> Float = { paint, text ->
+            if (text.isEmpty()) 0f
+            else if (selector != null) MixedTypefaceText.measureText(paint, text, selector)
+            else {
+                val advance = paint.measureText(text)
+                paint.getTextBounds(text, 0, text.length, bounds)
+                maxOf(advance, bounds.right.toFloat())
+            }
+        }
+        val splitResult = splitSeparatedLyricLine(rawLine) { line ->
+            val splitPx = separatedSplitWidthPx(
+                textWidthPx = measureWidth(textPaint, line.text.orEmpty()),
+                leftMaxWidthPx = leftMaxPx
+            )
+            RichLyricLineSplitter.split(
+                line,
+                textPaint,
+                splitPx,
+                config.textSizeRatio,
+                centerLyric = true,
+                measureWidth = measureWidth,
+            )
+        }
+        return if (isLeft) splitResult.left else splitResult.right
     }
+
+    internal fun separatedSplitWidthPx(textWidthPx: Float, leftMaxWidthPx: Float): Float =
+        (textWidthPx / 2f).coerceAtMost(leftMaxWidthPx).coerceAtLeast(0f)
+
+    private fun splitFonts(prefs: SharedPreferences, config: IslandSlotRuntimeConfig): SplitFonts {
+        val customPath = config.customFontPath
+        val customFile = customPath.takeIf { it.isNotBlank() }?.let(::File)
+        val key = SplitFontKey(
+            weight = config.fontWeight,
+            weightMode = config.fontWeightMode,
+            systemWeight = config.systemFontWeight,
+            textSizeSp = config.textSizeSp,
+            italic = config.fontItalic,
+            customPath = customPath,
+            customModified = customFile?.lastModified() ?: 0L,
+            customLength = customFile?.length() ?: 0L,
+            narrowLatin = config.narrowLatinFont,
+        )
+        return synchronized(this) {
+            splitFontCache?.takeIf { it.key == key }
+                ?: SplitFonts(
+                    key = key,
+                    base = FontHelper.loadBaseTypeface(prefs),
+                    narrow = FontHelper.loadNarrowTypeface(prefs),
+                ).also { splitFontCache = it }
+        }
+    }
+
+    /** 行绑定在主线程同步执行，测宽环境跨调用复用安全；仅字体或字号变化时重建。 */
+    private fun splitMeasureEnv(fonts: SplitFonts, textSizePx: Float): SplitMeasureEnv {
+        val key = SplitMeasureKey(fontKey = fonts.key, textSizePx = textSizePx)
+        return synchronized(this) {
+            splitMeasureEnvCache?.takeIf { it.first == key }?.second
+                ?: SplitMeasureEnv(
+                    paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+                        textSize = textSizePx
+                        typeface = fonts.base
+                    },
+                    bounds = Rect(),
+                ).also { splitMeasureEnvCache = key to it }
+        }
+    }
+
+    internal fun isInterludeIndicatorLine(line: IRichLyricLine?): Boolean =
+        line?.metadata?.getBoolean(LyricMetadataKeys.INSTRUMENTAL) == true
+
+    private fun usesIndependentLyricSlots(
+        view: View,
+        prefs: SharedPreferences,
+        config: IslandSlotRuntimeConfig,
+    ): Boolean =
+        IslandFullIslandGapPolicy.usesIndependentSlots(
+            config.activeMode,
+            LyriconDataBridge.currentLyricLine
+        ) || IslandShortLyricLayout.usesSongInfo(view, prefs, config)
 
     fun processedRawLine(
         prefs: SharedPreferences,
@@ -507,15 +807,16 @@ internal object IslandSlotContentAssembler {
     ): IRichLyricLine? {
         val songName = LyriconDataBridge.currentSongName?.takeIf { it.isNotEmpty() } ?: ""
         var rawLine = LyriconDataBridge.currentLyricLineForIsland(
-            nextLyricLineEnabled = config?.nextLyricLine != false
+            nextLyricLineEnabled = config?.nextLineEnabled != false
         )
             ?: RichLyricLine(text = songName, words = emptyList())
 
         if (config != null && isNextLinePreviewEnabled(prefs, config, rawLine)) {
-            val nextLine = LyriconDataBridge.currentNextLyricLine
+            val nextLine = displayLyricLine(prefs, LyriconDataBridge.currentNextLyricLine)
             return rawLine.withNextLinePreview(
                 nextLine = nextLine,
-                centerNextLine = shouldCenterLine(config, nextLine, isLeft)
+                centerNextLine = shouldCenterLine(config, nextLine, isLeft),
+                onRight = config.nextLineOnRight,
             )
         }
 
@@ -548,6 +849,7 @@ internal object IslandSlotContentAssembler {
         // A next-line preview has its own secondary payload and must not be
         // interpreted as a normal current lyric during a later refresh.
         if (line.metadata?.getBoolean(METADATA_NEXT_LINE_PREVIEW) == true) return line
+        if (!line.metadata?.get(METADATA_NEXT_LINE_RIGHT_TEXT).isNullOrBlank()) return line
         if (config.translationDisplayMode == RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_OFF) {
             return line
         }
@@ -588,10 +890,16 @@ internal object IslandSlotContentAssembler {
             }
         )
         val isLeft = view.tag == IslandProbeUtils.LEFT_TEST_VIEW_TAG
-        // 分离模式下两槽画的是同一条文本带，居中/靠右必须两侧一致，
+        // 全岛歌词下两槽画的是同一条文本带，居中/靠右必须两侧一致，
         // 统一采用左槽的位置偏好（带的原点是岛左缘），否则两个视口错位。
-        val alignmentIsLeft = if (config.isSplitMode) true else isLeft
-        val centerCurrentLine = shouldCenterLine(config, targetLine, alignmentIsLeft)
+        val continuousSpaceGate = config.isFullIslandMode &&
+            !usesIndependentLyricSlots(view, prefs, config)
+        val separatedRole = if (config.isSeparatedMode) !IslandFullIslandGapPolicy.usesIndependentSlots(
+            config.activeMode, LyriconDataBridge.currentLyricLine,
+        ) else null
+        val alignmentIsLeft = if (continuousSpaceGate) true else isLeft
+        val centerCurrentLine = if (config.nextLineOnRight && isNextLinePreviewEnabled(prefs, config)) false
+            else shouldCenterLine(config, targetLine, alignmentIsLeft)
         val isNextLinePreview = targetLine?.metadata?.getBoolean(
             METADATA_NEXT_LINE_PREVIEW
         ) == true
@@ -603,10 +911,24 @@ internal object IslandSlotContentAssembler {
         } else {
             centerCurrentLine
         }
-        val signature = "lyric|${lineContentSignature(targetLine)}|${config.styleSignature}"
+        val signature = "lyric|${lineContentSignature(targetLine)}|${config.styleSignature}|$continuousSpaceGate"
         val contentChanged = hasViewLineContentChanged(view, targetLine)
         val lyricsJustBecameAvailable = recordLyricAvailability(view, targetLine)
         val viewContentLost = isLyricViewContentLost(view, targetLine)
+        if (BuildConfig.DEBUG &&
+            lastContentSignatures[view]?.startsWith("next-song") == true
+        ) {
+            HookLogger.i(
+                "IslandSlotContentAssembler",
+                "[PreviewEndDiag] lyric view=${System.identityHashCode(view).toString(16)}, " +
+                    "cached=${lastContentSignatures[view]}, contentChanged=$contentChanged, " +
+                    "viewContentLost=$viewContentLost, viewLine=${when (view) {
+                        is RichLyricLineView -> view.line?.let { "text=${it.text}, secondary=${it.secondary}" }
+                        is SpaceGateRichLyricLineView -> view.line?.let { "text=${it.text}, secondary=${it.secondary}" }
+                        else -> null
+                    }}, attached=${view.isAttachedToWindow}"
+            )
+        }
         if (shouldSkipContentRefresh(force, lastContentSignatures[view], signature, viewContentLost)) {
             // The target signature is recorded when its exit animation starts, while the
             // View still draws the previous line until the animation callback. A position or
@@ -671,10 +993,12 @@ internal object IslandSlotContentAssembler {
             when (target) {
                 is RichLyricLineView -> {
                     target.line = targetLine
+                    IslandSeparatedLyricTransition.contentApplied(target, separatedRole)
                     target.setPlaybackActive(playbackActive)
                     if (config.lyricMarqueeEnabled) target.post { target.requestStartMarquee() }
                 }
                 is SpaceGateRichLyricLineView -> {
+                    target.continuousSpaceGate = continuousSpaceGate
                     target.line = targetLine
                     target.setPlaybackActive(playbackActive)
                     if (config.lyricMarqueeEnabled) target.post { target.requestStartMarquee() }
@@ -693,9 +1017,8 @@ internal object IslandSlotContentAssembler {
             (willAnimateNextLinePromotion && !lyricsJustBecameAvailable) ||
             view.parent == null ||
             !view.isAttachedToWindow
-        // 动态长度：预览提升动画会把内容更新延迟到动画结束时落地。动画开始前
-        // 先让视图按目标行落定后的实测宽度参与岛宽测量，使岛宽与上浮动画同步
-        // 过渡；内容落地时 pendingHugWidth 清除并由 onDeferredContentApplied 实测兜底。
+        // 动态长度：预览提升会延迟内容落地。提前提供目标宽度；长句上浮时
+        // 视图只把它作为岛宽预算，子行仍以旧宽绘制。内容落地后实测兜底。
         if (config.dynamicWidthEnabled) {
             val deferredByPromotion = deferAlignmentToPromotionLanding
             when (view) {
@@ -717,20 +1040,30 @@ internal object IslandSlotContentAssembler {
 
     private fun applyMetadataContent(
         view: View,
+        prefs: SharedPreferences,
         config: IslandSlotRuntimeConfig,
         mode: Int,
         force: Boolean,
         mediaInfo: MediaMetadataHelper.MediaInfo,
         suppressAnimation: Boolean
     ): Boolean {
+        val preferSessionMetadata = shouldPreferMediaSessionMetadata(
+            packageName = LyriconDataBridge.currentLyricPackageName,
+            restoreOriginalMetadata = prefs.getBoolean(
+                RootConstants.KEY_HOOK_APPLE_MUSIC_RESTORE_CJK_ORIGINAL_METADATA,
+                RootConstants.DEFAULT_HOOK_APPLE_MUSIC_RESTORE_CJK_ORIGINAL_METADATA,
+            ),
+        )
         val songName = resolveMetadataSongName(
             lyricSongName = LyriconDataBridge.currentSong?.name,
             currentSongName = LyriconDataBridge.currentSongName,
-            mediaTitle = mediaInfo.title
+            mediaTitle = mediaInfo.title,
+            preferSessionMetadata = preferSessionMetadata,
         )
         val artistName = resolveMetadataArtistName(
             lyricArtist = LyriconDataBridge.currentSong?.artist,
-            mediaArtist = mediaInfo.artist
+            mediaArtist = mediaInfo.artist,
+            preferSessionMetadata = preferSessionMetadata,
         )
         val albumName = mediaInfo.album
         if (BuildConfig.DEBUG) AppleMetadataFlowDiagnostics.record("island_choice", changedOnly = true) {
@@ -738,7 +1071,8 @@ internal object IslandSlotContentAssembler {
                 "providerArtist=${AppleMetadataFlowDiagnostics.text(LyriconDataBridge.currentSong?.artist)} " +
                 "mediaArtist=${AppleMetadataFlowDiagnostics.text(mediaInfo.artist)} " +
                 "selectedArtist=${AppleMetadataFlowDiagnostics.text(artistName)} " +
-                "selectedTitle=${AppleMetadataFlowDiagnostics.text(songName)}"
+                "selectedTitle=${AppleMetadataFlowDiagnostics.text(songName)} " +
+                "preferSessionMetadata=$preferSessionMetadata"
         }
 
         val signature = listOf(
@@ -756,6 +1090,21 @@ internal object IslandSlotContentAssembler {
         val newLine = buildMetadataLine(mode, songName, artistName, albumName)
         val contentChanged = hasViewLineContentChanged(view, newLine)
         val viewContentLost = isLyricViewContentLost(view, newLine)
+        if (BuildConfig.DEBUG &&
+            lastContentSignatures[view]?.startsWith("next-song") == true
+        ) {
+            HookLogger.i(
+                "IslandSlotContentAssembler",
+                "[PreviewEndDiag] metadata view=${System.identityHashCode(view).toString(16)}, " +
+                    "mode=$mode, cached=${lastContentSignatures[view]}, target=$signature, " +
+                    "contentChanged=$contentChanged, viewContentLost=$viewContentLost, " +
+                    "viewLine=${when (view) {
+                        is RichLyricLineView -> view.line?.let { "text=${it.text}, secondary=${it.secondary}" }
+                        is SpaceGateRichLyricLineView -> view.line?.let { "text=${it.text}, secondary=${it.secondary}" }
+                        else -> null
+                    }}, attached=${view.isAttachedToWindow}"
+            )
+        }
         if (shouldSkipContentRefresh(force, lastContentSignatures[view], signature, viewContentLost)) return false
 
         applyContentUpdate(view, config, suppressAnimation, contentChanged) { target ->
@@ -765,9 +1114,11 @@ internal object IslandSlotContentAssembler {
             when (target) {
                 is RichLyricLineView -> {
                     if (contentChanged || viewContentLost) target.line = newLine
+                    IslandSeparatedLyricTransition.contentApplied(target, false.takeIf { config.isSeparatedMode })
                     applyMetadataMarquee(target, config)
                 }
                 is SpaceGateRichLyricLineView -> {
+                    target.continuousSpaceGate = false
                     if (contentChanged || viewContentLost) target.line = newLine
                     applyMetadataMarquee(target, config)
                 }
@@ -780,21 +1131,50 @@ internal object IslandSlotContentAssembler {
     internal fun resolveMetadataSongName(
         lyricSongName: String?,
         currentSongName: String?,
-        mediaTitle: String
-    ): String = lyricSongName?.takeIf { it.isNotBlank() }
-        ?: currentSongName?.takeIf { it.isNotBlank() }
-        ?: mediaTitle
+        mediaTitle: String,
+        preferSessionMetadata: Boolean = false,
+    ): String {
+        val anchorTitle = currentSongName?.takeIf {
+            it.isNotBlank() && it != UNKNOWN_MEDIA_TITLE
+        }
+        val sessionTitle = anchorTitle ?: mediaTitle.takeIf { it.isNotBlank() }
+        return if (preferSessionMetadata) {
+            sessionTitle
+                ?: lyricSongName?.takeIf { it.isNotBlank() }
+                ?: currentSongName?.takeIf { it.isNotBlank() }
+                ?: mediaTitle
+        } else {
+            lyricSongName?.takeIf { it.isNotBlank() }
+                ?: currentSongName?.takeIf { it.isNotBlank() }
+                ?: mediaTitle
+        }
+    }
 
     /**
-     * 与 resolveMetadataSongName 同一优先级链：Provider 发布的权威歌手优先，
-     * 媒体库原始值兜底。国内音乐 App 开启车载歌词时会把「歌名-歌手」组合串
-     * 写进 MediaSession 的歌手字段，只有桥内的 Provider 数据是干净的。
+     * 默认由 Provider 的干净歌手字段优先，避免国内音乐 App 的车载歌词把
+     * 「歌名-歌手」组合串写进 MediaSession。仅 Apple 原地区原名模式反转该优先级，
+     * 因为该模式已把最终原名写入 MediaSession，而 Provider 仍可能保留地区英文别名。
      */
     internal fun resolveMetadataArtistName(
         lyricArtist: String?,
-        mediaArtist: String
-    ): String = lyricArtist?.takeIf { it.isNotBlank() }
-        ?: mediaArtist
+        mediaArtist: String,
+        preferSessionMetadata: Boolean = false,
+    ): String = if (preferSessionMetadata) {
+        mediaArtist.takeIf { it.isNotBlank() }
+            ?: lyricArtist?.takeIf { it.isNotBlank() }
+            ?: mediaArtist
+    } else {
+        lyricArtist?.takeIf { it.isNotBlank() }
+            ?: mediaArtist
+    }
+
+    internal fun shouldPreferMediaSessionMetadata(
+        packageName: String?,
+        restoreOriginalMetadata: Boolean,
+    ): Boolean = restoreOriginalMetadata &&
+        packageName == OfficialProviderCatalog.APPLE_MUSIC_PACKAGE_NAME
+
+    private const val UNKNOWN_MEDIA_TITLE = "Playing~"
 
     internal fun buildMetadataLine(
         mode: Int,
@@ -856,6 +1236,13 @@ internal object IslandSlotContentAssembler {
             update(target)
             relayoutAfterDeferredContent(target, config)
         }
+        // 动画速率只作用于歌词切换动画：以所选样式内置时长为 1x 缩放出/入段；
+        // 优雅(1x)保持原样。间奏动画、第二行(下一句预览)上浮动画、入场揭示均不参与。
+        val switchPreset = if (config.switchAnimRateFactor != RootConstants.SWITCH_ANIM_RATE_ELEGANT_FACTOR) {
+            preset.scaleDurations(config.switchAnimRateFactor)
+        } else {
+            preset
+        }
         when (view) {
             is RichLyricLineView -> if (entranceOnly) {
                 view.animateEntrance(preset) { update(this) }
@@ -863,16 +1250,29 @@ internal object IslandSlotContentAssembler {
                 // 动态长度：淡出期间冻结组宽，旧句对唱位置保持到新内容落地，
                 // 避免“旧句先移到另一侧再换字”。
                 view.beginContentSwitchFreeze()
-                view.animateUpdate(preset) { animatedUpdate(this) }
+                view.animateUpdate(switchPreset) { animatedUpdate(this) }
             }
             is SpaceGateRichLyricLineView -> if (entranceOnly) {
                 view.animateEntrance(preset) { update(this) }
             } else {
                 view.beginContentSwitchFreeze()
-                view.animateUpdate(preset) { animatedUpdate(this) }
+                view.animateUpdate(switchPreset) { animatedUpdate(this) }
             }
             else -> update(view)
         }
+    }
+
+    /**
+     * 样式出/入两段时长等比缩放到速率倍率（各样式内置时长为 1x）；
+     * 下限 1ms，防止极小倍率时零时长动画回调路径异常。
+     */
+    private fun Pair<AnimConfig, AnimConfig>.scaleDurations(factor: Float): Pair<AnimConfig, AnimConfig> {
+        fun scale(config: AnimConfig) = AnimConfig(
+            technique = config.technique,
+            duration = (config.duration * factor).toLong().coerceAtLeast(1L),
+            interpolator = config.interpolator
+        )
+        return scale(first) to scale(second)
     }
 
     /**
@@ -917,6 +1317,9 @@ internal object IslandSlotContentAssembler {
         }
         when (view) {
             is RichLyricLineView -> {
+                view.setSecondaryTextUnitProgress(config.isSeparatedMode)
+                // 对半分离的间奏也由左槽显示歌曲信息，右槽显示完整指示器。
+                view.hideInterludeIndicator = false
                 view.setDisplayOptions(
                     options.displayMode,
                     options.fallback,
@@ -929,14 +1332,15 @@ internal object IslandSlotContentAssembler {
                 }
             }
             is SpaceGateRichLyricLineView -> {
+                view.setSecondaryTextUnitProgress(config.isFullIslandMode)
                 view.setDisplayOptions(
                     options.displayMode,
                     options.fallback,
                     options.hideSecondaryContent
                 )
-                // 分离模式两槽共享同一整行，hug 收缩会让两侧都量出整行宽、
+                // 全岛歌词两槽共享同一整行，hug 收缩会让两侧都量出整行宽、
                 // 把岛宽计算撑大一倍；整带几何要求每槽恒占满自己的槽宽。
-                view.hugContentWidth = config.dynamicWidthEnabled && !config.isSplitMode
+                view.hugContentWidth = config.dynamicWidthEnabled && !config.isFullIslandMode
                 view.applyDuetFixedLength(duetSongLyrics, duetWidthCapOf(view))
                 view.onDeferredContentApplied = {
                     IslandViewHelper.triggerSystemRelayoutForDescendant(view)

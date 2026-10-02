@@ -215,6 +215,42 @@ class ActivePlayerCoordinatorTest {
     }
 
     @Test
+    fun `confirmed new playback edge switches before stale player reports pause`() {
+        var actualOutputPackage = playerPackageName
+        val coordinator = coordinator(
+            officialProviderPreference = { true },
+            audioConflict = { candidate -> candidate != actualOutputPackage },
+        )
+        val listener = RecordingListener()
+        coordinator.addListener(listener)
+        coordinator.onPlaybackStateChanged(playingRecorder(officialInfo), true)
+        assertEquals(officialInfo, listener.activeProvider)
+
+        actualOutputPackage = otherPlayerPackageName
+        coordinator.onPlaybackStateChanged(playingRecorder(otherOfficialInfo), true)
+
+        assertEquals(otherOfficialInfo, listener.activeProvider)
+        assertEquals(true, listener.isPlaying)
+    }
+
+    @Test
+    fun `position traffic cannot steal ownership from still playing provider`() {
+        var actualOutputPackage = playerPackageName
+        val coordinator = coordinator(
+            officialProviderPreference = { true },
+            audioConflict = { candidate -> candidate != actualOutputPackage },
+        )
+        val listener = RecordingListener()
+        coordinator.addListener(listener)
+        coordinator.onPlaybackStateChanged(playingRecorder(officialInfo), true)
+
+        actualOutputPackage = otherPlayerPackageName
+        coordinator.onPositionChanged(playingRecorder(otherOfficialInfo), 42L)
+
+        assertEquals(officialInfo, listener.activeProvider)
+    }
+
+    @Test
     fun `audio conflict must remain stable through confirmation window`() {
         var now = 0L
         val coordinator = coordinator(

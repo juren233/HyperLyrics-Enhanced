@@ -9,6 +9,9 @@ object YoYoAnimation {
     private const val KEY_ANIM_LOCK = 0x7F_114514
     private const val KEY_ANIM_HANDLE = 0x7F_191981
 
+    /** Includes the old-content completion callback, before the entrance animation starts. */
+    internal fun isRunning(target: View): Boolean = target.getTag(KEY_ANIM_LOCK) == true
+
     fun <T : View> switchContent(
         target: T,
         outConfig: AnimConfig,
@@ -29,7 +32,14 @@ object YoYoAnimation {
                 override fun onAnimationStart(p0: Animator) {}
                 override fun onAnimationRepeat(p0: Animator) {}
                 override fun onAnimationCancel(p0: Animator) {
+                    // 内容写入只排队在淡出结束回调，装配层却在排队瞬间就同步记录了
+                    // 目标签名（"已排队"语义）。取消若只清锁，写入会被永久丢弃：
+                    // 后续所有应用都按签名相同跳过，视图停在旧内容（单曲循环下
+                    // 没有元数据刷新来补救，表现为下首预览残留）。取消时必须把
+                    // 排队中的写入立即落地。
+                    val queued = target.getTag(KEY_ANIM_LOCK) == true
                     target.setTag(KEY_ANIM_LOCK, false)
+                    if (queued) action(target)
                 }
 
                 override fun onAnimationEnd(p0: Animator) {

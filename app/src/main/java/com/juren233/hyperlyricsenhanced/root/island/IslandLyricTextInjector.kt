@@ -6,19 +6,22 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import com.juren233.hyperlyricsenhanced.BuildConfig
+import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.common.media.MediaMetadataHelper
 import com.juren233.hyperlyricsenhanced.root.HookEntry
 import com.juren233.hyperlyricsenhanced.root.LyriconDataBridge
 import com.juren233.hyperlyricsenhanced.lyric.view.RichLyricLineView
 import com.juren233.hyperlyricsenhanced.lyric.view.SpaceGateRichLyricLineView
 import com.juren233.hyperlyricsenhanced.lyric.view.line.LyricTextPaintOwner
+import com.juren233.hyperlyricsenhanced.root.island.renderer.BaseIslandRenderer
 import com.juren233.hyperlyricsenhanced.root.island.view.MaxWidthFrameLayout
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 
 /**
  * Stage-4 / 富歌词大岛视图注入与更新调度。
  *
- * 负责在超级岛卡槽上动态注入 RichLyricLineView (Standard) 或 SpaceGateRichLyricLineView (Split)，
+ * 负责在超级岛卡槽上动态注入 RichLyricLineView (Single-side) 或
+ * SpaceGateRichLyricLineView (Full-island)，
  * 并维护其生命周期恢复及热替换。
  */
 internal object IslandLyricTextInjector {
@@ -41,8 +44,8 @@ internal object IslandLyricTextInjector {
             rootView.findViewWithTag<View>(IslandProbeUtils.RIGHT_TEST_WRAPPER_TAG)?.let { (it.parent as? ViewGroup)?.removeView(it) }
         }
 
-        if (config.isSplitMode) {
-            linkViews(rootView)
+        if (config.usesSpaceGateView) {
+            configureSpaceGateViews(rootView)
         }
 
         changed = IslandNativeSlotPlacement.apply(
@@ -53,6 +56,10 @@ internal object IslandLyricTextInjector {
         ) || changed
         IslandHostFacade.applyHostSettings(rootView, prefs)
         IslandViewRegistry.refreshInjectedViews(rootView)
+        IslandNativeTextCollisionGuard.sync(
+            root = rootView,
+            enabled = config.usesSpaceGateView && config.shouldInjectLeft && config.shouldInjectRight,
+        )
         if (changed) {
             IslandAlbumCoverStyleHooker.refreshLeftContentTextShadows()
         }
@@ -61,6 +68,10 @@ internal object IslandLyricTextInjector {
             rootView.post {
                 logGradientShadowDiagnostic(rootView, config, changed, phase = "posted_after_content")
             }
+        }
+        if (BuildConfig.DEBUG && changed) {
+            runCatching { IslandOverlapDiagnostics.onContentApplied(rootView, "inject") }
+                .onFailure { HookLogger.w(TAG, "超级岛重叠注入取证失败: ${it.javaClass.simpleName}") }
         }
         return changed
     }
@@ -167,6 +178,48 @@ internal object IslandLyricTextInjector {
             rootView.findViewWithTag<View>(IslandProbeUtils.RIGHT_TEST_VIEW_TAG) != null
     }
 
+    /** 采集宿主子树注入锚点可达性；与 injectSlot 的查找路径保持同一判定。 */
+    fun probeAnchorState(rootView: ViewGroup): IslandAnchorState {
+        fun hasParent(parentName: String): Boolean =
+            IslandViewHelper.findViewByName(rootView, parentName) != null
+
+        fun hasContainer(parentName: String): Boolean {
+            val parent = IslandViewHelper.findViewByName(rootView, parentName) as? ViewGroup ?: return false
+            return IslandViewHelper.findViewByName(parent, IslandProbeUtils.TEXT_CONTAINER_NAME) != null
+        }
+
+        return IslandAnchorState(
+            leftParent = hasParent(IslandProbeUtils.LEFT_PARENT_NAME),
+            leftContainer = hasContainer(IslandProbeUtils.LEFT_PARENT_NAME),
+            rightParent = hasParent(IslandProbeUtils.RIGHT_PARENT_NAME),
+            rightContainer = hasContainer(IslandProbeUtils.RIGHT_PARENT_NAME),
+        )
+    }
+
+    /** 当前配置需要注入的每一侧锚点是否都可达；失效宿主判定与重挂候选过滤共用。 */
+    fun hasInjectableAnchors(rootView: ViewGroup): Boolean {
+        val prefs = HookEntry.instance?.prefs ?: return false
+        val config = IslandSlotRuntimeConfig.from(prefs)
+        return IslandHostRetirementPolicy.isAnchorStateInjectable(
+            state = probeAnchorState(rootView),
+            shouldInjectLeft = config.shouldInjectLeft,
+            shouldInjectRight = config.shouldInjectRight,
+        )
+    }
+
+    /** Debug 诊断：区分失效宿主缺失的是父容器还是文本容器。 */
+    fun describeAnchorState(rootView: ViewGroup): String {
+        val state = probeAnchorState(rootView)
+        return "left(parent=${state.leftParent}, text=${state.leftContainer}), " +
+            "right(parent=${state.rightParent}, text=${state.rightContainer})"
+    }
+
+    /** wrapper 仍在但真正歌词 View 已被系统重建移除时，也必须判定为需要重新注入。 */
+    fun hasInjectedLyricView(rootView: ViewGroup): Boolean {
+        return rootView.findViewWithTag<View>(IslandProbeUtils.LEFT_TEST_VIEW_TAG) != null ||
+            rootView.findViewWithTag<View>(IslandProbeUtils.RIGHT_TEST_VIEW_TAG) != null
+    }
+
     fun hasVisibleInjectedContent(rootView: ViewGroup): Boolean {
         fun isVisible(tag: String): Boolean {
             return rootView.findViewWithTag<View>(tag)
@@ -195,8 +248,12 @@ internal object IslandLyricTextInjector {
             changed = refreshSlotContent(rootView, IslandProbeUtils.RIGHT_TEST_VIEW_TAG, config.rightMode, prefs, config, force, suppressAnimation, mediaInfo) || changed
         }
 
-        if (config.isSplitMode) {
-            linkViews(rootView)
+        if (config.usesSpaceGateView) {
+            configureSpaceGateViews(rootView)
+        }
+        if (BuildConfig.DEBUG && changed) {
+            runCatching { IslandOverlapDiagnostics.onContentApplied(rootView, "content_applied") }
+                .onFailure { HookLogger.w(TAG, "超级岛重叠内容取证失败: ${it.javaClass.simpleName}") }
         }
         return changed
     }
@@ -514,7 +571,7 @@ internal object IslandLyricTextInjector {
     }
 
     private fun isViewTypeCorrect(view: View, activeMode: Int): Boolean {
-        return if (activeMode == 1) {
+        return if (activeMode == RootConstants.HOOK_LYRIC_MODE_FULL_ISLAND) {
             view is SpaceGateRichLyricLineView
         } else {
             view is RichLyricLineView
@@ -577,7 +634,7 @@ internal object IslandLyricTextInjector {
     }
 
     private fun wrapperLayoutWidth(config: IslandSlotRuntimeConfig): Int {
-        return if (config.isSplitMode || config.dynamicWidthEnabled) {
+        return if (config.usesSpaceGateView || config.dynamicWidthEnabled) {
             FrameLayout.LayoutParams.WRAP_CONTENT
         } else {
             FrameLayout.LayoutParams.MATCH_PARENT
@@ -585,7 +642,7 @@ internal object IslandLyricTextInjector {
     }
 
     private fun lyricTextLayoutWidth(config: IslandSlotRuntimeConfig): Int {
-        return if (config.dynamicWidthEnabled && !config.isSplitMode) {
+        return if (config.dynamicWidthEnabled && !config.usesSpaceGateView) {
             FrameLayout.LayoutParams.WRAP_CONTENT
         } else {
             FrameLayout.LayoutParams.MATCH_PARENT
@@ -601,12 +658,15 @@ internal object IslandLyricTextInjector {
 
     private fun createLyricView(rootView: ViewGroup, tagValue: String, config: IslandSlotRuntimeConfig, mode: Int, suppressAnimation: Boolean = false): View {
         val prefs = HookEntry.instance?.prefs
-        val view = if (config.isSplitMode) {
+        val view = if (config.usesSpaceGateView) {
             SpaceGateRichLyricLineView(rootView.context)
         } else {
             RichLyricLineView(rootView.context)
         }
         view.tag = tagValue
+        if (view is SpaceGateRichLyricLineView && tagValue == IslandProbeUtils.RIGHT_TEST_VIEW_TAG) {
+            IslandShortLyricLayout.observeWidth(view)
+        }
 
         if (prefs != null) {
             IslandSlotContentAssembler.applySlotContent(view, prefs, config, mode, force = true, suppressAnimation = true)
@@ -624,6 +684,11 @@ internal object IslandLyricTextInjector {
         suppressAnimation: Boolean,
         mediaInfo: MediaMetadataHelper.MediaInfo
     ): Boolean {
+        // 下首歌曲预览占用槽位期间（含预览自身淡出→落地的动画窗口），轻量刷新
+        // 不得触碰该槽：视图此刻仍是旧内容（预览行未落地），常规内容会误判
+        // "已是目标内容"而只改写装配器缓存，预览落地后缓存与视图永久错位，
+        // 单曲循环无切歌刷新兜底，表现为预览残留（ISLAND-NEXT-PREVIEW-002）。
+        if (BaseIslandRenderer.isSlotReservedByNextSongPreview(rootView, viewTag)) return false
         val view = rootView.findViewWithTag<View>(viewTag) ?: return false
         val isLeft = viewTag == IslandProbeUtils.LEFT_TEST_VIEW_TAG
         // The adjacent-translation slot is temporarily converted from its
@@ -649,16 +714,14 @@ internal object IslandLyricTextInjector {
         )
     }
 
-    fun linkViews(rootView: ViewGroup) {
+    private fun configureSpaceGateViews(rootView: ViewGroup) {
         val leftView = rootView.findViewWithTag<View>(IslandProbeUtils.LEFT_TEST_VIEW_TAG) as? SpaceGateRichLyricLineView
         val rightView = rootView.findViewWithTag<View>(IslandProbeUtils.RIGHT_TEST_VIEW_TAG) as? SpaceGateRichLyricLineView
 
         if (leftView == null || rightView == null) {
             // 同步链路需要左右两槽都在；缺一侧时退回普通单槽渲染。
-            listOf(leftView, rightView).forEach { view ->
-                view?.main?.spaceGateEnabled = false
-                view?.secondary?.spaceGateEnabled = false
-            }
+            leftView?.setSpaceGateConfig(isRightSide = false, sibling = null)
+            rightView?.setSpaceGateConfig(isRightSide = true, sibling = null)
             return
         }
 
@@ -667,10 +730,8 @@ internal object IslandLyricTextInjector {
         // 完整文本带，中间挖孔区域不属于任何视口，文本在视觉上被其隔断。
         leftView.setSpaceGateConfig(isRightSide = false, sibling = rightView)
         rightView.setSpaceGateConfig(isRightSide = true, sibling = leftView)
-        leftView.main.spaceGateEnabled = true
-        leftView.secondary.spaceGateEnabled = true
-        rightView.main.spaceGateEnabled = true
-        rightView.secondary.spaceGateEnabled = true
+        // Each view keeps its applied content role. Width-only reinjection must
+        // not reconnect the belt while the slots show metadata and a gap indicator.
 
         IslandHostFacade.logCameraCutoutInfo(rootView)
     }

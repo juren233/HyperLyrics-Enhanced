@@ -32,3 +32,6 @@ DEBUGGING_MISTAKES.md
 .trae/
 apks/
 scripts/
+.zcodeignore
+.tmp-hle-logs/
+.zcode/

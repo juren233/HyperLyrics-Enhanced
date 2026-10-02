@@ -8,11 +8,17 @@ package com.juren233.hyperlyricsenhanced.root.island
 
 import android.content.SharedPreferences
 import com.juren233.hyperlyricsenhanced.common.IslandMusicWaveColorMode
+import com.juren233.hyperlyricsenhanced.common.IslandFontWeightMode
 import com.juren233.hyperlyricsenhanced.common.IslandProgressColorMode
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 
 /** Reads the latest broadcast override before falling back to RemotePreferences storage. */
 internal object IslandRuntimePreferenceReader {
+    fun getFontWeightMode(prefs: SharedPreferences): Int = IslandFontWeightMode.resolve(
+        getInt(prefs, RootConstants.KEY_HOOK_FONT_WEIGHT_MODE, IslandFontWeightMode.UNSPECIFIED),
+        IslandFontWeightMode.hasLegacySettings(prefs) || contains(prefs, RootConstants.KEY_HOOK_FONT_WEIGHT),
+    )
+
     fun getInt(
         prefs: SharedPreferences,
         key: String,

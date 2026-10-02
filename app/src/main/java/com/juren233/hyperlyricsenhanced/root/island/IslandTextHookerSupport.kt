@@ -5,9 +5,11 @@ import android.view.ViewGroup
 import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.lyric.view.RichLyricLineView
 import com.juren233.hyperlyricsenhanced.lyric.view.SpaceGateRichLyricLineView
+import com.juren233.hyperlyricsenhanced.root.HookEntry
 import com.juren233.hyperlyricsenhanced.root.LyriconDataBridge
 import com.juren233.hyperlyricsenhanced.root.island.renderer.BaseIslandRenderer
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
+import java.util.WeakHashMap
 
 internal object IslandTextHookerSupport {
     const val TAG = "IslandTextHooker"
@@ -42,7 +44,19 @@ internal object IslandTextHookerSupport {
         return IslandProbeUtils.extractMediaIslandInfo(realData)
     }
 
+    /** 最近一次完整装配所属的过渡代；宿主释放后不保留视图。 */
+    private val transitionAssemblyGenerations = WeakHashMap<ViewGroup, Int>()
+
     fun prepareFrozenFakeIslandForTransition(fakeView: ViewGroup, source: String) {
+        prepareFrozenFakeIslandInternal(fakeView, source, reconfigureExisting = false, postVerification = true)
+    }
+
+    private fun prepareFrozenFakeIslandInternal(
+        fakeView: ViewGroup,
+        source: String,
+        reconfigureExisting: Boolean,
+        postVerification: Boolean,
+    ) {
         if (!IslandProbeUtils.isSuperIslandEnabled()) return
         val mediaInfo = extractMediaInfoFromContentOrReal(fakeView) ?: return
 
@@ -54,7 +68,19 @@ internal object IslandTextHookerSupport {
             return
         }
 
-        if (IslandLyricTextInjector.hasInjectedLyricText(fakeView)) {
+        // 一次原生过渡会从多个 Hook 点重复准备同一 fake 宿主。
+        // 只有同代且实际槽位内容完整时才跳过全量装配；内容丢失仍回填。
+        val generation = FakeIslandTransitionState.ensureActive(fakeView)
+        if (isRedundantTransitionAssemblyRound(fakeView, generation)) {
+            IslandLyricTextInjector.freezeInjectedLyricProgress(fakeView, LyriconDataBridge.currentPosition)
+            fakeView.alpha = 1f
+            HookLogger.d(TAG, "过渡准备命中同代去重，仅补冻结: 来源=$source")
+            return
+        }
+
+        if (reconfigureExisting) {
+            IslandLyricTextInjector.injectSlots(fakeView, reconfigureExisting = true, suppressAnimation = true)
+        } else if (IslandLyricTextInjector.hasInjectedLyricText(fakeView)) {
             IslandLyricTextInjector.restoreExistingSlotsLightweight(fakeView)
         } else {
             IslandLyricTextInjector.injectSlots(fakeView, reconfigureExisting = false, suppressAnimation = true)
@@ -62,23 +88,67 @@ internal object IslandTextHookerSupport {
         IslandLyricTextInjector.refreshCurrentContent(fakeView, includeLyricSlots = true, force = true, suppressAnimation = true)
         IslandLyricTextInjector.freezeInjectedLyricProgress(fakeView, LyriconDataBridge.currentPosition)
         fakeView.alpha = 1f
+        synchronized(transitionAssemblyGenerations) {
+            transitionAssemblyGenerations[fakeView] = generation
+        }
         // 冻结快照可能落在数据暂缺或视图被重置的瞬间（签名去重感知不到实际内容丢失），
-        // 过渡开始后补一次完整注入+校验刷新：丢失内容在此处回填并重新冻结，避免收回动画全程主行空白。
-        fakeView.post {
-            if (!IslandProbeUtils.isSuperIslandEnabled()) return@post
-            if (!shouldRenderInjectedIsland()) return@post
-            if (!fakeView.isAttachedToWindow) return@post
-            IslandLyricTextInjector.injectSlots(fakeView, reconfigureExisting = true, suppressAnimation = true)
-            IslandLyricTextInjector.refreshCurrentContent(
-                fakeView,
-                includeLyricSlots = true,
-                force = true,
-                suppressAnimation = true,
-            )
-            IslandLyricTextInjector.freezeInjectedLyricProgress(fakeView, LyriconDataBridge.currentPosition)
+        // 过渡开始后只校验一次；若槽位丢失才完整回填，不再递归安排校验。
+        if (postVerification) {
+            fakeView.post {
+                if (!FakeIslandTransitionState.isActive(fakeView, generation)) return@post
+                if (!fakeView.isAttachedToWindow) return@post
+                prepareFrozenFakeIslandInternal(
+                    fakeView,
+                    "post($source)",
+                    reconfigureExisting = true,
+                    postVerification = false,
+                )
+            }
+        } else {
             logFakeSlotSnapshot("prepare_post", fakeView, source)
         }
         HookLogger.d(TAG, "已准备过渡冻结 fake view: 来源=$source")
+    }
+
+    private fun isRedundantTransitionAssemblyRound(fakeView: ViewGroup, generation: Int): Boolean {
+        val assembledGeneration = synchronized(transitionAssemblyGenerations) {
+            transitionAssemblyGenerations[fakeView]
+        } ?: return false
+        val (slotsPresent, slotsIntact) = probeTransitionSlots(fakeView)
+        return IslandTransitionAssemblyPolicy.shouldSkipFullAssembly(
+            sameGeneration = assembledGeneration == generation,
+            slotsPresent = slotsPresent,
+            slotsIntact = slotsIntact,
+        )
+    }
+
+    /** 实读槽位内容，避免只凭缓存签名误判被原生清空的视图仍完整。 */
+    private fun probeTransitionSlots(fakeView: ViewGroup): Pair<Boolean, Boolean> {
+        val prefs = HookEntry.instance?.prefs ?: return false to false
+        val config = IslandSlotRuntimeConfig.from(prefs)
+        val tags = buildList {
+            if (config.shouldInjectLeft) add(IslandProbeUtils.LEFT_TEST_VIEW_TAG)
+            if (config.shouldInjectRight) add(IslandProbeUtils.RIGHT_TEST_VIEW_TAG)
+        }
+        if (tags.isEmpty()) return true to true
+        var allPresent = true
+        var allIntact = true
+        for (tag in tags) {
+            val view = fakeView.findViewWithTag<View>(tag)
+            if (view == null) {
+                allPresent = false
+                continue
+            }
+            val line = when (view) {
+                is RichLyricLineView -> view.line
+                is SpaceGateRichLyricLineView -> view.line
+                else -> null
+            }
+            if (line == null || (line.text.isNullOrBlank() && line.secondary.isNullOrBlank())) {
+                allIntact = false
+            }
+        }
+        return allPresent to allIntact
     }
 
     fun restoreRealIslandAfterFakeTransition(fakeView: ViewGroup, source: String) {

@@ -4,7 +4,6 @@
 
 package com.juren233.hyperlyricsenhanced.ui.page.main
 
-import android.bluetooth.BluetoothAdapter
 import android.content.Context
 import android.os.Build
 import android.provider.Settings
@@ -115,13 +114,12 @@ object AboutDeviceInfoHelper {
      * 3. 回退为官方销售市场名（ro.product.marketname）；
      * 4. 最终兜底为 Build.MODEL。
      */
-    @Suppress("DEPRECATION")
     fun resolveDeviceName(
         context: Context,
         systemPropertyGetter: (String) -> String? = ::getSystemProperty,
-        bluetoothNameGetter: () -> String? = {
-            runCatching { BluetoothAdapter.getDefaultAdapter()?.name }.getOrNull()
-        },
+        // The app does not request BLUETOOTH_CONNECT. Keep this optional input injectable,
+        // and use the existing Settings/MIUI/property paths instead of a forbidden API call.
+        bluetoothNameGetter: () -> String? = { null },
     ): String {
         val cached = memoryCachedDeviceName
             ?: runCatching {

@@ -1,6 +1,7 @@
 package com.juren233.hyperlyricsenhanced.root.island
 
 import android.view.ViewGroup
+import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.root.HookEntry
 import com.juren233.hyperlyricsenhanced.root.island.IslandTextHookerSupport.TAG
@@ -15,9 +16,16 @@ internal object RealIslandHooker {
             var mediaInfo: IslandProbeUtils.MediaIslandInfo? = null
             runCatching {
                 val contentView = chain.thisObject as? ViewGroup ?: return@runCatching
+                // 无论歌词状态如何，先记为岛根候选：媒体切换窗口内本视图可能被硬清
+                // 注销，若之后原生不再重发更新，重挂扫描只能靠这里的候选找回。
+                IslandViewRegistry.rememberCandidate(contentView)
                 val data = chain.args.getOrNull(0)
                 if (IslandProbeUtils.isSuperIslandEnabled()) {
                     mediaInfo = IslandProbeUtils.extractMediaIslandInfo(data)
+                    if (mediaInfo != null && data != null) {
+                        // 双播冲突断供窗口的重放来源：缓存最后一次带媒体信息的数据。
+                        IslandMediaReinstater.rememberMediaData(data, mediaInfo.packageName)
+                    }
                     if (mediaInfo?.let(IslandTextHookerSupport::isCurrentLyricIsland) == true) {
                         if (!IslandTextHookerSupport.shouldRenderInjectedIsland()) {
                             IslandTextHookerSupport.clearInjectedIsland(contentView)
@@ -47,6 +55,7 @@ internal object RealIslandHooker {
 
             runCatching {
                 val contentView = chain.thisObject as? ViewGroup ?: return@runCatching
+                IslandViewRegistry.rememberCandidate(contentView)
                 val prefs = HookEntry.instance?.prefs ?: return@runCatching
                 if (!prefs.getBoolean(RootConstants.KEY_HOOK_ENABLE_HYPER_ISLAND, RootConstants.DEFAULT_HOOK_ENABLE_HYPER_ISLAND)) {
                     return@runCatching
@@ -59,6 +68,13 @@ internal object RealIslandHooker {
                 val info = mediaInfo ?: IslandProbeUtils.extractMediaIslandInfo(data)
 
                 if (info == null) {
+                    if (BuildConfig.DEBUG) {
+                        HookLogger.d(
+                            TAG,
+                            "岛数据无媒体信息，执行清理: 数据=${data?.javaClass?.simpleName}, " +
+                                "是媒体岛=${IslandProbeUtils.isMediaIsland(data)}",
+                        )
+                    }
                     IslandTextHookerSupport.hardClearInjectedIsland(contentView)
                     return@runCatching
                 }
@@ -96,6 +112,7 @@ internal object RealIslandHooker {
 
             runCatching {
                 val contentView = chain.thisObject as? ViewGroup ?: return@runCatching
+                IslandViewRegistry.rememberCandidate(contentView)
                 if (!IslandProbeUtils.isSuperIslandEnabled()) return@runCatching
                 val currentData = IslandProbeUtils.getCurrentIslandData(contentView)
                 val mediaInfo = IslandProbeUtils.extractMediaIslandInfo(currentData) ?: return@runCatching

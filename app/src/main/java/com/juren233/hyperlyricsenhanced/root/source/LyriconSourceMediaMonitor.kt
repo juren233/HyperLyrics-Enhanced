@@ -202,11 +202,9 @@ internal fun LyriconSource.startMediaPositionPolling() {
             )
             if (progress.position >= 0L) {
                 applePositionState.lastAdjustedPosition = progress.position
-                sink?.onPositionChanged(progress.position)
             }
             if (applePositionState.mediaPlaybackState() != progress.isPlaying) {
                 applePositionState.setMediaPlaybackState(progress.isPlaying)
-                sink?.onPlaybackStateChanged(progress.isPlaying)
             }
             delay(33L)
         }

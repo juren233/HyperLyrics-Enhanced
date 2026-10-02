@@ -47,7 +47,11 @@ import java.util.concurrent.atomic.AtomicBoolean
  *  - 亮屏状态与歌词运行状态（调用方通过 stateProvider 提供）；
  *  - 帧统计：经系统 FrameMetrics 回调（仅在视图真正绘制时触发，空闲时零开销）聚合
  *    总帧耗时、动画/布局/绘制分段均值与掉帧计数；
- *  - 主线程停顿计数（5 秒心跳的派发延迟，仅亮屏时计入）。
+ *  - 主线程停顿计数（5 秒心跳的派发延迟，仅亮屏时计入）；
+ *  - 冻结取证：进程被整进程挂起期间连采样线程都无法运行，解冻后第一个节拍
+ *    补一条 freeze_gap 行，按 uptime/elapsedRealtime 双钟跳变区分「设备醒着但
+ *    本进程没跑（冻结类）」与「窗口被深睡吸收」，附 /proc 自证（进程状态、
+ *    cgroup 路径与冻结位）。
  *
  * 观察者效应控制：采样线程 15s 一次、心跳 5s 一次、帧回调纯被动，不额外唤醒 vsync，
  * 采样线程自身也会出现在 topThreads 中如实上报开销。release 构建 [start] 直接返回。
@@ -60,6 +64,9 @@ object RuntimePerfDiagnostics {
     private const val TOP_THREAD_COUNT = 4
     private const val STALL_PROBE_INTERVAL_MS = 5_000L
     private const val STALL_WARN_THRESHOLD_MS = 300L
+    // 冻结取证阈值：采样错过至少一个完整周期（2×15s）；主线程心跳迟到 3×5s。
+    private const val SAMPLER_GAP_THRESHOLD_MS = 30_000L
+    private const val HEARTBEAT_GAP_THRESHOLD_MS = 15_000L
     private const val NAME_MAX_CHARS = 24
     private const val FRAME_BURST_SAMPLES = 30
 
@@ -89,6 +96,8 @@ object RuntimePerfDiagnostics {
 
     // 仅采样线程访问。
     private var lastSampleElapsedMs = -1L
+    private var lastSampleUptimeMs = -1L
+    private var lastScreenInteractive: Boolean? = null
     private var lastProcJiffies = -1L
     private var lastThreadJiffies: Map<Int, Long> = emptyMap()
     private var lastThreadNames: Map<Int, String> = emptyMap()
@@ -221,6 +230,7 @@ object RuntimePerfDiagnostics {
 
     private fun buildCoreSample(app: Application): CoreSample {
         val now = elapsedRealtimeSafe()
+        val nowUptime = uptimeMillisSafe()
         val procJiffies = readSelfJiffies()
         val threads = readThreads()
 
@@ -236,7 +246,21 @@ object RuntimePerfDiagnostics {
             topThreads = "na"
         }
 
+        val screenInteractive = isScreenInteractive()
+        if (windowMs > SAMPLER_GAP_THRESHOLD_MS) {
+            val uptimeJumpMs = if (lastSampleUptimeMs > 0) nowUptime - lastSampleUptimeMs else -1L
+            emitFreezeGap(
+                src = "sampler",
+                gapMs = windowMs,
+                uptimeJumpMs = uptimeJumpMs,
+                screenBefore = lastScreenInteractive,
+                screenNow = screenInteractive,
+            )
+        }
+
         lastSampleElapsedMs = now
+        lastSampleUptimeMs = nowUptime
+        lastScreenInteractive = screenInteractive
         lastProcJiffies = procJiffies ?: -1L
         lastThreadJiffies = threads.associate { it.tid to it.jiffies }
         lastThreadNames = threads.associate { it.tid to it.name }
@@ -249,7 +273,7 @@ object RuntimePerfDiagnostics {
             topThreads = topThreads,
             mem = memorySnapshot(),
             battery = batterySnapshot(app),
-            screen = screenSnapshot(app),
+            screen = screenSnapshot(app, screenInteractive),
         )
     }
 
@@ -444,7 +468,8 @@ object RuntimePerfDiagnostics {
     /**
      * 主线程心跳：postDelayed 的实际派发延迟即停顿时长。
      * uptimeMillis 与 Handler 同基准；息屏时主线程消息可长时间不派发，属正常深睡，
-     * 仅在亮屏时计入停顿。
+     * 仅在亮屏时计入停顿。深睡期间 uptime 同样暂停，迟到≈0；大迟到只发生在
+     * 设备醒着而主线程没跑的场景（整进程挂起），据此补冻结取证行。
      */
     private val stallProbe = object : Runnable {
         private var scheduledForMs = 0L
@@ -457,6 +482,15 @@ object RuntimePerfDiagnostics {
                     stallCount++
                     if (delayedMs > stallMaxMs) stallMaxMs = delayedMs
                 }
+                if (delayedMs > HEARTBEAT_GAP_THRESHOLD_MS) {
+                    emitFreezeGap(
+                        src = "main",
+                        gapMs = delayedMs,
+                        uptimeJumpMs = -1L,
+                        screenBefore = null,
+                        screenNow = isScreenInteractive(),
+                    )
+                }
             }
             scheduledForMs = now + STALL_PROBE_INTERVAL_MS
             mainHandler.postDelayed(this, STALL_PROBE_INTERVAL_MS)
@@ -464,6 +498,77 @@ object RuntimePerfDiagnostics {
     }
 
     internal data class ThreadSample(val tid: Int, val name: String, val jiffies: Long)
+
+    internal data class FreezeGapVerdict(
+        val gapMs: Long,
+        val uptimeJumpMs: Long,
+        val suspendMs: Long,
+        val likely: String,
+    )
+
+    /**
+     * 冻结判别（纯逻辑，供单测）：冻结中的进程连采样线程都不运行，只能在解冻后的
+     * 第一个节拍回看补记。elapsedRealtime 含深睡时间、uptimeMillis 不含：
+     *  - uptime 几乎走满（≥80% 窗口）→ 设备醒着而本进程没跑，冻结类
+     *    （cached-app freezer / SIGSTOP）；
+     *  - uptime 几乎没走（≤20%）→ 窗口被 CPU 深睡吸收，不是冻结；
+     *  - 两者之间记 mixed。原始数值始终完整落盘，likely 只是阅读提示。
+     */
+    internal fun classifyFreezeGap(realtimeJumpMs: Long, uptimeJumpMs: Long): FreezeGapVerdict {
+        val safeRealtime = realtimeJumpMs.coerceAtLeast(0L)
+        val safeUptime = uptimeJumpMs.coerceIn(0L, safeRealtime)
+        val likely = when {
+            safeRealtime <= 0L -> "unclear"
+            safeUptime * 5 >= safeRealtime * 4 -> "frozen"
+            safeUptime * 5 <= safeRealtime -> "suspend"
+            else -> "mixed"
+        }
+        return FreezeGapVerdict(
+            gapMs = safeRealtime,
+            uptimeJumpMs = safeUptime,
+            suspendMs = safeRealtime - safeUptime,
+            likely = likely,
+        )
+    }
+
+    /**
+     * 冻结空窗补记（debug 取证，Issue #34）。src=sampler 来自 15s 采样节拍
+     * （gapMs=真实墙钟窗口，附双钟差与亮屏前后状态）；src=main 来自 5s 主线程心跳的
+     * uptime 迟到（深睡时 uptime 暂停、迟到≈0，大迟到即设备醒着而主线程没跑，
+     * 无需双钟差已可排除深睡）。procState=T 指 SIGSTOP 型挂起；cg/cgFreeze 提供
+     * cgroup freezer 线索（应用域多无权限读冻结位，读不到记 na）。冻结决策方
+     * （哪个系统组件下的手）系统不向应用披露，组件级归因需系统侧 logcat/bugreport
+     * 的 am_kill / freezer 记录；本行负责回答「是否被冻结、冻了多久、机制类型」。
+     */
+    private fun emitFreezeGap(
+        src: String,
+        gapMs: Long,
+        uptimeJumpMs: Long,
+        screenBefore: Boolean?,
+        screenNow: Boolean,
+    ) {
+        val verdict = if (uptimeJumpMs >= 0L) classifyFreezeGap(gapMs, uptimeJumpMs) else null
+        val message = buildString {
+            append(PREFIX)
+            append(" freeze_gap src=").append(src)
+            append(" scope=").append(sanitize(scope))
+            append(" pid=").append(android.os.Process.myPid())
+            append(" gapMs=").append(gapMs)
+            if (verdict != null) {
+                append(" uptimeJumpMs=").append(verdict.uptimeJumpMs)
+                append(" suspendMs=").append(verdict.suspendMs)
+            }
+            if (screenBefore != null) {
+                append(" screenBefore=").append(if (screenBefore) "on" else "off")
+            }
+            append(" screen=").append(if (screenNow) "on" else "off")
+            append(" procState=").append(readSelfStatState() ?: "na")
+            append(" cg=").append(readSelfCgroup() ?: "na")
+            append(" cgFreeze=").append(readSelfCgroupFreezeFlag() ?: "na")
+            if (verdict != null) append(" likely=").append(verdict.likely)
+        }
+        HookLogger.i(TAG, message)
+    }
 
     private fun readSelfJiffies(): Long? {
         val line = runCatching { File("/proc/self/stat").readText().trim() }.getOrNull()
@@ -542,10 +647,8 @@ object RuntimePerfDiagnostics {
         }
     }
 
-    private fun screenSnapshot(app: Application): String {
-        val pm = runCatching { app.getSystemService(PowerManager::class.java) }.getOrNull()
-        val interactive = runCatching { pm?.isInteractive }.getOrNull()
-        val powerSave = runCatching { pm?.isPowerSaveMode }.getOrNull()
+    private fun screenSnapshot(app: Application, interactive: Boolean?): String {
+        val powerSave = runCatching { app.getSystemService(PowerManager::class.java)?.isPowerSaveMode }.getOrNull()
         return buildString {
             append(if (interactive == true) "on" else "off")
             append(",psm=").append(
@@ -637,6 +740,36 @@ object RuntimePerfDiagnostics {
         val utime = rest.getOrNull(11)?.toLongOrNull() ?: return null
         val stime = rest.getOrNull(12)?.toLongOrNull() ?: return null
         return utime + stime
+    }
+
+    /** 解析 /proc/<pid>/stat 的进程状态字符（')' 后第 0 项；T=SIGSTOP 挂起）。 */
+    internal fun parseStateFromStatLine(line: String): Char? {
+        val close = line.lastIndexOf(')')
+        if (close < 0 || close + 1 >= line.length) return null
+        val rest = line.substring(close + 1).trim()
+        return rest.firstOrNull()?.takeIf { it != ' ' }
+    }
+
+    private fun readSelfStatState(): Char? =
+        runCatching { File("/proc/self/stat").readText().trim() }
+            .getOrNull()
+            ?.let(::parseStateFromStatLine)
+
+    private fun readSelfCgroup(): String? =
+        runCatching {
+            File("/proc/self/cgroup").readText().trim().lineSequence().firstOrNull()
+        }.getOrNull()?.takeIf { it.isNotBlank() }
+
+    /** cgroup v2 冻结位（1=冻结中）。应用 SELinux 域多无权限读，失败记 na 不影响其余证据。 */
+    private fun readSelfCgroupFreezeFlag(): String? {
+        val cgroupPath = readSelfCgroup()
+            ?.takeIf { it.startsWith("0::") }
+            ?.removePrefix("0::")
+            ?.trimEnd('/')
+            ?: return null
+        return runCatching {
+            File("/sys/fs/cgroup$cgroupPath/cgroup.freeze").readText().trim()
+        }.getOrNull()?.ifBlank { null }
     }
 
     private const val NUL_CHAR = '\u0000'

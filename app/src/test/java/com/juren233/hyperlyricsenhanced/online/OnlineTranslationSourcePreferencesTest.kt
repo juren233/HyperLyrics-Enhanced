@@ -164,6 +164,48 @@ class OnlineTranslationSourcePreferencesTest {
         )
     }
 
+    @Test
+    fun `online lyrics require explicit app enable for toggle-listed packages`() {
+        val prefs = TestSharedPreferences(
+            mapOf(
+                com.juren233.hyperlyricsenhanced.common.RootConstants
+                    .KEY_HOOK_APPLE_MUSIC_MATCH_ONLINE_TRANSLATION to true,
+            )
+        )
+        assertEquals(
+            true,
+            OnlineTranslationSourcePreferences.isOnlineLyricsAllowedForApp(
+                prefs,
+                OnlineTranslationSourcePreferences.APPLE_MUSIC_PACKAGE,
+            ),
+        )
+        // 已收录开关但未启用（默认 false）
+        assertEquals(
+            false,
+            OnlineTranslationSourcePreferences.isOnlineLyricsAllowedForApp(
+                null,
+                OnlineTranslationSourcePreferences.APPLE_MUSIC_PACKAGE,
+            ),
+        )
+        // 未收录开关的包不受门禁约束
+        assertEquals(
+            true,
+            OnlineTranslationSourcePreferences.isOnlineLyricsAllowedForApp(
+                null,
+                "com.tencent.qqmusic",
+            ),
+        )
+        // 空包名保持原行为
+        assertEquals(
+            true,
+            OnlineTranslationSourcePreferences.isOnlineLyricsAllowedForApp(null, null),
+        )
+        assertEquals(
+            true,
+            OnlineTranslationSourcePreferences.isOnlineLyricsAllowedForApp(null, ""),
+        )
+    }
+
     private class TestSharedPreferences(
         private val values: Map<String, Any?>
     ) : android.content.SharedPreferences {

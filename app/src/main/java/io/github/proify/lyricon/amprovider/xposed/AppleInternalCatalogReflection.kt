@@ -153,7 +153,34 @@ internal fun AppleInternalCatalogResolver.catalogResponseDiagnostic(response: An
         is Iterable<*> -> data.count().toString()
         else -> "unknown:${data.javaClass.name}"
     }
-    return "valueClass=${response.javaClass.name}, dataSize=$dataSize"
+    val diagnostic = StringBuilder(
+        "valueClass=${response.javaClass.name}, dataSize=$dataSize"
+    )
+    if (BuildConfig.DEBUG) {
+        // 只为定位目录请求被拒原因取证：响应自身的 HTTP 状态码与错误体（6.5.3 DEX:
+        // getHttpStatusCode:()Ljava/lang/Integer; getErrors:()[L...models/Error;）。
+        val status = runCatching {
+            AppleReflection.call(
+                response,
+                catalogMember(AppleMusicRuntimeMember.CATALOG_RESPONSE_STATUS_METHOD),
+            )
+        }.getOrElse { error -> "unavailable:${error.javaClass.simpleName}" }
+        diagnostic.append(", httpStatus=").append(status ?: "null")
+        val errors = runCatching {
+            AppleReflection.call(
+                response,
+                catalogMember(AppleMusicRuntimeMember.CATALOG_RESPONSE_ERRORS_METHOD),
+            )
+        }.getOrElse { error -> "unavailable:${error.javaClass.simpleName}" }
+        val errorText = when (errors) {
+            null -> "null"
+            is Array<*> -> errors.joinToString("; ") { it?.toString().orEmpty() }
+            is Iterable<*> -> errors.joinToString("; ") { it?.toString().orEmpty() }
+            else -> errors.toString()
+        }
+        diagnostic.append(", errors=").append(errorText.take(600))
+    }
+    return diagnostic.toString()
 }
 
 internal fun AppleInternalCatalogResolver.storefrontForLanguage(language: String): String =

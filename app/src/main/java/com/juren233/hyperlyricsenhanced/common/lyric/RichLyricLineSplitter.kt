@@ -4,6 +4,8 @@ import android.graphics.Paint
 import com.juren233.hyperlyricsenhanced.lyric.model.LyricWord
 import com.juren233.hyperlyricsenhanced.lyric.model.RichLyricLine
 import com.juren233.hyperlyricsenhanced.lyric.model.interfaces.IRichLyricLine
+import java.text.BreakIterator
+import java.util.Locale
 import kotlin.math.abs
 
 /**
@@ -25,10 +27,17 @@ object RichLyricLineSplitter {
      * @param maxWidthPx 左侧最大像素宽度
      * @return 分割后的左右 RichLyricLine
      */
-    fun split(line: IRichLyricLine, paint: Paint, maxWidthPx: Float, textSizeRatio: Float = 0.7f, centerLyric: Boolean = false): SplitLineResult {
+    fun split(
+        line: IRichLyricLine,
+        paint: Paint,
+        maxWidthPx: Float,
+        textSizeRatio: Float = 0.7f,
+        centerLyric: Boolean = false,
+        measureWidth: ((Paint, String) -> Float)? = null,
+    ): SplitLineResult {
         val text = line.text ?: return SplitLineResult(line as? RichLyricLine ?: RichLyricLine(), RichLyricLine())
 
-        val totalWidth = paint.measureText(text)
+        val totalWidth = measuredWidth(paint, text, measureWidth)
         if (totalWidth <= maxWidthPx) {
             // 文本未超出，全部放左侧，右侧为空
             val richLine = line as? RichLyricLine ?: RichLyricLine(
@@ -45,7 +54,7 @@ object RichLyricLineSplitter {
         }
 
         // 计算分割索引
-        val splitIndex = computeSplitIndex(text, paint, maxWidthPx)
+        val splitIndex = computeSplitIndex(text, paint, maxWidthPx, measureWidth)
         if (splitIndex <= 0) {
             return SplitLineResult(line, RichLyricLine())
         }
@@ -58,46 +67,31 @@ object RichLyricLineSplitter {
 
         // 分割主文本 words
         val (leftWords, rightWords) = splitWordsAtCharIndex(line.words, splitIndex)
+        val lineEnd = effectiveLineEnd(line)
+        val splitTime = resolveSplitTime(line, splitIndex, text.length, leftWords, rightWords)
 
-        // 分割 translation（用独立 Paint 测量，翻译字号更小）
+        // 第二行按完整语义单元分割（英文按词，其他文本按字素）。
+        // 翻译 timing 故意不沿用原整行 words：左/右半行必须和主句
+        // 共用 splitTime，由 LyricLineAssembler 在各自时间窗内重建进度。
         val secondaryPaint = Paint(paint).apply { textSize = paint.textSize * textSizeRatio }
-        val translationSplitIndex = computeTranslationSplitIndex(line, secondaryPaint, maxWidthPx, centerLyric)
+        val translationSplitIndex = computeTranslationSplitIndex(line, secondaryPaint, maxWidthPx, centerLyric, measureWidth)
         val transText = line.translation
         val leftTransText: String?
         val rightTransText: String?
-        val leftTransWords: List<LyricWord>?
-        val rightTransWords: List<LyricWord>?
 
         if (translationSplitIndex != null && !transText.isNullOrEmpty()) {
-            if (!line.translationWords.isNullOrEmpty()) {
-                // 有词级 timing：分割 words
-                val (ltw, rtw) = splitWordsAtCharIndex(line.translationWords, translationSplitIndex)
-                leftTransWords = ltw
-                rightTransWords = rtw
-                leftTransText = ltw.joinToString("") { it.text.orEmpty() }.takeIf { it.isNotEmpty() }
-                rightTransText = rtw.joinToString("") { it.text.orEmpty() }.takeIf { it.isNotEmpty() }
-            } else {
-                // 无词级 timing：直接按比例截取文本
-                leftTransWords = null
-                rightTransWords = null
-                leftTransText = transText.substring(0, translationSplitIndex.coerceAtMost(transText.length)).takeIf { it.isNotEmpty() }
-                rightTransText = transText.substring(translationSplitIndex.coerceAtMost(transText.length)).takeIf { it.isNotEmpty() }
-            }
+            leftTransText = transText.substring(0, translationSplitIndex).takeIf { it.isNotEmpty() }
+            rightTransText = transText.substring(translationSplitIndex).takeIf { it.isNotEmpty() }
         } else if (!transText.isNullOrEmpty()) {
-            // 翻译未超出，全部给左侧
             leftTransText = transText
             rightTransText = null
-            leftTransWords = line.translationWords
-            rightTransWords = null
         } else {
             leftTransText = null
             rightTransText = null
-            leftTransWords = null
-            rightTransWords = null
         }
 
         // 分割 secondary（按像素宽度独立计算）
-        val secondarySplitIndex = computeSecondarySplitIndex(line, secondaryPaint, maxWidthPx, centerLyric)
+        val secondarySplitIndex = computeSecondarySplitIndex(line, secondaryPaint, maxWidthPx, centerLyric, measureWidth)
         val secText = line.secondary
         val leftSecWords: List<LyricWord>?
         val rightSecWords: List<LyricWord>?
@@ -129,10 +123,24 @@ object RichLyricLineSplitter {
             rightSecText = null
         }
 
+        val romaSplitIndex = computeSupplementSplitIndex(
+            text = line.roma,
+            paint = secondaryPaint,
+            maxWidthPx = maxWidthPx,
+            centerLyric = centerLyric,
+            measureWidth = measureWidth,
+        )
+        val leftRoma = line.roma?.let { roma ->
+            if (romaSplitIndex == null) roma else roma.substring(0, romaSplitIndex)
+        }?.takeIf { it.isNotEmpty() }
+        val rightRoma = line.roma?.let { roma ->
+            romaSplitIndex?.let(roma::substring)
+        }?.takeIf { it.isNotEmpty() }
+
         val leftLine = RichLyricLine(
             begin = line.begin,
-            end = line.end,
-            duration = 0,
+            end = splitTime,
+            duration = (splitTime - line.begin).coerceAtLeast(0L),
             isAlignedRight = false,
             metadata = line.metadata,
             text = text.substring(0, splitIndex),
@@ -140,14 +148,14 @@ object RichLyricLineSplitter {
             secondary = leftSecText,
             secondaryWords = leftSecWords,
             translation = leftTransText,
-            translationWords = leftTransWords,
-            roma = null
+            translationWords = null,
+            roma = leftRoma
         )
 
         val rightLine = RichLyricLine(
-            begin = rightWords.firstOrNull()?.begin ?: line.begin,
-            end = line.end,
-            duration = 0,
+            begin = splitTime,
+            end = lineEnd,
+            duration = (lineEnd - splitTime).coerceAtLeast(0L),
             isAlignedRight = false,
             metadata = line.metadata,
             text = text.substring(splitIndex),
@@ -155,8 +163,8 @@ object RichLyricLineSplitter {
             secondary = rightSecText,
             secondaryWords = rightSecWords,
             translation = rightTransText,
-            translationWords = rightTransWords,
-            roma = null
+            translationWords = null,
+            roma = rightRoma
         )
 
         return SplitLineResult(leftLine, rightLine)
@@ -211,41 +219,45 @@ object RichLyricLineSplitter {
     /**
      * 计算分割索引：breakText + 词边界调整
      */
-    private fun computeSplitIndex(text: String, paint: Paint, maxWidthPx: Float): Int {
-        var splitIndex = paint.breakText(text, true, maxWidthPx, null)
+    private fun computeSplitIndex(
+        text: String,
+        paint: Paint,
+        maxWidthPx: Float,
+        measureWidth: ((Paint, String) -> Float)?,
+    ): Int {
+        var splitIndex = fittingPrefixIndex(text, paint, maxWidthPx, measureWidth)
 
-        if (splitIndex < text.length && paint.measureText(text, 0, splitIndex) < maxWidthPx) {
-            if (paint.measureText(text, 0, splitIndex + 1) <= maxWidthPx) {
+        if (splitIndex < text.length && measuredWidth(paint, text.substring(0, splitIndex), measureWidth) < maxWidthPx) {
+            if (measuredWidth(paint, text.substring(0, splitIndex + 1), measureWidth) <= maxWidthPx) {
                 splitIndex++
             }
         }
 
-        splitIndex = splitIndex.coerceIn(0, text.length)
-        return adjustForWordBoundary(text, splitIndex, maxWidthPx, paint)
+        splitIndex = previousCharacterBoundary(text, splitIndex.coerceIn(0, text.length))
+        return adjustForWordBoundary(text, splitIndex, maxWidthPx, paint, measureWidth)
     }
 
     /**
-     * 词边界调整：避免在英文单词中间切割
+     * 词边界调整：英文以空格为界，分割点不得落进词簇内部。
+     * 词簇 = 连续的英文字母数字（撇号/连字符是词内连接符，如 I'm、
+     * well-known），加上紧贴词尾、中间无空格的标点（逗号等随左侧单词走，
+     * 不能单独出现在右段开头）。中文等非拉丁文本不受影响，仍在任意
+     * 字素边界分割。
      */
     private fun adjustForWordBoundary(
-        text: String, originalIndex: Int, maxLimitPx: Float, paint: Paint
+        text: String,
+        originalIndex: Int,
+        maxLimitPx: Float,
+        paint: Paint,
+        measureWidth: ((Paint, String) -> Float)?,
     ): Int {
         if (originalIndex <= 0 || originalIndex >= text.length) {
             return originalIndex.coerceIn(0, text.length)
         }
+        val bounds = nearestSafeSplitIndexes(text, originalIndex) ?: return originalIndex
+        val (backSplit, forwardSplit) = bounds
 
-        val isAsciiAlnum = { c: Char -> c.isLetterOrDigit() && c.code < 128 }
-        if (!isAsciiAlnum(text[originalIndex - 1]) || !isAsciiAlnum(text[originalIndex])) {
-            return originalIndex
-        }
-
-        var backSplit = originalIndex
-        while (backSplit > 0 && isAsciiAlnum(text[backSplit - 1])) backSplit--
-
-        var forwardSplit = originalIndex
-        while (forwardSplit < text.length && isAsciiAlnum(text[forwardSplit])) forwardSplit++
-
-        val forwardPx = paint.measureText(text, 0, forwardSplit)
+        val forwardPx = measuredWidth(paint, text.substring(0, forwardSplit), measureWidth)
         if (forwardPx > maxLimitPx) return backSplit
 
         val forwardDiff = abs(forwardSplit - (text.length - forwardSplit))
@@ -255,25 +267,135 @@ object RichLyricLineSplitter {
     }
 
     /**
-     * 计算 translation 的分割索引（按像素宽度，翻译字号更小所以独立计算）
+     * 候选分割点落在词簇内部时，给出最近的两个安全边界（词簇起点与终点）；
+     * 候选本身已是安全边界（空格/字素交界）时返回 null 表示无需调整。
      */
-    private fun computeTranslationSplitIndex(line: IRichLyricLine, paint: Paint, maxWidthPx: Float, centerLyric: Boolean): Int? {
-        val transText = line.translation ?: return null
-        if (transText.isEmpty()) return null
-        val totalWidth = paint.measureText(transText)
-        val splitLimit = if (centerLyric) (totalWidth / 2f).coerceAtMost(maxWidthPx) else maxWidthPx
-        if (totalWidth <= splitLimit) return null
-        val splitIdx = paint.breakText(transText, true, splitLimit, null).coerceIn(0, transText.length)
-        return adjustForWordBoundary(transText, splitIdx, splitLimit, paint)
+    internal fun nearestSafeSplitIndexes(text: String, index: Int): Pair<Int, Int>? {
+        if (index <= 0 || index >= text.length) return null
+        if (!isInsideWordCluster(text, index)) return null
+
+        var backSplit = index
+        while (backSplit > 0 && isInsideWordCluster(text, backSplit)) backSplit--
+
+        var forwardSplit = index
+        while (forwardSplit < text.length && isInsideWordCluster(text, forwardSplit)) forwardSplit++
+
+        return backSplit to forwardSplit
     }
 
-    private fun computeSecondarySplitIndex(line: IRichLyricLine, paint: Paint, maxWidthPx: Float, centerLyric: Boolean): Int? {
-        val secText = line.secondary ?: return null
-        if (secText.isEmpty()) return null
-        val totalWidth = paint.measureText(secText)
+    private fun isInsideWordCluster(text: String, index: Int): Boolean {
+        if (index <= 0 || index >= text.length) return false
+        val before = text[index - 1]
+        val after = text[index]
+        return when {
+            isWordClusterChar(before) -> isWordClusterChar(after) || isAttachedPunctuation(after)
+            isAttachedPunctuation(before) -> isAttachedPunctuation(after)
+            else -> false
+        }
+    }
+
+    private fun isWordClusterChar(c: Char): Boolean =
+        (c.code < 128 && c.isLetterOrDigit()) || isIntraWordConnector(c)
+
+    /** 词内连接符：撇号（I'm）与连字符（well-known）两侧的字母同属一个词簇。 */
+    private fun isIntraWordConnector(c: Char): Boolean = c == '\'' || c == '’' || c == '-'
+
+    private fun isAttachedPunctuation(c: Char): Boolean =
+        (c.code < 128 && c in ",.!?;:") || c == '…'
+
+    /**
+     * 计算 translation 的分割索引（按像素宽度，翻译字号更小所以独立计算）
+     */
+    private fun computeTranslationSplitIndex(
+        line: IRichLyricLine,
+        paint: Paint,
+        maxWidthPx: Float,
+        centerLyric: Boolean,
+        measureWidth: ((Paint, String) -> Float)?,
+    ): Int? {
+        return computeSupplementSplitIndex(line.translation, paint, maxWidthPx, centerLyric, measureWidth)
+    }
+
+    private fun computeSecondarySplitIndex(
+        line: IRichLyricLine,
+        paint: Paint,
+        maxWidthPx: Float,
+        centerLyric: Boolean,
+        measureWidth: ((Paint, String) -> Float)?,
+    ): Int? {
+        return computeSupplementSplitIndex(line.secondary, paint, maxWidthPx, centerLyric, measureWidth)
+    }
+
+    private fun computeSupplementSplitIndex(
+        text: String?,
+        paint: Paint,
+        maxWidthPx: Float,
+        centerLyric: Boolean,
+        measureWidth: ((Paint, String) -> Float)?,
+    ): Int? {
+        if (text.isNullOrEmpty()) return null
+        val totalWidth = measuredWidth(paint, text, measureWidth)
         val splitLimit = if (centerLyric) (totalWidth / 2f).coerceAtMost(maxWidthPx) else maxWidthPx
         if (totalWidth <= splitLimit) return null
-        val splitIdx = paint.breakText(secText, true, splitLimit, null).coerceIn(0, secText.length)
-        return adjustForWordBoundary(secText, splitIdx, splitLimit, paint)
+        val measured = fittingPrefixIndex(text, paint, splitLimit, measureWidth)
+        return SecondaryLyricTextUnits.adjustSplitIndex(text, measured) { candidate ->
+            measuredWidth(paint, text.substring(0, candidate), measureWidth) <= splitLimit
+        }.takeIf { it in 1 until text.length }
+    }
+
+    private fun measuredWidth(
+        paint: Paint,
+        text: String,
+        measureWidth: ((Paint, String) -> Float)?,
+    ): Float = measureWidth?.invoke(paint, text) ?: paint.measureText(text)
+
+    private fun fittingPrefixIndex(
+        text: String,
+        paint: Paint,
+        maxWidthPx: Float,
+        measureWidth: ((Paint, String) -> Float)?,
+    ): Int {
+        if (measureWidth == null) return paint.breakText(text, true, maxWidthPx, null)
+        var low = 0
+        var high = text.length
+        while (low < high) {
+            val middle = (low + high + 1) / 2
+            if (measuredWidth(paint, text.substring(0, middle), measureWidth) <= maxWidthPx) {
+                low = middle
+            } else {
+                high = middle - 1
+            }
+        }
+        return low
+    }
+
+    private fun previousCharacterBoundary(text: String, index: Int): Int {
+        if (index <= 0 || index >= text.length) return index.coerceIn(0, text.length)
+        val iterator = BreakIterator.getCharacterInstance(Locale.ROOT)
+        iterator.setText(text)
+        return if (iterator.isBoundary(index)) index else iterator.preceding(index).coerceAtLeast(0)
+    }
+
+    internal fun resolveSplitTime(
+        line: IRichLyricLine,
+        splitIndex: Int,
+        textLength: Int,
+        leftWords: List<LyricWord>,
+        rightWords: List<LyricWord>,
+    ): Long {
+        val lineEnd = effectiveLineEnd(line)
+        val timedBoundary = rightWords.firstOrNull()?.begin
+            ?: leftWords.lastOrNull()?.end
+        if (timedBoundary != null && timedBoundary in line.begin..lineEnd) {
+            return timedBoundary
+        }
+        if (lineEnd <= line.begin || textLength <= 0) return line.begin
+        return line.begin + (lineEnd - line.begin) * splitIndex / textLength
+    }
+
+    private fun effectiveLineEnd(line: IRichLyricLine): Long = when {
+        line.end > line.begin -> line.end
+        line.duration > 0L -> line.begin + line.duration
+        else -> line.begin
     }
 }

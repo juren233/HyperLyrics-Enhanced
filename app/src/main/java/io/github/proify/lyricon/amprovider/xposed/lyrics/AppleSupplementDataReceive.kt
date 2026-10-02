@@ -75,6 +75,27 @@ internal fun AppleLyricsSupplementHooks.currentAppleLyricsNativeSong(songId: Str
     return songNative.takeIf { nativeSongId(it) == songId }
 }
 
+internal fun AppleLyricsSupplementHooks.currentPresentedLyricsSource(songId: String?): String? {
+    if (songId.isNullOrBlank()) return null
+    val binding = presentationBinding.snapshot()
+    if (binding.songId != songId) return null
+    val pointer = binding.pointer ?: return null
+    val songNative = runCatching {
+        lyricsNativeCall(pointer, AppleMusicRuntimeMember.LYRICS_NATIVE_POINTER_GET_METHOD)
+    }.getOrNull() ?: return null
+    val supplement = missingLyricsSupplement()
+    return presentedLyricsSource(
+        requestedSongId = songId,
+        modelSongId = nativeSongId(songNative),
+        hasLines = appleNativeSongHasLines(songNative),
+        pointer = pointer,
+        knownSupplementPointers = supplement.store.knownNativeSongInfoPointers(),
+        currentSupplementPointer = supplement.store.nativeSongInfoPointer(songId),
+        supplementSource = supplement.store.sourceInfo(songId)?.selectedSource,
+        nativeAddress = supplement::nativePointerAddress,
+    )
+}
+
 internal fun AppleLyricsSupplementHooks.currentAppleLyricsNativeLines(songNative: Any): List<Any> {
     val sections = runCatching {
         lyricsNativeCall(songNative, AppleMusicRuntimeMember.LYRICS_NATIVE_SONG_SECTIONS_METHOD)

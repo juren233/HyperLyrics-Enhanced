@@ -462,7 +462,12 @@ internal const val CACHE_SIZE = 64
 internal const val LOCALIZED_CACHE_SIZE = 4_096
 internal const val LOCALIZED_ARTIST_ALIAS_CACHE_SIZE = 2_048
 internal const val REQUEST_PRIORITY_CACHE_SIZE = 2_048
-internal const val ORIGINAL_METADATA_CACHE_SCHEMA = "V2"
+// V2 could promote an arbitrary regional translation (Japanese first) into an original
+// entity and then persist that language for the artist. Those entries have no provenance
+// with which to repair them safely; rebuild only this derived cache, leaving the old rows.
+internal const val ORIGINAL_METADATA_CACHE_SCHEMA = "V3"
+internal const val ORIGINAL_ARTIST_REGION_PREFERENCES =
+    "hyperlyricsenhanced_apple_original_artist_regions_$ORIGINAL_METADATA_CACHE_SCHEMA"
 
 internal fun isCoroutineSuspended(value: Any?): Boolean =
     value is Enum<*> && value.name == "COROUTINE_SUSPENDED"
@@ -491,15 +496,15 @@ internal fun originalEntityCacheKey(
     "$ORIGINAL_METADATA_CACHE_SCHEMA:$entityType:${language.trim()}:${mediaId.trim()}"
 
 /**
- * Direct keys are always tried first. The remaining keys cover aliases written before
- * direct entity keys were introduced and equivalent catalog IDs collected from the same
- * Media API object.
+ * Direct originals and equivalent catalog IDs are always tried first. A language-specific
+ * compatibility entry is eligible only when the caller already knows the original language;
+ * the existence of a translation in a storefront is not evidence of an artist's origin.
  */
 internal fun originalEntityCacheLookupKeys(
     entityType: LocalizedEntityType,
     mediaId: String,
     lookupIds: Collection<String> = emptyList(),
-    languages: Collection<String> = ORIGINAL_LANGUAGE_PROBE_ORDER,
+    languages: Collection<String> = emptyList(),
 ): List<String> {
     val ids = sequenceOf(mediaId)
         .plus(lookupIds.asSequence())
@@ -563,19 +568,6 @@ internal const val CATALOG_REQUEST_TOKEN_PARAM = "hle_catalog_request"
  */
 internal const val AMP_HTTP_MODULE_MARKER_PARAM = "hle_catalog_module"
 internal const val AMP_HTTP_MODULE_MARKER_VALUE = "1"
-internal val ORIGINAL_LANGUAGE_PROBE_ORDER = listOf(
-    "ja-JP",
-    "ko-KR",
-    "zh-Hans-CN",
-    "th-TH",
-    "ru-RU",
-    "uk-UA",
-    "ar-SA",
-    "he-IL",
-    "hi-IN",
-    "el-GR",
-    "bg-BG",
-)
 
 internal fun originalLanguageCacheKeyVariants(language: String): List<String> = when (
     canonicalOriginalLanguage(language)

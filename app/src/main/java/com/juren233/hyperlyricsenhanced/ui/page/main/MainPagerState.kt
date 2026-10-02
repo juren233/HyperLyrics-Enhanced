@@ -1,9 +1,5 @@
 package com.juren233.hyperlyricsenhanced.ui.page.main
 
-import androidx.compose.animation.core.EaseInOut
-import androidx.compose.animation.core.animate
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.MutatePriority
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
@@ -17,7 +13,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
-import kotlin.math.abs
+import top.yukonga.miuix.kmp.utils.springAnimateToPage
 
 @Stable
 class MainPagerState(
@@ -43,28 +39,8 @@ class MainPagerState(
         navJob = coroutineScope.launch {
             val myJob = coroutineContext.job
             try {
-                pagerState.scroll(MutatePriority.UserInput) {
-                    val distance = abs(targetIndex - pagerState.currentPage).coerceAtLeast(2)
-                    val duration = 100 * distance + 100
-                    val layoutInfo = pagerState.layoutInfo
-                    val pageSize = layoutInfo.pageSize + layoutInfo.pageSpacing
-                    val currentDistanceInPages =
-                        targetIndex - pagerState.currentPage - pagerState.currentPageOffsetFraction
-                    val scrollPixels = currentDistanceInPages * pageSize
-
-                    var previousValue = 0f
-                    animate(
-                        initialValue = 0f,
-                        targetValue = scrollPixels,
-                        animationSpec = tween(easing = EaseInOut, durationMillis = duration),
-                    ) { currentValue, _ ->
-                        previousValue += scrollBy(currentValue - previousValue)
-                    }
-                }
-
-                if (pagerState.currentPage != targetIndex) {
-                    pagerState.scrollToPage(targetIndex)
-                }
+                // miuix 弹簧翻页：距离自适应 + 轻微落座回弹，动画在同一 scroll mutation 内完成落位。
+                pagerState.springAnimateToPage(targetIndex)
             } finally {
                 if (navJob == myJob) {
                     isNavigating = false

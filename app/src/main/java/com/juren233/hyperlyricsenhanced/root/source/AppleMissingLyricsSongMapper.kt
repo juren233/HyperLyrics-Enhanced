@@ -53,7 +53,8 @@ internal object AppleMissingLyricsSongMapper {
                     line.words.joinToString("") { it.text }.trim().isNotEmpty()
             }
             .sortedBy(LyricsLine::start)
-            .distinctBy(LyricsLine::start)
+            // Distinct TTML paragraphs may start together and carry different voices.
+            .let { if (preserveSourceWhitespace) it else it.distinctBy(LyricsLine::start) }
             .toList()
         val richLines = if (normalizedLines.isNotEmpty()) {
             normalizedLines.mapIndexed { index, line ->
@@ -64,11 +65,14 @@ internal object AppleMissingLyricsSongMapper {
                         text = word.text,
                     )
                 }
+                val joinedWordText = words.joinToString("") { it.text.orEmpty() }
                 val sourceLineText = fetchedTranslationLines
-                    .firstOrNull { it.startTimeMs == line.start }
+                    .firstOrNull {
+                        it.startTimeMs == line.start &&
+                            (!preserveSourceWhitespace || it.content == joinedWordText)
+                    }
                     ?.content
                     ?.takeIf(String::isNotBlank)
-                val joinedWordText = words.joinToString("") { it.text.orEmpty() }
                 val text = (sourceLineText ?: joinedWordText).let { value ->
                     if (preserveSourceWhitespace) value else value.trim()
                 }
@@ -89,11 +93,17 @@ internal object AppleMissingLyricsSongMapper {
                     duration = end - line.start,
                     text = text,
                     words = words,
+                    secondary = line.secondaryWords.joinToString("") { it.text }
+                        .takeIf(String::isNotBlank),
+                    secondaryWords = line.secondaryWords.takeIf { it.isNotEmpty() }?.map { word ->
+                        LyricWord(begin = word.start, end = word.end, text = word.text)
+                    },
                     translation = findTranslation(
                         startTimeMs = line.start,
                         text = text,
                         fetchedLines = fetchedTranslationLines,
                         previousLines = previousTranslationLines,
+                        matchTextAtSameTime = preserveSourceWhitespace,
                     ),
                 )
             }
@@ -170,13 +180,16 @@ internal object AppleMissingLyricsSongMapper {
         text: String?,
         fetchedLines: List<LrcLine>,
         previousLines: List<com.juren233.hyperlyricsenhanced.lyric.model.RichLyricLine>,
+        matchTextAtSameTime: Boolean = false,
     ): String? {
         fun meaningful(value: String?): String? = value
             ?.trim()
             ?.takeIf(OnlineTranslationContentPolicy::isMeaningful)
 
         val normalizedText = normalizeText(text)
-        val fetched = fetchedLines.firstOrNull { it.startTimeMs == startTimeMs }
+        val fetched = fetchedLines.firstOrNull {
+            it.startTimeMs == startTimeMs && (!matchTextAtSameTime || normalizeText(it.content) == normalizedText)
+        }
             ?.let { meaningful(it.translation) }
             ?: fetchedLines
                 .asSequence()

@@ -50,6 +50,49 @@ internal class LineShadowRenderer {
     private var extractedOffsetY = 0
     private val bitmapPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private var bitmapPaintColor: Int? = null
+    private val promotionSlice = SpaceGatePromotionShadowSlice()
+    private val promotionSource = Rect()
+    private val promotionDestination = RectF()
+
+    /** Warm the immutable target-font mask before an animation starts; retargets reuse its key. */
+    fun preparePromotion(target: SpaceGatePromotionSnapshot, shadowStyle: TextPaint): Bitmap? {
+        val radius = shadowStyle.getShadowLayerRadius()
+        val width = target.geometry.glyphs.lastOrNull()?.naturalEnd ?: return null
+        if (radius <= 0f || width <= 0f || target.text.isEmpty()) return null
+        return ensureShadowBitmap(target.text, width, target.paint, target.typefaceSelector,
+            target.fontSignature, radius)
+    }
+
+    /** The animation has no progress clip: shadow and unplayed glyphs share only the camera fade. */
+    fun drawPromotion(
+        canvas: Canvas, target: SpaceGatePromotionSnapshot, geometry: SpaceGatePromotionGeometry,
+        fraction: Float, baseline: Float, scaleY: Float, shadowStyle: TextPaint, alpha: Float,
+    ) {
+        if (alpha <= 0f) return
+        val bitmap = preparePromotion(target, shadowStyle) ?: return
+        val color = shadowStyle.getShadowLayerColor()
+        if (bitmapPaintColor != color) {
+            bitmapPaintColor = color
+            bitmapPaint.colorFilter = PorterDuffColorFilter(color, PorterDuff.Mode.SRC_IN)
+        }
+        bitmapPaint.alpha = (255 * alpha).toInt().coerceIn(0, 255)
+        val origin = maskPadding - extractedOffsetX
+        val top = baseline + (target.paint.fontMetrics.ascent - maskPadding + extractedOffsetY) * scaleY +
+            shadowStyle.getShadowLayerDy()
+        val bottom = top + bitmap.height * scaleY
+        for ((index, glyph) in target.geometry.glyphs.withIndex()) {
+            if (!promotionSlice.update(
+                    glyph.naturalStart, glyph.naturalEnd, geometry.start(index, fraction), geometry.end(index, fraction),
+                    origin, bitmap.width, index == 0, index == target.geometry.glyphs.lastIndex,
+                    shadowStyle.getShadowLayerDx(),
+                )) continue
+            promotionSource.set(promotionSlice.sourceLeft, 0, promotionSlice.sourceRight, bitmap.height)
+            promotionDestination.set(promotionSlice.left, top, promotionSlice.right, bottom)
+            canvas.withSeamFade(geometry.fade(index, fraction), bitmapPaint) {
+                canvas.drawBitmap(bitmap, promotionSource, promotionDestination, bitmapPaint)
+            }
+        }
+    }
 
     fun draw(
         canvas: Canvas,
@@ -63,13 +106,16 @@ internal class LineShadowRenderer {
         centerIfPossible: Boolean,
         alignRight: Boolean,
         ghostSpacing: Float,
-        gateSplit: GateSplitLayout? = null,
+        seamPlan: SeamStripPlan? = null,
+        seamLayout: SeamOcclusionLayout? = null,
+        layoutWidth: Float = model.width,
+        drawGhost: Boolean = true,
     ) {
         val shadowRadius = sourcePaint.getShadowLayerRadius()
         val text = if (model.isPlainText) model.text else model.wordText
         if (shadowRadius <= 0f || text.isEmpty() || model.width <= 0f) return
 
-        val laidWidth = gateSplit?.holedWidth ?: model.width
+        val laidWidth = layoutWidth
         val bitmap = ensureShadowBitmap(
             text = text,
             textWidth = model.width,
@@ -98,15 +144,17 @@ internal class LineShadowRenderer {
             bitmapPaint.colorFilter = PorterDuffColorFilter(shadowColor, PorterDuff.Mode.SRC_IN)
         }
 
-        drawSplitAware(
+        drawSeamSlices(
             canvas = canvas,
             bitmap = bitmap,
-            gateSplit = gateSplit,
+            layout = seamLayout,
+            plan = seamPlan,
             startX = startX,
             textTop = textTop,
             shadowDx = sourcePaint.getShadowLayerDx(),
             shadowDy = sourcePaint.getShadowLayerDy(),
         )
+        if (!drawGhost) return
         resolveShadowGhostStartX(
             primaryStartX = startX,
             textWidth = laidWidth,
@@ -114,10 +162,14 @@ internal class LineShadowRenderer {
             ghostSpacing = ghostSpacing,
             isPlainText = model.isPlainText,
         )?.let { ghostStartX ->
-            drawSplitAware(
+            // ghost 只在滚动中出现：纯过缝方案，跨缝渐隐与正文同源。
+            val ghostPlan = if (seamPlan == null) null else
+                seamLayout?.let { SeamStripPlan.transit(it, ghostStartX, seamPlan.seamX) }
+            drawSeamSlices(
                 canvas = canvas,
                 bitmap = bitmap,
-                gateSplit = gateSplit,
+                layout = seamLayout,
+                plan = ghostPlan,
                 startX = ghostStartX,
                 textTop = textTop,
                 shadowDx = sourcePaint.getShadowLayerDx(),
@@ -127,41 +179,69 @@ internal class LineShadowRenderer {
     }
 
     /**
-     * 挖孔时阴影位图按源矩形精确切两片：A 片含前段及左侧模糊边，B 片从
-     * 前段宽度处起、整片右移挖孔宽，使后段阴影与新起笔位置对齐。两片各带
-     * 自己字形的完整模糊边缘，接缝处软性衔接、不重不漏。
+     * 按接缝方案切片绘制阴影位图（与正文同源）：每段带一片、平移量与正文
+     * 一致；跨缝单元单独一片，按渐隐 alpha 与多数侧裁剪（裁剪用绝对缝坐
+     * 标）。各片保留自己字形的完整模糊边缘，段界处不重不漏。
      */
-    private fun drawSplitAware(
+    private fun drawSeamSlices(
         canvas: Canvas,
         bitmap: Bitmap,
-        gateSplit: GateSplitLayout?,
+        layout: SeamOcclusionLayout?,
+        plan: SeamStripPlan?,
         startX: Float,
         textTop: Float,
         shadowDx: Float,
         shadowDy: Float,
     ) {
-        val split = gateSplit
-        if (split == null || split.holeWidth <= 0f) {
+        if (plan == null || layout == null) {
             drawShadowBitmap(canvas, bitmap, startX, textTop, shadowDx, shadowDy)
             return
         }
         // 位图 x 与条带文本 x 的换算：text x=0 位于 maskPadding − extractedOffsetX。
         val textOriginInBitmap = maskPadding - extractedOffsetX
-        val srcSplitX = (split.runAWidth + textOriginInBitmap)
-            .toInt().coerceIn(0, bitmap.width)
         val dstTop = textTop - maskPadding + extractedOffsetY + shadowDy
         val dstBottom = dstTop + bitmap.height
+        val totalAdvance = layout.totalAdvance
 
-        val fullDrawX = startX - maskPadding + extractedOffsetX + shadowDx
-        val aSrc = Rect(0, 0, srcSplitX, bitmap.height)
-        val aDst = RectF(fullDrawX, dstTop, fullDrawX + srcSplitX, dstBottom)
-        canvas.drawBitmap(bitmap, aSrc, aDst, bitmapPaint)
+        for (i in plan.bands.indices) {
+            val band = plan.bands[i]
+            if (band.charEnd <= band.charStart) continue
+            val naturalEnd = if (i + 1 < plan.bands.size) plan.bands[i + 1].startAdvance else totalAdvance
+            val st = plan.straddler
+            if (st != null && st.unit.charStart >= band.charStart && st.unit.charEnd <= band.charEnd) {
+                drawSlice(canvas, bitmap, band.startAdvance, st.unit.start, band.delta, startX, dstTop, dstBottom, shadowDx, textOriginInBitmap, null)
+                // 跨缝切片：多数侧裁剪（绝对缝坐标）＋渐隐，与正文同 alpha。
+                val fade = SeamStripPlan.SeamFade(st.alpha, plan.seamX, st.majorityLeft)
+                drawSlice(canvas, bitmap, st.unit.start, st.unit.end, band.delta, startX, dstTop, dstBottom, shadowDx, textOriginInBitmap, fade)
+                drawSlice(canvas, bitmap, st.unit.end, naturalEnd, band.delta, startX, dstTop, dstBottom, shadowDx, textOriginInBitmap, null)
+            } else {
+                drawSlice(canvas, bitmap, band.startAdvance, naturalEnd, band.delta, startX, dstTop, dstBottom, shadowDx, textOriginInBitmap, null)
+            }
+        }
+    }
 
-        if (srcSplitX < bitmap.width) {
-            val bDrawX = startX + split.runBStripStart + shadowDx
-            val bSrc = Rect(srcSplitX, 0, bitmap.width, bitmap.height)
-            val bDst = RectF(bDrawX, dstTop, bDrawX + (bitmap.width - srcSplitX), dstBottom)
-            canvas.drawBitmap(bitmap, bSrc, bDst, bitmapPaint)
+    private fun drawSlice(
+        canvas: Canvas,
+        bitmap: Bitmap,
+        naturalStart: Float,
+        naturalEnd: Float,
+        delta: Float,
+        startX: Float,
+        dstTop: Float,
+        dstBottom: Float,
+        shadowDx: Float,
+        textOriginInBitmap: Int,
+        fade: SeamStripPlan.SeamFade?,
+    ) {
+        if (naturalEnd <= naturalStart) return
+        val srcLeft = (naturalStart + textOriginInBitmap).toInt().coerceIn(0, bitmap.width)
+        val srcRight = (naturalEnd + textOriginInBitmap).toInt().coerceIn(0, bitmap.width)
+        if (srcRight <= srcLeft) return
+        val drawX = startX + delta + naturalStart + shadowDx
+        canvas.withSeamFade(fade, bitmapPaint) {
+            val src = Rect(srcLeft, 0, srcRight, bitmap.height)
+            val dst = RectF(drawX, dstTop, drawX + (srcRight - srcLeft), dstBottom)
+            canvas.drawBitmap(bitmap, src, dst, bitmapPaint)
         }
     }
 

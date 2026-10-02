@@ -111,6 +111,10 @@ internal fun AppleMusicProviderOrchestrator.hookModuleIdsForBuild(debug: Boolean
 
 internal fun AppleMusicProviderOrchestrator.hookModules() = listOf(
     FunctionalAppleMusicHookModule(
+        "hookActivityThemeInitialization",
+        installer = { AppleActivityThemeInitializationHooks(runtime).install() },
+    ),
+    FunctionalAppleMusicHookModule(
         "hookMetadataSurfaceLifecycle",
         installer = { inAppMetadata.metadataSurfaceRuntime.installLifecycleHooks() },
     ),
@@ -204,6 +208,10 @@ internal fun AppleMusicProviderOrchestrator.hookModules() = listOf(
     FunctionalAppleMusicHookModule(
         "hookInAppListenNowMetadataBinding",
         installer = { inAppMetadata.listenNowHooks.installMetadataBindingHooks() },
+    ),
+    FunctionalAppleMusicHookModule(
+        "hookBrowseSurfaceMetadata",
+        installer = { inAppMetadata.artistSurfaceHooks.installBrowseHooks() },
     ),
     FunctionalAppleMusicHookModule(
         "hookRecyclerViewCentralBinding",

@@ -3,6 +3,7 @@ package com.juren233.hyperlyricsenhanced.root.island.view
 import android.content.Context
 import android.view.View
 import android.widget.FrameLayout
+import com.juren233.hyperlyricsenhanced.BuildConfig
 
 /**
  * 限制最大测量宽度的 FrameLayout 容器。
@@ -20,6 +21,12 @@ class MaxWidthFrameLayout(context: Context) : FrameLayout(context) {
      */
     var keepVisible: Boolean = false
 
+    /** Last parent constraints, populated only for Debug geometry snapshots. */
+    internal var diagnosticWidthSpec: Int? = null
+        private set
+    internal var diagnosticHeightSpec: Int? = null
+        private set
+
     override fun setVisibility(visibility: Int) {
         if (keepVisible && visibility != View.VISIBLE) {
             super.setVisibility(View.VISIBLE)
@@ -29,6 +36,10 @@ class MaxWidthFrameLayout(context: Context) : FrameLayout(context) {
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        if (BuildConfig.DEBUG) {
+            diagnosticWidthSpec = widthMeasureSpec
+            diagnosticHeightSpec = heightMeasureSpec
+        }
         val givenWidth = MeasureSpec.getSize(widthMeasureSpec)
         // AT_MOST 0 is a real limit (for example no room beside status-bar icons).
         // Only UNSPECIFIED means that the parent did not provide a width bound.

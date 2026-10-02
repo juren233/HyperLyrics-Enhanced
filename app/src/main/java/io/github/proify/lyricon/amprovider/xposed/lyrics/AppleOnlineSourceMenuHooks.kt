@@ -53,6 +53,7 @@ internal class AppleOnlineSourceMenuHooks(
     internal val visibleLyricsSongId: () -> String?,
     internal val shouldHideMandarinPronunciation: (String?) -> Boolean,
     internal val hasOnlineContentConsumption: (String?, String) -> Boolean,
+    internal val currentPresentedLyricsSource: (String?) -> String?,
     internal val missingLyricsSourceInfo: (String?) -> AppleMissingLyricsSourceInfo?,
     internal val hasMissingLyricsSupplement: (String?) -> Boolean,
     internal val missingLyricsTranslationSource: (String?) -> String?,

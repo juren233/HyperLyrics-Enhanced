@@ -1,6 +1,9 @@
 package com.juren233.hyperlyricsenhanced.root.mediacard.notification
 
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.drawable.Drawable
@@ -72,8 +75,8 @@ object NotificationMediaAmbientFlowHooker {
     /**
      * 稳态息屏（doze）下无人持续持有 draw wake lock 时，SurfaceFlinger 不合成流光视图的
      * 帧，流光冻结、仅在歌词路径的 1s wake lock 窗口内跳格（AMBIENT-FLOW-AOD-001 真机
-     * 证据）。该 tick 在存在已挂载控制器时常驻运行，仅在"非交互 + 流光应流动"时续期
-     * draw wake lock 并对原生视图补发帧循环恢复。
+     * 证据）。该 tick 只在息屏（非交互）时运行：亮屏下帧合成由视图自身帧循环驱动，
+     * tick 纯空转，由 [screenStateReceiver] 在息屏时拉起、亮屏时停掉并放掉 wake lock。
      */
     private val flowKeepAlive = object : Runnable {
         override fun run() {
@@ -86,6 +89,40 @@ object NotificationMediaAmbientFlowHooker {
                 flowKeepAliveScheduled = false
                 releaseFlowWakeLock()
             }
+        }
+    }
+
+    /** 屏幕状态门控：亮屏停 tick（空转），息屏重新拉起保活。注册一次随 SystemUI 存续。 */
+    private var screenStateReceiverRegistered = false
+
+    private fun ensureScreenStateReceiver(context: Context) {
+        if (screenStateReceiverRegistered) return
+        screenStateReceiverRegistered = true
+        runCatching {
+            context.registerReceiver(
+                object : BroadcastReceiver() {
+                    override fun onReceive(host: Context?, intent: Intent?) {
+                        when (intent?.action) {
+                            Intent.ACTION_SCREEN_OFF -> {
+                                if (FlowKeepAlivePolicy.tickNeeded(screenOn = false)) {
+                                    scheduleFlowKeepAlive()
+                                }
+                            }
+                            Intent.ACTION_SCREEN_ON -> {
+                                if (!FlowKeepAlivePolicy.tickNeeded(screenOn = true)) {
+                                    mainHandler.post(::cancelFlowKeepAliveInternal)
+                                }
+                            }
+                        }
+                    }
+                },
+                IntentFilter().apply {
+                    addAction(Intent.ACTION_SCREEN_OFF)
+                    addAction(Intent.ACTION_SCREEN_ON)
+                },
+            )
+        }.onFailure {
+            HookLogger.w(TAG, "注册流光保活屏幕状态接收器失败: reason=${it.message}")
         }
     }
 
@@ -385,6 +422,11 @@ object NotificationMediaAmbientFlowHooker {
     }
 
     private fun scheduleFlowKeepAliveInternal() {
+        // 注册屏幕状态接收器（幂等）：息屏拉起 tick 的唯一入口。上下文取已挂载
+        // 控制器视图的宿主，SystemUI 应用与媒体卡同进程同 Resources。
+        synchronized(states) { states.values.toList() }
+            .firstNotNullOfOrNull { state -> state.view?.context }
+            ?.let(::ensureScreenStateReceiver)
         if (flowKeepAliveScheduled) return
         flowKeepAliveScheduled = true
         mainHandler.post(flowKeepAlive)
@@ -416,10 +458,17 @@ object NotificationMediaAmbientFlowHooker {
         if (snapshot.isEmpty()) return false
         val context = snapshot.firstNotNullOfOrNull { (_, state) -> state.view?.context }
         val powerManager = context?.getSystemService(PowerManager::class.java)
-        // 亮屏交互时帧合成本就可用，不需要 wake lock，仅保持 tick 待命。
-        if (powerManager == null || powerManager.isInteractive) {
+        if (powerManager == null) {
+            // 交互状态不可知时保守保持 tick，等待下一次能判定时再收敛。
             logFlowHold(false)
             return true
+        }
+        if (!FlowKeepAlivePolicy.tickNeeded(powerManager.isInteractive)) {
+            // 亮屏交互时帧合成本就可用、播放态校正有数据重绑路径，tick 纯空转：
+            // 就此停掉（cancelFlowKeepAliveInternal 语义由外层 keepTicking=false 完成），
+            // 息屏后由屏幕广播重新拉起。
+            logFlowHold(false)
+            return false
         }
         var holding = false
         snapshot.forEach { (controller, state) ->

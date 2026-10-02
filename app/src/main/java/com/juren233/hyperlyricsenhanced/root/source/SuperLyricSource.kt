@@ -78,8 +78,6 @@ class SuperLyricSource : LyricSource {
             override fun onStop(publisher: String, data: SuperLyricData) {
                 HookLogger.d(TAG, "收到停止事件, publisher=$publisher")
                 @Suppress("UNNECESSARY_SAFE_CALL")
-                sink?.onPlaybackStateChanged(false)
-                @Suppress("UNNECESSARY_SAFE_CALL")
                 sink?.onStop()
                 stopPositionPolling()
             }
@@ -117,7 +115,6 @@ class SuperLyricSource : LyricSource {
         val hasContent = data.hasLyric() || data.hasTitle() || data.hasArtist() || data.hasAlbum()
         if (!hasContent) return
 
-        currentSink.onPlaybackStateChanged(true)
         if (data.hasTitle()) lastMetadataTitle = data.title
         if (data.hasArtist()) lastMetadataArtist = data.artist
         if (data.hasAlbum()) lastMetadataAlbum = data.album
@@ -236,7 +233,6 @@ class SuperLyricSource : LyricSource {
                 val pos = MediaMetadataHelper.getPlaybackPosition(context, publisher)
                 if (pos >= 0) {
                     lastKnownPosition = pos
-                    sink?.onPositionChanged(pos)
                 }
                 delay(50)
             }

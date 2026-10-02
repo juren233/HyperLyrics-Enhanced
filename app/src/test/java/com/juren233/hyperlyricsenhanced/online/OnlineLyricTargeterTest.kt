@@ -1,6 +1,8 @@
 package com.juren233.hyperlyricsenhanced.online
 
+import com.juren233.hyperlyricsenhanced.lyric.LrcLine
 import com.juren233.hyperlyricsenhanced.online.model.LyricsLine
+import com.juren233.hyperlyricsenhanced.online.model.SongSearchResult
 import com.juren233.hyperlyricsenhanced.online.model.LyricsResult
 import com.juren233.hyperlyricsenhanced.online.model.LyricsWord
 import com.juren233.hyperlyricsenhanced.online.model.Source
@@ -219,6 +221,58 @@ class OnlineLyricTargeterTest {
     }
 
     @Test
+    fun `artist identity near miss only applies when explicitly allowed`() {
+        // 默认（未开启）行为不变：单人署名且时长不符仍不可兜底
+        assertEquals(
+            false,
+            OnlineLyricTargeter.isLyricFallbackEligible(
+                titleMatched = true,
+                multiCredit = false,
+                durationClose = false,
+            )
+        )
+        // 开启后：标题+歌手双匹配、时长不符可进入行级配对兜底
+        assertEquals(
+            true,
+            OnlineLyricTargeter.isLyricFallbackEligible(
+                titleMatched = true,
+                multiCredit = false,
+                durationClose = false,
+                artistMatched = true,
+            )
+        )
+        // 歌手不匹配（如同名错歌）即使开启也不放行
+        assertEquals(
+            false,
+            OnlineLyricTargeter.isLyricFallbackEligible(
+                titleMatched = true,
+                multiCredit = false,
+                durationClose = false,
+                artistMatched = false,
+            )
+        )
+        // 标题不符或时长相符时该通道不参与
+        assertEquals(
+            false,
+            OnlineLyricTargeter.isLyricFallbackEligible(
+                titleMatched = false,
+                multiCredit = false,
+                durationClose = false,
+                artistMatched = true,
+            )
+        )
+        assertEquals(
+            false,
+            OnlineLyricTargeter.isLyricFallbackEligible(
+                titleMatched = true,
+                multiCredit = false,
+                durationClose = true,
+                artistMatched = true,
+            )
+        )
+    }
+
+    @Test
     fun `normalizes internal spaces in Apple original artist names`() {
         assertEquals(
             "藤井風",
@@ -419,5 +473,82 @@ class OnlineLyricTargeterTest {
         assertEquals("專輯 deluxe edition", simplifierInput)
         assertEquals("专辑 deluxe edition", normalized)
         assertEquals(5, OnlineLyricTargeter.albumScore("专辑", normalized))
+    }
+
+    @Test
+    fun `cv annotation artist degrades to bracket free then first token variants`() {
+        assertEquals(
+            listOf("MILGRAM コトコ", "MILGRAM"),
+            OnlineLyricTargeter.artistSearchVariants("MILGRAM コトコ (CV: 愛美)"),
+        )
+    }
+
+    @Test
+    fun `full width cv annotation is stripped the same way`() {
+        assertEquals(
+            listOf("MILGRAM コトコ", "MILGRAM"),
+            OnlineLyricTargeter.artistSearchVariants("MILGRAM コトコ（CV: 愛美）"),
+        )
+    }
+
+    @Test
+    fun `bracket free multi token artist still gets first token variant`() {
+        assertEquals(
+            listOf("MILGRAM"),
+            OnlineLyricTargeter.artistSearchVariants("MILGRAM コトコ"),
+        )
+    }
+
+    @Test
+    fun `single token artist has no search variants`() {
+        assertEquals(emptyList<String>(), OnlineLyricTargeter.artistSearchVariants("愛美"))
+        assertEquals(emptyList<String>(), OnlineLyricTargeter.artistSearchVariants("  "))
+        assertEquals(emptyList<String>(), OnlineLyricTargeter.artistSearchVariants("(CV: 愛美)"))
+    }
+
+    @Test
+    fun `bracket stripping scans nested and mixed width segments without regex`() {
+        assertEquals(
+            "MILGRAM コトコ",
+            stripBracketedAnnotations("MILGRAM (コトコ (CV: 愛美)) コトコ"),
+        )
+        assertEquals(
+            "MILGRAM コトコ",
+            stripBracketedAnnotations("MILGRAM（CV: 愛美）コトコ"),
+        )
+        assertEquals("a d", stripBracketedAnnotations("a [b {c}] d"))
+        assertEquals("愛美", stripBracketedAnnotations("愛美"))
+    }
+
+    @Test
+    fun `better source attempt never trades fetched lines for duration flags`() {
+        val song = SongSearchResult(
+            id = "1",
+            title = "ドラマ",
+            artist = "MILGRAM",
+            album = "ドラマ",
+            duration = 178_281L,
+            source = Source.NE,
+        )
+        val lineless = SourceAttempt(
+            song = song.copy(id = "2", title = "モニタリング"),
+            score = 40,
+            durationClose = true,
+        )
+        val withLines = SourceAttempt(
+            lines = listOf(LrcLine(32L, "裏切りのHARROW")),
+            song = song,
+            score = 90,
+            durationClose = false,
+        )
+        // 变体重试拿回的带词结果不得因 durationClose 标志差异被无词候选替换
+        assertEquals(
+            withLines,
+            OnlineLyricTargeter.betterSourceAttempt(lineless, withLines),
+        )
+        assertEquals(
+            withLines,
+            OnlineLyricTargeter.betterSourceAttempt(withLines, lineless),
+        )
     }
 }

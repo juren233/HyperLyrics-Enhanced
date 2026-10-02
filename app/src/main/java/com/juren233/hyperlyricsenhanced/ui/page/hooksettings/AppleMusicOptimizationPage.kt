@@ -111,6 +111,14 @@ fun AppleMusicOptimizationPage(
             )
         )
     }
+    var preventNetworkAutoSkip by remember {
+        mutableStateOf(
+            prefs.getBoolean(
+                RootConstants.KEY_HOOK_APPLE_MUSIC_PREVENT_NETWORK_AUTO_SKIP,
+                RootConstants.DEFAULT_HOOK_APPLE_MUSIC_PREVENT_NETWORK_AUTO_SKIP,
+            )
+        )
+    }
     var simplifyTraditionalLyrics by remember {
         mutableStateOf(
             prefs.getBoolean(
@@ -529,6 +537,22 @@ fun AppleMusicOptimizationPage(
                         forceCellularDataEntry = enabled
                         saveConfig(
                             RootConstants.KEY_HOOK_APPLE_MUSIC_FORCE_CELLULAR_DATA_ENTRY,
+                            enabled,
+                        )
+                    },
+                )
+                SwitchPreference(
+                    title = stringResource(
+                        R.string.title_apple_music_prevent_network_auto_skip
+                    ),
+                    summary = stringResource(
+                        R.string.summary_apple_music_prevent_network_auto_skip
+                    ),
+                    checked = preventNetworkAutoSkip,
+                    onCheckedChange = { enabled ->
+                        preventNetworkAutoSkip = enabled
+                        saveConfig(
+                            RootConstants.KEY_HOOK_APPLE_MUSIC_PREVENT_NETWORK_AUTO_SKIP,
                             enabled,
                         )
                     },

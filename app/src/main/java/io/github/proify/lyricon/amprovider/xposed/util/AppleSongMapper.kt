@@ -22,6 +22,10 @@ fun AppleSong.toSong(): Song = AppleSongMapper.map(this)
 object AppleSongMapper {
 
     fun map(song: AppleSong): Song {
+        val textLines = song.lyrics.filter { line ->
+            !line.htmlLineText.isNullOrBlank() ||
+                line.words.any { !it.text.isNullOrBlank() }
+        }
         val metadataEntries = buildList {
             song.genre?.takeIf { it.isNotBlank() }?.let {
                 add(LyricMetadataKeys.APPLE_CATALOG_GENRE to it)
@@ -49,6 +53,13 @@ object AppleSongMapper {
             }
             song.lyricsSource?.takeIf { it.isNotBlank() }?.let {
                 add(LyricMetadataKeys.APPLE_LYRICS_CACHE_SOURCE to it)
+            }
+            if (song.lyricsSource == "apple" && textLines.isNotEmpty() &&
+                textLines.none { line ->
+                    line.end > line.begin || line.words.any { it.end > it.begin }
+                }
+            ) {
+                add(LyricMetadataKeys.APPLE_NATIVE_LYRICS_UNTIMED to "true")
             }
         }
         return Song(

@@ -8,7 +8,9 @@ package io.github.proify.lyricon.amprovider.xposed.hooks
 
 import android.media.AudioRouting
 import android.media.AudioTrack
+import android.media.session.MediaSession
 import android.media.session.PlaybackState as AndroidPlaybackState
+import android.os.Handler
 import android.os.SystemClock
 import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.common.RootConstants
@@ -16,6 +18,7 @@ import io.github.proify.extensions.android.ScreenStateMonitor
 import io.github.proify.lyricon.amprovider.xposed.AppleMusicHookPoint
 import io.github.proify.lyricon.amprovider.xposed.AppleMusicHookTarget
 import io.github.proify.lyricon.amprovider.xposed.AppleMusicProviderRuntime
+import io.github.proify.lyricon.amprovider.xposed.AppleMusicOptimizationGate
 import io.github.proify.lyricon.amprovider.xposed.AppleMusicRuntimeMember
 import io.github.proify.lyricon.amprovider.xposed.AppleReflection
 import io.github.proify.lyricon.amprovider.xposed.PlaybackPositionSource
@@ -32,6 +35,11 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.lang.ref.WeakReference
+import java.lang.reflect.Field
+import java.lang.reflect.Method
+import java.lang.reflect.Modifier
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.abs
 
@@ -42,6 +50,7 @@ internal class ApplePlaybackHooks(
     private val currentLyricsSongId: () -> String?,
     private val queueItemMediaId: (Any) -> String?,
     private val refreshCurrentQueueItem: (Any?, String) -> Unit,
+    private val isNetworkAutoSkipPreventionEnabled: () -> Boolean,
     private val isVolumeBalanceEnabled: () -> Boolean,
 ) {
     @Volatile
@@ -51,7 +60,17 @@ internal class ApplePlaybackHooks(
     private val coroutineScope by lazy { CoroutineScope(Dispatchers.Default + SupervisorJob()) }
     private var progressJob: Job? = null
     private var remotePlayer: RemotePlayer? = null
+    /** Playback surface activity. BUFFERING remains active. */
     private var playing = false
+    /** True only while the media clock may advance. BUFFERING is false. */
+    private var timelineAdvancing = false
+    private val exoPlaybackSignals =
+        WeakIdentityMap<Any, AppleExoPlaybackIntentPolicy.Resolution>()
+    private val networkErrorPlayer = ThreadLocal<Any?>()
+    private val networkRetryRequested = ThreadLocal<Boolean>()
+    private val networkRetryStates = WeakIdentityMap<Any, NetworkRetryState>()
+    private val networkRetryRevision = AtomicLong()
+    private var networkRetryAccess: NetworkRetryAccess? = null
     private var zeroPositionReadCount = 0
     private var hasLoggedNonZeroPosition = false
     private var lastTimingSamplePosition = -1L
@@ -63,6 +82,8 @@ internal class ApplePlaybackHooks(
     private var lastPlaybackAnchorAtMs = 0L
     private val atmosphereSessionCallbackHit = AtomicBoolean(false)
     private val atmosphereVariantCallbackHit = AtomicBoolean(false)
+    private val exoPlayerStateCallbackHit = AtomicBoolean(false)
+    private val mediaSessionStateCallbackHit = AtomicBoolean(false)
     private val atmosphereVolumeProcessor = AppleAtmosVolumeProcessor(isVolumeBalanceEnabled)
     private val atmosphereLoudnessMetadataHooks = AppleAtmosLoudnessMetadataHooks(runtime)
     private val atmospherePcmMonitor = AppleAtmosPcmMonitor(
@@ -93,28 +114,32 @@ internal class ApplePlaybackHooks(
         ScreenStateMonitor.initialize(runtime.application)
         ScreenStateMonitor.addListener(object : ScreenStateMonitor.ScreenStateListener {
             override fun onScreenOn() {
-                if (playing) resumeCoroutineTask()
+                if (timelineAdvancing) resumeCoroutineTask()
             }
 
             override fun onScreenOff() {
-                if (playing && isAodLyricsEnabled()) resumeCoroutineTask()
+                if (timelineAdvancing && isAodLyricsEnabled()) resumeCoroutineTask()
                 else pauseCoroutineTask()
             }
 
             override fun onScreenUnlocked() {
-                if (playing && progressJob == null) resumeCoroutineTask()
+                if (timelineAdvancing && progressJob == null) resumeCoroutineTask()
             }
         })
     }
 
     fun onAodPreferenceChanged() {
         if (ScreenStateMonitor.state != ScreenStateMonitor.ScreenState.OFF) return
-        if (playing && isAodLyricsEnabled()) resumeCoroutineTask()
+        if (timelineAdvancing && isAodLyricsEnabled()) resumeCoroutineTask()
         else pauseCoroutineTask()
     }
 
     fun onVolumeBalancePreferenceChanged() {
         atmosphereVolumeProcessor.onPreferenceChanged()
+    }
+
+    fun onNetworkAutoSkipPreferenceChanged() {
+        networkRetryRevision.incrementAndGet()
     }
 
     fun installExoMediaPlayer() {
@@ -130,7 +155,29 @@ internal class ApplePlaybackHooks(
                 )
             })
         }
+        val playerStateTarget = runtime.hookResolver.resolveMethod(
+            AppleMusicHookPoint.EXO_PLAYER_STATE_CHANGED
+        )
+        runtime.hookRegistrar.installHook(playerStateTarget.method, after = { chain, _ ->
+            val player = chain.thisObject ?: return@installHook
+            val playWhenReady = chain.args.getOrNull(0) as? Boolean ?: return@installHook
+            val state = chain.args.getOrNull(1) as? Int ?: return@installHook
+            onExoPlayerStateChanged(player, playWhenReady, state)
+        })
+        ProviderLogger.info(
+            "Apple Music Exo 播放意图 Hook 已安装: " +
+                "${playerStateTarget.method.declaringClass.name}#" +
+                "${playerStateTarget.method.name}(boolean,int)"
+        )
+        hookPlatformMediaSessionPlaybackState()
         hookExoPlaybackLifecycle(exoPlayerClass)
+        runCatching { hookNetworkAutoSkip(exoPlayerClass) }
+            .onFailure {
+                ProviderLogger.error(
+                    "Apple Music 弱网自动重试 Hook 安装失败，已禁用该可选功能",
+                    it,
+                )
+            }
         hookAtmosVolumeBalance()
 
         val seekMethod = AppleReflection.findMethod(
@@ -175,7 +222,18 @@ internal class ApplePlaybackHooks(
                     startSyncAction()
                 }
                 else -> {
-                    if (activePlaybackPlayer === activeMediaPlayer) stopSyncAction()
+                    if (activePlaybackPlayer === activeMediaPlayer) {
+                        val signal = activeMediaPlayer?.let(exoPlaybackSignals::get)
+                        if (signal?.playbackActive == true) {
+                            applyExoPlaybackResolution(
+                                player = activeMediaPlayer,
+                                resolution = signal,
+                                source = "LocalMediaPlayerController.retained_exo_intent",
+                            )
+                        } else {
+                            stopSyncAction()
+                        }
+                    }
                 }
             }
         })
@@ -190,14 +248,16 @@ internal class ApplePlaybackHooks(
             ?: lastTimingSamplePosition.takeIf { it >= 0L }
 
     private fun startSyncAction() {
-        if (playing) return
+        if (playing && timelineAdvancing) return
         playing = true
+        timelineAdvancing = true
         currentPositionMs()?.let { publishPlaybackAnchor(it, playing = true, force = true) }
         resumeCoroutineTask()
     }
 
     private fun stopSyncAction() {
         playing = false
+        timelineAdvancing = false
         currentPositionMs()?.let { publishPlaybackAnchor(it, playing = false, force = true) }
             ?: remotePlayer?.setPlaybackState(false)
         pauseCoroutineTask()
@@ -206,7 +266,7 @@ internal class ApplePlaybackHooks(
     private fun resumeCoroutineTask() {
         if (progressJob?.isActive == true) return
         progressJob = coroutineScope.launch {
-            while (isActive && playing) {
+            while (isActive && timelineAdvancing) {
                 runCatching {
                     playbackPositionSource?.readPosition()?.let { position ->
                         logPositionSyncState(position)
@@ -247,22 +307,304 @@ internal class ApplePlaybackHooks(
                 methodName,
                 parameterCount = 0,
             )
-            runtime.hookRegistrar.installHook(method, after = { chain, _ ->
-                if (runtimeMember == AppleMusicRuntimeMember.EXO_RELEASE_METHOD) {
-                    chain.thisObject?.let(atmosphereVolumeProcessor::onPlayerReleased)
-                }
-                if (playbackPositionSource?.player === chain.thisObject) {
-                    stopSyncAction()
+            runtime.hookRegistrar.installHook(
+                method,
+                before = { chain ->
+                    // The platform MediaSession PAUSED publication can happen inside these
+                    // methods. Remove retained play intent before the original call so an
+                    // explicit pause/stop/release is never rewritten as BUFFERING or retried.
+                    chain.thisObject?.let { player ->
+                        exoPlaybackSignals.remove(player)
+                        cancelNetworkRetry(player)
+                    }
+                },
+                after = { chain, _ ->
                     if (runtimeMember == AppleMusicRuntimeMember.EXO_RELEASE_METHOD) {
-                        playbackPositionSource = null
-                        if (activePlaybackPlayer === chain.thisObject) {
-                            activePlaybackPlayer = null
+                        chain.thisObject?.let(atmosphereVolumeProcessor::onPlayerReleased)
+                    }
+                    if (playbackPositionSource?.player === chain.thisObject) {
+                        stopSyncAction()
+                        if (runtimeMember == AppleMusicRuntimeMember.EXO_RELEASE_METHOD) {
+                            playbackPositionSource = null
+                            if (activePlaybackPlayer === chain.thisObject) {
+                                activePlaybackPlayer = null
+                            }
                         }
                     }
-                }
-            })
+                },
+            )
         }
         ProviderLogger.info("Apple Music 播放生命周期 Hook 已安装")
+    }
+
+    private fun hookNetworkAutoSkip(exoPlayerClass: Class<*>) {
+        val shouldSkipMethod = AppleReflection.findMethod(
+            exoPlayerClass,
+            member(AppleMusicRuntimeMember.EXO_SHOULD_SKIP_TO_NEXT_ITEM_METHOD),
+            parameterCount = 3,
+        )
+        check(
+            Modifier.isStatic(shouldSkipMethod.modifiers) &&
+                shouldSkipMethod.returnType == Boolean::class.javaPrimitiveType,
+        ) {
+            "Apple Music 自动切歌决策方法签名不符合预期: $shouldSkipMethod"
+        }
+
+        val onPlayerErrorMethod = AppleReflection.findMethod(
+            exoPlayerClass,
+            member(AppleMusicRuntimeMember.EXO_PLAYER_ERROR_METHOD),
+            parameterCount = 1,
+        )
+        check(
+            !Modifier.isStatic(onPlayerErrorMethod.modifiers) &&
+                onPlayerErrorMethod.returnType == Void.TYPE,
+        ) {
+            "Apple Music 播放错误方法签名不符合预期: $onPlayerErrorMethod"
+        }
+
+        val playerField = exoPlayerClass.getDeclaredField(
+            member(AppleMusicRuntimeMember.EXO_PLAYER_FIELD)
+        ).apply { isAccessible = true }
+        val eventHandlerField = exoPlayerClass.getDeclaredField(
+            member(AppleMusicRuntimeMember.EXO_EVENT_HANDLER_FIELD)
+        ).apply { isAccessible = true }
+        check(
+            !Modifier.isStatic(playerField.modifiers) &&
+                !Modifier.isStatic(eventHandlerField.modifiers) &&
+                Handler::class.java.isAssignableFrom(eventHandlerField.type),
+        ) {
+            "Apple Music 自动重试字段签名不符合预期: " +
+                "player=$playerField, eventHandler=$eventHandlerField"
+        }
+        val retryMethod = AppleReflection.findMethod(
+            playerField.type,
+            member(AppleMusicRuntimeMember.EXO_PLAYER_RETRY_METHOD),
+            parameterCount = 0,
+        )
+        check(
+            !Modifier.isStatic(retryMethod.modifiers) && retryMethod.returnType == Void.TYPE,
+        ) {
+            "ExoPlayer retry 方法签名不符合预期: $retryMethod"
+        }
+        networkRetryAccess = NetworkRetryAccess(
+            playerField = playerField,
+            eventHandlerField = eventHandlerField,
+            retryMethod = retryMethod,
+        )
+
+        runtime.hookRegistrar.installScopedHook(
+            onPlayerErrorMethod,
+            enter = { chain ->
+                val player = chain.thisObject ?: return@installScopedHook false
+                networkErrorPlayer.set(player)
+                networkRetryRequested.set(false)
+                true
+            },
+            after = { chain, _ ->
+                val player = chain.thisObject ?: return@installScopedHook
+                if (
+                    networkRetryRequested.get() == true &&
+                    isNetworkAutoSkipPreventionEnabled()
+                ) {
+                    scheduleNetworkRetry(player)
+                }
+            },
+            exit = {
+                networkRetryRequested.remove()
+                networkErrorPlayer.remove()
+            },
+        )
+        runtime.hookRegistrar.installResultOverrideHook(shouldSkipMethod) { chain, original ->
+            if (original != true || !isNetworkAutoSkipPreventionEnabled()) {
+                return@installResultOverrideHook original
+            }
+            val player = networkErrorPlayer.get() ?: return@installResultOverrideHook original
+            val exception = chain.args.getOrNull(0) as? Throwable
+            val errorType = (chain.args.getOrNull(1) as? Number)?.toInt()
+            if (!AppleNetworkAutoSkipPolicy.isTransientNetworkFailure(exception, errorType)) {
+                return@installResultOverrideHook original
+            }
+            networkRetryRequested.set(true)
+            ProviderLogger.diagnostic(
+                "Apple Music 弱网失败阻止自动切歌并等待重试: " +
+                    "player=${System.identityHashCode(player)}, " +
+                    "exception=${exception?.javaClass?.name}, errorType=$errorType"
+            )
+            false
+        }
+        ProviderLogger.info(
+            "Apple Music 弱网自动重试 Hook 已安装: " +
+                "${shouldSkipMethod.declaringClass.name}#${shouldSkipMethod.name}" +
+                "(Exception,int,MediaPlayerContext)"
+        )
+    }
+
+    private fun scheduleNetworkRetry(player: Any) {
+        val access = networkRetryAccess ?: return
+        val handler = access.eventHandlerField.get(player) as? Handler
+            ?: error("Apple Music ExoMediaPlayer eventHandler 不可用")
+        val previous = networkRetryStates[player]
+        previous?.handler?.get()?.removeCallbacks(previous.runnable)
+        val attempt = (previous?.attempt ?: 0) + 1
+        val delayMs = NETWORK_RETRY_DELAYS_MS[
+            (attempt - 1).coerceAtMost(NETWORK_RETRY_DELAYS_MS.lastIndex)
+        ]
+        val featureRevision = networkRetryRevision.get()
+        val optimizationRevision = AppleMusicOptimizationGate.revision()
+        val playerReference = WeakReference(player)
+        lateinit var retryTask: Runnable
+        retryTask = Runnable {
+            val currentPlayer = playerReference.get() ?: return@Runnable
+            val currentState = networkRetryStates[currentPlayer] ?: return@Runnable
+            if (currentState.runnable !== retryTask) return@Runnable
+            if (
+                featureRevision != networkRetryRevision.get() ||
+                optimizationRevision != AppleMusicOptimizationGate.revision() ||
+                !AppleMusicOptimizationGate.isEnabled() ||
+                !isNetworkAutoSkipPreventionEnabled() ||
+                exoPlaybackSignals[currentPlayer]?.playbackActive != true
+            ) {
+                cancelNetworkRetry(currentPlayer)
+                return@Runnable
+            }
+            runCatching {
+                val exoPlayer = access.playerField.get(currentPlayer)
+                    ?: error("Apple Music ExoPlayer 实例不可用")
+                access.retryMethod.invoke(exoPlayer)
+            }.onSuccess {
+                ProviderLogger.diagnostic(
+                    "Apple Music 弱网播放已发起自动重试: " +
+                        "player=${System.identityHashCode(currentPlayer)}, attempt=$attempt"
+                )
+            }.onFailure {
+                cancelNetworkRetry(currentPlayer)
+                ProviderLogger.error("Apple Music 弱网播放自动重试失败", it)
+            }
+        }
+        networkRetryStates[player] = NetworkRetryState(
+            handler = WeakReference(handler),
+            runnable = retryTask,
+            attempt = attempt,
+        )
+        if (!handler.postDelayed(retryTask, delayMs)) {
+            networkRetryStates.remove(player)
+            error("Apple Music 弱网播放自动重试任务提交失败")
+        }
+        ProviderLogger.diagnostic(
+            "Apple Music 弱网播放自动重试已安排: " +
+                "player=${System.identityHashCode(player)}, attempt=$attempt, delayMs=$delayMs"
+        )
+    }
+
+    private fun cancelNetworkRetry(player: Any) {
+        val state = networkRetryStates[player] ?: return
+        networkRetryStates.remove(player)
+        state.handler.get()?.removeCallbacks(state.runnable)
+    }
+
+    private fun hookPlatformMediaSessionPlaybackState() {
+        val method = MediaSession::class.java.getDeclaredMethod(
+            "setPlaybackState",
+            AndroidPlaybackState::class.java,
+        )
+        runtime.hookRegistrar.installArgumentRewriteHook(method) { chain ->
+            val incoming = chain.args.firstOrNull() as? AndroidPlaybackState
+                ?: return@installArgumentRewriteHook null
+            val activePlayer = activePlaybackPlayer
+            val activeResolution = activePlayer?.let(exoPlaybackSignals::get)
+            if (BuildConfig.DEBUG && mediaSessionStateCallbackHit.compareAndSet(false, true)) {
+                ProviderLogger.diagnostic(
+                    "Apple MediaSession 播放态首次回调: state=${incoming.state}, " +
+                        "position=${incoming.position}, activePlayer=" +
+                        "${activePlayer?.let(System::identityHashCode)}, " +
+                        "exoPublication=${activeResolution?.publication}, " +
+                        "exoActive=${activeResolution?.playbackActive}"
+                )
+            }
+            val decision = AppleExoPlaybackIntentPolicy.decideMediaSessionPause(
+                incomingPaused = incoming.state == AndroidPlaybackState.STATE_PAUSED,
+                activeResolution = activeResolution,
+            )
+            if (decision != AppleExoPlaybackIntentPolicy.MediaSessionPauseDecision.REWRITE_BUFFERING) {
+                return@installArgumentRewriteHook null
+            }
+
+            val rewritten = AndroidPlaybackState.Builder(incoming)
+                .setState(
+                    AndroidPlaybackState.STATE_BUFFERING,
+                    incoming.position,
+                    0.0f,
+                    incoming.lastPositionUpdateTime.takeIf { it > 0L }
+                        ?: SystemClock.elapsedRealtime(),
+                )
+                .build()
+            if (BuildConfig.DEBUG) {
+                ProviderLogger.diagnostic(
+                    "Apple MediaSession 假暂停已改写: original=PAUSED, " +
+                        "replacement=BUFFERING, position=${incoming.position}, " +
+                        "activePlayer=${activePlayer?.let(System::identityHashCode)}, " +
+                        "exoPublication=${activeResolution?.publication}"
+                )
+            }
+            arrayOf(rewritten)
+        }
+        ProviderLogger.info(
+            "Apple Music 系统 MediaSession 缓冲态 Hook 已安装: " +
+                "${method.declaringClass.name}#${method.name}(PlaybackState)"
+        )
+    }
+
+    private fun onExoPlayerStateChanged(
+        player: Any,
+        playWhenReady: Boolean,
+        state: Int,
+    ) {
+        val resolution = AppleExoPlaybackIntentPolicy.resolve(playWhenReady, state)
+        if (state == AppleExoPlaybackIntentPolicy.STATE_READY || !resolution.playbackActive) {
+            cancelNetworkRetry(player)
+        }
+        exoPlaybackSignals[player] = resolution
+        if (BuildConfig.DEBUG && exoPlayerStateCallbackHit.compareAndSet(false, true)) {
+            ProviderLogger.diagnostic(
+                "Exo 播放意图首次回调: player=${System.identityHashCode(player)}, " +
+                    "playWhenReady=$playWhenReady, state=$state, " +
+                    "publication=${resolution.publication}"
+            )
+        }
+        if (resolution.playbackActive && activePlaybackPlayer !== player) {
+            activatePlaybackPlayer(player, "ExoMediaPlayer.onPlayerStateChanged")
+            refreshCurrentQueueItem(player, "onPlayerStateChanged")
+        }
+        if (activePlaybackPlayer !== player) return
+        applyExoPlaybackResolution(
+            player = player,
+            resolution = resolution,
+            source = "ExoMediaPlayer.onPlayerStateChanged",
+        )
+    }
+
+    private fun applyExoPlaybackResolution(
+        player: Any,
+        resolution: AppleExoPlaybackIntentPolicy.Resolution,
+        source: String,
+    ) {
+        if (activePlaybackPlayer !== player) return
+        playing = resolution.playbackActive
+        timelineAdvancing = resolution.advancesTimeline
+        val position = currentPositionMs()?.coerceAtLeast(0L) ?: 0L
+        publishPlaybackState(
+            position = position,
+            publication = resolution.publication,
+            force = true,
+        )
+        if (resolution.advancesTimeline) resumeCoroutineTask() else pauseCoroutineTask()
+        if (BuildConfig.DEBUG) {
+            ProviderLogger.diagnostic(
+                "Exo 播放意图发布: source=$source, player=${System.identityHashCode(player)}, " +
+                    "publication=${resolution.publication}, active=${resolution.playbackActive}, " +
+                    "advancing=${resolution.advancesTimeline}, position=$position"
+            )
+        }
     }
 
     private fun hookAtmosVolumeBalance() {
@@ -558,23 +900,47 @@ internal class ApplePlaybackHooks(
     }
 
     private fun publishPlaybackAnchor(position: Long, playing: Boolean, force: Boolean) {
+        publishPlaybackState(
+            position = position,
+            publication = if (playing) {
+                AppleExoPlaybackIntentPolicy.Publication.PLAYING
+            } else {
+                AppleExoPlaybackIntentPolicy.Publication.PAUSED
+            },
+            force = force,
+        )
+    }
+
+    private fun publishPlaybackState(
+        position: Long,
+        publication: AppleExoPlaybackIntentPolicy.Publication,
+        force: Boolean,
+    ) {
         val now = SystemClock.elapsedRealtime()
         if (!force && now - lastPlaybackAnchorAtMs < PLAYBACK_ANCHOR_INTERVAL_MS) return
 
         lastPlaybackAnchorAtMs = now
+        val androidState = when (publication) {
+            AppleExoPlaybackIntentPolicy.Publication.PLAYING ->
+                AndroidPlaybackState.STATE_PLAYING
+            AppleExoPlaybackIntentPolicy.Publication.BUFFERING ->
+                AndroidPlaybackState.STATE_BUFFERING
+            AppleExoPlaybackIntentPolicy.Publication.PAUSED ->
+                AndroidPlaybackState.STATE_PAUSED
+        }
         val state = AndroidPlaybackState.Builder()
             .setState(
-                if (playing) AndroidPlaybackState.STATE_PLAYING
-                else AndroidPlaybackState.STATE_PAUSED,
+                androidState,
                 position.coerceAtLeast(0L),
-                if (playing) 1.0f else 0.0f,
+                if (publication == AppleExoPlaybackIntentPolicy.Publication.PLAYING) 1.0f
+                else 0.0f,
                 now,
             )
             .build()
         val success = remotePlayer?.setPlaybackState(state) == true
         if (BuildConfig.DEBUG) {
             ProviderLogger.diagnostic(
-                "Timing playback anchor: position=$position, playing=$playing, " +
+                "Timing playback anchor: position=$position, publication=$publication, " +
                     "force=$force, success=$success"
             )
         }
@@ -600,7 +966,20 @@ internal class ApplePlaybackHooks(
     private fun playbackMember(member: AppleMusicRuntimeMember): String =
         playbackTarget.runtimeMemberName(member)
 
+    private data class NetworkRetryAccess(
+        val playerField: Field,
+        val eventHandlerField: Field,
+        val retryMethod: Method,
+    )
+
+    private data class NetworkRetryState(
+        val handler: WeakReference<Handler>,
+        val runnable: Runnable,
+        val attempt: Int,
+    )
+
     private companion object {
         private const val PLAYBACK_ANCHOR_INTERVAL_MS = 5_000L
+        private val NETWORK_RETRY_DELAYS_MS = longArrayOf(1_000L, 2_000L, 4_000L, 8_000L)
     }
 }

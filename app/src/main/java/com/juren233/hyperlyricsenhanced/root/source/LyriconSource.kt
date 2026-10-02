@@ -26,6 +26,7 @@ import com.juren233.hyperlyricsenhanced.lyric.model.Song as LocalSong
 import com.juren233.hyperlyricsenhanced.lyric.model.lyricMetadataOf
 import com.juren233.hyperlyricsenhanced.lyric.source.LyricSink
 import com.juren233.hyperlyricsenhanced.lyric.source.LyricSource
+import com.juren233.hyperlyricsenhanced.lyric.source.TimelineContent
 import com.juren233.hyperlyricsenhanced.online.OnlineLyricTargeter
 import com.juren233.hyperlyricsenhanced.online.OnlineTranslationSourcePreferences
 import com.juren233.hyperlyricsenhanced.online.model.Source
@@ -36,6 +37,7 @@ import com.juren233.hyperlyricsenhanced.root.LyriconDataBridge
 import com.juren233.hyperlyricsenhanced.root.island.renderer.BaseIslandRenderer
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import com.juren233.hyperlyricsenhanced.root.utils.MediaCardDiagnosticLogger
+import com.juren233.hyperlyricsenhanced.timeline.model.TrackIdentity
 import io.github.proify.lyricon.central.CentralRuntime
 import io.github.proify.lyricon.amprovider.xposed.AppleDirectBridgeContract
 import io.github.proify.lyricon.amprovider.xposed.AppleSourceSwitchPerformanceDiagnostics
@@ -84,6 +86,7 @@ class LyriconSource : LyricSource {
     }
 
     override val id = "lyricon"
+    override val providesLyricClock = true
     override val displayName = "Lyricon"
 
     @Volatile
@@ -286,6 +289,7 @@ class LyriconSource : LyricSource {
     internal fun needsMissingLyricsSourceRecovery(song: LocalSong?): Boolean =
         song != null && (
             song.lyrics.isNullOrEmpty() ||
+                hasUntimedAppleNativeLyrics(song) ||
                 (
                     isMissingLyricsSupplement(song) &&
                         song.metadata
@@ -424,28 +428,40 @@ class LyriconSource : LyricSource {
         restorePosition: Boolean,
         onlineTranslationMatched: Boolean = false
     ) {
-        val preservedSameSongState = restorePosition &&
-            song != null &&
-            !song.lyrics.isNullOrEmpty() &&
-            LyriconDataBridge.replaceSameSongContent(song)
-        if (!preservedSameSongState) {
-            LyriconDataBridge.updateSong(song)
+        if (song == null) {
+            sink?.onStop()
+            return
         }
-        if (onlineTranslationMatched) {
-            sink?.onOnlineTranslationMatched(song)
-        } else {
-            sink?.onSongChanged(song)
-        }
+        sink?.onTimelineContent(
+            TimelineContent(
+                sourceId = id,
+                track = timelineTrack(song),
+                song = song,
+                onlineTranslationMatched = onlineTranslationMatched,
+            )
+        )
         if (BuildConfig.DEBUG) AppleMetadataFlowDiagnostics.record("bridge_publish_complete") {
-            "retained=$preservedSameSongState " +
+            "restoreRequested=$restorePosition " +
                 "requested=${AppleMetadataFlowDiagnostics.local(song)} " +
-                "actual=${AppleMetadataFlowDiagnostics.local(LyriconDataBridge.currentSong)}"
-        }
-        BaseIslandRenderer.refreshActiveIsland()
-        if (restorePosition && song != null && !song.lyrics.isNullOrEmpty()) {
-            sink?.onPositionChanged(lastAdjustedPosition)
+                "submitted=${AppleMetadataFlowDiagnostics.local(song)}"
         }
     }
+
+    private fun timelineTrack(song: LocalSong): TrackIdentity = TrackIdentity(
+        packageName = activeCentralPlayerPackageName
+            ?: if (currentAppleSong != null) APPLE_MUSIC_PACKAGE else "",
+        // Lyricon 的 Song.id 属于歌词提供器命名空间，不等同于 MediaSession mediaId。
+        // 不能把两者当作同一个运行时标识；本地来源按包名/标题/歌手做确定性匹配。
+        // 例外：Provider 通过元数据显式携带会话 mediaId（小米音乐车载歌词会持续
+        // 污染标题/歌手，mediaId 是唯一逐曲稳定身份），此时两侧都有 mediaId，
+        // 匹配按 包名+mediaId 严格判定，污染不再影响身份判定。
+        mediaId = song.metadata
+            ?.getString(LyricMetadataKeys.SESSION_MEDIA_ID)
+            ?.takeIf(String::isNotBlank),
+        title = song.name.orEmpty(),
+        artist = song.artist.orEmpty(),
+        durationMs = song.duration,
+    )
 
     private fun simplifyAppleSongForDisplay(song: LocalSong): LocalSong {
         if (!isSimplifyTraditionalLyricsEnabled()) return song
@@ -688,7 +704,6 @@ internal val activePlayerListener = object : ActivePlayerListener {
         activeProviderDelayMs = providerInfo?.providerPackageName
             ?.let(::readProviderDelay)
             ?: RootConstants.DEFAULT_HOOK_LYRICON_PROVIDER_DELAY
-        LyriconDataBridge.updateLyricPackage(playerPackageName)
         MediaCardDiagnosticLogger.log(
             stage = "central",
             event = "active_provider_changed_complete",
@@ -763,7 +778,7 @@ internal val activePlayerListener = object : ActivePlayerListener {
         MediaCardDiagnosticLogger.log(
             stage = "central",
             event = "song_callback_complete",
-            details = "incomingId=${MediaCardDiagnosticLogger.sanitize(localSong?.id)},publishedId=${MediaCardDiagnosticLogger.sanitize(LyriconDataBridge.currentSong?.id)},apple=$centralAppleProviderActive,sink=${sink != null}",
+            details = "incomingId=${MediaCardDiagnosticLogger.sanitize(localSong?.id)},publishedId=${MediaCardDiagnosticLogger.sanitize(localSong?.id)},apple=$centralAppleProviderActive,sink=${sink != null}",
         )
     }
 
@@ -774,6 +789,9 @@ internal val activePlayerListener = object : ActivePlayerListener {
             event = "playback_state_callback",
             details = "isPlaying=$isPlaying,blocked=$blocked,activePlayer=${MediaCardDiagnosticLogger.sanitize(activeCentralPlayerPackageName)},provider=${MediaCardDiagnosticLogger.sanitize(activeProviderPackageName)},sink=${sink != null}",
         )
+        // 无条件转发给统一时间轴作播放态提示：部分 app 缓冲期向 MediaSession 上报
+        // 暂停态，app 进程内仍是播放中；提示与门禁无关，由驱动器按包名门控使用。
+        sink?.onSourcePlaybackHint(isPlaying, activeCentralPlayerPackageName)
         if (blocked) {
             MediaCardDiagnosticLogger.log(
                 stage = "central",
@@ -798,10 +816,9 @@ internal val activePlayerListener = object : ActivePlayerListener {
             return
         }
         centralPlaybackPositionWitness.onSinkPlaybackState(isPlaying)
-        sink?.onPlaybackStateChanged(isPlaying)
         MediaCardDiagnosticLogger.log(
             stage = "central",
-            event = "playback_state_forwarded",
+            event = "playback_state_observed",
             details = "isPlaying=$isPlaying",
         )
     }
@@ -852,7 +869,6 @@ internal val activePlayerListener = object : ActivePlayerListener {
                             "provider=$activeProviderPackageName, actualSinkPlaying=$actualPlayback, " +
                             "upstreamPlaying=$upstreamPlayback",
                     )
-                    currentSink.onPlaybackStateChanged(true)
                 }
             }
         }
@@ -949,7 +965,7 @@ internal val activePlayerListener = object : ActivePlayerListener {
             MediaCardDiagnosticLogger.log(
                 stage = "central",
                 event = "seek_forwarded",
-                details = "rawPosition=$position,forwardedPosition=$resolvedPosition,apple=true",
+                details = "rawPosition=$position,forwardedPosition=$resolvedPosition,apple=true,sink=${sink != null}",
                 positionSample = true,
             )
             return
@@ -993,9 +1009,7 @@ internal val activePlayerListener = object : ActivePlayerListener {
         }
         if (!hasActiveCentralPlayer()) return
         if (centralAppleProviderActive && fallbackSongActive) return
-        sink?.onPlainText(
-            if (centralAppleProviderActive) simplifyAppleTextForDisplay(text) else text
-        )
+        diagnostic("忽略来源侧纯文本帧；统一时间轴只接受完整 Song")
     }
 
     // 提供器只负责提供歌词内容；翻译和罗马音是否显示由 HyperLyrics Enhanced 显示端配置决定。

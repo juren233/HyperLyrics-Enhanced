@@ -15,8 +15,10 @@
 package com.juren233.hyperlyricsenhanced.root.utils
 
 import com.juren233.hyperlyricsenhanced.root.utils.RuntimePerfDiagnostics.ThreadSample
+import com.juren233.hyperlyricsenhanced.root.utils.RuntimePerfDiagnostics.classifyFreezeGap
 import com.juren233.hyperlyricsenhanced.root.utils.RuntimePerfDiagnostics.formatTopThreads
 import com.juren233.hyperlyricsenhanced.root.utils.RuntimePerfDiagnostics.parseJiffiesFromStatLine
+import com.juren233.hyperlyricsenhanced.root.utils.RuntimePerfDiagnostics.parseStateFromStatLine
 import com.juren233.hyperlyricsenhanced.root.utils.RuntimePerfDiagnostics.sanitize
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -80,5 +82,50 @@ class RuntimePerfDiagnosticsTest {
     fun `sanitize keeps log tokens single-tokened`() {
         assertEquals("HyperLyrics_Enhanced-Per", sanitize("HyperLyrics Enhanced-PerfDiag"))
         assertEquals("012345678901234567890123", sanitize("012345678901234567890123456789"))
+    }
+
+    @Test
+    fun `gap with uptime nearly full classifies frozen`() {
+        // #34 形态：103s 窗口内设备醒着、进程没跑（29-103s 冻结空窗）。
+        val verdict = classifyFreezeGap(103_000L, 101_000L)
+        assertEquals("frozen", verdict.likely)
+        assertEquals(103_000L, verdict.gapMs)
+        assertEquals(101_000L, verdict.uptimeJumpMs)
+        assertEquals(2_000L, verdict.suspendMs)
+    }
+
+    @Test
+    fun `gap absorbed by deep sleep classifies suspend`() {
+        // 息屏深睡：uptime 暂停，窗口几乎全被 sleep 吸收。
+        assertEquals("suspend", classifyFreezeGap(600_000L, 5_000L).likely)
+    }
+
+    @Test
+    fun `gap with partial uptime classifies mixed`() {
+        assertEquals("mixed", classifyFreezeGap(100_000L, 60_000L).likely)
+    }
+
+    @Test
+    fun `negative or overrange uptime jumps are clamped`() {
+        val negative = classifyFreezeGap(50_000L, -1L)
+        assertEquals(0L, negative.uptimeJumpMs)
+        assertEquals(50_000L, negative.suspendMs)
+        assertEquals("suspend", negative.likely)
+        val overrange = classifyFreezeGap(50_000L, 80_000L)
+        assertEquals(50_000L, overrange.uptimeJumpMs)
+        assertEquals("frozen", overrange.likely)
+    }
+
+    @Test
+    fun `zero window classifies unclear`() {
+        assertEquals("unclear", classifyFreezeGap(0L, 0L).likely)
+    }
+
+    @Test
+    fun `stat line state char parses after comm`() {
+        assertEquals('S', parseStateFromStatLine("1234 (a (b) c) S 1 2 3"))
+        assertEquals('R', parseStateFromStatLine("42 (kworker/0:1) R 1 1"))
+        assertNull(parseStateFromStatLine("1234 (comm)"))
+        assertNull(parseStateFromStatLine(""))
     }
 }

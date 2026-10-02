@@ -89,6 +89,13 @@ jobs:
         if: steps.gate.outputs.skip != 'true'
         run: chmod +x gradlew .github/scripts/resolve-version.sh
 
+      - name: 本地逻辑与静态检查 Unit Tests and Lint
+        if: steps.gate.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          ./gradlew --no-daemon --max-workers=2 \
+            :app:testDebugUnitTest :app:lintDebug :app:lintRelease
+
       - name: 构建 Debug 或 Release Build
         if: steps.gate.outputs.skip != 'true'
         env:
@@ -106,7 +113,7 @@ jobs:
           fi
 
       - name: 校验 Release Provider ABI Verify Release Provider ABI
-        if: steps.gate.outputs.skip != 'true' && steps.gate.outputs.channel == 'stable'
+        if: steps.gate.outputs.skip != 'true' && (steps.gate.outputs.channel == 'stable' || steps.gate.outputs.channel == 'beta')
         run: |
           set -euo pipefail
           RELEASE_APK=$(find app/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' -print -quit)

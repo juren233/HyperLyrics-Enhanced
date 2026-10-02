@@ -59,6 +59,8 @@ internal object IslandWidthHooker {
                 IslandViewHelper.forceLayoutIslandAreasIfDynamicWidth(contentView)
                 lyricWidthCalculationActive = true
                 if (BuildConfig.DEBUG) {
+                    runCatching { IslandOverlapDiagnostics.beforeWidthCalculation(contentView) }
+                        .onFailure { HookLogger.w(TAG, "超级岛重叠前置取证失败: ${it.javaClass.simpleName}") }
                     IslandBackgroundTraceDiagnostics.event(
                         "宽度计算开始",
                         contentView,
@@ -98,6 +100,12 @@ internal object IslandWidthHooker {
                 }.onFailure { HookLogger.e(TAG, "开启平板岛内容锚定失败", it) }
             }
             if (BuildConfig.DEBUG) {
+                if (lyricIslandCalculation) {
+                    hookedContentView?.let { view ->
+                        runCatching { IslandOverlapDiagnostics.afterWidthCalculation(view, result) }
+                            .onFailure { HookLogger.w(TAG, "超级岛重叠宽度取证失败: ${it.javaClass.simpleName}") }
+                    }
+                }
                 IslandBackgroundTraceDiagnostics.event(
                     "宽度计算结束",
                     hookedContentView,
@@ -271,7 +279,8 @@ internal object IslandWidthHooker {
                 }
                 swapped
             }.getOrDefault(result)
-            return IslandDynamicWidthLimiter.apply(result, candidate, chain.args.getOrNull(0), pad = true, helper = chain.thisObject)
+            val limited = IslandDynamicWidthLimiter.apply(result, candidate, chain.args.getOrNull(0), pad = true, helper = chain.thisObject)
+            return IslandFullIslandDynamicWidth.apply(limited, chain.args.getOrNull(0), chain.thisObject, pad = true)
         }
 
         private fun Any.intGetter(suffix: String): Int? = runCatching {
@@ -353,7 +362,8 @@ internal object IslandWidthHooker {
                 }
                 swapped
             }.getOrDefault(result)
-            return IslandDynamicWidthLimiter.apply(result, candidate, chain.args.getOrNull(0), pad = false, helper = chain.thisObject)
+            val limited = IslandDynamicWidthLimiter.apply(result, candidate, chain.args.getOrNull(0), pad = false, helper = chain.thisObject)
+            return IslandFullIslandDynamicWidth.apply(limited, chain.args.getOrNull(0), chain.thisObject, pad = false)
         }
 
         private fun isFlipTiny(helper: Any?): Boolean = runCatching {

@@ -70,6 +70,8 @@
     <string name="title_apple_music_app_display">App Display</string>
     <string name="title_apple_music_volume_balance">Dynamic Dolby Atmos Speaker Boost</string>
     <string name="summary_apple_music_volume_balance">Enable “Sound Check” in Apple Music for better results. System spatial audio is not recommended.</string>
+    <string name="title_apple_music_prevent_network_auto_skip">Don\'t auto-skip on network playback failures</string>
+    <string name="summary_apple_music_prevent_network_auto_skip">Keep the current song and retry automatically until playback resumes</string>
     <string name="title_apple_music_notification_open_full_player">Open Player from Media Notification</string>
     <string name="title_apple_music_simplify_traditional_lyrics">Simplify Traditional Chinese Lyrics</string>
     <string name="title_apple_music_native_online_translation">Fill Translation &amp; Pronunciation Gaps</string>
@@ -164,7 +166,9 @@
     <string name="monet_pink">Pink</string>
     <string name="title_monet">Accent Color</string>
     <string name="title_predictive_back">Predictive Back Gesture</string>
+    <string name="title_swipe_back_gesture">Swipe Back Gesture</string>
     <string name="title_parallel_window_ui">Parallel Window UI</string>
+    <string name="title_top_bar_progressive_blur">Progressive Blur</string>
     <string name="title_floating_nav">Floating Navigation Bar</string>
     <string name="title_exclude_from_recents">Hide from Recents</string>
     <string name="title_hide_app_icon">Hide App Icon</string>
@@ -182,8 +186,9 @@
     <string name="export_all_logs">Export All Logs</string>
 
     <!-- ———————————————————————— HookSettingsPage ———————————————————————— -->
-    <string name="lyric_mode_verbatim">Lyricon Verbatim Lyrics</string>
-    <string name="lyric_mode_separated">Lyricon Separated Lyrics</string>
+    <string name="lyric_mode_single_side">Single-side Scroll</string>
+    <string name="lyric_mode_full_island">Full-Island Scroll</string>
+    <string name="lyric_mode_separated">Half-Split Scroll</string>
     <string name="title_lyric_mode">Lyrics Mode</string>
     <string name="title_lyric_source">Lyrics Source</string>
     <string name="summary_lyric_source_apple_music_builtin">Apple Music uses Lyricon without another module. Lyricon is also recommended for other music apps because built-in plugins simplify setup.</string>
@@ -373,6 +378,13 @@
     <!-- ———————————————————————— LyricAnimationPage ———————————————————————— -->
     <string name="option_anim_none">No Animation</string>
     <string name="option_anim_default">Default</string>
+    <string name="title_switch_anim_rate">Animation Speed</string>
+    <string name="option_switch_anim_rate_swift">Swift</string>
+    <string name="option_switch_anim_rate_moderate">Moderate</string>
+    <string name="option_switch_anim_rate_elegant">Elegant</string>
+    <string name="option_switch_anim_rate_custom">Custom</string>
+    <string name="title_switch_anim_custom_rate">Custom Multiplier</string>
+    <string name="label_switch_anim_custom_rate_range">Multiplier range: 0.1–5.0</string>
     <string name="option_anim_fade">Fade</string>
     <string name="option_anim_fade_up">Fade Up</string>
     <string name="option_anim_fade_down">Fade Down</string>
@@ -404,6 +416,9 @@
     <string name="title_size">Size</string>
     <string name="label_size_range">Range: 8–16</string>
     <string name="title_font_weight">Font Weight</string>
+    <string name="option_font_weight_system">Follow System</string>
+    <string name="option_font_weight_custom">Custom</string>
+    <string name="title_custom_font_weight">Custom Font Weight</string>
     <string name="label_font_weight_range">Range: 100–900</string>
     <string name="title_fading_edge">Fading Edge Length</string>
     <string name="label_fading_edge_range">Range: 0–100</string>
@@ -446,6 +461,9 @@
     <string name="title_translation_only">Translation Only</string>
     <string name="title_swap_translation">Swap Original Lyrics and Translation</string>
     <string name="title_next_lyric_line">Show Next Lyric Line</string>
+    <string name="island_next_line_off">Hidden</string>
+    <string name="island_next_line_second_line">Second Line</string>
+    <string name="island_next_line_right">Right Side</string>
     <string name="summary_next_lyric_line">The next lyric line is hidden while a translation is shown</string>
     <string name="title_aod_main_text_size">Main Lyric Size</string>
     <string name="title_aod_backing_text_size">Backing-Vocal Text Size</string>
@@ -491,6 +509,7 @@
     <string name="option_font_color_cover">Cover Color</string>
     <string name="option_font_color_cover_gradient">Cover Gradient</string>
     <string name="option_font_color_custom">Custom</string>
+    <string name="option_font_color_status_bar">Follow status bar color</string>
     <string name="title_custom_font_color">Custom Color</string>
     <string name="summary_custom_font_color_picker">Adjust color and opacity</string>
     <string name="title_word_motion">Word Lift Animation</string>
@@ -587,6 +606,8 @@
     <string name="title_island_album_cover_whitelist_loading">Loading Apps</string>
     <string name="option_audio_cover_style_hidden">Hide cover</string>
     <string name="title_audio_rhythm">Audio Rhythm</string>
+    <string name="title_island_short_lyric_song_info">Show song info for short lyrics</string>
+    <string name="summary_island_short_lyric_song_info">Long lyrics return to full-island scrolling</string>
     <string name="title_audio_rhythm_cover_color">Audio Rhythm Cover Color</string>
     <string name="option_music_wave_color_mode_off">Off</string>
     <string name="option_music_wave_color_mode_cover">Cover color</string>
@@ -735,12 +756,13 @@
     <string name="title_center_lyric">Lyrics Position</string>
     <string name="title_left_lyric_position">Left-Side Lyrics Position</string>
     <string name="title_right_lyric_position">Right-Side Lyrics Position</string>
+    <string name="summary_lyric_position_non_scrolling">Only applies to non-scrolling lyrics</string>
     <string name="option_lyric_position_default">Default</string>
     <string name="option_lyric_position_center">Center</string>
     <string name="option_lyric_position_right">Right</string>
     <string name="title_center_group_vocals">Center Group Vocals</string>
     <string name="title_adjacent_background_translation">Backing-Vocal Translation on Other Side</string>
-    <string name="summary_adjacent_background_translation">Temporarily shown in Verbatim Lyrics mode when exactly one side displays lyrics</string>
+    <string name="summary_adjacent_background_translation">Temporarily shown in Single-side Scroll mode when exactly one side displays lyrics</string>
     
     <!-- Shizuku Bypass Limits -->
     <string name="title_bypass_focus_limit">Bypass Notification Spotlight Limit</string>

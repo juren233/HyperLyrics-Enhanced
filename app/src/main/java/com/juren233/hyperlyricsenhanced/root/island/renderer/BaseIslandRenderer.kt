@@ -13,13 +13,17 @@ import com.juren233.hyperlyricsenhanced.root.HookEntry
 import com.juren233.hyperlyricsenhanced.root.LyriconDataBridge
 import com.juren233.hyperlyricsenhanced.root.island.IslandAlbumCoverStyleHooker
 import com.juren233.hyperlyricsenhanced.root.island.IslandHostFacade
+import com.juren233.hyperlyricsenhanced.root.island.IslandHostRetirementPolicy
 import com.juren233.hyperlyricsenhanced.root.island.IslandLyricTextInjector
+import com.juren233.hyperlyricsenhanced.root.island.IslandMediaReinstater
 import com.juren233.hyperlyricsenhanced.root.island.IslandMusicWaveColorHooker
 import com.juren233.hyperlyricsenhanced.root.island.IslandProbeUtils
 import com.juren233.hyperlyricsenhanced.root.island.IslandProgressGlowController
+import com.juren233.hyperlyricsenhanced.root.island.IslandReattachAssistant
 import com.juren233.hyperlyricsenhanced.root.island.IslandSlotContentAssembler
 import com.juren233.hyperlyricsenhanced.root.island.IslandSlotRuntimeConfig
 import com.juren233.hyperlyricsenhanced.root.island.IslandViewRegistry
+import com.juren233.hyperlyricsenhanced.root.island.IslandViewRecoveryPolicy
 import com.juren233.hyperlyricsenhanced.root.island.IslandViewHelper
 import com.juren233.hyperlyricsenhanced.root.island.NextSongPreviewPolicy
 import com.juren233.hyperlyricsenhanced.root.utils.DisplayDiagnosticLogger
@@ -43,6 +47,10 @@ object BaseIslandRenderer : IslandRenderer {
     private val pauseRestoreRunnable = Runnable { commitDeferredNativeRestore() }
     private val nextSongPreviewActive = WeakHashMap<ViewGroup, NextSongPreviewState>()
     private val nextSongPreviewFailures = WeakHashMap<ViewGroup, String>()
+
+    // 宿主仍附着但注入锚点丢失时重注入必败；连续失败计数用于区分暂态窗口
+    // （fake/real 过渡、原生重排）与结构性失效，达到阈值才注销并触发重挂。
+    private val injectionRecoveryFailures = WeakHashMap<ViewGroup, Int>()
 
     private data class NextSongPreviewState(
         val style: Int,
@@ -162,8 +170,14 @@ object BaseIslandRenderer : IslandRenderer {
             synchronized(nextSongPreviewFailures) { nextSongPreviewFailures.clear() }
         }
         val activeViews = IslandViewRegistry.snapshotAttached(lyricPkg)
+        if (activeViews.isEmpty() && IslandReattachAssistant.tryReattach(lyricPkg)) {
+            // 重挂后 register() 已安排补发刷新，本次直接返回避免竞态双写。
+            return
+        }
         if (activeViews.isEmpty()) {
             DisplayDiagnosticLogger.log("ISLAND", "skipped", "no_attached_view")
+            // 双播冲突断供窗口：重挂无目标时用最后一次媒体数据驱动原生重建媒体岛。
+            IslandMediaReinstater.reinstateIfEligible(lyricPkg, reason = "no_attached_view")
             return
         }
         val config = IslandSlotRuntimeConfig.from(prefs)
@@ -191,7 +205,7 @@ object BaseIslandRenderer : IslandRenderer {
                 if (refreshWidth || (config.dynamicWidthEnabled && contentChanged)) {
                     IslandHostFacade.triggerSystemRelayout(cv)
                 }
-                val injected = IslandLyricTextInjector.hasInjectedLyricText(cv)
+                val injected = IslandLyricTextInjector.hasInjectedLyricView(cv)
                 DisplayDiagnosticLogger.log(
                     channel = "ISLAND",
                     result = if (injected) "shown" else "skipped",
@@ -235,26 +249,79 @@ object BaseIslandRenderer : IslandRenderer {
         val config = IslandSlotRuntimeConfig.from(prefs)
 
         val activeViews = IslandViewRegistry.snapshotAttached(lyricPkg)
+        if (activeViews.isEmpty() && IslandReattachAssistant.tryReattach(lyricPkg)) {
+            // 重挂后 register() 已安排补发刷新，本次直接返回避免竞态双写。
+            return
+        }
         if (activeViews.isEmpty()) {
             DisplayDiagnosticLogger.log("ISLAND", "skipped", "no_attached_view")
+            // 双播冲突断供窗口：重挂无目标时用最后一次媒体数据驱动原生重建媒体岛。
+            IslandMediaReinstater.reinstateIfEligible(lyricPkg, reason = "no_attached_view")
             return
         }
         activeViews.forEach { (cv, _) ->
                 cv.post {
-                    if (!IslandLyricTextInjector.hasInjectedLyricText(cv)) {
+                    val recoveryAction = IslandViewRecoveryPolicy.decide(
+                        hasRegisteredHost = true,
+                        hasInjectedView = IslandLyricTextInjector.hasInjectedLyricView(cv),
+                    )
+                    var injectionRecovered = false
+                    if (recoveryAction == IslandViewRecoveryPolicy.Action.REINJECT_REGISTERED_HOST) {
+                        val injectionChanged = IslandLyricTextInjector.injectSlots(
+                            cv,
+                            reconfigureExisting = false,
+                            suppressAnimation = true,
+                        )
+                        injectionRecovered = IslandLyricTextInjector.hasInjectedLyricView(cv)
+                        if (!injectionRecovered) {
+                            val consecutiveFailures = (injectionRecoveryFailures[cv] ?: 0) + 1
+                            if (BuildConfig.DEBUG) {
+                                HookLogger.d(
+                                    "IslandRecoveryDiag",
+                                    "注入恢复失败: host=${cv.javaClass.simpleName}@${System.identityHashCode(cv).toString(16)}, " +
+                                        "锚点=${IslandLyricTextInjector.describeAnchorState(cv)}, " +
+                                        "连续失败=$consecutiveFailures/${IslandHostRetirementPolicy.RETIRE_THRESHOLD}",
+                                )
+                            }
+                            if (IslandHostRetirementPolicy.shouldRetire(consecutiveFailures)) {
+                                injectionRecoveryFailures.remove(cv)
+                                IslandViewRegistry.unregister(cv)
+                                val reattached = IslandReattachAssistant.tryReattach(lyricPkg)
+                                HookLogger.i(
+                                    "IslandRecovery",
+                                    "连续注入失败已达阈值，已注销失效宿主并尝试重挂: package=$lyricPkg, " +
+                                        "阈值=${IslandHostRetirementPolicy.RETIRE_THRESHOLD}, 重挂=$reattached, " +
+                                        "剩余注册=${IslandViewRegistry.snapshotAttached(lyricPkg).size}",
+                                )
+                            } else {
+                                injectionRecoveryFailures[cv] = consecutiveFailures
+                            }
+                            DisplayDiagnosticLogger.log(
+                                channel = "ISLAND",
+                                result = "skipped",
+                                reason = "injected_view_recovery_failed",
+                                extra = "targetViews=${activeViews.size}, injectionChanged=$injectionChanged, " +
+                                    "consecutiveFailures=$consecutiveFailures",
+                                dedupeKey = "ISLAND/line",
+                            )
+                            return@post
+                        }
                         DisplayDiagnosticLogger.log(
                             channel = "ISLAND",
-                            result = "skipped",
-                            reason = "injected_view_missing",
-                            extra = "targetViews=${activeViews.size}",
+                            result = "shown",
+                            reason = "injected_view_recovered",
+                            extra = "targetViews=${activeViews.size}, injectionChanged=$injectionChanged",
                             dedupeKey = "ISLAND/line",
                         )
-                        return@post
                     }
                     val contentChanged = updateLyricContentForView(cv, prefs, config)
-                    if (config.dynamicWidthEnabled && contentChanged) {
+                    if (injectionRecovered) {
+                        IslandHostFacade.triggerSystemRelayout(cv)
+                    } else if (config.dynamicWidthEnabled && contentChanged) {
                         IslandHostFacade.triggerLyricContentRelayout(cv)
                     }
+                    // 任意健康路径（重注入成功或视图本就存在）都清零暂态失败计数。
+                    injectionRecoveryFailures.remove(cv)
                     DisplayDiagnosticLogger.log(
                         channel = "ISLAND",
                         result = "shown",
@@ -536,8 +603,18 @@ object BaseIslandRenderer : IslandRenderer {
         config: IslandSlotRuntimeConfig,
         mediaInfo: MediaMetadataHelper.MediaInfo
     ): Boolean {
-        if (isSlotReservedByNextSongPreview(cv, tag)) return false
-        val view = cv.findViewWithTag<View>(tag) ?: return false
+        if (isSlotReservedByNextSongPreview(cv, tag)) {
+            if (BuildConfig.DEBUG) {
+                HookLogger.i("BaseIslandRenderer", "[PreviewEndDiag] updateSlot $tag skipped: reserved")
+            }
+            return false
+        }
+        val view = cv.findViewWithTag<View>(tag) ?: run {
+            if (BuildConfig.DEBUG) {
+                HookLogger.i("BaseIslandRenderer", "[PreviewEndDiag] updateSlot $tag skipped: view not found")
+            }
+            return false
+        }
         val isLeft = tag == IslandProbeUtils.LEFT_TEST_VIEW_TAG
         val adjacentTranslation = IslandSlotContentAssembler.buildAdjacentTranslationLine(
             prefs = prefs,
@@ -566,7 +643,7 @@ object BaseIslandRenderer : IslandRenderer {
         )
     }
 
-    private fun isSlotReservedByNextSongPreview(cv: ViewGroup, tag: String): Boolean {
+    fun isSlotReservedByNextSongPreview(cv: ViewGroup, tag: String): Boolean {
         val state = synchronized(nextSongPreviewActive) {
             nextSongPreviewActive[cv]
         } ?: return false
@@ -621,8 +698,26 @@ object BaseIslandRenderer : IslandRenderer {
             synchronized(nextSongPreviewFailures) { nextSongPreviewFailures.remove(cv) }
             if (previewState == null) return false
             synchronized(nextSongPreviewActive) { nextSongPreviewActive.remove(cv) }
-            updateSlot(cv, IslandProbeUtils.LEFT_TEST_VIEW_TAG, config.leftMode, prefs, config, mediaInfo)
-            updateSlot(cv, IslandProbeUtils.RIGHT_TEST_VIEW_TAG, config.rightMode, prefs, config, mediaInfo)
+            if (BuildConfig.DEBUG) {
+                val leftView = cv.findViewWithTag<View>(IslandProbeUtils.LEFT_TEST_VIEW_TAG)
+                val rightView = cv.findViewWithTag<View>(IslandProbeUtils.RIGHT_TEST_VIEW_TAG)
+                HookLogger.i(
+                    "BaseIslandRenderer",
+                    "[PreviewEndDiag] cv=${System.identityHashCode(cv).toString(16)}, " +
+                        "leftView=${leftView?.let { System.identityHashCode(it).toString(16) }}, " +
+                        "rightView=${rightView?.let { System.identityHashCode(it).toString(16) }}, " +
+                        "leftMode=${config.leftMode}, rightMode=${config.rightMode}, " +
+                        "position=$position, duration=$duration, attached=${cv.isAttachedToWindow}"
+                )
+            }
+            val leftRestored = updateSlot(cv, IslandProbeUtils.LEFT_TEST_VIEW_TAG, config.leftMode, prefs, config, mediaInfo)
+            val rightRestored = updateSlot(cv, IslandProbeUtils.RIGHT_TEST_VIEW_TAG, config.rightMode, prefs, config, mediaInfo)
+            if (BuildConfig.DEBUG) {
+                HookLogger.i(
+                    "BaseIslandRenderer",
+                    "[PreviewEndDiag] restored left=$leftRestored, right=$rightRestored"
+                )
+            }
             HookLogger.i("BaseIslandRenderer", "已结束下首歌曲信息预览")
             return false
         }

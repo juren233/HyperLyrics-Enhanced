@@ -7,6 +7,7 @@
 package io.github.proify.lyricon.amprovider.xposed
 
 import android.app.Application
+import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.root.utils.RuntimePerfDiagnostics
 import io.github.libxposed.api.XposedModule
 import java.util.concurrent.atomic.AtomicBoolean
@@ -109,6 +110,7 @@ internal object AppleMusicProviderOrchestrator {
             nativeLibraryDir = module.getModuleApplicationInfo().nativeLibraryDir,
         )
         runtime.attach(app, hookResolver)
+        if (BuildConfig.DEBUG) AppleActivityRestartDiagnostics.install(runtime)
         ProviderLogger.info(
             "Apple Music Hook 版本档案已加载: app=${appleMusicVersion.displayName}, " +
                 "profile=${hookResolver.profile?.id ?: "compatibility-fallback"}"
@@ -146,6 +148,7 @@ internal object AppleMusicProviderOrchestrator {
             lyricsPlayback.playbackHooks.initializeScreenStateMonitor()
             lyricsPlayback.initializeProvider()
             startHooks()
+            if (BuildConfig.DEBUG) AppleActivityRestartDiagnostics.stage("module_initialized")
             ProviderLogger.info("Apple Music 内置歌词提供器初始化完成")
         }.onFailure {
             initialized.set(false)

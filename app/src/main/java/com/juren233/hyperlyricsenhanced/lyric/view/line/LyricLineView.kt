@@ -36,7 +36,7 @@ import kotlin.math.abs
 import kotlin.math.ceil
 
 open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
-    View(context, attrs), UpdatableColor, LyricTextPaintOwner {
+    View(context, attrs), UpdatableColor, LyricTextPaintOwner, PositionUpdateConsumer {
 
     init {
         isHorizontalFadingEdgeEnabled = true
@@ -49,6 +49,18 @@ open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
     private var _model: LyricModel = emptyLyricModel()
 
     private val interludeDotsRenderer = InterludeDotsRenderer()
+
+    /**
+     * 分离歌词右槽：仍绑定整条间奏指示器行（保持测量宽度与状态机一致），
+     * 但不重复绘制第二组指示点——整岛只保留左槽（条带起点）的一组，
+     * 与全岛歌词一致。
+     */
+    var hideInterludeIndicator: Boolean = false
+        set(value) {
+            if (field == value) return
+            field = value
+            invalidate()
+        }
 
     val lineWidth: Float
         get() = if (interludeDotsRenderer.isIndicator(_model)) {
@@ -80,6 +92,14 @@ open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
     val isPlaying: Boolean get() = activeRenderer.isPlaying
     val isFinished: Boolean get() = activeRenderer.isFinished
     val isStarted: Boolean get() = activeRenderer.isStarted
+
+    /** Read-only, Debug-only call site: correlate drawn text with the island viewport. */
+    internal fun overlapDiagnosticState(): String =
+        "text=${_model.text.length}/${_model.text.hashCode()} plain=$isPlainText " +
+            "lineW=$lineWidth scrollW=$scrollWidth overflow=$isOverflow " +
+            "offset=${lineState.scrollOffset} progress=${scrollRenderer.scrollProgress} " +
+            "unlocked=$scrollUnlocked started=$scrollStarted renderer=$isStarted/$isPlaying/$isFinished " +
+            "static=$isStaticPreview align=$alignRight center=$centerIfPossible textX=${currentTextStartX()}"
 
     var isScrollOnly: Boolean = false
         set(value) {
@@ -171,11 +191,7 @@ open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
     private var narrowTypeface: Typeface? = null
 
     private val currentTypefaceSelector: ((Char) -> Typeface)?
-        get() {
-            val narrow = narrowTypeface ?: return null
-            val base = baseTypeface
-            return { ch -> if (ch.isCjk()) base else narrow }
-        }
+        get() = MixedTypefaceText.typefaceSelector(baseTypeface, narrowTypeface)
 
     private var activeRenderer: LineRenderer = scrollRenderer
 
@@ -213,13 +229,23 @@ open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
         centerIfPossibleOverride: Boolean? = null,
         alignRightOverride: Boolean? = null,
         availableWidthOverride: Float? = null
-    ): Float {
-        // 必须与 LyricModel.updateSizes 同管线测宽：混排窄体开启时英数走窄字体
-        // （≈0.8×宽），朴素 measureText 全按基础字体会高估 ~25%，提升动画的
-        // 横向目标被算小/误判溢出锚到左缘，落地按模型真宽居中即视觉跳变。
+    ): Float = resolveTextStartX(
+        measureLineTextWidth(text),
+        isAlignedRight,
+        centerIfPossibleOverride,
+        alignRightOverride,
+        availableWidthOverride
+    )
+
+    /**
+     * 与 LyricModel.updateSizes 同管线测宽：混排窄体开启时英数走窄字体
+     * （≈0.8×宽），朴素 measureText 全按基础字体会高估 ~25%。供提升动画
+     * 计算落定文本锚点（中点/右缘）使用。
+     */
+    fun measureLineTextWidth(text: String?): Float {
         val raw = text.orEmpty()
         val selector = currentTypefaceSelector
-        val measuredWidth = if (selector != null) {
+        return if (selector != null) {
             MixedTypefaceText.measureText(textPaint, raw, selector)
         } else {
             val measureWidth = textPaint.measureText(raw)
@@ -227,13 +253,6 @@ open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
             textPaint.getTextBounds(raw, 0, raw.length, bounds)
             if (bounds.right > measureWidth) bounds.right.toFloat() else measureWidth
         }
-        return resolveTextStartX(
-            measuredWidth,
-            isAlignedRight,
-            centerIfPossibleOverride,
-            alignRightOverride,
-            availableWidthOverride
-        )
     }
 
     fun setTextSize(size: Float) {
@@ -324,6 +343,12 @@ open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
      * 替换前像素级静止；新内容落地后由正常进度 tick 恢复。
      */
     private var contentSwitchPaused = false
+    private var layoutRolePaused = false
+
+    internal fun setLayoutRolePaused(paused: Boolean) {
+        layoutRolePaused = paused
+        if (paused) animator.stop() else resumePlaybackAnimation()
+    }
     private val switchTrace = if (BuildConfig.DEBUG) LyricSwitchTrace(this) else null
 
     private fun traceSwitch(event: String, dumpHistory: Boolean = false) {
@@ -350,7 +375,7 @@ open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
     }
 
     fun seekTo(posMs: Long) {
-        if (contentSwitchPaused || isStaticPreview) return
+        if (contentSwitchPaused || layoutRolePaused || isStaticPreview) return
         if (isInterludeIndicator) {
             interludeDotsRenderer.updatePosition(posMs)
             invalidate()
@@ -370,7 +395,7 @@ open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
     }
 
     fun updatePosition(posMs: Long) {
-        if (contentSwitchPaused || isStaticPreview) return
+        if (contentSwitchPaused || layoutRolePaused || isStaticPreview) return
         if (isInterludeIndicator) {
             interludeDotsRenderer.updatePosition(posMs)
             if (playbackActive) postInvalidateOnAnimation() else invalidate()
@@ -413,7 +438,7 @@ open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
     }
 
     private fun resumePlaybackAnimation() {
-        if (contentSwitchPaused) {
+        if (contentSwitchPaused || layoutRolePaused) {
             traceSwitch("resume_blocked_while_switch_paused")
             return
         }
@@ -569,16 +594,18 @@ open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
 
     override fun onDraw(canvas: Canvas) {
         if (interludeDotsRenderer.isIndicator(_model)) {
-            interludeDotsRenderer.draw(
-                canvas,
-                _model,
-                textPaint,
-                scrollWidth,
-                measuredHeight,
-                centerIfPossible,
-                alignRight
-            )
-            if (playbackActive && !isStaticPreview && isShown) postInvalidateOnAnimation()
+            if (!hideInterludeIndicator) {
+                interludeDotsRenderer.draw(
+                    canvas,
+                    _model,
+                    textPaint,
+                    scrollWidth,
+                    measuredHeight,
+                    centerIfPossible,
+                    alignRight
+                )
+                if (playbackActive && !isStaticPreview && isShown) postInvalidateOnAnimation()
+            }
         } else {
             drawShadowAndContent(canvas, scrollWidth)
         }
@@ -606,6 +633,51 @@ open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
 
     internal fun currentFontSignature(): Int =
         31 * System.identityHashCode(baseTypeface) + System.identityHashCode(narrowTypeface)
+
+    /** Independent-row endpoint for the same glyph morph renderer used by the full island. */
+    internal fun layoutRoleSnapshot(incoming: LyricLine? = null): SpaceGatePromotionSnapshot? {
+        val model = incoming?.normalize()?.createModel()?.apply {
+            updateSizes(textPaint, currentTypefaceSelector)
+        } ?: _model
+        if (interludeDotsRenderer.isIndicator(model)) return null
+        val text = if (model.isPlainText) model.text else model.wordText
+        if (text.isEmpty()) return null
+        val widths = FloatArray(text.length)
+        if (model.isPlainText) {
+            val selector = currentTypefaceSelector
+            if (selector != null) MixedTypefaceText.getTextWidths(textPaint, text, selector, widths)
+            else textPaint.getTextWidths(text, widths)
+        } else {
+            var filled = 0
+            for (word in model.words) {
+                if (filled + word.charWidths.size > widths.size) return null
+                word.charWidths.copyInto(widths, filled)
+                filled += word.charWidths.size
+            }
+            if (filled != widths.size) return null
+        }
+        val units = SeamOcclusionLayout.build(text, widths) ?: return null
+        val fm = textPaint.fontMetrics
+        return SpaceGatePromotionSnapshot(
+            text = text,
+            geometry = SpaceGatePromotionGeometry.endpoint(
+                units, model.width, scrollWidth.toFloat(), 0f,
+                model.isAlignedRight, centerIfPossible, alignRight,
+                scrollOffset = if (incoming == null) lineState.scrollOffset else 0f,
+            ),
+            paint = TextPaint(textPaint).apply {
+                color = backgroundColors.firstOrNull() ?: syncRenderer.bgPaint.color
+                shader = if (backgroundColors.size > 1) LinearGradient(
+                    0f, 0f, model.width.coerceAtLeast(1f), 0f,
+                    backgroundColors, null, Shader.TileMode.CLAMP,
+                ) else null
+            },
+            typefaceSelector = currentTypefaceSelector,
+            baseline = measuredHeight / 2f - (fm.descent + fm.ascent) / 2f,
+            fadingEdgeLength = horizontalFadingEdgeLength.toFloat(),
+            fontSignature = currentFontSignature(),
+        )
+    }
 
     override fun getLeftFadingEdgeStrength(): Float {
         if (lineWidth <= width || horizontalFadingEdgeLength <= 0) return 0f
@@ -718,7 +790,18 @@ open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
         }
     }
 
+    override val needsFrequentPositionUpdates: Boolean
+        get() = isAttachedToWindow && isShown && playbackActive &&
+            !isStaticPreview && !contentSwitchPaused && !layoutRolePaused && isWordSync &&
+            !syncRenderer.isFinished && !(syncRenderer.isScrollOnly && !isOverflow)
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        PositionUpdateDemand.active.attach(this)
+    }
+
     override fun onDetachedFromWindow() {
+        PositionUpdateDemand.active.detach(this)
         super.onDetachedFromWindow()
         MarqueeDiag.i(this, "detached") {
             "reset 会清空 unlocked/started/宽度基线：overflow=$isOverflow"
@@ -727,6 +810,7 @@ open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
     }
 
     private fun startScrolling() {
+        if (layoutRolePaused) return
         // Do not latch before the overflow check: with dynamic island width the first
         // requestScroll can run before the final measured width exists. Latching there
         // permanently blocked scrolling even after the text really overflowed, so
@@ -752,6 +836,7 @@ open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
         scrollStarted = true
         lineState.reset()
         post {
+            if (layoutRolePaused) return@post
             scrollRenderer.update(_model, lineState, 0, scrollWidth, measuredHeight)
             animator.stop()
             animator.startIfNeeded()
@@ -825,7 +910,7 @@ open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
         val isFrameLoopRunning: Boolean get() = running
 
         fun startIfNeeded() {
-            if (playbackActive && !running && isAttachedToWindow && isShown) {
+            if (playbackActive && !layoutRolePaused && !running && isAttachedToWindow && isShown) {
                 running = true
                 lastReportedFinished = false
                 lastFrameNanos = 0L
@@ -840,7 +925,7 @@ open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
         }
 
         override fun doFrame(frameTimeNanos: Long) {
-            if (!running || !playbackActive || !isAttachedToWindow || !isShown) {
+            if (!running || !playbackActive || layoutRolePaused || !isAttachedToWindow || !isShown) {
                 running = false
                 return
             }
@@ -870,17 +955,4 @@ open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
             }
         }
     }
-}
-
-private fun Char.isCjk(): Boolean {
-    val block = Character.UnicodeBlock.of(this)
-    return block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS ||
-        block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_A ||
-        block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_B ||
-        block == Character.UnicodeBlock.CJK_COMPATIBILITY_IDEOGRAPHS ||
-        block == Character.UnicodeBlock.HIRAGANA ||
-        block == Character.UnicodeBlock.KATAKANA ||
-        block == Character.UnicodeBlock.HANGUL_SYLLABLES ||
-        block == Character.UnicodeBlock.HANGUL_JAMO ||
-        block == Character.UnicodeBlock.HANGUL_COMPATIBILITY_JAMO
 }

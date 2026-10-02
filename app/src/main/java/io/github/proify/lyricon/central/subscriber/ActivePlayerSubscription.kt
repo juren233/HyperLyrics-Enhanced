@@ -14,6 +14,7 @@ import android.util.Log
 import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import io.github.proify.lyricon.central.json
+import io.github.proify.lyricon.central.ProviderFlowDiagnostics
 import io.github.proify.lyricon.central.provider.player.ActivePlayerListener
 import io.github.proify.lyricon.lyric.model.Song
 import io.github.proify.lyricon.provider.ProviderInfo
@@ -60,7 +61,15 @@ internal class ActivePlayerSubscription(
 
     override fun onSongChanged(song: Song?) {
         val bytes = song?.let { json.encodeToString(it).toByteArray() } ?: byteArrayOf()
+        ProviderFlowDiagnostics.log("subscriber_song_delivery") {
+            "subscription=${ProviderFlowDiagnostics.id(this)}, subscriber=$subscriberPackageName, " +
+                "subscriberProcess=$subscriberProcessName, remote=${ProviderFlowDiagnostics.id(remoteListener?.asBinder())}, " +
+                "songId=${song?.id}, lyrics=${song?.lyrics?.size ?: 0}, bytes=${bytes.size}"
+        }
         remoteListener?.onSongChanged(bytes)
+        ProviderFlowDiagnostics.log("subscriber_song_returned") {
+            "subscription=${ProviderFlowDiagnostics.id(this)}, songId=${song?.id}"
+        }
     }
 
     override fun onPlaybackStateChanged(isPlaying: Boolean) {

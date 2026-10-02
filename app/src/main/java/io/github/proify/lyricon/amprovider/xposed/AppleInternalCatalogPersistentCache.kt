@@ -246,9 +246,14 @@ internal fun AppleInternalCatalogResolver.resolveCachedOriginalEntity(
             mediaId = normalizedId,
             lookupIds = lookupIds,
         ),
+        accept = { alias -> isAcceptableOriginalAlias(alias, alias.language) },
         onResult = { hit ->
-            val validAlias = hit?.alias?.takeIf {
-                isAcceptableOriginalAlias(it, canonicalOriginalLanguage(it.language))
+            val validAlias = hit?.alias
+            if (BuildConfig.DEBUG) {
+                ProviderLogger.info(
+                    "Apple 原名实体缓存读取: id=$normalizedId, entityType=$entityType, " +
+                        "key=${hit?.key}, language=${validAlias?.language}, hit=${hit != null}"
+                )
             }
             if (validAlias != null && hit.key != directKey) {
                 // Promote compatibility/alternate-ID hits so subsequent home builders use the

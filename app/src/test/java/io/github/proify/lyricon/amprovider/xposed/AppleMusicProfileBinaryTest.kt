@@ -7,6 +7,8 @@ package io.github.proify.lyricon.amprovider.xposed
 import java.io.File
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -83,6 +85,33 @@ class AppleMusicProfileBinaryTest {
             )
             val corrupted = File.createTempFile("apple-stale-settings-", ".json")
             try {
+                // Both classes exist in DEX: reject the unregistered activity specifically.
+                val launchPoint = "APPLE_MAIN_CONTENT_ACTIVITY"
+                val legacyActivity = buildJsonObject {
+                    json.jsonObject.forEach { (key, value) ->
+                        if (key != "hookPoints") put(key, value) else put(key, buildJsonObject {
+                            value.jsonObject.forEach { (point, targets) ->
+                                if (point != launchPoint) put(point, targets) else put(point, buildJsonArray {
+                                    targets.jsonArray.forEach { target -> add(buildJsonObject {
+                                        target.jsonObject.forEach { (member, field) ->
+                                            put(member, if (member == "className")
+                                                JsonPrimitive("com.apple.android.music.common.MainContentActivity") else field)
+                                        }
+                                    }) }
+                                })
+                            }
+                        })
+                    }
+                }
+                corrupted.writeText(legacyActivity.toString())
+                val legacyCheck = ProcessBuilder(
+                    "python3", File(root, "scripts/verify_apple_music_profile_export.py").absolutePath,
+                    "--apk", requireNotNull(apk), "--profiles-json", corrupted.absolutePath,
+                    "--profile-id", AppleMusicHookProfiles.profileFor(version)!!.id,
+                ).redirectErrorStream(true).start()
+                val legacyOutput = legacyCheck.inputStream.bufferedReader().use { it.readText() }
+                assertEquals(legacyOutput, 1, legacyCheck.waitFor())
+                assertTrue(legacyOutput, legacyOutput.contains("not a registered Activity in AndroidManifest.xml"))
                 for ((member, oldName, expectedError) in mutations) {
                     val currentName = AppleMusicHookPoint.entries.asSequence()
                         .flatMap { AppleMusicHookProfiles.exactTargets(version, it).asSequence() }

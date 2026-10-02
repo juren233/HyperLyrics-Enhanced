@@ -905,4 +905,68 @@ class OnlineTranslationMatcherTest {
         assertNull(result.song.lyrics?.single()?.translation)
         assertEquals("Kimi no na wa", result.song.lyrics?.single()?.roma)
     }
+
+    @Test
+    fun `untimed native text matches online lines regardless of candidate timestamps`() {
+        val base = Song(
+            lyrics = listOf(
+                RichLyricLine(text = "ドラマみたい"),
+                RichLyricLine(text = "君のまま"),
+            )
+        )
+
+        val result = OnlineTranslationMatcher.matchUntimed(
+            base,
+            listOf(
+                LrcLine(startTimeMs = 180_000L, content = "ドラマみたい"),
+                LrcLine(startTimeMs = 200_000L, content = "君のまま"),
+            )
+        )
+
+        assertEquals(2, result.matchedCount)
+        assertEquals(2, result.lineMatchScores.size)
+        // 比对不搬运内容，原生歌词对象保持原样
+        assertNull(result.song.lyrics?.first()?.translation)
+    }
+
+    @Test
+    fun `untimed overlap counts plain text candidates without translations`() {
+        val base = Song(lyrics = listOf(RichLyricLine(text = "ドラマみたい")))
+
+        val result = OnlineTranslationMatcher.matchUntimed(
+            base,
+            listOf(LrcLine(startTimeMs = 10_000L, content = "ドラマみたい"))
+        )
+
+        assertEquals(1, result.matchedCount)
+        assertEquals(1.0, result.averageMatchScore, 0.001)
+    }
+
+    @Test
+    fun `untimed overlap rejects same-title candidate with different text`() {
+        val base = Song(lyrics = listOf(RichLyricLine(text = "ドラマみたい")))
+
+        val result = OnlineTranslationMatcher.matchUntimed(
+            base,
+            listOf(LrcLine(startTimeMs = 10_000L, content = "Drama parties tonight"))
+        )
+
+        assertEquals(0, result.matchedCount)
+        assertEquals(0.0, result.averageMatchScore, 0.001)
+    }
+
+    @Test
+    fun `untimed overlap only counts lines actually present in the candidate`() {
+        val base = Song(
+            lyrics = (1..8).map { RichLyricLine(text = "ネイティブ行$it") } +
+                (9..10).map { RichLyricLine(text = "未收录行$it") }
+        )
+
+        val result = OnlineTranslationMatcher.matchUntimed(
+            base,
+            (1..8).map { LrcLine(startTimeMs = it * 20_000L, content = "ネイティブ行$it") }
+        )
+
+        assertEquals(8, result.matchedCount)
+    }
 }

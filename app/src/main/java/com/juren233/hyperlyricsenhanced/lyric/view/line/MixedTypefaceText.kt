@@ -11,6 +11,11 @@ import android.graphics.Typeface
  */
 internal object MixedTypefaceText {
 
+    fun typefaceSelector(base: Typeface, narrow: Typeface?): ((Char) -> Typeface)? {
+        narrow ?: return null
+        return { ch -> if (ch.isCjk()) base else narrow }
+    }
+
     fun measureText(
         paint: Paint,
         text: String,
@@ -100,5 +105,18 @@ internal object MixedTypefaceText {
         } finally {
             paint.typeface = original
         }
+    }
+
+    private fun Char.isCjk(): Boolean {
+        val block = Character.UnicodeBlock.of(this)
+        return block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS ||
+            block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_A ||
+            block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_B ||
+            block == Character.UnicodeBlock.CJK_COMPATIBILITY_IDEOGRAPHS ||
+            block == Character.UnicodeBlock.HIRAGANA ||
+            block == Character.UnicodeBlock.KATAKANA ||
+            block == Character.UnicodeBlock.HANGUL_SYLLABLES ||
+            block == Character.UnicodeBlock.HANGUL_JAMO ||
+            block == Character.UnicodeBlock.HANGUL_COMPATIBILITY_JAMO
     }
 }

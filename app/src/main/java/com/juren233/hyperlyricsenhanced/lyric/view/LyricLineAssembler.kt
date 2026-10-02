@@ -15,6 +15,10 @@ import com.juren233.hyperlyricsenhanced.lyric.model.lyricMetadataOf
 internal const val METADATA_NEXT_LINE_PREVIEW = "nextLinePreview"
 internal const val METADATA_NEXT_LINE_PREVIEW_ALIGNED_RIGHT = "nextLinePreviewAlignedRight"
 internal const val METADATA_NEXT_LINE_PREVIEW_CENTERED = "nextLinePreviewCentered"
+internal const val METADATA_NEXT_LINE_RIGHT_TEXT = "nextLineRightText"
+
+internal fun shouldHandoffRightPreview(previewText: String?, incomingText: String?, lineAdvanced: Boolean): Boolean =
+    lineAdvanced && !previewText.isNullOrBlank() && previewText == incomingText
 
 internal fun shouldPromoteNextLinePreview(
     wasPreview: Boolean,
@@ -35,6 +39,12 @@ internal fun hasLyricLineAdvanced(
         previousLine.end != targetLine.end ||
         previousLine.duration != targetLine.duration
     )
+
+internal fun shouldFinishRunningPromotionBeforeApplying(
+    promotionRunning: Boolean,
+    promotedLine: IRichLyricLine?,
+    incomingLine: IRichLyricLine?
+): Boolean = promotionRunning && hasLyricLineAdvanced(promotedLine, incomingLine)
 
 internal fun canAnimateNextLinePromotion(
     wasPreview: Boolean,
@@ -64,6 +74,7 @@ internal class LyricLineAssembler(
     private var hideSecondaryContent: Boolean = false,
     private var enableRelativeProgress: Boolean = false,
     private var enableRelativeHighlight: Boolean = false,
+    private var secondaryTextUnitProgress: Boolean = false,
 ) {
     private val wordBuilder = RelativeWordBuilder()
 
@@ -79,6 +90,10 @@ internal class LyricLineAssembler(
         this.hideSecondaryContent = hideSecondaryContent
         this.enableRelativeProgress = enableRelativeProgress
         this.enableRelativeHighlight = enableRelativeHighlight
+    }
+
+    fun setSecondaryTextUnitProgress(enabled: Boolean) {
+        secondaryTextUnitProgress = enabled
     }
 
     fun updateFlags(
@@ -102,6 +117,20 @@ internal class LyricLineAssembler(
     }
 
     data class MainResult(val line: LyricLine, val isScrollOnly: Boolean)
+
+    /** Use the same row selection as binding, with each row's own drawing metrics. */
+    fun measureVisibleContentWidth(
+        source: IRichLyricLine,
+        measureMain: (LyricLine) -> Int,
+        measureSecondary: (LyricLine) -> Int,
+    ): Int {
+        val main = buildMain(source)
+        val secondary = buildSecondary(source)
+        return maxOf(
+            measureMain(main.line),
+            if (secondary.alwaysShow) measureSecondary(secondary.line) else 0,
+        )
+    }
 
     fun buildMain(source: IRichLyricLine?): MainResult {
         if (source == null) return MainResult(LyricLine(), false)
@@ -173,22 +202,47 @@ internal class LyricLineAssembler(
                         words = emptyList()
                         metadata = lyricMetadataOf(METADATA_NEXT_LINE_PREVIEW to "true")
                     } else {
-                        words = wordBuilder.build(source, source.secondary, source.secondaryWords)
+                        words = if (secondaryTextUnitProgress) {
+                            wordBuilder.buildByTextUnit(source, source.secondary, source.secondaryWords)
+                        } else {
+                            wordBuilder.build(source, source.secondary, source.secondaryWords)
+                        }
                         generated = words !== source.secondaryWords
                     }
                 }
                 effectiveSecondary == SecondaryChoice.Translation -> {
                     text = source.translation
-                    words = wordBuilder.build(source, source.translation, source.translationWords)
+                    words = if (secondaryTextUnitProgress) {
+                        wordBuilder.buildByTextUnit(source, source.translation, source.translationWords)
+                    } else {
+                        wordBuilder.build(source, source.translation, source.translationWords)
+                    }
                     metadata = lyricMetadataOf("translation" to "true")
                     generated = words !== source.translationWords
                 }
                 effectiveSecondary == SecondaryChoice.Roma -> {
                     text = source.roma
-                    words = wordBuilder.build(source, source.roma, null)
+                    words = if (secondaryTextUnitProgress) {
+                        wordBuilder.buildByTextUnit(source, source.roma, null)
+                    } else {
+                        wordBuilder.build(source, source.roma, null)
+                    }
                     metadata = lyricMetadataOf("roma" to "true")
                     generated = true
                 }
+            }
+        }
+
+        // 分离后的主行时间窗不能截断有独立 timing 的伴唱/翻译，否则在词间隙
+        // position >= line.end 会被渲染器判为整行完成。无 timing 的内容仍由
+        // wordBuilder 按主行半句窗口生成；预览没有 words，保留静态预览语义。
+        line.words?.takeIf { it.isNotEmpty() }?.let { words ->
+            val begin = words.minOf { it.begin }
+            val end = words.maxOf { it.end }
+            if (end > begin) {
+                line.begin = begin
+                line.end = end
+                line.duration = end - begin
             }
         }
 

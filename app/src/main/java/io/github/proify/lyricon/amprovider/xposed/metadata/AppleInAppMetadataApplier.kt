@@ -108,6 +108,7 @@ internal class AppleInAppMetadataApplier(
         }
         val libraryComposeStates =
             if (forceRebind) librarySurfaceHooks.refreshComposeStates(mediaId, alias) else 0
+        if (forceRebind) artistSurfaceHooks.refreshComposeMetadata(mediaId, alias)
         val dataBindingTargets =
             if (forceRebind) dataBindingHooks.refreshDataBindings(mediaId, alias) else 0
         val listenNowDataBindingTargets =

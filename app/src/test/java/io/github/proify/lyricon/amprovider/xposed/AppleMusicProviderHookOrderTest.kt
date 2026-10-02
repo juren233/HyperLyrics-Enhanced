@@ -75,6 +75,7 @@ class AppleMusicProviderHookOrderTest {
 
     private companion object {
         val PROTECTED_HOOK_ORDER = listOf(
+            "hookActivityThemeInitialization",
             "hookMetadataSurfaceLifecycle",
             "hookTranslationPreference",
             "hookMediaApiLocalization",
@@ -98,6 +99,7 @@ class AppleMusicProviderHookOrderTest {
             "hookVisibleMetadataDiagnostics",
             "hookInAppDataBindingRefresh",
             "hookInAppListenNowMetadataBinding",
+            "hookBrowseSurfaceMetadata",
             "hookRecyclerViewCentralBinding",
             "hookInAppMetadata",
             "hookInAppPlaybackItemConversion",

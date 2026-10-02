@@ -133,6 +133,15 @@ internal fun LyriconSource.handleAppleSong(incomingSong: LocalSong?) {
     }
     val originalMetadataChanged = sameTrack &&
         AppleOnlineTranslationRequestPolicy.originalMetadataChanged(previousSong, song)
+    val untimedNativeLyrics = hasUntimedAppleNativeLyrics(song)
+    if (sameTrack && untimedNativeLyrics && !originalMetadataChanged &&
+        (fallbackSongActive || appleFallbackRequest.snapshot().pending)
+    ) {
+        refreshRetainedAppleMetadata(song)
+        publication.acceptAppleInput(song, hasAppleNativeLyrics(song))
+        debug("Apple Music 无时间轴原生歌词保留在线检索或岛端结果: id=${song?.id}")
+        return
+    }
     val repeatedEmptySong = sameTrack && song != null && !originalMetadataChanged &&
         song.lyrics.isNullOrEmpty() &&
         (fallbackSongActive || appleFallbackRequest.snapshot().pending)
@@ -149,7 +158,7 @@ internal fun LyriconSource.handleAppleSong(incomingSong: LocalSong?) {
         sameTrack = sameTrack,
         authoritativeNativeTransition = authoritativeNativeTransition,
         hasLyrics = !song?.lyrics.isNullOrEmpty(),
-        needsEnrichment = needsOnlineEnrichment(song),
+        needsEnrichment = !untimedNativeLyrics && needsOnlineEnrichment(song),
         originalMetadataChanged = originalMetadataChanged,
         enrichmentRunning =
             onlineTranslationRunning || onlineTranslationResultReady || onlineMatchedTranslationActive,
@@ -206,7 +215,8 @@ internal fun LyriconSource.handleAppleSong(incomingSong: LocalSong?) {
     if (
         song != null &&
         !isMissingLyricsSupplement(song) &&
-        isLunaBeatWordLyricsEnabled()
+        isLunaBeatWordLyricsEnabled() &&
+        !untimedNativeLyrics
     ) {
         scheduleFallback(
             baseSong = song,
@@ -219,12 +229,13 @@ internal fun LyriconSource.handleAppleSong(incomingSong: LocalSong?) {
         needsMissingLyricsSourceRecovery(song) &&
         (
             isOnlineTranslationEnabledFor(LyriconSource.APPLE_MUSIC_PACKAGE) ||
-                isFillMissingLyricsEnabled()
+                isFillMissingLyricsEnabled() || untimedNativeLyrics
             )
     ) {
         HookLogger.i(
             LyriconSource.TAG,
-            "Apple Music 原生歌词未返回，立即预取在线候选: title=${song.name}"
+            "Apple Music 缺少可用原生时间轴，立即预取在线候选: " +
+                "title=${song.name}, untimedNative=$untimedNativeLyrics"
         )
         // 候选检索可以与 Apple 原生请求并行；Apple 进程内的 takeover gate
         // 仍会在原生状态未确认前禁止呈现，因此这里不再额外等待 5 秒。
@@ -238,6 +249,7 @@ internal fun LyriconSource.handleAppleSong(incomingSong: LocalSong?) {
             confirmedNativeLyrics = hasAppleNativeLyrics(song),
         ) &&
         incomingNeedsEnrichment &&
+        !untimedNativeLyrics &&
         isAppleTranslationEnrichmentEnabled()
     ) {
         HookLogger.i(

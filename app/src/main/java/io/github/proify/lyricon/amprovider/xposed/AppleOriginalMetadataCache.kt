@@ -6,6 +6,7 @@ import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import android.os.Handler
+import com.juren233.hyperlyricsenhanced.BuildConfig
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
@@ -16,7 +17,7 @@ internal class AppleOriginalMetadataCache(
 ) {
     private val helper = DatabaseHelper(context.applicationContext)
     private val artistRegionPreferences = context.applicationContext.getSharedPreferences(
-        ARTIST_REGION_PREFERENCES,
+        ORIGINAL_ARTIST_REGION_PREFERENCES,
         Context.MODE_PRIVATE,
     )
     private val artistRegionLock = Any()
@@ -92,13 +93,11 @@ internal class AppleOriginalMetadataCache(
             onResult(null)
             return
         }
-        synchronized(memoryCache) {
-            normalizedKeys.firstNotNullOfOrNull { key ->
-                memoryCache[key]
-                    ?.takeIf(accept)
-                    ?.let { alias -> CacheHit(key, alias) }
-            }
-        }?.let { hit ->
+        val cached = synchronized(memoryCache) {
+            validateOriginalCacheEntries(normalizedKeys, memoryCache, accept)
+        }
+        cached.rejected.forEach(::discardRejected)
+        cached.hit?.let { hit ->
             onResult(hit)
             return
         }
@@ -121,7 +120,11 @@ internal class AppleOriginalMetadataCache(
     fun cached(key: String): Alias? {
         val normalizedKey = key.trim()
         if (!enabled || normalizedKey.isEmpty()) return null
-        return synchronized(memoryCache) { memoryCache[normalizedKey] }
+        val result = synchronized(memoryCache) {
+            validateOriginalCacheEntries(listOf(normalizedKey), memoryCache) { true }
+        }
+        result.rejected.forEach(::discardRejected)
+        return result.hit?.alias
     }
 
     fun warmRecentAsync(onResult: (Int?) -> Unit) {
@@ -203,6 +206,33 @@ internal class AppleOriginalMetadataCache(
         }
     }
 
+    private fun discardRejected(rejected: CacheHit) {
+        synchronized(memoryCache) {
+            removeOriginalAliasIfUnchanged(memoryCache, rejected)
+        }
+        executor.execute {
+            runCatching {
+                // Compare all stored fields as well as the key. A newer successful query may
+                // have replaced the row while this invalidation was waiting on the executor.
+                val removed = helper.writableDatabase.delete(
+                    TABLE_NAME,
+                    "$COLUMN_KEY = ? AND $COLUMN_TITLE = ? AND $COLUMN_ARTIST = ? " +
+                        "AND $COLUMN_ALBUM = ? AND $COLUMN_LANGUAGE = ?",
+                    arrayOf(
+                        rejected.key, rejected.alias.title, rejected.alias.artist,
+                        rejected.alias.album, rejected.alias.language,
+                    ),
+                )
+                if (BuildConfig.DEBUG) {
+                    ProviderLogger.info(
+                        "Apple 原名缓存自愈: key=${rejected.key}, " +
+                            "rejectedLanguage=${rejected.alias.language}, removed=$removed"
+                    )
+                }
+            }.onFailure { ProviderLogger.error("Apple 原名缓存失效失败", it) }
+        }
+    }
+
     fun cachedArtistRegion(keys: Collection<String>): String? =
         synchronized(artistRegionLock) {
             val normalizedKeys = keys.asSequence()
@@ -272,8 +302,8 @@ internal class AppleOriginalMetadataCache(
         helper.readableDatabase.query(
             TABLE_NAME,
             WARM_COLUMNS,
-            null,
-            null,
+            "$COLUMN_KEY LIKE ?",
+            arrayOf("$ORIGINAL_METADATA_CACHE_SCHEMA:%"),
             null,
             null,
             "$COLUMN_UPDATED_AT DESC",
@@ -334,15 +364,13 @@ internal class AppleOriginalMetadataCache(
             while (cursor.moveToNext()) {
                 val key = cursor.stringColumn(COLUMN_KEY)
                 val alias = cursor.toAlias()
-                canonicalCachedOriginalAlias(alias)
-                    ?.let { aliases[key] = it }
+                // Retain the raw value for compare-and-delete, including legacy locale tags.
+                aliases[key] = alias
             }
         }
-        return keys.firstNotNullOfOrNull { key ->
-            aliases[key]
-                ?.takeIf(accept)
-                ?.let { alias -> CacheHit(key, alias) }
-        }
+        val result = validateOriginalCacheEntries(keys, aliases, accept)
+        result.rejected.forEach(::discardRejected)
+        return result.hit
     }
 
     private fun write(key: String, alias: Alias) {
@@ -425,8 +453,6 @@ internal class AppleOriginalMetadataCache(
         private const val COLUMN_ALBUM = "album"
         private const val COLUMN_LANGUAGE = "language"
         private const val COLUMN_UPDATED_AT = "updated_at"
-        private const val ARTIST_REGION_PREFERENCES =
-            "hyperlyricsenhanced_apple_original_artist_regions_v3"
         private const val ARTIST_REGION_VALUE_SEPARATOR = "|"
         private val COLUMNS = arrayOf(
             COLUMN_TITLE,

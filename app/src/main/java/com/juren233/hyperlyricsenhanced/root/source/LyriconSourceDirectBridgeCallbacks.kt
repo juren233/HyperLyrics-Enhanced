@@ -12,7 +12,6 @@ import com.juren233.hyperlyricsenhanced.root.utils.AppleMetadataFlowDiagnostics
 import com.juren233.hyperlyricsenhanced.common.lyric.LyricMetadataKeys
 import com.juren233.hyperlyricsenhanced.lyric.model.Song as LocalSong
 import com.juren233.hyperlyricsenhanced.online.model.Source
-import com.juren233.hyperlyricsenhanced.root.LyriconDataBridge
 import io.github.proify.lyricon.amprovider.xposed.AppleSourceSwitchPerformanceDiagnostics
 import io.github.proify.lyricon.lyric.model.Song as LyriconSong
 
@@ -56,14 +55,14 @@ internal fun LyriconSource.onDirectSongChanged(song: LyriconSong?) {
     val providerPackage = activeProviderPackageName ?: LyriconSource.BUILT_IN_PROVIDER_PACKAGE
     activeProviderPackageName = providerPackage
     activeProviderDelayMs = readProviderDelay(providerPackage)
-    LyriconDataBridge.updateLyricPackage(LyriconSource.APPLE_MUSIC_PACKAGE)
     handleAppleSong(localSong)
 }
 
 internal fun LyriconSource.onDirectPlaybackStateChanged(isPlaying: Boolean) {
-    if (!hasActiveCentralPlayer() && !fallbackSongActive) {
-        sink?.onPlaybackStateChanged(isPlaying)
-    }
+    // Apple 直连桥的播放态来自 app 进程内（缓冲期仍为播放中），转发给统一时间轴
+    // 作播放态提示；MediaSession 假暂停期间据此维持渲染层播放态，避免岛缩回。
+    sink?.onSourcePlaybackHint(isPlaying, LyriconSource.APPLE_MUSIC_PACKAGE)
+    diagnostic("来源侧播放态已转发为提示: playing=$isPlaying")
 }
 
 internal fun LyriconSource.onDirectPositionChanged(position: Long) {
@@ -87,7 +86,6 @@ internal fun LyriconSource.onDirectPositionChanged(position: Long) {
     )
     resolution.position?.let {
         maybeCommitPendingOnlineTranslation(it)
-        sink?.onPositionChanged(it)
     }
 }
 
@@ -113,7 +111,6 @@ internal fun LyriconSource.onDirectSeekTo(position: Long) {
     )
     resolution.position?.let {
         maybeCommitPendingOnlineTranslation(it)
-        sink?.onSeekTo(it)
     }
 }
 
@@ -127,9 +124,7 @@ internal fun LyriconSource.isBuiltInAppleCentralProviderActive(): Boolean =
     centralAppleProviderActive && activeProviderPackageName == LyriconSource.BUILT_IN_PROVIDER_PACKAGE
 
 internal fun LyriconSource.onDirectText(text: String?) {
-    if (!hasActiveCentralPlayer() && !fallbackSongActive) {
-        sink?.onPlainText(simplifyAppleTextForDisplay(text))
-    }
+    diagnostic("忽略来源侧纯文本帧；统一时间轴只接受完整 Song")
 }
 
 internal fun LyriconSource.activeSourceSwitchTraceRequest(songId: String?): OnlineSourceSwitchRequest? {

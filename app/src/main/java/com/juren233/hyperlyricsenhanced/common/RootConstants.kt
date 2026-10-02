@@ -195,6 +195,7 @@ object RootConstants {
     const val KEY_HOOK_TEXT_SIZE = "key_hook_text_size"
     const val KEY_HOOK_TEXT_SIZE_RATIO = "key_hook_text_size_ratio"
     const val KEY_HOOK_FONT_WEIGHT = "key_hook_font_weight"
+    const val KEY_HOOK_FONT_WEIGHT_MODE = "key_hook_font_weight_mode"
     const val KEY_HOOK_FONT_ITALIC = "key_hook_font_italic"
     const val KEY_HOOK_FADING_EDGE_LENGTH = "key_hook_fading_edge_length"
     const val KEY_HOOK_GRADIENT_PROGRESS = "key_hook_gradient_progress"
@@ -204,6 +205,7 @@ object RootConstants {
     const val KEY_HOOK_ISLAND_RIGHT_LYRIC_POSITION = "key_hook_island_right_lyric_position"
     const val KEY_HOOK_CENTER_GROUP_VOCALS = "key_hook_center_group_vocals"
     const val KEY_HOOK_ISLAND_RIGHT_ICON = "key_hook_island_right_icon"
+    const val KEY_HOOK_ISLAND_SHORT_LYRIC_SONG_INFO = "key_hook_island_short_lyric_song_info"
     const val KEY_HOOK_ISLAND_MUSIC_WAVE_COLOR = "key_hook_island_music_wave_color"
     const val KEY_HOOK_ISLAND_MUSIC_WAVE_GRADIENT = "key_hook_island_music_wave_gradient"
     const val KEY_HOOK_ISLAND_MUSIC_WAVE_COLOR_MODE = "key_hook_island_music_wave_color_mode"
@@ -212,6 +214,8 @@ object RootConstants {
     const val KEY_HOOK_ANIM_MODE = "key_hook_anim_mode"
     const val KEY_HOOK_ANIM_ENABLE = "key_hook_anim_enable"
     const val KEY_HOOK_ANIM_ID = "key_hook_anim_id"
+    const val KEY_HOOK_SWITCH_ANIM_RATE = "key_hook_switch_anim_rate"
+    const val KEY_HOOK_SWITCH_ANIM_CUSTOM_RATE = "key_hook_switch_anim_custom_rate"
     const val KEY_HOOK_MARQUEE_MODE = "key_hook_marquee_mode"
     const val KEY_HOOK_MARQUEE_SPEED = "key_hook_marquee_speed"
     const val KEY_HOOK_MARQUEE_DELAY = "key_hook_marquee_delay"
@@ -239,6 +243,7 @@ object RootConstants {
     const val KEY_HOOK_TRANSLATION_ONLY = "key_hook_translation_only"
     const val KEY_HOOK_SWAP_TRANSLATION = "key_hook_swap_translation"
     const val KEY_HOOK_NEXT_LYRIC_LINE = "key_hook_next_lyric_line"
+    const val KEY_HOOK_ISLAND_NEXT_LINE_MODE = "key_hook_island_next_line_mode"
     const val KEY_HOOK_AUTO_SWITCH_TRANSLATION = "key_hook_auto_switch_translation"
     const val KEY_HOOK_ADJACENT_BACKGROUND_TRANSLATION =
         "key_hook_adjacent_background_translation"
@@ -248,6 +253,7 @@ object RootConstants {
     const val KEY_HOOK_EXTRACT_COVER_TEXT_GRADIENT = "key_hook_extract_cover_text_gradient"
     const val KEY_HOOK_CUSTOM_TEXT_COLOR_ENABLED = "key_hook_custom_text_color_enabled"
     const val KEY_HOOK_CUSTOM_TEXT_COLOR = "key_hook_custom_text_color"
+    const val KEY_HOOK_STATUS_BAR_TEXT_COLOR = "key_hook_status_bar_text_color"
     const val KEY_HOOK_MONET_TEXT_COLOR = "key_hook_monet_text_color"
     const val KEY_HOOK_ISLAND_GLOW_EXTRACT_COLOR = "key_hook_island_glow_extract_color"
     const val KEY_HOOK_ISLAND_PROGRESS_GLOW = "key_hook_island_progress_glow"
@@ -304,6 +310,8 @@ object RootConstants {
         "key_hook_apple_music_force_cellular_data_entry"
     const val KEY_HOOK_APPLE_MUSIC_VOLUME_BALANCE =
         "key_hook_apple_music_volume_balance"
+    const val KEY_HOOK_APPLE_MUSIC_PREVENT_NETWORK_AUTO_SKIP =
+        "key_hook_apple_music_prevent_network_auto_skip"
     const val KEY_HOOK_APPLE_MUSIC_SIMPLIFY_TRADITIONAL_LYRICS =
         "key_hook_apple_music_simplify_traditional_lyrics"
     const val KEY_HOOK_APPLE_MUSIC_NATIVE_ONLINE_TRANSLATION =
@@ -345,8 +353,10 @@ object RootConstants {
     const val KEY_HOOK_AI_TRANS_MAX_TOKENS = "key_hook_ai_trans_max_tokens"
 
     // ================= DEFAULTS =================
-    const val DEFAULT_HOOK_LYRIC_MODE = 0
-    const val HOOK_LYRIC_MODE_SPLIT = 1
+    const val HOOK_LYRIC_MODE_SINGLE_SIDE = 0
+    const val HOOK_LYRIC_MODE_FULL_ISLAND = 1
+    const val HOOK_LYRIC_MODE_SEPARATED = 2
+    const val DEFAULT_HOOK_LYRIC_MODE = HOOK_LYRIC_MODE_SINGLE_SIDE
     const val DEFAULT_HOOK_LYRICON_PROVIDER_DELAY = 0
     const val DEFAULT_HOOK_REMOVE_CJK_LYRIC_SPACES = false
     const val APPLE_MUSIC_CONTENT_UI_LANGUAGE_NONE = 0
@@ -364,6 +374,7 @@ object RootConstants {
     const val DEFAULT_HOOK_APPLE_MUSIC_NOTIFICATION_OPEN_FULL_PLAYER = false
     const val DEFAULT_HOOK_APPLE_MUSIC_FORCE_CELLULAR_DATA_ENTRY = false
     const val DEFAULT_HOOK_APPLE_MUSIC_VOLUME_BALANCE = false
+    const val DEFAULT_HOOK_APPLE_MUSIC_PREVENT_NETWORK_AUTO_SKIP = false
     const val DEFAULT_HOOK_APPLE_MUSIC_SIMPLIFY_TRADITIONAL_LYRICS = false
     const val DEFAULT_HOOK_APPLE_MUSIC_NATIVE_ONLINE_TRANSLATION = false
     const val DEFAULT_HOOK_APPLE_MUSIC_FILL_MISSING_LYRICS = false
@@ -559,6 +570,7 @@ object RootConstants {
     const val DEFAULT_HOOK_CENTER_LYRIC = false
     const val DEFAULT_HOOK_CENTER_GROUP_VOCALS = false
     const val DEFAULT_HOOK_ISLAND_RIGHT_ICON = false
+    const val DEFAULT_HOOK_ISLAND_SHORT_LYRIC_SONG_INFO = true
     const val DEFAULT_HOOK_ISLAND_MUSIC_WAVE_COLOR = false
     const val DEFAULT_HOOK_ISLAND_MUSIC_WAVE_GRADIENT = false
     const val ISLAND_MUSIC_WAVE_COLOR_MODE_DISABLED = 0
@@ -568,6 +580,29 @@ object RootConstants {
 
     const val DEFAULT_HOOK_ANIM_ENABLE = false
     const val DEFAULT_HOOK_ANIM_ID = "yoyo_default"
+
+    // 换句动画速率：只作用于歌词切换动画（所选样式的出/入段），以各样式内置时长为 1x 基准。
+    // 优雅=1x 保持现状，适中=0.7x，迅速=0.4x，自定义=用户输入倍率(0.1~5.0)。
+    // 间奏动画、第二行(下一句预览)上浮动画、入场揭示等均不随速率变化。
+    const val SWITCH_ANIM_RATE_SWIFT = "swift"
+    const val SWITCH_ANIM_RATE_MODERATE = "moderate"
+    const val SWITCH_ANIM_RATE_ELEGANT = "elegant"
+    const val SWITCH_ANIM_RATE_CUSTOM = "custom"
+    const val SWITCH_ANIM_RATE_SWIFT_FACTOR = 0.4f
+    const val SWITCH_ANIM_RATE_MODERATE_FACTOR = 0.7f
+    const val SWITCH_ANIM_RATE_ELEGANT_FACTOR = 1.0f
+    const val SWITCH_ANIM_CUSTOM_RATE_MIN = 0.1f
+    const val SWITCH_ANIM_CUSTOM_RATE_MAX = 5.0f
+    const val DEFAULT_HOOK_SWITCH_ANIM_RATE = SWITCH_ANIM_RATE_ELEGANT
+    const val DEFAULT_HOOK_SWITCH_ANIM_CUSTOM_RATE = 1.0f
+
+    /** 速率档位解析为倍率：迅速=0.4x、适中=0.7x、优雅=1x、自定义=用户输入(夹紧 0.1~5.0)。 */
+    fun resolveSwitchAnimRateFactor(rate: String?, customRate: Float): Float = when (rate) {
+        SWITCH_ANIM_RATE_SWIFT -> SWITCH_ANIM_RATE_SWIFT_FACTOR
+        SWITCH_ANIM_RATE_MODERATE -> SWITCH_ANIM_RATE_MODERATE_FACTOR
+        SWITCH_ANIM_RATE_CUSTOM -> customRate.coerceIn(SWITCH_ANIM_CUSTOM_RATE_MIN, SWITCH_ANIM_CUSTOM_RATE_MAX)
+        else -> SWITCH_ANIM_RATE_ELEGANT_FACTOR
+    }
     const val DEFAULT_HOOK_MARQUEE_MODE = false
     const val DEFAULT_HOOK_MARQUEE_SPEED = 30
     const val DEFAULT_HOOK_MARQUEE_DELAY = 1500
@@ -598,6 +633,7 @@ object RootConstants {
     const val DEFAULT_HOOK_EXTRACT_COVER_TEXT_GRADIENT = false
     const val DEFAULT_HOOK_CUSTOM_TEXT_COLOR_ENABLED = false
     const val DEFAULT_HOOK_CUSTOM_TEXT_COLOR = -1
+    const val DEFAULT_HOOK_STATUS_BAR_TEXT_COLOR = false
     const val DEFAULT_HOOK_MONET_TEXT_COLOR = false
     const val DEFAULT_HOOK_ISLAND_GLOW_EXTRACT_COLOR = false
     const val DEFAULT_HOOK_ISLAND_PROGRESS_GLOW = false

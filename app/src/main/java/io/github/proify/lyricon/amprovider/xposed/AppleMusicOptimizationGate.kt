@@ -8,6 +8,7 @@ package io.github.proify.lyricon.amprovider.xposed
 
 import android.content.SharedPreferences
 import com.juren233.hyperlyricsenhanced.common.UIConstants
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Apple Music 体验优化入口的运行时门控。
@@ -22,12 +23,13 @@ internal object AppleMusicOptimizationGate {
 
     /** 偏好实现可能只持有监听器的弱引用，这里保留强引用。 */
     private var listener: SharedPreferences.OnSharedPreferenceChangeListener? = null
+    private val revision = AtomicLong()
 
     fun attach(prefs: SharedPreferences) {
-        enabled = readEntryEnabled(prefs)
+        updateEnabled(readEntryEnabled(prefs))
         val changeListener = SharedPreferences.OnSharedPreferenceChangeListener { changed, key ->
             if (key == null || key == UIConstants.KEY_FEATURE_ENTRY_APPLE_MUSIC) {
-                enabled = readEntryEnabled(changed)
+                updateEnabled(readEntryEnabled(changed))
             }
         }
         listener?.let { runCatching { prefs.unregisterOnSharedPreferenceChangeListener(it) } }
@@ -42,6 +44,14 @@ internal object AppleMusicOptimizationGate {
      * 与设置页“已安装 Apple Music 时入口默认开启”的默认值一致。
      */
     fun isEnabled(): Boolean = enabled
+
+    /** 入口每次切换后的单调代次，用于使已排队的异步工作永久失效。 */
+    fun revision(): Long = revision.get()
+
+    private fun updateEnabled(next: Boolean) {
+        if (enabled != next) revision.incrementAndGet()
+        enabled = next
+    }
 
     private fun readEntryEnabled(prefs: SharedPreferences): Boolean = runCatching {
         prefs.getBoolean(UIConstants.KEY_FEATURE_ENTRY_APPLE_MUSIC, true)

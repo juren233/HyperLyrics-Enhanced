@@ -20,6 +20,29 @@ import org.junit.Test
 class AppleSongMapperTest {
 
     @Test
+    fun `marks native plain text without timing and keeps timed native authoritative`() {
+        val plainText = AppleSong(
+            lyricsSource = "apple",
+            lyrics = mutableListOf(
+                LyricLine(htmlLineText = "First line"),
+                LyricLine(htmlLineText = "Second line"),
+            ),
+        )
+        assertEquals("true", AppleSongMapper.map(plainText).metadata
+            ?.getString(LyricMetadataKeys.APPLE_NATIVE_LYRICS_UNTIMED))
+        assertEquals("true", AppleSongMapper.map(plainText.copy(
+            lyrics = (plainText.lyrics + LyricLine(begin = 0, end = 2_000)).toMutableList(),
+        )).metadata?.getString(LyricMetadataKeys.APPLE_NATIVE_LYRICS_UNTIMED))
+        assertNull(AppleSongMapper.map(plainText.copy(
+            lyrics = mutableListOf(LyricLine(
+                begin = 0, end = 2_000, htmlLineText = "Timed line",
+            )),
+        )).metadata?.getString(LyricMetadataKeys.APPLE_NATIVE_LYRICS_UNTIMED))
+        assertNull(AppleSongMapper.map(plainText.copy(lyricsSource = "module"))
+            .metadata?.getString(LyricMetadataKeys.APPLE_NATIVE_LYRICS_UNTIMED))
+    }
+
+    @Test
     fun `carries Apple internal catalog metadata`() {
         val mappedSong = AppleSongMapper.map(
             AppleSong(

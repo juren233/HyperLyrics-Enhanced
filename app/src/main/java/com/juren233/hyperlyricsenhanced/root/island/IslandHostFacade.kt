@@ -58,6 +58,7 @@ internal object IslandHostFacade {
     }
 
     fun clearInjectedViews(rootView: ViewGroup) {
+        IslandNativeTextCollisionGuard.clear(rootView)
         IslandViewHelper.clearInjectedViews(rootView)
         IslandProgressGlowController.clear(rootView)
     }

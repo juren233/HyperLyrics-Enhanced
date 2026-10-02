@@ -39,6 +39,7 @@ import com.juren233.hyperlyricsenhanced.common.FeatureEntryConfig
 import com.juren233.hyperlyricsenhanced.common.LogLevelPolicy
 import com.juren233.hyperlyricsenhanced.common.PrefsBridge
 import com.juren233.hyperlyricsenhanced.common.RootConstants
+import com.juren233.hyperlyricsenhanced.common.TopBarProgressiveBlurPreference
 import com.juren233.hyperlyricsenhanced.common.UIConstants
 import com.juren233.hyperlyricsenhanced.root.settings.SettingsEntryProfile
 import com.juren233.hyperlyricsenhanced.ui.component.LyricHookPermissionSheet
@@ -465,6 +466,8 @@ private fun LazyListScope.settingsSections(
                     runCatching { org.lsposed.hiddenapibypass.HiddenApiBypass.addHiddenApiExemptions("Landroid/content/pm/ApplicationInfo;->setEnableOnBackInvokedCallback"); val m = android.content.pm.ApplicationInfo::class.java.getDeclaredMethod("setEnableOnBackInvokedCallback", Boolean::class.javaPrimitiveType); m.isAccessible = true; m.invoke(context.applicationInfo, it) }
                     activity?.recreate()
                 })
+                var swipeBackGestureEnabled by remember { mutableStateOf(prefs.getBoolean(UIConstants.KEY_SWIPE_BACK_GESTURE, UIConstants.DEFAULT_SWIPE_BACK_GESTURE)) }
+                SwitchPreference(title = stringResource(R.string.title_swipe_back_gesture), checked = swipeBackGestureEnabled, onCheckedChange = { swipeBackGestureEnabled = it; prefs.edit { putBoolean(UIConstants.KEY_SWIPE_BACK_GESTURE, it) } })
                 var parallelWindowUiEnabled by remember { mutableStateOf(prefs.getBoolean(UIConstants.KEY_PARALLEL_WINDOW_UI, UIConstants.DEFAULT_PARALLEL_WINDOW_UI)) }
                 val isWideScreen = rememberIsWideScreen()
                 // 平行窗口 UI 仅平板（宽屏）提供；开启期间底部栏导航不可用，隐藏悬浮底栏开关
@@ -472,6 +475,20 @@ private fun LazyListScope.settingsSections(
                     SwitchPreference(title = stringResource(R.string.title_parallel_window_ui), checked = parallelWindowUiEnabled, onCheckedChange = { parallelWindowUiEnabled = it; prefs.edit { putBoolean(UIConstants.KEY_PARALLEL_WINDOW_UI, it) } })
                 }
                 var floatingNavBarEnabled by remember { mutableStateOf(prefs.getBoolean(UIConstants.KEY_FLOATING_NAV_BAR, UIConstants.DEFAULT_FLOATING_NAV_BAR)) }
+                var topBarProgressiveBlurEnabled by remember {
+                    mutableStateOf(TopBarProgressiveBlurPreference.read(prefs))
+                }
+                SwitchPreference(
+                    title = stringResource(R.string.title_top_bar_progressive_blur),
+                    checked = topBarProgressiveBlurEnabled,
+                    onCheckedChange = {
+                        topBarProgressiveBlurEnabled = it
+                        prefs.edit {
+                            putBoolean(UIConstants.KEY_TOP_BAR_PROGRESSIVE_BLUR, it)
+                            remove(UIConstants.KEY_TOP_BAR_PROGRESSIVE_BLUR_MODE)
+                        }
+                    },
+                )
                 if (!(isWideScreen && parallelWindowUiEnabled)) {
                     SwitchPreference(title = stringResource(R.string.title_floating_nav), checked = floatingNavBarEnabled, onCheckedChange = { floatingNavBarEnabled = it; prefs.edit { putBoolean(UIConstants.KEY_FLOATING_NAV_BAR, it) } })
                 }

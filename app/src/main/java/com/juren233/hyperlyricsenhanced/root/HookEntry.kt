@@ -16,6 +16,7 @@ import com.juren233.hyperlyricsenhanced.root.island.IslandViewRegistry
 import com.juren233.hyperlyricsenhanced.root.island.IslandMusicWaveColorHooker
 import com.juren233.hyperlyricsenhanced.root.island.IslandProgressGlowController
 import com.juren233.hyperlyricsenhanced.root.island.IslandRuntimePreferenceOverrides
+import com.juren233.hyperlyricsenhanced.root.island.IslandRuntimePreferenceReader
 import com.juren233.hyperlyricsenhanced.root.island.IslandModuleRestoreHooker
 import com.juren233.hyperlyricsenhanced.root.island.SystemUIHookRegistry
 import com.juren233.hyperlyricsenhanced.root.island.IslandWidthHooker
@@ -40,11 +41,15 @@ import com.juren233.hyperlyricsenhanced.root.source.onPreferenceChanged
 import com.juren233.hyperlyricsenhanced.root.source.LyricInfoSource
 import com.juren233.hyperlyricsenhanced.root.source.RootLyricSink
 import com.juren233.hyperlyricsenhanced.root.source.SuperLyricSource
+import com.juren233.hyperlyricsenhanced.root.timeline.LocalTimelineDriver
+import com.juren233.hyperlyricsenhanced.root.timeline.SystemMediaPlaybackAnchor
 import com.juren233.hyperlyricsenhanced.root.aitrans.AITranslator
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
+import com.juren233.hyperlyricsenhanced.root.utils.IslandSystemFontWeight
 import com.juren233.hyperlyricsenhanced.root.utils.RuntimePerfDiagnostics
 import com.juren233.hyperlyricsenhanced.common.PreferenceDiagnostics
 import com.juren233.hyperlyricsenhanced.common.RootConstants
+import com.juren233.hyperlyricsenhanced.common.IslandFontWeightMode
 import com.juren233.hyperlyricsenhanced.common.UIConstants
 import com.juren233.hyperlyricsenhanced.common.media.NextTrackMetadataCache
 import com.juren233.hyperlyricsenhanced.common.media.MediaMetadataHelper
@@ -84,6 +89,7 @@ class HookEntry : XposedModule() {
             private set
 
         private val HYPER_ISLAND_RUNTIME_REFRESH_KEYS = setOf(
+            RootConstants.KEY_HOOK_ISLAND_SHORT_LYRIC_SONG_INFO,
             RootConstants.KEY_HOOK_ISLAND_CONTENT_LEFT,
             RootConstants.KEY_HOOK_ISLAND_CONTENT_RIGHT,
             RootConstants.KEY_HOOK_ISLAND_LEFT_PADDING_LEFT,
@@ -106,6 +112,7 @@ class HookEntry : XposedModule() {
             RootConstants.KEY_HOOK_TEXT_SIZE,
             RootConstants.KEY_HOOK_TEXT_SIZE_RATIO,
             RootConstants.KEY_HOOK_FONT_WEIGHT,
+            RootConstants.KEY_HOOK_FONT_WEIGHT_MODE,
             RootConstants.KEY_HOOK_FONT_ITALIC,
             RootConstants.KEY_HOOK_FADING_EDGE_LENGTH,
             RootConstants.KEY_HOOK_GRADIENT_PROGRESS,
@@ -116,6 +123,8 @@ class HookEntry : XposedModule() {
             RootConstants.KEY_HOOK_CENTER_GROUP_VOCALS,
             RootConstants.KEY_HOOK_ANIM_ENABLE,
             RootConstants.KEY_HOOK_ANIM_ID,
+            RootConstants.KEY_HOOK_SWITCH_ANIM_RATE,
+            RootConstants.KEY_HOOK_SWITCH_ANIM_CUSTOM_RATE,
             RootConstants.KEY_HOOK_MARQUEE_MODE,
             RootConstants.KEY_HOOK_MARQUEE_SPEED,
             RootConstants.KEY_HOOK_MARQUEE_DELAY,
@@ -135,6 +144,7 @@ class HookEntry : XposedModule() {
             RootConstants.KEY_HOOK_TRANSLATION_ONLY,
             RootConstants.KEY_HOOK_SWAP_TRANSLATION,
             RootConstants.KEY_HOOK_NEXT_LYRIC_LINE,
+            RootConstants.KEY_HOOK_ISLAND_NEXT_LINE_MODE,
             RootConstants.KEY_HOOK_AUTO_SWITCH_TRANSLATION,
             RootConstants.KEY_HOOK_ADJACENT_BACKGROUND_TRANSLATION,
             RootConstants.KEY_HOOK_EXTRACT_COVER_TEXT_COLOR,
@@ -142,6 +152,7 @@ class HookEntry : XposedModule() {
             RootConstants.KEY_HOOK_CUSTOM_TEXT_COLOR_ENABLED,
             RootConstants.KEY_HOOK_CUSTOM_TEXT_COLOR,
             RootConstants.KEY_HOOK_MONET_TEXT_COLOR,
+            RootConstants.KEY_HOOK_STATUS_BAR_TEXT_COLOR,
             RootConstants.KEY_HOOK_CUSTOM_FONT_PATH,
             RootConstants.KEY_HOOK_NARROW_LATIN_FONT,
             RootConstants.KEY_HOOK_WORD_MOTION_ENABLED,
@@ -157,6 +168,8 @@ class HookEntry : XposedModule() {
     private var prefListener: android.content.SharedPreferences.OnSharedPreferenceChangeListener? = null
     private var preferenceBroadcastReceiver: BroadcastReceiver? = null
     private var runtimeApp: Application? = null
+    private var playbackAnchor: SystemMediaPlaybackAnchor? = null
+    private var localTimelineDriver: LocalTimelineDriver? = null
     private var lyricsOnlyAfterHotReload = false
     private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
     private var pendingSystemMediaProviderRefresh: Runnable? = null
@@ -301,6 +314,7 @@ class HookEntry : XposedModule() {
                  }
             }
 
+            com.juren233.hyperlyricsenhanced.root.island.IslandStatusBarColorMonitor.install(this, param.defaultClassLoader)
             com.juren233.hyperlyricsenhanced.root.island.IslandStatusBarSpaceMonitor.install(this, param.defaultClassLoader)
 
             val isSuperIslandEnabled = SystemUiEnhancementGate.isEnabled()
@@ -401,6 +415,11 @@ class HookEntry : XposedModule() {
         try {
             cleanupRuntime()
             runtimeApp = app
+            IslandSystemFontWeight.start(app) {
+                if (IslandRuntimePreferenceReader.getFontWeightMode(prefs) ==
+                    IslandFontWeightMode.SYSTEM
+                ) BaseIslandRenderer.refreshActiveIsland()
+            }
             MediaMetadataHelper.setArtworkResolvedListener(BaseIslandRenderer::refreshActiveIsland)
             registerPreferenceBroadcastReceiver(app)
 
@@ -432,15 +451,21 @@ class HookEntry : XposedModule() {
             superLyricSource.initialize(app)
             lyricInfoSource = LyricInfoSource(app)
 
+            // SystemUI 唯一时间轴。来源只提交歌词内容；媒体锚点负责播放状态、位置与滚动。
+            val anchor = SystemMediaPlaybackAnchor(app)
+            playbackAnchor = anchor
+            val driver = LocalTimelineDriver(anchor, sink)
+            localTimelineDriver = driver
+            driver.start()
+
             AITranslator.init(app)
 
             sourceManager = SourceManager(
                 sources = listOf(lyriconSource, superLyricSource, lyricInfoSource!!),
                 prefs = prefs,
-                sink = sink,
+                sink = driver,
                 prefKey = RootConstants.KEY_HOOK_LYRIC_SOURCE,
                 defaultSourceId = RootConstants.DEFAULT_HOOK_LYRIC_SOURCE,
-                stateResetter = LyriconDataBridge,
                 logger = HookLogger
             )
             activeMode = prefs.getInt(
@@ -713,9 +738,8 @@ class HookEntry : XposedModule() {
             sourceManager?.start()
         } else {
             sourceManager?.stop()
+            localTimelineDriver?.stopDriving()
             AITranslator.cancelActiveRequests()
-            LyriconDataBridge.clearState()
-            BaseIslandRenderer.clearAllViews()
             IslandProgressGlowController.clearAll()
         }
 
@@ -744,6 +768,7 @@ class HookEntry : XposedModule() {
     }
 
     private fun cleanupRuntime() {
+        IslandSystemFontWeight.stop()
         pendingSystemMediaProviderRefresh?.let(mainHandler::removeCallbacks)
         pendingSystemMediaProviderRefresh = null
         MediaMetadataHelper.clearArtworkResolution()
@@ -764,6 +789,10 @@ class HookEntry : XposedModule() {
         AITranslator.cancelActiveRequests()
         sourceManager = null
         lyricInfoSource = null
+        localTimelineDriver?.stop()
+        localTimelineDriver = null
+        playbackAnchor?.stop()
+        playbackAnchor = null
         runtimeApp = null
     }
 

@@ -47,7 +47,7 @@ internal object IslandMusicWaveColorHooker {
     /** 延迟复查最大次数（间隔按次数递增：2s、4s）。 */
     private const val MEDIA_RECHECK_MAX_ATTEMPTS = 2
 
-    /** 模式对账看门狗周期：事件触发链失效时，模式切换最多延迟一个周期生效。 */
+    /** 模式对账看门狗（窗口内）周期：窗口内事件触发链失效时，模式切换最迟延迟一个周期生效。 */
     private const val MODE_WATCHDOG_INTERVAL_MS = 1_000L
     private val mainHandler = Handler(Looper.getMainLooper())
     private val hookedClassLoaders = Collections.synchronizedSet(
@@ -108,6 +108,12 @@ internal object IslandMusicWaveColorHooker {
 
     @Volatile
     private var lastAppliedMode: Int = IslandMusicWaveColorMode.UNSPECIFIED
+
+    private val watchdogLock = Any()
+    private var watchdogScheduled = false
+
+    @Volatile
+    private var watchdogDeadlineMs = 0L
 
     private val mediaRecheckToken = AtomicInteger()
 
@@ -197,6 +203,7 @@ internal object IslandMusicWaveColorHooker {
 
     fun refresh() {
         runOnMain {
+            armModeWatchdog()
             val sharedPrefs = prefs
             if (sharedPrefs == null || !isEnabled(sharedPrefs)) {
                 trace { "refresh: 功能未启用，恢复原生色" }
@@ -253,43 +260,70 @@ internal object IslandMusicWaveColorHooker {
         if (mediaTriggersInstalled) return
         mediaTriggersInstalled = true
         LyriconDataBridge.addSongChangedListener(songChangedListener)
-        startModeWatchdog()
+        armModeWatchdog()
     }
 
     /**
-     * 模式对账看门狗：模式值读取总是最新（广播/远程偏好 store 双链路兜底），
-     * 但"重新取色"依赖事件触发。若触发链在某环节失效，这里按内存中的模式整数
-     * 对账，发现不一致立即补一次重取，保证切换最迟一个周期内生效。
+     * 模式对账看门狗（窗口化）：同一首歌内颜色只来自封面，封面不变颜色就不该变，
+     * 常驻 1Hz 对账是纯空转。仅在事件（初始化/切歌/设置修改/取色应用）后布防一个
+     * [IslandWaveColorWatchdogPolicy.WINDOW_MS] 窗口；功能关闭且原生色已还原时不再
+     * 布防。窗口内发现「设置的模式 ≠ 已应用的模式」立即补一次重取/还原。
      */
-    private fun startModeWatchdog() {
-        val watchdog = object : Runnable {
-            override fun run() {
-                runCatching {
-                    val sharedPrefs = prefs
-                    if (sharedPrefs != null && isEnabled(sharedPrefs)) {
-                        val mode = IslandRuntimePreferenceReader.getMusicWaveColorMode(sharedPrefs)
-                        if (mode != lastAppliedMode) {
-                            HookLogger.i(TAG, "模式对账触发重取色: applied=$lastAppliedMode, current=$mode")
-                            refresh()
-                        }
-                    } else if (sharedPrefs != null && overrideApplied) {
-                        // 功能已关但覆盖还挂着（事件触发失效时），恢复原生色
-                        HookLogger.i(TAG, "模式对账触发恢复原生色")
+    private val modeWatchdog = object : Runnable {
+        override fun run() {
+            synchronized(watchdogLock) { watchdogScheduled = false }
+            runCatching {
+                val sharedPrefs = prefs
+                if (sharedPrefs != null && isEnabled(sharedPrefs)) {
+                    val mode = IslandRuntimePreferenceReader.getMusicWaveColorMode(sharedPrefs)
+                    if (mode != lastAppliedMode) {
+                        HookLogger.i(TAG, "模式对账触发重取色: applied=$lastAppliedMode, current=$mode")
                         refresh()
                     }
-                }.onFailure { e ->
-                    HookLogger.e(TAG, "模式对账看门狗异常", e)
+                } else if (sharedPrefs != null && overrideApplied) {
+                    HookLogger.i(TAG, "模式对账触发恢复原生色")
+                    refresh()
                 }
-                mainHandler.postDelayed(this, MODE_WATCHDOG_INTERVAL_MS)
+            }.onFailure { e ->
+                HookLogger.e(TAG, "模式对账看门狗异常", e)
             }
+            if (!IslandWaveColorWatchdogPolicy.shouldKeepRunning(
+                    nowMs = SystemClock.uptimeMillis(),
+                    deadlineMs = watchdogDeadlineMs,
+                )
+            ) {
+                return
+            }
+            synchronized(watchdogLock) {
+                if (watchdogScheduled) return
+                watchdogScheduled = true
+            }
+            mainHandler.postDelayed(this, MODE_WATCHDOG_INTERVAL_MS)
         }
-        mainHandler.postDelayed(watchdog, MODE_WATCHDOG_INTERVAL_MS)
+    }
+
+    private fun armModeWatchdog() {
+        val sharedPrefs = prefs ?: return
+        if (!IslandWaveColorWatchdogPolicy.shouldArm(
+                featureEnabled = isEnabled(sharedPrefs),
+                overrideApplied = overrideApplied,
+            )
+        ) {
+            return
+        }
+        watchdogDeadlineMs = SystemClock.uptimeMillis() + IslandWaveColorWatchdogPolicy.WINDOW_MS
+        synchronized(watchdogLock) {
+            if (watchdogScheduled) return
+            watchdogScheduled = true
+        }
+        mainHandler.postDelayed(modeWatchdog, MODE_WATCHDOG_INTERVAL_MS)
     }
 
     private fun scheduleColorsFromMediaChange() {
         val sharedPrefs = prefs ?: return
         if (!isEnabled(sharedPrefs)) return
         runOnMain {
+            armModeWatchdog()
             runCatching {
                 refreshColorsFromMediaSession("song_changed", allowDeferredRetry = true)
             }.onFailure { e ->
@@ -529,6 +563,7 @@ internal object IslandMusicWaveColorHooker {
         accessor.write(colors)
         overrideApplied = true
         prefs?.let { lastAppliedMode = IslandRuntimePreferenceReader.getMusicWaveColorMode(it) }
+        armModeWatchdog()
         trace { "应用取色: token=$token, colors=$colors, colorsChanged=$colorsChanged" }
         if (colorsChanged) {
             reapplyLottieValueCallbacks()

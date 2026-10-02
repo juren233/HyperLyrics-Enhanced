@@ -71,6 +71,8 @@
     <string name="title_apple_music_app_display">App显示</string>
     <string name="title_apple_music_volume_balance">动态提升Dolby Atmos外放音量</string>
     <string name="summary_apple_music_volume_balance">开启Apple Music设置内“音量平衡”听感更佳，不建议开启系统沉浸声</string>
+    <string name="title_apple_music_prevent_network_auto_skip">弱网播放失败时不自动切歌</string>
+    <string name="summary_apple_music_prevent_network_auto_skip">保留当前歌曲并持续自动重试，网络恢复后自动继续播放</string>
     <string name="title_apple_music_notification_open_full_player">点击媒体通知直接跳转播放页</string>
     <string name="title_apple_music_simplify_traditional_lyrics">将繁体歌词转成简体</string>
     <string name="title_apple_music_native_online_translation">补全歌词翻译与发音</string>
@@ -165,7 +167,9 @@
     <string name="monet_pink">粉色</string>
     <string name="title_monet">强调色</string>
     <string name="title_predictive_back">预测性返回手势</string>
+    <string name="title_swipe_back_gesture">滑动手势返回上一页</string>
     <string name="title_parallel_window_ui">平行窗口UI</string>
+    <string name="title_top_bar_progressive_blur">渐进模糊</string>
     <string name="title_floating_nav">悬浮底栏</string>
     <string name="title_exclude_from_recents">隐藏后台卡片</string>
     <string name="title_hide_app_icon">隐藏应用图标</string>
@@ -183,8 +187,9 @@
     <string name="export_all_logs">导出全部日志</string>
 
     <!-- ———————————————————————— HookSettingsPage ———————————————————————— -->
-    <string name="lyric_mode_verbatim">逐字歌词</string>
-    <string name="lyric_mode_separated">分离歌词</string>
+    <string name="lyric_mode_single_side">单侧滚动</string>
+    <string name="lyric_mode_full_island">全岛滚动</string>
+    <string name="lyric_mode_separated">对半分离滚动</string>
     <string name="title_lyric_mode">歌词模式</string>
     <string name="title_lyric_source">歌词源</string>
     <string name="summary_lyric_source_apple_music_builtin">Apple Music用户可直接选用Lyricon源，无需额外模块，其余音乐App用户也推荐使用Lyricon源，内置插件更方便</string>
@@ -374,6 +379,13 @@
     <!-- ———————————————————————— LyricAnimationPage ———————————————————————— -->
     <string name="option_anim_none">无动画</string>
     <string name="option_anim_default">默认</string>
+    <string name="title_switch_anim_rate">动画速率</string>
+    <string name="option_switch_anim_rate_swift">迅速</string>
+    <string name="option_switch_anim_rate_moderate">适中</string>
+    <string name="option_switch_anim_rate_elegant">优雅</string>
+    <string name="option_switch_anim_rate_custom">自定义</string>
+    <string name="title_switch_anim_custom_rate">自定义倍率</string>
+    <string name="label_switch_anim_custom_rate_range">倍率范围：0.1 ~ 5.0</string>
     <string name="option_anim_fade">渐隐渐现</string>
     <string name="option_anim_fade_up">向上渐隐＆向上渐现</string>
     <string name="option_anim_fade_down">向下渐隐＆向下渐现</string>
@@ -405,6 +417,9 @@
     <string name="title_size">大小</string>
     <string name="label_size_range">范围：8 ~ 16</string>
     <string name="title_font_weight">字重</string>
+    <string name="option_font_weight_system">跟随系统</string>
+    <string name="option_font_weight_custom">自定义</string>
+    <string name="title_custom_font_weight">字重自定义</string>
     <string name="label_font_weight_range">范围：100 ~ 900</string>
     <string name="title_fading_edge">羽化边缘长度</string>
     <string name="label_fading_edge_range">范围：0 ~ 100</string>
@@ -447,6 +462,9 @@
     <string name="title_translation_only">仅显示翻译</string>
     <string name="title_swap_translation">原词翻译对调位置</string>
     <string name="title_next_lyric_line">显示下一句歌词</string>
+    <string name="island_next_line_off">不显示</string>
+    <string name="island_next_line_second_line">第二行</string>
+    <string name="island_next_line_right">右侧</string>
     <string name="summary_next_lyric_line">显示翻译时将不显示下句歌词</string>
     <string name="title_aod_main_text_size">主句字号</string>
     <string name="title_aod_backing_text_size">伴唱字号</string>
@@ -492,6 +510,7 @@
     <string name="option_font_color_cover">封面色</string>
     <string name="option_font_color_cover_gradient">封面渐变色</string>
     <string name="option_font_color_custom">自定义</string>
+    <string name="option_font_color_status_bar">跟随状态栏颜色</string>
     <string name="title_custom_font_color">自定义颜色</string>
     <string name="summary_custom_font_color_picker">调整颜色与透明度</string>
     <string name="title_word_motion">字词上浮动画</string>
@@ -589,6 +608,8 @@
     <string name="title_island_album_cover_whitelist_loading">获取应用列表中</string>
     <string name="option_audio_cover_style_hidden">隐藏封面</string>
     <string name="title_audio_rhythm">音频律动</string>
+    <string name="title_island_short_lyric_song_info">短歌词显示歌曲信息</string>
+    <string name="summary_island_short_lyric_song_info">长歌词恢复全岛滚动</string>
     <string name="title_audio_rhythm_cover_color">音频律动封面色</string>
     <string name="option_music_wave_color_mode_off">不开启</string>
     <string name="option_music_wave_color_mode_cover">封面色</string>
@@ -738,12 +759,13 @@
     <string name="title_center_lyric">位置显示</string>
     <string name="title_left_lyric_position">左侧位置显示</string>
     <string name="title_right_lyric_position">右侧位置显示</string>
+    <string name="summary_lyric_position_non_scrolling">仅非滚动歌词生效</string>
     <string name="option_lyric_position_default">默认</string>
     <string name="option_lyric_position_center">居中</string>
     <string name="option_lyric_position_right">靠右</string>
     <string name="title_center_group_vocals">合唱歌词居中显示</string>
     <string name="title_adjacent_background_translation">含伴唱的歌词翻译临时显示在隔壁</string>
-    <string name="summary_adjacent_background_translation">仅在逐字歌词模式且仅一侧设为歌词时可用</string>
+    <string name="summary_adjacent_background_translation">仅在单侧滚动模式且仅一侧设为歌词时可用</string>
     
     <!-- Shizuku 绕过限制相关 -->
     <string name="title_bypass_focus_limit">绕过焦点通知限制</string>

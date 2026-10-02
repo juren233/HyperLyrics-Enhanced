@@ -1,8 +1,11 @@
 package com.juren233.hyperlyricsenhanced.root.island
 
 import com.juren233.hyperlyricsenhanced.common.RootConstants
+import com.juren233.hyperlyricsenhanced.common.lyric.LyricMetadataKeys
+import com.juren233.hyperlyricsenhanced.common.lyric.RichLyricLineSplitter
 import com.juren233.hyperlyricsenhanced.lyric.model.LyricWord
 import com.juren233.hyperlyricsenhanced.lyric.model.RichLyricLine
+import com.juren233.hyperlyricsenhanced.lyric.model.lyricMetadataOf
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -10,6 +13,85 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class IslandSlotContentAssemblerTest {
+    @Test
+    fun `native tint changes invalidate a same-song style cache`() {
+        fun signature(tint: Int?) = IslandSlotContentAssembler.buildStyleCacheSignature(
+            styleSignature = "same", mode = 7, mediaColorKey = "same-song",
+            artworkContentKey = 0, statusBarTextColor = tint,
+        )
+        assertNotEquals(signature(-1), signature(0xFF000000.toInt()))
+        assertNotEquals(signature(null), signature(-1))
+        assertEquals(signature(-1), signature(-1))
+    }
+
+    @Test
+    fun `separated split timeline uses the main lyric word boundary`() {
+        val line = RichLyricLine(begin = 1_000, end = 5_000, text = "ABCD")
+        val splitTime = RichLyricLineSplitter.resolveSplitTime(
+            line = line,
+            splitIndex = 2,
+            textLength = 4,
+            leftWords = listOf(LyricWord(begin = 1_000, end = 2_800, text = "AB")),
+            rightWords = listOf(LyricWord(begin = 2_800, end = 5_000, text = "CD")),
+        )
+
+        assertEquals(2_800L, splitTime)
+    }
+
+    @Test
+    fun `separated split timeline interpolates when main lyric has no word timing`() {
+        val line = RichLyricLine(begin = 1_000, end = 5_000, text = "ABCD")
+
+        assertEquals(
+            3_000L,
+            RichLyricLineSplitter.resolveSplitTime(
+                line = line,
+                splitIndex = 2,
+                textLength = 4,
+                leftWords = emptyList(),
+                rightWords = emptyList(),
+            )
+        )
+    }
+
+    @Test
+    fun `separated mode splits at half text width when both halves fit`() {
+        assertEquals(
+            120f,
+            IslandSlotContentAssembler.separatedSplitWidthPx(
+                textWidthPx = 240f,
+                leftMaxWidthPx = 180f,
+            ),
+            0f,
+        )
+    }
+
+    @Test
+    fun `separated mode caps the left half at the available slot width`() {
+        assertEquals(
+            90f,
+            IslandSlotContentAssembler.separatedSplitWidthPx(
+                textWidthPx = 240f,
+                leftMaxWidthPx = 90f,
+            ),
+            0f,
+        )
+    }
+
+    @Test
+    fun `interlude indicator lines skip separated splitting`() {
+        val indicator = RichLyricLine(
+            begin = 1_000,
+            end = 8_000,
+            text = "•••",
+            metadata = lyricMetadataOf(LyricMetadataKeys.INSTRUMENTAL to "true")
+        )
+
+        assertTrue(IslandSlotContentAssembler.isInterludeIndicatorLine(indicator))
+        assertFalse(IslandSlotContentAssembler.isInterludeIndicatorLine(RichLyricLine(text = "歌词")))
+        assertFalse(IslandSlotContentAssembler.isInterludeIndicatorLine(null))
+    }
+
 
     @Test
     fun `artwork is kept when lyric and media titles differ only by spacing or suffix`() {
@@ -147,6 +229,83 @@ class IslandSlotContentAssemblerTest {
                 lyricArtist = "   ",
                 mediaArtist = "imase"
             )
+        )
+    }
+
+    @Test
+    fun `apple original metadata setting prefers session title over provider alias`() {
+        assertEquals(
+            "别问很可怕",
+            IslandSlotContentAssembler.resolveMetadataSongName(
+                lyricSongName = "Don't Ask",
+                currentSongName = "别问很可怕",
+                mediaTitle = "别问很可怕",
+                preferSessionMetadata = true,
+            ),
+        )
+        assertEquals(
+            "童话",
+            IslandSlotContentAssembler.resolveMetadataSongName(
+                lyricSongName = "Fairy Tale",
+                currentSongName = "Playing~",
+                mediaTitle = "童话",
+                preferSessionMetadata = true,
+            ),
+        )
+    }
+
+    @Test
+    fun `apple original metadata setting prefers session artist over provider alias`() {
+        assertEquals(
+            "아이브",
+            IslandSlotContentAssembler.resolveMetadataArtistName(
+                lyricArtist = "IVE",
+                mediaArtist = "아이브",
+                preferSessionMetadata = true,
+            ),
+        )
+    }
+
+    @Test
+    fun `blank session metadata falls back to provider while original metadata is enabled`() {
+        assertEquals(
+            "Fairy Tale",
+            IslandSlotContentAssembler.resolveMetadataSongName(
+                lyricSongName = "Fairy Tale",
+                currentSongName = "Playing~",
+                mediaTitle = "",
+                preferSessionMetadata = true,
+            ),
+        )
+        assertEquals(
+            "林宥嘉",
+            IslandSlotContentAssembler.resolveMetadataArtistName(
+                lyricArtist = "林宥嘉",
+                mediaArtist = "",
+                preferSessionMetadata = true,
+            ),
+        )
+    }
+
+    @Test
+    fun `session metadata priority is limited to apple with original metadata enabled`() {
+        assertTrue(
+            IslandSlotContentAssembler.shouldPreferMediaSessionMetadata(
+                packageName = "com.apple.android.music",
+                restoreOriginalMetadata = true,
+            ),
+        )
+        assertFalse(
+            IslandSlotContentAssembler.shouldPreferMediaSessionMetadata(
+                packageName = "com.apple.android.music",
+                restoreOriginalMetadata = false,
+            ),
+        )
+        assertFalse(
+            IslandSlotContentAssembler.shouldPreferMediaSessionMetadata(
+                packageName = "com.miui.player",
+                restoreOriginalMetadata = true,
+            ),
         )
     }
 

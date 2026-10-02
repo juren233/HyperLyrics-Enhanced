@@ -15,6 +15,14 @@ internal object IslandViewRegistry {
     private val activeIslandPkgNames = WeakHashMap<ViewGroup, String>()
     private val injectedViewsByRoot = WeakHashMap<ViewGroup, MutableMap<View, Unit>>()
     private val publishedAttachedPkgNames = WeakHashMap<ViewGroup, String>()
+
+    /**
+     * 岛根视图候选：任何岛 hook 见过的 contentView 都登记在此。媒体切换瞬间
+     * 原生只发一次岛更新，若恰好撞上歌词包名未更新的窗口会被硬清注销；部分
+     * 播放器（通知无逐秒进度重发）此后原生不再调用被 hook 的更新入口，注册表
+     * 就永久为空。重挂扫描用这些候选找回视图。
+     */
+    private val candidateRoots = WeakHashMap<ViewGroup, Unit>()
     private val attachStateListener = object : View.OnAttachStateChangeListener {
         override fun onViewAttachedToWindow(view: View) {
             val root = view as? ViewGroup ?: return
@@ -30,6 +38,7 @@ internal object IslandViewRegistry {
     }
 
     fun register(view: ViewGroup, packageName: String) {
+        synchronized(lock) { candidateRoots[view] = Unit }
         var shouldPublishAttached = false
         synchronized(lock) {
             activeIslandPkgNames[view] = packageName
@@ -66,6 +75,16 @@ internal object IslandViewRegistry {
                 injectedViewsByRoot[root] = indexedViews
             }
         }
+    }
+
+    /** 岛 hook 每次见到 contentView 都应调用；不判断歌词状态，只留候选引用。 */
+    fun rememberCandidate(view: ViewGroup) {
+        synchronized(lock) { candidateRoots[view] = Unit }
+    }
+
+    /** 当前仍附着的候选岛根视图（弱引用快照）。 */
+    fun snapshotCandidates(): List<ViewGroup> = synchronized(lock) {
+        candidateRoots.keys.filter { it.isAttachedToWindow }
     }
 
     fun snapshotAttached(packageName: String? = null): List<Pair<ViewGroup, String>> {

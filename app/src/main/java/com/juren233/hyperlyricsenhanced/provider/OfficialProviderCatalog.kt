@@ -33,7 +33,7 @@ object OfficialProviderCatalog {
         Definition("netease", "网易云音乐", setOf("com.netease.cloudmusic", "com.hihonor.cloudmusic")),
         Definition(
             id = "qqmusic",
-            displayName = "QQ音乐",
+            displayName = "QQ音乐 & 小米音乐",
             targetPackages = setOf(
                 "com.tencent.qqmusic",
                 "com.tencent.qqmusicpad",
@@ -44,6 +44,7 @@ object OfficialProviderCatalog {
                 "com.miui.player:remote",
             ),
             targetDisplayNames = mapOf(
+                "com.tencent.qqmusic" to "QQ音乐",
                 "com.tencent.qqmusicpad" to "QQ音乐HD",
                 "com.miui.player" to "小米音乐",
             ),
@@ -60,7 +61,16 @@ object OfficialProviderCatalog {
                 "com.kugou.android.lite" to "酷狗概念版",
             ),
         ),
-        Definition("kuwo", "酷我音乐", setOf("cn.kuwo.player")),
+        Definition(
+            id = "kuwo",
+            displayName = "酷我音乐 & 波点音乐",
+            targetPackages = setOf("cn.kuwo.player", "cn.wenyu.bodian"),
+            secondaryProcesses = setOf("cn.wenyu.bodian:service"),
+            targetDisplayNames = mapOf(
+                "cn.kuwo.player" to "酷我音乐",
+                "cn.wenyu.bodian" to "波点音乐",
+            ),
+        ),
         Definition("spotify", "Spotify", setOf("com.spotify.music")),
         Definition(
             "lxmusic",

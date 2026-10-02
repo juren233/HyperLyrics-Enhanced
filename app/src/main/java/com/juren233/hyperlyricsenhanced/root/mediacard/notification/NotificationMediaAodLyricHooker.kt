@@ -137,8 +137,16 @@ object NotificationMediaAodLyricHooker {
                         refreshAodPluginStates()
                     }
                 }
+                // 到期唤醒：AOD 是整行显示，行间睡到下一个切换点之前，doze 唤醒从
+                // 10 次/秒降到约 1 次/秒；切句瞬间精度不损失（唤醒点 = 边界 - 保护量）。
+                schedulePositionPoll(
+                    AodLyricPollCadencePolicy.nextIntervalMs(
+                        positionMs = position ?: 0L,
+                        nextBoundaryMs = position?.let(LyriconDataBridge::nextDisplayChangeMs),
+                        hasLyrics = currentActualLyrics().isNotEmpty(),
+                    )
+                )
             }
-            if (keepPolling) schedulePositionPoll()
         }
     }
 

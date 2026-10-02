@@ -38,6 +38,7 @@ import java.lang.reflect.Method
 import java.util.concurrent.ConcurrentHashMap
 
 private const val APPLE_REQUEST_SHAPE_TRACE_LIMIT = 300
+private const val CATALOG_URL_TRACE_LIMIT = 80
 
 internal class AppleContentLocalizationHooks(
     private val runtime: AppleMusicProviderRuntime,
@@ -51,6 +52,7 @@ internal class AppleContentLocalizationHooks(
     private val contentRequestHeaderTraceKeys = ConcurrentHashMap.newKeySet<String>()
     private val mediaApiLocalizationTraceKeys = ConcurrentHashMap.newKeySet<String>()
     private val contentRequestShapeTraceKeys = ConcurrentHashMap.newKeySet<String>()
+    private val catalogRequestUrlTraceKeys = ConcurrentHashMap.newKeySet<String>()
     private val contentHttpTimingTracker by lazy {
         AppleContentHttpTimingTracker(clock = SystemClock::elapsedRealtime)
     }
@@ -122,11 +124,23 @@ internal class AppleContentLocalizationHooks(
                                 (result.token ?: "native:${result.storefront}")
                         )
                     ) {
+                        val rewrittenArgs = result.args
+                        val rewrittenQuery =
+                            rewrittenArgs.getOrNull(queryArgIndex) as? Map<*, *>
+                        val querySummary = rewrittenQuery?.entries
+                            ?.joinToString(",") { (key, value) ->
+                                "$key=${value?.toString().orEmpty().take(60)}"
+                            }
+                            ?.take(300)
+                            .orEmpty()
                         ProviderLogger.diagnostic(
                             "AppleCatalogExecutorLocalization: " +
                                 "executor=${resolved.target.className}#${target.methodName}, " +
                                 "token=${result.token ?: "none"}, " +
-                                "storefront=${result.storefront ?: "unchanged"}"
+                                "storefront=${result.storefront ?: "unchanged"}, " +
+                                "arg3=${rewrittenArgs.getOrNull(3)?.toString().orEmpty().take(40)}, " +
+                                "arg4=${rewrittenArgs.getOrNull(4)?.toString().orEmpty().take(40)}, " +
+                                "query=$querySummary"
                         )
                     }
                     result?.args
@@ -208,7 +222,7 @@ internal class AppleContentLocalizationHooks(
             contentHttpTarget = resolved.target
             runtime.hookRegistrar.installHook(
                 resolved.method,
-                before = ::contentHttpLocalizationBefore,
+                before = { chain -> contentHttpLocalizationBefore(chain, "content-http") },
                 after = ::contentHttpLocalizationAfter,
             )
             ProviderLogger.info("Apple 内容 HTTP 本地化 Hook 已安装")
@@ -229,7 +243,7 @@ internal class AppleContentLocalizationHooks(
             )
             runtime.hookRegistrar.installHook(
                 resolved.method,
-                before = ::contentHttpLocalizationBefore,
+                before = { chain -> contentHttpLocalizationBefore(chain, "amp-api") },
                 after = ::contentHttpLocalizationAfter,
             )
             ProviderLogger.info(
@@ -241,7 +255,7 @@ internal class AppleContentLocalizationHooks(
         }
     }
 
-    private fun contentHttpLocalizationBefore(chain: Chain) {
+    private fun contentHttpLocalizationBefore(chain: Chain, hookSource: String) {
         val prefs = preferences() ?: return
         val selection = prefs.getInt(
             RootConstants.KEY_HOOK_APPLE_MUSIC_CONTENT_UI_LANGUAGE,
@@ -258,9 +272,15 @@ internal class AppleContentLocalizationHooks(
         )?.toString().orEmpty()
         val requestUri = Uri.parse(requestUrl)
         startContentHttpTiming(httpChain, requestUri)
+        logCatalogRequestUrl(requestUri, hookSource, request)
         logAppleHostRequestShape(requestUri)
         if (requestUri.getQueryParameter(AMP_HTTP_MODULE_MARKER_PARAM) != null) {
             logModuleMarkedRequestSkip(requestUri)
+            stripModuleMarker(
+                httpChain = httpChain,
+                request = request,
+                uri = requestUri,
+            )
             return
         }
         val pathSegments = requestUri.pathSegments
@@ -344,6 +364,53 @@ internal class AppleContentLocalizationHooks(
             "AppleAmpHttpMarkedSkip: ${requestUri.host.orEmpty()}${requestUri.path} " +
                 "tokenPresent=$tokenPresent"
         )
+    }
+
+    /**
+     * executor 已按逐条 token 改写过的请求在这里只放行、不做二次 storefront 改写，但常量
+     * 标记本身不能留在出网 URL 上：2026-09-19 真机取证显示 Apple amp-api 对未声明的查询
+     * 参数直接回 `40004 Invalid Parameter / Parameter 'hle_catalog_module' is not allowed`，
+     * 继续携带会让全部 catalog 请求（地区批量、原名探针、身份查询）整条链路 400。放行前把
+     * 标记从查询表剥离；URL 其余参数、方法与请求头保持 executor 改写后的原样。
+     */
+    private fun stripModuleMarker(httpChain: Any, request: Any, uri: Uri) {
+        runCatching {
+            val builder = uri.buildUpon()
+            builder.clearQuery()
+            uri.queryParameterNames.forEach { name ->
+                if (name != AMP_HTTP_MODULE_MARKER_PARAM) {
+                    uri.getQueryParameters(name).forEach { value ->
+                        builder.appendQueryParameter(name, value)
+                    }
+                }
+            }
+            val strippedUrl = builder.build().toString()
+            val requestBuilder = AppleReflection.call(
+                request,
+                member(AppleMusicRuntimeMember.CONTENT_HTTP_REQUEST_NEW_BUILDER_METHOD),
+            ) ?: return
+            AppleReflection.call(
+                requestBuilder,
+                member(AppleMusicRuntimeMember.CONTENT_HTTP_REQUEST_BUILDER_URL_METHOD),
+                strippedUrl,
+            )
+            val rebuilt = AppleReflection.call(
+                requestBuilder,
+                member(AppleMusicRuntimeMember.CONTENT_HTTP_REQUEST_BUILDER_BUILD_METHOD),
+            ) ?: return
+            AppleReflection.setField(
+                httpChain,
+                member(AppleMusicRuntimeMember.CONTENT_HTTP_CHAIN_REQUEST_FIELD),
+                rebuilt,
+            )
+            if (BuildConfig.DEBUG) {
+                ProviderLogger.diagnostic(
+                    "AppleCatalogMarkerStripped: url=${strippedUrl.take(500)}"
+                )
+            }
+        }.onFailure { error ->
+            ProviderLogger.error("Apple 目录请求常量标记剥离失败", error)
+        }
     }
 
     private fun startContentHttpTiming(httpChain: Any, uri: Uri) {
@@ -440,6 +507,27 @@ internal class AppleContentLocalizationHooks(
         if (!contentRequestShapeTraceKeys.add(shape)) return
         ProviderLogger.diagnostic(
             "AppleContentHttpRequestShape: $shape"
+        )
+    }
+
+    /**
+     * 6.5.3 目录请求取证诊断：记录 catalog/editorial 请求的真实出网 URL（debug-only，
+     * 按 hook 来源 + URL 去重、上限防刷屏）。用于定位目录请求被 HTTP 400 拒绝时究竟
+     * 发出了什么：storefront 路径段、l 取值、executor 注入的常量标记是否残留在查询表。
+     */
+    private fun logCatalogRequestUrl(uri: Uri, hookSource: String, request: Any) {
+        if (!BuildConfig.DEBUG) return
+        if (storefrontFromContentPath(uri.pathSegments) == null) return
+        if (catalogRequestUrlTraceKeys.size >= CATALOG_URL_TRACE_LIMIT) return
+        val key = "$hookSource|${uri.host}|${uri.encodedPath}|${uri.query}"
+        if (!catalogRequestUrlTraceKeys.add(key)) return
+        ProviderLogger.diagnostic(
+            "AppleCatalogUrl: source=$hookSource, " +
+                "url=${uri.toString().take(500)}, " +
+                "acceptLanguage=${requestHeader(request, "Accept-Language") ?: "unset"}, " +
+                "storefrontHeader=${requestHeader(request, "X-Apple-Store-Front") ?: "unset"}, " +
+                "requestStorefrontHeader=" +
+                "${requestHeader(request, "X-Apple-Request-Store-Front") ?: "unset"}"
         )
     }
 

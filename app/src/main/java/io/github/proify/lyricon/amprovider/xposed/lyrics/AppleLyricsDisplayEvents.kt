@@ -33,4 +33,5 @@ internal fun AppleLyricsSupplementHooks.onAppleLyricsDisplayTrackChanged(songId:
 internal fun AppleLyricsSupplementHooks.onAppleLyricsPresentationCompleted(fragment: Any, songId: String) {
     restoreAppleLyricsScrollSnapshot(fragment, songId)
     scheduleAppleLyricsBlur(resolveAppleLyricsRecyclerView(fragment))
+    onlineSourceMenuHooks().refreshActiveMenu(songId)
 }

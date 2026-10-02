@@ -11,6 +11,16 @@ import org.junit.Test
 
 class LyricStyleHelperCustomColorTest {
     @Test
+    fun `status bar light dark and intermediate colors retain their native RGB`() {
+        for (color in intArrayOf(-1, 0xFF000000.toInt(), 0xFF777777.toInt())) {
+            val palette = LyricStyleHelper.customTextColorPalette(color)
+            assertArrayEquals(intArrayOf(color), palette.primary)
+            assertArrayEquals(intArrayOf(color), palette.highlight)
+            assertArrayEquals(intArrayOf(0xBF000000.toInt() or (color and 0xFFFFFF)), palette.background)
+        }
+    }
+
+    @Test
     fun `custom font color uses the selected color and a seventy five percent background alpha`() {
         val palette = LyricStyleHelper.customTextColorPalette(0xCC3366FF.toInt())
 

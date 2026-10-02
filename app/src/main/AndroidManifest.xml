@@ -48,12 +48,18 @@
             android:name=".ui.MainActivity"
             android:configChanges="locale|layoutDirection"
             android:exported="true">
+            <!-- LSPosed 优先解析模块设置入口；INFO 兼容普通包启动查询，均不依赖桌面别名。 -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="de.robv.android.xposed.category.MODULE_SETTINGS" />
+                <category android:name="android.intent.category.INFO" />
+            </intent-filter>
             <intent-filter>
                 <action android:name="android.service.quicksettings.action.QS_TILE_PREFERENCES" />
             </intent-filter>
         </activity>
 
-        <!-- 桌面图标入口：隐藏应用图标时停用此别名，主 Activity 保持可用（磁贴/通知仍可进入应用） -->
+        <!-- 桌面图标入口：隐藏应用图标时仅停用此别名，主 Activity 的 LSP/磁贴/通知入口保持可用。 -->
         <activity-alias
             android:name=".ui.MainLauncherAlias"
             android:targetActivity=".ui.MainActivity"

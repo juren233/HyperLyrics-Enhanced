@@ -9,6 +9,7 @@ package io.github.proify.lyricon.central.provider.player
 import android.os.SystemClock
 import android.util.Log
 import com.juren233.hyperlyricsenhanced.BuildConfig
+import io.github.proify.lyricon.central.ProviderFlowDiagnostics
 import com.juren233.hyperlyricsenhanced.provider.OfficialProviderControlProtocol
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import io.github.proify.lyricon.central.Constants
@@ -142,7 +143,7 @@ internal class ActivePlayerCoordinator(
 
     override fun onSongChanged(recorder: PlayerRecorder, song: Song?) {
         if (debug) Log.d(TAG, "onSongChanged: $song")
-        dispatchIfActive(recorder, allowDuplicateIfSwitching = false) {
+        dispatchIfActive(recorder, allowDuplicateIfSwitching = false, diagnosticSong = true) {
             it.onSongChanged(song)
         }
     }
@@ -195,6 +196,10 @@ internal class ActivePlayerCoordinator(
     }
 
     private fun dispatchSnapshot(snapshot: ActivePlayerSnapshot, listener: ActivePlayerListener) {
+        ProviderFlowDiagnostics.log("snapshot_delivery", snapshot.providerInfo) {
+            "listener=${ProviderFlowDiagnostics.id(listener)}, songId=${snapshot.song?.id}, " +
+                "lyricType=${snapshot.lyricType}, playing=${snapshot.isPlaying}"
+        }
         listener.onActiveProviderChanged(snapshot.providerInfo)
         listener.onPlaybackStateChanged(snapshot.isPlaying)
 
@@ -213,6 +218,7 @@ internal class ActivePlayerCoordinator(
         recorder: PlayerRecorder,
         allowDuplicateIfSwitching: Boolean = true,
         diagnosticPosition: Long? = null,
+        diagnosticSong: Boolean = false,
         reportsPlaybackState: Boolean = false,
         crossinline notifier: (ActivePlayerListener) -> Unit
     ) {
@@ -291,10 +297,20 @@ internal class ActivePlayerCoordinator(
                         ProviderSourcePriorityResolver.resolve(currentInfo).rank
                     )
                 }
+                // Cross-app handoff must not wait for the old player to publish PAUSED. In real
+                // devices the new player's playback-state edge and actual audio output arrive
+                // first, while the old Provider can retain isPlaying=true for ~2 seconds. Only a
+                // playback-state event may use this fast path; song/position traffic is not an
+                // ownership signal and therefore cannot oscillate the active player.
+                val confirmedPlaybackTakeover = !samePlayer &&
+                    reportsPlaybackState &&
+                    recorderPlaying &&
+                    audioConflict == false
                 val canSwitch = when {
                     currentInfo == null -> true
                     samePlayer && priorityComparison > 0 -> true
                     samePlayer && priorityComparison < 0 -> false
+                    confirmedPlaybackTakeover -> true
                     else -> !activeIsPlaying && recorderPlaying
                 }
                 if (canSwitch) {
@@ -305,6 +321,7 @@ internal class ActivePlayerCoordinator(
                     decision = when {
                         currentInfo == null -> "switched_no_active"
                         samePlayer && priorityComparison > 0 -> "switched_higher_priority"
+                        confirmedPlaybackTakeover -> "switched_confirmed_playback_takeover"
                         else -> "switched_playback_state"
                     }
                 } else {
@@ -325,6 +342,15 @@ internal class ActivePlayerCoordinator(
             logSourceDecisionOnce(recorderInfo, decision)
         }
 
+        if (diagnosticSong) {
+            ProviderFlowDiagnostics.log("central_song_route", recorderInfo) {
+                "recorder=${ProviderFlowDiagnostics.id(recorder)}, songId=${recorder.song?.id}, " +
+                    "decision=$decision, switched=$isSwitched, broadcast=$shouldBroadcastOriginal, " +
+                    "reportedPlaying=$reportedPlaying, effectivePlaying=$recorderPlaying, " +
+                    "audioConflict=$audioConflict, audioSuppressed=$audioSuppressed, " +
+                    "active=${resultingInfo?.playerPackageName}, listeners=${listeners.size}"
+            }
+        }
         diagnosticPosition?.let { position ->
             logPositionDiagnostic(
                 recorderInfo = recorderInfo,
@@ -439,6 +465,9 @@ internal class ActivePlayerCoordinator(
             try {
                 notifier(listener)
             } catch (e: Exception) {
+                ProviderFlowDiagnostics.log("subscriber_dispatch_failed") {
+                    "listener=${ProviderFlowDiagnostics.id(listener)}, error=${e.javaClass.name}"
+                }
                 if (debug) Log.e(TAG, "Dispatch failed for listener: ${listener.javaClass.name}", e)
             }
         }

@@ -8,8 +8,55 @@ chains used by settings. This is a binary check, NOT proof of runtime callbacks 
 """
 import argparse
 import json
+import os
+from pathlib import Path
+import re
+import shutil
+import subprocess
 import sys
 from verify_apple_music_profiles import ApkDexContext, to_dex_type
+
+
+def manifest_activity_names(apk_path):
+    """Read registered components from binary AXML; DEX class existence is insufficient."""
+    aapt = shutil.which('aapt')
+    roots = [os.environ.get('ANDROID_HOME'), os.environ.get('ANDROID_SDK_ROOT')]
+    local = Path(__file__).resolve().parents[1] / 'local.properties'
+    if local.is_file():
+        roots += [line.split('=', 1)[1].strip() for line in local.read_text().splitlines()
+                  if line.startswith('sdk.dir=')]
+    if not aapt:
+        for root in filter(None, roots):
+            candidates = sorted(Path(root).glob('build-tools/*/aapt'), reverse=True)
+            if candidates:
+                aapt = str(candidates[0])
+                break
+    if not aapt:
+        raise RuntimeError('Manifest verification requires Android SDK aapt (ANDROID_HOME or local.properties)')
+    xml = subprocess.check_output([aapt, 'dump', 'xmltree', str(apk_path), 'AndroidManifest.xml'], text=True)
+    package = re.search(r'\bA: package="([^"]+)"', xml)
+    if not package:
+        raise ValueError('Binary Manifest package could not be decoded')
+    activities = set()
+    component_indent = None
+    for line in xml.splitlines():
+        element = re.match(r'(\s*)E: ([\w-]+)', line)
+        if element:
+            indent = len(element[1])
+            if component_indent is not None and indent <= component_indent:
+                component_indent = None
+            if element[2] in ('activity', 'activity-alias'):
+                component_indent = indent
+        elif component_indent is not None:
+            name = re.search(r'\bA: android:name\([^)]*\)="([^"]+)"', line)
+            if name and len(line) - len(line.lstrip()) == component_indent + 2:
+                value = name[1]
+                if value.startswith('.'):
+                    value = package[1] + value
+                elif '.' not in value:
+                    value = package[1] + '.' + value
+                activities.add(value)
+    return activities
 
 
 def binary_name(descriptor):
@@ -120,6 +167,19 @@ def verify_profile(ctx, profile):
         field(response, names['CONTENT_HTTP_RESPONSE_REQUEST_FIELD'], request)
         field(response, names['CONTENT_HTTP_RESPONSE_HEADERS_FIELD'], headers)
 
+    # Raw 1606 restart-theme fields: one instance snapshot and one static mode.
+    for point, member, expected_static in [
+        ('ACTIVITY_THEME_CREATE', 'ACTIVITY_THEME_MODE_FIELD', False),
+        ('APP_COMPAT_THEME_STATE', 'APP_COMPAT_THEME_MODE_FIELD', True),
+    ]:
+        if points.get(point):
+            target = one(point)
+            name = target['runtimeMemberNames'][member]
+            field(target['className'], name, 'int')
+            matches = [f for cls in lineage(ctx, target['className']) for f in cls.fields if f.name == name]
+            require(len(matches) == 1 and bool(matches[0].access_flags & 0x8) == expected_static,
+                    f'{target["className"]}.{name}: static/instance mismatch')
+
     # A reused name is insufficient: f(q.B,int,float)V is not the old f()V resolver.
     custom = one('APPLE_CUSTOM_TEXT_VIEW')
     names = custom['runtimeMemberNames']
@@ -216,8 +276,39 @@ def verify_profile(ctx, profile):
                 if key.endswith(('_CLASS', '_CLASS_NAME')):
                     require(ctx.find_class(value) is not None, f'{point}.{key}: missing class {value}')
 
+    # MainContentActivity still exists in 1606 DEX but is absent from its Manifest.
+    registered = manifest_activity_names(ctx.apk_path)
+    for target in points.get('APPLE_MAIN_CONTENT_ACTIVITY', []):
+        require(target['className'] in registered,
+                f'APPLE_MAIN_CONTENT_ACTIVITY: not a registered Activity in AndroidManifest.xml: {target["className"]}')
+
     # Verify fields on THEIR ACTUAL OWNERS, not a two-hop bag of matching field letters.
     ui = one('LYRICS_UI_ON_CREATE_VIEW')
+    if points.get('ALBUM_COMPOSE_ROW'):
+        row = one('ALBUM_COMPOSE_ROW')
+        row_owner = row['parameterTypeNames'][1]
+        names = row['runtimeMemberNames']
+        key_owner = field(row_owner, names['ALBUM_COMPOSE_ROW_KEY_FIELD'], 'D7.q')
+        if key_owner:
+            field(key_owner, names['ALBUM_COMPOSE_KEY_ID_FIELD'], 'java.lang.String')
+
+    if points.get('RADIO_SEARCH_SESSION'):
+        session = one('RADIO_SEARCH_SESSION')
+        names = session['runtimeMemberNames']
+        kind = names['RADIO_SEARCH_SESSION_KIND_CLASS']
+        api = names['RADIO_SEARCH_MEDIA_API_CLASS']
+        scope = names['RADIO_SEARCH_SCOPE_CLASS']
+        wanted = [to_dex_type(x) for x in [kind, api, scope]]
+        require(any(m.name == '<init>' and m.param_types == wanted
+                    for m in ctx.find_class(session['className']).methods),
+                f'{session["className"]}: isolated search constructor descriptor mismatch')
+        start = one('RADIO_SEARCH_START')
+        section, catalogue = start['parameterTypeNames'][1:3]
+        field(kind, names['RADIO_SEARCH_SESSION_KIND_FIELD'], kind)
+        field(section, names['RADIO_SEARCH_ARTISTS_KIND_FIELD'], section)
+        field(catalogue, names['RADIO_SEARCH_CATALOG_KIND_FIELD'], catalogue)
+        method(scope, names['RADIO_SEARCH_SCOPE_CONTEXT_METHOD'], [], 'fi.e', False)
+
     names = ui['runtimeMemberNames']
     binding = field(ui['className'], names['LYRICS_UI_BINDING_FIELD'])
     field(binding, names['LYRICS_UI_BINDING_RECYCLER_FIELD'], 'androidx.recyclerview.widget.RecyclerView')

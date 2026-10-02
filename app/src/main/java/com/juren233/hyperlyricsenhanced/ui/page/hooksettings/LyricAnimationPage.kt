@@ -1,6 +1,11 @@
 ﻿package com.juren233.hyperlyricsenhanced.ui.page.hooksettings
 
 import android.content.Context
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -11,9 +16,11 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -24,6 +31,7 @@ import com.juren233.hyperlyricsenhanced.R
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.common.UIConstants
 import com.juren233.hyperlyricsenhanced.common.PrefsBridge
+import com.juren233.hyperlyricsenhanced.ui.component.FloatInputDialog
 import com.juren233.hyperlyricsenhanced.ui.navigation.LocalNavigator
 import com.juren233.hyperlyricsenhanced.ui.utils.BlurredBar
 import com.juren233.hyperlyricsenhanced.ui.utils.pageScrollModifiers
@@ -34,10 +42,13 @@ import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
+import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
+import top.yukonga.miuix.kmp.preference.ArrowPreference
+import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.preference.RadioButtonPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
@@ -79,6 +90,13 @@ fun LyricAnimationPage() {
     val blurActive = backdrop != null
     val barColor = if (blurActive) Color.Transparent else MiuixTheme.colorScheme.surface
     val topAppBarScrollBehavior = MiuixScrollBehavior()
+
+    // 无动画=样式切换动画关闭，此时动画速率整卡置灰（速率只作用于样式切换动画）。
+    val prefs = remember { context.getSharedPreferences(UIConstants.PREF_NAME, Context.MODE_PRIVATE) }
+    var animEnable by remember {
+        mutableStateOf(prefs.getBoolean(RootConstants.KEY_HOOK_ANIM_ENABLE, RootConstants.DEFAULT_HOOK_ANIM_ENABLE))
+    }
+    val onAnimEnableChange: (Boolean) -> Unit = { animEnable = it }
     Scaffold(
         topBar = {
             BlurredBar(backdrop, blurActive) {
@@ -112,18 +130,125 @@ fun LyricAnimationPage() {
                 modifier = Modifier.pageScrollModifiers(true, true, topAppBarScrollBehavior),
                 contentPadding = contentPadding,
             ) {
-                animationPageSections()
+                animationRateSection(enabled = animEnable)
+                animationPageSections(animEnable = animEnable, onAnimEnableChange = onAnimEnableChange)
             }
         }
     }
 }
 
-private fun LazyListScope.animationPageSections() {
+private fun LazyListScope.animationRateSection(enabled: Boolean) {
+    item(key = "animation_rate") {
+        val context = LocalContext.current
+        val prefs = remember { context.getSharedPreferences(UIConstants.PREF_NAME, Context.MODE_PRIVATE) }
+
+        var rate by remember {
+            mutableStateOf(
+                prefs.getString(RootConstants.KEY_HOOK_SWITCH_ANIM_RATE, RootConstants.DEFAULT_HOOK_SWITCH_ANIM_RATE)
+                    ?: RootConstants.DEFAULT_HOOK_SWITCH_ANIM_RATE
+            )
+        }
+        var customRate by remember {
+            mutableFloatStateOf(prefs.getFloat(RootConstants.KEY_HOOK_SWITCH_ANIM_CUSTOM_RATE, RootConstants.DEFAULT_HOOK_SWITCH_ANIM_CUSTOM_RATE))
+        }
+        var showDurationDialog by remember { mutableStateOf(false) }
+
+        val saveConfig = remember {
+            { key: String, value: Any ->
+                prefs.edit {
+                    when (value) {
+                        is Boolean -> putBoolean(key, value)
+                        is Int -> putInt(key, value)
+                        is Float -> putFloat(key, value)
+                        is String -> putString(key, value)
+                    }
+                }
+                when (value) {
+                    is Boolean -> PrefsBridge.putBoolean(key, value)
+                    is Int -> PrefsBridge.putInt(key, value)
+                    is Float -> PrefsBridge.putFloat(key, value)
+                    is String -> PrefsBridge.putString(key, value)
+                }
+            }
+        }
+
+        val rateValues = listOf(
+            RootConstants.SWITCH_ANIM_RATE_SWIFT,
+            RootConstants.SWITCH_ANIM_RATE_MODERATE,
+            RootConstants.SWITCH_ANIM_RATE_ELEGANT,
+            RootConstants.SWITCH_ANIM_RATE_CUSTOM,
+        )
+        val rateLabels = listOf(
+            stringResource(id = R.string.option_switch_anim_rate_swift),
+            stringResource(id = R.string.option_switch_anim_rate_moderate),
+            stringResource(id = R.string.option_switch_anim_rate_elegant),
+            stringResource(id = R.string.option_switch_anim_rate_custom),
+        )
+
+        Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
+            Column {
+                OverlayDropdownPreference(
+                    title = stringResource(id = R.string.title_switch_anim_rate),
+                    items = rateLabels,
+                    selectedIndex = rateValues.indexOf(rate).coerceAtLeast(0),
+                    enabled = enabled,
+                    onSelectedIndexChange = { index ->
+                        val value = rateValues[index]
+                        rate = value
+                        saveConfig(RootConstants.KEY_HOOK_SWITCH_ANIM_RATE, value)
+                    }
+                )
+                AnimatedVisibility(
+                    visible = rate == RootConstants.SWITCH_ANIM_RATE_CUSTOM,
+                    enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
+                    exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top)
+                ) {
+                    Column {
+                        ArrowPreference(
+                            title = stringResource(id = R.string.title_switch_anim_custom_rate),
+                            enabled = enabled,
+                            endActions = {
+                                Text(
+                                    String.format("%.1f", customRate) + "x",
+                                    fontSize = MiuixTheme.textStyles.body2.fontSize,
+                                    color = if (enabled) {
+                                        MiuixTheme.colorScheme.onSurfaceVariantActions
+                                    } else {
+                                        MiuixTheme.colorScheme.disabledOnSecondaryVariant
+                                    }
+                                )
+                            },
+                            onClick = { showDurationDialog = true }
+                        )
+                    }
+                }
+            }
+        }
+
+        FloatInputDialog(
+            show = showDurationDialog,
+            title = stringResource(id = R.string.title_switch_anim_custom_rate),
+            label = stringResource(id = R.string.label_switch_anim_custom_rate_range),
+            initialValue = customRate,
+            min = RootConstants.SWITCH_ANIM_CUSTOM_RATE_MIN,
+            max = RootConstants.SWITCH_ANIM_CUSTOM_RATE_MAX,
+            onDismiss = { showDurationDialog = false },
+            onConfirm = { value ->
+                customRate = value
+                saveConfig(RootConstants.KEY_HOOK_SWITCH_ANIM_CUSTOM_RATE, value)
+            }
+        )
+    }
+}
+
+private fun LazyListScope.animationPageSections(
+    animEnable: Boolean,
+    onAnimEnableChange: (Boolean) -> Unit
+) {
     item(key = "animation_options") {
         val context = LocalContext.current
         val prefs = remember { context.getSharedPreferences(UIConstants.PREF_NAME, Context.MODE_PRIVATE) }
 
-        var animEnable by remember { mutableStateOf(prefs.getBoolean(RootConstants.KEY_HOOK_ANIM_ENABLE, RootConstants.DEFAULT_HOOK_ANIM_ENABLE)) }
         var animId by remember { mutableStateOf(prefs.getString(RootConstants.KEY_HOOK_ANIM_ID, RootConstants.DEFAULT_HOOK_ANIM_ID) ?: RootConstants.DEFAULT_HOOK_ANIM_ID) }
 
         val saveConfig = remember {
@@ -147,7 +272,7 @@ private fun LazyListScope.animationPageSections() {
                     title = stringResource(id = R.string.option_anim_none),
                     selected = !animEnable,
                     onClick = {
-                        animEnable = false
+                        onAnimEnableChange(false)
                         saveConfig(RootConstants.KEY_HOOK_ANIM_ENABLE, false)
                     }
                 )
@@ -158,7 +283,7 @@ private fun LazyListScope.animationPageSections() {
                         title = label,
                         selected = animEnable && animId == key,
                         onClick = {
-                            animEnable = true
+                            onAnimEnableChange(true)
                             saveConfig(RootConstants.KEY_HOOK_ANIM_ENABLE, true)
                             animId = key
                             saveConfig(RootConstants.KEY_HOOK_ANIM_ID, key)

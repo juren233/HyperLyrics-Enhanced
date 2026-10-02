@@ -9,8 +9,11 @@ package com.juren233.hyperlyricsenhanced.lyric.view
 import android.annotation.SuppressLint
 import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
+import android.animation.ValueAnimator
+import android.animation.LayoutTransition
 import android.content.Context
 import android.graphics.Canvas
+import android.graphics.Picture
 import android.view.Gravity
 import android.view.View
 import android.widget.LinearLayout
@@ -19,8 +22,12 @@ import androidx.core.view.forEach
 import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.lyric.model.RichLyricLine
+import com.juren233.hyperlyricsenhanced.lyric.model.LyricLine
 import com.juren233.hyperlyricsenhanced.lyric.model.interfaces.IRichLyricLine
 import com.juren233.hyperlyricsenhanced.lyric.view.line.SpaceGateLyricLineView
+import com.juren233.hyperlyricsenhanced.lyric.view.line.SpaceGatePromotionRenderer
+import com.juren233.hyperlyricsenhanced.lyric.view.line.SpaceGatePromotionSnapshot
+import com.juren233.hyperlyricsenhanced.lyric.view.yoyo.YoYoAnimation
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 
 @SuppressLint("ViewConstructor")
@@ -36,6 +43,14 @@ class SpaceGateRichLyricLineView(
     val secondary = SpaceGateLyricLineView(context).apply { visibleIfChanged = false }
 
     var alwaysShowSecondary = false
+
+    /** Metadata and instrumental gaps render independently in each physical slot. */
+    internal var continuousSpaceGate = true
+        set(value) {
+            if (field == value) return
+            field = value
+            updateSpaceGateEnabled()
+        }
 
     /**
      * 动态长度模式：主/次行测量宽度收缩为文字实际宽度，见 [SpaceGateLyricLineView.hugContentWidth]。
@@ -54,12 +69,100 @@ class SpaceGateRichLyricLineView(
      */
     var onDeferredContentApplied: (() -> Unit)? = null
 
-    /**
-     * 动态长度：预览提升动画期间（内容延迟落地前）让视图按目标行落定后的
-     * 内容宽度参与岛宽测量，使岛宽与提升动画同步过渡。
-     * 预判与落地实测走同一条绘制管线；内容落地时清除，实测值兜底。
-     */
+    /** 动态长度的下一行宽度预测；长句上浮时用于提前给岛留位。 */
     private var pendingHugWidth: Int? = null
+    /** 飞行期间子行始终按起跳帧宽度绘制，避免重新布局造成横跳。 */
+    private var promotionFlightWidth: Int? = null
+    /** 长句上浮时只给外层岛预留宽度，子行仍按起跳宽度绘制。 */
+    private var promotionReserveWidth: Int? = null
+    /** 旧宽子行在预留宽度内的放置比例：左=0、居中=0.5、右=1。 */
+    private var promotionReserveOffsetFactor: Float? = null
+    /** 预留生效时按落定宽度算出的主行起笔位；落地帧与重排后的稳态共用同一锚点。 */
+    private var promotionLandingStartX: Float? = null
+    /** 落地后到首次正式重测前，抵消旧宽子行在预留宽度中的临时放置偏移。 */
+    private var promotionLandingOffset: Float? = null
+    private var fullIslandPromotion: SpaceGatePromotionRenderer? = null
+    private var fullIslandPromotionAnimator: ValueAnimator? = null
+    internal var cancelLayoutRoleTransition: (() -> Unit)? = null
+    internal var layoutRoleDrawing: ((Canvas) -> Unit)? = null
+    private var applyingLayoutRoleContent = false
+    private var layoutRoleLayoutTransition: LayoutTransition? = null
+
+    /** Bind the final layout behind the shared morph drawing; no independent promotion may start. */
+    internal fun applyLayoutRoleContent(keepLive: Boolean = false, apply: () -> Unit) {
+        applyingLayoutRoleContent = true
+        try {
+            if (!keepLive) {
+                layoutRoleLayoutTransition = layoutTransition
+                layoutTransition = null
+                // Cancellation may flush a queued old bind; apply the current pair afterwards.
+                YoYoAnimation.cancelAnimation(this)
+                cancelNextLinePromotion()
+                alpha = 1f
+            }
+            apply()
+        } finally {
+            applyingLayoutRoleContent = false
+        }
+    }
+
+    internal fun layoutRoleMain(line: IRichLyricLine?) = assembler.buildMain(line).line
+
+    internal fun rightPreviewHandoffSnapshot(incoming: IRichLyricLine?): SpaceGatePromotionSnapshot? {
+        val text = assembler.buildMain(incoming).line.normalize().text
+        if (!shouldHandoffRightPreview(rawLine?.metadata?.get(METADATA_NEXT_LINE_RIGHT_TEXT), text,
+                hasLyricLineAdvanced(rawLine, incoming))) return null
+        return main.rightPreviewSnapshot(text)?.let { it.copy(baseline = it.baseline + main.top) }
+    }
+
+    internal fun layoutRoleSnapshot(preview: Boolean = false, incoming: IRichLyricLine? = null): SpaceGatePromotionSnapshot? {
+        val row = if (preview) secondary else main
+        return row.promotionSnapshot(
+            incoming = incoming?.let { assembler.buildMain(it).line }, includeIndependent = true,
+        )?.let { it.copy(baseline = it.baseline + row.top) }
+    }
+
+    /** Record only our drawing commands, for the outgoing text/metadata during a layout morph. */
+    internal fun recordLayoutRoleFrame(
+        hideMain: Boolean = false,
+        hideSecondary: Boolean = false,
+        includeTransition: Boolean = true,
+        draw: ((Canvas) -> Unit)? = null,
+    ): Picture {
+        val picture = Picture()
+        val canvas = picture.beginRecording(width.coerceAtLeast(1), height.coerceAtLeast(1))
+        val mainAlpha = main.alpha
+        val secondaryAlpha = secondary.alpha
+        try {
+            if (hideMain) main.alpha = 0f
+            if (hideSecondary) secondary.alpha = 0f
+            val layer = canvas.saveLayerAlpha(0f, 0f, width.toFloat(), height.toFloat(), (255 * alpha).toInt())
+            canvas.translate(translationX, translationY)
+            canvas.scale(scaleX, scaleY, pivotX, pivotY)
+            when {
+                draw != null -> draw(canvas)
+                includeTransition -> dispatchDraw(canvas)
+                else -> drawLyricContent(canvas)
+            }
+            canvas.restoreToCount(layer)
+        } finally {
+            main.alpha = mainAlpha
+            secondary.alpha = secondaryAlpha
+            picture.endRecording()
+        }
+        return picture
+    }
+
+    internal fun pauseLayoutRoleContent(paused: Boolean) {
+        main.setLayoutRolePaused(paused)
+        secondary.setLayoutRolePaused(paused)
+        if (!paused) {
+            layoutTransition = layoutRoleLayoutTransition
+            layoutRoleLayoutTransition = null
+            lastPosition = Long.MIN_VALUE
+            if (requestMarquee) requestStartMarquee()
+        }
+    }
 
     internal fun beginDeferredContentWidth(targetLine: IRichLyricLine?) {
         pendingHugWidth = targetLine?.let(::predictAppliedContentWidth)
@@ -91,15 +194,14 @@ class SpaceGateRichLyricLineView(
     }
 
     private fun predictAppliedContentWidth(targetLine: IRichLyricLine): Int {
-        val mainResult = assembler.buildMain(targetLine)
-        val secResult = assembler.buildSecondary(targetLine)
-        val mainWidth = main.measureIncomingHugWidth(mainResult.line)
-        val secondaryWidth = if (secResult.alwaysShow) {
-            secondary.measureIncomingHugWidth(secResult.line)
-        } else {
-            0
-        }
-        return resolveMeasureFloor(maxOf(mainWidth, secondaryWidth))
+        return resolveMeasureFloor(measureIndependentContentWidth(targetLine))
+    }
+
+    /** Uncapped width of all visible rows with the actual drawing fonts and sizes. */
+    internal fun measureIndependentContentWidth(targetLine: IRichLyricLine): Int {
+        return assembler.measureVisibleContentWidth(
+            targetLine, main::measureIncomingHugWidth, secondary::measureIncomingHugWidth,
+        )
     }
 
     /**
@@ -192,6 +294,7 @@ class SpaceGateRichLyricLineView(
     private var secondaryIsNextLinePreview = false
     private var nextLineTransitionRunning = false
     private var nextLineTransitionGeneration = 0
+    private var nextLineWatchdog: Runnable? = null
     private var centerMainLine: Boolean? = null
     private var centerSecondaryLine: Boolean? = null
     // 预览提升窗口的对齐暂存：提升动画期间旧句仍在上屏，视图级居中/靠右
@@ -204,6 +307,7 @@ class SpaceGateRichLyricLineView(
         targetLine: IRichLyricLine?,
         previousLine: IRichLyricLine? = rawLine
     ): Boolean {
+        if (applyingLayoutRoleContent) return false
         val nextMainText = assembler.buildMain(targetLine).line.text
         return canAnimateNextLinePromotion(
             wasPreview = secondaryIsNextLinePreview,
@@ -220,6 +324,21 @@ class SpaceGateRichLyricLineView(
     var line: IRichLyricLine?
         get() = rawLine
         set(value) {
+            // An older YoYo completion may still bind during the shared fade-out. Its
+            // queued content must not discard the newer pair waiting at the transparent frame.
+            if (!applyingLayoutRoleContent && cancelLayoutRoleTransition != null && !YoYoAnimation.isRunning(this)) {
+                cancelLayoutRoleTransition?.invoke()
+            }
+            if (shouldFinishRunningPromotionBeforeApplying(nextLineTransitionRunning, rawLine, value)) {
+                if (BuildConfig.DEBUG) {
+                    HookLogger.d(
+                        "SwitchTrace",
+                        "promotion preempt view=${System.identityHashCode(this).toString(16)} " +
+                            "promoted=${rawLine?.begin}-${rawLine?.end} incoming=${value?.begin}-${value?.end}"
+                    )
+                }
+                finishNextLinePromotion(revealNextPreview = false)
+            }
             rawLine = value
             val clearedFreeze = contentSwitchFreezeWidth
             contentSwitchFreezeWidth = null
@@ -258,9 +377,23 @@ class SpaceGateRichLyricLineView(
         main.siblingView = sibling?.main
         secondary.isRightSide = isRightSide
         secondary.siblingView = sibling?.secondary
+        updateSpaceGateEnabled()
+    }
+
+    private fun updateSpaceGateEnabled() {
+        listOf(main, secondary).forEach { child ->
+            val enabled = continuousSpaceGate && child.siblingView != null
+            if (child.spaceGateEnabled != enabled) {
+                child.spaceGateEnabled = enabled
+                // Clear/rebuild the seam and virtual-width geometry when a slot
+                // changes roles, including a relayout during a queued content animation.
+                child.relayout()
+            }
+        }
     }
 
     fun reset() {
+        cancelLayoutRoleTransition?.invoke()
         cancelNextLinePromotion()
         line = null
         renderScale = 1.0f
@@ -280,6 +413,7 @@ class SpaceGateRichLyricLineView(
     }
 
     fun beginAnimationTransition() {
+        cancelLayoutRoleTransition?.invoke()
         cancelNextLinePromotion()
         animationTransition = true
     }
@@ -301,6 +435,10 @@ class SpaceGateRichLyricLineView(
     }
 
     fun notifyLineChanged() = refreshLines()
+
+    fun setSecondaryTextUnitProgress(enabled: Boolean) {
+        assembler.setSecondaryTextUnitProgress(enabled)
+    }
 
     fun setDisplayOptions(
         displayMode: Int,
@@ -335,6 +473,7 @@ class SpaceGateRichLyricLineView(
     }
 
     fun seekTo(position: Long) {
+        cancelLayoutRoleTransition?.invoke()
         if (animationTransition) {
             pendingPosition = position; return
         }
@@ -366,6 +505,7 @@ class SpaceGateRichLyricLineView(
 
     fun requestStartMarquee() {
         requestMarquee = true
+        if (layoutRoleDrawing != null) return
         main.requestScroll()
         if (!secondaryIsNextLinePreview) secondary.requestScroll()
     }
@@ -486,8 +626,20 @@ class SpaceGateRichLyricLineView(
     }
 
     override fun onMeasure(wSpec: Int, hSpec: Int) {
+        promotionFlightWidth?.let { frozen ->
+            prepareHugMeasurePass(frozen)
+            super.onMeasure(MeasureSpec.makeMeasureSpec(frozen, MeasureSpec.EXACTLY), hSpec)
+            promotionReserveWidth?.let { desired ->
+                val available = MeasureSpec.getSize(wSpec)
+                val reserved = if (MeasureSpec.getMode(wSpec) == MeasureSpec.UNSPECIFIED ||
+                    LyricHugMeasureWindow.reportIntrinsicWidth
+                ) desired else minOf(desired, maxOf(available, frozen))
+                if (reserved > frozen) setMeasuredDimension(reserved, measuredHeight)
+            }
+            return
+        }
         val pending = pendingHugWidth
-        if (pending != null) {
+        if (pending != null && !nextLineTransitionRunning) {
             // 预览提升动画期间：按预判的落定内容宽度参与岛宽测量，
             // 受当前可用宽度约束，与 hug 实测的 spec 收敛行为一致
             val target = pending.coerceAtMost(MeasureSpec.getSize(wSpec))
@@ -544,6 +696,17 @@ class SpaceGateRichLyricLineView(
 
     override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
         super.onLayout(changed, left, top, right, bottom)
+        val frozen = promotionFlightWidth
+        if (frozen != null && promotionReserveWidth != null && width > frozen) {
+            val childOffset = ((width - frozen) * (promotionReserveOffsetFactor ?: 0f)).toInt()
+            main.offsetLeftAndRight(childOffset)
+            secondary.offsetLeftAndRight(childOffset)
+        }
+        if (promotionLandingOffset != null && frozen == null) {
+            promotionLandingOffset = null
+            main.translationX = 0f
+            clipChildren = true
+        }
         // 切换时序诊断：任何真实几何变化（自身宽/在父层中的位置/父层与祖父层
         // 的位置宽度）都记录，用于区分"自身测量宽变化"与"父层/胶囊搬动"。
         if (!BuildConfig.DEBUG || !changed || !main.hugContentWidth) return
@@ -561,13 +724,29 @@ class SpaceGateRichLyricLineView(
     }
 
     override fun dispatchDraw(canvas: Canvas) {
+        layoutRoleDrawing?.let { it(canvas); return }
+        drawLyricContent(canvas)
+    }
+
+    private fun drawLyricContent(canvas: Canvas) {
         if (renderScale != 1.0f) {
             canvas.withScale(renderScale, renderScale, 0f, height / 2f) {
                 super.dispatchDraw(this)
+                drawFullIslandPromotion(this)
             }
         } else {
             super.dispatchDraw(canvas)
+            drawFullIslandPromotion(canvas)
         }
+    }
+
+    private fun drawFullIslandPromotion(canvas: Canvas) {
+        val own = fullIslandPromotion ?: return
+        val master = if (main.isRightSide) own else {
+            val other = (main.siblingView?.parent as? SpaceGateRichLyricLineView)?.fullIslandPromotion
+            other?.takeIf { it.matches(own) } ?: own
+        }
+        master.draw(canvas, main.isRightSide, width, height, shadowStyle = main.textPaint)
     }
 
     fun setRenderScale(scale: Float) {
@@ -603,7 +782,7 @@ class SpaceGateRichLyricLineView(
         val shouldPromote = allowNextLinePromotion &&
             willAnimateNextLinePromotion(line, previousLine)
         if (shouldPromote) {
-            animateNextLinePromotion()
+            animateNextLinePromotion(mainResult.line)
             return
         }
 
@@ -631,10 +810,12 @@ class SpaceGateRichLyricLineView(
     }
 
     private fun updateLayoutTransitionX(config: String? = LayoutTransitionX.TRANSITION_CONFIG_SMOOTH) {
-        layoutTransition = LayoutTransitionX(config).apply { setAnimateParentHierarchy(true) }
+        val transition = LayoutTransitionX(config).apply { setAnimateParentHierarchy(true) }
+        if (layoutRoleDrawing != null) layoutRoleLayoutTransition = transition
+        else layoutTransition = transition
     }
 
-    private fun animateNextLinePromotion() {
+    private fun animateNextLinePromotion(nextMainLine: LyricLine) {
         val generation = ++nextLineTransitionGeneration
         nextLineTransitionRunning = true
         val followsInterlude = main.isInterludeIndicator
@@ -643,13 +824,91 @@ class SpaceGateRichLyricLineView(
         } else {
             NEXT_LINE_PROMOTION_DURATION
         }
+        if (startFullIslandPromotion(nextMainLine, generation, transitionDuration)) {
+            schedulePromotionWatchdog(generation, transitionDuration)
+            return
+        }
+        val nextMainText = nextMainLine.text
+        val nextMainAlignedRight = nextMainLine.isAlignedRight
         val targetTranslationY = (main.top - secondary.top).toFloat()
-        val targetTranslationX = (main.left - secondary.left).toFloat()
+        // 飞行子行保持起跳宽；长句让外层岛提前增宽。新增空间按落定对齐
+        // 放在右侧、两侧或左侧，动画再抵消子行在预留宽度中的位置变化。锚点语义（与
+        // SpaceGateLyricLineView.resolveTextStartX 的决策树一一对应）：
+        // 溢出行落定后从 0 起笔按左缘、靠右行取右缘、居中行取文本中点、其余左缘。
+        val currentWidth = (width.takeIf { it > 0 } ?: measuredWidth).toFloat()
+        promotionFlightWidth = currentWidth.toInt().takeIf { main.hugContentWidth && it > 0 }
+        val landingWidth = currentWidth
+        val secondaryTextStartX = secondary.currentTextStartX()
+        val landingRightFlag = stagedPromotionRightAlign?.first ?: main.alignRight
+        val landingCenterFlag = stagedPromotionCentering?.first ?: main.centerIfPossible
         val targetScale = (main.textSize / secondary.textSize).coerceIn(0.5f, 2f)
+        val targetTextWidth = main.measureLineTextWidth(nextMainText)
+        promotionReserveWidth = PromotionWidthGeometry.reserveWidth(
+            pendingWidth = pendingHugWidth,
+            currentWidth = currentWidth,
+            hugContentWidth = main.hugContentWidth,
+            scaledPreviewWidth = secondary.lineWidth * targetScale,
+            targetTextWidth = targetTextWidth
+        )
+        promotionReserveOffsetFactor = promotionReserveWidth?.let {
+            PromotionWidthGeometry.placementFactor(
+                alignRight = landingRightFlag,
+                center = landingCenterFlag,
+                lineAlignedRight = nextMainAlignedRight
+            )
+        }
+        // 预留生效时落定组宽=预留宽（对唱固定长度会把 hug 宽抬到全曲最长行），
+        // 落定几何必须按预留宽计算：否则目标按起跳宽判溢出归零、落地重排后文本
+        // 却居中在 (预留宽−文本宽)/2，产生无动画承接的落地横跳。
+        val landingStartWidth = promotionReserveWidth?.toFloat() ?: landingWidth
+        // 目标 X 按落定对齐（暂存值）计算：此刻旧句标志仍是上一行的方向。
+        val targetMainTextStartX = main.textStartX(
+            nextMainText,
+            nextMainAlignedRight,
+            centerIfPossibleOverride = stagedPromotionCentering?.first,
+            alignRightOverride = stagedPromotionRightAlign?.first,
+            availableWidthOverride = landingStartWidth
+        )
+        val anchorFactor = when {
+            targetTextWidth >= landingStartWidth -> 0f
+            landingRightFlag -> 1f
+            landingCenterFlag -> 0.5f
+            nextMainAlignedRight -> 1f
+            else -> 0f
+        }
+        val anchorFrom = secondaryTextStartX + secondary.lineWidth * anchorFactor
+        val anchorTo = targetMainTextStartX + targetTextWidth * anchorFactor
+        promotionLandingStartX = promotionReserveWidth?.let { targetMainTextStartX }
+        val reserveOffset = PromotionWidthGeometry.childOffset(
+            promotionReserveWidth,
+            currentWidth,
+            promotionReserveOffsetFactor ?: 0f
+        )
+        val targetTranslationX = (main.left - secondary.left).toFloat() +
+            anchorTo - anchorFrom - reserveOffset
+        if (promotionReserveWidth != null) {
+            clipChildren = false
+            requestLayout()
+        }
+        if (BuildConfig.DEBUG) {
+            HookLogger.d(
+                "SwitchTrace",
+                "promotion begin view=${System.identityHashCode(this).toString(16)} " +
+                    "mainLeft=${main.left} secLeft=${secondary.left} " +
+                    "mainW=${main.scrollWidth} mainLW=${main.lineWidth} mainCenter=${main.centerIfPossible} " +
+                    "secW=${secondary.scrollWidth} secLW=${secondary.lineWidth} secCenter=${secondary.centerIfPossible} " +
+                    "landingW=$landingWidth predictedW=$pendingHugWidth reserveW=$promotionReserveWidth secStartX=$secondaryTextStartX " +
+                    "targetMainX=$targetMainTextStartX targetW=$targetTextWidth " +
+                    "anchorFrom=$anchorFrom anchorTo=$anchorTo factor=$anchorFactor " +
+                    "reserveFactor=$promotionReserveOffsetFactor reserveOffset=$reserveOffset landingStartX=$promotionLandingStartX " +
+                    "dT=$targetTranslationX dY=$targetTranslationY scale=$targetScale nextRight=$nextMainAlignedRight " +
+                    "stagedCenter=${stagedPromotionCentering?.first} stagedRight=${stagedPromotionRightAlign?.first}"
+            )
+        }
 
         main.animate().cancel()
         secondary.animate().cancel()
-        secondary.pivotX = 0f
+        secondary.pivotX = anchorFrom
         secondary.pivotY = 0f
         main.animate()
             .alpha(0f)
@@ -667,21 +926,132 @@ class SpaceGateRichLyricLineView(
             .setListener(object : AnimatorListenerAdapter() {
                 override fun onAnimationEnd(animation: Animator) {
                     if (generation != nextLineTransitionGeneration) return
+                    if (BuildConfig.DEBUG) {
+                        HookLogger.d(
+                            "SwitchTrace",
+                            "promotion anim end view=${System.identityHashCode(this@SpaceGateRichLyricLineView).toString(16)} " +
+                                "secTransX=${secondary.translationX} " +
+                                // 真实视觉锚点：t + pivot + s·(画布起点 − pivot)
+                                "secVisAnchor=${secondary.translationX + secondary.pivotX +
+                                    secondary.scaleX * (secondary.currentTextStartX() - secondary.pivotX)} " +
+                                "secW=${secondary.scrollWidth} secLW=${secondary.lineWidth} " +
+                                "secCenter=${secondary.centerIfPossible}"
+                        )
+                    }
                     finishNextLinePromotion()
                 }
             })
             .start()
+        schedulePromotionWatchdog(generation, transitionDuration)
     }
 
-    private fun finishNextLinePromotion() {
+    private fun startFullIslandPromotion(line: LyricLine, generation: Int, duration: Long): Boolean {
+        if (!continuousSpaceGate || !main.spaceGateEnabled || !secondary.spaceGateEnabled) return false
+        val source = secondary.promotionSnapshot() ?: return false
+        val target = main.promotionSnapshot(
+            incoming = line,
+            center = stagedPromotionCentering?.first ?: main.centerIfPossible,
+            right = stagedPromotionRightAlign?.first ?: main.alignRight,
+        ) ?: return false
+        if (source.text != target.text || source.paint.textSize <= 0f) return false
+        val from = source.geometry.glyphs
+        val to = target.geometry.glyphs
+        if (from.size != to.size || from.indices.any {
+                from[it].charStart != to[it].charStart || from[it].charEnd != to[it].charEnd
+            }) return false
+        val promotion = SpaceGatePromotionRenderer(source, target, secondary.top, main.top, line, secondary.alpha)
+        promotion.prepareShadows(
+            (if (main.isRightSide) main.siblingView else main)?.textPaint,
+            (if (main.isRightSide) main else main.siblingView)?.textPaint,
+        )
+        fullIslandPromotion = promotion
+        main.animate().cancel()
+        secondary.animate().cancel()
+        secondary.alpha = 0f
+        main.animate()
+            .alpha(0f)
+            .translationY(-main.height * 0.65f)
+            .setDuration(duration)
+            .withLayer()
+            .start()
+        if (BuildConfig.DEBUG) {
+            HookLogger.d("SwitchTrace", "full promotion begin view=${System.identityHashCode(this).toString(16)} " +
+                "line=${line.begin}-${line.end} vw=${target.geometry.viewWidth} seam=${target.geometry.seam} " +
+                "units=${target.geometry.glyphs.size} source=${source.geometry.hashCode()} target=${target.geometry.hashCode()}")
+        }
+        fullIslandPromotionAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
+            this.duration = duration
+            addUpdateListener {
+                promotion.fraction = it.animatedValue as Float
+                invalidate()
+                (main.siblingView?.parent as? View)?.invalidate()
+            }
+            addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) {
+                    if (generation != nextLineTransitionGeneration) return
+                    // The left slot draws the right slot's frame, so it must also wait for its landing.
+                    val peer = (main.siblingView?.parent as? SpaceGateRichLyricLineView)?.fullIslandPromotion
+                    if (!main.isRightSide && peer?.matches(promotion) == true) return
+                    finishNextLinePromotion()
+                }
+            })
+            start()
+        }
+        return true
+    }
+
+    private fun finishNextLinePromotion(
+        revealNextPreview: Boolean = true,
+        notifyContentApplied: Boolean = true,
+    ) {
+        if (!nextLineTransitionRunning) return
+        val commitStart = if (BuildConfig.DEBUG) android.os.SystemClock.elapsedRealtimeNanos() else 0L
+        val fullPromotion = fullIslandPromotion
+        val peer = (main.siblingView?.parent as? SpaceGateRichLyricLineView)?.takeIf {
+            fullPromotion != null && it.fullIslandPromotion?.matches(fullPromotion) == true
+        }
+        val fullPromotionTarget = if (BuildConfig.DEBUG) fullPromotion?.geometry?.target else null
+        clearNextLineWatchdog()
+        val landingOffset = if (promotionReserveWidth != null) {
+            ((width - (promotionFlightWidth ?: width)).coerceAtLeast(0) *
+                (promotionReserveOffsetFactor ?: 0f))
+        } else null
+        promotionReserveOffsetFactor = null
+        // 预留路径的落定锚点：落地帧文本起点（旧宽子行溢出归零）+ 该补偿
+        // 恰好落在按落定宽度算出的稳态起笔位，随后重排前后视觉连续。
+        val landingStartX = promotionLandingStartX
+        promotionLandingStartX = null
         clearNextLineTransitionState()
         nextLineTransitionRunning = false
+        promotionFlightWidth = null
+        promotionReserveWidth = null
+        promotionLandingOffset = landingOffset
+        main.translationX = (landingStartX ?: 0f) - (landingOffset ?: 0f)
+        if (landingOffset == null) clipChildren = true
         pendingHugWidth = null
         refreshLines(allowNextLinePromotion = false, bypassIdentityCheck = true)
         // 新内容已渲染，此刻套用暂存对齐——与内容同帧生效，旧句淡出期间不受影响。
         applyStagedPromotionAlignment()
-        onDeferredContentApplied?.invoke()
-        if (alwaysShowSecondary) {
+        if (BuildConfig.DEBUG && main.isRightSide && fullPromotionTarget != null) {
+            val landed = main.promotionSnapshot()?.geometry
+            HookLogger.d("SwitchTrace", "full promotion landed view=${System.identityHashCode(this).toString(16)} " +
+                "target=${fullPromotionTarget.hashCode()} actual=${landed?.hashCode()} same=${fullPromotionTarget == landed}")
+        }
+        // Own transition has already been cleared, preventing recursion. Commit both slots before relayout.
+        if (fullPromotion != null && peer?.fullIslandPromotion?.matches(fullPromotion) == true) {
+            peer.finishNextLinePromotion(revealNextPreview, notifyContentApplied = false)
+        }
+        // Both slots share the same native island. Recalculating it from each callback repeats
+        // the complete width measurement and BigIslandChanged transition in the landing frame.
+        val relayoutStart = if (BuildConfig.DEBUG) android.os.SystemClock.elapsedRealtimeNanos() else 0L
+        if (notifyContentApplied) onDeferredContentApplied?.invoke()
+        if (BuildConfig.DEBUG && notifyContentApplied && fullPromotion != null) {
+            val end = android.os.SystemClock.elapsedRealtimeNanos()
+            HookLogger.d("SwitchTrace", "full promotion commit paired=${peer != null} " +
+                "totalMs=${(end - commitStart) / 1_000_000f} " +
+                "relayoutMs=${(end - relayoutStart) / 1_000_000f}")
+        }
+        if (revealNextPreview && alwaysShowSecondary) {
             secondary.alpha = 0f
             secondary.animate()
                 .alpha(1f)
@@ -692,19 +1062,68 @@ class SpaceGateRichLyricLineView(
         }
     }
 
+    /**
+     * 提升完成回调丢失的兜底：完成依赖 secondary 上 ViewPropertyAnimator 的
+     * onAnimationEnd，监听被同视图后续动画替换或回调未触发时，
+     * nextLineTransitionRunning 永久为 true，refreshLines 首行守卫会把之后所有
+     * 歌词写入静默吞掉（真机实测：apply 持续到达、bind 恒为 0 的整岛卡死）。
+     * 看门狗只在代数仍匹配且仍未落地时强制落地；正常落地后是空操作。
+     */
+    private fun schedulePromotionWatchdog(generation: Int, durationMs: Long) {
+        clearNextLineWatchdog()
+        val watchdog = Runnable {
+            nextLineWatchdog = null
+            if (generation != nextLineTransitionGeneration) return@Runnable
+            if (!nextLineTransitionRunning) return@Runnable
+            main.animate().setListener(null)
+            secondary.animate().setListener(null)
+            main.animate().cancel()
+            secondary.animate().cancel()
+            if (BuildConfig.DEBUG) {
+                HookLogger.d(
+                    "SwitchTrace",
+                    "promotion watchdog fired view=${System.identityHashCode(this).toString(16)}"
+                )
+            }
+            finishNextLinePromotion()
+        }
+        nextLineWatchdog = watchdog
+        postDelayed(watchdog, durationMs + PROMOTION_WATCHDOG_MARGIN_MS)
+    }
+
+    private fun clearNextLineWatchdog() {
+        nextLineWatchdog?.let { removeCallbacks(it) }
+        nextLineWatchdog = null
+    }
+
     private fun cancelNextLinePromotion() {
         nextLineTransitionGeneration++
+        clearNextLineWatchdog()
         main.animate().setListener(null)
         secondary.animate().setListener(null)
         main.animate().cancel()
         secondary.animate().cancel()
         nextLineTransitionRunning = false
+        promotionFlightWidth = null
+        promotionReserveWidth = null
+        promotionReserveOffsetFactor = null
+        promotionLandingStartX = null
+        promotionLandingOffset = null
+        main.translationX = 0f
+        clipChildren = true
         stagedPromotionCentering = null
         stagedPromotionRightAlign = null
         clearNextLineTransitionState()
     }
 
     private fun clearNextLineTransitionState() {
+        fullIslandPromotionAnimator?.let {
+            it.removeAllListeners()
+            it.removeAllUpdateListeners()
+            it.cancel()
+        }
+        fullIslandPromotionAnimator = null
+        fullIslandPromotion = null
         main.alpha = 1f
         main.translationY = 0f
         secondary.alpha = 1f
@@ -718,5 +1137,6 @@ class SpaceGateRichLyricLineView(
         const val NEXT_LINE_PROMOTION_DURATION = 220L
         const val INTERLUDE_PROMOTION_DURATION = 320L
         const val NEXT_LINE_PREVIEW_FADE_DURATION = 140L
+        const val PROMOTION_WATCHDOG_MARGIN_MS = 250L
     }
 }
