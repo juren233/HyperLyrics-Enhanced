@@ -18,7 +18,8 @@ internal object SystemUiHotReloadClient {
     suspend fun hasPendingUpdate(): Boolean = withContext(Dispatchers.IO) {
         runCatching {
             val service = RootApplication.xposedService ?: return@runCatching false
-            service.apiVersion >= 102 && service.runningTargets.count {
+            if (service.apiVersion < 102) return@runCatching false
+            service.runningTargets.count {
                 it.processName == "com.android.systemui" && it.state == HookedTarget.State.STALE
             } == 1
         }.getOrDefault(false)
