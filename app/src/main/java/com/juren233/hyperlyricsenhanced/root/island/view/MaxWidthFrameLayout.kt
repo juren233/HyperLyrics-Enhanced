@@ -17,7 +17,7 @@ class MaxWidthFrameLayout(context: Context) : FrameLayout(context) {
     var maxWidthPx: Int = -1
 
     /**
-     * Used only by injected Super Island test blocks.
+     * Used only by injected HyperIsland test blocks.
      */
     var keepVisible: Boolean = false
 

@@ -7,6 +7,7 @@
 package com.juren233.hyperlyricsenhanced.root
 
 import com.juren233.hyperlyricsenhanced.common.RootConstants
+import com.juren233.hyperlyricsenhanced.common.IslandTouchConfig
 
 /** Preference keys that require an immediate SystemUI runtime refresh after app-side changes. */
 internal object LivePreferenceRefreshPolicy {
@@ -41,5 +42,5 @@ internal object LivePreferenceRefreshPolicy {
         RootConstants.KEY_ACTIVE_MEDIA_SESSION_PACKAGES,
     )
 
-    fun contains(key: String): Boolean = key in keys
+    fun contains(key: String): Boolean = key in keys || key in IslandTouchConfig.preferenceKeys
 }

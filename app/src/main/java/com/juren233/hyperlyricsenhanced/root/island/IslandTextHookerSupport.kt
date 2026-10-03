@@ -57,7 +57,7 @@ internal object IslandTextHookerSupport {
         reconfigureExisting: Boolean,
         postVerification: Boolean,
     ) {
-        if (!IslandProbeUtils.isSuperIslandEnabled()) return
+        if (!IslandProbeUtils.isHyperIslandEnabled()) return
         val mediaInfo = extractMediaInfoFromContentOrReal(fakeView) ?: return
 
         if (!isCurrentLyricIsland(mediaInfo)) {
@@ -152,7 +152,7 @@ internal object IslandTextHookerSupport {
     }
 
     fun restoreRealIslandAfterFakeTransition(fakeView: ViewGroup, source: String) {
-        if (!IslandProbeUtils.isSuperIslandEnabled()) return
+        if (!IslandProbeUtils.isHyperIslandEnabled()) return
         val mediaInfo = extractMediaInfoFromContentOrReal(fakeView) ?: return
         if (!isCurrentLyricIsland(mediaInfo)) return
         if (!shouldRenderInjectedIsland()) return
@@ -185,7 +185,7 @@ internal object IslandTextHookerSupport {
         // （主行被 hug 成 0px 宽，视觉上主行消失）。这里把 fake 也补成完整内容并重新冻结，
         // 保证无论原生展示哪棵树，用户看到的都是完整双行内容。
         fakeView.post {
-            if (!IslandProbeUtils.isSuperIslandEnabled()) return@post
+            if (!IslandProbeUtils.isHyperIslandEnabled()) return@post
             if (!shouldRenderInjectedIsland()) return@post
             if (!fakeView.isAttachedToWindow) return@post
             IslandLyricTextInjector.injectSlots(fakeView, reconfigureExisting = true, suppressAnimation = true)

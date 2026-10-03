@@ -1,5 +1,6 @@
 package com.juren233.hyperlyricsenhanced.root.island
 
+import com.juren233.hyperlyricsenhanced.root.reload.SystemUiHookLifetime
 import android.view.ViewGroup
 import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.common.RootConstants
@@ -13,6 +14,7 @@ internal object RealIslandHooker {
 
     class UpdateBigIslandViewHook : Hooker {
         override fun intercept(chain: Chain): Any? {
+            if (SystemUiHookLifetime.retired) return chain.proceed()
             var mediaInfo: IslandProbeUtils.MediaIslandInfo? = null
             runCatching {
                 val contentView = chain.thisObject as? ViewGroup ?: return@runCatching
@@ -20,7 +22,7 @@ internal object RealIslandHooker {
                 // 注销，若之后原生不再重发更新，重挂扫描只能靠这里的候选找回。
                 IslandViewRegistry.rememberCandidate(contentView)
                 val data = chain.args.getOrNull(0)
-                if (IslandProbeUtils.isSuperIslandEnabled()) {
+                if (IslandProbeUtils.isHyperIslandEnabled()) {
                     mediaInfo = IslandProbeUtils.extractMediaIslandInfo(data)
                     if (mediaInfo != null && data != null) {
                         // 双播冲突断供窗口的重放来源：缓存最后一次带媒体信息的数据。
@@ -108,12 +110,13 @@ internal object RealIslandHooker {
         private val eventName: String
     ) : Hooker {
         override fun intercept(chain: Chain): Any? {
+            if (SystemUiHookLifetime.retired) return chain.proceed()
             val result = chain.proceed()
 
             runCatching {
                 val contentView = chain.thisObject as? ViewGroup ?: return@runCatching
                 IslandViewRegistry.rememberCandidate(contentView)
-                if (!IslandProbeUtils.isSuperIslandEnabled()) return@runCatching
+                if (!IslandProbeUtils.isHyperIslandEnabled()) return@runCatching
                 val currentData = IslandProbeUtils.getCurrentIslandData(contentView)
                 val mediaInfo = IslandProbeUtils.extractMediaIslandInfo(currentData) ?: return@runCatching
 

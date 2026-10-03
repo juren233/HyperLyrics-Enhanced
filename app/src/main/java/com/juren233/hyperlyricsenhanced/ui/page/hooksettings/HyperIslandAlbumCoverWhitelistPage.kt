@@ -53,6 +53,7 @@ import com.juren233.hyperlyricsenhanced.common.PrefsBridge
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.common.XposedLyricSettingPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.common.rememberHookPrefs
+import com.juren233.hyperlyricsenhanced.ui.utils.LocaleUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.Card
@@ -70,7 +71,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 private const val APP_ICON_BITMAP_SIZE_PX = 96
 
 @Composable
-fun SuperIslandAlbumCoverWhitelistPage() {
+fun HyperIslandAlbumCoverWhitelistPage() {
     val context = LocalContext.current
     val prefs = rememberHookPrefs()
     val installedAppsPermission = remember(context) {
@@ -350,8 +351,7 @@ private data class InstalledApp(
 )
 
 private fun loadInstalledApps(context: Context): List<InstalledApp> {
-    val packageManager = context.packageManager
-    val knownApps = IslandMusicAppCatalog.apps.associateBy { it.packageName }
+    val packageManager = LocaleUtils.systemLanguageContext(context).packageManager
     val launcherIntent = Intent(Intent.ACTION_MAIN).apply {
         addCategory(Intent.CATEGORY_LAUNCHER)
     }
@@ -366,10 +366,10 @@ private fun loadInstalledApps(context: Context): List<InstalledApp> {
         .filter { it.packageName != context.packageName }
         .distinctBy { it.packageName }
         .map { applicationInfo ->
-            val app = knownApps[applicationInfo.packageName] ?: IslandMusicAppCatalog.App(
+            val app = IslandMusicAppCatalog.App(
                 packageName = applicationInfo.packageName,
-                displayName = applicationInfo.loadLabel(packageManager)
-                    .toString()
+                displayName = runCatching { applicationInfo.loadLabel(packageManager).toString() }
+                    .getOrDefault(applicationInfo.packageName)
                     .takeUnless(String::isBlank)
                     ?: applicationInfo.packageName,
             )

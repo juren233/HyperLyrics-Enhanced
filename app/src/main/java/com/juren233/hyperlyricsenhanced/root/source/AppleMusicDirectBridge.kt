@@ -16,6 +16,7 @@ import com.juren233.hyperlyricsenhanced.IAppleMusicLyricBridge
 import com.juren233.hyperlyricsenhanced.IAppleMusicTranslationReceiver
 import com.juren233.hyperlyricsenhanced.lyric.model.Song as LocalSong
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
+import com.juren233.hyperlyricsenhanced.root.utils.LyricRuntimeDiagnostics
 import io.github.proify.extensions.deflate
 import io.github.proify.extensions.inflate
 import io.github.proify.extensions.json
@@ -36,6 +37,7 @@ internal class AppleMusicDirectBridge(
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
+    @Volatile
     private var registered = false
     @Volatile
     private var translationReceiver: IAppleMusicTranslationReceiver? = null
@@ -48,6 +50,7 @@ internal class AppleMusicDirectBridge(
 
     private val binder = object : IAppleMusicLyricBridge.Stub() {
         override fun registerTranslationReceiver(receiver: IAppleMusicTranslationReceiver?) {
+            if (!isCurrentConnection()) return
             translationReceiver = receiver
             receiver?.asBinder()?.let { binder ->
                 runCatching {
@@ -82,7 +85,7 @@ internal class AppleMusicDirectBridge(
                     "empty=${compressedSong.isEmpty()}",
             )
             if (compressedSong.isEmpty()) {
-                mainHandler.post { source.onDirectSongChanged(null) }
+                postToSource { source.onDirectSongChanged(null) }
                 return
             }
             val decoded = runCatching {
@@ -98,23 +101,23 @@ internal class AppleMusicDirectBridge(
                 "stage=direct_song_payload_decoded, id=${song.id}, " +
                     "lyrics=${song.lyrics.orEmpty().size}",
             )
-            mainHandler.post { source.onDirectSongChanged(song) }
+            postToSource { source.onDirectSongChanged(song) }
         }
 
         override fun onPlaybackStateChanged(isPlaying: Boolean) {
-            mainHandler.post { source.onDirectPlaybackStateChanged(isPlaying) }
+            postToSource { source.onDirectPlaybackStateChanged(isPlaying) }
         }
 
         override fun onPositionChanged(position: Long) {
-            mainHandler.post { source.onDirectPositionChanged(position) }
+            postToSource { source.onDirectPositionChanged(position) }
         }
 
         override fun onSeekTo(position: Long) {
-            mainHandler.post { source.onDirectSeekTo(position) }
+            postToSource { source.onDirectSeekTo(position) }
         }
 
         override fun onReceiveText(text: String?) {
-            mainHandler.post { source.onDirectText(text) }
+            postToSource { source.onDirectText(text) }
         }
 
         override fun onDisplayTranslationChanged(isDisplayTranslation: Boolean) = Unit
@@ -127,7 +130,7 @@ internal class AppleMusicDirectBridge(
             contentType: String?,
             sourceName: String?,
         ) {
-            mainHandler.post {
+            postToSource {
                 source.onDirectOnlineLyricContentSourceRequested(
                     requestId = requestId,
                     songId = songId,
@@ -141,6 +144,10 @@ internal class AppleMusicDirectBridge(
     private val requestReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.action != AppleDirectBridgeContract.ACTION_REQUEST) return
+            LyricRuntimeDiagnostics.record("direct_request_received") {
+                val senderUid = if (Build.VERSION.SDK_INT >= 34) sentFromUid else -1
+                "senderUid=$senderUid package=${app.packageName}"
+            }
             val senderPackage = if (Build.VERSION.SDK_INT >= 34) sentFromPackage else null
             bridgeDiagnostic(
                 "stage=direct_bridge_request_received, senderPackage=$senderPackage",
@@ -179,10 +186,18 @@ internal class AppleMusicDirectBridge(
     fun stop() {
         bridgeDiagnostic("stage=direct_bridge_stop_requested, registered=$registered")
         if (!registered) return
+        registered = false
+        mainHandler.removeCallbacksAndMessages(null)
         runCatching { app.unregisterReceiver(requestReceiver) }
         translationReceiver = null
-        registered = false
         bridgeDiagnostic("stage=direct_bridge_stopped")
+    }
+
+    private fun isCurrentConnection(): Boolean = registered && source.directBridge === this
+
+    private fun postToSource(action: () -> Unit) {
+        if (!isCurrentConnection()) return
+        mainHandler.post { if (isCurrentConnection()) action() }
     }
 
     fun publishOnlineTranslation(song: LocalSong, generation: Int? = null): Boolean {
@@ -284,6 +299,9 @@ internal class AppleMusicDirectBridge(
                 "binderAlive=${binder.asBinder().isBinderAlive}",
         )
         app.sendBroadcast(intent)
+        LyricRuntimeDiagnostics.record("direct_registration_sent") {
+            "package=${app.packageName} target=${intent.`package`}"
+        }
         bridgeDiagnostic("stage=direct_bridge_registration_sent")
     }
 

@@ -6,6 +6,7 @@
 
 package com.juren233.hyperlyricsenhanced.root.island
 
+import com.juren233.hyperlyricsenhanced.root.reload.SystemUiHookLifetime
 import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.root.LyriconDataBridge
 import com.juren233.hyperlyricsenhanced.root.island.renderer.BaseIslandRenderer
@@ -40,6 +41,7 @@ internal object IslandSelfHealGuardHooker {
 
     class RemoveDynamicIslandViewHook : Hooker {
         override fun intercept(chain: Chain): Any? {
+            if (SystemUiHookLifetime.retired) return chain.proceed()
             (chain.args.getOrNull(0) as? String)?.let { key ->
                 lastLegitRemoveKey = key
                 lastLegitRemoveAtMs = System.currentTimeMillis()
@@ -50,6 +52,7 @@ internal object IslandSelfHealGuardHooker {
 
     class DispatchEventHook : Hooker {
         override fun intercept(chain: Chain): Any? {
+            if (SystemUiHookLifetime.retired) return chain.proceed()
             if (!ENABLED) return chain.proceed()
             val event = chain.args.getOrNull(0) ?: return chain.proceed()
             if (event.javaClass.simpleName != "DeletedDynamicIsland") return chain.proceed()
@@ -72,6 +75,7 @@ internal object IslandSelfHealGuardHooker {
 
     class ClearAfterDeleteHook : Hooker {
         override fun intercept(chain: Chain): Any? {
+            if (SystemUiHookLifetime.retired) return chain.proceed()
             if (!ENABLED) return chain.proceed()
             val islandKey = chain.args.getOrNull(1) as? String
             return if (guardShouldVeto(islandKey)) {

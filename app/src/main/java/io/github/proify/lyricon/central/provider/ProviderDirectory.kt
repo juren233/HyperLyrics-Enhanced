@@ -35,6 +35,8 @@ internal class ProviderDirectory(
         return registered
     }
 
+    fun closeAll(retire: Boolean = true) = registry.closeAll(retire)
+
     fun unregister(connection: ProviderConnection) {
         val removed = registry.unregister(connection)
         ProviderFlowDiagnostics.log("connection_unregister", connection.providerInfo) {

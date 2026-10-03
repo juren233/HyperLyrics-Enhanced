@@ -60,7 +60,7 @@ fun HelpPage() {
     val pagerState = rememberPagerState { tabs.size }
     val coroutineScope = rememberCoroutineScope()
 
-    val superIslandListState = rememberLazyListState()
+    val hyperIslandListState = rememberLazyListState()
     val dynamicIslandListState = rememberLazyListState()
 
     Scaffold(
@@ -95,7 +95,7 @@ fun HelpPage() {
     ) { innerPadding ->
         Box(modifier = if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier) {
             HorizontalPager(state = pagerState, verticalAlignment = Alignment.Top, beyondViewportPageCount = 1) { page ->
-                val listState = if (page == 0) superIslandListState else dynamicIslandListState
+                val listState = if (page == 0) hyperIslandListState else dynamicIslandListState
                 val topPadding = innerPadding.calculateTopPadding()
                 val bottomPadding = innerPadding.calculateBottomPadding()
                 val contentPadding = remember(topPadding, bottomPadding) {
@@ -116,7 +116,7 @@ fun HelpPage() {
                     contentPadding = contentPadding,
                 ) {
                     when (page) {
-                        0 -> superIslandHelpSections(
+                        0 -> hyperIslandHelpSections(
                             onOpenLyriconConfig = {
                                 navigator.navigate(Route.LyricProvider)
                             }
@@ -130,7 +130,7 @@ fun HelpPage() {
 }
 
 @OptIn(ExperimentalLayoutApi::class)
-private fun LazyListScope.superIslandHelpSections(
+private fun LazyListScope.hyperIslandHelpSections(
     onOpenLyriconConfig: () -> Unit,
 ) {
     // 1. 配置流程

@@ -6,6 +6,7 @@
 
 package com.juren233.hyperlyricsenhanced.root.island
 
+import com.juren233.hyperlyricsenhanced.root.reload.SystemUiHookLifetime
 import android.annotation.SuppressLint
 import android.content.res.Resources
 import android.view.View
@@ -105,6 +106,7 @@ internal object IslandLegacyWidthHooker {
         private val minWidthHookAvailable: Boolean,
     ) : Hooker {
         override fun intercept(chain: Chain): Any? {
+            if (SystemUiHookLifetime.retired) return chain.proceed()
             if (!IslandWidthHooker.lyricWidthCalculationActive) return chain.proceed()
             val host = chain.thisObject as? View ?: return chain.proceed()
             val left = chain.args.getOrNull(0) as? View
@@ -165,6 +167,7 @@ internal object IslandLegacyWidthHooker {
 
     private class MinWidthResourceHook : Hooker {
         override fun intercept(chain: Chain): Any? {
+            if (SystemUiHookLifetime.retired) return chain.proceed()
             val result = chain.proceed()
             val window = calculationWindow.get() ?: return result
             if (window.minWidthResourceId == 0 || window.minWidthFloor <= 0) return result
@@ -188,6 +191,7 @@ internal object IslandLegacyWidthHooker {
         private val fields: LegacyFields,
     ) : Hooker {
         override fun intercept(chain: Chain): Any? {
+            if (SystemUiHookLifetime.retired) return chain.proceed()
             val window = calculationWindow.get()
             val host = chain.thisObject
             if (window != null && host === window.host) {

@@ -125,7 +125,7 @@ internal fun IslandExpandedMediaAmbientFlowHooker.scheduleModuleTakeoverAfterSet
         if (moduleTakeoverTokens[settleView] != token) return@postDelayed
         moduleTakeoverTokens.remove(settleView)
         runCatching {
-            if (!IslandProbeUtils.isSuperIslandEnabled()) return@runCatching
+            if (!IslandProbeUtils.isHyperIslandEnabled()) return@runCatching
             applyAppearance(binder, allowCoverColor = true)
         }.onFailure { error ->
             HookLogger.e(TAG, "原生阶段结束后恢复模块接管失败", error)

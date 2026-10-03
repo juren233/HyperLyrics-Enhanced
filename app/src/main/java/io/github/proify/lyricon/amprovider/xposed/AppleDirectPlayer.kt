@@ -19,6 +19,7 @@ import android.util.Log
 import androidx.core.content.ContextCompat
 import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.root.utils.AppleMetadataFlowDiagnostics
+import com.juren233.hyperlyricsenhanced.root.utils.LyricRuntimeDiagnostics
 import com.juren233.hyperlyricsenhanced.IAppleMusicLyricBridge
 import com.juren233.hyperlyricsenhanced.IAppleMusicTranslationReceiver
 import io.github.proify.extensions.deflate
@@ -131,10 +132,21 @@ internal class AppleDirectPlayer(
 
     private val registrationReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
+            LyricRuntimeDiagnostics.record("direct_registration_callback") {
+                val sender = if (Build.VERSION.SDK_INT >= 34) {
+                    "senderUid=$sentFromUid senderPackage=$sentFromPackage"
+                } else {
+                    "senderUid=unknown senderPackage=unknown"
+                }
+                "action=${intent.action} $sender expectedUid=${Process.SYSTEM_UID}"
+            }
             if (Build.VERSION.SDK_INT >= 34 &&
                 sentFromUid >= 0 &&
                 sentFromUid != Process.SYSTEM_UID
             ) {
+                LyricRuntimeDiagnostics.record("direct_registration_rejected") {
+                    "reason=sender_uid senderUid=$sentFromUid expectedUid=${Process.SYSTEM_UID}"
+                }
                 ProviderLogger.diagnostic(
                     "拒绝非 SystemUI 直连注册：uid=$sentFromUid, package=$sentFromPackage"
                 )
@@ -204,6 +216,9 @@ internal class AppleDirectPlayer(
     }
 
     private fun requestBridge() {
+        LyricRuntimeDiagnostics.record("direct_request_sending") {
+            "package=${context.packageName} target=${AppleDirectBridgeContract.SYSTEM_UI_PACKAGE}"
+        }
         ProviderLogger.diagnostic(
             "直连诊断: stage=bridge_request_sending, " +
                 "target=${AppleDirectBridgeContract.SYSTEM_UI_PACKAGE}",
@@ -224,6 +239,10 @@ internal class AppleDirectPlayer(
                 ProviderLogger.diagnostic("直连诊断: stage=bridge_binder_died")
                 requestBridge()
             }, 0)
+        }.onFailure { error ->
+            LyricRuntimeDiagnostics.record("direct_death_listener_failed") {
+                "error=${error.javaClass.name}"
+            }
         }
         val receiverRegistered = send { it.registerTranslationReceiver(translationReceiver) }
         pronunciationDiagnostic(
@@ -294,7 +313,10 @@ internal class AppleDirectPlayer(
         return runCatching {
             action(target)
             true
-        }.onFailure {
+        }.onFailure { error ->
+            LyricRuntimeDiagnostics.record("direct_send_failed") {
+                "error=${error.javaClass.name} binderAlive=${target.asBinder()?.isBinderAlive}"
+            }
             bridge = null
             requestBridge()
         }.getOrDefault(false)

@@ -6,6 +6,7 @@
 
 package com.juren233.hyperlyricsenhanced.root.island
 
+import com.juren233.hyperlyricsenhanced.root.reload.SystemUiHookLifetime
 import android.service.notification.StatusBarNotification
 import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.root.LyriconDataBridge
@@ -40,6 +41,7 @@ internal object IslandPromotedMediaHooker {
 
     class PromotedOngoingGateHook : Hooker {
         override fun intercept(chain: Chain): Any? {
+            if (SystemUiHookLifetime.retired) return chain.proceed()
             if (!ENABLED) return chain.proceed()
             val result = chain.proceed()
             if (result == java.lang.Boolean.TRUE) return result

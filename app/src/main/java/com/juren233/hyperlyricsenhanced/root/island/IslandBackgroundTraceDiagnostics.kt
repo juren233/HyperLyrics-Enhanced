@@ -6,6 +6,7 @@
 
 package com.juren233.hyperlyricsenhanced.root.island
 
+import com.juren233.hyperlyricsenhanced.root.reload.SystemUiHookLifetime
 import android.os.SystemClock
 import android.view.View
 import android.view.ViewGroup
@@ -121,6 +122,7 @@ internal object IslandBackgroundTraceDiagnostics {
 
     private class DrawTraceHook : Hooker {
         override fun intercept(chain: Chain): Any? {
+            if (SystemUiHookLifetime.retired) return chain.proceed()
             runCatching { traceDraw(chain.thisObject as? View) }
             return chain.proceed()
         }

@@ -18,6 +18,62 @@ class OneTapRefreshSelectionPolicyTest {
         "com.tencent.qqmusic",
     )
 
+    private val installedLabels = mapOf(
+        "com.apple.android.music" to "Apple Music",
+        "com.netease.cloudmusic" to "网易云音乐",
+        "com.tencent.qqmusic" to "QQ音乐",
+    )
+
+    @Test
+    fun `installed app labels are refreshed after phone language changes`() {
+        val labels = mutableMapOf("com.miui.player" to "音乐")
+        assertEquals("音乐", OneTapRefreshCatalog.installedMusicApps(labels::get).single().displayName)
+        labels["com.miui.player"] = "Music"
+        assertEquals("Music", OneTapRefreshCatalog.installedMusicApps(labels::get).single().displayName)
+    }
+
+    @Test
+    fun `missing labels exclude absent apps and blank labels use package names`() {
+        val apps = OneTapRefreshCatalog.installedMusicApps(
+            mapOf("com.miui.player" to " ")::get,
+        )
+        assertEquals(listOf(OneTapRefreshMusicApp("com.miui.player", "com.miui.player")), apps)
+    }
+
+    @Test
+    fun `identical labels keep package identity and both refresh targets`() {
+        val apps = OneTapRefreshCatalog.installedMusicApps(
+            mapOf("com.apple.android.music" to "Music", "com.miui.player" to "Music")::get,
+        )
+        assertEquals(2, apps.size)
+        assertEquals(
+            listOf("com.apple.android.music", "com.miui.player"),
+            OneTapRefreshSelectionPolicy.selectedPackages(
+                setOf(OneTapRefreshSelectionPolicy.ALL_MUSIC_APPS_ID), apps,
+            ),
+        )
+    }
+
+    @Test
+    fun `hot reload and restart are mutually exclusive`() {
+        val hot = OneTapRefreshSelectionPolicy.toggle(
+            setOf(OneTapRefreshSelectionPolicy.SYSTEM_UI_ID),
+            OneTapRefreshSelectionPolicy.SYSTEM_UI_HOT_RELOAD_ID, musicAppIds,
+        )
+        assertEquals(setOf(OneTapRefreshSelectionPolicy.SYSTEM_UI_HOT_RELOAD_ID), hot)
+        assertTrue(OneTapRefreshSelectionPolicy.selectedPackages(hot, emptyList()).isEmpty())
+        val restart = OneTapRefreshSelectionPolicy.toggle(hot, OneTapRefreshSelectionPolicy.SYSTEM_UI_ID, musicAppIds)
+        assertEquals(setOf(OneTapRefreshSelectionPolicy.SYSTEM_UI_ID), restart)
+    }
+
+    @Test
+    fun `hot reload with music app restart never kills system ui`() {
+        val selected = setOf(OneTapRefreshSelectionPolicy.SYSTEM_UI_HOT_RELOAD_ID,
+            OneTapRefreshSelectionPolicy.ALL_MUSIC_APPS_ID)
+        val apps = musicAppIds.map { OneTapRefreshMusicApp(it, it) }
+        assertEquals(musicAppIds, OneTapRefreshSelectionPolicy.selectedPackages(selected, apps).toSet())
+    }
+
     @Test
     fun `all music apps cancels individual music app selections but preserves system ui`() {
         val selected = OneTapRefreshSelectionPolicy.toggle(
@@ -83,12 +139,12 @@ class OneTapRefreshSelectionPolicyTest {
     @Test
     fun `installed catalog puts scoped apps in order and excludes apps outside module scope`() {
         assertEquals(
-            listOf("Apple Music", "网易云音乐", "QQ音乐", "小米音乐"),
+            listOf("Apple Music", "网易云音乐", "QQ音乐", "Music"),
             OneTapRefreshCatalog.installedMusicApps(
-                musicAppIds + setOf(
-                    "com.miui.player",
-                    "com.google.android.apps.youtube.music",
-                ),
+                (installedLabels + mapOf(
+                    "com.miui.player" to "Music",
+                    "com.google.android.apps.youtube.music" to "YouTube Music",
+                ))::get,
             ).map { it.displayName },
         )
     }
@@ -101,14 +157,17 @@ class OneTapRefreshSelectionPolicyTest {
                 OneTapRefreshMusicApp("com.kugou.android.lite", "酷狗概念版"),
             ),
             OneTapRefreshCatalog.installedMusicApps(
-                setOf("com.kugou.android", "com.kugou.android.lite"),
+                mapOf(
+                    "com.kugou.android" to "酷狗音乐",
+                    "com.kugou.android.lite" to "酷狗概念版",
+                )::get,
             ),
         )
     }
 
     @Test
     fun `home hidden keeps only system ui and apple music refresh targets`() {
-        val installed = OneTapRefreshCatalog.installedMusicApps(musicAppIds)
+        val installed = OneTapRefreshCatalog.installedMusicApps(installedLabels::get)
 
         val targets = OneTapRefreshCatalog.refreshTargets(
             installedMusicApps = installed,
@@ -124,7 +183,7 @@ class OneTapRefreshSelectionPolicyTest {
 
     @Test
     fun `home visible keeps every installed music app with the all music apps option`() {
-        val installed = OneTapRefreshCatalog.installedMusicApps(musicAppIds)
+        val installed = OneTapRefreshCatalog.installedMusicApps(installedLabels::get)
 
         val targets = OneTapRefreshCatalog.refreshTargets(
             installedMusicApps = installed,

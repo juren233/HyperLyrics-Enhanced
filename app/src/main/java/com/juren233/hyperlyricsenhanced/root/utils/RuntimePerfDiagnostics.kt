@@ -93,6 +93,25 @@ object RuntimePerfDiagnostics {
     // 懒初始化：本地 JVM 单测只调用纯解析函数，不应触碰 Android 桩。
     private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
     private var sampler: java.util.concurrent.ScheduledExecutorService? = null
+    private val frameViews = java.util.WeakHashMap<View, Unit>()
+    private val frameBursts = mutableSetOf<Choreographer.FrameCallback>()
+
+    /** SystemUI never enables activity callbacks; retire all process-local diagnostics. */
+    internal fun stopForReload() {
+        if (!BuildConfig.DEBUG || !started.getAndSet(false)) return
+        sampler?.shutdownNow()
+        sampler = null
+        mainHandler.removeCallbacksAndMessages(null)
+        frameBursts.toList().forEach { Choreographer.getInstance().removeFrameCallback(it) }
+        frameBursts.clear()
+        frameViews.keys.toList().forEach { view ->
+            runCatching { viewListenerSetMethod?.invoke(view, null, mainHandler) }
+        }
+        frameViews.clear()
+        stateProvider = null
+        frameViewProvider = null
+        appRef = null
+    }
 
     // 仅采样线程访问。
     private var lastSampleElapsedMs = -1L
@@ -214,7 +233,7 @@ object RuntimePerfDiagnostics {
             HookLogger.w(TAG, "$PREFIX sample_failed error=${it.javaClass.simpleName}:${it.message}")
             return
         }
-        mainHandler.post { runCatching { logOnMain(core) } }
+        mainHandler.post { if (started.get()) runCatching { logOnMain(core) } }
     }
 
     private class CoreSample(
@@ -384,6 +403,7 @@ object RuntimePerfDiagnostics {
             }
             // 重复设置只覆盖旧监听，无需簿记；视图分离后回调自然消失。
             method.invoke(view, proxy, mainHandler)
+            frameViews[view] = Unit
             lastAttachError = null
         }.onFailure { error ->
             val reason = "${error.javaClass.simpleName}:${error.cause?.javaClass?.simpleName}"
@@ -411,6 +431,7 @@ object RuntimePerfDiagnostics {
         var over33 = 0L
         val callback = object : Choreographer.FrameCallback {
             override fun doFrame(frameTimeNanos: Long) {
+                if (!started.get()) { frameBursts.remove(this); return }
                 if (lastNs > 0) {
                     val delta = frameTimeNanos - lastNs
                     if (delta > 0) {
@@ -424,12 +445,14 @@ object RuntimePerfDiagnostics {
                 if (samples < FRAME_BURST_SAMPLES) {
                     choreographer.postFrameCallback(this)
                 } else {
+                    frameBursts.remove(this)
                     burstBlock = "n=$samples,avgMs=" + fmt1(totalDeltaNs / 1_000_000.0 / samples) +
                         ",maxMs=" + fmt1(maxDeltaNs / 1_000_000.0) +
                         ",over33=$over33"
                 }
             }
         }
+        frameBursts.add(callback)
         choreographer.postFrameCallback(callback)
     }
 
@@ -493,7 +516,7 @@ object RuntimePerfDiagnostics {
                 }
             }
             scheduledForMs = now + STALL_PROBE_INTERVAL_MS
-            mainHandler.postDelayed(this, STALL_PROBE_INTERVAL_MS)
+            if (started.get()) mainHandler.postDelayed(this, STALL_PROBE_INTERVAL_MS)
         }
     }
 

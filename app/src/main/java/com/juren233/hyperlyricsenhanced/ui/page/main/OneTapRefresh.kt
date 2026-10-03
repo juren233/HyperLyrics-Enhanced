@@ -31,7 +31,10 @@ import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.unit.dp
 import com.juren233.hyperlyricsenhanced.R
 import com.juren233.hyperlyricsenhanced.provider.OfficialProviderCatalog
+import com.juren233.hyperlyricsenhanced.root.reload.SystemUiHotReloadClient
 import com.juren233.hyperlyricsenhanced.root.utils.ShellUtils
+import com.juren233.hyperlyricsenhanced.ui.component.AppWindowDialog
+import com.juren233.hyperlyricsenhanced.ui.utils.LocaleUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.BasicComponent
@@ -40,7 +43,6 @@ import top.yukonga.miuix.kmp.basic.Checkbox
 import top.yukonga.miuix.kmp.basic.SnackbarDuration
 import top.yukonga.miuix.kmp.basic.SnackbarHostState
 import top.yukonga.miuix.kmp.basic.TextButton
-import top.yukonga.miuix.kmp.window.WindowDialog
 
 internal data class OneTapRefreshMusicApp(
     val packageName: String,
@@ -55,40 +57,29 @@ internal data class OneTapRefreshTargets(
 )
 
 internal object OneTapRefreshCatalog {
-    private val knownMusicApps = buildList {
-        val addedPackages = linkedSetOf<String>()
-
-        fun addKnownApp(packageName: String, displayName: String) {
-            if (addedPackages.add(packageName)) {
-                add(OneTapRefreshMusicApp(packageName, displayName))
-            }
-        }
-
-        addKnownApp(OfficialProviderCatalog.APPLE_MUSIC_PACKAGE_NAME, "Apple Music")
+    private val knownMusicPackages = buildSet {
+        add(OfficialProviderCatalog.APPLE_MUSIC_PACKAGE_NAME)
         OfficialProviderCatalog.definitions.forEach { definition ->
-            definition.targetPackages.forEach { packageName ->
-                addKnownApp(packageName, definition.displayNameForPackage(packageName))
-            }
+            addAll(definition.targetPackages)
         }
     }
 
     fun installedMusicApps(packageManager: PackageManager): List<OneTapRefreshMusicApp> =
-        installedMusicApps(
-            knownMusicApps.mapNotNullTo(linkedSetOf()) { app ->
-                runCatching {
-                    packageManager.getApplicationInfo(
-                        app.packageName,
-                        PackageManager.ApplicationInfoFlags.of(0L),
-                    )
-                    app.packageName
-                }.getOrNull()
-            },
-        )
+        installedMusicApps { packageName ->
+            val info = runCatching {
+                packageManager.getApplicationInfo(
+                    packageName,
+                    PackageManager.ApplicationInfoFlags.of(0L),
+                )
+            }.getOrNull() ?: return@installedMusicApps null
+            runCatching { info.loadLabel(packageManager).toString() }.getOrDefault(packageName)
+        }
 
     internal fun installedMusicApps(
-        installedPackages: Set<String>,
-    ): List<OneTapRefreshMusicApp> = knownMusicApps.filter { app ->
-        app.packageName in installedPackages
+        installedLabel: (String) -> String?,
+    ): List<OneTapRefreshMusicApp> = knownMusicPackages.mapNotNull { packageName ->
+        val label = installedLabel(packageName) ?: return@mapNotNull null
+        OneTapRefreshMusicApp(packageName, label.ifBlank { packageName })
     }
 
     /**
@@ -123,6 +114,7 @@ internal object OneTapRefreshCatalog {
 
 internal object OneTapRefreshSelectionPolicy {
     const val SYSTEM_UI_ID = "__system_ui__"
+    const val SYSTEM_UI_HOT_RELOAD_ID = "__system_ui_hot_reload__"
     const val ALL_MUSIC_APPS_ID = "__all_music_apps__"
     const val SYSTEM_UI_PACKAGE = "com.android.systemui"
 
@@ -133,7 +125,14 @@ internal object OneTapRefreshSelectionPolicy {
     ): Set<String> {
         val updated = selectedIds.toMutableSet()
         when (targetId) {
-            SYSTEM_UI_ID -> updated.toggle(SYSTEM_UI_ID)
+            SYSTEM_UI_ID -> {
+                updated.remove(SYSTEM_UI_HOT_RELOAD_ID)
+                updated.toggle(SYSTEM_UI_ID)
+            }
+            SYSTEM_UI_HOT_RELOAD_ID -> {
+                updated.remove(SYSTEM_UI_ID)
+                updated.toggle(SYSTEM_UI_HOT_RELOAD_ID)
+            }
             ALL_MUSIC_APPS_ID -> {
                 if (ALL_MUSIC_APPS_ID in updated) {
                     updated.remove(ALL_MUSIC_APPS_ID)
@@ -174,6 +173,7 @@ internal object OneTapRefreshSelectionPolicy {
 internal fun OneTapRefreshDialog(
     show: Boolean,
     hasRootAccess: Boolean?,
+    hasPendingSystemUiUpdate: Boolean,
     musicApps: List<OneTapRefreshMusicApp>,
     showAllMusicAppsOption: Boolean,
     selectedIds: Set<String>,
@@ -182,11 +182,12 @@ internal fun OneTapRefreshDialog(
     onDismissFinished: () -> Unit,
     onConfirm: () -> Unit,
 ) {
-    WindowDialog(
+    AppWindowDialog(
         title = stringResource(R.string.title_one_tap_refresh),
         // 仅在确认无 root 时提示；null 表示检查进行中，保持上一次结果避免副标题闪现
         summary = if (hasRootAccess == false) {
-            stringResource(R.string.summary_one_tap_refresh_root_required)
+            stringResource(if (hasPendingSystemUiUpdate) R.string.summary_refresh_hot_reload_no_root
+                else R.string.summary_one_tap_refresh_root_required)
         } else {
             null
         },
@@ -201,6 +202,13 @@ internal fun OneTapRefreshDialog(
                     .heightIn(max = 420.dp)
                     .verticalScroll(rememberScrollState()),
             ) {
+                if (hasPendingSystemUiUpdate) {
+                    OneTapRefreshOption(
+                        title = stringResource(R.string.option_refresh_system_ui_hot_reload),
+                        selected = OneTapRefreshSelectionPolicy.SYSTEM_UI_HOT_RELOAD_ID in selectedIds,
+                        onClick = { onToggle(OneTapRefreshSelectionPolicy.SYSTEM_UI_HOT_RELOAD_ID) },
+                    )
+                }
                 OneTapRefreshOption(
                     title = stringResource(R.string.option_refresh_system_ui),
                     selected = OneTapRefreshSelectionPolicy.SYSTEM_UI_ID in selectedIds,
@@ -289,6 +297,9 @@ internal class OneTapRefreshController(
     var selectedIds by mutableStateOf(emptySet<String>())
         private set
 
+    var hasPendingSystemUiUpdate by mutableStateOf(false)
+        private set
+    private var pendingHotReload = false
     private var pendingPackages = emptyList<String>()
     private var rootCheckSequence = 0L
 
@@ -303,12 +314,16 @@ internal class OneTapRefreshController(
     fun open(appleMusicOnly: Boolean = false) {
         selectedIds = emptySet()
         targets = OneTapRefreshCatalog.refreshTargets(
-            packageManager = context.packageManager,
+            packageManager = LocaleUtils.systemLanguageContext(context).packageManager,
             appleMusicOnly = appleMusicOnly,
         )
         showDialog = true
         rootCheckSequence += 1L
         val checkSequence = rootCheckSequence
+        scope.launch {
+            val available = SystemUiHotReloadClient.hasPendingUpdate()
+            if (rootCheckSequence == checkSequence) hasPendingSystemUiUpdate = available
+        }
         scope.launch {
             val rootAccess = ShellUtils.hasRootAccess()
             // 只接受本次打开对应的检查结果，避免连续打开面板时旧结果覆盖新结果。
@@ -335,7 +350,8 @@ internal class OneTapRefreshController(
             selectedIds = selectedIds,
             musicApps = targets.musicApps,
         )
-        if (selectedPackages.isNotEmpty()) {
+        pendingHotReload = OneTapRefreshSelectionPolicy.SYSTEM_UI_HOT_RELOAD_ID in selectedIds
+        if (selectedPackages.isNotEmpty() || pendingHotReload) {
             pendingPackages = selectedPackages
             showDialog = false
         }
@@ -344,11 +360,26 @@ internal class OneTapRefreshController(
     /** 面板退场动画结束后再结束进程，避免动画期间界面直接消失。 */
     fun onDismissFinished() {
         val selectedPackages = pendingPackages
+        val hotReload = pendingHotReload
         pendingPackages = emptyList()
-        if (selectedPackages.isEmpty()) {
+        pendingHotReload = false
+        if (selectedPackages.isEmpty() && !hotReload) {
             return
         }
         scope.launch {
+            if (hotReload) {
+                val result = SystemUiHotReloadClient.reload()
+                val message = when (result) {
+                    SystemUiHotReloadClient.Result.SUCCEEDED -> R.string.toast_system_ui_hot_reload_success
+                    SystemUiHotReloadClient.Result.REJECTED -> R.string.toast_system_ui_hot_reload_rejected
+                    SystemUiHotReloadClient.Result.UNAVAILABLE -> R.string.toast_system_ui_hot_reload_unavailable
+                    SystemUiHotReloadClient.Result.IN_PROGRESS,
+                    SystemUiHotReloadClient.Result.TIMED_OUT -> R.string.toast_system_ui_hot_reload_pending
+                    else -> R.string.toast_system_ui_hot_reload_failed
+                }
+                snackbarHostState.showSnackbar(context.getString(message), duration = SnackbarDuration.Custom(3000L))
+            }
+            // A reload failure must never silently turn into a SystemUI process restart.
             val success = ShellUtils.killAppProcesses(selectedPackages)
             if (!success) {
                 snackbarHostState.showSnackbar(
@@ -383,6 +414,7 @@ internal fun OneTapRefreshHost(controller: OneTapRefreshController) {
     OneTapRefreshDialog(
         show = controller.showDialog,
         hasRootAccess = controller.hasRootAccess,
+        hasPendingSystemUiUpdate = controller.hasPendingSystemUiUpdate,
         musicApps = controller.targets.musicApps,
         showAllMusicAppsOption = controller.targets.showAllMusicAppsOption,
         selectedIds = controller.selectedIds,

@@ -47,6 +47,7 @@ import com.juren233.hyperlyricsenhanced.online.model.Source
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.common.XposedLyricSettingPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.common.rememberHookConfigSaver
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.common.rememberHookPrefs
+import com.juren233.hyperlyricsenhanced.ui.utils.LocaleUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.Card
@@ -118,7 +119,7 @@ fun OnlineTranslationSourcesPage() {
         }
     }
     val context = LocalContext.current
-    var installedApps by remember { mutableStateOf<List<InstalledTranslationApp>?>(null) }
+    var installedApps by remember(context) { mutableStateOf<List<InstalledTranslationApp>?>(null) }
     LaunchedEffect(Unit) {
         if (configuredEnabledSources.isEmpty()) {
             initialEnabledSources.firstOrNull()?.let { source ->
@@ -129,9 +130,9 @@ fun OnlineTranslationSourcesPage() {
             }
         }
     }
-    LaunchedEffect(Unit) {
+    LaunchedEffect(context) {
         installedApps = withContext(Dispatchers.IO) {
-            val packageManager = context.packageManager
+            val packageManager = LocaleUtils.systemLanguageContext(context).packageManager
             val installedPackageNames = packageManager
                 .getInstalledPackages(PackageManager.PackageInfoFlags.of(0L))
                 .map { it.packageName }
@@ -143,6 +144,8 @@ fun OnlineTranslationSourcesPage() {
                         val info = packageManager.getApplicationInfo(app.packageName, 0)
                         InstalledTranslationApp(
                             app = app,
+                            displayName = runCatching { info.loadLabel(packageManager).toString() }
+                                .getOrDefault(app.packageName).ifBlank { app.packageName },
                             icon = info.loadIcon(packageManager),
                         )
                     }.getOrNull()
@@ -313,6 +316,7 @@ private fun LazyListScope.enabledAppsSection(
                     apps.forEach { installedApp ->
                         AppSwitchPreference(
                             app = installedApp.app,
+                            displayName = installedApp.displayName,
                             icon = installedApp.icon,
                             checked = appEnabled[installedApp.app.packageName] == true,
                             onCheckedChange = { checked ->
@@ -329,12 +333,13 @@ private fun LazyListScope.enabledAppsSection(
 @Composable
 private fun AppSwitchPreference(
     app: TranslationApp,
+    displayName: String,
     icon: Drawable?,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
 ) {
     SwitchPreference(
-        title = app.displayName,
+        title = displayName,
         summary = stringResource(app.summaryRes),
         checked = checked,
         onCheckedChange = onCheckedChange,
@@ -374,31 +379,30 @@ private fun AppIcon(icon: Drawable?) {
 
 private data class TranslationApp(
     val packageName: String,
-    val displayName: String,
     val summaryRes: Int,
 )
 
-private data class InstalledTranslationApp(val app: TranslationApp, val icon: Drawable?)
+private data class InstalledTranslationApp(
+    val app: TranslationApp,
+    val displayName: String,
+    val icon: Drawable?,
+)
 
 private val ENABLED_APPS = listOf(
     TranslationApp(
         OnlineTranslationSourcePreferences.APPLE_MUSIC_PACKAGE,
-        "Apple Music",
         R.string.summary_online_translation_app_lyrics_translation,
     ),
     TranslationApp(
         OnlineTranslationSourcePreferences.QISHUI_PACKAGE,
-        "汽水音乐",
         R.string.summary_online_translation_app_translation,
     ),
     TranslationApp(
         OnlineTranslationSourcePreferences.SPOTIFY_PACKAGE,
-        "Spotify",
         R.string.summary_online_translation_app_translation,
     ),
     TranslationApp(
         OnlineTranslationSourcePreferences.SALT_PACKAGE,
-        "椒盐音乐",
         R.string.summary_online_translation_app_lyrics_translation,
     ),
 )

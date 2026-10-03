@@ -1,5 +1,6 @@
 package com.juren233.hyperlyricsenhanced.root.island
 
+import com.juren233.hyperlyricsenhanced.root.reload.SystemUiHookLifetime
 import com.juren233.hyperlyricsenhanced.root.island.IslandTextHookerSupport.TAG
 import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
@@ -10,10 +11,11 @@ internal object IslandModuleRestoreHooker {
 
     class AdapterUpdateViewHook : Hooker {
         override fun intercept(chain: Chain): Any? {
+            if (SystemUiHookLifetime.retired) return chain.proceed()
             val result = chain.proceed()
 
             runCatching {
-                if (!IslandProbeUtils.isSuperIslandEnabled()) return@runCatching
+                if (!IslandProbeUtils.isHyperIslandEnabled()) return@runCatching
                 val moduleType = chain.args.getOrNull(0) as? String
                 val data = chain.args.getOrNull(2)
                 val mediaInfo = IslandProbeUtils.extractMediaIslandInfo(data) ?: return@runCatching
@@ -45,10 +47,11 @@ internal object IslandModuleRestoreHooker {
 
     class UpdateModuleViewHook : Hooker {
         override fun intercept(chain: Chain): Any? {
+            if (SystemUiHookLifetime.retired) return chain.proceed()
             val result = chain.proceed()
 
             runCatching {
-                if (!IslandProbeUtils.isSuperIslandEnabled()) return@runCatching
+                if (!IslandProbeUtils.isHyperIslandEnabled()) return@runCatching
                 val moduleType = chain.args.getOrNull(0) as? String
                 val data = chain.args.getOrNull(2)
                 val mediaInfo = IslandProbeUtils.extractMediaIslandInfo(data) ?: return@runCatching

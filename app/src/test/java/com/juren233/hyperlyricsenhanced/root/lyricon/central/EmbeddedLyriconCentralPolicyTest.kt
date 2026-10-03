@@ -13,6 +13,13 @@ import org.junit.Test
 class EmbeddedLyriconCentralPolicyTest {
 
     @Test
+    fun `waits for the standalone packages present in issue 43`() {
+        for (packageName in listOf("io.github.proify.lyricon", "io.github.kifranei.lyricon.fork")) {
+            assertFalse(packageName, EmbeddedLyriconCentralPolicy.shouldStartImmediately(setOf(packageName)))
+        }
+    }
+
+    @Test
     fun `starts immediately when no standalone central package is installed`() {
         assertTrue(EmbeddedLyriconCentralPolicy.shouldStartImmediately(emptySet()))
     }

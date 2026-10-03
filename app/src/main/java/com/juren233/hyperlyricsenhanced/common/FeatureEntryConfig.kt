@@ -49,7 +49,7 @@ object FeatureEntryConfig {
     }
 
     /** 米系超级岛歌词入口默认开值：仅小米/红米设备默认开启。 */
-    fun defaultSuperIslandEntryEnabled(): Boolean = isXiaomiOrRedmiDevice()
+    fun defaultHyperIslandEntryEnabled(): Boolean = isXiaomiOrRedmiDevice()
 
     /** 米系息屏歌词入口默认开值：仅小米/红米设备默认开启。 */
     fun defaultAodLyricsEntryEnabled(): Boolean = isXiaomiOrRedmiDevice()

@@ -1,5 +1,6 @@
 package com.juren233.hyperlyricsenhanced.root.island
 
+import com.juren233.hyperlyricsenhanced.root.reload.SystemUiHookLifetime
 import android.view.View
 import android.view.ViewGroup
 import com.juren233.hyperlyricsenhanced.root.island.IslandTextHookerSupport.TAG
@@ -14,6 +15,7 @@ internal object FakeIslandTransitionHooker {
 
     class StateChangedHook : Hooker {
         override fun intercept(chain: Chain): Any? {
+            if (SystemUiHookLifetime.retired) return chain.proceed()
             val result = chain.proceed()
 
             runCatching {
@@ -34,6 +36,7 @@ internal object FakeIslandTransitionHooker {
 
     class TrackingStartHook : Hooker {
         override fun intercept(chain: Chain): Any? {
+            if (SystemUiHookLifetime.retired) return chain.proceed()
             val result = chain.proceed()
 
             runCatching {
@@ -65,6 +68,7 @@ internal object FakeIslandTransitionHooker {
 
     class PrepareVisibleHook : Hooker {
         override fun intercept(chain: Chain): Any? {
+            if (SystemUiHookLifetime.retired) return chain.proceed()
             val result = chain.proceed()
 
             runCatching {
@@ -91,6 +95,7 @@ internal object FakeIslandTransitionHooker {
 
     class VisibilityHook : Hooker {
         override fun intercept(chain: Chain): Any? {
+            if (SystemUiHookLifetime.retired) return chain.proceed()
             val visibility = (chain.args.getOrNull(0) as? Number)?.toInt()
             if (visibility == View.VISIBLE) {
                 runCatching {

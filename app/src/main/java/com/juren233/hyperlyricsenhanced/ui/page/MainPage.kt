@@ -73,6 +73,7 @@ import com.juren233.hyperlyricsenhanced.common.UIConstants
 import com.juren233.hyperlyricsenhanced.R
 import com.juren233.hyperlyricsenhanced.common.PrefsBridge
 import com.juren233.hyperlyricsenhanced.root.RootApplication
+import com.juren233.hyperlyricsenhanced.ui.component.AppWindowDialog
 import com.juren233.hyperlyricsenhanced.ui.component.EnhancedVersionNotice
 import com.juren233.hyperlyricsenhanced.ui.component.LyricHookPermissionSheet
 import com.juren233.hyperlyricsenhanced.ui.component.rememberLyricHookSwitchController
@@ -131,7 +132,6 @@ import top.yukonga.miuix.kmp.icon.extended.Music
 import top.yukonga.miuix.kmp.icon.extended.Tune
 import top.yukonga.miuix.kmp.interfaces.ExperimentalScrollBarApi
 import top.yukonga.miuix.kmp.theme.MiuixTheme
-import top.yukonga.miuix.kmp.window.WindowDialog
 import androidx.core.net.toUri
 
 /** 底栏渐进模糊向上延伸的渐隐高度，与顶栏 PageUtils.TOP_BAR_BLUR_FADE_HEIGHT 一致。 */
@@ -161,7 +161,7 @@ fun MainPage() {
     val appleMusicInstalled = remember(context) {
         FeatureEntryConfig.isAppleMusicInstalled(context)
     }
-    var superIslandEntryEnabled by remember {
+    var hyperIslandEntryEnabled by remember {
         mutableStateOf(
             prefs.getBoolean(UIConstants.KEY_FEATURE_ENTRY_HYPER_ISLAND, xiaomiDevice)
         )
@@ -182,13 +182,13 @@ fun MainPage() {
         )
     }
     val mainTabs = remember(
-        superIslandEntryEnabled,
+        hyperIslandEntryEnabled,
         aodLyricsEntryEnabled,
         dynamicIslandEntryEnabled,
         appleMusicEntryEnabled,
     ) {
         MainTabPolicy.tabs(
-            superIslandEntryEnabled = superIslandEntryEnabled,
+            hyperIslandEntryEnabled = hyperIslandEntryEnabled,
             aodLyricsEntryEnabled = aodLyricsEntryEnabled,
             dynamicIslandEntryEnabled = dynamicIslandEntryEnabled,
             appleMusicEntryEnabled = appleMusicEntryEnabled,
@@ -196,7 +196,7 @@ fun MainPage() {
     }
     // 主页是否保留：三个歌词入口至少有一个开启。主页隐藏时 Apple Music 体验优化页即为首页。
     val homePageVisible = MainTabPolicy.isHomePageVisible(
-        superIslandEntryEnabled = superIslandEntryEnabled,
+        hyperIslandEntryEnabled = hyperIslandEntryEnabled,
         aodLyricsEntryEnabled = aodLyricsEntryEnabled,
         dynamicIslandEntryEnabled = dynamicIslandEntryEnabled,
     )
@@ -241,7 +241,7 @@ fun MainPage() {
     }
     // 平行窗口 UI：仅宽屏且开关开启时启用（侧栏 + 双栏场景），关闭后回落为底部栏单栏布局
     val parallelWindowUi = isWideScreen && parallelWindowUiEnabled
-    var enableSuperIsland by remember {
+    var enableHyperIsland by remember {
         mutableStateOf(prefs.getBoolean(RootConstants.KEY_HOOK_ENABLE_HYPER_ISLAND, RootConstants.DEFAULT_HOOK_ENABLE_HYPER_ISLAND))
     }
     var enableAodLyrics by remember {
@@ -267,11 +267,11 @@ fun MainPage() {
                 UIConstants.KEY_PARALLEL_WINDOW_UI ->
                     parallelWindowUiEnabled = p.getBoolean(UIConstants.KEY_PARALLEL_WINDOW_UI, UIConstants.DEFAULT_PARALLEL_WINDOW_UI)
                 RootConstants.KEY_HOOK_ENABLE_HYPER_ISLAND ->
-                    enableSuperIsland = p.getBoolean(RootConstants.KEY_HOOK_ENABLE_HYPER_ISLAND, RootConstants.DEFAULT_HOOK_ENABLE_HYPER_ISLAND)
+                    enableHyperIsland = p.getBoolean(RootConstants.KEY_HOOK_ENABLE_HYPER_ISLAND, RootConstants.DEFAULT_HOOK_ENABLE_HYPER_ISLAND)
                 RootConstants.KEY_HOOK_ENABLE_AOD_LYRICS ->
                     enableAodLyrics = p.getBoolean(RootConstants.KEY_HOOK_ENABLE_AOD_LYRICS, RootConstants.DEFAULT_HOOK_ENABLE_AOD_LYRICS)
                 UIConstants.KEY_FEATURE_ENTRY_HYPER_ISLAND ->
-                    superIslandEntryEnabled = p.getBoolean(UIConstants.KEY_FEATURE_ENTRY_HYPER_ISLAND, xiaomiDevice)
+                    hyperIslandEntryEnabled = p.getBoolean(UIConstants.KEY_FEATURE_ENTRY_HYPER_ISLAND, xiaomiDevice)
                 UIConstants.KEY_FEATURE_ENTRY_AOD_LYRICS ->
                     aodLyricsEntryEnabled = p.getBoolean(UIConstants.KEY_FEATURE_ENTRY_AOD_LYRICS, xiaomiDevice)
                 UIConstants.KEY_FEATURE_ENTRY_DYNAMIC_ISLAND ->
@@ -308,10 +308,10 @@ fun MainPage() {
     }
 
     // --- callbacks (remembered for reference stability) ---
-    val toggleSuperIsland: (Boolean) -> Unit = remember { { isChecked ->
+    val toggleHyperIsland: (Boolean) -> Unit = remember { { isChecked ->
         if (isChecked) {
             if (RootApplication.xposedService != null) {
-                enableSuperIsland = true
+                enableHyperIsland = true
                 prefs.edit { putBoolean(RootConstants.KEY_HOOK_ENABLE_HYPER_ISLAND, true) }
                 PrefsBridge.putBoolean(RootConstants.KEY_HOOK_ENABLE_HYPER_ISLAND, true)
             } else {
@@ -323,7 +323,7 @@ fun MainPage() {
                 }
             }
         } else {
-            enableSuperIsland = false
+            enableHyperIsland = false
             prefs.edit { putBoolean(RootConstants.KEY_HOOK_ENABLE_HYPER_ISLAND, false) }
             PrefsBridge.putBoolean(RootConstants.KEY_HOOK_ENABLE_HYPER_ISLAND, false)
         }
@@ -458,7 +458,7 @@ fun MainPage() {
     OneTapRefreshHost(controller = oneTapRefresh)
 
     // --- migration dialog ---
-    WindowDialog(
+    AppWindowDialog(
         title = migrationTitle,
         show = showMigrationDialog,
         onDismissRequest = {},
@@ -660,15 +660,16 @@ fun MainPage() {
                         MainTab.Home -> HomePage(
                             outerPadding = innerPadding,
                             availableUpdateVersion = availableUpdate?.displayVersion,
-                            showSuperIslandEntry = superIslandEntryEnabled,
+                            showHyperIslandEntry = hyperIslandEntryEnabled,
                             showAodLyricsEntry = aodLyricsEntryEnabled,
                             showDynamicIslandEntry = dynamicIslandEntryEnabled,
                             lyricHookSwitches = lyricHookSwitches,
-                            enableSuperIsland = enableSuperIsland,
-                            onSuperIslandToggle = toggleSuperIsland,
+                            enableHyperIsland = enableHyperIsland,
+                            onHyperIslandToggle = toggleHyperIsland,
                             enableAodLyrics = enableAodLyrics,
                             onAodLyricsToggle = toggleAodLyrics,
-                            onSuperIslandConfigClick = { navigator.navigate(Route.HookSettings) },
+                            onHyperIslandConfigClick = { navigator.navigate(Route.HookSettings) },
+                            onHyperIslandTouchConfigClick = { navigator.navigate(Route.HyperIslandTouchSettings) },
                             onMediaCardConfigClick = { navigator.navigate(Route.MediaCardSettings) },
                             onLyricSettingsClick = { navigator.navigate(Route.LyricSettings) },
                             onDynamicIslandConfigClick = { navigator.navigate(Route.DynamicIslandNotification) },

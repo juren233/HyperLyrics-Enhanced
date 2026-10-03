@@ -8,7 +8,7 @@ package com.juren233.hyperlyricsenhanced.common
 
 import com.juren233.hyperlyricsenhanced.provider.OfficialProviderCatalog
 
-/** Existing music-app targets that can show the Super Island album-cover customization. */
+/** Existing music-app targets that can show the HyperIsland album-cover customization. */
 object IslandMusicAppCatalog {
     data class App(
         val packageName: String,

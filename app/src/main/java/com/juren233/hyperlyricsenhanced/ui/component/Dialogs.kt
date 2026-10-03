@@ -23,7 +23,6 @@ import com.juren233.hyperlyricsenhanced.R
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TextField
-import top.yukonga.miuix.kmp.window.WindowDialog
 
 @Composable
 fun NumberInputDialog(
@@ -42,7 +41,7 @@ fun NumberInputDialog(
         if (show) inputValue = initialValue.toString()
     }
 
-    WindowDialog(title = title, show = show, onDismissRequest = onDismiss) {
+    AppWindowDialog(title = title, show = show, onDismissRequest = onDismiss) {
         Column(modifier = Modifier.fillMaxWidth()) {
             TextField(
                 value = inputValue,
@@ -94,7 +93,7 @@ fun NumberRangeInputDialog(
         }
     }
 
-    WindowDialog(title = title, show = show, onDismissRequest = onDismiss) {
+    AppWindowDialog(title = title, show = show, onDismissRequest = onDismiss) {
         Column(modifier = Modifier.fillMaxWidth()) {
             TextField(
                 value = minInputValue,
@@ -174,7 +173,7 @@ fun FloatRangeInputDialog(
         value.count { it == '.' } <= 1 && value.all { it.isDigit() || it == '.' }
     }
 
-    WindowDialog(title = title, show = show, onDismissRequest = onDismiss) {
+    AppWindowDialog(title = title, show = show, onDismissRequest = onDismiss) {
         Column(modifier = Modifier.fillMaxWidth()) {
             TextField(
                 value = minInputValue,
@@ -241,7 +240,7 @@ fun TextInputDialog(
         if (show) inputValue = initialValue
     }
 
-    WindowDialog(title = title, show = show, onDismissRequest = onDismiss) {
+    AppWindowDialog(title = title, show = show, onDismissRequest = onDismiss) {
         Column(modifier = Modifier.fillMaxWidth()) {
             TextField(
                 value = inputValue,
@@ -275,7 +274,7 @@ fun SimpleDialog(
     onDismiss: () -> Unit,
     onConfirm: () -> Unit
 ) {
-    WindowDialog(
+    AppWindowDialog(
         title = title,
         summary = summary,
         show = show,
@@ -313,7 +312,7 @@ fun FloatInputDialog(
         if (show) inputValue = initialValue.toString()
     }
 
-    WindowDialog(title = title, show = show, onDismissRequest = onDismiss) {
+    AppWindowDialog(title = title, show = show, onDismissRequest = onDismiss) {
         Column(modifier = Modifier.fillMaxWidth()) {
             TextField(
                 value = inputValue,
@@ -360,7 +359,7 @@ fun PaddingInputDialog(
         }
     }
 
-    WindowDialog(title = title, show = show, onDismissRequest = onDismiss) {
+    AppWindowDialog(title = title, show = show, onDismissRequest = onDismiss) {
         Column(modifier = Modifier.fillMaxWidth()) {
             val filter = { text: String ->
                 if (text == "-" || text.isEmpty()) true

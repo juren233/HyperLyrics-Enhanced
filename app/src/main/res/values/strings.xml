@@ -2,11 +2,11 @@
 <resources>
     <string name="app_name" translatable="false">HyperLyrics Enhanced</string>
     <string name="enhanced_version_notice">遇到仅在 HyperLyrics Enhanced 中出现的问题，请在本仓库的 Issue 中反馈，本模块仓库可在“关于”-“项目地址”跳转。反馈至错误的仓库会引起非必要的打扰且降低解决问题的效率！</string>
-    <string name="module_update_available_notice">当前模块有新版本，建议去GitHub仓库下载更新</string>
+    <string name="module_update_available_notice">当前模块有新版本，建议去GitHub仓库下载更新。</string>
     <string name="debug_build_notice">当前为Debug包，如果你只是日常使用，建议重新下载安装Release包。</string>
     <string name="module_update_available_version">有新版本：%1$s</string>
     <string name="apple_music_provider_description">内置 Apple Music 逐字歌词提供器</string>
-    <string name="app_description">在 HyperOS3 媒体超级岛与米系AOD上体验歌词，更有 Apple Music 专属体验优化</string>
+    <string name="app_description">在 HyperOS 3&amp;4 媒体超级岛与米系AOD上体验歌词，更有 Apple Music 专属体验优化</string>
     <string name="label_lyric_listener_service">获取媒体信息权限</string>
     <string name="label_lyric_enable_service">HyperLyrics Enhanced 媒体信息监听</string>
     <string name="provider_release_home">https://github.com/juren233/HLE-Providers</string>
@@ -215,7 +215,7 @@
     <string name="title_hyper_island">超级岛</string>
     <string name="subtitle_hyper_island">暂停或切换音乐后生效</string>
     <string name="title_media_cards">媒体通知卡片</string>
-    <string name="summary_media_cards">更新后需重启系统界面</string>
+    <string name="summary_media_cards">设置实时生效；更新模块后请手动重启系统界面</string>
     <string name="title_notification_center_media_card">通知中心媒体卡片</string>
     <string name="title_media_card_background_theme">卡片背景颜色</string>
     <string name="option_media_card_theme_follow_system">跟随系统</string>
@@ -573,7 +573,7 @@
     <string name="module_tag_translation">翻译</string>
     <string name="module_tag_bluetooth">车载蓝牙歌词</string>
 
-    <!-- ———————————————————————— SuperIslandSettingsPage ———————————————————————— -->
+    <!-- ———————————————————————— HyperIslandSettingsPage ———————————————————————— -->
     <string name="title_layout">布局</string>
     <string name="title_content">内容</string>
     <string name="title_island_dynamic_limit">动态上限调节</string>
@@ -686,7 +686,7 @@
     <string name="summary_help_dynamic_island_steps">1、打开 HyperLyrics Enhanced 主页的通知型灵动岛歌词开关\n2、点击进入歌词白名单页添加音乐软件包名\n3、在音乐软件里打开蓝牙歌词功能，并连接蓝牙设备</string>
     <string name="summary_help_salt_player">已支持 Salt Player，更多应用等你发现...</string>
 
-    <!-- Super Island Help -->
+    <!-- HyperIsland Help -->
     <string name="summary_help_supported_devices">仅支持已安装 LSPosed v2.0+ 的 HyperOS 3/4 设备</string>
     <string name="summary_help_prerequisites">① 在 LSPosed 中启用 HyperLyrics Enhanced，并勾选推荐作用域 App（其中的“设置”可按需勾选，只有要在设置中显示 HyperLyrics Enhanced 入口时才需要）\n② 在“歌词设置”中选择合适的歌词源，并在主页打开“米系超级岛歌词”\n③ 重启系统界面和对应的音乐App</string>
     <string name="title_help_lyric_sources">歌词源</string>
@@ -813,4 +813,58 @@
     <string name="setup_completion_apple_music_only">Apple Music用户可直接使用，无需额外模块设置。</string>
     <string name="no_lyric_data">歌词源无数据</string>
     <string name="title_apple_music_force_cellular_data_entry">强制平板显示蜂窝数据入口</string>
+
+    <!-- HyperIsland touch controls -->
+    <string name="title_island_touch_config">超级岛触控配置</string>
+    <string name="island_touch_enable">启用自定义触控</string>
+    <string name="island_touch_description">仅作用于收起状态的音乐岛</string>
+    <string name="island_touch_double_disabled">不启用</string>
+    <string name="island_touch_haptic">触觉反馈</string>
+    <string name="island_touch_haptic_description">识别自定义手势时轻震</string>
+    <string name="island_touch_double_interval">双击间隔</string>
+    <string name="island_touch_milliseconds_value">%1$d ms</string>
+    <string name="island_touch_double_interval_range">150–500 ms</string>
+    <string name="island_touch_long_press_time">长按时间</string>
+    <string name="island_touch_long_press_range">200–1500 ms</string>
+    <string name="island_touch_unified_sides">两侧统一设置</string>
+    <string name="island_touch_unified_sides_description">两侧共用一套动作，单独保存；关闭后恢复左右侧配置</string>
+    <string name="island_touch_help">使用说明</string>
+    <string name="island_touch_help_expand">展开</string>
+    <string name="island_touch_help_collapse">收起</string>
+    <string name="island_touch_help_area">分侧设置时，以手指按下位置决定左右区域；开启“两侧统一设置”后，整个音乐岛使用同一套动作。展开后使用系统触控。</string>
+    <string name="island_touch_help_default">未自定义的手势保留系统原操作。双击不启用时，连续点击按单击处理。双击间隔越短，单击等待越短，但双击也需更快。</string>
+    <string name="island_touch_help_player">跳转 App 等同于点击媒体通知；快进、倒退等操作需播放器支持。</string>
+    <string name="island_touch_left">左侧区域</string>
+    <string name="island_touch_right">右侧区域</string>
+    <string name="island_touch_tap">单击</string>
+    <string name="island_touch_double_tap">双击</string>
+    <string name="island_touch_long_press">长按</string>
+    <string name="island_touch_swipe_left">向左滑</string>
+    <string name="island_touch_swipe_right">向右滑</string>
+    <string name="island_touch_none">系统原操作</string>
+    <string name="island_touch_play_pause">播放 / 暂停</string>
+    <string name="island_touch_previous">上一首</string>
+    <string name="island_touch_next">下一首</string>
+    <string name="island_touch_forward">快进</string>
+    <string name="island_touch_backward">倒退</string>
+    <string name="island_touch_restart">从头播放</string>
+    <string name="island_touch_toggle_mute">静音切换</string>
+    <string name="island_touch_volume_up">音量 +</string>
+    <string name="island_touch_volume_down">音量 −</string>
+    <string name="island_touch_open_app">跳转 App</string>
+    <string name="island_touch_open_app_freeform">小窗 App</string>
+    <string name="island_touch_expand">展开超级岛</string>
+    <string name="island_touch_media_output">音乐流转</string>
+    <string name="island_touch_copy_current_lyric">复制当前歌词</string>
+    <string name="island_touch_help_mute_copy">静音切换控制本机媒体音量，不控制远程投放。复制当前歌词会包含已有翻译，没有当前歌词时保留剪贴板内容。</string>
+    <string name="island_touch_seek_seconds">跳转秒数</string>
+    <string name="island_touch_seconds_value">%1$d 秒</string>
+    <string name="island_touch_seconds_range">1–300 秒</string>
+    <string name="option_refresh_system_ui_hot_reload">系统界面（实验性热重载，有卡死风险）</string>
+    <string name="summary_refresh_hot_reload_no_root">实验性热重载无需 root；重启进程需要 root 权限</string>
+    <string name="toast_system_ui_hot_reload_success">系统界面模块更新已加载</string>
+    <string name="toast_system_ui_hot_reload_rejected">当前运行版本需要先重启一次系统界面</string>
+    <string name="toast_system_ui_hot_reload_unavailable">当前没有可热重载的系统界面模块更新</string>
+    <string name="toast_system_ui_hot_reload_pending">热重载仍在处理中，请稍后查看</string>
+    <string name="toast_system_ui_hot_reload_failed">热重载未完成；可手动选择重启系统界面</string>
 </resources>

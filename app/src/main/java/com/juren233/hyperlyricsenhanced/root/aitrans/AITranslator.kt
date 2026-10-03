@@ -5,6 +5,7 @@ import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import com.juren233.hyperlyricsenhanced.lyric.model.Song
 import com.juren233.hyperlyricsenhanced.lyric.style.AiTranslationConfigs
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -76,6 +77,11 @@ object AITranslator {
         HookLogger.d("AITranslator", "清理记录：正在清空所有本地翻译记录（内存+数据库）")
         scheduler.cancelPending()
         cache.clear(callback)
+    }
+
+    internal fun releaseForReload() {
+        scheduler.releaseForReload()
+        scope.cancel()
     }
 
     fun cancelActiveRequests() {

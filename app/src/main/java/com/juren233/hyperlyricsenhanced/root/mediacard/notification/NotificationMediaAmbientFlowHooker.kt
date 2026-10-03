@@ -1,5 +1,6 @@
 package com.juren233.hyperlyricsenhanced.root.mediacard.notification
 
+import com.juren233.hyperlyricsenhanced.root.reload.SystemUiHookLifetime
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -94,13 +95,13 @@ object NotificationMediaAmbientFlowHooker {
 
     /** 屏幕状态门控：亮屏停 tick（空转），息屏重新拉起保活。注册一次随 SystemUI 存续。 */
     private var screenStateReceiverRegistered = false
+    private var screenReceiverContext: Context? = null
+    private var screenReceiver: BroadcastReceiver? = null
 
     private fun ensureScreenStateReceiver(context: Context) {
         if (screenStateReceiverRegistered) return
-        screenStateReceiverRegistered = true
         runCatching {
-            context.registerReceiver(
-                object : BroadcastReceiver() {
+            val receiver = object : BroadcastReceiver() {
                     override fun onReceive(host: Context?, intent: Intent?) {
                         when (intent?.action) {
                             Intent.ACTION_SCREEN_OFF -> {
@@ -115,12 +116,14 @@ object NotificationMediaAmbientFlowHooker {
                             }
                         }
                     }
-                },
-                IntentFilter().apply {
-                    addAction(Intent.ACTION_SCREEN_OFF)
-                    addAction(Intent.ACTION_SCREEN_ON)
-                },
-            )
+                }
+            context.registerReceiver(receiver, IntentFilter().apply {
+                addAction(Intent.ACTION_SCREEN_OFF)
+                addAction(Intent.ACTION_SCREEN_ON)
+            })
+            screenReceiver = receiver
+            screenReceiverContext = context
+            screenStateReceiverRegistered = true
         }.onFailure {
             HookLogger.w(TAG, "注册流光保活屏幕状态接收器失败: reason=${it.message}")
         }
@@ -232,7 +235,34 @@ object NotificationMediaAmbientFlowHooker {
         }
     }
 
+    internal fun snapshotForReload(): Array<Array<Any?>> =
+        synchronized(activeControllers) { activeControllers.toList() }.map { controller ->
+            arrayOf(controller, states[controller]?.lastMediaData)
+        }.toTypedArray()
+
+    internal fun restoreAfterReload(rows: List<Array<*>>) {
+        rows.forEach { row ->
+            val controller = row.getOrNull(0) ?: return@forEach
+            val data = row.getOrNull(1)
+            runCatching {
+                activeControllers.add(controller)
+                NotificationMediaBackgroundController.onBind(controller, data)
+                bind(controller, data)
+                syncView(controller)
+            }.onFailure { HookLogger.e(TAG, "热重载后恢复通知中心媒体卡片失败", it) }
+        }
+        refreshCardTheme()
+        scheduleFlowKeepAlive()
+    }
+
     fun releaseAll() {
+        screenReceiver?.let { receiver ->
+            runCatching { screenReceiverContext?.unregisterReceiver(receiver) }
+                .onFailure { HookLogger.w(TAG, "注销流光屏幕监听失败", it) }
+        }
+        screenReceiver = null
+        screenReceiverContext = null
+        screenStateReceiverRegistered = false
         val snapshot = synchronized(states) { states.toMap() }
         val controllers = synchronized(activeControllers) { activeControllers.toList() }
         states.clear()
@@ -262,6 +292,7 @@ object NotificationMediaAmbientFlowHooker {
 
     class ControllerHook(private val action: Action) : Hooker {
         override fun intercept(chain: Chain): Any? {
+            if (SystemUiHookLifetime.retired) return chain.proceed()
             val controller = chain.thisObject ?: return chain.proceed()
             MediaCardDiagnosticLogger.log(
                 stage = "notification_ambient",
@@ -350,6 +381,7 @@ object NotificationMediaAmbientFlowHooker {
 
     class NativeBackgroundUpdateHook(private val methodName: String) : Hooker {
         override fun intercept(chain: Chain): Any? {
+            if (SystemUiHookLifetime.retired) return chain.proceed()
             if (!SystemUiEnhancementGate.isEnabled()) return chain.proceed()
             val controller = chain.thisObject ?: return chain.proceed()
             if (BuildConfig.DEBUG) {
@@ -368,6 +400,7 @@ object NotificationMediaAmbientFlowHooker {
 
     class ProgressDrawHook : Hooker {
         override fun intercept(chain: Chain): Any? {
+            if (SystemUiHookLifetime.retired) return chain.proceed()
             if (SystemUiEnhancementGate.isEnabled()) {
                 chain.thisObject?.let(NotificationMediaBackgroundController::applySeekBarColor)
             }

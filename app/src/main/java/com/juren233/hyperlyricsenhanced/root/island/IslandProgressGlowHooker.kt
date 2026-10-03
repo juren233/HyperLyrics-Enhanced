@@ -1,5 +1,6 @@
 package com.juren233.hyperlyricsenhanced.root.island
 
+import com.juren233.hyperlyricsenhanced.root.reload.SystemUiHookLifetime
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.LinearGradient
@@ -118,6 +119,7 @@ internal object IslandProgressGlowHooker {
 
     class BackgroundDrawHook : Hooker {
         override fun intercept(chain: Chain): Any? {
+            if (SystemUiHookLifetime.retired) return chain.proceed()
             val result = chain.proceed()
             if (!SystemUiEnhancementGate.isEnabled()) return result
             val backgroundView = chain.thisObject as? View ?: return result

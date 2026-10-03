@@ -30,8 +30,44 @@ object BridgeCentral {
 
     /** 用于接收中央控制广播的接收器实例 */
     private val receiver = CentralReceiver
+    private var receiverRegistered = false
 
     private val active = AtomicBoolean(false)
+    @Volatile private var retired = false
+
+    /** End this generation before the replacement advertises its new Binder services. */
+    fun releaseForReload() {
+        retired = true
+        active.set(false)
+        discardPendingRegistrations()
+        if (receiverRegistered) runCatching { context.unregisterReceiver(receiver) }
+        receiverRegistered = false
+        CentralRuntime.subscribers.closeAll()
+        CentralRuntime.providers.closeAll()
+        ScreenStateMonitor.release()
+    }
+
+    /** Reversible shutdown when HLE no longer has a lyric display consuming Central. */
+    fun deactivate() {
+        val wasActive = synchronized(this) {
+            val previous = active.getAndSet(false)
+            discardPendingRegistrations()
+            if (receiverRegistered) context.unregisterReceiver(receiver)
+            receiverRegistered = false
+            previous
+        }
+        val failures = listOf(
+            runCatching { CentralRuntime.subscribers.closeAll(retire = false) },
+            runCatching { CentralRuntime.providers.closeAll(retire = false) },
+        ).mapNotNull { it.exceptionOrNull() }
+        ScreenStateMonitor.release()
+        if (wasActive && ::context.isInitialized) {
+            // One handoff notification lets clients register with an existing standalone Central.
+            // Our registration receiver is already detached, so this cannot reclaim their binding.
+            context.sendBroadcast(Intent(Constants.ACTION_CENTRAL_BOOT_COMPLETED))
+        }
+        check(failures.isEmpty()) { "Central shutdown failed: ${failures.firstOrNull()}" }
+    }
     private val pendingRegistrations = LinkedHashMap<String, Intent>()
 
     /**
@@ -43,8 +79,11 @@ object BridgeCentral {
      */
     fun initialize(appContext: Context, startActive: Boolean = true) {
         synchronized(this) {
+            check(!retired) { "Central has been retired" }
             if (!::context.isInitialized) {
                 context = appContext.applicationContext
+            }
+            if (!receiverRegistered) {
                 ScreenStateMonitor.initialize(appContext)
                 CentralRuntime.activePlayers.setActiveAudioPlaybackMonitor(
                     SystemActiveAudioPlaybackMonitor(context),
@@ -58,6 +97,7 @@ object BridgeCentral {
                     },
                     ContextCompat.RECEIVER_EXPORTED
                 )
+                receiverRegistered = true
             }
         }
         if (startActive) activate()
@@ -75,6 +115,7 @@ object BridgeCentral {
     internal fun handleRegistration(intent: Intent) {
         var dispatchImmediately = false
         synchronized(this) {
+            if (retired || !receiverRegistered) return
             if (active.get()) {
                 dispatchImmediately = true
             } else {

@@ -6,6 +6,7 @@
 
 package com.juren233.hyperlyricsenhanced.root.island
 
+import com.juren233.hyperlyricsenhanced.root.reload.SystemUiHookLifetime
 import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import io.github.libxposed.api.XposedInterface.Chain
@@ -251,6 +252,7 @@ internal object IslandWidthEventRebindGuard {
         private val firstCallbackLogged = AtomicBoolean()
 
         override fun intercept(chain: Chain): Any? {
+            if (SystemUiHookLifetime.retired) return chain.proceed()
             logFirstCallback(firstCallbackLogged, IslandWidthEventMethodProfile.DISPATCH_METHOD)
             val event = chain.args.getOrNull(0)
             val target = chain.args.getOrNull(1)
@@ -272,6 +274,7 @@ internal object IslandWidthEventRebindGuard {
         private val firstCallbackLogged = AtomicBoolean()
 
         override fun intercept(chain: Chain): Any? {
+            if (SystemUiHookLifetime.retired) return chain.proceed()
             logFirstCallback(
                 firstCallbackLogged,
                 IslandWidthEventMethodProfile.DISPATCH_TRANSITION_METHOD,
@@ -304,6 +307,7 @@ internal object IslandWidthEventRebindGuard {
         private val firstCallbackLogged = AtomicBoolean()
 
         override fun intercept(chain: Chain): Any? {
+            if (SystemUiHookLifetime.retired) return chain.proceed()
             logFirstCallback(
                 firstCallbackLogged,
                 IslandWidthEventMethodProfile.VISIBLE_LOTTIE_SCENES_METHOD,

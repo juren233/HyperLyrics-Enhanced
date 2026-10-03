@@ -1,5 +1,6 @@
 package com.juren233.hyperlyricsenhanced.root.mediacard.island
 
+import com.juren233.hyperlyricsenhanced.root.reload.SystemUiHookLifetime
 import android.content.Context
 import android.content.SharedPreferences
 import android.content.res.ColorStateList
@@ -204,6 +205,15 @@ object IslandExpandedMediaAmbientFlowHooker {
         }
     }
 
+    internal fun snapshotForReload(): Array<Any> =
+        synchronized(activeBinders) { activeBinders.toTypedArray() }
+
+    internal fun restoreAfterReload(binders: List<Any>) {
+        activeBinders.addAll(binders)
+        refreshCardTheme()
+        refreshMediaElements()
+    }
+
     fun releaseAll() {
         IslandExpandedMediaBackgroundController.releaseAll()
         val binders = synchronized(activeBinders) { activeBinders.toList() }
@@ -255,6 +265,7 @@ object IslandExpandedMediaAmbientFlowHooker {
         private val methodName: String? = null,
     ) : Hooker {
         override fun intercept(chain: Chain): Any? {
+            if (SystemUiHookLifetime.retired) return chain.proceed()
             val binder = chain.thisObject ?: return chain.proceed()
             MediaCardDiagnosticLogger.log(
                 stage = "island_expanded_media",
@@ -358,6 +369,7 @@ object IslandExpandedMediaAmbientFlowHooker {
 
     private class PlaybackStartHook : Hooker {
         override fun intercept(chain: Chain): Any? {
+            if (SystemUiHookLifetime.retired) return chain.proceed()
             if (!SystemUiEnhancementGate.isEnabled()) return chain.proceed()
             val view = chain.thisObject as? View ?: return chain.proceed()
             if ((IslandExpandedMediaBackgroundController.isActive() ||
@@ -373,6 +385,7 @@ object IslandExpandedMediaAmbientFlowHooker {
 
     private class ForegroundColorsHook : Hooker {
         override fun intercept(chain: Chain): Any? {
+            if (SystemUiHookLifetime.retired) return chain.proceed()
             if (!SystemUiEnhancementGate.isEnabled()) return chain.proceed()
             if (restoringNativeForeground.get() == true) return chain.proceed()
             val binder = chain.thisObject ?: return chain.proceed()
@@ -411,6 +424,7 @@ object IslandExpandedMediaAmbientFlowHooker {
 
     private class HeadGlowUpdateHook : Hooker {
         override fun intercept(chain: Chain): Any? {
+            if (SystemUiHookLifetime.retired) return chain.proceed()
             val result = chain.proceed()
             if (!SystemUiEnhancementGate.isEnabled()) return result
             val api = nativeApi ?: return result
@@ -425,6 +439,7 @@ object IslandExpandedMediaAmbientFlowHooker {
 
     internal class BackgroundUpdateHook : Hooker {
         override fun intercept(chain: Chain): Any? {
+            if (SystemUiHookLifetime.retired) return chain.proceed()
             if (!SystemUiEnhancementGate.isEnabled()) return chain.proceed()
             val view = chain.args.firstOrNull() as? View
             if (
@@ -451,6 +466,7 @@ object IslandExpandedMediaAmbientFlowHooker {
 
     internal class ExpandedVisibilityHook : Hooker {
         override fun intercept(chain: Chain): Any? {
+            if (SystemUiHookLifetime.retired) return chain.proceed()
             val result = chain.proceed()
             if (!SystemUiEnhancementGate.isEnabled()) return result
             val visibility = (chain.args.getOrNull(1) as? Number)?.toInt()
@@ -464,6 +480,7 @@ object IslandExpandedMediaAmbientFlowHooker {
 
     internal class ClosingToExpandedHook : Hooker {
         override fun intercept(chain: Chain): Any? {
+            if (SystemUiHookLifetime.retired) return chain.proceed()
             val result = chain.proceed()
             if (!SystemUiEnhancementGate.isEnabled()) return result
             if (chain.args.getOrNull(1) == true) {
@@ -475,6 +492,7 @@ object IslandExpandedMediaAmbientFlowHooker {
 
     internal class MiniBarUpdateHook : Hooker {
         override fun intercept(chain: Chain): Any? {
+            if (SystemUiHookLifetime.retired) return chain.proceed()
             val result = chain.proceed()
             if (!SystemUiEnhancementGate.isEnabled()) return result
             runCatching {

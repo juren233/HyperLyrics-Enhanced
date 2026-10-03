@@ -1,6 +1,7 @@
 package com.juren233.hyperlyricsenhanced.ui.navigation
 
 import top.yukonga.miuix.kmp.nav.core.NavKey
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -43,10 +44,18 @@ sealed interface Route : NavKey {
     data object VerbatimLyric : Route
     @Serializable
     data object LyricTranslation : Route
+    // Keep the saved Navigation route ID from 220002-220006; verified in its compiled serializer.
     @Serializable
-    data object SuperIslandSettings : Route
+    @SerialName("com.juren233.hyperlyricsenhanced.ui.navigation.Route.SuperIslandTouchSettings")
+    data object HyperIslandTouchSettings : Route
+    // Preserve the saved route ID verified in the original 220007 compiled serializer.
     @Serializable
-    data object SuperIslandAlbumCoverWhitelist : Route
+    @SerialName("com.juren233.hyperlyricsenhanced.ui.navigation.Route.SuperIslandSettings")
+    data object HyperIslandSettings : Route
+    // Preserve the saved route ID verified in the original 220007 compiled serializer.
+    @Serializable
+    @SerialName("com.juren233.hyperlyricsenhanced.ui.navigation.Route.SuperIslandAlbumCoverWhitelist")
+    data object HyperIslandAlbumCoverWhitelist : Route
     @Serializable
     data object MediaCardSettings : Route
     @Serializable

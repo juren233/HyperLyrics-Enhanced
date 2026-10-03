@@ -5,6 +5,7 @@ import com.juren233.hyperlyricsenhanced.lyric.model.Song
 import com.juren233.hyperlyricsenhanced.lyric.style.AiTranslationConfigs
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
@@ -74,6 +75,11 @@ internal class AITranslationScheduler(
                 HookLogger.d(TAG, "取消等待中的翻译任务: song=${job.songName}")
             }
         }
+    }
+
+    fun releaseForReload() {
+        cancelAll()
+        scope.cancel()
     }
 
     fun cancelAll() {

@@ -9,6 +9,10 @@ package com.juren233.hyperlyricsenhanced.root.lyricon.central
 internal object EmbeddedLyriconCentralPolicy {
 
     val knownStandalonePackages: Set<String> = setOf(
+        // Original APK manifests: tomakino 1.0.30-beta5 and Kifranei 1.0.30-beta14/1.0.40-rc1.
+        // See docs/knowledge-base/lyricon-central-coexistence.md; retain the split packages below.
+        "io.github.proify.lyricon",
+        "io.github.kifranei.lyricon.fork",
         "io.github.proify.lyricon.core",
         "io.github.proify.lyricon.app",
     )

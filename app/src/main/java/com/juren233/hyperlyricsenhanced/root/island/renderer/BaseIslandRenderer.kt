@@ -32,6 +32,13 @@ import java.util.WeakHashMap
 
 object BaseIslandRenderer : IslandRenderer {
 
+    @Volatile private var retiredForReload = false
+
+    internal fun beginHotReload() {
+        retiredForReload = true
+        mainHandler.removeCallbacksAndMessages(null)
+    }
+
     private const val REFRESH_DEBOUNCE_MS = 32L
     private val SCREEN_ON_REFRESH_DELAYS_MS = longArrayOf(0L, 120L, 400L, 900L)
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -87,6 +94,7 @@ object BaseIslandRenderer : IslandRenderer {
     fun currentPlaybackActive(): Boolean = playbackActive
 
     override fun refreshActiveIsland() {
+        if (retiredForReload) return
         fullRefreshPending = true
         scheduleRefresh()
     }
@@ -97,6 +105,7 @@ object BaseIslandRenderer : IslandRenderer {
     }
 
     fun onScreenInteractive() {
+        if (retiredForReload) return
         val generation = ++screenRefreshGeneration
         SCREEN_ON_REFRESH_DELAYS_MS.forEach { delay ->
             mainHandler.postDelayed(
@@ -129,6 +138,7 @@ object BaseIslandRenderer : IslandRenderer {
     }
 
     fun refreshDynamicWidth() {
+        if (retiredForReload) return
         dynamicWidthRefreshPending = true
         scheduleRefresh()
     }
@@ -228,6 +238,7 @@ object BaseIslandRenderer : IslandRenderer {
     }
 
     override fun updateLyricLine() {
+        if (retiredForReload) return
         if ((HookEntry.instance?.prefs?.getBoolean(RootConstants.KEY_HOOK_ENABLE_HYPER_ISLAND, RootConstants.DEFAULT_HOOK_ENABLE_HYPER_ISLAND)) != true) {
             DisplayDiagnosticLogger.log("ISLAND", "skipped", "feature_disabled")
             return
@@ -334,10 +345,12 @@ object BaseIslandRenderer : IslandRenderer {
     }
 
     override fun updatePosition(position: Long) {
+        if (retiredForReload) return
         updatePositionForActiveViews(position, isSeek = false)
     }
 
     override fun seekTo(position: Long) {
+        if (retiredForReload) return
         updatePositionForActiveViews(position, isSeek = true)
     }
 
@@ -382,6 +395,7 @@ object BaseIslandRenderer : IslandRenderer {
     }
 
     override fun onPlaybackStateChanged(isPlaying: Boolean) {
+        if (retiredForReload) return
         val prefs = HookEntry.instance?.prefs ?: return
         if (!prefs.getBoolean(RootConstants.KEY_HOOK_ENABLE_HYPER_ISLAND, RootConstants.DEFAULT_HOOK_ENABLE_HYPER_ISLAND)) {
             clearAllViews()
@@ -467,7 +481,7 @@ object BaseIslandRenderer : IslandRenderer {
             .filter { (_, pkgName) -> lyricPkg == null || pkgName == lyricPkg }
             .forEach { (cv, _) ->
                 cv.post {
-                    IslandHostFacade.clearAndRefresh(cv)
+                    if (!retiredForReload) IslandHostFacade.clearAndRefresh(cv)
                 }
             }
         clearedByPause = true
@@ -516,7 +530,23 @@ object BaseIslandRenderer : IslandRenderer {
         }
     }
 
+    internal fun releaseForReload() {
+        mainHandler.removeCallbacksAndMessages(null)
+        screenRefreshGeneration++
+        pauseTransitionGuard.reset()
+        playbackActive = false
+        clearedByPause = true
+        IslandViewRegistry.allRootsForReload().forEach { root ->
+            com.juren233.hyperlyricsenhanced.root.island.IslandTextHookerSupport
+                .clearInjectedIsland(root, suppressRelayout = true)
+        }
+        IslandViewRegistry.releaseForReload()
+        nextSongPreviewActive.clear()
+        injectionRecoveryFailures.clear()
+    }
+
     override fun clearAllViews() {
+        if (retiredForReload) return
         mainHandler.removeCallbacks(refreshRunnable)
         mainHandler.removeCallbacks(pauseRestoreRunnable)
         dynamicWidthRefreshPending = false

@@ -1,5 +1,6 @@
 package com.juren233.hyperlyricsenhanced.root.mediacard.notification
 
+import com.juren233.hyperlyricsenhanced.root.reload.SystemUiHookLifetime
 import android.content.Context
 import android.content.SharedPreferences
 import android.graphics.Outline
@@ -173,6 +174,17 @@ object NotificationMediaCoverStyleHooker {
         else Handler(Looper.getMainLooper()).post(refresh)
     }
 
+    internal fun snapshotForReload(): Array<Array<Any>> = arrayOf(
+        synchronized(activeControllers) { activeControllers.toTypedArray() },
+        synchronized(layoutControllers) { layoutControllers.toTypedArray() },
+    )
+
+    internal fun restoreAfterReload(rows: List<Array<*>>) {
+        rows.getOrNull(0)?.filterNotNull()?.let(activeControllers::addAll)
+        rows.getOrNull(1)?.filterNotNull()?.let(layoutControllers::addAll)
+        refresh()
+    }
+
     fun releaseAll() {
         val layouts = synchronized(layoutControllers) { layoutControllers.toList() }
         val controllers = synchronized(activeControllers) { activeControllers.toList() }
@@ -200,6 +212,7 @@ object NotificationMediaCoverStyleHooker {
 
     private class ControllerHook(private val methodName: String) : Hooker {
         override fun intercept(chain: Chain): Any? {
+            if (SystemUiHookLifetime.retired) return chain.proceed()
             val controller = chain.thisObject ?: return chain.proceed()
             MediaCardDiagnosticLogger.log(
                 stage = "notification_cover",
@@ -271,6 +284,7 @@ object NotificationMediaCoverStyleHooker {
 
     private class LayoutLoadHook(private val methodName: String) : Hooker {
         override fun intercept(chain: Chain): Any? {
+            if (SystemUiHookLifetime.retired) return chain.proceed()
             val result = chain.proceed()
             val controller = chain.thisObject ?: return result
             MediaCardDiagnosticLogger.log(

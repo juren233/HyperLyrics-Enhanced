@@ -38,7 +38,6 @@ import top.yukonga.miuix.kmp.basic.drawCheckerboard
 import top.yukonga.miuix.kmp.squircle.squircleBorder
 import top.yukonga.miuix.kmp.squircle.squircleClip
 import top.yukonga.miuix.kmp.theme.MiuixTheme
-import top.yukonga.miuix.kmp.window.WindowDialog
 
 @Composable
 fun CustomFontColorPreview(
@@ -77,7 +76,7 @@ fun CustomFontColorPickerDialog(
         if (show) draftColor = initialColor
     }
 
-    WindowDialog(
+    AppWindowDialog(
         title = stringResource(R.string.title_custom_font_color),
         show = show,
         onDismissRequest = onDismiss,

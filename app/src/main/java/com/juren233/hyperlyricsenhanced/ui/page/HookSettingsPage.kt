@@ -127,7 +127,7 @@ private fun LazyListScope.hookSettingsSections() {
         val navigator = LocalNavigator.current
         Card(modifier = Modifier.padding(horizontal = 12.dp).fillMaxWidth()) {
             Column {
-                ArrowPreference(title = stringResource(R.string.title_hyper_island), onClick = { navigator.navigate(Route.SuperIslandSettings) })
+                ArrowPreference(title = stringResource(R.string.title_hyper_island), onClick = { navigator.navigate(Route.HyperIslandSettings) })
                 ArrowPreference(title = stringResource(R.string.title_text), onClick = { navigator.navigate(Route.LyricDisplay) })
                 ArrowPreference(title = stringResource(R.string.title_marquee), onClick = { navigator.navigate(Route.LyricScroll) })
                 ArrowPreference(title = stringResource(R.string.title_verbatim_lyric), onClick = { navigator.navigate(Route.VerbatimLyric) })

@@ -8,6 +8,7 @@ package io.github.proify.lyricon.central.registration
 
 import android.content.Intent
 import android.util.Log
+import com.juren233.hyperlyricsenhanced.root.utils.LyricRuntimeDiagnostics
 import io.github.proify.lyricon.central.Constants
 import io.github.proify.lyricon.central.ProviderFlowDiagnostics
 import io.github.proify.lyricon.central.json
@@ -26,6 +27,7 @@ internal class RegistrationHandler(
 ) {
 
     fun handle(intent: Intent) {
+        LyricRuntimeDiagnostics.record("central_registration_dispatch") { "action=${intent.action}" }
         when (intent.action) {
             Constants.ACTION_REGISTER_PROVIDER -> registerProvider(intent)
             Constants.ACTION_REGISTER_SUBSCRIBER -> registerSubscriber(intent)
@@ -42,6 +44,7 @@ internal class RegistrationHandler(
                 ?.let { json.decodeFromString(ProviderInfo.serializer(), it) }
 
             if (info?.providerPackageName.isNullOrBlank() || info.playerPackageName.isBlank()) {
+                LyricRuntimeDiagnostics.record("central_provider_rejected") { "reason=invalid_info" }
                 Log.e(TAG, "Provider info is invalid: $info")
                 return
             }
@@ -74,14 +77,22 @@ internal class RegistrationHandler(
                 ?.let { json.decodeFromString(SubscriberInfo.serializer(), it) }
 
             if (info?.packageName.isNullOrBlank() || info.processName.isBlank()) {
+                LyricRuntimeDiagnostics.record("central_subscriber_rejected") { "reason=invalid_info" }
                 Log.e(TAG, "Subscriber info is invalid: $info")
                 return
             }
 
             connection = subscribers.getOrCreate(binder, info)
             Log.d(TAG, "Subscriber registered: $info")
+            LyricRuntimeDiagnostics.record("central_subscriber_callback_begin") {
+                "package=${info.packageName} process=${info.processName}"
+            }
             binder.onRegistrationCallback(connection.service)
+            LyricRuntimeDiagnostics.record("central_subscriber_callback_returned") {
+                "package=${info.packageName} process=${info.processName}"
+            }
         } catch (e: Exception) {
+            LyricRuntimeDiagnostics.record("central_subscriber_failed") { "error=${e.javaClass.name}" }
             Log.e(TAG, "Subscriber registration failed", e)
             connection?.let { subscribers.unregister(it) }
         }
@@ -89,7 +100,12 @@ internal class RegistrationHandler(
 
     private inline fun <reified T> getBinder(intent: Intent): T? = runCatching {
         val binder = intent.getBundleExtra(Constants.EXTRA_BUNDLE)
-            ?.getBinder(Constants.EXTRA_BINDER) ?: return null
+            ?.getBinder(Constants.EXTRA_BINDER) ?: run {
+            LyricRuntimeDiagnostics.record("central_registration_missing_binder") {
+                "action=${intent.action} type=${T::class.java.simpleName}"
+            }
+            return null
+        }
 
         when (T::class) {
             IProviderBinder::class -> IProviderBinder.Stub.asInterface(binder) as? T
@@ -100,6 +116,7 @@ internal class RegistrationHandler(
             }
         }
     }.onFailure {
+        LyricRuntimeDiagnostics.record("central_registration_binder_failed") { "error=${it.javaClass.name}" }
         Log.e(TAG, "Failed to get binder from intent", it)
     }.getOrNull()
 

@@ -15,7 +15,7 @@ internal object IslandProbeUtils {
     const val LEFT_TEST_WRAPPER_TAG = "HYPERLYRIC_LEFT_VIEW_WRAPPER"
     const val RIGHT_TEST_WRAPPER_TAG = "HYPERLYRIC_RIGHT_VIEW_WRAPPER"
 
-    fun isSuperIslandEnabled(): Boolean {
+    fun isHyperIslandEnabled(): Boolean {
         return SystemUiEnhancementGate.isEnabled()
     }
 

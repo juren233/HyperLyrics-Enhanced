@@ -42,6 +42,7 @@ import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.common.UIConstants
 import com.juren233.hyperlyricsenhanced.root.RootApplication
 import com.juren233.hyperlyricsenhanced.service.LiveLyricService
+import com.juren233.hyperlyricsenhanced.ui.utils.LocaleUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Card
@@ -297,7 +298,7 @@ fun LyricHookPermissionSheet(controller: LyricHookSwitchController) {
         title = stringResource(R.string.sheet_permission_title),
         allowDismiss = false,
         backgroundColor = MiuixTheme.colorScheme.surface,
-        startAction = {
+        startAction = LocaleUtils.localizedWindowContent {
             IconButton(onClick = controller::dismissPermissionSheet) {
                 Icon(
                     imageVector = MiuixIcons.Close,
@@ -306,7 +307,7 @@ fun LyricHookPermissionSheet(controller: LyricHookSwitchController) {
                 )
             }
         },
-        endAction = {
+        endAction = LocaleUtils.localizedWindowContent {
             IconButton(onClick = controller::confirmPermissionSheet) {
                 Icon(
                     imageVector = MiuixIcons.Ok,
@@ -316,44 +317,45 @@ fun LyricHookPermissionSheet(controller: LyricHookSwitchController) {
             }
         },
         onDismissRequest = controller::dismissPermissionSheet,
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .layout { measurable, constraints ->
-                    val paddingPx = 24.dp.roundToPx()
-                    val placeable = measurable.measure(
-                        constraints.copy(maxWidth = constraints.maxWidth + paddingPx * 2)
-                    )
-                    layout(constraints.maxWidth, placeable.height) {
-                        placeable.place(-paddingPx, 0)
-                    }
-                }
-        ) {
-            Column(
+        content = LocaleUtils.localizedWindowContent {
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 40.dp)
+                    .layout { measurable, constraints ->
+                        val paddingPx = 24.dp.roundToPx()
+                        val placeable = measurable.measure(
+                            constraints.copy(maxWidth = constraints.maxWidth + paddingPx * 2)
+                        )
+                        layout(constraints.maxWidth, placeable.height) {
+                            placeable.place(-paddingPx, 0)
+                        }
+                    }
             ) {
-                Card(modifier = Modifier.padding(horizontal = 12.dp).fillMaxWidth()) {
-                    ArrowPreference(
-                        title = stringResource(R.string.title_permission_post_notification),
-                        onClick = {
-                            notificationPermissionLauncher.launch(
-                                Manifest.permission.POST_NOTIFICATIONS
-                            )
-                        },
-                    )
-                    ArrowPreference(
-                        title = stringResource(R.string.title_permission_listener),
-                        onClick = controller::openNotificationListenerSettings,
-                    )
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 40.dp)
+                ) {
+                    Card(modifier = Modifier.padding(horizontal = 12.dp).fillMaxWidth()) {
+                        ArrowPreference(
+                            title = stringResource(R.string.title_permission_post_notification),
+                            onClick = {
+                                notificationPermissionLauncher.launch(
+                                    Manifest.permission.POST_NOTIFICATIONS
+                                )
+                            },
+                        )
+                        ArrowPreference(
+                            title = stringResource(R.string.title_permission_listener),
+                            onClick = controller::openNotificationListenerSettings,
+                        )
+                    }
                 }
+                SnackbarHost(
+                    state = controller.sheetSnackbarHostState,
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                )
             }
-            SnackbarHost(
-                state = controller.sheetSnackbarHostState,
-                modifier = Modifier.align(Alignment.BottomCenter),
-            )
-        }
-    }
+        },
+    )
 }

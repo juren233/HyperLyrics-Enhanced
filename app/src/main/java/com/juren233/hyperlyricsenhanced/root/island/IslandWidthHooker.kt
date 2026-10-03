@@ -1,5 +1,6 @@
 package com.juren233.hyperlyricsenhanced.root.island
 
+import com.juren233.hyperlyricsenhanced.root.reload.SystemUiHookLifetime
 import android.view.ViewGroup
 import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.lyric.view.LyricHugMeasureWindow
@@ -28,11 +29,12 @@ internal object IslandWidthHooker {
 
     class CalculateWidthHook : Hooker {
         override fun intercept(chain: Chain): Any? {
+            if (SystemUiHookLifetime.retired) return chain.proceed()
             var hookedContentView: ViewGroup? = null
             var previousIslandWidth = -1
             var lyricIslandCalculation = false
             runCatching {
-                if (!IslandProbeUtils.isSuperIslandEnabled()) return@runCatching
+                if (!IslandProbeUtils.isHyperIslandEnabled()) return@runCatching
                 val contentView = chain.thisObject as? ViewGroup ?: return@runCatching
                 hookedContentView = contentView
                 // 所有宽度计算路径（含系统自发调用、非歌词态）都必须提供内容视图，
@@ -178,6 +180,7 @@ internal object IslandWidthHooker {
      */
     class BigIslandMinWidthHook : Hooker {
         override fun intercept(chain: Chain): Any? {
+            if (SystemUiHookLifetime.retired) return chain.proceed()
             val result = chain.proceed()
             return runCatching {
                 if (!lyricWidthCalculationActive) return@runCatching result
@@ -236,6 +239,7 @@ internal object IslandWidthHooker {
         }
 
         override fun intercept(chain: Chain): Any? {
+            if (SystemUiHookLifetime.retired) return chain.proceed()
             val result = chain.proceed()
             val candidate = runCatching {
                 if (!IslandViewHelper.isUnlockIslandLengthEnabled()) {
@@ -317,6 +321,7 @@ internal object IslandWidthHooker {
         }
 
         override fun intercept(chain: Chain): Any? {
+            if (SystemUiHookLifetime.retired) return chain.proceed()
             val result = chain.proceed()
             val candidate = runCatching {
                 if (!IslandViewHelper.isUnlockIslandLengthEnabled()) {

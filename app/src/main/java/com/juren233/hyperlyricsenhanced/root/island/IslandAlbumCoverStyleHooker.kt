@@ -1,5 +1,6 @@
 package com.juren233.hyperlyricsenhanced.root.island
 
+import com.juren233.hyperlyricsenhanced.root.reload.SystemUiHookLifetime
 import android.content.SharedPreferences
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -299,6 +300,23 @@ internal object IslandAlbumCoverStyleHooker {
         }
     }
 
+    internal fun snapshotForReload(): Array<Array<Any>> = synchronized(trackedHolders) {
+        trackedHolders.mapNotNull { (holder, tracked) ->
+            tracked.dataRef.get()?.let { arrayOf(holder, it, tracked.accessor.setFixIconMethod) }
+        }.toTypedArray()
+    }
+
+    internal fun restoreAfterReload(rows: List<Array<*>>) {
+        rows.forEach { row ->
+            val holder = row.getOrNull(0) ?: return@forEach
+            val data = row.getOrNull(1) ?: return@forEach
+            val method = row.getOrNull(2) as? java.lang.reflect.Method ?: return@forEach
+            // The Method is owned by the host. Invoking it rebuilds accessors/state in NEW hooks.
+            runCatching { method.invoke(holder, data) }
+                .onFailure { HookLogger.e(TAG, "热重载后恢复超级岛封面失败", it) }
+        }
+    }
+
     fun releaseAll() {
         val holders = synchronized(trackedHolders) {
             trackedHolders.mapNotNull { (holder, tracked) ->
@@ -321,6 +339,7 @@ internal object IslandAlbumCoverStyleHooker {
     }
 
     fun cleanup() {
+        mainHandler.removeCallbacksAndMessages(null)
         IslandAlbumCoverRotationController.cleanup()
         restoreAllGradientCovers()
         cachedBigVisual = null
@@ -540,6 +559,7 @@ internal object IslandAlbumCoverStyleHooker {
         private val methodName: String,
     ) : Hooker {
         override fun intercept(chain: Chain): Any? {
+            if (SystemUiHookLifetime.retired) return chain.proceed()
             val result = chain.proceed()
             if (restoringNative.get() == true) return result
             runCatching {
@@ -566,6 +586,7 @@ internal object IslandAlbumCoverStyleHooker {
 
     private class TemplateGeometryHook : Hooker {
         override fun intercept(chain: Chain): Any? {
+            if (SystemUiHookLifetime.retired) return chain.proceed()
             val result = chain.proceed()
             runCatching {
                 val holder = result ?: return@runCatching

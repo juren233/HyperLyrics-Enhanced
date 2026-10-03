@@ -213,7 +213,7 @@ fun SettingsPage(scrollToFeatureSwitches: Boolean = false) {
     val appleMusicInstalled = remember(context) {
         FeatureEntryConfig.isAppleMusicInstalled(context)
     }
-    var superIslandEntryEnabled by remember {
+    var hyperIslandEntryEnabled by remember {
         mutableStateOf(
             prefs.getBoolean(UIConstants.KEY_FEATURE_ENTRY_HYPER_ISLAND, xiaomiDevice)
         )
@@ -249,7 +249,7 @@ fun SettingsPage(scrollToFeatureSwitches: Boolean = false) {
         }
     // 主页是否保留：三个歌词入口至少有一个开启。主页保留时不在设置页重复列出它的内容。
     val homePageVisible = MainTabPolicy.isHomePageVisible(
-        superIslandEntryEnabled = superIslandEntryEnabled,
+        hyperIslandEntryEnabled = hyperIslandEntryEnabled,
         aodLyricsEntryEnabled = aodLyricsEntryEnabled,
         dynamicIslandEntryEnabled = dynamicIslandEntryEnabled,
     )
@@ -311,12 +311,12 @@ fun SettingsPage(scrollToFeatureSwitches: Boolean = false) {
                     lyricHookSwitches = lyricHookSwitches,
                     showMigratedHomeSections = !homePageVisible,
                     dynamicIslandEntryEnabled = dynamicIslandEntryEnabled,
-                    superIslandEntryEnabled = superIslandEntryEnabled,
-                    onSuperIslandEntryToggle = { enabled ->
+                    hyperIslandEntryEnabled = hyperIslandEntryEnabled,
+                    onHyperIslandEntryToggle = { enabled ->
                         toggleFeatureEntry(
                             UIConstants.KEY_FEATURE_ENTRY_HYPER_ISLAND,
                             enabled,
-                            { superIslandEntryEnabled = it },
+                            { hyperIslandEntryEnabled = it },
                             RootConstants.KEY_HOOK_ENABLE_HYPER_ISLAND,
                         )
                     },
@@ -360,8 +360,8 @@ private fun LazyListScope.settingsSections(
     lyricHookSwitches: LyricHookSwitchController,
     showMigratedHomeSections: Boolean,
     dynamicIslandEntryEnabled: Boolean,
-    superIslandEntryEnabled: Boolean,
-    onSuperIslandEntryToggle: (Boolean) -> Unit,
+    hyperIslandEntryEnabled: Boolean,
+    onHyperIslandEntryToggle: (Boolean) -> Unit,
     aodLyricsEntryEnabled: Boolean,
     onAodLyricsEntryToggle: (Boolean) -> Unit,
     onDynamicIslandEntryToggle: (Boolean) -> Unit,
@@ -540,8 +540,8 @@ private fun LazyListScope.settingsSections(
             Column {
                 SwitchPreference(
                     title = stringResource(R.string.title_feature_entry_hyper_island),
-                    checked = superIslandEntryEnabled,
-                    onCheckedChange = onSuperIslandEntryToggle,
+                    checked = hyperIslandEntryEnabled,
+                    onCheckedChange = onHyperIslandEntryToggle,
                 )
                 SwitchPreference(
                     title = stringResource(R.string.title_feature_entry_aod_lyrics),

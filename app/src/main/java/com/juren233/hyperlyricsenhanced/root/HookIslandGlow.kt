@@ -1,5 +1,6 @@
 package com.juren233.hyperlyricsenhanced.root
 
+import com.juren233.hyperlyricsenhanced.root.reload.SystemUiHookLifetime
 import android.annotation.SuppressLint
 import android.content.SharedPreferences
 import android.graphics.Bitmap
@@ -66,6 +67,7 @@ object HookIslandGlow {
 
     class UpdateTemplateHook : Hooker {
         override fun intercept(chain: Chain): Any? {
+            if (SystemUiHookLifetime.retired) return chain.proceed()
             val view = chain.thisObject as? View
             val data = chain.args.getOrNull(0)
             val color = prepareHighlightColor(view, data)

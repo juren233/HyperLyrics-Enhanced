@@ -16,7 +16,7 @@ class MainTabPolicyTest {
         assertEquals(
             listOf(MainTab.Home, MainTab.AppleMusic, MainTab.About),
             MainTabPolicy.tabs(
-                superIslandEntryEnabled = true,
+                hyperIslandEntryEnabled = true,
                 aodLyricsEntryEnabled = true,
                 dynamicIslandEntryEnabled = true,
                 appleMusicEntryEnabled = true,
@@ -29,7 +29,7 @@ class MainTabPolicyTest {
         assertEquals(
             listOf(MainTab.AppleMusic, MainTab.About),
             MainTabPolicy.tabs(
-                superIslandEntryEnabled = false,
+                hyperIslandEntryEnabled = false,
                 aodLyricsEntryEnabled = false,
                 dynamicIslandEntryEnabled = false,
                 appleMusicEntryEnabled = true,
@@ -42,7 +42,7 @@ class MainTabPolicyTest {
         assertEquals(
             listOf(MainTab.Home, MainTab.About),
             MainTabPolicy.tabs(
-                superIslandEntryEnabled = true,
+                hyperIslandEntryEnabled = true,
                 aodLyricsEntryEnabled = false,
                 dynamicIslandEntryEnabled = false,
                 appleMusicEntryEnabled = false,
@@ -51,7 +51,7 @@ class MainTabPolicyTest {
         assertEquals(
             listOf(MainTab.Home, MainTab.About),
             MainTabPolicy.tabs(
-                superIslandEntryEnabled = false,
+                hyperIslandEntryEnabled = false,
                 aodLyricsEntryEnabled = true,
                 dynamicIslandEntryEnabled = false,
                 appleMusicEntryEnabled = false,
@@ -64,7 +64,7 @@ class MainTabPolicyTest {
         assertEquals(
             listOf(MainTab.Home, MainTab.About),
             MainTabPolicy.tabs(
-                superIslandEntryEnabled = false,
+                hyperIslandEntryEnabled = false,
                 aodLyricsEntryEnabled = false,
                 dynamicIslandEntryEnabled = true,
                 appleMusicEntryEnabled = false,
@@ -73,7 +73,7 @@ class MainTabPolicyTest {
         assertEquals(
             listOf(MainTab.Home, MainTab.AppleMusic, MainTab.About),
             MainTabPolicy.tabs(
-                superIslandEntryEnabled = false,
+                hyperIslandEntryEnabled = false,
                 aodLyricsEntryEnabled = false,
                 dynamicIslandEntryEnabled = true,
                 appleMusicEntryEnabled = true,
@@ -86,7 +86,7 @@ class MainTabPolicyTest {
         assertEquals(
             listOf(MainTab.Unsupported),
             MainTabPolicy.tabs(
-                superIslandEntryEnabled = false,
+                hyperIslandEntryEnabled = false,
                 aodLyricsEntryEnabled = false,
                 dynamicIslandEntryEnabled = false,
                 appleMusicEntryEnabled = false,
@@ -99,7 +99,7 @@ class MainTabPolicyTest {
         assertEquals(
             true,
             MainTabPolicy.isHomePageVisible(
-                superIslandEntryEnabled = true,
+                hyperIslandEntryEnabled = true,
                 aodLyricsEntryEnabled = true,
                 dynamicIslandEntryEnabled = true,
             ),
@@ -107,7 +107,7 @@ class MainTabPolicyTest {
         assertEquals(
             true,
             MainTabPolicy.isHomePageVisible(
-                superIslandEntryEnabled = true,
+                hyperIslandEntryEnabled = true,
                 aodLyricsEntryEnabled = false,
                 dynamicIslandEntryEnabled = false,
             ),
@@ -115,7 +115,7 @@ class MainTabPolicyTest {
         assertEquals(
             true,
             MainTabPolicy.isHomePageVisible(
-                superIslandEntryEnabled = false,
+                hyperIslandEntryEnabled = false,
                 aodLyricsEntryEnabled = true,
                 dynamicIslandEntryEnabled = false,
             ),
@@ -123,7 +123,7 @@ class MainTabPolicyTest {
         assertEquals(
             true,
             MainTabPolicy.isHomePageVisible(
-                superIslandEntryEnabled = false,
+                hyperIslandEntryEnabled = false,
                 aodLyricsEntryEnabled = false,
                 dynamicIslandEntryEnabled = true,
             ),
@@ -135,7 +135,7 @@ class MainTabPolicyTest {
         assertEquals(
             false,
             MainTabPolicy.isHomePageVisible(
-                superIslandEntryEnabled = false,
+                hyperIslandEntryEnabled = false,
                 aodLyricsEntryEnabled = false,
                 dynamicIslandEntryEnabled = false,
             ),

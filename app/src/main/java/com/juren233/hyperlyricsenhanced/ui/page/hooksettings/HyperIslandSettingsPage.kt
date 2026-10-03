@@ -60,7 +60,7 @@ import androidx.compose.ui.res.stringResource
 import com.juren233.hyperlyricsenhanced.R
 
 @Composable
-fun SuperIslandSettingsPage() {
+fun HyperIslandSettingsPage() {
     val context = LocalContext.current
     val navigator = LocalNavigator.current
     val prefs = remember { context.getSharedPreferences(UIConstants.PREF_NAME, Context.MODE_PRIVATE) }
@@ -504,7 +504,7 @@ fun SuperIslandSettingsPage() {
                                     ) {
                                         ArrowPreference(
                                             title = stringResource(R.string.title_island_album_cover_app_whitelist),
-                                            onClick = { navigator.navigate(Route.SuperIslandAlbumCoverWhitelist) },
+                                            onClick = { navigator.navigate(Route.HyperIslandAlbumCoverWhitelist) },
                                         )
                                     }
                                 }

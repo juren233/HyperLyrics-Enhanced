@@ -21,7 +21,7 @@ import java.lang.reflect.Method
 import java.util.WeakHashMap
 
 /**
- * Issue #35: read-only Super Island geometry and drawing-state snapshots.
+ * Issue #35: read-only HyperIsland geometry and drawing-state snapshots.
  * No listener, polling loop, extra measure/layout, or change to clipping is installed.
  * A bounded series samples the same content after native width calculation, through
  * the width animation, and after the marquee has had time to move. All entry points

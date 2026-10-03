@@ -348,6 +348,8 @@ internal class NativeApi private constructor(
 ) {
     fun getHolder(controller: Any): Any? = holderField.get(controller)
     fun getMediaData(controller: Any): Any? = mediaDataField.get(controller)
+    fun mediaSessionToken(controller: Any) =
+        (mediaControllerField.get(controller) as? MediaController)?.sessionToken
     fun getPlayer(holder: Any): ViewGroup = playerField.get(holder) as ViewGroup
     fun getMediaBackground(holder: Any): View? =
         runCatching { mediaBackgroundField?.get(holder) as? View }.getOrNull()
@@ -428,6 +430,8 @@ internal class DozeRefreshApi private constructor(
 ) {
     private var hostReference = WeakReference<Any>(null)
     private var didLogFirstTick = false
+
+    fun snapshotHost(): Any? = hostReference.get()
 
     fun captureHost(host: Any) {
         hostReference = WeakReference(host)

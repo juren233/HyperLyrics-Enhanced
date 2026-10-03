@@ -6,6 +6,7 @@
 
 package com.juren233.hyperlyricsenhanced.root.island
 
+import com.juren233.hyperlyricsenhanced.root.reload.SystemUiHookLifetime
 import android.view.View
 import android.view.ViewGroup
 import com.juren233.hyperlyricsenhanced.BuildConfig
@@ -44,6 +45,7 @@ internal object IslandReentrantBackgroundRemovalHooker {
 
     class RemoveViewHook : Hooker {
         override fun intercept(chain: Chain): Any? {
+            if (SystemUiHookLifetime.retired) return chain.proceed()
             val window = chain.thisObject as? ViewGroup ?: return chain.proceed()
             val background = chain.args.getOrNull(0) as? View ?: return chain.proceed()
             if (!isTarget(window.javaClass.name, background.javaClass.name)) {

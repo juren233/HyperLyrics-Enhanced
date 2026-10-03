@@ -15,12 +15,43 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import com.juren233.hyperlyricsenhanced.common.UIConstants
 
 object LocaleUtils {
     const val LANGUAGE_SYSTEM = 0
     const val LANGUAGE_SIMPLIFIED_CHINESE = 1
     const val LANGUAGE_ENGLISH = 2
+
+    /** App labels follow the phone language even when HLE has its own display language. */
+    fun systemLanguageContext(context: Context): Context = context.createConfigurationContext(
+        Configuration(context.resources.configuration).apply {
+            setLocales(
+                context.getSystemService(LocaleManager::class.java)?.systemLocales
+                    ?: Resources.getSystem().configuration.locales
+            )
+        }
+    )
+
+    /**
+     * Android dialogs create their Compose view from LocalView's original Context, which
+     * replaces our locale locals. Capture them before opening the window and restore them
+     * inside its content, including nested slots such as bottom-sheet actions.
+     */
+    @Composable
+    fun localizedWindowContent(content: @Composable () -> Unit): @Composable () -> Unit {
+        val context = LocalContext.current
+        val configuration = LocalConfiguration.current
+        val resources = LocalResources.current
+        return {
+            CompositionLocalProvider(
+                LocalContext provides context,
+                LocalConfiguration provides configuration,
+                LocalResources provides resources,
+                content = content,
+            )
+        }
+    }
 
     fun clearLegacyPlatformLocale(context: Context) {
         val localeManager = context.getSystemService(LocaleManager::class.java) ?: return

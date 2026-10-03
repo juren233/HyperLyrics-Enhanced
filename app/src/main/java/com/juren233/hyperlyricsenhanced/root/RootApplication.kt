@@ -37,7 +37,7 @@ class RootApplication : Application() {
             attachActivityFrameMetrics = true,
         )
         PrefsBridge.init(this)
-        StorageKeyMigrator.migrateLegacySuperIslandKeys(this)
+        StorageKeyMigrator.migrateLegacyIslandKeys(this)
         appContext = this
         initializeFeatureEntries()
 

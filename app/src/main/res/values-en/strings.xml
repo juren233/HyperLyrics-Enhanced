@@ -5,7 +5,7 @@
     <string name="debug_build_notice">This is a debug build. For everyday use, download and install a release build instead.</string>
     <string name="module_update_available_version">New version: %1$s</string>
     <string name="apple_music_provider_description">Built-in Apple Music word-synced lyrics provider</string>
-    <string name="app_description">Lyrics on HyperOS 3 HyperIsland and Xiaomi AOD, plus Apple Music enhancements</string>
+    <string name="app_description">Lyrics on HyperOS 3&amp;4 HyperIsland and Xiaomi AOD, plus Apple Music enhancements</string>
     <string name="label_lyric_listener_service">Media Information Access</string>
     <string name="label_lyric_enable_service">HyperLyrics Enhanced Media Monitor</string>
     <string name="provider_release_home">https://github.com/juren233/HLE-Providers</string>
@@ -214,7 +214,7 @@
     <string name="title_hyper_island">HyperIsland</string>
     <string name="subtitle_hyper_island">Takes effect after playback is paused or the track changes</string>
     <string name="title_media_cards">Media Notification Card</string>
-    <string name="summary_media_cards">Requires restarting SystemUI after an update</string>
+    <string name="summary_media_cards">Settings apply live; restart SystemUI manually after updating the module</string>
     <string name="title_notification_center_media_card">Notification Center Media Card</string>
     <string name="title_media_card_background_theme">Card Background Color</string>
     <string name="option_media_card_theme_follow_system">Follow system</string>
@@ -571,7 +571,7 @@
     <string name="module_tag_translation">Translation</string>
     <string name="module_tag_bluetooth">In-Car Bluetooth Lyrics</string>
 
-    <!-- ———————————————————————— SuperIslandSettingsPage ———————————————————————— -->
+    <!-- ———————————————————————— HyperIslandSettingsPage ———————————————————————— -->
     <string name="title_layout">Layout</string>
     <string name="title_content">Content</string>
     <string name="title_island_dynamic_limit">Dynamic Width Limit</string>
@@ -810,4 +810,59 @@
     <string name="setup_completion_apple_music_only">Apple Music works immediately with no extra module setup.</string>
     <string name="no_lyric_data">No Lyrics Available</string>
     <string name="title_apple_music_force_cellular_data_entry">Always Show Cellular Data on Tablets</string>
+
+    <!-- HyperIsland touch controls -->
+    <string name="title_island_touch_config">HyperIsland touch controls</string>
+    <string name="island_touch_enable">Enable custom touch controls</string>
+    <string name="island_touch_description">For the collapsed music island</string>
+    <string name="island_touch_double_disabled">Disabled</string>
+    <string name="island_touch_haptic">Haptic feedback</string>
+    <string name="island_touch_haptic_description">Vibrate when a custom gesture is recognized</string>
+    <string name="island_touch_double_interval">Double-tap interval</string>
+    <string name="island_touch_milliseconds_value">%1$d ms</string>
+    <string name="island_touch_double_interval_range">150–500 ms</string>
+    <string name="island_touch_long_press_time">Long-press time</string>
+    <string name="island_touch_long_press_range">200–1500 ms</string>
+    <string name="island_touch_unified_sides">Use the same settings on both sides</string>
+    <string name="island_touch_unified_sides_description">Use a separately saved set of actions on both sides. Turn off to restore individual settings.</string>
+    <string name="island_touch_help">How it works</string>
+    <string name="island_touch_help_expand">Expand</string>
+    <string name="island_touch_help_collapse">Collapse</string>
+    <string name="island_touch_help_area">With separate settings, the starting position determines the side. When both sides share settings, the whole music island uses the same actions. Expanded cards keep system controls.</string>
+    <string name="island_touch_help_default">Unassigned gestures keep system controls. With double tap disabled, each tap acts as a single tap. A shorter double-tap interval reduces the wait for single taps, but requires faster double taps.</string>
+    <string name="island_touch_help_player">Open app follows the media notification. Seeking and some other actions require player support.</string>
+    <string name="island_touch_left">Left area</string>
+    <string name="island_touch_right">Right area</string>
+    <string name="island_touch_tap">Single tap</string>
+    <string name="island_touch_double_tap">Double tap</string>
+    <string name="island_touch_long_press">Long press</string>
+    <string name="island_touch_swipe_left">Swipe left</string>
+    <string name="island_touch_swipe_right">Swipe right</string>
+    <string name="island_touch_none">System default</string>
+    <string name="island_touch_play_pause">Play / pause</string>
+    <string name="island_touch_previous">Previous track</string>
+    <string name="island_touch_next">Next track</string>
+    <string name="island_touch_forward">Seek forward</string>
+    <string name="island_touch_backward">Seek backward</string>
+    <string name="island_touch_restart">Play from start</string>
+    <string name="island_touch_toggle_mute">Toggle mute</string>
+    <string name="island_touch_volume_up">Volume up</string>
+    <string name="island_touch_volume_down">Volume down</string>
+    <string name="island_touch_open_app">Open app</string>
+    <string name="island_touch_open_app_freeform">Open app in floating window</string>
+    <string name="island_touch_expand">Expand HyperIsland</string>
+    <!-- User-confirmed feature name; retain it until an official English name is verified. -->
+    <string name="island_touch_media_output">音乐流转</string>
+    <string name="island_touch_copy_current_lyric">Copy current lyrics</string>
+    <string name="island_touch_help_mute_copy">Toggle mute controls local media audio, not remote playback. Copy current lyrics includes any available translation and leaves the clipboard unchanged when no current lyrics are available.</string>
+    <string name="island_touch_seek_seconds">Seek interval</string>
+    <string name="island_touch_seconds_value">%1$d seconds</string>
+    <string name="island_touch_seconds_range">1–300 seconds</string>
+    <string name="option_refresh_system_ui_hot_reload">SystemUI (experimental hot reload; may freeze)</string>
+    <string name="summary_refresh_hot_reload_no_root">Experimental hot reload needs no root; restarting processes requires root</string>
+    <string name="toast_system_ui_hot_reload_success">SystemUI module update loaded</string>
+    <string name="toast_system_ui_hot_reload_rejected">The running version needs one SystemUI restart first</string>
+    <string name="toast_system_ui_hot_reload_unavailable">No SystemUI module update is available for hot reload</string>
+    <string name="toast_system_ui_hot_reload_pending">Hot reload is still pending; please check again later</string>
+    <string name="toast_system_ui_hot_reload_failed">Hot reload did not complete; you can restart SystemUI manually</string>
 </resources>

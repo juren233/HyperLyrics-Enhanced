@@ -37,6 +37,18 @@ internal object IslandViewRegistry {
         }
     }
 
+    internal fun allRootsForReload(): List<ViewGroup> = synchronized(lock) {
+        (candidateRoots.keys + activeIslandPkgNames.keys).distinct()
+    }
+
+    internal fun releaseForReload() = synchronized(lock) {
+        activeIslandPkgNames.keys.toList().forEach { it.removeOnAttachStateChangeListener(attachStateListener) }
+        activeIslandPkgNames.clear()
+        candidateRoots.clear()
+        injectedViewsByRoot.clear()
+        publishedAttachedPkgNames.clear()
+    }
+
     fun register(view: ViewGroup, packageName: String) {
         synchronized(lock) { candidateRoots[view] = Unit }
         var shouldPublishAttached = false

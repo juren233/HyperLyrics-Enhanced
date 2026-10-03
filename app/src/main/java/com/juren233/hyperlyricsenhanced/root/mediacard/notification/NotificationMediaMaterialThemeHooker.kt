@@ -6,6 +6,7 @@
 
 package com.juren233.hyperlyricsenhanced.root.mediacard.notification
 
+import com.juren233.hyperlyricsenhanced.root.reload.SystemUiHookLifetime
 import android.content.Context
 import android.content.res.Configuration
 import com.juren233.hyperlyricsenhanced.BuildConfig
@@ -127,6 +128,7 @@ internal object NotificationMediaMaterialThemeHooker {
         private val themeProvider: () -> Int,
     ) : Hooker {
         override fun intercept(chain: Chain): Any? {
+            if (SystemUiHookLifetime.retired) return chain.proceed()
             val view = chain.getArg(0) ?: return chain.proceed()
             val context = chain.getArg(1) as? Context ?: return chain.proceed()
             val inFlight = inFlightViews.get()

@@ -28,19 +28,19 @@ object MainTabPolicy {
      * 主页被隐藏时，主页上的歌词设置与特殊功能才迁到设置页顶部。
      */
     fun isHomePageVisible(
-        superIslandEntryEnabled: Boolean,
+        hyperIslandEntryEnabled: Boolean,
         aodLyricsEntryEnabled: Boolean,
         dynamicIslandEntryEnabled: Boolean,
-    ): Boolean = superIslandEntryEnabled || aodLyricsEntryEnabled || dynamicIslandEntryEnabled
+    ): Boolean = hyperIslandEntryEnabled || aodLyricsEntryEnabled || dynamicIslandEntryEnabled
 
     fun tabs(
-        superIslandEntryEnabled: Boolean,
+        hyperIslandEntryEnabled: Boolean,
         aodLyricsEntryEnabled: Boolean,
         dynamicIslandEntryEnabled: Boolean,
         appleMusicEntryEnabled: Boolean,
     ): List<MainTab> {
         val showHome = isHomePageVisible(
-            superIslandEntryEnabled = superIslandEntryEnabled,
+            hyperIslandEntryEnabled = hyperIslandEntryEnabled,
             aodLyricsEntryEnabled = aodLyricsEntryEnabled,
             dynamicIslandEntryEnabled = dynamicIslandEntryEnabled,
         )

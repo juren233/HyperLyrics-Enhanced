@@ -13,12 +13,13 @@ import com.juren233.hyperlyricsenhanced.utils.LogManager
 object StorageKeyMigrator {
     private const val TAG = "StorageKeyMigrator"
 
+    // Legacy persisted keys must keep their original spelling for upgrades.
     private val renamedBooleanKeys = listOf(
         "key_hook_enable_super_island" to RootConstants.KEY_HOOK_ENABLE_HYPER_ISLAND,
         "key_feature_entry_super_island" to UIConstants.KEY_FEATURE_ENTRY_HYPER_ISLAND,
     )
 
-    fun migrateLegacySuperIslandKeys(context: Context) {
+    fun migrateLegacyIslandKeys(context: Context) {
         val prefs = context.getSharedPreferences(PreferenceKeys.PREF_NAME, Context.MODE_PRIVATE)
         val edits = prefs.edit()
         var dirty = false

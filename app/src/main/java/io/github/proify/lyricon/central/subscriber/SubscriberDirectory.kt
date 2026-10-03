@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 Proify, Tomakino
+ * Copyright 2026 juren233
  * Licensed under the Apache License, Version 2.0
  * http://www.apache.org/licenses/LICENSE-2.0
  */
@@ -18,6 +18,8 @@ internal class SubscriberDirectory {
         if (existing != null) return existing
         return registry.register(SubscriberConnection(binder, info))
     }
+
+    fun closeAll(retire: Boolean = true) = registry.closeAll(retire)
 
     fun unregister(connection: SubscriberConnection) {
         registry.unregister(connection)

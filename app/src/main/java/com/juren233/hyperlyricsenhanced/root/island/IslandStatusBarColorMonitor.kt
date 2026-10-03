@@ -1,6 +1,7 @@
 /* Copyright 2026 juren233 */
 package com.juren233.hyperlyricsenhanced.root.island
 
+import com.juren233.hyperlyricsenhanced.root.reload.SystemUiHookLifetime
 import android.graphics.Color
 import android.graphics.Rect
 import android.os.Handler
@@ -56,6 +57,12 @@ internal object IslandStatusBarColorMonitor {
         }
     }
 
+    internal fun releaseForReload() {
+        mainHandler.removeCallbacksAndMessages(null)
+        dispatcher = null
+        snapshot = null
+    }
+
     fun install(module: XposedModule, loader: ClassLoader) {
         if (nativeApi != null) return
         runCatching {
@@ -63,6 +70,7 @@ internal object IslandStatusBarColorMonitor {
             module.deoptimize(api.applyTint)
             module.hook(api.applyTint).intercept(object : Hooker {
                 override fun intercept(chain: Chain): Any? {
+                    if (SystemUiHookLifetime.retired) return chain.proceed()
                     val result = chain.proceed()
                     val receiver = chain.thisObject ?: return result
                     onMain {

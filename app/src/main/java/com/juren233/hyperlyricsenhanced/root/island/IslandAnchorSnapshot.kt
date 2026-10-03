@@ -17,6 +17,19 @@ internal class IslandAnchorSnapshot {
     private var spans: List<IslandDynamicLimitPolicy.Span>? = null
     private var screenWidth: Int = 0
 
+    /** Boot-classloader-only state; preserve frozen anchors across module generations. */
+    fun save(): IntArray = intArrayOf(screenWidth) + spans.orEmpty().flatMap {
+        listOf(it.left, it.right, if (it.text) 1 else 0)
+    }.toIntArray()
+
+    fun restore(values: IntArray) {
+        if (values.isEmpty() || (values.size - 1) % 3 != 0) return
+        screenWidth = values[0]
+        spans = (1 until values.size step 3).map {
+            IslandDynamicLimitPolicy.Span(values[it], values[it + 1], values[it + 2] != 0)
+        }
+    }
+
     /** 结构性变化（或首次观测）时替换快照。 */
     fun update(live: List<IslandDynamicLimitPolicy.Span>, observedScreenWidth: Int) {
         spans = live

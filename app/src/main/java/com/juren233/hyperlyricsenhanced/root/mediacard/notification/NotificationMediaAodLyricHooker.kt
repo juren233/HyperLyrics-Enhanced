@@ -2,6 +2,7 @@
 
 package com.juren233.hyperlyricsenhanced.root.mediacard.notification
 
+import com.juren233.hyperlyricsenhanced.root.reload.SystemUiHookLifetime
 import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
 import android.animation.ValueAnimator
@@ -350,6 +351,42 @@ object NotificationMediaAodLyricHooker {
         )
     }
 
+    internal fun snapshotForReload(): Array<Any> = arrayOf(
+        synchronized(states) { states.map { (controller, state) ->
+            arrayOf(controller, state.fullAod, state.aodActive)
+        }.toTypedArray() },
+        synchronized(aodPluginStates) { aodPluginStates.keys.toTypedArray() },
+        synchronized(hookedAodPluginClassLoaders) { hookedAodPluginClassLoaders.toTypedArray() },
+        synchronized(dozeRefreshApis) { dozeRefreshApis.mapNotNull { (loader, api) ->
+            api.snapshotHost()?.let { arrayOf(loader, it) }
+        }.toTypedArray() },
+    )
+
+    internal fun restoreAfterReload(values: List<Any>) {
+        (values.getOrNull(0) as? Array<*>)?.filterIsInstance<Array<*>>()?.forEach { row ->
+            val controller = row.getOrNull(0) ?: return@forEach
+            val api = resolveApi(controller.javaClass.classLoader) ?: return@forEach
+            runCatching {
+                val data = api.getMediaData(controller)
+                states[controller] = ControllerState(
+                    holder = api.getHolder(controller), mediaData = data,
+                    fullAod = row.getOrNull(1) == true, aodActive = row.getOrNull(2) == true,
+                    playing = resolvePlaying(api, controller, data),
+                )
+            }.onFailure { HookLogger.e(TAG, "热重载后恢复锁屏歌词宿主失败", it) }
+        }
+        (values.getOrNull(1) as? Array<*>)?.filterIsInstance<View>()?.forEach { view ->
+            if (view.isAttachedToWindow) aodPluginStates[view] = AodPluginState(
+                attached = true, playing = LyriconDataBridge.currentPlaybackState == true,
+            )
+        }
+        (values.getOrNull(3) as? Array<*>)?.filterIsInstance<Array<*>>()?.forEach { row ->
+            val loader = row.getOrNull(0) as? ClassLoader ?: return@forEach
+            row.getOrNull(1)?.let { dozeRefreshApis[loader]?.captureHost(it) }
+        }
+        refresh()
+    }
+
     fun releaseAll() = runOnMain {
         synchronized(states) { states.entries.toList() }.forEach { (_, state) ->
             restoreActions(state)
@@ -380,6 +417,7 @@ object NotificationMediaAodLyricHooker {
 
     private class ControllerHook(private val methodName: String) : Hooker {
         override fun intercept(chain: Chain): Any? {
+            if (SystemUiHookLifetime.retired) return chain.proceed()
             val controller = chain.thisObject ?: return chain.proceed()
             val api = resolveApi(controller.javaClass.classLoader) ?: return chain.proceed()
             val state = states.getOrPut(controller) { ControllerState() }
@@ -448,6 +486,7 @@ object NotificationMediaAodLyricHooker {
 
     private class HeaderVisibilityHook : Hooker {
         override fun intercept(chain: Chain): Any? {
+            if (SystemUiHookLifetime.retired) return chain.proceed()
             val header = chain.thisObject as? View ?: return chain.proceed()
             val newVisibility = (chain.args.firstOrNull() as? Int) ?: View.GONE
             val becomesVisible = newVisibility == View.VISIBLE
@@ -489,6 +528,7 @@ object NotificationMediaAodLyricHooker {
 
     private class AodPluginHook(private val method: Method) : Hooker {
         override fun intercept(chain: Chain): Any? {
+            if (SystemUiHookLifetime.retired) return chain.proceed()
             val aodView = chain.thisObject ?: return chain.proceed()
             val methodName = method.name
             if (BuildConfig.DEBUG && firstAodPluginCallbackClasses.add(aodView.javaClass)) {
@@ -534,6 +574,7 @@ object NotificationMediaAodLyricHooker {
         private val refreshApi: DozeRefreshApi
     ) : Hooker {
         override fun intercept(chain: Chain): Any? {
+            if (SystemUiHookLifetime.retired) return chain.proceed()
             val result = chain.proceed()
             chain.thisObject?.let(refreshApi::captureHost)
             return result

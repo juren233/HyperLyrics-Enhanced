@@ -6,6 +6,7 @@
 
 package com.juren233.hyperlyricsenhanced.root.island
 
+import com.juren233.hyperlyricsenhanced.root.reload.SystemUiHookLifetime
 import android.os.Handler
 import android.os.Looper
 import com.juren233.hyperlyricsenhanced.BuildConfig
@@ -54,6 +55,7 @@ internal object IslandMediaControllerObserver {
     /** 观测 addDynamicIslandView 调用，缓存控制器实例（主 APK 类，SystemUI 进程内）。 */
     class MediaAddObserverHook : Hooker {
         override fun intercept(chain: Chain): Any? {
+            if (SystemUiHookLifetime.retired) return chain.proceed()
             controllerRef = WeakReference(chain.thisObject)
             return chain.proceed()
         }

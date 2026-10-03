@@ -27,7 +27,7 @@ object RootConstants {
     const val DEBUG_APPLE_PRONUNCIATION_DIAGNOSTIC_METHOD =
         "debug_apple_pronunciation_diagnostic"
 
-    // ================= HOOK & SUPER ISLAND KEYS =================
+    // ================= HOOK & HYPERISLAND KEYS =================
     const val KEY_HOOK_ENABLE_HYPER_ISLAND = "key_hook_enable_hyper_island"
     const val KEY_HOOK_ENABLE_DYNAMIC_ISLAND = "key_hook_enable_dynamic_island"
     const val KEY_HOOK_ENABLE_AOD_LYRICS = "key_hook_enable_aod_lyrics"

@@ -30,10 +30,33 @@ internal object EmbeddedLyriconCentralController {
     private const val TAG = "EmbeddedLyriconCentral"
     private const val STANDALONE_PROBE_TIMEOUT_MS = 3_500L
     private val started = AtomicBoolean(false)
+    private var prepared = false
     private val mainHandler = Handler(Looper.getMainLooper())
     private var standaloneProbeTimeout: Runnable? = null
 
-    fun prepare(app: Application) {
+    internal fun releaseForReload() {
+        standaloneProbeTimeout?.let(mainHandler::removeCallbacks)
+        standaloneProbeTimeout = null
+        prepared = false
+        started.set(false)
+        BridgeCentral.releaseForReload()
+    }
+
+    fun prepare(app: Application, enabled: Boolean = true) {
+        if (!enabled) {
+            standaloneProbeTimeout?.let(mainHandler::removeCallbacks)
+            standaloneProbeTimeout = null
+            if (!prepared) return
+            prepared = false
+            started.set(false)
+            runCatching { BridgeCentral.deactivate() }.onFailure { error ->
+                HookLogger.e(TAG, "停用内嵌 Lyricon Central 失败", error)
+            }
+            diagnostic("stage=central_disabled, reason=no_lyric_display")
+            return
+        }
+        if (prepared) return
+        prepared = true
         val installed = installedStandalonePackages(app.packageManager)
         diagnostic(
             "stage=prepare_started, installedStandalone=${installed.sorted()}, " +
@@ -53,6 +76,7 @@ internal object EmbeddedLyriconCentralController {
     }
 
     fun onCentralConnected() {
+        if (!prepared) return
         diagnostic("stage=subscriber_connected, started=${started.get()}")
         standaloneProbeTimeout?.let(mainHandler::removeCallbacks)
         standaloneProbeTimeout = null
@@ -60,6 +84,7 @@ internal object EmbeddedLyriconCentralController {
     }
 
     fun onSubscriberConnectTimeout(app: Application) {
+        if (!prepared) return
         diagnostic("stage=subscriber_connect_timeout, started=${started.get()}")
         ensureStarted(app, reason = "standalone_connection_timeout")
     }
@@ -70,6 +95,7 @@ internal object EmbeddedLyriconCentralController {
     }
 
     private fun ensureStarted(app: Application, reason: String) {
+        if (!prepared) return
         diagnostic("stage=start_requested, reason=$reason, started=${started.get()}")
         if (!started.compareAndSet(false, true)) {
             diagnostic("stage=start_skipped, reason=already_started, trigger=$reason")

@@ -95,6 +95,17 @@ class LyriconSource : LyricSource {
     @Volatile
     internal var subscriber: LyriconSubscriber? = null
 
+    internal var centralSubscriptionEnabled = true
+        private set
+
+    internal fun configureCentralSubscription(enabled: Boolean) {
+        check(subscriber == null && directBridge == null) { "Stop the lyric source before changing its connection mode" }
+        centralSubscriptionEnabled = enabled
+    }
+
+    private val acceptsCentralCallbacks: Boolean
+        get() = centralSubscriptionEnabled && subscriber != null && sink != null
+
     internal var activeProviderPackageName: String? = null
     @Volatile
     internal var activeCentralPlayerPackageName: String? = null
@@ -191,7 +202,7 @@ class LyriconSource : LyricSource {
                 "prefsPresent=${prefs != null}, subscriberPresent=${subscriber != null}, " +
                 "directBridgePresent=${directBridge != null}",
         )
-        if (this.subscriber != null) {
+        if (this.subscriber != null || directBridge != null) {
             HookLogger.d(TAG, "跳过重复启动: reason=already_running")
             diagnostic(
                 "stage=source_start_skipped, reason=already_running, " +
@@ -206,9 +217,14 @@ class LyriconSource : LyricSource {
         }
         registerLocalMediaSessionTracker()
         diagnostic("stage=direct_bridge_starting")
-        directBridge = AppleMusicDirectBridge(application, this).also { it.start() }
+        directBridge = AppleMusicDirectBridge(application, this)
+        directBridge?.start()
         diagnostic("stage=direct_bridge_started")
-        initializeSubscriber(application)
+        if (centralSubscriptionEnabled) {
+            initializeSubscriber(application)
+        } else {
+            diagnostic("stage=subscriber_skipped, reason=apple_direct_only")
+        }
         startAppleMediaMonitor()
         HookLogger.i(TAG, "数据源已启动")
         diagnostic(
@@ -218,6 +234,8 @@ class LyriconSource : LyricSource {
     }
 
     override fun stop() {
+        val previousSubscriber = subscriber
+        subscriber = null
         stopAppleMediaMonitor()
         unregisterLocalMediaSessionTracker()
         cancelFallback(clearAppleSong = true, reason = "source_stopped")
@@ -230,9 +248,9 @@ class LyriconSource : LyricSource {
         try {
             directBridge?.stop()
             directBridge = null
-            subscriber?.unsubscribeActivePlayer(activePlayerListener)
-            subscriber?.unregister()
-            subscriber?.destroy()
+            previousSubscriber?.unsubscribeActivePlayer(activePlayerListener)
+            previousSubscriber?.unregister()
+            previousSubscriber?.destroy()
         } catch (e: Exception) {
             HookLogger.e(TAG, "清理歌词订阅连接失败", e)
         } finally {
@@ -584,6 +602,7 @@ class LyriconSource : LyricSource {
 
 internal val connectionListener = object : ConnectionListener {
     override fun onConnected(subscriber: LyriconSubscriber) {
+        if (!acceptsCentralCallbacks || this@LyriconSource.subscriber !== subscriber) return
         MediaCardDiagnosticLogger.log(
             stage = "subscriber",
             event = "connected",
@@ -591,10 +610,15 @@ internal val connectionListener = object : ConnectionListener {
         )
         HookLogger.i(TAG, "订阅连接已建立")
         diagnostic("stage=subscriber_connected")
-        mainHandler.post { onCentralConnected?.invoke() }
+        mainHandler.post {
+            if (acceptsCentralCallbacks && this@LyriconSource.subscriber === subscriber) {
+                onCentralConnected?.invoke()
+            }
+        }
     }
 
     override fun onReconnected(subscriber: LyriconSubscriber) {
+        if (!acceptsCentralCallbacks || this@LyriconSource.subscriber !== subscriber) return
         MediaCardDiagnosticLogger.log(
             stage = "subscriber",
             event = "reconnected",
@@ -602,10 +626,15 @@ internal val connectionListener = object : ConnectionListener {
         )
         HookLogger.i(TAG, "订阅连接已恢复")
         diagnostic("stage=subscriber_reconnected")
-        mainHandler.post { onCentralConnected?.invoke() }
+        mainHandler.post {
+            if (acceptsCentralCallbacks && this@LyriconSource.subscriber === subscriber) {
+                onCentralConnected?.invoke()
+            }
+        }
     }
 
     override fun onDisconnected(subscriber: LyriconSubscriber) {
+        if (!acceptsCentralCallbacks || this@LyriconSource.subscriber !== subscriber) return
         MediaCardDiagnosticLogger.log(
             stage = "subscriber",
             event = "disconnected",
@@ -621,6 +650,7 @@ internal val connectionListener = object : ConnectionListener {
     }
 
     override fun onConnectTimeout(subscriber: LyriconSubscriber) {
+        if (!acceptsCentralCallbacks || this@LyriconSource.subscriber !== subscriber) return
         MediaCardDiagnosticLogger.log(
             stage = "subscriber",
             event = "connect_timeout",
@@ -634,6 +664,7 @@ internal val connectionListener = object : ConnectionListener {
         HookLogger.w(TAG, "订阅连接超时")
         diagnostic("stage=subscriber_connect_timeout")
         mainHandler.post {
+            if (!acceptsCentralCallbacks || this@LyriconSource.subscriber !== subscriber) return@post
             onCentralConnectTimeout?.invoke()
             diagnostic("stage=subscriber_retry_requested")
             subscriber.register()
@@ -643,6 +674,7 @@ internal val connectionListener = object : ConnectionListener {
 }
 internal val activePlayerListener = object : ActivePlayerListener {
     override fun onActiveProviderChanged(providerInfo: ProviderInfo?) {
+        if (!acceptsCentralCallbacks) return
         val playerPackageName = providerInfo?.playerPackageName
         MediaCardDiagnosticLogger.log(
             stage = "central",
@@ -722,6 +754,7 @@ internal val activePlayerListener = object : ActivePlayerListener {
 
 
     override fun onSongChanged(song: LyriconSong?) {
+        if (!acceptsCentralCallbacks) return
         val localSong = song?.toLocalSong()
         if (BuildConfig.DEBUG) AppleMetadataFlowDiagnostics.record("central_received") {
             "player=$activeCentralPlayerPackageName provider=$activeProviderPackageName " +
@@ -783,6 +816,7 @@ internal val activePlayerListener = object : ActivePlayerListener {
     }
 
     override fun onPlaybackStateChanged(isPlaying: Boolean) {
+        if (!acceptsCentralCallbacks) return
         val blocked = isCentralPlayerBlockedByMediaSession()
         MediaCardDiagnosticLogger.log(
             stage = "central",
@@ -824,6 +858,7 @@ internal val activePlayerListener = object : ActivePlayerListener {
     }
 
     override fun onPositionChanged(position: Long) {
+        if (!acceptsCentralCallbacks) return
         if (!hasActiveCentralPlayer()) {
             logCentralPositionDiagnostic(position, null, "dropped_no_active_player")
             MediaCardDiagnosticLogger.log(
@@ -929,6 +964,7 @@ internal val activePlayerListener = object : ActivePlayerListener {
 
 
     override fun onSeekTo(position: Long) {
+        if (!acceptsCentralCallbacks) return
         val blocked = isCentralPlayerBlockedByMediaSession()
         MediaCardDiagnosticLogger.log(
             stage = "central",
@@ -981,6 +1017,7 @@ internal val activePlayerListener = object : ActivePlayerListener {
     }
 
     override fun onReceiveText(text: String?) {
+        if (!acceptsCentralCallbacks) return
         val controlFrame = OfficialProviderSubscriberControlFrame.inspect(text)
         if (controlFrame.consumed) {
             val providerPackage = activeProviderPackageName

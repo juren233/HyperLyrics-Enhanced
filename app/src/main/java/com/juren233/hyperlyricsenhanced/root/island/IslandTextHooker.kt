@@ -5,7 +5,7 @@ import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import io.github.libxposed.api.XposedModule
 
 /**
- * Super Island hook installer.
+ * HyperIsland hook installer.
  *
  * Behavior lives in small hooker groups so the verified real-island, fake-view,
  * adapter/module, and width paths can be reviewed independently.

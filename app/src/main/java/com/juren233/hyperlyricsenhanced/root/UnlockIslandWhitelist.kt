@@ -1,5 +1,6 @@
 package com.juren233.hyperlyricsenhanced.root
 
+import com.juren233.hyperlyricsenhanced.root.reload.SystemUiHookLifetime
 import android.content.SharedPreferences
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import com.juren233.hyperlyricsenhanced.common.RootConstants
@@ -96,6 +97,7 @@ object UnlockIslandWhitelist {
 
     class ReturnTrueHooker : Hooker {
         override fun intercept(chain: Chain): Any? {
+            if (SystemUiHookLifetime.retired) return chain.proceed()
             // hook 存在即代表功能开启，无需读取偏好
             if (UnlockIslandWhitelist.loggedFirstHit.compareAndSet(false, true)) {
                 HookLogger.i("UnlockIslandWhitelist", "下拉小窗白名单 Hook 首次命中")

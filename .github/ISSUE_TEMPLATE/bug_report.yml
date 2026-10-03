@@ -36,8 +36,8 @@ body:
     attributes:
       label: 问题属于哪一方面 / Which part does the bug relate to?
       options:
-        - 歌词显示相关（超级岛与AOD相同问题） (Lyric display related (same issue on Super Island and AOD))
-        - 超级岛相关 (Super Island related)
+        - 歌词显示相关（超级岛与AOD相同问题） (Lyric display related (same issue on HyperIsland and AOD))
+        - 超级岛相关 (HyperIsland related)
         - 媒体通知卡片相关 (Media notification card related)
         - 息屏功能相关 (Always-on Display related)
         - Apple Music体验优化功能相关 (Apple Music experience optimization feature related)

@@ -1,5 +1,6 @@
 package com.juren233.hyperlyricsenhanced.root.island
 
+import com.juren233.hyperlyricsenhanced.root.reload.SystemUiHookLifetime
 import android.content.Context
 import android.content.SharedPreferences
 import android.graphics.Bitmap
@@ -435,6 +436,28 @@ internal object IslandMusicWaveColorHooker {
         )
     }
 
+    internal fun snapshotForReload(): Array<Any> =
+        synchronized(trackedHolders) { trackedHolders.keys.toTypedArray() }
+
+    internal fun restoreAfterReload(holders: List<Any>) {
+        holders.forEach { holder ->
+            runCatching { registerLottieCallbackMethod?.invoke(holder) }
+                .onFailure { HookLogger.e(TAG, "热重载后恢复音频律动失败", it) }
+        }
+        refresh()
+    }
+
+    internal fun releaseForReload() {
+        mediaRecheckToken.incrementAndGet()
+        LyriconDataBridge.removeSongChangedListener(songChangedListener)
+        mediaTriggersInstalled = false
+        watchdogDeadlineMs = 0L
+        synchronized(watchdogLock) { watchdogScheduled = false }
+        cleanup()
+        mainHandler.removeCallbacksAndMessages(null)
+        colorExecutor.shutdownNow()
+    }
+
     fun cleanup() {
         colorRequest.incrementAndGet()
         colorExecutor.shutdown()
@@ -689,6 +712,7 @@ internal object IslandMusicWaveColorHooker {
 
     private class SetLottieColorHook(private val methodName: String) : Hooker {
         override fun intercept(chain: Chain): Any? {
+            if (SystemUiHookLifetime.retired) return chain.proceed()
             val result = chain.proceed()
             runCatching {
                 val bitmap = chain.args.firstOrNull() as? Bitmap ?: return@runCatching
@@ -752,6 +776,7 @@ internal object IslandMusicWaveColorHooker {
 
     private class NativeColorWriteClampHook(private val methodName: String) : Hooker {
         override fun intercept(chain: Chain): Any? {
+            if (SystemUiHookLifetime.retired) return chain.proceed()
             val result = chain.proceed()
             runCatching {
                 if (!overrideApplied) return@runCatching
@@ -801,6 +826,7 @@ internal object IslandMusicWaveColorHooker {
         private val picInfoField: Field
     ) : Hooker {
         override fun intercept(chain: Chain): Any? {
+            if (SystemUiHookLifetime.retired) return chain.proceed()
             val result = chain.proceed()
             runCatching {
                 val holder = chain.thisObject ?: return@runCatching

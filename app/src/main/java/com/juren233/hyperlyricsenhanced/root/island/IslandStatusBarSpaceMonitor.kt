@@ -1,6 +1,7 @@
 /* Copyright 2026 juren233 */
 package com.juren233.hyperlyricsenhanced.root.island
 
+import com.juren233.hyperlyricsenhanced.root.reload.SystemUiHookLifetime
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewTreeObserver
@@ -19,9 +20,22 @@ import kotlin.math.roundToInt
 /** Tracks the SystemUI status-bar window, which is separate from the island window. */
 internal object IslandStatusBarSpaceMonitor {
     private const val TAG = "IslandDynamicLimit"
-    private val roots = WeakHashMap<ViewGroup, Unit>()
+    private val roots = WeakHashMap<ViewGroup, Runnable>()
     private var installed = false
     private var hit = false
+
+    internal fun snapshotForReload(): Array<Any> = arrayOf(roots.keys.toTypedArray(), snapshot.save())
+
+    internal fun restoreAfterReload(values: List<Any>) {
+        (values.getOrNull(1) as? IntArray)?.let(snapshot::restore)
+        (values.getOrNull(0) as? Array<*>)?.filterIsInstance<ViewGroup>()
+            ?.filter { it.isAttachedToWindow }?.forEach(::attach)
+    }
+
+    internal fun releaseForReload() {
+        roots.values.toList().forEach(Runnable::run)
+        roots.clear()
+    }
 
     fun install(module: XposedModule, loader: ClassLoader) {
         if (installed) return
@@ -31,6 +45,7 @@ internal object IslandStatusBarSpaceMonitor {
             module.deoptimize(method)
             module.hook(method).intercept(object : Hooker {
                 override fun intercept(chain: Chain): Any? {
+                    if (SystemUiHookLifetime.retired) return chain.proceed()
                     val result = chain.proceed()
                     runCatching { (chain.thisObject as? ViewGroup)?.let(::attach) }
                     return result
@@ -42,7 +57,7 @@ internal object IslandStatusBarSpaceMonitor {
     }
 
     private fun attach(root: ViewGroup) {
-        if (roots.put(root, Unit) != null) return
+        if (roots.containsKey(root)) return
         if (BuildConfig.DEBUG && !hit) {
             hit = true
             HookLogger.i(TAG, "状态栏空间监听首次命中")
@@ -124,15 +139,21 @@ internal object IslandStatusBarSpaceMonitor {
             }
         }
         observer.addOnGlobalLayoutListener(listener)
-        root.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+        val observerReference = WeakReference(observer)
+        val attachListener = object : View.OnAttachStateChangeListener {
             override fun onViewAttachedToWindow(v: View) = Unit
             override fun onViewDetachedFromWindow(v: View) {
-                v.removeCallbacks(settleCheck)
-                if (observer.isAlive) observer.removeOnGlobalLayoutListener(listener)
-                roots.remove(root)
-                v.removeOnAttachStateChangeListener(this)
+                roots.remove(v)?.run()
             }
-        })
+        }
+        roots[root] = Runnable {
+            reference.get()?.let { view ->
+                view.removeCallbacks(settleCheck)
+                view.removeOnAttachStateChangeListener(attachListener)
+            }
+            observerReference.get()?.takeIf { it.isAlive }?.removeOnGlobalLayoutListener(listener)
+        }
+        root.addOnAttachStateChangeListener(attachListener)
     }
 
     private val snapshot = IslandAnchorSnapshot()

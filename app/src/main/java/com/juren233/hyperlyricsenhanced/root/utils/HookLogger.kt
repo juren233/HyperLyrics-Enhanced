@@ -29,25 +29,27 @@ object HookLogger : HyperLogger {
         val finalMsg = format(tag, msg)
         // Local JVM tests use Android stubs where Log.d throws; logging must never break logic.
         runCatching { Log.d(TAG, finalMsg) }
-        module?.log(Log.DEBUG, TAG, finalMsg)
+        // Let libxposed choose its module tag. Vector 2.2 only persists framework tags;
+        // a custom tag reaches logcat but is silently omitted from modules*.log.
+        module?.log(Log.DEBUG, null, finalMsg)
     }
 
     override fun i(tag: String, msg: String) {
         val finalMsg = format(tag, msg)
-        Log.i(TAG, finalMsg)
-        module?.log(Log.INFO, TAG, finalMsg)
+        runCatching { Log.i(TAG, finalMsg) }
+        module?.log(Log.INFO, null, finalMsg)
     }
 
     override fun w(tag: String, msg: String, e: Throwable?) {
         val finalMsg = format(tag, msg)
-        Log.w(TAG, finalMsg, e)
-        module?.log(Log.WARN, TAG, finalMsg, e)
+        runCatching { Log.w(TAG, finalMsg, e) }
+        module?.log(Log.WARN, null, finalMsg, e)
     }
 
     override fun e(tag: String, msg: String, e: Throwable?) {
         val finalMsg = format(tag, msg)
-        Log.e(TAG, finalMsg, e)
-        module?.log(Log.ERROR, TAG, finalMsg, e)
+        runCatching { Log.e(TAG, finalMsg, e) }
+        module?.log(Log.ERROR, null, finalMsg, e)
     }
 
     private fun readLogLevel(): Int {

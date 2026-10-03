@@ -19,6 +19,9 @@ object SystemUIHookRegistry {
     var isHookedSuccess = false
         private set
 
+    internal fun snapshotClassLoaders(): Array<ClassLoader> =
+        synchronized(hookedClassLoaders) { hookedClassLoaders.toTypedArray() }
+
     fun hook(xposedModule: XposedModule, cl: ClassLoader, lyricsOnly: Boolean = false) {
         if (cl.javaClass.name.contains("BootClassLoader")) return
 
@@ -34,6 +37,7 @@ object SystemUIHookRegistry {
         try {
             IslandTextHooker.hook(module, cl, includeMediaHooks = !lyricsOnly)
             if (!lyricsOnly) {
+                com.juren233.hyperlyricsenhanced.root.island.touch.IslandTouchHooker.hook(module, cl)
                 HookIslandGlow.init(module, cl)
                 IslandProgressGlowHooker.hook(module, cl)
                 IslandMusicWaveColorHooker.hook(module, cl)

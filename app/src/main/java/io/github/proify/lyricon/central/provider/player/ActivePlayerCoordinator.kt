@@ -393,7 +393,7 @@ internal class ActivePlayerCoordinator(
         // Playback state and position recover through the normal path once the conflict clears,
         // but the cached lyric is only replayed when the next setSong arrives. Re-dispatch the
         // recorded lyric exactly on the suppressed -> unsuppressed transition so the first Song
-        // is not lost forever and AOD/Super Island recover without a track switch.
+        // is not lost forever and AOD/HyperIsland recover without a track switch.
         if (transitionedFromSuppression && !isSwitched && recorderInfo === activeInfo) {
             broadcast {
                 when (recorder.lyricType) {

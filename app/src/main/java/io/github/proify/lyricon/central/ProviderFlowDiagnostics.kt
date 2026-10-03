@@ -22,7 +22,8 @@ internal object ProviderFlowDiagnostics {
             HookLogger.i(
                 "ProviderFlowDiag",
                 "[ProviderFlowDiag] event=$event, hostPid=${Process.myPid()}, " +
-                    "callerPid=${Binder.getCallingPid()}, elapsedMs=${SystemClock.elapsedRealtime()}, " +
+                    "hostUid=${Process.myUid()}, callerPid=${Binder.getCallingPid()}, " +
+                    "callerUid=${Binder.getCallingUid()}, elapsedMs=${SystemClock.elapsedRealtime()}, " +
                     "provider=${info?.providerPackageName}, player=${info?.playerPackageName}, " +
                     "process=${info?.processName}, ${details()}",
             )

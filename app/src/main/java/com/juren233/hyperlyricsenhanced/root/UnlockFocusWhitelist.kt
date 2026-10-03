@@ -1,5 +1,6 @@
 package com.juren233.hyperlyricsenhanced.root
 
+import com.juren233.hyperlyricsenhanced.root.reload.SystemUiHookLifetime
 import android.content.Context
 import android.content.SharedPreferences
 import android.os.Bundle
@@ -174,6 +175,7 @@ object UnlockFocusWhitelist {
 
     class PluginLoadHooker : Hooker {
         override fun intercept(chain: Chain): Any? {
+            if (SystemUiHookLifetime.retired) return chain.proceed()
             val result = chain.proceed()
             runCatching {
                 val thisObj = chain.thisObject ?: return result
@@ -193,6 +195,7 @@ object UnlockFocusWhitelist {
 
     class FocusSettingsHooker : Hooker {
         override fun intercept(chain: Chain): Any? {
+            if (SystemUiHookLifetime.retired) return chain.proceed()
             if (isWhitelistRemovalEnabled()) {
                 if (UnlockFocusWhitelist.loggedFirstFocusHit.compareAndSet(false, true)) {
                     HookLogger.i("UnlockFocusWhitelist", "焦点通知白名单 Hook 首次命中")
@@ -205,6 +208,7 @@ object UnlockFocusWhitelist {
 
     class AuthResultHooker : Hooker {
         override fun intercept(chain: Chain): Any? {
+            if (SystemUiHookLifetime.retired) return chain.proceed()
             if (!isWhitelistRemovalEnabled()) return chain.proceed()
 
             val thisObj = chain.thisObject

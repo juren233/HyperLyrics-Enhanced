@@ -32,8 +32,9 @@ import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.LyricAnimationPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.LyricSettingsPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.OnlineTranslationSourcesPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.AppleMusicOptimizationPage
-import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.SuperIslandSettingsPage
-import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.SuperIslandAlbumCoverWhitelistPage
+import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.HyperIslandSettingsPage
+import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.HyperIslandTouchSettingsPage
+import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.HyperIslandAlbumCoverWhitelistPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.media.MediaCardSettingsPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.aod.ClassicAodSettingsPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.aod.LockScreenAodSettingsPage
@@ -130,8 +131,9 @@ fun AppNavigation(startRoute: Route) {
             appEntry<Route.LyricScroll>(swipeDismiss = swipeDismiss) { LyricScrollPage() }
             appEntry<Route.VerbatimLyric>(swipeDismiss = swipeDismiss) { VerbatimLyricPage() }
             appEntry<Route.LyricTranslation>(swipeDismiss = swipeDismiss) { LyricTranslationPage() }
-            appEntry<Route.SuperIslandSettings>(swipeDismiss = swipeDismiss) { SuperIslandSettingsPage() }
-            appEntry<Route.SuperIslandAlbumCoverWhitelist>(swipeDismiss = swipeDismiss) { SuperIslandAlbumCoverWhitelistPage() }
+            appEntry<Route.HyperIslandTouchSettings>(swipeDismiss = swipeDismiss) { HyperIslandTouchSettingsPage() }
+            appEntry<Route.HyperIslandSettings>(swipeDismiss = swipeDismiss) { HyperIslandSettingsPage() }
+            appEntry<Route.HyperIslandAlbumCoverWhitelist>(swipeDismiss = swipeDismiss) { HyperIslandAlbumCoverWhitelistPage() }
             appEntry<Route.MediaCardSettings>(swipeDismiss = swipeDismiss) { MediaCardSettingsPage() }
             appEntry<Route.LockScreenAodSettings>(swipeDismiss = swipeDismiss) { LockScreenAodSettingsPage() }
             appEntry<Route.ClassicAodSettings>(swipeDismiss = swipeDismiss) { ClassicAodSettingsPage() }

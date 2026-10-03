@@ -18,15 +18,16 @@ import top.yukonga.miuix.kmp.preference.SwitchPreference
 
 fun LazyListScope.homePageSections(
     availableUpdateVersion: String?,
-    showSuperIslandEntry: Boolean,
+    showHyperIslandEntry: Boolean,
     showAodLyricsEntry: Boolean,
     showDynamicIslandEntry: Boolean,
     lyricHookSwitches: LyricHookSwitchController,
-    enableSuperIsland: Boolean,
-    onSuperIslandToggle: (Boolean) -> Unit,
+    enableHyperIsland: Boolean,
+    onHyperIslandToggle: (Boolean) -> Unit,
     enableAodLyrics: Boolean,
     onAodLyricsToggle: (Boolean) -> Unit,
-    onSuperIslandConfigClick: () -> Unit,
+    onHyperIslandConfigClick: () -> Unit,
+    onHyperIslandTouchConfigClick: () -> Unit,
     onMediaCardConfigClick: () -> Unit,
     onLyricSettingsClick: () -> Unit,
     onDynamicIslandConfigClick: () -> Unit,
@@ -55,20 +56,24 @@ fun LazyListScope.homePageSections(
         }
     }
 
-    if (showSuperIslandEntry) item(key = "basic_features_content_system_ui") {
+    if (showHyperIslandEntry) item(key = "basic_features_content_system_ui") {
         Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
             Column {
                 SwitchPreference(
                     title = stringResource(R.string.title_miui_systemui_enhancement),
                     summary = stringResource(R.string.summary_miui_systemui_enhancement),
-                    checked = enableSuperIsland,
-                    onCheckedChange = onSuperIslandToggle,
+                    checked = enableHyperIsland,
+                    onCheckedChange = onHyperIslandToggle,
                 )
-                AnimatedVisibility(visible = enableSuperIsland) {
+                AnimatedVisibility(visible = enableHyperIsland) {
                     Column {
                         ArrowPreference(
                             title = stringResource(R.string.title_hyper_island_lyrics_config),
-                            onClick = onSuperIslandConfigClick,
+                            onClick = onHyperIslandConfigClick,
+                        )
+                        ArrowPreference(
+                            title = stringResource(R.string.title_island_touch_config),
+                            onClick = onHyperIslandTouchConfigClick,
                         )
                         ArrowPreference(
                             title = stringResource(R.string.title_media_cards),
