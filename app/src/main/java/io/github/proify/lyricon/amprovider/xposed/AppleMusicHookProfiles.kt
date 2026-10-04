@@ -141,6 +141,7 @@ internal enum class AppleMusicHookPoint {
     ALBUM_COMPOSE_TRACK_MAPPER,
     ALBUM_COMPOSE_TRACK_COMPARATOR,
     ALBUM_COMPOSE_REFRESH,
+    ALBUM_COMPOSE_HEADER_REFRESH,
     ALBUM_COMPOSE_ROW,
     ALBUM_COMPOSE_ENTITY_ID,
     ARTIST_COMPOSE_CONTENT,
@@ -1937,6 +1938,16 @@ internal object AppleMusicHookProfiles {
                     className = "com.apple.android.music.collection2.viewmodel.BaseCollectionViewModel", methodName = "refreshState",
                     parameterTypeNames = listOf(), returnTypeName = "void",
                     isStatic = false,
+                ),
+            ),
+            // Original classes2.dex: private final publishHeader()V, 1606 0x2968c4 /
+            // 1607 0x296ec8. Publishes the separate header Compose state; refreshState
+            // only republishes selectedItemStateLiveData for the track-list pipeline.
+            AppleMusicHookPoint.ALBUM_COMPOSE_HEADER_REFRESH to listOf(
+                AppleMusicHookTarget(
+                    className = "com.apple.android.music.collection2.viewmodel.BaseCollectionViewModel",
+                    methodName = "publishHeader", parameterTypeNames = emptyList(),
+                    returnTypeName = "void", isStatic = false,
                 ),
             ),
             AppleMusicHookPoint.ALBUM_COMPOSE_ROW to listOf(
@@ -4238,6 +4249,7 @@ internal class AppleMusicHookResolver(
             AppleMusicHookPoint.ALBUM_COMPOSE_TRACK_MAPPER,
             AppleMusicHookPoint.ALBUM_COMPOSE_TRACK_COMPARATOR,
             AppleMusicHookPoint.ALBUM_COMPOSE_REFRESH,
+            AppleMusicHookPoint.ALBUM_COMPOSE_HEADER_REFRESH,
             AppleMusicHookPoint.ALBUM_COMPOSE_ROW,
             AppleMusicHookPoint.ALBUM_COMPOSE_ENTITY_ID,
             AppleMusicHookPoint.ARTIST_COMPOSE_FRAGMENT_RESUMED -> true

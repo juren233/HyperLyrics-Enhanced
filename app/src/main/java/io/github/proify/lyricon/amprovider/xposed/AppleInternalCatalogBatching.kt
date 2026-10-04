@@ -44,26 +44,27 @@ internal fun AppleInternalCatalogResolver.processOriginalEntityBatch() {
         storefront = first.storefront,
         language = first.language,
     ) { resolved ->
-        batch.forEach { request ->
-            val alias = selectExactOriginalEntityAlias(
-                mediaId = request.mediaId,
-                lookupIds = request.lookupIds,
-                resolved = resolved.mapValues { it.value.alias },
-                sourceLanguage = request.language,
-            )
-            if (alias != null) {
-                persistentOriginalCache.put(request.directCacheKey, alias)
-            }
-            ProviderLogger.info(
-                "Apple 原地区实体查询完成: id=${request.mediaId}, " +
-                    "entityType=${request.entityType}, language=${request.language}, " +
-                    "batch=${batch.size}, priority=${request.priority}, hit=${alias != null}, " +
-                    "value=${alias?.title}/${alias?.artist}/${alias?.album}"
-            )
-            request.callbacks.forEach { callback -> callback(alias) }
-        }
-        dispatch.endOriginalEntityBatch(first.priority)
-        scheduleOriginalEntityBatchIfCapacity()
+        resolveOriginalEntityBatchResults(
+            requests = batch,
+            exact = resolved.mapValues { it.value.alias },
+            queryEquivalentAlbum = ::queryEquivalentOriginalAlbum,
+            onResolved = { request, alias ->
+                if (alias != null) {
+                    persistentOriginalCache.put(request.directCacheKey, alias)
+                }
+                ProviderLogger.info(
+                    "Apple 原地区实体查询完成: id=${request.mediaId}, " +
+                        "entityType=${request.entityType}, language=${request.language}, " +
+                        "batch=${batch.size}, priority=${request.priority}, hit=${alias != null}, " +
+                        "value=${alias?.title}/${alias?.artist}/${alias?.album}"
+                )
+                request.callbacks.forEach { callback -> callback(alias) }
+            },
+            onComplete = {
+                dispatch.endOriginalEntityBatch(first.priority)
+                scheduleOriginalEntityBatchIfCapacity()
+            },
+        )
     }
     scheduleOriginalEntityBatchIfCapacity()
 }
@@ -690,4 +691,3 @@ internal fun languageTagsForOriginalMetadata(
         .orEmpty()
     return genreLanguages.ifEmpty { languageTagsForIsrc(isrc) }
 }
-

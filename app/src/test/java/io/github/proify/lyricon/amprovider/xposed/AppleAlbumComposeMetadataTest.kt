@@ -54,11 +54,28 @@ class AppleAlbumComposeMetadataTest {
 
     @Test fun `album support does not leak to older or unknown versions`() {
         val points = AppleMusicHookPoint.entries.filter { it.name.startsWith("ALBUM_COMPOSE_") }
-        assertEquals(10, points.size)
+        assertEquals(11, points.size)
         points.forEach {
             assertEquals(1, AppleMusicHookProfiles.exactTargets(version, it).size)
             assertTrue(AppleMusicHookProfiles.exactTargets(AppleMusicVersion("6.5.3", 1599), it).isEmpty())
             assertTrue(AppleMusicHookProfiles.exactTargets(AppleMusicVersion("7.0.0-beta", 9999), it).isEmpty())
+        }
+    }
+
+    @Test fun `album header has its own binary verified publication method on both beta builds`() {
+        listOf(1606L, 1607L).forEach { versionCode ->
+            val header = AppleMusicHookProfiles.exactTargets(
+                AppleMusicVersion("7.0.0-beta", versionCode),
+                AppleMusicHookPoint.ALBUM_COMPOSE_HEADER_REFRESH,
+            ).single()
+            assertEquals("com.apple.android.music.collection2.viewmodel.BaseCollectionViewModel", header.className)
+            assertEquals("publishHeader", header.methodName)
+            assertEquals(emptyList<String>(), header.parameterTypeNames)
+            assertEquals("void", header.returnTypeName)
+            assertEquals(false, header.isStatic)
+            assertFalse(header.includeSynthetic)
+            assertNotEquals("refreshData", header.methodName)
+            assertNotEquals("refreshState", header.methodName)
         }
     }
 
