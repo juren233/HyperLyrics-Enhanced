@@ -153,7 +153,7 @@ class AppleBrowseMetadataTest {
     }
 
     @Test fun `700 browse and search profiles do not claim compatibility with older or unverified beta builds`() {
-        listOf(AppleMusicVersion("6.5.3", 1599L), AppleMusicVersion("7.0.0-beta", 1607L)).forEach { version ->
+        listOf(AppleMusicVersion("6.5.3", 1599L), AppleMusicVersion("7.0.0-beta", 1608L)).forEach { version ->
             listOf(AppleMusicHookPoint.BROWSE_COMPOSE_ITEM, AppleMusicHookPoint.RADIO_SEARCH_SESSION, AppleMusicHookPoint.SEARCH_RESULTS_MODEL_BOUND).forEach { point ->
                 assertTrue(AppleMusicHookProfiles.exactTargets(version, point).isEmpty())
             }

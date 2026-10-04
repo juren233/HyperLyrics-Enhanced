@@ -52,7 +52,7 @@ class AppleActivityRestartProfileTest {
 
     @Test
     fun `unverified releases have no exact restart diagnostics`() {
-        listOf(AppleMusicVersion("6.5.3", 1599L), AppleMusicVersion("7.0.0-beta", 1607L)).forEach { other ->
+        listOf(AppleMusicVersion("6.5.3", 1599L), AppleMusicVersion("7.0.0-beta", 1608L)).forEach { other ->
             points.forEach { assertTrue(AppleMusicHookProfiles.exactTargets(other, it).isEmpty()) }
         }
     }

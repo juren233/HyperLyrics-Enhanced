@@ -96,7 +96,7 @@ class AppleExactProfileMemberPrecedenceTest {
     }
 
     @Test fun `unknown version retains fallback repair without rewriting its baseline`() {
-        val f = Fixture(AppleMusicVersion("7.0.0-beta", 1607))
+        val f = Fixture(AppleMusicVersion("7.0.0-beta", 1608))
         val before = f.values.toMap()
         val resolved = f.resolver.resolveMethod(f.point)
         assertTrue(resolved.compatibilityFallback)

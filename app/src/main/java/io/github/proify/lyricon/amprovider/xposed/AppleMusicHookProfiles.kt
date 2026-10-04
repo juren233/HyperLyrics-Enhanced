@@ -1555,6 +1555,141 @@ internal object AppleMusicHookProfiles {
         )
     }
 
+    private val APPLE_MUSIC_7_0_0_1607 by lazy {
+        AppleMusicHookProfile(
+            id = "am-7.0.0-beta-1607",
+            versionName = "7.0.0-beta",
+            versionCodes = setOf(1607L),
+            matchVersionName = false,
+            settingsDataCategoryHasNoSimGate = true,
+            hookTargets = verified7001607Targets(),
+        )
+    }
+
+    /**
+     * Original 1607 base.apk SHA-256: 75bcdefe635ec00b2865e789761562a03acd415b5ba18a8e920b995c63811126.
+     * All 135 groups / 174 targets and their member chains were checked against its four DEX files.
+     * In particular, R8 merged request executors into Ef/Eg; these are binary package names,
+     * not decompiler aliases. Keep the 1606 table intact for that separately verified beta.
+     */
+    private fun verified7001607Targets(): Map<AppleMusicHookPoint, List<AppleMusicHookTarget>> {
+        val inherited = AppleMusicHookPoint.entries.associateWith(APPLE_MUSIC_7_0_0::targets)
+            .filterValues { it.isNotEmpty() }
+        fun target(point: AppleMusicHookPoint, index: Int = 0) = inherited.getValue(point)[index]
+        return inherited + mapOf(
+            // BaseActivity.onCreate/onRestart and D$a.emit now read/write k.g.b; snapshot J0 stays.
+            AppleMusicHookPoint.APP_COMPAT_THEME_STATE to listOf(
+                target(AppleMusicHookPoint.APP_COMPAT_THEME_STATE).copy(className = "k.g"),
+            ),
+            // P0.b retains /songs/{id}/syllable-lyrics; rb.k implements the original cookie jar.
+            AppleMusicHookPoint.LYRICS_NETWORK_REQUEST to listOf(
+                target(AppleMusicHookPoint.LYRICS_NETWORK_REQUEST).copy(className = "x9.P0"),
+            ),
+            AppleMusicHookPoint.LYRICS_COOKIE_JAR to listOf(
+                target(AppleMusicHookPoint.LYRICS_COOKIE_JAR).copy(className = "rb.k"),
+            ),
+            // onCreateView installs e0; its field a captures this PlayerLyricsViewFragment.
+            AppleMusicHookPoint.LYRICS_SOURCE_MENU_CLICK_LISTENER to listOf(
+                target(AppleMusicHookPoint.LYRICS_SOURCE_MENU_CLICK_LISTENER).copy(
+                    className = "com.apple.android.music.player.fragment.e0",
+                ),
+            ),
+            // B2 selects r0:C / q0:V0 into p0:j1. Both keep w/x/O and d/e selection fields.
+            AppleMusicHookPoint.LYRICS_WORD_RENDER_ADAPTER to listOf(
+                target(AppleMusicHookPoint.LYRICS_WORD_RENDER_ADAPTER).copy(
+                    className = "com.apple.android.music.player.C",
+                ),
+            ),
+            AppleMusicHookPoint.LYRICS_RECYCLER_ADAPTER to listOf(
+                target(AppleMusicHookPoint.LYRICS_RECYCLER_ADAPTER).copy(
+                    className = "com.apple.android.music.player.C",
+                ),
+                target(AppleMusicHookPoint.LYRICS_RECYCLER_ADAPTER, 1).copy(
+                    className = "com.apple.android.music.player.V0",
+                ),
+            ),
+            AppleMusicHookPoint.PLAYER_LYRICS_AVAILABILITY_CALCULATOR to listOf(
+                target(AppleMusicHookPoint.PLAYER_LYRICS_AVAILABILITY_CALCULATOR).copy(
+                    className = "com.apple.android.music.player.f1",
+                ),
+            ),
+            // Original i1.C(Context,AttributeSet,g8.a,pi.a)Typeface and t(CustomTextView,String,Z)V.
+            AppleMusicHookPoint.APPLE_TEXT_STYLE_UTILS to listOf(
+                target(AppleMusicHookPoint.APPLE_TEXT_STYLE_UTILS).copy(
+                    className = "com.apple.android.music.utils.i1",
+                ),
+            ),
+            // The listeners and Q.a/b now take z3.x; its title/artist/extras remain a/b/J.
+            AppleMusicHookPoint.IN_APP_GLOBAL_METADATA_DISPATCHER to listOf(
+                target(AppleMusicHookPoint.IN_APP_GLOBAL_METADATA_DISPATCHER).copy(
+                    parameterTypeNames = listOf("z3.x"),
+                ),
+            ),
+            AppleMusicHookPoint.IN_APP_NOW_PLAYING_METADATA_LISTENER to listOf(
+                target(AppleMusicHookPoint.IN_APP_NOW_PLAYING_METADATA_LISTENER).copy(
+                    parameterTypeNames = listOf("z3.x"),
+                ),
+            ),
+            AppleMusicHookPoint.APPLE_PLAYER_UTIL_CLASS to listOf(
+                target(AppleMusicHookPoint.APPLE_PLAYER_UTIL_CLASS).copy(
+                    className = "com.apple.android.music.player.Q",
+                ),
+            ),
+            // The native shelf still binds five renderer families; only oa.s moved to oa.r.
+            AppleMusicHookPoint.BROWSE_COMPOSE_ITEM to inherited.getValue(AppleMusicHookPoint.BROWSE_COMPOSE_ITEM)
+                .map { old -> if (old.className == "oa.s") old.copy(className = "oa.r") else old },
+            AppleMusicHookPoint.BROWSE_COMPOSER_SCOPE to listOf(
+                target(AppleMusicHookPoint.BROWSE_COMPOSER_SCOPE).copy(returnTypeName = "z0.O0"),
+            ),
+            AppleMusicHookPoint.BROWSE_COMPOSER_USE_SCOPE to listOf(
+                target(AppleMusicHookPoint.BROWSE_COMPOSER_USE_SCOPE).copy(parameterTypeNames = listOf("z0.M0")),
+            ),
+            AppleMusicHookPoint.BROWSE_SCOPE_INVALIDATE to listOf(
+                target(AppleMusicHookPoint.BROWSE_SCOPE_INVALIDATE).copy(className = "z0.O0"),
+            ),
+            // w9.Q initializes these executors; its request coroutines invoke Eg/Ef directly.
+            // Eg.c.d/c build /search and /search/query;
+            // Ef.d.e/g build /multiplex/ and /multirooms/. Storefront is still argument 3.
+            AppleMusicHookPoint.MEDIA_API_CATALOG_REQUEST_EXECUTOR to listOf(
+                target(AppleMusicHookPoint.MEDIA_API_CATALOG_REQUEST_EXECUTOR, 0).copy(className = "x9.D"),
+                target(AppleMusicHookPoint.MEDIA_API_CATALOG_REQUEST_EXECUTOR, 1).copy(className = "x9.D"),
+                target(AppleMusicHookPoint.MEDIA_API_CATALOG_REQUEST_EXECUTOR, 2).copy(className = "Eg.c", methodName = "d"),
+                target(AppleMusicHookPoint.MEDIA_API_CATALOG_REQUEST_EXECUTOR, 3).copy(className = "Eg.c", methodName = "c"),
+                target(AppleMusicHookPoint.MEDIA_API_CATALOG_REQUEST_EXECUTOR, 4).copy(className = "Ef.d", methodName = "e"),
+                target(AppleMusicHookPoint.MEDIA_API_CATALOG_REQUEST_EXECUTOR, 5).copy(className = "Ef.d", methodName = "g"),
+            ),
+            // z0.r0.toString is NeverEqualPolicy; z0.t0 is now a different class.
+            AppleMusicHookPoint.COMPOSE_NEVER_EQUAL_POLICY to listOf(
+                target(AppleMusicHookPoint.COMPOSE_NEVER_EQUAL_POLICY).copy(className = "z0.r0"),
+            ),
+            AppleMusicHookPoint.LIBRARY_EPOXY_BUILD to listOf(
+                target(AppleMusicHookPoint.LIBRARY_EPOXY_BUILD).copy(
+                    parameterTypeNames = listOf(
+                        "com.apple.android.music.library2.F", "java.util.List", "java.util.List",
+                        "com.apple.android.music.library2.a", "Q7.e",
+                    ),
+                ),
+            ),
+            // LibraryComposeContentFragment.E1 calls A0.h.i; i reads LiveData.getValue,
+            // h checks isInitialized and observes the lifecycle. Return type is z0.p0.
+            AppleMusicHookPoint.COMPOSE_OBSERVE_AS_STATE to listOf(
+                target(AppleMusicHookPoint.COMPOSE_OBSERVE_AS_STATE).copy(
+                    className = "A0.h", methodName = "i", returnTypeName = "z0.p0",
+                ),
+            ),
+            // Raw y7.m.a copies the same D7.i row/key model; four render parameter types moved.
+            AppleMusicHookPoint.ALBUM_COMPOSE_ROW to listOf(
+                target(AppleMusicHookPoint.ALBUM_COMPOSE_ROW).copy(
+                    className = "y7.m",
+                    parameterTypeNames = listOf(
+                        "O0.j", "D7.i", "D7.t", "Rb.w5", "Vb.u", "Rb.v5", "Rb.x5", "int",
+                        "boolean", "D7.o", "D7.p", "pi.l", "pi.p", "pi.p", "z0.m", "int",
+                    ),
+                ),
+            ),
+        )
+    }
+
     /** Verified against all four original 1606 DEX files, SHA-256 recorded in docs. */
     private fun verified700Targets(): Map<AppleMusicHookPoint, List<AppleMusicHookTarget>> {
         val inherited = AppleMusicHookPoint.entries.associateWith(APPLE_MUSIC_6_5_3::targets)
@@ -2312,6 +2447,7 @@ internal object AppleMusicHookProfiles {
 
     /** 新版本档案必须放在前面，未知版本回退时优先尝试较新的目标。 */
     private val KNOWN_PROFILES = listOf(
+        APPLE_MUSIC_7_0_0_1607,
         APPLE_MUSIC_7_0_0,
         APPLE_MUSIC_6_5_3,
         APPLE_MUSIC_6_5_2,
@@ -3506,10 +3642,13 @@ internal object AppleMusicHookProfiles {
         // Preserve the OLD compatibility pool within 6.5.0-6.5.2 (650 intentionally
         // borrows some 651 groups). Unknown APKs still try newest-first.
         val compatible = when (known) {
-            null, APPLE_MUSIC_7_0_0 -> KNOWN_PROFILES
-            APPLE_MUSIC_6_5_3 -> KNOWN_PROFILES.filterNot { it === APPLE_MUSIC_7_0_0 }
+            null, APPLE_MUSIC_7_0_0_1607 -> KNOWN_PROFILES
+            APPLE_MUSIC_7_0_0 -> KNOWN_PROFILES.filterNot { it === APPLE_MUSIC_7_0_0_1607 }
+            APPLE_MUSIC_6_5_3 -> KNOWN_PROFILES.filterNot {
+                it === APPLE_MUSIC_7_0_0 || it === APPLE_MUSIC_7_0_0_1607
+            }
             else -> KNOWN_PROFILES.filterNot {
-                it === APPLE_MUSIC_6_5_3 || it === APPLE_MUSIC_7_0_0
+                it === APPLE_MUSIC_6_5_3 || it === APPLE_MUSIC_7_0_0 || it === APPLE_MUSIC_7_0_0_1607
             }
         }
         return (exact + compatible.flatMap { profile -> profile.targets(hookPoint) })

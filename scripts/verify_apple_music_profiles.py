@@ -66,6 +66,8 @@ class DexMethod:
     return_type: str
     param_types: List[str]
     access_flags: int
+    code_offset: int = field(default=0, repr=False, compare=False)
+    dex: Optional['DexParser'] = field(default=None, repr=False, compare=False)
 
     @property
     def is_static(self) -> bool:
@@ -102,6 +104,71 @@ class DexParser:
         self.data = data
         self.classes: Dict[str, DexClass] = {}
         self.parse_header()
+
+    def code_references(self, method: DexMethod):
+        """Read actual instructions, excluding switch/array payloads and debug metadata.
+
+        Widths are 16-bit code units from the AOSP Dalvik bytecode format:
+        https://source.android.com/docs/core/runtime/dalvik-bytecode
+        Only references are decoded; this is not an execution or reachability proof.
+        """
+        refs = dict(strings=set(), methods=set(), fields=set(), types=set())
+        if not method.code_offset:
+            return refs
+        count = struct.unpack_from('<I', self.data, method.code_offset + 12)[0]
+        units = struct.unpack_from(f'<{count}H', self.data, method.code_offset + 16)
+        widths = {}
+        for first, last, width in [
+            (0x00, 0x12, 1), (0x2d, 0x3d, 2), (0x44, 0x6d, 2),
+            (0x6e, 0x72, 3), (0x74, 0x78, 3), (0x7b, 0x8f, 1),
+            (0x90, 0xaf, 2), (0xb0, 0xcf, 1), (0xd0, 0xe2, 2),
+            (0xfa, 0xfb, 4), (0xfc, 0xfd, 3), (0xfe, 0xff, 2),
+        ]:
+            widths.update(dict.fromkeys(range(first, last + 1), width))
+        widths.update({
+            0x02: 2, 0x03: 3, 0x05: 2, 0x06: 3, 0x08: 2, 0x09: 3,
+            0x13: 2, 0x14: 3, 0x15: 2, 0x16: 2, 0x17: 3, 0x18: 5,
+            0x19: 2, 0x1a: 2, 0x1b: 3, 0x1c: 2, 0x1d: 1, 0x1e: 1,
+            0x1f: 2, 0x20: 2, 0x21: 1, 0x22: 2, 0x23: 2, 0x24: 3,
+            0x25: 3, 0x26: 3, 0x27: 1, 0x28: 1, 0x29: 2,
+            0x2a: 3, 0x2b: 3, 0x2c: 3,
+        })
+        pc = 0
+        while pc < count:
+            word = units[pc]
+            op = word & 0xff
+            if word in (0x100, 0x200, 0x300):
+                if pc + (4 if word == 0x300 else 2) > count:
+                    raise ValueError('Truncated DEX instruction payload')
+                if word == 0x100:
+                    width = 4 + units[pc + 1] * 2
+                elif word == 0x200:
+                    width = 2 + units[pc + 1] * 4
+                else:
+                    size = units[pc + 2] | units[pc + 3] << 16
+                    width = 4 + (units[pc + 1] * size + 1) // 2
+            else:
+                width = widths.get(op)
+                if width is None:
+                    raise ValueError(f'Unsupported DEX opcode {op:#x} at {pc:#x}')
+            if pc + width > count:
+                raise ValueError('Truncated DEX instruction')
+            if word in (0x100, 0x200, 0x300):
+                pc += width
+                continue
+            if op in (0x1a, 0x1b):
+                index = units[pc + 1] | (units[pc + 2] << 16 if op == 0x1b else 0)
+                refs['strings'].add(self.strings[index])
+            elif op in range(0x6e, 0x73) or op in range(0x74, 0x79) or op in (0xfa, 0xfb):
+                owner, name, _, ret, params = self.methods_info[units[pc + 1]]
+                refs['methods'].add((owner, name, tuple(params), ret))
+            elif op in range(0x52, 0x6e):
+                owner, typ, name = self.fields_info[units[pc + 1]]
+                refs['fields'].add((owner, name, typ, op))
+            elif op in (0x1c, 0x1f, 0x20, 0x22, 0x23, 0x24, 0x25):
+                refs['types'].add(self.types[units[pc + 1]])
+            pc += width
+        return refs
 
     def parse_header(self):
         if len(self.data) < 112 or self.data[:4] != b'dex\n':
@@ -155,6 +222,8 @@ class DexParser:
             methods_info.append((types[class_idx], strings[name_idx], shorty, ret_type, params))
 
         # 6. class_defs
+        self.strings, self.types = strings, types
+        self.fields_info, self.methods_info = fields_info, methods_info
         for i in range(class_defs_size):
             (
                 class_idx, access_flags, superclass_idx,
@@ -224,6 +293,7 @@ class DexParser:
                     dex_class.methods.append(DexMethod(
                         name=m_name, shorty=shorty, return_type=ret_type,
                         param_types=params, access_flags=m_access,
+                        code_offset=code_off, dex=self,
                     ))
 
                 # Virtual methods
@@ -240,6 +310,7 @@ class DexParser:
                     dex_class.methods.append(DexMethod(
                         name=m_name, shorty=shorty, return_type=ret_type,
                         param_types=params, access_flags=m_access,
+                        code_offset=code_off, dex=self,
                     ))
 
             self.classes[dex_class.binary_name] = dex_class
