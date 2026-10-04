@@ -16,6 +16,7 @@ import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
 import com.juren233.hyperlyricsenhanced.BuildConfig
+import com.juren233.hyperlyricsenhanced.common.bridge.sendAppleDirectBroadcast
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.common.lyric.AppleOriginalMetadataPolicy
 import com.juren233.hyperlyricsenhanced.common.lyric.AppleMissingLyricsSourceInfo
@@ -482,7 +483,7 @@ internal fun LyriconSource.requestOriginalMetadata(baseSong: LocalSong, reason: 
     ) return false
     val application = app ?: return false
     originalMetadataRequest.register(mediaId)
-    application.sendBroadcast(
+    application.sendAppleDirectBroadcast(
         Intent(AppleDirectBridgeContract.ACTION_RESOLVE_ORIGINAL_METADATA)
             .setPackage(LyriconSource.APPLE_MUSIC_PACKAGE)
             .putExtra(AppleDirectBridgeContract.EXTRA_MEDIA_ID, mediaId)

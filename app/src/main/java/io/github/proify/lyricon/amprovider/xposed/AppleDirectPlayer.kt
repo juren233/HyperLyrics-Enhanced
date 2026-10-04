@@ -11,13 +11,17 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.media.session.PlaybackState
-import android.os.Build
 import android.os.IBinder
-import android.os.Process
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
 import androidx.core.content.ContextCompat
 import com.juren233.hyperlyricsenhanced.BuildConfig
+import com.juren233.hyperlyricsenhanced.common.bridge.AppleDirectBinderConnection
+import com.juren233.hyperlyricsenhanced.common.bridge.AppleDirectReconnectPolicy
+import com.juren233.hyperlyricsenhanced.common.bridge.appleDirectSenderIdentity
+import com.juren233.hyperlyricsenhanced.common.bridge.sendAppleDirectBroadcast
 import com.juren233.hyperlyricsenhanced.root.utils.AppleMetadataFlowDiagnostics
 import com.juren233.hyperlyricsenhanced.root.utils.LyricRuntimeDiagnostics
 import com.juren233.hyperlyricsenhanced.IAppleMusicLyricBridge
@@ -58,10 +62,28 @@ internal class AppleDirectPlayer(
         private const val PRONUNCIATION_DIAGNOSTIC_TAG = "ApplePronunciationDiag"
     }
 
-    @Volatile
-    private var bridge: IAppleMusicLyricBridge? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val reconnectLock = Any()
+    private val reconnectPolicy = AppleDirectReconnectPolicy()
+    private val bridgeInstance = Integer.toHexString(System.identityHashCode(this))
+    private var recoverySequence = 0L
+    private var recoveryReason = "none"
+    private val reconnectRunnable = Runnable { runReconnectAttempt() }
+    private val connection = AppleDirectBinderConnection<IAppleMusicLyricBridge>(
+        onDeath = {
+            recoveryDiagnostic("direct_bridge_binder_died")
+            ProviderLogger.diagnostic("直连诊断: stage=bridge_binder_died")
+            requestReconnect("binder_died")
+        },
+        onLinkFailure = { error ->
+            LyricRuntimeDiagnostics.record("direct_death_listener_failed") {
+                "error=${error.javaClass.name}"
+            }
+        },
+    )
     @Volatile
     private var latestSongPayload: ByteArray? = null
+    @Volatile
     private var registered = false
 
     private val translationReceiver = object : IAppleMusicTranslationReceiver.Stub() {
@@ -132,36 +154,23 @@ internal class AppleDirectPlayer(
 
     private val registrationReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            LyricRuntimeDiagnostics.record("direct_registration_callback") {
-                val sender = if (Build.VERSION.SDK_INT >= 34) {
-                    "senderUid=$sentFromUid senderPackage=$sentFromPackage"
-                } else {
-                    "senderUid=unknown senderPackage=unknown"
-                }
-                "action=${intent.action} $sender expectedUid=${Process.SYSTEM_UID}"
-            }
-            if (Build.VERSION.SDK_INT >= 34 &&
-                sentFromUid >= 0 &&
-                sentFromUid != Process.SYSTEM_UID
-            ) {
-                LyricRuntimeDiagnostics.record("direct_registration_rejected") {
-                    "reason=sender_uid senderUid=$sentFromUid expectedUid=${Process.SYSTEM_UID}"
-                }
-                ProviderLogger.diagnostic(
-                    "拒绝非 SystemUI 直连注册：uid=$sentFromUid, package=$sentFromPackage"
-                )
+            if (!registered) return
+            if (intent.action != AppleDirectBridgeContract.ACTION_REGISTER &&
+                intent.action != AppleDirectBridgeContract.ACTION_RESOLVE_ORIGINAL_METADATA
+            ) return
+            val identity = appleDirectSenderIdentity(context, AppleDirectBridgeContract.SYSTEM_UI_PACKAGE)
+            val senderInfo = "uid=${identity.sender.uid}, package=${identity.sender.packageName}, " +
+                "expectedUid=${identity.expectedUid}, identity=${identity.decision}"
+            recoveryDiagnostic("direct_registration_callback", "action=${intent.action} $senderInfo")
+            if (!identity.decision.accepted) {
+                recoveryDiagnostic("direct_registration_rejected", senderInfo)
+                ProviderLogger.diagnostic("拒绝非 SystemUI 直连消息：$senderInfo")
                 return
             }
+            // LEGACY_UNKNOWN_IDENTITY deliberately stays visible and is never called authenticated.
+            ProviderLogger.diagnostic("直连诊断: stage=sender_identity, $senderInfo")
             when (intent.action) {
                 AppleDirectBridgeContract.ACTION_REGISTER -> {
-                    // getSentFromUid()/getSentFromPackage() 是 API 34 才有的方法，安卓13 上
-                    // 执行调用即抛 NoSuchMethodError 并炸掉宿主进程（issue 41）；
-                    // 字符串模板是急切求值，必须整体留在版本分支内。
-                    val senderInfo = if (Build.VERSION.SDK_INT >= 34) {
-                        "uid=$sentFromUid, package=$sentFromPackage"
-                    } else {
-                        "uid=unknown, package=unknown"
-                    }
                     val binder = intent.extras
                         ?.getBinder(AppleDirectBridgeContract.EXTRA_BINDER)
                         ?: run {
@@ -212,7 +221,50 @@ internal class AppleDirectPlayer(
         registered = true
         ProviderLogger.diagnostic("直连诊断: stage=player_receiver_registered")
         pronunciationDiagnostic("stage=direct_player_started")
-        requestBridge()
+        requestReconnect("initial")
+    }
+
+    private fun requestReconnect(reason: String, allowReconnect: Boolean = true) {
+        synchronized(reconnectLock) {
+            if (!registered || !reconnectPolicy.request(SystemClock.elapsedRealtime(), allowReconnect)) return
+            recoverySequence++
+            recoveryReason = reason
+            recoveryDiagnostic("direct_recovery_scheduled")
+            ProviderLogger.diagnostic("直连诊断: stage=reconnect_scheduled, reason=$reason")
+            scheduleReconnectLocked()
+        }
+    }
+
+    private fun scheduleReconnectLocked() {
+        mainHandler.removeCallbacks(reconnectRunnable)
+        val next = reconnectPolicy.nextAttemptAtMs ?: return
+        mainHandler.postDelayed(reconnectRunnable, (next - SystemClock.elapsedRealtime()).coerceAtLeast(0L))
+    }
+
+    private fun runReconnectAttempt() {
+        val shouldSend = synchronized(reconnectLock) {
+            if (!registered || isActive) {
+                reconnectPolicy.connected()
+                false
+            } else reconnectPolicy.takeAttempt(SystemClock.elapsedRealtime()).also { taken ->
+                if (taken) recoveryDiagnostic("direct_recovery_attempt", "state=awaiting_callback")
+            }
+        }
+        if (shouldSend) {
+            runCatching { requestBridge() }.onFailure { error ->
+                recoveryDiagnostic("direct_recovery_send_failed", "error=${error.javaClass.name}")
+                ProviderLogger.error("请求 Apple Music 直连桥接失败", error)
+            }
+        }
+        synchronized(reconnectLock) {
+            // Consuming the last send is not a failed handshake: its callback may still arrive.
+            if (shouldSend && !isActive &&
+                reconnectPolicy.snapshot(SystemClock.elapsedRealtime()).budgetConsumed
+            ) {
+                recoveryDiagnostic("direct_recovery_budget_consumed", "state=awaiting_callback")
+            }
+            scheduleReconnectLocked()
+        }
     }
 
     private fun requestBridge() {
@@ -224,7 +276,7 @@ internal class AppleDirectPlayer(
                 "target=${AppleDirectBridgeContract.SYSTEM_UI_PACKAGE}",
         )
         pronunciationDiagnostic("stage=bridge_requested")
-        context.sendBroadcast(
+        context.sendAppleDirectBroadcast(
             Intent(AppleDirectBridgeContract.ACTION_REQUEST)
                 .setPackage(AppleDirectBridgeContract.SYSTEM_UI_PACKAGE)
         )
@@ -232,19 +284,19 @@ internal class AppleDirectPlayer(
     }
 
     private fun connect(binder: IBinder) {
-        bridge = IAppleMusicLyricBridge.Stub.asInterface(binder)
-        runCatching {
-            binder.linkToDeath({
-                bridge = null
-                ProviderLogger.diagnostic("直连诊断: stage=bridge_binder_died")
-                requestBridge()
-            }, 0)
-        }.onFailure { error ->
-            LyricRuntimeDiagnostics.record("direct_death_listener_failed") {
-                "error=${error.javaClass.name}"
-            }
+        val entry = connection.replace(IAppleMusicLyricBridge.Stub.asInterface(binder))
+        if (entry == null) {
+            requestReconnect("death_listener_failed")
+            return
         }
         val receiverRegistered = send { it.registerTranslationReceiver(translationReceiver) }
+        if (receiverRegistered) synchronized(reconnectLock) {
+            if (connection.current === entry && entry.binder.isBinderAlive) {
+                reconnectPolicy.connected()
+                mainHandler.removeCallbacks(reconnectRunnable)
+                recoveryDiagnostic("direct_recovery_connected", "receiverRegistered=true")
+            }
+        }
         pronunciationDiagnostic(
             "stage=bridge_connected, alive=${binder.isBinderAlive}, " +
                 "receiverRegistered=$receiverRegistered"
@@ -255,6 +307,7 @@ internal class AppleDirectPlayer(
         )
         latestSongPayload?.let { payload ->
             val replayed = send { target -> target.onSongChanged(payload) }
+            recoveryDiagnostic("direct_song_replay", "bytes=${payload.size} success=$replayed")
             ProviderLogger.debug(
                 "直连重连后补发当前歌曲：bytes=${payload.size}, success=$replayed"
             )
@@ -265,7 +318,7 @@ internal class AppleDirectPlayer(
     }
 
     override val isActive: Boolean
-        get() = bridge?.asBinder()?.isBinderAlive == true
+        get() = connection.current?.binder?.isBinderAlive == true
 
     override fun setSong(song: Song?): Boolean {
         val payload = song?.let {
@@ -276,40 +329,48 @@ internal class AppleDirectPlayer(
             return false
         }
         latestSongPayload = payload
-        return send { target -> target.onSongChanged(payload) }
+        return send(reconnectIfMissing = true) { target -> target.onSongChanged(payload) }
     }
 
     override fun setPlaybackState(playing: Boolean): Boolean =
-        send { it.onPlaybackStateChanged(playing) }
+        send(reconnectIfMissing = true) { it.onPlaybackStateChanged(playing) }
 
-    override fun seekTo(position: Long): Boolean = send { it.onSeekTo(position) }
+    override fun seekTo(position: Long): Boolean = send(reconnectIfMissing = true) { it.onSeekTo(position) }
 
     override fun setPosition(position: Long): Boolean = send { it.onPositionChanged(position) }
 
     override fun setPositionUpdateInterval(interval: Int): Boolean = true
 
-    override fun sendText(text: String?): Boolean = send { it.onReceiveText(text) }
+    override fun sendText(text: String?): Boolean = send(reconnectIfMissing = true) { it.onReceiveText(text) }
 
     override fun setDisplayTranslation(displayTranslation: Boolean): Boolean =
-        send { it.onDisplayTranslationChanged(displayTranslation) }
+        send(reconnectIfMissing = true) { it.onDisplayTranslationChanged(displayTranslation) }
 
     override fun setDisplayRoma(displayRoma: Boolean): Boolean =
-        send { it.onDisplayRomaChanged(displayRoma) }
+        send(reconnectIfMissing = true) { it.onDisplayRomaChanged(displayRoma) }
 
     fun requestOnlineLyricContentSource(
         requestId: Long,
         songId: String,
         contentType: String,
         source: String,
-    ): Boolean = send {
+    ): Boolean = send(reconnectIfMissing = true) {
         it.requestOnlineLyricContentSource(requestId, songId, contentType, source)
     }
 
     override fun setPlaybackState(state: PlaybackState?): Boolean =
         setPlaybackState(PlaybackStateActivityPolicy.keepsSessionActive(state?.state))
 
-    private inline fun send(action: (IAppleMusicLyricBridge) -> Unit): Boolean {
-        val target = bridge ?: return false
+    private inline fun send(
+        reconnectIfMissing: Boolean = false,
+        action: (IAppleMusicLyricBridge) -> Unit,
+    ): Boolean {
+        // Song, playback and user actions may renew a bounded burst; position ticks cannot.
+        val entry = connection.current ?: run {
+            requestReconnect("send_without_bridge", allowReconnect = reconnectIfMissing)
+            return false
+        }
+        val target = entry.target
         return runCatching {
             action(target)
             true
@@ -317,13 +378,23 @@ internal class AppleDirectPlayer(
             LyricRuntimeDiagnostics.record("direct_send_failed") {
                 "error=${error.javaClass.name} binderAlive=${target.asBinder()?.isBinderAlive}"
             }
-            bridge = null
-            requestBridge()
+            if (connection.clear(entry)) requestReconnect("send_failed")
         }.getOrDefault(false)
     }
 
     private fun pronunciationDiagnostic(message: String) {
         if (BuildConfig.DEBUG) Log.i(PRONUNCIATION_DIAGNOSTIC_TAG, message)
+    }
+
+    private fun recoveryDiagnostic(stage: String, details: String = "") {
+        LyricRuntimeDiagnostics.record(stage) {
+            synchronized(reconnectLock) {
+                "side=player bridgeInstance=$bridgeInstance recoverySequence=$recoverySequence " +
+                    "reason=$recoveryReason " +
+                    reconnectPolicy.snapshot(SystemClock.elapsedRealtime()).diagnosticFields() +
+                    " $details"
+            }
+        }
     }
 }
 

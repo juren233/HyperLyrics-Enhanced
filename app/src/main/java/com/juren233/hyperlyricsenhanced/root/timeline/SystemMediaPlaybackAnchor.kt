@@ -19,6 +19,9 @@ import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.common.IslandMusicAppCatalog
 import com.juren233.hyperlyricsenhanced.common.media.MediaMetadataHelper
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
+import com.juren233.hyperlyricsenhanced.root.utils.RuntimeResourceCleanup
+import com.juren233.hyperlyricsenhanced.root.utils.RuntimeCallbackGate
+import com.juren233.hyperlyricsenhanced.root.utils.RuntimeResourceCleanupException
 import com.juren233.hyperlyricsenhanced.timeline.model.TrackIdentity
 import io.github.proify.lyricon.provider.PlaybackStateActivityPolicy
 import java.util.concurrent.ConcurrentHashMap
@@ -110,42 +113,82 @@ class SystemMediaPlaybackAnchor(
         listeners.remove(listener)
     }
 
-    private val pollRunnable: Runnable = Runnable {
-        refreshControllers()
-        mainHandler.postDelayed(pollRunnable, POLL_INTERVAL_MS)
-    }
+    private val callbackGate = RuntimeCallbackGate()
+    private val running get() = callbackGate.active
+    private var generation: Any? = null
+    private val callbackToken = Any()
+    private var pollRunnable: Runnable? = null
+    private var sessionListener: MediaSessionManager.OnActiveSessionsChangedListener? = null
+    private var audioListener: AudioPlaybackActivityTracker.Listener? = null
+    private var cleanupFailure: RuntimeResourceCleanupException? = null
 
-    private val sessionListener = MediaSessionManager.OnActiveSessionsChangedListener { controllers ->
-        mainHandler.post { refreshControllers(controllers) }
+    private fun isCurrent(expectedGeneration: Any?): Boolean = callbackGate.isCurrent(expectedGeneration)
+
+    private fun postCurrent(expectedGeneration: Any?, action: () -> Unit) {
+        if (!isCurrent(expectedGeneration)) return
+        mainHandler.postAtTime(
+            callbackGate.guard(expectedGeneration, action),
+            callbackToken,
+            SystemClock.uptimeMillis(),
+        )
     }
 
     fun start(listener: Listener) {
+        cleanupFailure?.let { throw it }
         addListener(listener)
-        runCatching {
-            manager.addOnActiveSessionsChangedListener(sessionListener, null)
-        }.onFailure {
-            HookLogger.w(TAG, "会话监听注册失败: ${it.javaClass.simpleName}")
+        if (running) return
+        val currentGeneration = callbackGate.begin()
+        generation = currentGeneration
+        val sessions = MediaSessionManager.OnActiveSessionsChangedListener { controllers ->
+            postCurrent(currentGeneration) { refreshControllers(controllers, currentGeneration) }
         }
-        audioTracker.addListener(object : AudioPlaybackActivityTracker.Listener {
+        sessionListener = sessions
+        // Registration failures must reach the startup transaction, which owns rollback.
+        manager.addOnActiveSessionsChangedListener(sessions, null)
+        val audio = object : AudioPlaybackActivityTracker.Listener {
             override fun onAudibleUidsChanged() {
-                // 推送式重选：起播/停声立即生效，不必等 2s 轮询。
-                mainHandler.post { refreshControllers() }
+                postCurrent(currentGeneration) { refreshControllers(expectedGeneration = currentGeneration) }
             }
-        })
+        }
+        audioListener = audio
+        audioTracker.addListener(audio)
         audioTracker.start(appContext)
-        refreshControllers()
-        mainHandler.removeCallbacks(pollRunnable)
-        mainHandler.postDelayed(pollRunnable, POLL_INTERVAL_MS)
+        refreshControllers(expectedGeneration = currentGeneration)
+        val poll = object : Runnable {
+            override fun run() {
+                if (!isCurrent(currentGeneration)) return
+                refreshControllers(expectedGeneration = currentGeneration)
+                if (isCurrent(currentGeneration)) mainHandler.postDelayed(this, POLL_INTERVAL_MS)
+            }
+        }
+        pollRunnable = poll
+        mainHandler.postDelayed(poll, POLL_INTERVAL_MS)
     }
 
     fun stop() {
-        mainHandler.removeCallbacks(pollRunnable)
-        runCatching { manager.removeOnActiveSessionsChangedListener(sessionListener) }
-        trackedControllers.keys.forEach { controller ->
-            runCatching { controller.unregisterCallback(trackedControllers[controller] ?: return@forEach) }
-        }
+        callbackGate.invalidate()
+        generation = null
+        val previousPoll = pollRunnable
+        val previousSessions = sessionListener
+        val previousAudio = audioListener
+        val previousControllers = trackedControllers.toMap()
+        pollRunnable = null
+        sessionListener = null
+        audioListener = null
         trackedControllers.clear()
-        audioTracker.stop()
+        listeners.clear()
+        val cleanup = RuntimeResourceCleanup()
+        cleanup.attempt("previous anchor cleanup") { cleanupFailure?.let { throw it } }
+        cleanup.attempt("anchor queued callbacks") { mainHandler.removeCallbacksAndMessages(callbackToken) }
+        cleanup.attempt("anchor poll") { previousPoll?.let(mainHandler::removeCallbacks) }
+        cleanup.attempt("anchor session listener") {
+            previousSessions?.let(manager::removeOnActiveSessionsChangedListener)
+        }
+        previousControllers.forEach { (controller, callback) ->
+            cleanup.attempt("anchor controller callback") { controller.unregisterCallback(callback) }
+        }
+        cleanup.attempt("anchor audio listener") { previousAudio?.let(audioTracker::removeListener) }
+        cleanup.attempt("audio tracker") { audioTracker.stop() }
         sessionUids.clear()
         activeController = null
         currentAnchor = null
@@ -154,7 +197,8 @@ class SystemMediaPlaybackAnchor(
         timelineAdvancing = false
         playStartedAtMs.clear()
         lastObservedState.clear()
-        listeners.clear()
+        cleanupFailure = cleanup.failureOrNull()
+        cleanupFailure?.let { throw it }
     }
 
     /** 当前锚点（回调/轮询最近一次采样）。 */
@@ -168,35 +212,49 @@ class SystemMediaPlaybackAnchor(
         return (anchor.positionMs + elapsed * anchor.speed).toLong()
     }
 
-    private fun refreshControllers(explicit: List<MediaController>? = null) {
+    private fun refreshControllers(
+        explicit: List<MediaController>? = null,
+        expectedGeneration: Any? = generation,
+    ) {
+        if (!isCurrent(expectedGeneration)) return
         val controllers = explicit ?: runCatching { manager.getActiveSessions(null) }.getOrNull() ?: return
         synchronized(this) {
+            if (!isCurrent(expectedGeneration)) return
             // 清理消失的会话。
             val current = controllers.toSet()
             trackedControllers.keys.filter { it !in current }.forEach { dead ->
-                trackedControllers.remove(dead)?.let { cb -> runCatching { dead.unregisterCallback(cb) } }
+                trackedControllers[dead]?.let { cb ->
+                    runCatching { dead.unregisterCallback(cb) }.onSuccess { trackedControllers.remove(dead, cb) }
+                }
             }
             // 注册新会话回调。
             for (controller in controllers) {
                 if (!trackedControllers.containsKey(controller)) {
                     val callback = object : MediaController.Callback() {
                         override fun onPlaybackStateChanged(state: PlaybackState?) {
-                            if (controller.sessionToken == activeController?.sessionToken) {
-                                mainHandler.post { sampleController(controller) }
-                            } else if (state?.state == PlaybackState.STATE_PLAYING) {
-                                // 其他会话起播：立即重新评估，换 app 播放即时切换。
-                                mainHandler.post { refreshControllers() }
+                            val callback = this
+                            postCurrent(expectedGeneration) {
+                                if (trackedControllers[controller] !== callback) return@postCurrent
+                                if (controller.sessionToken == activeController?.sessionToken) {
+                                    sampleController(controller)
+                                } else if (state?.state == PlaybackState.STATE_PLAYING) {
+                                    // 其他会话起播：立即重新评估，换 app 播放即时切换。
+                                    refreshControllers(expectedGeneration = expectedGeneration)
+                                }
                             }
                         }
 
                         override fun onMetadataChanged(metadata: MediaMetadata?) {
-                            if (controller.sessionToken == activeController?.sessionToken) {
-                                mainHandler.post { sampleController(controller) }
+                            val callback = this
+                            postCurrent(expectedGeneration) {
+                                if (trackedControllers[controller] === callback &&
+                                    controller.sessionToken == activeController?.sessionToken
+                                ) sampleController(controller)
                             }
                         }
                     }
-                    runCatching { controller.registerCallback(callback) }
                     trackedControllers[controller] = callback
+                    runCatching { controller.registerCallback(callback) }
                 }
             }
 
@@ -238,6 +296,7 @@ class SystemMediaPlaybackAnchor(
     }
 
     private fun sampleController(controller: MediaController?) {
+        if (!running) return
         controller ?: run {
             // 会话全空：清除身份与锚点。
             if (currentTrack != null) {
@@ -291,6 +350,7 @@ class SystemMediaPlaybackAnchor(
     }
 
     private fun publishPlaybackActivity(active: Boolean) {
+        if (!running) return
         if (active == playbackActive) return
         playbackActive = active
         listeners.forEach { it.onPlaybackStateChanged(active) }

@@ -7,6 +7,9 @@
 package com.juren233.hyperlyricsenhanced.root.utils
 
 import android.util.Log
+import android.content.SharedPreferences
+import com.juren233.hyperlyricsenhanced.BuildConfig
+import com.juren233.hyperlyricsenhanced.common.LogLevelPolicy
 import com.juren233.hyperlyricsenhanced.utils.LOG_EXPORT_LEVEL_DEBUG
 import com.juren233.hyperlyricsenhanced.utils.LogExportStream
 import io.github.libxposed.api.XposedInterface
@@ -28,6 +31,9 @@ class HookLoggerTest {
 
     private val entries = mutableListOf<Entry>()
     private var previousModule: XposedModule? = null
+    private var backendFailure: Throwable? = null
+    private var preferenceFailure: Throwable? = null
+    private var preferences: SharedPreferences? = null
 
     @Before
     fun attachFramework() {
@@ -38,6 +44,7 @@ class HookLoggerTest {
         ) { _, method, args ->
             when (method.name) {
                 "log" -> {
+                    backendFailure?.let { throw it }
                     val values = requireNotNull(args)
                     entries += Entry(
                         values[0] as Int, values[1] as String?, values[2] as String,
@@ -45,7 +52,10 @@ class HookLoggerTest {
                     )
                     null
                 }
-                "getRemotePreferences" -> null
+                "getRemotePreferences" -> {
+                    preferenceFailure?.let { throw it }
+                    preferences
+                }
                 else -> error("Unexpected framework call: ${method.name}")
             }
         } as XposedInterface
@@ -57,6 +67,52 @@ class HookLoggerTest {
     @After
     fun restoreFramework() {
         HookLogger.module = previousModule
+    }
+
+    private fun logAllLevels() {
+        HookLogger.d("Lifecycle", "debug")
+        HookLogger.i("Lifecycle", "info")
+        HookLogger.w("Lifecycle", "warning", IllegalStateException("optional diagnostic"))
+        HookLogger.e("Lifecycle", "error", IllegalStateException("optional diagnostic"))
+    }
+
+    @Test
+    fun `logging backend failure cannot escape any severity`() {
+        backendFailure = IllegalStateException("framework logger detached")
+        logAllLevels()
+        assertTrue(entries.isEmpty())
+    }
+
+    @Test
+    fun `preference lookup failure falls back to build default`() {
+        preferenceFailure = IllegalStateException("preferences unavailable")
+        logAllLevels()
+        val expected = if (LogLevelPolicy.defaultLevel(BuildConfig.DEBUG) > 0) 4 else 3
+        assertEquals(expected, entries.size)
+    }
+
+    @Test
+    fun `preference value failure cannot escape debug gating`() {
+        for (failingMethod in listOf("contains", "getInt", "getString")) {
+            preferences = Proxy.newProxyInstance(
+                SharedPreferences::class.java.classLoader,
+                arrayOf(SharedPreferences::class.java),
+            ) { _, method, _ ->
+                if (method.name == failingMethod) error("preference read failed")
+                when (method.name) {
+                    "contains" -> true
+                    "getInt" -> LogLevelPolicy.LEVEL_DEBUG
+                    "getString" -> LogLevelPolicy.buildKind(BuildConfig.DEBUG)
+                    else -> error("Unexpected preferences call: ${method.name}")
+                }
+            } as SharedPreferences
+            // Reset the logger's cached preference handle between failure boundaries.
+            HookLogger.module = HookLogger.module
+            entries.clear()
+            logAllLevels()
+            val expected = if (LogLevelPolicy.defaultLevel(BuildConfig.DEBUG) > 0) 4 else 3
+            assertEquals("failure at $failingMethod", expected, entries.size)
+        }
     }
 
     @Test

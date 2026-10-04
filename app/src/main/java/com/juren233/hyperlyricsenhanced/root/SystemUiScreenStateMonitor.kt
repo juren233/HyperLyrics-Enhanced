@@ -14,7 +14,8 @@ internal object SystemUiScreenStateMonitor {
     private const val TAG = "SystemUiScreenState"
 
     private var registeredApp: Application? = null
-    private var receiver: BroadcastReceiver? = null
+    @Volatile private var receiver: BroadcastReceiver? = null
+    private var cleanupFailure: Throwable? = null
 
     fun initialize(app: Application) {
         if (registeredApp === app && receiver != null) return
@@ -22,6 +23,7 @@ internal object SystemUiScreenStateMonitor {
 
         val screenReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
+                if (receiver !== this) return
                 when (intent?.action) {
                     Intent.ACTION_SCREEN_ON -> {
                         MediaCardDiagnosticLogger.log(
@@ -50,19 +52,25 @@ internal object SystemUiScreenStateMonitor {
             addAction(Intent.ACTION_SCREEN_ON)
             addAction(Intent.ACTION_SCREEN_OFF)
         }
-        app.registerReceiver(screenReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
         registeredApp = app
         receiver = screenReceiver
+        app.registerReceiver(screenReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
     }
 
     fun cleanup() {
         val app = registeredApp
         val activeReceiver = receiver
-        if (app != null && activeReceiver != null) {
-            runCatching { app.unregisterReceiver(activeReceiver) }
-                .onFailure { HookLogger.w(TAG, "注销屏幕状态监听失败", it) }
-        }
         registeredApp = null
         receiver = null
+        // Never let a failed release look clean to a later startup rollback.
+        cleanupFailure?.let { throw it }
+        if (app != null && activeReceiver != null) {
+            try {
+                app.unregisterReceiver(activeReceiver)
+            } catch (failure: Throwable) {
+                cleanupFailure = failure
+                throw failure
+            }
+        }
     }
 }

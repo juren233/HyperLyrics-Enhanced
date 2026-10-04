@@ -68,6 +68,8 @@ internal object IslandSystemFontWeight {
     private var callbacks: ComponentCallbacks? = null
     private var cached: Pair<String, Typeface>? = null
     private var failureLogged = false
+    private var registration: Any? = null
+    private var cleanupFailure: RuntimeResourceCleanupException? = null
 
     private val methods by lazy {
         runCatching {
@@ -150,10 +152,13 @@ internal object IslandSystemFontWeight {
 
     fun start(app: Context, onChanged: () -> Unit) {
         stop()
+        val owner = Any()
+        registration = owner
         context = app
         val systemUri = Settings.System.getUriFor(SCALE_KEY)
         val globalUri = Settings.Global.getUriFor(SCALE_KEY)
         fun refresh(config: Configuration? = null, preferGlobal: Boolean = false) {
+            if (registration !== owner) return
             val resolver = app.contentResolver
             val deliveredScale = config?.let(::configurationScale)
             val scale = resolveScale(
@@ -174,30 +179,48 @@ internal object IslandSystemFontWeight {
                 onChanged()
             }
         }
-        observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
-            override fun onChange(selfChange: Boolean) = refresh()
-            override fun onChange(selfChange: Boolean, uri: Uri?) = refresh(preferGlobal = uri == globalUri)
-        }.also {
-            app.contentResolver.registerContentObserver(systemUri, false, it)
-            app.contentResolver.registerContentObserver(globalUri, false, it)
+        try {
+            val contentObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
+                override fun onChange(selfChange: Boolean) = refresh()
+                override fun onChange(selfChange: Boolean, uri: Uri?) = refresh(preferGlobal = uri == globalUri)
+            }
+            // Capture before the first registration: the second URI may fail after the first succeeds.
+            observer = contentObserver
+            app.contentResolver.registerContentObserver(systemUri, false, contentObserver)
+            app.contentResolver.registerContentObserver(globalUri, false, contentObserver)
+            val componentCallbacks = object : ComponentCallbacks {
+                override fun onConfigurationChanged(newConfig: Configuration) = refresh(newConfig)
+                @Suppress("OVERRIDE_DEPRECATION")
+                override fun onLowMemory() = Unit
+            }
+            callbacks = componentCallbacks
+            app.registerComponentCallbacks(componentCallbacks)
+            refresh(app.resources.configuration)
+        } catch (error: Throwable) {
+            runCatching { stop() }.onFailure(error::addSuppressed)
+            throw error
         }
-        callbacks = object : ComponentCallbacks {
-            override fun onConfigurationChanged(newConfig: Configuration) = refresh(newConfig)
-            @Suppress("OVERRIDE_DEPRECATION")
-            override fun onLowMemory() = Unit
-        }.also(app::registerComponentCallbacks)
-        refresh(app.resources.configuration)
     }
 
     fun stop() {
-        context?.let { app ->
-            observer?.let { runCatching { app.contentResolver.unregisterContentObserver(it) } }
-            callbacks?.let { app.unregisterComponentCallbacks(it) }
-        }
+        val app = context
+        val previousObserver = observer
+        val previousCallbacks = callbacks
+        registration = null
         context = null
         observer = null
         callbacks = null
         cached = null
+        val cleanup = RuntimeResourceCleanup()
+        cleanup.attempt("previous font cleanup") { cleanupFailure?.let { throw it } }
+        cleanup.attempt("font content observer") {
+            if (app != null && previousObserver != null) app.contentResolver.unregisterContentObserver(previousObserver)
+        }
+        cleanup.attempt("font configuration callbacks") {
+            if (app != null && previousCallbacks != null) app.unregisterComponentCallbacks(previousCallbacks)
+        }
+        cleanupFailure = cleanup.failureOrNull()
+        cleanupFailure?.let { throw it }
     }
 
     fun typeface(italic: Boolean, textSizeSp: Int): Typeface {

@@ -31,38 +31,38 @@ object HookLogger : HyperLogger {
         runCatching { Log.d(TAG, finalMsg) }
         // Let libxposed choose its module tag. Vector 2.2 only persists framework tags;
         // a custom tag reaches logcat but is silently omitted from modules*.log.
-        module?.log(Log.DEBUG, null, finalMsg)
+        runCatching { module?.log(Log.DEBUG, null, finalMsg) }
     }
 
     override fun i(tag: String, msg: String) {
         val finalMsg = format(tag, msg)
         runCatching { Log.i(TAG, finalMsg) }
-        module?.log(Log.INFO, null, finalMsg)
+        runCatching { module?.log(Log.INFO, null, finalMsg) }
     }
 
     override fun w(tag: String, msg: String, e: Throwable?) {
         val finalMsg = format(tag, msg)
         runCatching { Log.w(TAG, finalMsg, e) }
-        module?.log(Log.WARN, null, finalMsg, e)
+        runCatching { module?.log(Log.WARN, null, finalMsg, e) }
     }
 
     override fun e(tag: String, msg: String, e: Throwable?) {
         val finalMsg = format(tag, msg)
         runCatching { Log.e(TAG, finalMsg, e) }
-        module?.log(Log.ERROR, null, finalMsg, e)
+        runCatching { module?.log(Log.ERROR, null, finalMsg, e) }
     }
 
-    private fun readLogLevel(): Int {
+    private fun readLogLevel(): Int = runCatching {
         val prefs = resolveLogPrefs()
         val storedLevel = prefs?.takeIf { it.contains(UIConstants.KEY_LOG_LEVEL) }
             ?.getInt(UIConstants.KEY_LOG_LEVEL, UIConstants.DEFAULT_LOG_LEVEL)
         val storedBuildKind = prefs?.getString(UIConstants.KEY_LOG_LEVEL_BUILD_KIND, null)
-        return LogLevelPolicy.effectiveLevel(
+        LogLevelPolicy.effectiveLevel(
             storedLevel = storedLevel,
             storedBuildKind = storedBuildKind,
             debugBuild = BuildConfig.DEBUG,
         )
-    }
+    }.getOrElse { LogLevelPolicy.defaultLevel(BuildConfig.DEBUG) }
 
     private fun resolveLogPrefs(): SharedPreferences? {
         if (logPrefsResolved) return logPrefs

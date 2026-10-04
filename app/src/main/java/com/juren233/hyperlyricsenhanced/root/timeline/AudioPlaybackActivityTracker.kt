@@ -13,6 +13,8 @@ import android.os.Handler
 import android.os.SystemClock
 import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
+import com.juren233.hyperlyricsenhanced.root.utils.RuntimeResourceCleanup
+import com.juren233.hyperlyricsenhanced.root.utils.RuntimeResourceCleanupException
 import java.util.concurrent.CopyOnWriteArrayList
 
 /**
@@ -51,7 +53,9 @@ internal class AudioPlaybackActivityTracker(
     private val listeners = CopyOnWriteArrayList<Listener>()
 
     private var audioManager: AudioManager? = null
+    @Volatile
     private var playbackCallback: AudioManager.AudioPlaybackCallback? = null
+    private var cleanupFailure: RuntimeResourceCleanupException? = null
 
     /** uid -> 最近一次确认发声的时刻（elapsedRealtime 基准）。 */
     @Volatile
@@ -96,19 +100,21 @@ internal class AudioPlaybackActivityTracker(
     }
 
     fun start(context: Context) {
+        cleanupFailure?.let { throw it }
         if (audioManager != null) return
         val manager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
         val changed = refreshFrom(manager.getActivePlaybackConfigurations())
         val callback = object : AudioManager.AudioPlaybackCallback() {
             override fun onPlaybackConfigChanged(configs: List<AudioPlaybackConfiguration>) {
+                if (playbackCallback !== this) return
                 if (refreshFrom(configs)) {
                     listeners.forEach { it.onAudibleUidsChanged() }
                 }
             }
         }
-        manager.registerAudioPlaybackCallback(callback, mainHandler)
         audioManager = manager
         playbackCallback = callback
+        manager.registerAudioPlaybackCallback(callback, mainHandler)
         if (BuildConfig.DEBUG) {
             HookLogger.d(TAG, "发声跟踪已启动: available=$available, audibleUids=$audibleUids")
         }
@@ -118,14 +124,23 @@ internal class AudioPlaybackActivityTracker(
     }
 
     fun stop() {
-        playbackCallback?.let { callback ->
-            runCatching { audioManager?.unregisterAudioPlaybackCallback(callback) }
-        }
+        val previousCallback = playbackCallback
+        val previousManager = audioManager
         playbackCallback = null
         audioManager = null
+        available = false
         lastAudibleAtMs = emptyMap()
         audioStartedAtMs = emptyMap()
         audibleUids = emptySet()
+        val cleanup = RuntimeResourceCleanup()
+        cleanup.attempt("previous audio playback cleanup") { cleanupFailure?.let { throw it } }
+        cleanup.attempt("audio playback callback") {
+            if (previousManager != null && previousCallback != null) {
+                previousManager.unregisterAudioPlaybackCallback(previousCallback)
+            }
+        }
+        cleanupFailure = cleanup.failureOrNull()
+        cleanupFailure?.let { throw it }
     }
 
     /** 该 uid 当前是否有 USAGE_MEDIA 播放器处于 started。 */

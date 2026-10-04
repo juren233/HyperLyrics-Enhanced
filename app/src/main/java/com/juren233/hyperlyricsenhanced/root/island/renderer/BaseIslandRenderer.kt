@@ -219,13 +219,24 @@ object BaseIslandRenderer : IslandRenderer {
                     IslandHostFacade.triggerSystemRelayout(cv)
                 }
                 val injected = IslandLyricTextInjector.hasInjectedLyricView(cv)
+                val hostDiagnostic = if (BuildConfig.DEBUG) runCatching {
+                    val shown = cv.isShown
+                    val attached = cv.isAttachedToWindow
+                    val visibility = cv.visibility
+                    val width = cv.width
+                    val height = cv.height
+                    ("hostShown=$shown, hostAttached=$attached, hostVisibility=$visibility, " +
+                        "hostWidth=$width, hostHeight=$height") to
+                        "$injected|$shown|$attached|$visibility|${width > 0}|${height > 0}"
+                }.getOrDefault("hostState=unavailable" to "unavailable") else "" to ""
                 DisplayDiagnosticLogger.log(
                     channel = "ISLAND",
-                    result = if (injected) "shown" else "skipped",
-                    reason = if (injected) "injected_view_visible" else "injection_unavailable",
+                    result = if (injected) "present" else "skipped",
+                    reason = if (injected) "injected_view_present" else "injection_unavailable",
                     extra = "targetViews=${activeViews.size}, injectionChanged=$injectionChanged, " +
-                        "playbackActive=$playbackActive",
+                        "playbackActive=$playbackActive, ${hostDiagnostic.first}",
                     dedupeKey = "ISLAND/refresh",
+                    infoState = hostDiagnostic.second,
                 )
             }
         }
@@ -236,7 +247,7 @@ object BaseIslandRenderer : IslandRenderer {
             result = "pending",
             reason = "refresh_scheduled",
             extra = "targetViews=${activeViews.size}, playbackActive=$playbackActive",
-            dedupeKey = "ISLAND/refresh",
+            dedupeKey = "ISLAND/refresh_pending",
         )
     }
 

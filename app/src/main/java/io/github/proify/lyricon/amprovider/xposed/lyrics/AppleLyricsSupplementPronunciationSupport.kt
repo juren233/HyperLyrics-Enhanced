@@ -47,7 +47,7 @@ internal fun AppleLyricsSupplementHooks.hookAppleLyricTextGetter(clazz: Class<*>
                 if (BuildConfig.DEBUG) {
                     ProviderLogger.debug(
                         "[LyricsScrollDiag] getTranslationText: line=${System.identityHashCode(chain.thisObject)}, " +
-                            "original=$originalText, online=$text, result=$result"
+                            appleLyricTextLengthSummary(originalText, text, result)
                     )
                 }
                 result
@@ -576,7 +576,7 @@ private fun AppleLyricsSupplementHooks.debugAppleWordTimings(vector: Any?): List
 
 private fun AppleLyricsSupplementHooks.debugAppleWordTimings(words: List<AppleDebugWordTiming>): String =
     words.joinToString(prefix = "[", postfix = "]") { word ->
-        "${word.wordId}@${word.begin}-${word.end}:${word.text}"
+        appleWordTimingDiagnosticSummary(word.wordId, word.begin, word.end, word.text)
     }
 
 internal fun AppleLyricsSupplementHooks.logApplePronunciationBindingDiagnostic(

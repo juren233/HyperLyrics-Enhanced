@@ -1,5 +1,6 @@
 package com.juren233.hyperlyricsenhanced.root.utils
 
+import android.os.SystemClock
 import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.root.LyriconDataBridge
 import java.util.concurrent.ConcurrentHashMap
@@ -8,6 +9,7 @@ import java.util.concurrent.ConcurrentHashMap
 object DisplayDiagnosticLogger {
     private const val MAX_IDENTITY_CHARS = 80
     private val lastSignatures = ConcurrentHashMap<String, String>()
+    private val infoDecisions = DiagnosticDecisionGate(minIntervalMs = 2_000L)
 
     fun log(
         channel: String,
@@ -15,6 +17,7 @@ object DisplayDiagnosticLogger {
         reason: String,
         extra: String = "",
         dedupeKey: String = channel,
+        infoState: String = "",
     ) {
         if (!BuildConfig.DEBUG) return
 
@@ -37,7 +40,16 @@ object DisplayDiagnosticLogger {
             reason,
             extra,
         ).joinToString("|")
-        if (lastSignatures.put(dedupeKey, signature) == signature) return
+        // INFO summaries exclude line position/text and incidental view timing. The existing
+        // detailed DEBUG stream keeps its own signature; a suppressed summary can be emitted later.
+        val summarySignature = listOf(
+            song?.id, packageName, LyriconDataBridge.currentPlaybackState,
+            LyriconDataBridge.isTextMode, line != null, result, reason, infoState,
+        ).joinToString("|")
+        val summary = (channel == "ISLAND" || channel == "BRIDGE") && runCatching {
+            infoDecisions.shouldLog(dedupeKey, summarySignature, SystemClock.elapsedRealtime())
+        }.getOrDefault(false)
+        if (lastSignatures.put(dedupeKey, signature) == signature && !summary) return
 
         val lyrics = song?.lyrics.orEmpty()
         val details = buildString {
@@ -62,7 +74,7 @@ object DisplayDiagnosticLogger {
         }
         // AOD diagnosis must survive the default log level used by "export all logs".
         // It remains Debug-build-only because this method returns above in Release builds.
-        if (channel == "AOD_LOCK" || channel == "AOD_CLASSIC") {
+        if (channel == "AOD_LOCK" || channel == "AOD_CLASSIC" || summary) {
             HookLogger.i("DISPLAY_DIAG/$channel", details)
         } else {
             HookLogger.d("DISPLAY_DIAG/$channel", details)
@@ -71,6 +83,7 @@ object DisplayDiagnosticLogger {
 
     fun clear(channel: String? = null) {
         if (!BuildConfig.DEBUG) return
+        infoDecisions.clear(channel)
         if (channel == null) {
             lastSignatures.clear()
         } else {

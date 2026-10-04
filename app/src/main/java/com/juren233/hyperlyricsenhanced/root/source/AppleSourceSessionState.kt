@@ -8,6 +8,8 @@ package com.juren233.hyperlyricsenhanced.root.source
 import android.content.Context
 import android.media.AudioManager
 import android.media.session.MediaSessionManager
+import com.juren233.hyperlyricsenhanced.root.utils.RuntimeResourceCleanup
+import com.juren233.hyperlyricsenhanced.root.utils.RuntimeResourceCleanupException
 
 /**
  * Owns the SystemUI-side local media-session tracker registration and the cached
@@ -22,6 +24,7 @@ internal class AppleLocalMediaSessionState {
     private var manager: MediaSessionManager? = null
     private var listener: MediaSessionManager.OnActiveSessionsChangedListener? = null
     private var audio: AudioManager? = null
+    private var cleanupFailure: RuntimeResourceCleanupException? = null
 
     val isRegistered: Boolean get() = listener != null
 
@@ -39,20 +42,29 @@ internal class AppleLocalMediaSessionState {
         onFailure: (Throwable) -> Unit,
         onRegistered: () -> Unit,
     ) {
+        cleanupFailure?.let { throw it }
         if (listener != null) return
         runCatching {
             val service = context.getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
-            val activeListener = MediaSessionManager.OnActiveSessionsChangedListener { controllers ->
-                onSessions(controllers?.mapNotNull { it.packageName }?.toSet())
+            val activeListener = object : MediaSessionManager.OnActiveSessionsChangedListener {
+                override fun onActiveSessionsChanged(controllers: MutableList<android.media.session.MediaController>?) {
+                    if (listener !== this) return
+                    onSessions(controllers?.mapNotNull { it.packageName }?.toSet())
+                }
             }
-            service.addOnActiveSessionsChangedListener(activeListener, null)
+            // The platform can register and then throw. Keep the pair before entering it.
             manager = service
             listener = activeListener
+            service.addOnActiveSessionsChangedListener(activeListener, null)
             onSessions(service.getActiveSessions(null).mapNotNull { it.packageName }.toSet())
             onRegistered()
         }.onFailure { error ->
-            manager = null
-            listener = null
+            try {
+                unregister()
+            } catch (cleanupError: Throwable) {
+                error.addSuppressed(cleanupError)
+                throw error
+            }
             onFailure(error)
         }
     }
@@ -61,11 +73,18 @@ internal class AppleLocalMediaSessionState {
     fun unregister() {
         val currentManager = manager
         val currentListener = listener
-        if (currentManager != null && currentListener != null) {
-            runCatching { currentManager.removeOnActiveSessionsChangedListener(currentListener) }
-        }
         manager = null
         listener = null
+        audio = null
+        val cleanup = RuntimeResourceCleanup()
+        cleanup.attempt("previous media-session cleanup") { cleanupFailure?.let { throw it } }
+        cleanup.attempt("media-session listener") {
+            if (currentManager != null && currentListener != null) {
+                currentManager.removeOnActiveSessionsChangedListener(currentListener)
+            }
+        }
+        cleanupFailure = cleanup.failureOrNull()
+        cleanupFailure?.let { throw it }
     }
 
     /** True when audio is currently playing; defaults to true while the service is unknown. */

@@ -22,6 +22,7 @@ internal object ScreenStateMonitor {
     private val listeners = CopyOnWriteArraySet<ScreenStateListener>()
     private var appContext: Context? = null
     private var receiver: BroadcastReceiver? = null
+    private var cleanupFailure: Throwable? = null
 
     @Volatile
     var state: ScreenState = ScreenState.UNKNOWN
@@ -40,6 +41,7 @@ internal object ScreenStateMonitor {
     }
 
     fun initialize(context: Context) {
+        cleanupFailure?.let { throw it }
         if (appContext != null) return
         appContext = context.applicationContext
         registerReceiver()
@@ -54,13 +56,19 @@ internal object ScreenStateMonitor {
     }
 
     fun release() {
-        val ctx = appContext ?: return
-        runCatching {
-            receiver?.let { ctx.unregisterReceiver(it) }
-        }
+        val ctx = appContext
+        val previousReceiver = receiver
         listeners.clear()
         receiver = null
         appContext = null
+        state = ScreenState.UNKNOWN
+        cleanupFailure?.let { throw it }
+        try {
+            if (ctx != null && previousReceiver != null) ctx.unregisterReceiver(previousReceiver)
+        } catch (failure: Throwable) {
+            cleanupFailure = failure
+            throw failure
+        }
     }
 
     private fun registerReceiver() {
@@ -83,6 +91,7 @@ internal object ScreenStateMonitor {
 
     private class ScreenReceiver : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
+            if (receiver !== this) return
             when (intent?.action) {
                 Intent.ACTION_SCREEN_ON -> onScreenOn()
                 Intent.ACTION_SCREEN_OFF -> onScreenOff()

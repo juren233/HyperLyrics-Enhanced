@@ -11,6 +11,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import androidx.core.content.ContextCompat
+import com.juren233.hyperlyricsenhanced.root.utils.RuntimeResourceCleanup
+import com.juren233.hyperlyricsenhanced.root.utils.RuntimeResourceCleanupException
 import io.github.proify.lyricon.central.provider.player.SystemActiveAudioPlaybackMonitor
 import io.github.proify.lyricon.central.util.ScreenStateMonitor
 import java.util.concurrent.atomic.AtomicBoolean
@@ -34,39 +36,51 @@ object BridgeCentral {
 
     private val active = AtomicBoolean(false)
     @Volatile private var retired = false
+    private var cleanupFailure: RuntimeResourceCleanupException? = null
 
     /** End this generation before the replacement advertises its new Binder services. */
     fun releaseForReload() {
         retired = true
         active.set(false)
         discardPendingRegistrations()
-        if (receiverRegistered) runCatching { context.unregisterReceiver(receiver) }
+        val wasRegistered = receiverRegistered
         receiverRegistered = false
-        CentralRuntime.subscribers.closeAll()
-        CentralRuntime.providers.closeAll()
-        ScreenStateMonitor.release()
+        val cleanup = RuntimeResourceCleanup()
+        cleanup.attempt("previous Central cleanup") { cleanupFailure?.let { throw it } }
+        cleanup.attempt("retired Central receiver") {
+            if (wasRegistered) context.unregisterReceiver(receiver)
+        }
+        cleanup.attempt("retired Central subscribers") { CentralRuntime.subscribers.closeAll() }
+        cleanup.attempt("retired Central providers") { CentralRuntime.providers.closeAll() }
+        cleanup.attempt("retired Central screen monitor") { ScreenStateMonitor.release() }
+        cleanupFailure = cleanup.failureOrNull()
+        cleanupFailure?.let { throw it }
     }
 
     /** Reversible shutdown when HLE no longer has a lyric display consuming Central. */
     fun deactivate() {
-        val wasActive = synchronized(this) {
+        val (wasActive, wasRegistered) = synchronized(this) {
             val previous = active.getAndSet(false)
             discardPendingRegistrations()
-            if (receiverRegistered) context.unregisterReceiver(receiver)
+            val registered = receiverRegistered
             receiverRegistered = false
-            previous
+            previous to registered
         }
-        val failures = listOf(
-            runCatching { CentralRuntime.subscribers.closeAll(retire = false) },
-            runCatching { CentralRuntime.providers.closeAll(retire = false) },
-        ).mapNotNull { it.exceptionOrNull() }
-        ScreenStateMonitor.release()
+        val cleanup = RuntimeResourceCleanup()
+        cleanup.attempt("previous Central cleanup") { cleanupFailure?.let { throw it } }
+        cleanup.attempt("Central registration receiver") {
+            if (wasRegistered) context.unregisterReceiver(receiver)
+        }
+        cleanup.attempt("Central subscribers") { CentralRuntime.subscribers.closeAll(retire = false) }
+        cleanup.attempt("Central providers") { CentralRuntime.providers.closeAll(retire = false) }
+        cleanup.attempt("Central screen monitor") { ScreenStateMonitor.release() }
+        cleanupFailure = cleanup.failureOrNull()
+        cleanupFailure?.let { throw it }
         if (wasActive && ::context.isInitialized) {
             // One handoff notification lets clients register with an existing standalone Central.
             // Our registration receiver is already detached, so this cannot reclaim their binding.
-            context.sendBroadcast(Intent(Constants.ACTION_CENTRAL_BOOT_COMPLETED))
+            runCatching { context.sendBroadcast(Intent(Constants.ACTION_CENTRAL_BOOT_COMPLETED)) }
         }
-        check(failures.isEmpty()) { "Central shutdown failed: ${failures.firstOrNull()}" }
     }
     private val pendingRegistrations = LinkedHashMap<String, Intent>()
 
@@ -80,6 +94,7 @@ object BridgeCentral {
     fun initialize(appContext: Context, startActive: Boolean = true) {
         synchronized(this) {
             check(!retired) { "Central has been retired" }
+            cleanupFailure?.let { throw it }
             if (!::context.isInitialized) {
                 context = appContext.applicationContext
             }
@@ -88,6 +103,8 @@ object BridgeCentral {
                 CentralRuntime.activePlayers.setActiveAudioPlaybackMonitor(
                     SystemActiveAudioPlaybackMonitor(context),
                 )
+                // Keep ownership even if registration fails with an uncertain outcome.
+                receiverRegistered = true
                 ContextCompat.registerReceiver(
                     context,
                     receiver,
@@ -97,7 +114,6 @@ object BridgeCentral {
                     },
                     ContextCompat.RECEIVER_EXPORTED
                 )
-                receiverRegistered = true
             }
         }
         if (startActive) activate()
@@ -106,6 +122,7 @@ object BridgeCentral {
     /** Enables registration responses and replays Binder registrations captured in standby mode. */
     fun activate() {
         val pending = synchronized(this) {
+            cleanupFailure?.let { throw it }
             if (!active.compareAndSet(false, true)) return
             pendingRegistrations.values.toList().also { pendingRegistrations.clear() }
         }

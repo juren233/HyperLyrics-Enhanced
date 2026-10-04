@@ -17,6 +17,7 @@ import com.juren233.hyperlyricsenhanced.root.mediacard.notification.Notification
 import com.juren233.hyperlyricsenhanced.root.mediacard.notification.background.MediaBackgroundRendererPool
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import com.juren233.hyperlyricsenhanced.root.utils.RuntimePerfDiagnostics
+import com.juren233.hyperlyricsenhanced.root.utils.RuntimeResourceCleanup
 import io.github.libxposed.api.XposedInterface.HookHandle
 
 /** The host owns transferred objects; each module generation creates its own listeners and UI. */
@@ -39,24 +40,33 @@ internal object SystemUiHotReload {
             put("aod", NotificationMediaAodLyricHooker.snapshotForReload())
         }
         // Runs synchronously on the UI thread. A posted release is not a completed release.
-        BaseIslandRenderer.beginHotReload()
-        module.cleanupForHotReload()
-        IslandTouchHooker.releaseForReload()
-        IslandStatusBarSpaceMonitor.releaseForReload()
-        IslandStatusBarColorMonitor.releaseForReload()
-        IslandAlbumCoverStyleHooker.releaseAll()
-        IslandAlbumCoverStyleHooker.cleanup()
-        IslandExpandedMediaAmbientFlowHooker.releaseAll()
-        NotificationMediaCoverStyleHooker.releaseAll()
-        NotificationMediaAmbientFlowHooker.releaseAll()
-        NotificationMediaAodLyricHooker.releaseAll()
-        IslandMusicWaveColorHooker.releaseForReload()
-        IslandProgressGlowController.clearAll()
-        MediaBackgroundRendererPool.releaseAll()
-        BaseIslandRenderer.releaseForReload()
-        EmbeddedLyriconCentralController.releaseForReload()
-        RuntimePerfDiagnostics.stopForReload()
+        runTeardown(listOf(
+            "BaseIslandRenderer.beginHotReload" to { BaseIslandRenderer.beginHotReload() },
+            "module.cleanupForHotReload" to { module.cleanupForHotReload() },
+            "IslandTouchHooker.releaseForReload" to { IslandTouchHooker.releaseForReload() },
+            "IslandStatusBarSpaceMonitor.releaseForReload" to { IslandStatusBarSpaceMonitor.releaseForReload() },
+            "IslandStatusBarColorMonitor.releaseForReload" to { IslandStatusBarColorMonitor.releaseForReload() },
+            "IslandAlbumCoverStyleHooker.releaseAll" to { IslandAlbumCoverStyleHooker.releaseAll() },
+            "IslandAlbumCoverStyleHooker.cleanup" to { IslandAlbumCoverStyleHooker.cleanup() },
+            "IslandExpandedMediaAmbientFlowHooker.releaseAll" to { IslandExpandedMediaAmbientFlowHooker.releaseAll() },
+            "NotificationMediaCoverStyleHooker.releaseAll" to { NotificationMediaCoverStyleHooker.releaseAll() },
+            "NotificationMediaAmbientFlowHooker.releaseAll" to { NotificationMediaAmbientFlowHooker.releaseAll() },
+            "NotificationMediaAodLyricHooker.releaseAll" to { NotificationMediaAodLyricHooker.releaseAll() },
+            "IslandMusicWaveColorHooker.releaseForReload" to { IslandMusicWaveColorHooker.releaseForReload() },
+            "IslandProgressGlowController.clearAll" to { IslandProgressGlowController.clearAll() },
+            "MediaBackgroundRendererPool.releaseAll" to { MediaBackgroundRendererPool.releaseAll() },
+            "BaseIslandRenderer.releaseForReload" to { BaseIslandRenderer.releaseForReload() },
+            "EmbeddedLyriconCentralController.releaseForReload" to { EmbeddedLyriconCentralController.releaseForReload() },
+            "RuntimePerfDiagnostics.stopForReload" to { RuntimePerfDiagnostics.stopForReload() },
+        ))
         return state
+    }
+
+    /** Retire every owned subsystem even if an earlier teardown fails. */
+    internal fun runTeardown(steps: List<Pair<String, () -> Unit>>) {
+        val cleanup = RuntimeResourceCleanup()
+        steps.forEach { (name, release) -> cleanup.attempt(name, release) }
+        cleanup.throwIfFailed()
     }
 
     fun restore(module: HookEntry, state: Map<*, *>, oldHooks: List<HookHandle>) {

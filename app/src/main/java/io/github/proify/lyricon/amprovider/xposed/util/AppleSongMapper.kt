@@ -241,23 +241,26 @@ object AppleSongMapper {
         directions: List<LyricDirection>
     ) {
         val agentTypes = agents.associate { it.id to LyricAgent.getType(it.type) }
-        val declaredAgents = agents.joinToString(prefix = "[", postfix = "]") { agent ->
-            "${agent.id.orEmpty()}:${agent.typeName ?: agent.type}"
-        }
+        val agentIndices = agents.mapIndexed { index, agent -> agent.id to index }.toMap()
         val duetAgentCount = agents.count { agent ->
             val type = LyricAgent.getType(agent.type)
             type == LyricAgent.Type.PERSON || type == LyricAgent.Type.OTHER
         }
+        val sampleCount = minOf(appleLyrics.size, DIAGNOSTIC_LINE_SAMPLE_LIMIT)
         ProviderLogger.diagnostic(
-            "AppleSongMapper: declaredAgents=$declaredAgents, " +
-                "duetLayout=${duetAgentCount > 1}, lineCount=${appleLyrics.size}"
+            "AppleSongMapper: agentCount=${agents.size}, duetAgentCount=$duetAgentCount, " +
+                "duetLayout=${duetAgentCount > 1}, lineCount=${appleLyrics.size}, " +
+                "leftCount=${directions.count { it == LyricDirection.LEFT }}, " +
+                "rightCount=${directions.count { it == LyricDirection.RIGHT }}, " +
+                "sampleCount=$sampleCount, omittedLines=${appleLyrics.size - sampleCount}"
         )
-        appleLyrics.forEachIndexed { index, line ->
+        appleLyrics.take(sampleCount).forEachIndexed { index, line ->
             val agentId = line.agent.orEmpty()
             ProviderLogger.diagnostic(
-                "AppleSongMapper: line[$index] agent=$agentId, " +
+                "AppleSongMapper: line[$index] agentIndex=${agentIndices[agentId]}, " +
                     "type=${agentTypes[agentId]}, direction=${directions[index].logName}, " +
-                    "text=${line.mainText().orEmpty().take(DIAGNOSTIC_TEXT_LIMIT)}"
+                    "textLength=${line.mainText().orEmpty().length}, " +
+                    "wordCount=${line.words.size}, backgroundWordCount=${line.backgroundWords.size}"
             )
         }
     }
@@ -283,5 +286,5 @@ object AppleSongMapper {
     }
 
     private val APPLE_RTL_FIRST_LETTER_RANGE = 1424..1791
-    private const val DIAGNOSTIC_TEXT_LIMIT = 80
+    private const val DIAGNOSTIC_LINE_SAMPLE_LIMIT = 6
 }

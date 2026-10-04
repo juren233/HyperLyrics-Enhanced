@@ -20,6 +20,11 @@ import com.juren233.hyperlyricsenhanced.lyric.view.line.PositionUpdateDemand
 import com.juren233.hyperlyricsenhanced.root.LyriconDataBridge
 import com.juren233.hyperlyricsenhanced.root.SystemUiEnhancementGate
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
+import com.juren233.hyperlyricsenhanced.root.utils.DiagnosticDecisionGate
+import com.juren233.hyperlyricsenhanced.root.utils.LyricRuntimeDiagnostics
+import com.juren233.hyperlyricsenhanced.root.utils.RuntimeResourceCleanup
+import com.juren233.hyperlyricsenhanced.root.utils.RuntimeCallbackGate
+import com.juren233.hyperlyricsenhanced.root.utils.RuntimeResourceCleanupException
 import com.juren233.hyperlyricsenhanced.timeline.model.TrackIdentity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -75,17 +80,35 @@ class LocalTimelineDriver(
     private var positionJob: Job? = null
     private val positionScope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
 
+    private val callbackGate = RuntimeCallbackGate()
+    private val callbackGeneration = callbackGate.begin()
+    private val stopped get() = !callbackGate.isCurrent(callbackGeneration)
+    private val callbackToken = Any()
+    private var stopCompleted = false
+    private var cleanupFailure: RuntimeResourceCleanupException? = null
+
     init {
         registerActiveInstance(this)
     }
 
     fun start() {
+        check(!stopped) { "A stopped timeline driver cannot be restarted" }
         anchor.start(this)
     }
 
     fun stop() {
-        runOnMain {
-            stopPositionLoop()
+        // Invalidate queued/in-flight callbacks immediately, even for an off-main caller.
+        callbackGate.invalidate()
+        fun release() {
+            if (stopCompleted) {
+                cleanupFailure?.let { throw it }
+                return
+            }
+            stopCompleted = true
+            val cleanup = RuntimeResourceCleanup()
+            cleanup.attempt("timeline queued callbacks") { mainHandler.removeCallbacksAndMessages(callbackToken) }
+            cleanup.attempt("timeline position loop") { stopPositionLoop() }
+            cleanup.attempt("anchor listener") { anchor.removeListener(this) }
             activeSourceId = null
             appliedTrackKey = null
             appliedPackageName = null
@@ -99,10 +122,18 @@ class LocalTimelineDriver(
             anchorInactiveSinceMs = null
             sourceProgressWhileAnchorInactiveAtMs = 0L
             renderedPlaying = null
-            renderSink.onStop()
-            registerActiveInstance(null)
+            // A delayed stop from the previous attempt must not clear its replacement's sink.
+            if (clearActiveInstance(this)) cleanup.attempt("timeline render sink") { renderSink.onStop() }
+            cleanupFailure = cleanup.failureOrNull()
+            cleanupFailure?.let { throw it }
         }
-        anchor.removeListener(this)
+        if (Looper.myLooper() == mainHandler.looper) {
+            release()
+        } else {
+            check(mainHandler.post {
+                runCatching { release() }.onFailure { HookLogger.e(TAG, "时间轴清理失败", it) }
+            }) { "Timeline cleanup could not be scheduled" }
+        }
     }
 
     /** 所有歌词渲染面都关闭时停止时间轴，不保留上一首内容。 */
@@ -327,7 +358,7 @@ class LocalTimelineDriver(
         return if (anchor.anchor()?.isPlaying == true) src + age else src
     }
     override fun onMetadata(title: String?, artist: String?, album: String?, publisher: String?) = Unit
-    override fun currentPlaybackState(): Boolean = renderedPlaying ?: anchorPlaying
+    override fun currentPlaybackState(): Boolean = !stopped && (renderedPlaying ?: anchorPlaying)
 
     override fun onTrackChanged(track: TrackIdentity?) {
         runOnMain {
@@ -404,17 +435,17 @@ class LocalTimelineDriver(
     }
 
     override fun onPlaybackStateChanged(isPlaying: Boolean) {
-        if (isPlaying) {
-            anchorInactiveSinceMs = null
-            sourceProgressWhileAnchorInactiveAtMs = 0L
-        } else if (anchorPlaying || anchorInactiveSinceMs == null) {
-            anchorInactiveSinceMs = SystemClock.elapsedRealtime()
-            sourceProgressWhileAnchorInactiveAtMs = 0L
-            // Keep the last source value for duplicate rejection, but stop projecting it.
-            sourceAnchorElapsedMs = 0L
-        }
-        anchorPlaying = isPlaying
         runOnMain {
+            if (isPlaying) {
+                anchorInactiveSinceMs = null
+                sourceProgressWhileAnchorInactiveAtMs = 0L
+            } else if (anchorPlaying || anchorInactiveSinceMs == null) {
+                anchorInactiveSinceMs = SystemClock.elapsedRealtime()
+                sourceProgressWhileAnchorInactiveAtMs = 0L
+                // Keep the last source value for duplicate rejection, but stop projecting it.
+                sourceAnchorElapsedMs = 0L
+            }
+            anchorPlaying = isPlaying
             if (appliedTrackKey == null) return@runOnMain
             refreshRenderPlaybackState()
         }
@@ -476,8 +507,28 @@ class LocalTimelineDriver(
                 ?.let { nowMs - it },
         )
 
+    private val contentDecisionGate = DiagnosticDecisionGate(maxKeys = 8)
+
+    private fun recordContentDecision(content: TimelineContent, decision: String) {
+        if (!BuildConfig.DEBUG) return
+        runCatching {
+            val songIdentity = System.identityHashCode(content.song)
+            val anchorIdentity = anchor.currentTrack?.normalizedKey()?.hashCode()
+            val signature = "$decision|${content.sourceId}|$songIdentity|$anchorIdentity"
+            if (contentDecisionGate.shouldLog("content/$decision", signature, SystemClock.elapsedRealtime())) {
+                LyricRuntimeDiagnostics.record("timeline_content_decision") {
+                    "decision=$decision activeSource=$activeSourceId source=${content.sourceId} " +
+                        "songObj=$songIdentity anchorPresent=${anchor.currentTrack != null} " +
+                        "lyricLines=${content.song?.lyrics.orEmpty().size} streaming=${content.streaming}"
+                }
+            }
+        }
+    }
+
     private fun handleTimelineContent(content: TimelineContent) {
-        when (TimelineContentPolicy.decide(activeSourceId, anchor.currentTrack, content)) {
+        val decision = TimelineContentPolicy.decide(activeSourceId, anchor.currentTrack, content)
+        recordContentDecision(content, decision.name)
+        when (decision) {
             TimelineContentPolicy.Decision.APPLY -> applyContent(content)
             TimelineContentPolicy.Decision.HOLD_FOR_TRACK -> {
                 pendingContent = content
@@ -498,7 +549,10 @@ class LocalTimelineDriver(
     }
 
     private fun applyContent(content: TimelineContent) {
-        if (!SystemUiEnhancementGate.isLyricRuntimeEnabled()) return
+        if (!SystemUiEnhancementGate.isLyricRuntimeEnabled()) {
+            recordContentDecision(content, "FEATURE_DISABLED")
+            return
+        }
 
         // 媒体会话是 SystemUI 侧的曲目身份权威；来源身份只用于入站匹配。
         val track = anchor.currentTrack ?: content.track
@@ -679,10 +733,10 @@ class LocalTimelineDriver(
     }
 
     private fun startPositionLoop() {
-        if (positionJob?.isActive == true || appliedTrackKey == null) return
+        if (stopped || activeInstance !== this || positionJob?.isActive == true || appliedTrackKey == null) return
         positionJob = positionScope.launch {
             while (
-                isActive && PlaybackSmoothingPolicy.shouldDrivePositionLoop(
+                isActive && !stopped && activeInstance === this@LocalTimelineDriver && PlaybackSmoothingPolicy.shouldDrivePositionLoop(
                     appliedTrackKey = appliedTrackKey,
                     renderedPlaying = renderedPlaying,
                 )
@@ -737,7 +791,10 @@ class LocalTimelineDriver(
     }
 
     private fun runOnMain(action: () -> Unit) {
-        if (Looper.myLooper() == mainHandler.looper) action() else mainHandler.post(action)
+        if (stopped || activeInstance !== this) return
+        val guarded = callbackGate.guard(callbackGeneration) { if (activeInstance === this) action() }
+        if (Looper.myLooper() == mainHandler.looper) guarded.run()
+        else mainHandler.postAtTime(guarded, callbackToken, SystemClock.uptimeMillis())
     }
 
     companion object {
@@ -760,8 +817,16 @@ class LocalTimelineDriver(
         @Volatile
         private var activeInstance: LocalTimelineDriver? = null
 
+        @Synchronized
         internal fun registerActiveInstance(instance: LocalTimelineDriver?) {
             activeInstance = instance
+        }
+
+        @Synchronized
+        private fun clearActiveInstance(instance: LocalTimelineDriver): Boolean {
+            if (activeInstance !== instance) return false
+            activeInstance = null
+            return true
         }
     }
 }

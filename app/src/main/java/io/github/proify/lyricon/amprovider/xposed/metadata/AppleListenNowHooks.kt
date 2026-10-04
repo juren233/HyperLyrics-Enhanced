@@ -35,6 +35,8 @@ internal class AppleListenNowHooks(
         const val LISTEN_NOW_ARTWORK_CONTINUITY_TTL_MS = 10 * 60 * 1_000L
     }
 
+    private val metadataDiagnosticGate = createListenNowDiagnosticGate()
+
     private val inAppListenNowArtworkContinuityCache =
         Collections.synchronizedMap(
             object : LinkedHashMap<
@@ -141,13 +143,23 @@ internal class AppleListenNowHooks(
                         runCatching { liveDataGetValue.invoke(liveData) }.getOrNull()
                     )
                     if (BuildConfig.DEBUG) {
-                        host.logMetadataIdentity(
-                            event = "listen_now_artwork_builder_identity",
-                            details = "moduleVersion=${BuildConfig.VERSION_CODE}, " +
-                                "liveData=${objectIdentity(liveData)}, " +
-                                "currentUrlHash=${currentUrls.hashCode()}, " +
-                                debugInAppListenNowArtworkIdentity(identity),
-                        )
+                        val event = "listen_now_artwork_builder_identity"
+                        val identitySummary = debugInAppListenNowArtworkIdentity(identity)
+                        // Rebuilding a card creates a fresh LiveData. Only content/artwork
+                        // changes should make this repeated callback produce another trace.
+                        if (metadataDiagnosticGate.shouldLog(
+                                key = "$event/${identity.id}/${identity.persistentId}/${identity.contentType}",
+                                signature = "$identitySummary/currentUrlHash=${currentUrls.hashCode()}",
+                                nowMs = SystemClock.uptimeMillis(),
+                            )
+                        ) {
+                            host.logMetadataIdentity(
+                                event = event,
+                                details = "moduleVersion=${BuildConfig.VERSION_CODE}, " +
+                                    "liveData=${objectIdentity(liveData)}, " +
+                                    "currentUrlHash=${currentUrls.hashCode()}, " + identitySummary,
+                            )
+                        }
                     }
                     val key = identity.key ?: return@installHook
                     inAppListenNowArtworkKeysByLiveData[liveData] = key
@@ -345,7 +357,12 @@ internal class AppleListenNowHooks(
                 priority = RequestPriority.VISIBLE,
                 originalResolutionMode = InAppOriginalResolutionMode.AFTER_LOCALIZED,
             )
-            if (BuildConfig.DEBUG) {
+            if (BuildConfig.DEBUG && metadataDiagnosticGate.shouldLog(
+                    key = "listen_now_metadata_resolution_dispatched/$mediaId",
+                    signature = "$kind/VISIBLE/AFTER_LOCALIZED",
+                    nowMs = SystemClock.uptimeMillis(),
+                )
+            ) {
                 ProviderLogger.info(
                     "Apple Music 元数据链路: seq=${host.nextMetadataTraceSequence()}, " +
                         "event=listen_now_metadata_resolution_dispatched, " +
@@ -354,7 +371,13 @@ internal class AppleListenNowHooks(
                 )
             }
         }
-        if (BuildConfig.DEBUG) {
+        if (BuildConfig.DEBUG && metadataDiagnosticGate.shouldLog(
+                key = "listen_now_metadata_primed/$mediaId",
+                signature = "$kind/$entityType/$localizedCacheHit/${originalCacheHit != null}/" +
+                    "$originalCacheProbeDue/$originalApplied/$cacheMiss/${alias?.hashCode()}",
+                nowMs = SystemClock.uptimeMillis(),
+            )
+        ) {
             host.logMetadataIdentity(
                 event = "listen_now_metadata_primed",
                 details = "contentId=$mediaId, kind=$kind, entityType=$entityType, " +
@@ -363,7 +386,10 @@ internal class AppleListenNowHooks(
                     "originalCacheProbeDue=$originalCacheProbeDue, " +
                     "originalApplied=$originalApplied, " +
                     "cacheMiss=$cacheMiss, request=$cacheMiss, " +
-                    "effective=${alias?.title}/${alias?.artist}/${alias?.album}",
+                    "effectivePresent=${alias != null}, " +
+                    "effectiveTitleLength=${alias?.title?.length ?: 0}, " +
+                    "effectiveArtistLength=${alias?.artist?.length ?: 0}, " +
+                    "effectiveAlbumLength=${alias?.album?.length ?: 0}",
             )
         }
     }

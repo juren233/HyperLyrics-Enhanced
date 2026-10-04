@@ -8,6 +8,8 @@ import com.juren233.hyperlyricsenhanced.common.media.MediaMetadataHelper
 import com.juren233.hyperlyricsenhanced.lyric.source.LyricSink
 import com.juren233.hyperlyricsenhanced.lyric.source.LyricSource
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
+import com.juren233.hyperlyricsenhanced.root.utils.RuntimeResourceCleanup
+import com.juren233.hyperlyricsenhanced.root.utils.RuntimeResourceCleanupException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -19,7 +21,9 @@ class SuperLyricSource : LyricSource {
 
     private var app: android.app.Application? = null
     private var sink: LyricSink? = null
+    @Volatile
     private var receiver: ISuperLyricReceiver? = null
+    private var cleanupFailure: RuntimeResourceCleanupException? = null
     private val callbackScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private val contentAdapter = SuperLyricContentAdapter(SuperLyricHelper::getLatestLyric)
 
@@ -35,13 +39,11 @@ class SuperLyricSource : LyricSource {
     }
 
     override fun start(sink: LyricSink) {
+        cleanupFailure?.let { throw it }
         if (receiver != null) stop()
         this.sink = sink
         contentAdapter.clear()
-        if (!isAvailable()) {
-            HookLogger.w(TAG, "跳过接收端注册: reason=service_unavailable")
-            return
-        }
+        check(isAvailable()) { "SuperLyric service is unavailable" }
 
         val stub = object : ISuperLyricReceiver.Stub() {
             private var firstCallback = true
@@ -79,25 +81,28 @@ class SuperLyricSource : LyricSource {
         try {
             SuperLyricHelper.registerReceiver(stub)
             val registered = SuperLyricHelper.isReceiverRegistered(stub)
+            check(registered) { "SuperLyric receiver registration was not confirmed" }
             HookLogger.i(TAG, "更新接收端注册状态: registered=$registered")
-        } catch (e: Exception) {
-            HookLogger.e(TAG, "注册接收端失败", e)
+        } catch (error: Throwable) {
+            HookLogger.e(TAG, "注册接收端失败", error)
+            throw error
         }
     }
 
     override fun stop() {
         val previousReceiver = receiver
+        val previousSink = sink
         receiver = null
-        previousReceiver?.let {
-            try {
-                SuperLyricHelper.unregisterReceiver(it)
-            } catch (e: Exception) {
-                HookLogger.w(TAG, "注销接收端失败", e)
-            }
-        }
-        contentAdapter.clear()
-        sink?.onStop()
         sink = null
+        val cleanup = RuntimeResourceCleanup()
+        cleanup.attempt("previous SuperLyric cleanup") { cleanupFailure?.let { throw it } }
+        cleanup.attempt("SuperLyric receiver") {
+            previousReceiver?.let(SuperLyricHelper::unregisterReceiver)
+        }
+        cleanup.attempt("SuperLyric content") { contentAdapter.clear() }
+        cleanup.attempt("SuperLyric sink") { previousSink?.onStop() }
+        cleanupFailure = cleanup.failureOrNull()
+        cleanupFailure?.let { throw it }
         HookLogger.i(TAG, "数据源已停止")
     }
 

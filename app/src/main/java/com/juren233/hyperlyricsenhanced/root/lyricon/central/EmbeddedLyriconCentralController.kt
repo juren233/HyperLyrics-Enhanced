@@ -33,6 +33,7 @@ internal object EmbeddedLyriconCentralController {
     private var prepared = false
     private val mainHandler = Handler(Looper.getMainLooper())
     private var standaloneProbeTimeout: Runnable? = null
+    private var cleanupFailure: Throwable? = null
 
     internal fun releaseForReload() {
         standaloneProbeTimeout?.let(mainHandler::removeCallbacks)
@@ -43,14 +44,18 @@ internal object EmbeddedLyriconCentralController {
     }
 
     fun prepare(app: Application, enabled: Boolean = true) {
+        cleanupFailure?.let { throw it }
         if (!enabled) {
             standaloneProbeTimeout?.let(mainHandler::removeCallbacks)
             standaloneProbeTimeout = null
             if (!prepared) return
             prepared = false
             started.set(false)
-            runCatching { BridgeCentral.deactivate() }.onFailure { error ->
-                HookLogger.e(TAG, "停用内嵌 Lyricon Central 失败", error)
+            try {
+                BridgeCentral.deactivate()
+            } catch (error: Throwable) {
+                cleanupFailure = error
+                throw error
             }
             diagnostic("stage=central_disabled, reason=no_lyric_display")
             return

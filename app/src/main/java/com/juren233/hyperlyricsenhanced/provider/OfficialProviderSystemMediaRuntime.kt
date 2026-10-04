@@ -10,6 +10,8 @@ import android.app.Application
 import android.os.ParcelFileDescriptor
 import android.util.Log
 import com.juren233.hyperlyricsenhanced.common.UIConstants
+import com.juren233.hyperlyricsenhanced.root.utils.RuntimeResourceCleanup
+import com.juren233.hyperlyricsenhanced.root.utils.RuntimeResourceCleanupException
 import dalvik.system.InMemoryDexClassLoader
 import io.github.libxposed.api.XposedModule
 import java.nio.ByteBuffer
@@ -19,11 +21,13 @@ import java.util.concurrent.ConcurrentHashMap
 object OfficialProviderSystemMediaRuntime {
     private const val TAG = "OfficialProviderSystemMediaRuntime"
     private val activeRuntimes = ConcurrentHashMap<String, ActiveRuntime>()
+    private var cleanupFailure: RuntimeResourceCleanupException? = null
 
     fun installIfAvailable(
         module: XposedModule,
         application: Application,
     ): Boolean {
+        cleanupFailure?.let { throw it }
         var installed = false
         OfficialProviderCatalog.definitions
             .filter { it.systemMediaRuntime }
@@ -37,11 +41,16 @@ object OfficialProviderSystemMediaRuntime {
     }
 
     fun releaseAll() {
-        activeRuntimes.values.forEach { runtime ->
-            runCatching { runtime.plugin.releaseSystemMedia() }
-            runtime.host.release()
-        }
+        val previousRuntimes = activeRuntimes.values.toList()
         activeRuntimes.clear()
+        val cleanup = RuntimeResourceCleanup()
+        cleanup.attempt("previous SystemMedia cleanup") { cleanupFailure?.let { throw it } }
+        previousRuntimes.forEach { runtime ->
+            cleanup.attempt("SystemMedia plugin") { runtime.plugin.releaseSystemMedia() }
+            cleanup.attempt("SystemMedia host") { runtime.host.release() }
+        }
+        cleanupFailure = cleanup.failureOrNull()
+        cleanupFailure?.let { throw it }
     }
 
     private fun installDefinition(
@@ -88,22 +97,33 @@ object OfficialProviderSystemMediaRuntime {
                 "Provider 不是 SystemMedia 插件"
             }
             val host = OfficialProviderSystemMediaHostImpl(application, targetPackage)
-            plugin.installSystemMedia(host)
+            // Plugin installation may subscribe before throwing; rollback must own the host.
             activeRuntimes[definition.id] = ActiveRuntime(plugin, host)
-            module.log(
+            plugin.installSystemMedia(host)
+            runCatching { module.log(
                 Log.INFO,
                 TAG,
                 "SystemMedia Provider 已加载: id=${definition.id} package=$targetPackage " +
                     "version=$installedVersion",
-            )
+            ) }
             true
         }.onFailure { error ->
-            module.log(
+            activeRuntimes.remove(definition.id)?.let { runtime ->
+                val cleanup = RuntimeResourceCleanup()
+                cleanup.attempt("failed SystemMedia plugin") { runtime.plugin.releaseSystemMedia() }
+                cleanup.attempt("failed SystemMedia host") { runtime.host.release() }
+                cleanup.failureOrNull()?.let { failure ->
+                    cleanupFailure = failure
+                    error.addSuppressed(failure)
+                    throw error
+                }
+            }
+            runCatching { module.log(
                 Log.WARN,
                 TAG,
                 "SystemMedia Provider 未加载: id=${definition.id} package=$targetPackage " +
                     "reason=${error.message}",
-            )
+            ) }
         }.getOrDefault(false)
     }
 
