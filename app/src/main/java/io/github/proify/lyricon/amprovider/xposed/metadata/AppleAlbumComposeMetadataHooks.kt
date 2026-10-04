@@ -25,6 +25,7 @@ internal class AppleAlbumComposeMetadataHooks(
     private var currentData: Method? = null
     private var resumed: Method? = null
     private var refreshRows: Method? = null
+    private var refreshHeader: Method? = null
 
     fun install() {
         val resolver = runtime.hookResolver
@@ -34,6 +35,10 @@ internal class AppleAlbumComposeMetadataHooks(
             currentData = method(AppleMusicHookPoint.ALBUM_COMPOSE_CURRENT_DATA)
             resumed = method(AppleMusicHookPoint.ARTIST_COMPOSE_FRAGMENT_RESUMED)
             refreshRows = method(AppleMusicHookPoint.ALBUM_COMPOSE_REFRESH)
+            refreshHeader = method(AppleMusicHookPoint.ALBUM_COMPOSE_HEADER_REFRESH).also {
+                // The registrar records installation and the first native hit in Debug only.
+                if (BuildConfig.DEBUG) runtime.hookRegistrar.installHook(it)
+            }
             val vmGetter = method(AppleMusicHookPoint.ALBUM_COMPOSE_VIEW_MODEL_GETTER)
             val pageId = method(AppleMusicHookPoint.ALBUM_COMPOSE_PAGE_ID)
             val entityId = method(AppleMusicHookPoint.ALBUM_COMPOSE_ENTITY_ID)
@@ -72,7 +77,7 @@ internal class AppleAlbumComposeMetadataHooks(
                         page.registered[entity] = true
                         // Registration applies a warm alias before native code copies the row strings.
                         host.registerLibraryEntity(id, entity, kind)
-                        host.effectiveAlias(id)?.let { page.revision.update(id, it) }
+                        host.effectiveAlias(id)?.let { page.updateAlias(id, it) }
                     }
                 }
                 register(root)
@@ -93,7 +98,7 @@ internal class AppleAlbumComposeMetadataHooks(
                 val root = currentData?.invoke(vm) ?: return@installHook
                 val page = capture(vm, root) ?: return@installHook
                 page.catalogId?.let { request(page, it) }
-                if (page.revision.dirty()) queueRefresh(page)
+                if (page.needsRefresh()) queueRefresh(page)
             })
             runtime.hookRegistrar.installHook(method(AppleMusicHookPoint.ALBUM_COMPOSE_RESUME), after = { chain, _ ->
                 val fragment = chain.thisObject ?: return@installHook
@@ -102,7 +107,7 @@ internal class AppleAlbumComposeMetadataHooks(
                 val root = currentData?.invoke(vm) ?: return@installHook
                 val page = capture(vm, root) ?: return@installHook
                 page.catalogId?.let { request(page, it) }
-                if (page.revision.dirty()) queueRefresh(page)
+                if (page.needsRefresh()) queueRefresh(page)
             })
             runtime.hookRegistrar.installScopedHook(
                 method(AppleMusicHookPoint.ALBUM_COMPOSE_TRACK_MAPPER),
@@ -134,7 +139,7 @@ internal class AppleAlbumComposeMetadataHooks(
                         if (BuildConfig.DEBUG) host.logMetadataIdentity(
                             "album_compose_rebuild", "albumId=${page.id}, rows=${(result as? List<*>)?.size}, revision=${mapped.revision}"
                         )
-                        if (page.revision.dirty()) queueRefresh(page)
+                        if (page.needsRefresh()) queueRefresh(page)
                     }
                 },
                 exit = { mapping.remove() },
@@ -202,7 +207,7 @@ internal class AppleAlbumComposeMetadataHooks(
 
     fun refresh(id: String, alias: Alias): Int {
         val targets = pages.forMediaId(id)
-        targets.forEach { if (it.revision.update(id, alias)) queueRefresh(it) }
+        targets.forEach { if (it.updateAlias(id, alias)) queueRefresh(it) }
         return targets.size
     }
 
@@ -212,7 +217,18 @@ internal class AppleAlbumComposeMetadataHooks(
             page.queued = true
             runtime.mainHandler.post refresh@{
                 page.queued = false
-                if (!page.revision.dirty() || !active(page)) return@refresh
+                if (!page.needsRefresh() || !active(page)) return@refresh
+                if (page.headerRevision.dirty()) {
+                    val revision = page.headerRevision.snapshot()
+                    runCatching {
+                        refreshHeader?.invoke(page.vm.get())
+                        page.headerRevision.mapped(revision)
+                        if (BuildConfig.DEBUG) host.logMetadataIdentity(
+                            "album_compose_header_refresh", "albumId=${page.id}, revision=$revision"
+                        )
+                    }.onFailure { ProviderLogger.error("Apple Music Compose 专辑头刷新失败", it) }
+                }
+                if (!page.revision.dirty()) return@refresh
                 runCatching {
                     refreshRows?.invoke(page.vm.get())
                     if (BuildConfig.DEBUG) host.logMetadataIdentity(
@@ -235,6 +251,7 @@ internal class AppleAlbumRowRevision {
         return true
     }
     @Synchronized fun snapshot(): Long = revision
+    @Synchronized fun invalidateIfKnown() { if (aliases.isNotEmpty()) revision++ }
     @Synchronized fun mapped(value: Long) { rendered = maxOf(rendered, value) }
     @Synchronized fun dirty(): Boolean = rendered < revision
 }

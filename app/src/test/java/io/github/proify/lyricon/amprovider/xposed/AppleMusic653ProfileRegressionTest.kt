@@ -57,6 +57,7 @@ class AppleMusic653ProfileRegressionTest {
                     AppleMusicHookPoint.ALBUM_COMPOSE_TRACK_MAPPER,
                     AppleMusicHookPoint.ALBUM_COMPOSE_TRACK_COMPARATOR,
                     AppleMusicHookPoint.ALBUM_COMPOSE_REFRESH,
+                    AppleMusicHookPoint.ALBUM_COMPOSE_HEADER_REFRESH,
                     AppleMusicHookPoint.ALBUM_COMPOSE_ROW,
                     AppleMusicHookPoint.ALBUM_COMPOSE_ENTITY_ID,
                     AppleMusicHookPoint.ARTIST_COMPOSE_CONTENT,

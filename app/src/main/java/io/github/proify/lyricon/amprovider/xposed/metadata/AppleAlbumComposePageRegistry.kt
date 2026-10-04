@@ -30,8 +30,17 @@ internal class AppleAlbumComposePageRegistry {
         val ids = ConcurrentHashMap<String, String>()
         val registered = WeakIdentityMap<Any, Boolean>()
         val revision = AppleAlbumRowRevision()
+        val headerRevision = AppleAlbumRowRevision()
         val requested = mutableSetOf<String>() // main thread only
         var queued = false // main thread only
+
+        fun updateAlias(id: String, alias: Alias): Boolean {
+            val rowsChanged = revision.update(id, alias)
+            val headerChanged = id == catalogId && headerRevision.update(id, alias)
+            return rowsChanged || headerChanged
+        }
+
+        fun needsRefresh(): Boolean = revision.dirty() || headerRevision.dirty()
     }
 
     data class Row(val page: WeakReference<Page>, val id: String)
@@ -54,6 +63,7 @@ internal class AppleAlbumComposePageRegistry {
             ?: Page(vm, owner, root, rawId, catalogId).also { pages[vm] = it }
         // Catalog identity is optional for a root. Each song retains its own lookup identity.
         // Keep the Page itself: StateFlow may keep the first equal TrackDisplayItem instance.
+        if (page.root !== root) page.headerRevision.invalidateIfKnown()
         page.root = root
         page.rawId = rawId
         page.catalogId = catalogId
