@@ -41,6 +41,7 @@ import com.juren233.hyperlyricsenhanced.online.source.lunabeat.LunaBeatTtmlRepos
 import com.juren233.hyperlyricsenhanced.online.utils.ChineseUtils
 import com.juren233.hyperlyricsenhanced.root.LyriconDataBridge
 import com.juren233.hyperlyricsenhanced.root.island.renderer.BaseIslandRenderer
+import com.juren233.hyperlyricsenhanced.root.island.traceIslandPerformance
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import com.juren233.hyperlyricsenhanced.root.utils.MediaCardDiagnosticLogger
 import io.github.proify.lyricon.amprovider.xposed.AppleDirectBridgeContract
@@ -55,6 +56,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.decodeFromString
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -75,29 +77,114 @@ internal fun LyriconSource.applyOnlineTranslationResult(
     selection: OnlineTranslationSelection?,
     publicationStage: LyriconSource.OnlineTranslationPublicationStage = LyriconSource.OnlineTranslationPublicationStage.SINGLE,
 ) {
-    onlineTranslationRequest.deliver(generation) {
-        applyCurrentOnlineTranslationResult(generation, baseSong, selection, publicationStage)
+    // Register with the serial queue before returning so RACE_FINAL cannot overtake RACE_FIRST.
+    onlineTranslationRequest.markResultReady(generation)
+    fallbackScope.launch(start = CoroutineStart.UNDISPATCHED) {
+        if (!onlineTranslationRequest.beginPreparation(generation)) return@launch
+        try {
+            onlineTranslationPreparation.prepareAndCommit(
+                capture = {
+                    if (generation != onlineTranslationGeneration) null
+                    else captureTranslationApplySnapshot(baseSong)?.detached() ?: run {
+                        onlineTranslationRequest.deliver(generation) { }
+                        null
+                    }
+                },
+                prepare = { snapshot ->
+                    traceIslandPerformance("HLE.translation.prepare") {
+                        val published = snapshot.publishedSong?.let {
+                            ApplePronunciationVisibilityPolicy.filterSong(
+                                song = it,
+                                hideMandarinPinyin = snapshot.hideMandarinPinyin,
+                            )
+                        }
+                        val activeSelection = selection ?: OnlineTranslationSelection()
+                        val candidates = activeSelection.matchCandidates(snapshot.nativeSong)
+                        PreparedOnlineTranslation(
+                            publishedSong = published,
+                            candidates = candidates,
+                            merged = activeSelection.composeMatched(
+                                latestNativeSong = snapshot.nativeSong,
+                                currentPublishedSong = published,
+                                rebasedCandidates = candidates,
+                            ),
+                        )
+                    }
+                },
+                commit = { snapshot, prepared ->
+                    val delivered = onlineTranslationRequest.deliver(
+                        generation,
+                        stillCurrent = { snapshot == captureTranslationApplySnapshot(baseSong) },
+                    ) {
+                        traceIslandPerformance("HLE.translation.commit") {
+                            applyCurrentOnlineTranslationResult(
+                                generation, baseSong, selection, publicationStage, snapshot, prepared,
+                            )
+                        }
+                    }
+                    delivered || generation != onlineTranslationGeneration
+                },
+            )
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            // Release the ready flag only for this generation; a later receipt may retry it.
+            onlineTranslationRequest.deliver(generation) { }
+            HookLogger.e(LyriconSource.TAG, "在线翻译结果准备失败", error)
+        } finally {
+            onlineTranslationRequest.finishPreparation(generation)
+        }
     }
+}
+
+private data class TranslationApplySnapshot(
+    val playerPackage: String?,
+    val appleRequest: Boolean,
+    val nativeSong: LocalSong,
+    val publishedSong: LocalSong?,
+    val hideMandarinPinyin: Boolean,
+) {
+    // Song and its lyric lines are mutable models; the worker must not share their live instances.
+    fun detached() = copy(nativeSong = nativeSong.deepCopy(), publishedSong = publishedSong?.deepCopy())
+}
+
+private data class PreparedOnlineTranslation(
+    val publishedSong: LocalSong?,
+    val candidates: Map<Source, OnlineTranslationMatcher.Result>,
+    val merged: OnlineTranslationMatcher.Result?,
+)
+
+private fun LyriconSource.captureTranslationApplySnapshot(baseSong: LocalSong): TranslationApplySnapshot? {
+    val playerPackage = activeCentralPlayerPackageName
+    val appleRequest = playerPackage == LyriconSource.APPLE_MUSIC_PACKAGE || currentThirdPartySong == null
+    val nativeSong = (if (appleRequest) currentAppleSong else currentThirdPartySong)
+        ?.takeIf { isSameTrack(it, baseSong) } ?: return null
+    val published = (if (appleRequest) currentPublishedAppleSong else currentPublishedThirdPartySong)
+        ?.takeIf { isSameTrack(it, nativeSong) }
+    return TranslationApplySnapshot(
+        playerPackage, appleRequest, nativeSong, published, isHideMandarinPinyinEnabled(),
+    )
 }
 
 private fun LyriconSource.applyCurrentOnlineTranslationResult(
     generation: Int,
     baseSong: LocalSong,
     selection: OnlineTranslationSelection?,
-    publicationStage: LyriconSource.OnlineTranslationPublicationStage = LyriconSource.OnlineTranslationPublicationStage.SINGLE,
+    publicationStage: LyriconSource.OnlineTranslationPublicationStage,
+    snapshot: TranslationApplySnapshot,
+    prepared: PreparedOnlineTranslation,
 ) {
-    val appleRequest = activeCentralPlayerPackageName == LyriconSource.APPLE_MUSIC_PACKAGE ||
-        currentThirdPartySong == null
-    val nativeSong = if (appleRequest) currentAppleSong else currentThirdPartySong
+    val appleRequest = snapshot.appleRequest
+    val nativeSong = snapshot.nativeSong
     val generationMatches = generation == onlineTranslationGeneration
-    val sameTrack = nativeSong != null && isSameTrack(nativeSong, baseSong)
+    val sameTrack = isSameTrack(nativeSong, baseSong)
     val nativeLyricsAvailable = if (appleRequest) {
         hasAppleLyricsForOnlineEnrichment(
             song = nativeSong,
             confirmedNativeLyrics = currentAppleHasNativeLyrics,
         )
     } else {
-        !nativeSong?.lyrics.isNullOrEmpty()
+        !nativeSong.lyrics.isNullOrEmpty()
     }
     val enrichmentNeeded = needsOnlineEnrichment(nativeSong)
     val matchingEnabled = if (appleRequest) {
@@ -107,7 +194,7 @@ private fun LyriconSource.applyCurrentOnlineTranslationResult(
     }
     val overlayPublicationEnabled = !appleRequest ||
         isOnlineTranslationEnabledFor(LyriconSource.APPLE_MUSIC_PACKAGE)
-    val requestStillCurrent = generationMatches && nativeSong != null && sameTrack &&
+    val requestStillCurrent = generationMatches && sameTrack &&
         nativeLyricsAvailable && enrichmentNeeded && matchingEnabled
     pronunciationDiagnostic(
         "stage=apply_guard, generation=$generation, id=${baseSong.id}, " +
@@ -127,26 +214,10 @@ private fun LyriconSource.applyCurrentOnlineTranslationResult(
     }
 
     val latestNativeSong = nativeSong
-    val currentPublishedSong = (if (appleRequest) {
-        currentPublishedAppleSong
-    } else {
-        currentPublishedThirdPartySong
-    })
-        ?.takeIf { isSameTrack(it, latestNativeSong) }
-        ?.let { publishedSong ->
-            ApplePronunciationVisibilityPolicy.filterSong(
-                song = publishedSong,
-                hideMandarinPinyin = isHideMandarinPinyinEnabled(),
-            )
-        }
+    val currentPublishedSong = prepared.publishedSong
     val nativeLyricsChangedDuringRequest = baseSong.lyrics != latestNativeSong.lyrics
-    val mergedResult = (selection ?: OnlineTranslationSelection()).compose(
-        latestNativeSong = latestNativeSong,
-        currentPublishedSong = currentPublishedSong,
-    )
-    val candidateResults = selection
-        ?.matchCandidates(latestNativeSong)
-        .orEmpty()
+    val mergedResult = prepared.merged
+    val candidateResults = prepared.candidates
     pronunciationDiagnostic(
         "stage=result_rebased, generation=$generation, id=${baseSong.id}, " +
             "nativeLyricsChanged=$nativeLyricsChangedDuringRequest, " +
@@ -456,4 +527,3 @@ internal fun LyriconSource.cancelOnlineTranslation(
         publication.cancelEnrichment()
     }
 }
-

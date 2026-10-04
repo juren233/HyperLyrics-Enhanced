@@ -9,6 +9,7 @@ package com.juren233.hyperlyricsenhanced.root.island
 import java.lang.reflect.Method
 import java.lang.reflect.Modifier
 import java.util.ArrayDeque
+import java.util.concurrent.ConcurrentHashMap
 
 internal enum class IslandRelayoutEntry {
     UPDATE_BIG_ISLAND_VIEW_WIDTH,
@@ -27,8 +28,11 @@ internal data class ResolvedIslandRelayoutMethod(
 internal object IslandRelayoutMethodResolver {
     private const val UPDATE_METHOD = "updateBigIslandViewWidth"
     private const val CALCULATE_METHOD = "calculateBigIslandWidth"
+    private val cache = IslandRelayoutMethodCache(::resolveUncached)
 
-    fun resolve(hostClass: Class<*>): ResolvedIslandRelayoutMethod? {
+    fun resolve(hostClass: Class<*>): ResolvedIslandRelayoutMethod? = cache.resolve(hostClass)
+
+    private fun resolveUncached(hostClass: Class<*>): ResolvedIslandRelayoutMethod? {
         val method = hostClass.methods
             .asSequence()
             .filter { candidate ->
@@ -73,4 +77,21 @@ internal object IslandRelayoutMethodResolver {
         }
         return Int.MAX_VALUE
     }
+}
+
+/**
+ * A loaded Class has an immutable method set. Cache misses as well as matches: most ancestors
+ * visited after a lyric animation are ordinary ViewGroups without an island relayout entry.
+ * Class identity also keeps identically named classes from different plugin loaders separate.
+ * A failed lookup throws without inserting a result, so a later call can retry.
+ */
+internal class IslandRelayoutMethodCache(
+    private val resolveUncached: (Class<*>) -> ResolvedIslandRelayoutMethod?,
+) {
+    private class Resolution(val method: ResolvedIslandRelayoutMethod?)
+
+    private val resolutions = ConcurrentHashMap<Class<*>, Resolution>()
+
+    fun resolve(hostClass: Class<*>): ResolvedIslandRelayoutMethod? =
+        resolutions.computeIfAbsent(hostClass) { Resolution(resolveUncached(it)) }.method
 }

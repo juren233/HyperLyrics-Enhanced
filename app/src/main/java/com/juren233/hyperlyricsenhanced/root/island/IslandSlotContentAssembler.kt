@@ -344,6 +344,7 @@ internal object IslandSlotContentAssembler {
     ): Boolean {
         // Cancelling an older YoYo bind can synchronously request native layout. Its
         // reentrant refresh must not interrupt the pair that is being committed now.
+        if (IslandContentUpdateCoordinator.deferContent(view)) return false
         if (IslandSeparatedLyricTransition.isApplying(view) && !separatedMorphCommit) return false
         val independentSlots = usesIndependentLyricSlots(view, prefs, config)
         if (!IslandSeparatedLyricTransition.isApplying(view)) {
@@ -428,6 +429,7 @@ internal object IslandSlotContentAssembler {
         lineOverride: IRichLyricLine?,
         playbackActive: Boolean = true
     ): Boolean {
+        if (IslandContentUpdateCoordinator.deferContent(view)) return false
         // Line-only updates must also enter/leave the temporary metadata slot and
         // restore its lyric style; a full metadata refresh is not required at a gap boundary.
         if (config.usesBothLyricSlots) {
@@ -564,6 +566,7 @@ internal object IslandSlotContentAssembler {
         marquee: Boolean,
         playbackActive: Boolean
     ): Boolean {
+        if (IslandContentUpdateCoordinator.deferContent(view)) return false
         IslandShortLyricTransition.cancel(view)
         IslandSeparatedLyricTransition.cancel(view)
         IslandSeparatedLyricTransition.contentApplied(view, null)
@@ -1233,8 +1236,14 @@ internal object IslandSlotContentAssembler {
         // 落地点必须补一次岛宽重算（relayoutAfterDeferredContent），
         // 否则岛宽恒定按上一行计算。动画本身原样保留。
         val animatedUpdate: (View) -> Unit = { target ->
-            update(target)
-            relayoutAfterDeferredContent(target, config)
+            if (IslandContentUpdateCoordinator.deferContent(target)) {
+                // The signature was stored when this animation started. Its old closure must
+                // not overwrite a later song/line when the native morph ends.
+                invalidate(target)
+            } else {
+                update(target)
+                relayoutAfterDeferredContent(target, config)
+            }
         }
         // 动画速率只作用于歌词切换动画：以所选样式内置时长为 1x 缩放出/入段；
         // 优雅(1x)保持原样。间奏动画、第二行(下一句预览)上浮动画、入场揭示均不参与。
@@ -1245,7 +1254,9 @@ internal object IslandSlotContentAssembler {
         }
         when (view) {
             is RichLyricLineView -> if (entranceOnly) {
-                view.animateEntrance(preset) { update(this) }
+                view.animateEntrance(preset) {
+                    if (IslandContentUpdateCoordinator.deferContent(this)) invalidate(this) else update(this)
+                }
             } else {
                 // 动态长度：淡出期间冻结组宽，旧句对唱位置保持到新内容落地，
                 // 避免“旧句先移到另一侧再换字”。
@@ -1253,7 +1264,9 @@ internal object IslandSlotContentAssembler {
                 view.animateUpdate(switchPreset) { animatedUpdate(this) }
             }
             is SpaceGateRichLyricLineView -> if (entranceOnly) {
-                view.animateEntrance(preset) { update(this) }
+                view.animateEntrance(preset) {
+                    if (IslandContentUpdateCoordinator.deferContent(this)) invalidate(this) else update(this)
+                }
             } else {
                 view.beginContentSwitchFreeze()
                 view.animateUpdate(switchPreset) { animatedUpdate(this) }
@@ -1326,6 +1339,10 @@ internal object IslandSlotContentAssembler {
                     options.hideSecondaryContent
                 )
                 view.hugContentWidth = config.dynamicWidthEnabled
+                val widthLyrics = LyriconDataBridge.currentSong?.lyrics.takeIf { config.dynamicWidthEnabled }
+                val widthGate = IslandContentUpdateCoordinator.widthPreparationGate(view, config.dynamicWidthEnabled)
+                view.main.prepareIncomingWidths(widthLyrics, widthGate)
+                view.secondary.prepareIncomingWidths(widthLyrics, widthGate)
                 view.applyDuetFixedLength(duetSongLyrics, duetWidthCapOf(view))
                 view.onDeferredContentApplied = {
                     IslandViewHelper.triggerSystemRelayoutForDescendant(view)
@@ -1341,6 +1358,10 @@ internal object IslandSlotContentAssembler {
                 // 全岛歌词两槽共享同一整行，hug 收缩会让两侧都量出整行宽、
                 // 把岛宽计算撑大一倍；整带几何要求每槽恒占满自己的槽宽。
                 view.hugContentWidth = config.dynamicWidthEnabled && !config.isFullIslandMode
+                val widthLyrics = LyriconDataBridge.currentSong?.lyrics.takeIf { config.dynamicWidthEnabled }
+                val widthGate = IslandContentUpdateCoordinator.widthPreparationGate(view, config.dynamicWidthEnabled)
+                view.main.prepareIncomingWidths(widthLyrics, widthGate)
+                view.secondary.prepareIncomingWidths(widthLyrics, widthGate)
                 view.applyDuetFixedLength(duetSongLyrics, duetWidthCapOf(view))
                 view.onDeferredContentApplied = {
                     IslandViewHelper.triggerSystemRelayoutForDescendant(view)

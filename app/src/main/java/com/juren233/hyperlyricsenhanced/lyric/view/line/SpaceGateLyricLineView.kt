@@ -535,7 +535,8 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
     }
 
     fun refreshSizes() {
-        _model.updateSizes(textPaint, currentTypefaceSelector)
+        _model.updateSizes(textPaint, currentTypefaceSelector,
+            incomingWidth.preparedTextWidth(_model.text, textPaint, baseTypeface, narrowTypeface))
         rightPreview.configure(textPaint, currentTypefaceSelector, backgroundColors, currentFontSignature())
     }
 
@@ -1113,23 +1114,15 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
      * 与 [setLyric] 后的 [lineWidth] 实测走同一条管线，用于动态长度在
      * 预览提升动画期间同步预判内容落地后的岛宽。
      */
-    fun measureIncomingHugWidth(rawLine: LyricLine?): Int {
-        val line = if (rawLine?.text.isNullOrBlank()) null else rawLine
-        val model = line?.normalize()?.createModel() ?: return 0
-        val width = if (interludeDotsRenderer.isIndicator(model)) {
-            interludeDotsRenderer.width(textPaint.textSize)
-        } else {
-            model.updateSizes(textPaint, currentTypefaceSelector)
-            model.width
-        }
-        val shadowRadius = textPaint.getShadowLayerRadius()
-        val shadowPad = if (shadowRadius > 0f) {
-            ceil(shadowRadius + abs(textPaint.getShadowLayerDx())).toInt()
-        } else {
-            0
-        }
-        return ceil(width).toInt() + shadowPad
+    private val incomingWidth = IncomingLyricWidth()
+
+    internal fun prepareIncomingWidths(lyrics: List<com.juren233.hyperlyricsenhanced.lyric.model.RichLyricLine>?, gate: WidthPreparationGate) {
+        incomingWidth.prepare(lyrics, gate, textPaint, baseTypeface, narrowTypeface)
     }
+
+    fun measureIncomingHugWidth(rawLine: LyricLine?): Int = incomingWidth.measure(
+        rawLine, textPaint, baseTypeface, narrowTypeface, interludeDotsRenderer.width(textPaint.textSize),
+    )
 
     override fun onVisibilityAggregated(isVisible: Boolean) {
         super.onVisibilityAggregated(isVisible)
@@ -1152,6 +1145,7 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
     }
 
     override fun onDetachedFromWindow() {
+        incomingWidth.clear()
         PositionUpdateDemand.active.detach(this)
         super.onDetachedFromWindow()
         MarqueeDiag.i(this, "detached") {

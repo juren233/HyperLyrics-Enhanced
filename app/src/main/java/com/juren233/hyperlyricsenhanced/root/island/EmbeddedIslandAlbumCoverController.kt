@@ -538,47 +538,6 @@ internal fun findDescendantByResourceName(root: View, name: String): View? {
     return null
 }
 
-internal fun verticallyDiffusedEdgeColor(
-    edgeColumn: IntArray,
-    centerY: Int,
-    radius: Float,
-): Int {
-    val last = edgeColumn.lastIndex
-    if (last < 0) return Color.TRANSPARENT
-    val safeCenter = centerY.coerceIn(0, last)
-    if (radius < 0.5f) return edgeColumn[safeCenter]
-
-    // A Gaussian profile keeps the last-column color coherent near the centre while gradually
-    // borrowing nearby rows as the extension grows. A box average made the right side look like
-    // flat horizontal bands.
-    val sigma = (radius * 0.5f).coerceAtLeast(0.75f)
-    val extent = kotlin.math.ceil(radius).toInt().coerceAtLeast(1)
-    val denominator = 2f * sigma * sigma
-    var weightSum = 0f
-    var alpha = 0f
-    var red = 0f
-    var green = 0f
-    var blue = 0f
-    for (offset in -extent..extent) {
-        val row = (safeCenter + offset).coerceIn(0, last)
-        val distance = offset.toFloat()
-        val weight = kotlin.math.exp(-(distance * distance) / denominator)
-        val color = edgeColumn[row]
-        weightSum += weight
-        alpha += Color.alpha(color) * weight
-        red += Color.red(color) * weight
-        green += Color.green(color) * weight
-        blue += Color.blue(color) * weight
-    }
-
-    return Color.argb(
-        (alpha / weightSum).roundToInt().coerceIn(0, 255),
-        (red / weightSum).roundToInt().coerceIn(0, 255),
-        (green / weightSum).roundToInt().coerceIn(0, 255),
-        (blue / weightSum).roundToInt().coerceIn(0, 255),
-    )
-}
-
 internal fun blendArgbColors(from: Int, to: Int, fraction: Float): Int {
     val progress = fraction.coerceIn(0f, 1f)
     fun blend(start: Int, end: Int): Int =

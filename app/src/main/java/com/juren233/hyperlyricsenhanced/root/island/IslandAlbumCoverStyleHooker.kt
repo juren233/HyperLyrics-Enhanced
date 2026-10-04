@@ -138,14 +138,14 @@ internal object IslandAlbumCoverStyleHooker {
             )
 
             xposedModule.deoptimize(fixMethod)
-            xposedModule.hook(fixMethod).intercept(SetIconHook(accessor, accessor.fixIconField, "setFixIcon"))
+            xposedModule.hook(fixMethod).intercept(SetIconHook(accessor, accessor.fixIconField, fixMethod))
             setIconMethod?.let {
                 xposedModule.deoptimize(it)
-                xposedModule.hook(it).intercept(SetIconHook(accessor, accessor.fixIconField, "setIcon"))
+                xposedModule.hook(it).intercept(SetIconHook(accessor, accessor.fixIconField, it))
             }
             setSmallIconMethod?.let {
                 xposedModule.deoptimize(it)
-                xposedModule.hook(it).intercept(SetIconHook(accessor, accessor.smallIconField, "setSmallIcon"))
+                xposedModule.hook(it).intercept(SetIconHook(accessor, accessor.smallIconField, it))
             }
             installTemplateGeometryHook(xposedModule, classLoader)
             HookLogger.i(
@@ -556,10 +556,24 @@ internal object IslandAlbumCoverStyleHooker {
     private class SetIconHook(
         internal val accessor: CoverAccessor,
         private val targetField: Field,
-        private val methodName: String,
+        private val method: Method,
     ) : Hooker {
+        private val methodName = method.name
+
         override fun intercept(chain: Chain): Any? {
             if (SystemUiHookLifetime.retired) return chain.proceed()
+            val deferred = runCatching {
+                if (restoringNative.get() == true) return@runCatching false
+                val holder = chain.thisObject
+                val data = chain.args.firstOrNull()
+                val icon = holder?.let { runCatching { targetField.get(it) as? ImageView }.getOrNull() }
+                holder != null && data != null && icon?.drawable != null &&
+                    isMediaAlbum(accessor, holder) &&
+                    IslandContentUpdateCoordinator.deferAction(icon, icon) {
+                        if (icon.isAttachedToWindow) method.invoke(holder, data)
+                    }
+            }.getOrDefault(false)
+            if (deferred) return null
             val result = chain.proceed()
             if (restoringNative.get() == true) return result
             runCatching {

@@ -28,6 +28,7 @@ internal object IslandLyricTextInjector {
     private const val TAG = "IslandLyricTextInjector"
 
     fun injectSlots(rootView: ViewGroup, reconfigureExisting: Boolean = true, suppressAnimation: Boolean = false): Boolean {
+        if (IslandContentUpdateCoordinator.deferContent(rootView)) return false
         val prefs = HookEntry.instance?.prefs ?: return false
         val config = IslandSlotRuntimeConfig.from(prefs)
 
@@ -235,17 +236,24 @@ internal object IslandLyricTextInjector {
     }
 
     fun refreshCurrentContent(rootView: ViewGroup, includeLyricSlots: Boolean = true, force: Boolean = false, suppressAnimation: Boolean = false): Boolean {
+        if (IslandContentUpdateCoordinator.deferContent(rootView)) return false
         val prefs = HookEntry.instance?.prefs ?: return false
         val config = IslandSlotRuntimeConfig.from(prefs)
         val packageName = LyriconDataBridge.currentLyricPackageName.orEmpty()
-        val mediaInfo = MediaMetadataHelper.getMediaInfo(rootView.context, packageName, HookLogger)
+        val mediaInfo = traceIslandPerformance("HLE.content.mediaInfo") {
+            MediaMetadataHelper.getMediaInfo(rootView.context, packageName, HookLogger)
+        }
 
         var changed = false
         if (config.shouldInjectLeft && (includeLyricSlots || config.leftMode != 7)) {
-            changed = refreshSlotContent(rootView, IslandProbeUtils.LEFT_TEST_VIEW_TAG, config.leftMode, prefs, config, force, suppressAnimation, mediaInfo) || changed
+            changed = traceIslandPerformance("HLE.content.left") {
+                refreshSlotContent(rootView, IslandProbeUtils.LEFT_TEST_VIEW_TAG, config.leftMode, prefs, config, force, suppressAnimation, mediaInfo)
+            } || changed
         }
         if (config.shouldInjectRight && (includeLyricSlots || config.rightMode != 7)) {
-            changed = refreshSlotContent(rootView, IslandProbeUtils.RIGHT_TEST_VIEW_TAG, config.rightMode, prefs, config, force, suppressAnimation, mediaInfo) || changed
+            changed = traceIslandPerformance("HLE.content.right") {
+                refreshSlotContent(rootView, IslandProbeUtils.RIGHT_TEST_VIEW_TAG, config.rightMode, prefs, config, force, suppressAnimation, mediaInfo)
+            } || changed
         }
 
         if (config.usesSpaceGateView) {

@@ -9,8 +9,12 @@ object YoYoAnimation {
     private const val KEY_ANIM_LOCK = 0x7F_114514
     private const val KEY_ANIM_HANDLE = 0x7F_191981
 
-    /** Includes the old-content completion callback, before the entrance animation starts. */
-    internal fun isRunning(target: View): Boolean = target.getTag(KEY_ANIM_LOCK) == true
+    internal fun isRunning(target: View): Boolean = state(target)?.running == true
+
+    /** Width needs the new binding, not the end of its entrance animation. */
+    internal fun isAwaitingContent(target: View): Boolean = state(target)?.awaitingContent == true
+
+    private fun state(target: View) = target.getTag(KEY_ANIM_LOCK) as? ContentAnimationState
 
     fun <T : View> switchContent(
         target: T,
@@ -23,7 +27,8 @@ object YoYoAnimation {
             action(target)
             return
         }
-        target.setTag(KEY_ANIM_LOCK, true)
+        val transaction = ContentAnimationState(awaitingContent = true)
+        target.setTag(KEY_ANIM_LOCK, transaction)
 
         val outHandle = YoYo.with(outConfig.technique)
             .duration(outConfig.duration)
@@ -37,16 +42,16 @@ object YoYoAnimation {
                     // 后续所有应用都按签名相同跳过，视图停在旧内容（单曲循环下
                     // 没有元数据刷新来补救，表现为下首预览残留）。取消时必须把
                     // 排队中的写入立即落地。
-                    val queued = target.getTag(KEY_ANIM_LOCK) == true
-                    target.setTag(KEY_ANIM_LOCK, false)
-                    if (queued) action(target)
+                    val queued = transaction.cancel()
+                    if (state(target) === transaction && queued) action(target)
                 }
 
                 override fun onAnimationEnd(p0: Animator) {
-                    if (target.getTag(KEY_ANIM_LOCK) != true) return
+                    if (state(target) !== transaction || !transaction.claimContent()) return
 
                     // 执行内容更新
                     action(target)
+                    if (state(target) !== transaction || !transaction.running) return
 
                     val inHandle = YoYo.with(inConfig.technique)
                         .duration(inConfig.duration)
@@ -55,12 +60,12 @@ object YoYoAnimation {
                             override fun onAnimationStart(p0: Animator) {}
                             override fun onAnimationRepeat(p0: Animator) {}
                             override fun onAnimationCancel(p0: Animator) {
-                                target.setTag(KEY_ANIM_LOCK, false)
+                                transaction.finish()
                             }
 
                             override fun onAnimationEnd(p0: Animator) {
-                                target.setTag(KEY_ANIM_LOCK, false)
-                                target.setTag(KEY_ANIM_HANDLE, null)
+                                transaction.finish()
+                                if (state(target) === transaction) target.setTag(KEY_ANIM_HANDLE, null)
                             }
                         })
                         .playOn(target)
@@ -82,7 +87,8 @@ object YoYoAnimation {
         action(target)
         if (target.parent == null || !target.isAttachedToWindow) return
 
-        target.setTag(KEY_ANIM_LOCK, true)
+        val transaction = ContentAnimationState(awaitingContent = false)
+        target.setTag(KEY_ANIM_LOCK, transaction)
         val inHandle = YoYo.with(inConfig.technique)
             .duration(inConfig.duration)
             .interpolate(inConfig.interpolator)
@@ -91,13 +97,13 @@ object YoYoAnimation {
                 override fun onAnimationRepeat(animation: Animator) = Unit
 
                 override fun onAnimationCancel(animation: Animator) {
-                    target.setTag(KEY_ANIM_LOCK, false)
-                    target.setTag(KEY_ANIM_HANDLE, null)
+                    transaction.finish()
+                    if (state(target) === transaction) target.setTag(KEY_ANIM_HANDLE, null)
                 }
 
                 override fun onAnimationEnd(animation: Animator) {
-                    target.setTag(KEY_ANIM_LOCK, false)
-                    target.setTag(KEY_ANIM_HANDLE, null)
+                    transaction.finish()
+                    if (state(target) === transaction) target.setTag(KEY_ANIM_HANDLE, null)
                 }
             })
             .playOn(target)
@@ -106,10 +112,14 @@ object YoYoAnimation {
     }
 
     fun cancelAnimation(target: View) {
+        val transaction = state(target)
         val handle = target.getTag(KEY_ANIM_HANDLE) as? YoYo.YoYoString
         handle?.stop(true)
-        target.setTag(KEY_ANIM_HANDLE, null)
-        target.setTag(KEY_ANIM_LOCK, false)
+        if (state(target) === transaction) {
+            transaction?.finish()
+            target.setTag(KEY_ANIM_HANDLE, null)
+            target.setTag(KEY_ANIM_LOCK, null)
+        }
     }
 }
 

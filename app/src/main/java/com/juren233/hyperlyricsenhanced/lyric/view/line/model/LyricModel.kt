@@ -33,13 +33,10 @@ data class LyricModel(
 
     fun updateSizes(
         paint: Paint,
-        typefaceSelector: ((Char) -> Typeface)? = null
+        typefaceSelector: ((Char) -> Typeface)? = null,
+        preparedTextWidth: Float? = null,
     ) {
-        width = if (typefaceSelector != null) {
-            MixedTypefaceText.measureText(paint, text, typefaceSelector)
-        } else {
-            getTextFullWidth(paint, text)
-        }
+        width = preparedTextWidth ?: measureLyricTextWidth(paint, text, typefaceSelector)
         var previous: WordModel? = null
         words.forEach { word ->
             word.updateSizes(previous, paint, typefaceSelector)
@@ -47,21 +44,15 @@ data class LyricModel(
         }
     }
 
-    /**
-     * 获取文字绘制所需的实际宽度
-     */
-    private fun getTextFullWidth(paint: Paint, text: String): Float {
-        val measureWidth = paint.measureText(text)
-        val bounds = Rect()
-        paint.getTextBounds(text, 0, text.length, bounds)
+}
 
-        // 如果 bounds.right 大于 measureWidth，说明文字向右侧溢出了
-        return if (bounds.right > measureWidth) {
-            bounds.right.toFloat()
-        } else {
-            measureWidth
-        }
-    }
+/** The same natural text width for live drawing and background width preparation. */
+internal fun measureLyricTextWidth(paint: Paint, text: String, selector: ((Char) -> Typeface)?): Float {
+    if (selector != null) return MixedTypefaceText.measureText(paint, text, selector)
+    val advance = paint.measureText(text)
+    val bounds = Rect()
+    paint.getTextBounds(text, 0, text.length, bounds)
+    return maxOf(advance, bounds.right.toFloat())
 }
 
 internal fun emptyLyricModel(): LyricModel = LyricModel(

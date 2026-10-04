@@ -83,13 +83,15 @@ internal fun IslandAlbumCoverStyleHooker.applyGradientCover(
 
     IslandAlbumCoverStyleHooker.ensureArtworkContinuity(fixIcon, "real")
     val smallIsland = state.isSmallIslandState()
-    val embeddedHost = if (smallIsland) {
-        (IslandAlbumCoverStyleHooker.callViewGetter(holder, "getSmallContainer") as? ViewGroup)
-            ?: (state.module as? android.widget.FrameLayout)
-                ?.takeIf { IslandAlbumCoverStyleHooker.isSmallIslandModule(it) }
-    } else {
-        IslandAlbumCoverStyleHooker.callViewGetter(holder, "getBigContainer") as? ViewGroup
-    }
+    // Original phone classes2.dex (APK f07be6a3…): container getters belong to
+    // DynamicIslandBaseContentView/IslandContentViewHolder, not IslandIconViewHolder.
+    // Binding the icon must update its existing background in this same callback.
+    val embeddedHost = IslandAlbumCoverHostResolver.find<View>(
+        source = fixIcon,
+        smallIsland = smallIsland,
+        parent = { it.parent as? View },
+        resourceName = ::resourceName,
+    ) as? ViewGroup
     if (embeddedHost != null &&
         EmbeddedIslandAlbumCoverController.apply(embeddedHost, fixIcon, smallIsland)
     ) {

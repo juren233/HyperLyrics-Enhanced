@@ -3,6 +3,8 @@ package com.juren233.hyperlyricsenhanced.root.island
 import android.annotation.SuppressLint
 import android.view.View
 import android.view.ViewGroup
+import android.widget.FrameLayout
+import android.widget.LinearLayout
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.root.HookEntry
@@ -20,6 +22,7 @@ object IslandViewHelper {
     private val SYSTEMUI_PKG_NAMES = arrayOf("miui.systemui.plugin", "com.android.systemui")
     private val originalMargins = WeakHashMap<View, MarginSnapshot>()
     private val isRelayouting = ThreadLocal.withInitial { false }
+    private val premeasureScope = IslandPremeasureScope<ViewGroup, View>()
     private val loggedRelayoutClasses = Collections.synchronizedSet(
         Collections.newSetFromMap(WeakHashMap<Class<*>, Boolean>()),
     )
@@ -153,6 +156,10 @@ object IslandViewHelper {
     fun forceLayoutIslandAreas(rootView: ViewGroup) {
         val areaLeft = findViewByName(rootView, "area_left")
         val areaRight = findViewByName(rootView, "area_right")
+        forceLayoutIslandAreas(rootView, areaLeft, areaRight)
+    }
+
+    private fun forceLayoutIslandAreas(rootView: ViewGroup, areaLeft: View?, areaRight: View?) {
         if (areaLeft == null && areaRight == null) {
             // 兜底：不同版本区域容器缺失时，直接标记注入模块所在的父容器
             forceLayoutRecursively(findViewByName(rootView, IslandProbeUtils.LEFT_PARENT_NAME))
@@ -184,25 +191,33 @@ object IslandViewHelper {
      * 因此每次岛宽计算前把左右区以 AT_MOST(可用屏宽) 重新测量到内容自然宽度，
      * 让计算输入不再依赖上一次布局宽度。高度沿用当前实测值，不扰动纵向布局。
      */
-    fun measureIslandAreasToNaturalWidth(rootView: ViewGroup) {
+    private fun measureIslandAreasToNaturalWidth(
+        rootView: ViewGroup,
+        areaLeft: View?,
+        areaRight: View?,
+    ): IslandNaturalWidthSnapshot<View>? =
         runCatching {
             val available = rootView.width.takeIf { it > 0 }
                 ?: rootView.resources.displayMetrics.widthPixels
             val widthSpec = View.MeasureSpec.makeMeasureSpec(available, View.MeasureSpec.AT_MOST)
-            listOfNotNull(
-                findViewByName(rootView, "area_left"),
-                findViewByName(rootView, "area_right"),
-            ).forEach { area ->
+            val leftHeight = areaLeft?.measuredHeight?.coerceAtLeast(1) ?: 1
+            fun measure(area: View?, height: Int) {
+                if (area == null) return
                 val heightSpec = View.MeasureSpec.makeMeasureSpec(
-                    area.measuredHeight.coerceAtLeast(1),
+                    height,
                     View.MeasureSpec.EXACTLY,
                 )
                 area.measure(widthSpec, heightSpec)
             }
+            measure(areaLeft, leftHeight)
+            val rightHeight = areaRight?.measuredHeight?.coerceAtLeast(1) ?: 1
+            measure(areaRight, rightHeight)
+            if (areaLeft == null || areaRight == null) null else {
+                IslandNaturalWidthSnapshot(areaLeft, areaRight, available, leftHeight, rightHeight)
+            }
         }.onFailure { e ->
             HookLogger.e("IslandViewHelper", "区域自然宽度预测量失败", e)
-        }
-    }
+        }.getOrNull()
 
     internal fun isDynamicWidthEnabled(): Boolean {
         return HookEntry.instance?.prefs?.getBoolean(
@@ -223,11 +238,52 @@ object IslandViewHelper {
      * 覆盖 triggerSystemRelayout 与系统自发 calculateBigIslandWidth 两条路径；
      * 并把区域预测量到内容自然宽度，保证宽度计算的输入不受上一次布局宽度污染。
      */
-    fun forceLayoutIslandAreasIfDynamicWidth(rootView: ViewGroup) {
-        if (isDynamicWidthEnabled()) {
-            forceLayoutIslandAreas(rootView)
-            measureIslandAreasToNaturalWidth(rootView)
+    internal fun forceLayoutIslandAreasIfDynamicWidth(rootView: ViewGroup): IslandNaturalWidthSnapshot<View>? {
+        if (!isDynamicWidthEnabled()) return null
+        val left = findViewByName(rootView, "area_left")
+        val right = findViewByName(rootView, "area_right")
+        forceLayoutIslandAreas(rootView, left, right)
+        return measureIslandAreasToNaturalWidth(rootView, left, right)
+    }
+
+    /** Reuse only the immediately preceding successful measurement, before any native calculation. */
+    internal fun reuseNaturalWidthPremeasure(rootView: ViewGroup, contentChanged: Boolean): Boolean {
+        val prepared = premeasureScope.take(rootView) ?: return false
+        if (!isDynamicWidthEnabled() || contentChanged) return false
+        val left = findViewByName(rootView, "area_left")
+        val right = findViewByName(rootView, "area_right")
+        val available = rootView.width.takeIf { it > 0 }
+            ?: rootView.resources.displayMetrics.widthPixels
+        return prepared.isStillValid(
+            left = left,
+            right = right,
+            availableWidth = available,
+            leftHeight = left?.measuredHeight?.coerceAtLeast(1) ?: 1,
+            rightHeight = right?.measuredHeight?.coerceAtLeast(1) ?: 1,
+            contentChanged = contentChanged,
+            layoutPending = hasPendingLayout(left) || hasPendingLayout(right),
+        )
+    }
+
+    private fun hasPendingLayout(view: View?): Boolean {
+        if (view == null) return true
+        // A normal parent does not measure GONE children, so forceLayout() leaves their flag
+        // set even after a successful area measurement. A visibility change dirties the parent.
+        // Keep unknown custom parents and FrameLayouts that measure GONE children conservative.
+        if (view.visibility == View.GONE) {
+            val parent = view.parent
+            if (parent?.javaClass == LinearLayout::class.java) return false
+            if ((parent?.javaClass == FrameLayout::class.java || parent is MaxWidthFrameLayout) &&
+                !(parent as FrameLayout).measureAllChildren
+            ) return false
         }
+        if (view.isLayoutRequested) return true
+        if (view is ViewGroup) {
+            for (index in 0 until view.childCount) {
+                if (hasPendingLayout(view.getChildAt(index))) return true
+            }
+        }
+        return false
     }
 
     /**
@@ -259,7 +315,9 @@ object IslandViewHelper {
      * 预测量不在关联作用域内，Hook 不可用时安全退化为完整原生行为。
      */
     fun triggerLyricContentRelayout(islandView: ViewGroup) {
-        triggerRelayout(islandView, protectLyricLottie = true)
+        traceIslandPerformance("HLE.relayout.lyric") {
+            triggerRelayout(islandView, protectLyricLottie = true)
+        }
     }
 
     /**
@@ -273,7 +331,9 @@ object IslandViewHelper {
      * 吞掉或手工替代事件路径，否则会破坏可见伸缩或状态时序。
      */
     fun triggerSystemRelayout(islandView: ViewGroup) {
-        triggerRelayout(islandView, protectLyricLottie = false)
+        traceIslandPerformance("HLE.relayout.system") {
+            triggerRelayout(islandView, protectLyricLottie = false)
+        }
     }
 
     private fun triggerRelayout(
@@ -281,6 +341,7 @@ object IslandViewHelper {
         protectLyricLottie: Boolean,
     ) {
         if (isRelayouting.get() == true) return
+        if (IslandContentUpdateCoordinator.deferRelayout(islandView, protectLyricLottie)) return
         if (BuildConfig.DEBUG) {
             IslandBackgroundTraceDiagnostics.event(
                 if (protectLyricLottie) "模块歌词宽度刷新" else "模块主动布局刷新",
@@ -291,7 +352,9 @@ object IslandViewHelper {
         isRelayouting.set(true)
         try {
             runCatching {
-                forceLayoutIslandAreasIfDynamicWidth(islandView)
+                val prepared = traceIslandPerformance("HLE.relayout.premeasure") {
+                    forceLayoutIslandAreasIfDynamicWidth(islandView)
+                }
                 val viewClass = islandView.javaClass
                 val resolved = IslandRelayoutMethodResolver.resolve(viewClass) ?: run {
                     if (loggedMissingRelayoutClasses.add(viewClass)) {
@@ -309,16 +372,14 @@ object IslandViewHelper {
                         "超级岛布局刷新入口: ${resolved.diagnosticSummary}",
                     )
                 }
-                if (resolved.entry == IslandRelayoutEntry.UPDATE_BIG_ISLAND_VIEW_WIDTH) {
-                    if (protectLyricLottie) {
+                premeasureScope.run(islandView, prepared) {
+                    if (resolved.entry == IslandRelayoutEntry.UPDATE_BIG_ISLAND_VIEW_WIDTH && protectLyricLottie) {
                         IslandWidthEventRebindGuard.aroundLyricWidthRelayout(islandView) {
                             resolved.method.invoke(islandView)
                         }
                     } else {
                         resolved.method.invoke(islandView)
                     }
-                } else {
-                    resolved.method.invoke(islandView)
                 }
             }.onFailure { e ->
                 HookLogger.e("IslandViewHelper", "超级岛布局刷新失败", e)

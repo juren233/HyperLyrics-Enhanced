@@ -149,7 +149,7 @@ internal fun LyriconSource.scheduleOnlineTranslation(baseSong: LocalSong): Boole
             val applyStartedAtNanos = SystemClock.elapsedRealtimeNanos()
             sourceSwitchCoreStage(
                 request = sourceSwitchRequest,
-                stage = "translation_apply_main_started",
+                stage = "translation_prepare_enqueue_started",
                 details = "generation=$generation,publicationStage=$publicationStage," +
                     "queueWaitMs=" +
                     ((applyStartedAtNanos - postedAtNanos) / 1_000_000.0),
@@ -164,7 +164,7 @@ internal fun LyriconSource.scheduleOnlineTranslation(baseSong: LocalSong): Boole
             } finally {
                 sourceSwitchCoreStage(
                     request = sourceSwitchRequest,
-                    stage = "translation_apply_main_finished",
+                    stage = "translation_prepare_enqueue_finished",
                     details = "generation=$generation,publicationStage=$publicationStage," +
                         "elapsedMs=" +
                         ((SystemClock.elapsedRealtimeNanos() - applyStartedAtNanos) /

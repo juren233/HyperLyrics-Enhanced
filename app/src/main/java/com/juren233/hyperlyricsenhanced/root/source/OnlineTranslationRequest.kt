@@ -25,6 +25,7 @@ internal class OnlineTranslationRequest<P> {
     private var firstAccepted: Int? = null
     private var pending: P? = null
     private var resultReady = false
+    private var preparations = 0
 
     data class Snapshot<P>(
         val generation: Int,
@@ -37,7 +38,8 @@ internal class OnlineTranslationRequest<P> {
     )
 
     @Synchronized fun snapshot() = Snapshot(
-        generation, attempt, job?.isActive == true, firstPublished, firstAccepted, pending, resultReady,
+        generation, attempt, job?.isActive == true, firstPublished, firstAccepted, pending,
+        resultReady || preparations > 0,
     )
 
     /**
@@ -63,8 +65,12 @@ internal class OnlineTranslationRequest<P> {
     }
 
     /** Cancellation and delivery are serialized, including already-dequeued results. */
-    @Synchronized fun deliver(token: Int, apply: () -> Unit): Boolean {
-        if (token != generation) return false
+    @Synchronized fun deliver(
+        token: Int,
+        stillCurrent: () -> Boolean = { true },
+        apply: () -> Unit,
+    ): Boolean {
+        if (token != generation || !stillCurrent()) return false
         apply()
         resultReady = false
         return true
@@ -73,6 +79,17 @@ internal class OnlineTranslationRequest<P> {
     /** Marks that a result exists and only waits for its main-thread delivery. */
     @Synchronized fun markResultReady(token: Int) {
         if (token == generation) resultReady = true
+    }
+
+    /** A first result must not clear the alive marker while a final result is still preparing. */
+    @Synchronized fun beginPreparation(token: Int): Boolean {
+        if (token != generation) return false
+        preparations += 1
+        return true
+    }
+
+    @Synchronized fun finishPreparation(token: Int) {
+        if (token == generation && preparations > 0) preparations -= 1
     }
 
     @Synchronized fun markFirstPublished(token: Int) {
@@ -111,6 +128,7 @@ internal class OnlineTranslationRequest<P> {
         firstAccepted = null
         pending = null
         resultReady = false
+        preparations = 0
         previous?.cancel()
     }
 }

@@ -100,4 +100,41 @@ class OnlineTranslationRequestTest {
         assertTrue(owner.deliver(second) { })
     }
 
+    @Test fun `changed snapshot rejects delivery without dropping ready state`() {
+        val owner = OnlineTranslationRequest<String>()
+        val token = owner.begin("song")!!
+        owner.markResultReady(token)
+        assertFalse(owner.deliver(token, stillCurrent = { false }) { error("must not publish") })
+        assertTrue(owner.snapshot().resultReady)
+        assertTrue(owner.deliver(token, stillCurrent = { true }) { })
+        assertFalse(owner.snapshot().resultReady)
+    }
+
+    @Test fun `first commit keeps request alive until final preparation completes`() {
+        val owner = OnlineTranslationRequest<String>()
+        val token = owner.begin("song")!!
+        assertTrue(owner.beginPreparation(token))
+        assertTrue(owner.beginPreparation(token))
+        owner.deliver(token) { }
+        owner.finishPreparation(token)
+        assertTrue(owner.snapshot().resultReady)
+        owner.deliver(token) { }
+        owner.finishPreparation(token)
+        assertFalse(owner.snapshot().resultReady)
+    }
+
+    @Test fun `old preparation completion cannot clear a restarted request`() {
+        val owner = OnlineTranslationRequest<String>()
+        val old = owner.begin("song")!!
+        owner.beginPreparation(old)
+        owner.cancel(clearAttempt = true)
+        val current = owner.begin("next")!!
+        owner.beginPreparation(current)
+        assertFalse(owner.beginPreparation(old))
+        owner.finishPreparation(old)
+        assertTrue(owner.snapshot().resultReady)
+        owner.finishPreparation(current)
+        assertFalse(owner.snapshot().resultReady)
+    }
+
 }

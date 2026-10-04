@@ -372,6 +372,7 @@ internal class EmbeddedIslandAlbumCoverDrawable(
                     cropBottom = cropBottom,
                 )
             }
+            val edgeDiffusion = IslandCoverEdgeDiffusion(edgeColumn)
             for (targetX in 0 until width) {
                 val position = targetX.toFloat()
                 val rawPosition = position - rawCacheOffset
@@ -388,6 +389,7 @@ internal class EmbeddedIslandAlbumCoverDrawable(
                     targetHeight = targetHeight,
                     density = density,
                 )
+                edgeDiffusion.prepareRadius(diffusionRadius)
                 val visibleStart = (transitionInset - visibleOverlap).coerceAtLeast(0f)
                 val feather = IslandGradientCoverLayout.embeddedTransitionFeatherAlpha(
                     position = rawPosition - visibleStart,
@@ -422,11 +424,7 @@ internal class EmbeddedIslandAlbumCoverDrawable(
                 val dissolveAlpha = (255f * (1f - blackMix)).roundToInt().coerceIn(0, 255)
 
                 for (targetY in 0 until targetHeight) {
-                    val diffusedColor = verticallyDiffusedEdgeColor(
-                        edgeColumn = edgeColumn,
-                        centerY = targetY,
-                        radius = diffusionRadius,
-                    )
+                    val diffusedColor = edgeDiffusion.colorAt(targetY)
                     val color = if (position <= cacheInset) {
                         val sourceY = cropTop +
                             ((targetY + 0.5f) * sourceHeight / targetHeight) - 0.5f
@@ -460,10 +458,10 @@ internal class EmbeddedIslandAlbumCoverDrawable(
                 System.arraycopy(blurMaskRow, 0, blurMaskPixels, targetY * width, width)
             }
 
-            // Keep a blurred CPU copy for the rare fallback path. Normal hardware drawing uses
-            // the raw edge-smear texture through the Android-native RenderEffect below. The
-            // texture now carries varying alpha, so blur in premultiplied space to avoid
-            // color bleeding from transparent columns.
+            // premultiplyArgb and blurArgbPixelsInPlace both mutate texturePixels. Preserve
+            // that existing preblurred input to RenderEffect and the software fallback;
+            // their pixels are identical, so they can share one Bitmap instead of two.
+            // Premultiplied blur keeps transparent columns from bleeding color.
             val cpuBlurredPixels = premultiplyArgb(texturePixels)
             blurArgbPixelsInPlace(
                 pixels = cpuBlurredPixels,
@@ -482,12 +480,7 @@ internal class EmbeddedIslandAlbumCoverDrawable(
                 targetHeight,
                 Bitmap.Config.ARGB_8888,
             )
-            cpuBlurredTexture = Bitmap.createBitmap(
-                cpuBlurredPixels,
-                width,
-                targetHeight,
-                Bitmap.Config.ARGB_8888,
-            )
+            cpuBlurredTexture = texture
             mask = Bitmap.createBitmap(
                 maskPixels,
                 width,
