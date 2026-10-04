@@ -39,6 +39,7 @@ import com.juren233.hyperlyricsenhanced.root.lyricon.central.EmbeddedLyriconCent
 import com.juren233.hyperlyricsenhanced.root.lyricon.provider.LyriconProviderControlFrameBridge
 import com.juren233.hyperlyricsenhanced.root.salt.SaltPlayerNextTrackHooker
 import com.juren233.hyperlyricsenhanced.root.settings.SettingsEntryHooker
+import com.juren233.hyperlyricsenhanced.root.source.LyriconBridgeTrafficObserver
 import com.juren233.hyperlyricsenhanced.root.source.LyriconSource
 import com.juren233.hyperlyricsenhanced.root.source.onActiveMediaSessionSnapshotChanged
 import com.juren233.hyperlyricsenhanced.root.source.onPreferenceChanged
@@ -457,6 +458,7 @@ class HookEntry : XposedModule() {
         try {
             cleanupRuntime()
             runtimeApp = app
+            LyriconBridgeTrafficObserver.startOnce(app)
             IslandSystemFontWeight.start(app) {
                 if (IslandRuntimePreferenceReader.getFontWeightMode(prefs) ==
                     IslandFontWeightMode.SYSTEM

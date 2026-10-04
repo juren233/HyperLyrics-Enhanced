@@ -75,7 +75,9 @@ import io.github.proify.lyricon.amprovider.xposed.lyrics.AppleOnlineSourceMenuHo
 import io.github.proify.lyricon.amprovider.xposed.internal.ThreadLocalReentryGuard
 import io.github.proify.lyricon.amprovider.xposed.internal.ThreadLocalStack
 import io.github.proify.lyricon.amprovider.xposed.internal.WeakIdentityMap
+import io.github.proify.lyricon.provider.ConnectionListener
 import io.github.proify.lyricon.provider.LyriconFactory
+import io.github.proify.lyricon.provider.LyriconProvider
 import io.github.proify.lyricon.provider.ProviderConstants
 import io.github.proify.lyricon.provider.ProviderLogo
 import io.github.proify.lyricon.provider.RemotePlayer
@@ -495,12 +497,50 @@ internal class AppleOrchestratorLyricsPlaybackAssembly(
         ).also { it.start() }
         this.directPlayer = directPlayer
         val helper = runCatching {
+            ProviderLogger.diagnostic("中央注册诊断: stage=provider_creating")
             LyriconFactory.createProvider(
                 context = runtime.application,
                 providerPackageName = Constants.PROVIDER_PACKAGE_NAME,
                 playerPackageName = AppleMusicProviderOrchestrator.APPLE_MUSIC_PACKAGE,
                 logo = ProviderLogo.fromBase64(Constants.ICON)
-            ).also { it.register() }
+            ).also { provider ->
+                val registered = runCatching { provider.register() }.getOrDefault(false)
+                val service = runCatching { provider.service }.getOrNull()
+                ProviderLogger.diagnostic(
+                    "中央注册诊断: stage=register_returned, result=$registered, " +
+                        "initialStatus=${runCatching { service?.connectionStatus }.getOrNull()}, " +
+                        "serviceActive=${runCatching { service?.isActive }.getOrNull()}",
+                )
+                if (BuildConfig.DEBUG && service != null) {
+                    runCatching {
+                        service.addConnectionListener(object : ConnectionListener {
+                            override fun onConnected(provider: LyriconProvider) {
+                                ProviderLogger.diagnostic("中央注册诊断: stage=on_connected")
+                            }
+
+                            override fun onReconnected(provider: LyriconProvider) {
+                                ProviderLogger.diagnostic("中央注册诊断: stage=on_reconnected")
+                            }
+
+                            override fun onDisconnected(provider: LyriconProvider) {
+                                ProviderLogger.diagnostic(
+                                    "中央注册诊断: stage=on_disconnected, " +
+                                        "status=${runCatching { service.connectionStatus }.getOrNull()}",
+                                )
+                            }
+
+                            override fun onConnectTimeout(provider: LyriconProvider) {
+                                ProviderLogger.diagnostic("中央注册诊断: stage=on_connect_timeout")
+                            }
+                        })
+                        ProviderLogger.diagnostic("中央注册诊断: stage=listener_installed")
+                    }.onFailure {
+                        ProviderLogger.debug(
+                            "中央注册诊断: stage=listener_install_failed, error=${it.javaClass.name}",
+                        )
+                    }
+                }
+            }
         }.onFailure {
             ProviderLogger.error("Lyricon Central 提供器注册失败，使用内置直连", it)
         }.getOrNull()
