@@ -556,7 +556,7 @@ class AppleMusicHookProfilesTest {
         val profile = AppleMusicHookProfiles.profileFor(version)!!
         assertEquals("am-7.0.0-beta-1606", profile.id)
         assertTrue(profile.settingsDataCategoryHasNoSimGate)
-        assertEquals(null, AppleMusicHookProfiles.profileFor(AppleMusicVersion("7.0.0-beta", 1607L)))
+        assertEquals(null, AppleMusicHookProfiles.profileFor(AppleMusicVersion("7.0.0-beta", 1608L)))
         assertTrue(profile.targets(AppleMusicHookPoint.SETTINGS_DATA_CATEGORY_BUILD).isEmpty())
         assertTrue(profile.targets(AppleMusicHookPoint.SETTINGS_CELLULAR_SIM_CHECK).isEmpty())
         assertEquals("w9.Q", target(version, AppleMusicHookPoint.MEDIA_API_LOCALIZATION).className)
@@ -616,7 +616,7 @@ class AppleMusicHookProfilesTest {
 
     @Test
     fun `unknown versions try newer verified targets before older ones`() {
-        val version = AppleMusicVersion("7.0.0-beta", 1607L)
+        val version = AppleMusicVersion("7.0.0-beta", 1608L)
 
         assertEquals(
             listOf("com.airbnb.epoxy.J", "com.airbnb.epoxy.K"),
@@ -634,6 +634,7 @@ class AppleMusicHookProfilesTest {
         )
         assertEquals(
             listOf(
+                "com.apple.android.music.utils.i1",
                 "com.apple.android.music.utils.g1",
                 "com.apple.android.music.utils.d1\$a",
                 "com.apple.android.music.utils.j1\$a",
@@ -653,7 +654,7 @@ class AppleMusicHookProfilesTest {
             ).map(AppleMusicHookTarget::className).distinct(),
         )
         assertEquals(
-            listOf("z0.t0", "z0.p0", "z0.s0", "z0.v0"),
+            listOf("z0.r0", "z0.t0", "z0.p0", "z0.s0", "z0.v0"),
             AppleMusicHookProfiles.candidates(
                 version,
                 AppleMusicHookPoint.COMPOSE_NEVER_EQUAL_POLICY,
@@ -661,6 +662,8 @@ class AppleMusicHookProfilesTest {
         )
         assertEquals(
             listOf(
+                "com.apple.android.music.player.C",
+                "com.apple.android.music.player.V0",
                 "com.apple.android.music.player.A",
                 "com.apple.android.music.player.Y0",
                 "com.apple.android.music.player.U0",
@@ -706,10 +709,10 @@ class AppleMusicHookProfilesTest {
         )
         assertEquals(
             listOf(
+                "com.apple.android.music.player.fragment.e0",
                 "com.apple.android.music.player.fragment.b0",
                 "com.apple.android.music.player.fragment.d0",
                 "com.apple.android.music.player.fragment.a0",
-                "com.apple.android.music.player.fragment.e0",
             ),
             AppleMusicHookProfiles.candidates(
                 version,

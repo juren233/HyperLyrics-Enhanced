@@ -30,7 +30,7 @@ class AppleMediaLaunchTest {
                     .configuredClassNames(AppleMusicHookPoint.APPLE_MAIN_CONTENT_ACTIVITY).single())
             assertTrue(AppleMusicHookProfiles.exactTargets(old, AppleMusicHookPoint.APPLE_MEDIA_SESSION_SERVICE).isEmpty())
         }
-        assertNull(AppleMusicHookProfiles.profileFor(AppleMusicVersion("7.0.0-beta", 1607L)))
+        assertNull(AppleMusicHookProfiles.profileFor(AppleMusicVersion("7.0.0-beta", 1608L)))
     }
 
     @Test fun `native repair is restricted to the original media service pending intent`() {

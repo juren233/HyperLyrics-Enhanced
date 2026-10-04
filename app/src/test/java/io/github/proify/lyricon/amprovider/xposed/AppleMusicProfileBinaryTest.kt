@@ -29,6 +29,11 @@ class AppleMusicProfileBinaryTest {
         verify(AppleMusicVersion("7.0.0-beta", 1606L), "HLE_APPLE_MUSIC_700_APK", "HLE_APPLE_PROFILE_700_EXPORT")
     }
 
+    @Test
+    fun `all current 1607 targets and member chains match the original APK`() {
+        verify(AppleMusicVersion("7.0.0-beta", 1607L), "HLE_APPLE_MUSIC_1607_APK", "HLE_APPLE_PROFILE_1607_EXPORT")
+    }
+
     private fun verify(version: AppleMusicVersion, apkVariable: String, exportVariable: String) {
         val apk = System.getenv(apkVariable)
         assumeTrue("Set $apkVariable to the original ${version.displayName} base.apk", !apk.isNullOrBlank())
@@ -75,7 +80,7 @@ class AppleMusicProfileBinaryTest {
         val output = process.inputStream.bufferedReader().use { it.readText() }
         assertEquals(output, 0, process.waitFor())
         println(output)
-        if (version.versionCode == 1606L) {
+        if (version.versionCode in setOf(1606L, 1607L)) {
             // The old names still exist, but their DEX signatures/types have different roles.
             val mutations = listOf(
                 Triple("CUSTOM_TEXT_VIEW_FUTURE_RESOLVE_METHOD", "f", "q.B#f"),

@@ -111,6 +111,94 @@ def matching_methods(ctx, target):
     return matched
 
 
+def verify_1607_semantics(ctx, points):
+    """Reject same-signature targets with different native roles in this original beta."""
+    errors = []
+    checks = 0
+
+    def require(condition, message):
+        nonlocal checks
+        checks += 1
+        if not condition:
+            errors.append(message)
+
+    def references(target):
+        methods = matching_methods(ctx, target)
+        if len(methods) != 1 or methods[0].dex is None:
+            return dict(strings=set(), methods=set(), fields=set(), types=set())
+        return methods[0].dex.code_references(methods[0])
+
+    def one(point):
+        return points[point][0]
+
+    def method_ref(target):
+        methods = matching_methods(ctx, target)
+        if len(methods) != 1:
+            return None
+        method = methods[0]
+        return (to_dex_type(target['className']), method.name, tuple(method.param_types), method.return_type)
+
+    routes = [('/v1/catalog/', '/'), ('/v1/catalog/', 'ids['),
+              ('/v1/catalog/', '/search'), ('/v1/catalog/', '/search/query'),
+              ('/v1/editorial/', '/multiplex/'), ('/v1/editorial/', '/multirooms/')]
+    executors = points['MEDIA_API_CATALOG_REQUEST_EXECUTOR']
+    require(len(executors) == len(routes), '1607: all six catalogue request paths are required')
+    for target, route in zip(executors, routes):
+        require(set(route) <= references(target)['strings'],
+                f'{target["className"]}#{target["methodName"]}: wrong catalogue route, expected {route}')
+    require({'/songs/', '/syllable-lyrics', '/v1/catalog/'} <= references(one('LYRICS_NETWORK_REQUEST'))['strings'],
+            '1607: lyrics request does not build the native syllable-lyrics URL')
+
+    menu = one('LYRICS_SOURCE_MENU_CLICK_LISTENER')
+    created = references(one('LYRICS_UI_ON_CREATE_VIEW'))
+    require(any(owner == to_dex_type(menu['className']) and name == '<init>'
+                for owner, name, _, _ in created['methods']),
+            '1607: onCreateView does not construct the configured lyrics menu listener')
+    fragment = to_dex_type(one('LYRICS_UI_ON_CREATE_VIEW')['className'])
+    require(any(f.name == menu['runtimeMemberNames']['LYRICS_SOURCE_MENU_FRAGMENT_FIELD']
+                and f.type_descriptor == fragment for c in lineage(ctx, menu['className']) for f in c.fields),
+            '1607: lyrics menu capture is not the current lyrics fragment')
+
+    policy = one('COMPOSE_NEVER_EQUAL_POLICY')
+    require('NeverEqualPolicy' in references(dict(policy, methodName='toString', parameterTypeNames=[]))['strings'],
+            '1607: reused Compose class is not NeverEqualPolicy')
+    observe = one('COMPOSE_OBSERVE_AS_STATE')
+    require(method_ref(observe) in references(one('LIBRARY_COMPOSE_CONTENT'))['methods'],
+            '1607: library content does not call the configured observeAsState')
+    calls = references(observe)['methods']
+    require(any(name == 'getValue' and not params for _, name, params, _ in calls),
+            '1607: observeAsState does not read the current LiveData value')
+    helpers = [method for owner, name, params, ret in calls
+               if owner == to_dex_type(observe['className']) and ret == to_dex_type(observe['returnTypeName'])
+               for method in all_methods(ctx, binary_name(owner))
+               if method.name == name and tuple(method.param_types) == params and method.return_type == ret]
+    require(any(helper.dex and any(name == 'isInitialized'
+                                  for _, name, _, _ in helper.dex.code_references(helper)['methods'])
+                for helper in helpers), '1607: observeAsState lost its initialization check')
+
+    preferences = one('APPLE_SHARED_PREFERENCES_CLASS')
+    for point, key, cache in [('LYRICS_PRONUNCIATION_PREFERENCE', 'k', 's'),
+                              ('LYRICS_TRANSLATION_PREFERENCE', 'l', 't')]:
+        fields = references(one(point))['fields']
+        require(any(owner == to_dex_type(preferences['className']) and name == key
+                    and op == 0x62 for owner, name, _, op in fields),
+                f'1607: {point} reads the wrong DataStore key')
+        require(any(owner == to_dex_type(preferences['className']) and name == cache
+                    and typ == 'Ljava/lang/Boolean;' and op == 0x69 for owner, name, typ, op in fields),
+                f'1607: {point} writes the wrong preference cache')
+
+    state = one('APP_COMPAT_THEME_STATE')
+    mode = (to_dex_type(state['className']), state['runtimeMemberNames']['APP_COMPAT_THEME_MODE_FIELD'], 'I')
+    for point in ['ACTIVITY_THEME_CREATE', 'ACTIVITY_THEME_RESTART']:
+        require(any((owner, name, typ) == mode and op == 0x60
+                    for owner, name, typ, op in references(one(point))['fields']),
+                f'1607: {point} does not read the profiled theme mode')
+    require(any((owner, name, typ) == mode and op == 0x67
+                for owner, name, typ, op in references(one('THEME_MODE_EMIT'))['fields']),
+            '1607: theme collector does not write the profiled theme mode')
+    return checks, errors
+
+
 def verify_profile(ctx, profile):
     points = profile['hookPoints']
     errors = []
@@ -397,7 +485,14 @@ def verify_profile(ctx, profile):
     require(any(f.type_descriptor == 'Lcom/apple/android/music/listennow/ListenNowEpoxyController$R;'
                 for c in lineage(ctx, model['className']) for f in c.fields),
             f'{model["className"]}: not the ListenNow callback-bearing model')
-    return dict(profile=profile['id'], groups=len(points), targets=checked, memberChecks=member_checks, errors=errors,
+    semantic_checks = 0
+    if profile['id'] == 'am-7.0.0-beta-1607':
+        from verify_apple_music_1607_members import verify_consumer_members
+        verify_consumer_members(ctx, points, field, method, require)
+        semantic_checks, semantic_errors = verify_1607_semantics(ctx, points)
+        errors.extend(semantic_errors)
+    return dict(profile=profile['id'], groups=len(points), targets=checked, memberChecks=member_checks,
+                semanticChecks=semantic_checks, errors=errors,
                 scope='DEX descriptors and member chains; not runtime or UI acceptance')
 
 
