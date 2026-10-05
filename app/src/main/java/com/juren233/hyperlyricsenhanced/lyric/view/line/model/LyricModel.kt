@@ -12,6 +12,9 @@ import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.Typeface
 import com.juren233.hyperlyricsenhanced.lyric.view.line.MixedTypefaceText
+import com.juren233.hyperlyricsenhanced.lyric.view.line.BoundGeometryReuse
+import com.juren233.hyperlyricsenhanced.lyric.view.line.TextPaintX
+import com.juren233.hyperlyricsenhanced.lyric.view.line.WordGeometryMetrics
 import com.juren233.hyperlyricsenhanced.lyric.model.LyricLine
 import com.juren233.hyperlyricsenhanced.lyric.model.LyricMetadata
 import com.juren233.hyperlyricsenhanced.lyric.model.LyricWord
@@ -44,22 +47,74 @@ data class LyricModel(
         typefaceSelector: ((Char) -> Typeface)? = null,
         preparedTextWidth: Float? = null,
         diagnosticReason: Int,
+    ) = updateSizesInternal(paint, typefaceSelector, preparedTextWidth, diagnosticReason)
+
+    /** Only the two Views' private, factory-created models may use this known-font path. */
+    internal fun updateOwnedSizes(
+        paint: Paint,
+        base: Typeface,
+        narrow: Typeface?,
+        preparedTextWidth: Float?,
+        diagnosticReason: Int,
+        owner: BoundGeometryReuse<LyricModel, WordGeometryMetrics>,
+        allowResizeReuse: Boolean,
+    ) {
+        val selector = MixedTypefaceText.typefaceSelector(base, narrow)
+        if (text.isEmpty() && words.isEmpty()) {
+            // reset/empty rows have no reusable work or seam; do not allocate a Paint snapshot.
+            updateSizesDiagnosed(paint, selector, preparedTextWidth, diagnosticReason)
+        } else {
+            updateSizesInternal(paint, selector, preparedTextWidth,
+                diagnosticReason, owner, base, narrow, allowResizeReuse)
+        }
+    }
+
+    private fun updateSizesInternal(
+        paint: Paint,
+        typefaceSelector: ((Char) -> Typeface)?,
+        preparedTextWidth: Float?,
+        diagnosticReason: Int,
+        owner: BoundGeometryReuse<LyricModel, WordGeometryMetrics>? = null,
+        base: Typeface? = null,
+        narrow: Typeface? = null,
+        allowResizeReuse: Boolean = false,
     ) {
         val sampled = BuildConfig.DEBUG && GeometryDiagnostics.begin(
             this, diagnosticReason, words.size, preparedTextWidth != null
         )
         var failed = true
         try {
+            // A custom Paint/selector can have hidden behavior beyond native metrics.
+            // The public API remains the unconditionally measured compatibility path.
+            val metrics = if (owner != null && base != null && paint is TextPaintX) {
+                owner.descriptor?.takeIf { it.matches(paint, base, narrow) }
+                    ?: WordGeometryMetrics(paint, base, narrow)
+            } else null
+            val reused = owner?.canReuse(this, allowResizeReuse, words.isNotEmpty(), metrics) == true
+            if (sampled) GeometryDiagnostics.reuse(when {
+                owner == null || !allowResizeReuse || words.isEmpty() -> 0
+                metrics == null -> 5
+                !owner.ownershipRetained -> 4
+                reused -> 1
+                owner.descriptor == null -> 2
+                owner.descriptor !== metrics -> 3
+                else -> 2
+            })
+            val ticket = owner?.begin(this) ?: 0L
             val wholeStart = if (sampled) System.nanoTime() else 0L
             width = preparedTextWidth ?: measureLyricTextWidth(paint, text, typefaceSelector)
             if (sampled) GeometryDiagnostics.whole(System.nanoTime() - wholeStart)
-            var previous: WordModel? = null
-            words.forEach { word ->
-                word.updateSizes(previous, paint, typefaceSelector)
-                previous = word
+            if (!reused) {
+                var previous: WordModel? = null
+                words.forEach { word ->
+                    word.updateSizes(previous, paint, typefaceSelector)
+                    previous = word
+                }
             }
+            owner?.complete(this, ticket, metrics, words.isNotEmpty(), reused)
             failed = false
         } finally {
+            if (failed) owner?.fail(this)
             if (BuildConfig.DEBUG) GeometryDiagnostics.end(failed)
         }
     }

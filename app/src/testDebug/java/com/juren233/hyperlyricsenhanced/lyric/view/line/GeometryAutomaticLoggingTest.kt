@@ -44,6 +44,7 @@ class GeometryAutomaticLoggingTest {
 
     @Test fun appExportIncludesImmediateInfoSampleWithoutSummary() {
         val row = GeometrySampleWindow.Sample(1, 2, 3, false)
+        row.reuseStatus = 1
         val message = GeometryDiagnosticLog.sample(220053, 123, 1, row, 4, intArrayOf(0, 0, 4, 0, 0, 0, 0, 0))
         val input = "10-05 01:00:00.000 I/HLEGeomS0: $message\n"
         val output = StringWriter()
@@ -51,7 +52,18 @@ class GeometryAutomaticLoggingTest {
         assertEquals(input, output.toString())
         assertTrue(output.toString().contains("kind=sample"))
         assertTrue(output.toString().contains("queriesThroughSample=4 reasonsThroughSample=0,0,4,0,0,0,0,0"))
+        assertTrue(output.toString().contains("reuse=1"))
         assertFalse(output.toString().contains("kind=summary"))
+    }
+
+    @Test fun reuseDiagnosticsKeepUnknownAndEscapedCasesNumeric() {
+        for (status in 0..5) {
+            val row = GeometrySampleWindow.Sample(1, 5, 3, true).apply { reuseStatus = status }
+            val message = GeometryDiagnosticLog.sample(220053, 123, 1, row, 1, IntArray(8))
+            assertTrue(message.contains("reuse=$status"))
+            assertTrue(message.contains("preparedWhole=true"))
+            assertFalse(message.contains("text="))
+        }
     }
 
     @Test fun frameworkTaggedInfoSummarySurvivesExistingModuleExportFilter() {

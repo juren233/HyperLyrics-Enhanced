@@ -73,7 +73,7 @@ internal object IslandShortLyricTransition {
         val promoting = active == null && !right.isNextLinePromotionRunning &&
             right.willAnimateNextLinePromotion(incoming)
         val sameMain = active == null && !right.isNextLinePromotionRunning &&
-            right.main.model.let { (if (it.isPlainText) it.text else it.wordText) == fallback.text }
+            (right.main.drawnText == fallback.text)
         val source = flying ?: when {
             rightPreview != null -> rightPreview
             promoting -> right.layoutRoleSnapshot(preview = true)

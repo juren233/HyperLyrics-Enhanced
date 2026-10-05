@@ -320,7 +320,7 @@ class RichLyricLineView(
         return canAnimateNextLinePromotion(
             wasPreview = secondaryIsNextLinePreview,
             currentMainText = currentMainText,
-            previewText = secondary.model.text,
+            previewText = secondary.boundText,
             nextMainText = nextMainText,
             lineAdvanced = hasLyricLineAdvanced(previousLine, targetLine),
             attached = isAttachedToWindow,

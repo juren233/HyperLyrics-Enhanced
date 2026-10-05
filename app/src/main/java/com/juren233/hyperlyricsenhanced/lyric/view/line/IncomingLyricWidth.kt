@@ -21,7 +21,8 @@ internal class IncomingLyricWidth {
         private val paint = Paint(paint)
 
         fun matches(other: Paint, base: Typeface, narrow: Typeface?): Boolean =
-            this.base == base && this.narrow == narrow && paint.equalsForTextMeasurement(other)
+            this.base == base && this.narrow == narrow && paint.equalsForTextMeasurement(other) &&
+                paint.startHyphenEdit == other.startHyphenEdit && paint.endHyphenEdit == other.endHyphenEdit
 
         fun measure(text: String): Float = measureLyricTextWidth(
             Paint(paint), text, MixedTypefaceText.typefaceSelector(base, narrow),

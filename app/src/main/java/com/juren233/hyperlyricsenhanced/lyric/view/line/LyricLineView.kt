@@ -45,8 +45,16 @@ open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
 
     override val textPaint: TextPaint = TextPaintX().apply { textSize = 24f.sp }
 
-    val model: LyricModel get() = _model
+    /** Compatibility escape hatch: exposing writable words/arrays disables this bind's reuse. */
+    val model: LyricModel
+        get() {
+            geometryReuse.revoke()
+            return _model
+        }
     private var _model: LyricModel = emptyLyricModel()
+    private val geometryReuse = BoundGeometryReuse<LyricModel, WordGeometryMetrics>().apply { bind(_model) }
+    internal val boundText: String get() = _model.text
+    internal val drawnText: String get() = if (_model.isPlainText) _model.text else _model.wordText
 
     private val interludeDotsRenderer = InterludeDotsRenderer()
 
@@ -281,6 +289,7 @@ open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
         scrollStarted = false
 
         _model = line?.normalize()?.createModel() ?: emptyLyricModel()
+        geometryReuse.bind(_model)
         applyCurrentTypeface()
         activeRenderer = if (_model.isPlainText) scrollRenderer else syncRenderer
         refreshSizes(GeometryReason.BIND)
@@ -456,10 +465,19 @@ open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
 
     fun refreshSizes() = refreshSizes(GeometryReason.OTHER)
 
-    private fun refreshSizes(reason: Int) {
-        _model.updateSizesDiagnosed(textPaint, currentTypefaceSelector,
-            incomingWidth.preparedTextWidth(_model.text, textPaint, baseTypeface, narrowTypeface),
-            diagnosticReason = reason)
+    private fun refreshSizes(reason: Int, allowResizeReuse: Boolean = false) {
+        val model = _model
+        val paint = textPaint
+        val base = baseTypeface
+        val narrow = narrowTypeface
+        val preparedWidth = incomingWidth.preparedTextWidth(model.text, paint, base, narrow)
+        if (model.words.isEmpty()) {
+            // Independent plain rows have no word geometry or seam descriptor to retain.
+            model.updateSizesDiagnosed(paint, MixedTypefaceText.typefaceSelector(base, narrow), preparedWidth, reason)
+        } else {
+            model.updateOwnedSizes(paint, base, narrow, preparedWidth,
+                reason, geometryReuse, allowResizeReuse)
+        }
     }
 
     fun relayout() {
@@ -486,6 +504,7 @@ open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
         syncRenderer.reset(lineState)
         lineShadowRenderer.clear()
         _model = emptyLyricModel()
+        geometryReuse.bind(_model)
         activeRenderer = scrollRenderer
         lastWidthOverflow = null
         refreshSizes(GeometryReason.RESET)
@@ -500,7 +519,7 @@ open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
         if (w > 0 && h > 0) {
-            refreshSizes(GeometryReason.RESIZE)
+            refreshSizes(GeometryReason.RESIZE, allowResizeReuse = true)
             updateColorsIfReady()
         }
         if (w != oldw && w > 0) {

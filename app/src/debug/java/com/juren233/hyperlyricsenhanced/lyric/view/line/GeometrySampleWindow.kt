@@ -13,10 +13,13 @@ internal class GeometrySampleWindow(private val startedNs: Long) {
 
     data class Sample(
         val generation: Int, val reason: Int, val words: Int, val preparedWhole: Boolean,
+        // Actual measured units/calls: a nonempty line has zero here when reuseStatus == 1.
         var utf16: Int = 0, var plainCalls: Int = 0, var mixedCalls: Int = 0,
         var wholeNs: Long = 0, var measurementNs: Long = 0, var positionNs: Long = 0,
         var totalNs: Long = 0, var setupNs: Long = 0,
         var failed: Boolean = false, var reentrant: Boolean = false,
+        // 0 outside scope; 1 hit; 2 cold/invalid; 3 metrics changed; 4 exposed; 5 unsupported.
+        var reuseStatus: Int = 0,
     )
 
     private val models = ArrayList<WeakReference<Any>>(MAX_SAMPLES)

@@ -81,6 +81,7 @@ internal object GeometryDiagnostics {
     }
 
     fun whole(elapsed: Long) { if (sampling) window?.active?.wholeNs = elapsed }
+    fun reuse(status: Int) { if (sampling) window?.active?.reuseStatus = status }
     fun word(utf16: Int, measurementNs: Long, positionNs: Long) {
         if (!sampling) return
         window?.active?.let {

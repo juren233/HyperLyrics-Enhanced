@@ -11,7 +11,7 @@ internal object GeometryDiagnosticLog {
             "g=${row.generation} reason=${row.reason} words=${row.words} preparedWhole=${row.preparedWhole} utf16=${row.utf16} " +
             "plain=${row.plainCalls} mixed=${row.mixedCalls} wholeNs=${row.wholeNs} " +
             "measureNs=${row.measurementNs} positionNs=${row.positionNs} totalNs=${row.totalNs} " +
-            "setupNs=${row.setupNs} failed=${row.failed} reentrant=${row.reentrant}"
+            "setupNs=${row.setupNs} reuse=${row.reuseStatus} failed=${row.failed} reentrant=${row.reentrant}"
 
     fun summary(build: Int, pid: Int, window: Int, queries: Int, samples: Int, reasons: IntArray): String =
         "v=2 build=$build pid=$pid window=$window kind=summary queries=$queries samples=$samples " +

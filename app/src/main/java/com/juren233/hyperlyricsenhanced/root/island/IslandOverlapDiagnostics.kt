@@ -266,13 +266,13 @@ internal object IslandOverlapDiagnostics {
                 else -> null
             }
             val main = when (target) {
-                is RichLyricLineView -> target.main.model.text
-                is SpaceGateRichLyricLineView -> target.main.model.text
+                is RichLyricLineView -> target.main.boundText
+                is SpaceGateRichLyricLineView -> target.main.boundText
                 else -> ""
             }
             val secondary = when (target) {
-                is RichLyricLineView -> target.secondary.model.text
-                is SpaceGateRichLyricLineView -> target.secondary.model.text
+                is RichLyricLineView -> target.secondary.boundText
+                is SpaceGateRichLyricLineView -> target.secondary.boundText
                 else -> ""
             }
             append('|').append(id(target)).append(':').append(main.length).append('/')

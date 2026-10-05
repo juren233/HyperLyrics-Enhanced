@@ -59,10 +59,17 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
             updateRightPreviewMode()
         }
     var siblingView: SpaceGateLyricLineView? = null
+        set(value) {
+            if (field === value) return
+            field = value
+            // A plain row may have refreshed without a seam while this peer was absent.
+            if (_model.words.isEmpty()) seamLayoutModel = null
+        }
     var spaceGateEnabled = true
         set(value) {
             if (field == value) return
             field = value
+            if (value && _model.words.isEmpty()) seamLayoutModel = null
             updateRightPreviewMode()
             updateFadingEdges()
             if (value && !isRightSide) {
@@ -77,7 +84,11 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
 
     /** 纯遮挡接缝布局；null 表示非拼接模式（无对端槽），条带连续绘制。 */
     private var cachedSeamLayout: SeamOcclusionLayout? = null
-    private var seamLayoutKey: List<Any?>? = null
+    // Compare the model by reference, never by data-class equality or an identity hash.
+    private var seamLayoutModel: LyricModel? = null
+    private var seamLayoutRevision = Long.MIN_VALUE
+    private var seamLayoutWidthBits = 0
+    private var seamLayoutTextSizeBits = 0
 
     /** 最近一次分发到渲染器的接缝（虚拟坐标）＝左槽宽；-1 表示未分发。 */
     private var distributedSeamX: Int = -1
@@ -85,8 +96,16 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
 
     override val textPaint: TextPaint = TextPaintX().apply { textSize = 24f.sp }
 
-    val model: LyricModel get() = _model
+    /** Compatibility escape hatch: exposing writable words/arrays disables this bind's reuse. */
+    val model: LyricModel
+        get() {
+            geometryReuse.revoke()
+            return _model
+        }
     private var _model: LyricModel = emptyLyricModel()
+    private val geometryReuse = BoundGeometryReuse<LyricModel, WordGeometryMetrics>().apply { bind(_model) }
+    internal val boundText: String get() = _model.text
+    internal val drawnText: String get() = if (_model.isPlainText) _model.text else _model.wordText
 
     private val interludeDotsRenderer = InterludeDotsRenderer()
 
@@ -338,6 +357,7 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
         scrollStarted = false
 
         _model = line?.normalize()?.createModel() ?: emptyLyricModel()
+        geometryReuse.bind(_model)
         rightPreview.bind(_model.metadata?.get(METADATA_NEXT_LINE_RIGHT_TEXT))
         updateRightPreviewMode()
         applyCurrentTypeface()
@@ -536,10 +556,21 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
 
     fun refreshSizes() = refreshSizes(GeometryReason.OTHER)
 
-    private fun refreshSizes(reason: Int) {
-        _model.updateSizesDiagnosed(textPaint, currentTypefaceSelector,
-            incomingWidth.preparedTextWidth(_model.text, textPaint, baseTypeface, narrowTypeface),
-            diagnosticReason = reason)
+    private fun refreshSizes(reason: Int, allowResizeReuse: Boolean = false) {
+        val model = _model
+        val paint = textPaint
+        val base = baseTypeface
+        val narrow = narrowTypeface
+        val preparedWidth = incomingWidth.preparedTextWidth(model.text, paint, base, narrow)
+        if (model.words.isNotEmpty() || (spaceGateEnabled && siblingView != null)) {
+            model.updateOwnedSizes(paint, base, narrow, preparedWidth,
+                reason, geometryReuse, allowResizeReuse)
+        } else {
+            // No words and no active seam: retain the old measurement path without a snapshot.
+            // Clear only the key before work, including failures; later activation builds live geometry.
+            seamLayoutModel = null
+            model.updateSizesDiagnosed(paint, MixedTypefaceText.typefaceSelector(base, narrow), preparedWidth, reason)
+        }
         rightPreview.configure(textPaint, currentTypefaceSelector, backgroundColors, currentFontSignature())
     }
 
@@ -568,9 +599,13 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
         scrollRenderer.reset(lineState)
         syncRenderer.reset(lineState)
         lineShadowRenderer.clear()
+        // Release the new strong model reference without changing pre-draw renderer semantics.
+        // The existing ensure/clear points still publish or clear the seam and its coordinates.
+        seamLayoutModel = null
         rightPreview.bind(null)
         updateRightPreviewMode()
         _model = emptyLyricModel()
+        geometryReuse.bind(_model)
         activeRenderer = scrollRenderer
         lastWidthOverflow = null
         refreshSizes(GeometryReason.RESET)
@@ -585,7 +620,7 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
         if (w > 0 && h > 0) {
-            refreshSizes(GeometryReason.RESIZE)
+            refreshSizes(GeometryReason.RESIZE, allowResizeReuse = true)
             updateColorsIfReady()
         }
         if (w != oldw && w > 0) {
@@ -726,7 +761,7 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
         val master = if (isRightSide) this else siblingView
         if (master == null) {
             // 无对端时退回单槽渲染，接缝布局引用一并清掉，避免残留遮挡绘制。
-            if (seamLayoutKey != null || distributedSeamX >= 0) clearSeamLayout()
+            if (seamLayoutModel != null || distributedSeamX >= 0) clearSeamLayout()
             drawContent(canvas, scrollWidth)
             return
         }
@@ -775,7 +810,7 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
     private fun ensureSeamLayout() {
         val sibling = siblingView
         if (!spaceGateEnabled || sibling == null) {
-            if (seamLayoutKey != null || distributedSeamX >= 0) clearSeamLayout()
+            if (seamLayoutModel != null || distributedSeamX >= 0) clearSeamLayout()
             return
         }
         val leftView = if (isRightSide) sibling else this
@@ -783,17 +818,21 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
             view.width.takeIf { it > 0 } ?: view.measuredWidth
         val seam = laidOutWidth(leftView)
 
-        val key = listOf<Any?>(
-            _model.text,
-            _model.wordText,
-            _model.width.toBits(),
-            textPaint.textSize.toBits(),
-        )
-        val layoutChanged = key != seamLayoutKey
+        val model = _model
+        val revision = geometryReuse.revision
+        val widthBits = model.width.toBits()
+        // Preserve the previous key's live text-size check for callers changing exposed Paint.
+        val textSizeBits = textPaint.textSize.toBits()
+        val layoutChanged = seamLayoutModel !== model || seamLayoutRevision != revision ||
+            seamLayoutWidthBits != widthBits || seamLayoutTextSizeBits != textSizeBits
         val seamChanged = seam != distributedSeamX
         if (layoutChanged) {
-            seamLayoutKey = key
-            cachedSeamLayout = buildSeamLayout()
+            val layout = buildSeamLayout(model)
+            seamLayoutModel = model
+            seamLayoutRevision = revision
+            seamLayoutWidthBits = widthBits
+            seamLayoutTextSizeBits = textSizeBits
+            cachedSeamLayout = layout
             scrollRenderer.seamLayout = cachedSeamLayout
             syncRenderer.seamLayout = cachedSeamLayout
             if (BuildConfig.DEBUG) {
@@ -887,7 +926,10 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
     }
 
     private fun clearSeamLayout() {
-        seamLayoutKey = null
+        seamLayoutModel = null
+        seamLayoutRevision = Long.MIN_VALUE
+        seamLayoutWidthBits = 0
+        seamLayoutTextSizeBits = 0
         cachedSeamLayout = null
         distributedSeamX = -1
         scrollRenderer.seamLayout = null
