@@ -35,3 +35,4 @@ scripts/
 .zcodeignore
 .tmp-hle-logs/
 .zcode/
+/CANDIDATE_A_S0.md

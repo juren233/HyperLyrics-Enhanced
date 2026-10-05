@@ -260,7 +260,7 @@ open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
         if (!needsUpdate) return
         textPaint.textSize = size
         syncRenderer.setTextSize(size)
-        refreshSizes()
+        refreshSizes(GeometryReason.TEXT_SIZE)
         syncRenderer.updateLayout(_model, lineState, scrollWidth, measuredHeight)
         invalidate()
     }
@@ -283,7 +283,7 @@ open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
         _model = line?.normalize()?.createModel() ?: emptyLyricModel()
         applyCurrentTypeface()
         activeRenderer = if (_model.isPlainText) scrollRenderer else syncRenderer
-        refreshSizes()
+        refreshSizes(GeometryReason.BIND)
         updateColorsIfReady()
         traceSwitch("after_bind")
         invalidate()
@@ -319,7 +319,7 @@ open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
             isHorizontalFadingEdgeEnabled = true
         }
 
-        refreshSizes()
+        refreshSizes(GeometryReason.CONFIGURE)
         animator.stop()
         if (!isStaticPreview && playbackActive) animator.startIfNeeded()
         invalidate()
@@ -454,9 +454,12 @@ open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
         }
     }
 
-    fun refreshSizes() {
-        _model.updateSizes(textPaint, currentTypefaceSelector,
-            incomingWidth.preparedTextWidth(_model.text, textPaint, baseTypeface, narrowTypeface))
+    fun refreshSizes() = refreshSizes(GeometryReason.OTHER)
+
+    private fun refreshSizes(reason: Int) {
+        _model.updateSizesDiagnosed(textPaint, currentTypefaceSelector,
+            incomingWidth.preparedTextWidth(_model.text, textPaint, baseTypeface, narrowTypeface),
+            diagnosticReason = reason)
     }
 
     fun relayout() {
@@ -485,7 +488,7 @@ open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
         _model = emptyLyricModel()
         activeRenderer = scrollRenderer
         lastWidthOverflow = null
-        refreshSizes()
+        refreshSizes(GeometryReason.RESET)
         invalidate()
     }
 
@@ -497,7 +500,7 @@ open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
         if (w > 0 && h > 0) {
-            refreshSizes()
+            refreshSizes(GeometryReason.RESIZE)
             updateColorsIfReady()
         }
         if (w != oldw && w > 0) {
@@ -638,7 +641,7 @@ open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
     /** Independent-row endpoint for the same glyph morph renderer used by the full island. */
     internal fun layoutRoleSnapshot(incoming: LyricLine? = null): SpaceGatePromotionSnapshot? {
         val model = incoming?.normalize()?.createModel()?.apply {
-            updateSizes(textPaint, currentTypefaceSelector)
+            updateSizesDiagnosed(textPaint, currentTypefaceSelector, diagnosticReason = GeometryReason.ROLE_SNAPSHOT)
         } ?: _model
         if (interludeDotsRenderer.isIndicator(model)) return null
         val text = if (model.isPlainText) model.text else model.wordText

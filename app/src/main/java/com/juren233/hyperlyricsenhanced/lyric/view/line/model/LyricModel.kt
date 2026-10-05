@@ -6,6 +6,8 @@
 
 package com.juren233.hyperlyricsenhanced.lyric.view.line.model
 
+import com.juren233.hyperlyricsenhanced.BuildConfig
+import com.juren233.hyperlyricsenhanced.lyric.view.line.GeometryDiagnostics
 import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.Typeface
@@ -35,12 +37,30 @@ data class LyricModel(
         paint: Paint,
         typefaceSelector: ((Char) -> Typeface)? = null,
         preparedTextWidth: Float? = null,
+    ) = updateSizesDiagnosed(paint, typefaceSelector, preparedTextWidth, 0)
+
+    internal fun updateSizesDiagnosed(
+        paint: Paint,
+        typefaceSelector: ((Char) -> Typeface)? = null,
+        preparedTextWidth: Float? = null,
+        diagnosticReason: Int,
     ) {
-        width = preparedTextWidth ?: measureLyricTextWidth(paint, text, typefaceSelector)
-        var previous: WordModel? = null
-        words.forEach { word ->
-            word.updateSizes(previous, paint, typefaceSelector)
-            previous = word
+        val sampled = BuildConfig.DEBUG && GeometryDiagnostics.begin(
+            this, diagnosticReason, words.size, preparedTextWidth != null
+        )
+        var failed = true
+        try {
+            val wholeStart = if (sampled) System.nanoTime() else 0L
+            width = preparedTextWidth ?: measureLyricTextWidth(paint, text, typefaceSelector)
+            if (sampled) GeometryDiagnostics.whole(System.nanoTime() - wholeStart)
+            var previous: WordModel? = null
+            words.forEach { word ->
+                word.updateSizes(previous, paint, typefaceSelector)
+                previous = word
+            }
+            failed = false
+        } finally {
+            if (BuildConfig.DEBUG) GeometryDiagnostics.end(failed)
         }
     }
 

@@ -317,7 +317,7 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
         if (!needsUpdate) return
         textPaint.textSize = size
         syncRenderer.setTextSize(size)
-        refreshSizes()
+        refreshSizes(GeometryReason.TEXT_SIZE)
         syncRenderer.updateLayout(_model, lineState, getSpaceGateVirtualWidth(), measuredHeight)
         invalidate()
     }
@@ -350,7 +350,7 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
                     "len=${_model.text.length} hash=${_model.text.hashCode()}"
             )
         }
-        refreshSizes()
+        refreshSizes(GeometryReason.BIND)
         updateColorsIfReady()
         traceSwitch("after_bind")
         invalidate()
@@ -381,7 +381,7 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
         configuredFadingEdgeLength = fadingEdge.coerceAtLeast(0)
         updateFadingEdges()
 
-        refreshSizes()
+        refreshSizes(GeometryReason.CONFIGURE)
         animator.stop()
         if (!isStaticPreview && playbackActive) animator.startIfNeeded()
         invalidate()
@@ -534,9 +534,12 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
         }
     }
 
-    fun refreshSizes() {
-        _model.updateSizes(textPaint, currentTypefaceSelector,
-            incomingWidth.preparedTextWidth(_model.text, textPaint, baseTypeface, narrowTypeface))
+    fun refreshSizes() = refreshSizes(GeometryReason.OTHER)
+
+    private fun refreshSizes(reason: Int) {
+        _model.updateSizesDiagnosed(textPaint, currentTypefaceSelector,
+            incomingWidth.preparedTextWidth(_model.text, textPaint, baseTypeface, narrowTypeface),
+            diagnosticReason = reason)
         rightPreview.configure(textPaint, currentTypefaceSelector, backgroundColors, currentFontSignature())
     }
 
@@ -570,7 +573,7 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
         _model = emptyLyricModel()
         activeRenderer = scrollRenderer
         lastWidthOverflow = null
-        refreshSizes()
+        refreshSizes(GeometryReason.RESET)
         invalidate()
     }
 
@@ -582,7 +585,7 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
         if (w > 0 && h > 0) {
-            refreshSizes()
+            refreshSizes(GeometryReason.RESIZE)
             updateColorsIfReady()
         }
         if (w != oldw && w > 0) {
@@ -849,7 +852,7 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
         val sibling = siblingView ?: return null
         if (!spaceGateEnabled && !includeIndependent) return null
         val model = if (incoming != null) {
-            incoming.normalize().createModel().apply { updateSizes(textPaint, currentTypefaceSelector) }
+            incoming.normalize().createModel().apply { updateSizesDiagnosed(textPaint, currentTypefaceSelector, diagnosticReason = GeometryReason.PROMOTION_SNAPSHOT) }
         } else _model
         val units = buildSeamLayout(model) ?: return null
         val master = if (!spaceGateEnabled || isRightSide) this else sibling

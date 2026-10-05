@@ -1,5 +1,6 @@
 package com.juren233.hyperlyricsenhanced.lyric.view.line
 
+import com.juren233.hyperlyricsenhanced.BuildConfig
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Typeface
@@ -61,6 +62,7 @@ internal object MixedTypefaceText {
                 if (i == text.length || selector(text[i]) != currentTypeface) {
                     val runLength = i - start
                     val tmp = FloatArray(runLength)
+                    if (BuildConfig.DEBUG && GeometryDiagnostics.sampling) GeometryDiagnostics.paintCall(mixed = true)
                     paint.getTextWidths(text, start, i, tmp)
                     System.arraycopy(tmp, 0, widths, start, runLength)
                     if (i < text.length) {

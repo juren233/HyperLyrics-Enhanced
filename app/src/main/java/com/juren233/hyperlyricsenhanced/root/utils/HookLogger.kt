@@ -3,6 +3,7 @@ package com.juren233.hyperlyricsenhanced.root.utils
 import android.content.SharedPreferences
 import android.util.Log
 import com.juren233.hyperlyricsenhanced.BuildConfig
+import com.juren233.hyperlyricsenhanced.lyric.view.line.GeometryDiagnostics
 import com.juren233.hyperlyricsenhanced.common.HyperLogger
 import com.juren233.hyperlyricsenhanced.common.LogLevelPolicy
 import com.juren233.hyperlyricsenhanced.common.UIConstants
@@ -22,6 +23,14 @@ object HookLogger : HyperLogger {
             field = value
             logPrefs = null
             logPrefsResolved = false
+            if (BuildConfig.DEBUG) {
+                // libxposed's framework tag is required for modules*.log / Export All Logs.
+                runCatching {
+                    GeometryDiagnostics.setHostLogger(
+                        if (value == null) null else { message -> i("HLEGeomS0", message) }
+                    )
+                }
+            }
         }
 
     override fun d(tag: String, msg: String) {

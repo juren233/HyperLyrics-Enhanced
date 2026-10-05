@@ -8,6 +8,8 @@
 
 package com.juren233.hyperlyricsenhanced.lyric.view.line.model
 
+import com.juren233.hyperlyricsenhanced.BuildConfig
+import com.juren233.hyperlyricsenhanced.lyric.view.line.GeometryDiagnostics
 import android.graphics.Paint
 import android.graphics.Typeface
 import com.juren233.hyperlyricsenhanced.lyric.view.line.MixedTypefaceText
@@ -80,11 +82,15 @@ data class WordModel(
         paint: Paint,
         typefaceSelector: ((Char) -> Typeface)? = null
     ) {
+        val sampled = BuildConfig.DEBUG && GeometryDiagnostics.sampling
+        val measurementStart = if (sampled) System.nanoTime() else 0L
         if (typefaceSelector != null) {
             MixedTypefaceText.getTextWidths(paint, text, typefaceSelector, charWidths)
         } else {
+            if (sampled) GeometryDiagnostics.paintCall(mixed = false)
             paint.getTextWidths(chars, 0, chars.size, charWidths)
         }
+        val positionStart = if (sampled) System.nanoTime() else 0L
         textWidth = charWidths.sum()
         startPosition = previous?.endPosition ?: 0f
         endPosition = startPosition + textWidth
@@ -95,6 +101,9 @@ data class WordModel(
             currentPosition += charWidths[i]
             charEndPositions[i] = currentPosition
         }
+        if (sampled) GeometryDiagnostics.word(
+            text.length, positionStart - measurementStart, System.nanoTime() - positionStart
+        )
     }
 }
 
