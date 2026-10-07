@@ -24,6 +24,17 @@ internal object AppleLyricTextTransform {
         return ChineseUtils.toSimplified(currentContext, text)
     }
 
+    /**
+     * 展示边界使用：开启繁转简时把解析到的繁体歌名/歌手名/专辑名转成简体。
+     * 只用于写入 App UI、通知与框架元数据；持久化原名缓存必须保留原值，
+     * 否则关闭开关无法恢复，也会改变在线检索使用的原名键。
+     */
+    fun displayAlias(alias: Alias): Alias = alias.copy(
+        title = transform(alias.title).orEmpty(),
+        artist = transform(alias.artist).orEmpty(),
+        album = transform(alias.album).orEmpty(),
+    )
+
     fun isRawReadActive(): Boolean = (rawReadDepth.get() ?: 0) > 0
 
     fun <T> withRawReads(block: () -> T): T {

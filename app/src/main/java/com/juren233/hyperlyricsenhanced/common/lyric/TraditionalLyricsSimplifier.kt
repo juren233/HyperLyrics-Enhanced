@@ -6,8 +6,14 @@ import com.juren233.hyperlyricsenhanced.lyric.model.RichLyricLine
 import com.juren233.hyperlyricsenhanced.lyric.model.Song
 
 object TraditionalLyricsSimplifier {
+    /**
+     * 转换所有展示字段：歌名/歌手名同样可能来自繁体的原地区元数据。
+     * `metadata` 里的原名键（在线检索用）保持原值，不在此处转换。
+     */
     fun simplify(song: Song, convert: (String) -> String): Song =
         song.copy(
+            name = song.name?.let(convert),
+            artist = song.artist?.let(convert),
             lyrics = song.lyrics?.map { line -> simplify(line, convert) }
         )
 

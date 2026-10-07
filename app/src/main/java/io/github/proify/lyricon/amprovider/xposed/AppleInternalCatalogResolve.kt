@@ -275,6 +275,16 @@ internal fun AppleInternalCatalogResolver.resolveOriginalEntityForLanguage(
             if (entityType == LocalizedEntityType.SONG) {
                 persistentOriginalCache.remove(legacyAmbiguousSongCacheKey(mediaId))
             }
+            if (caches.isOriginalEntityMissFresh(originalEntityMissKey(directCacheKey, targetLanguage))) {
+                if (BuildConfig.DEBUG) {
+                    ProviderLogger.diagnostic(
+                        "Apple 原地区实体负缓存命中: id=$mediaId, entityType=$entityType, " +
+                            "language=$targetLanguage"
+                    )
+                }
+                onResolved(null)
+                return@getFirst
+            }
             enqueueOriginalEntityRequest(
                 OriginalEntityRequest(
                     requestKey = "$entityType:$targetLanguage:$mediaId:${ids.joinToString(",")}",

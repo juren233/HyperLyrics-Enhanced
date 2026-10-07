@@ -45,8 +45,11 @@ internal fun AppleMusicProviderOrchestrator.initializeContentUiLanguage() {
                 inAppMetadata.metadataConfigurationDispatcher.dispatch()
             RootConstants.KEY_HOOK_APPLE_MUSIC_LOCALIZED_METADATA_CACHE ->
                 catalogLanguage.applyConfiguredContentUiLanguage(changed)
-            RootConstants.KEY_HOOK_APPLE_MUSIC_SIMPLIFY_TRADITIONAL_LYRICS ->
+            RootConstants.KEY_HOOK_APPLE_MUSIC_SIMPLIFY_TRADITIONAL_CONTENT -> {
                 lyricsPlayback.lyricsHooks.onAppleLyricsDisplayPreferenceChanged(AppleLyricsDisplayPreference.TEXT)
+                // 该开关同时覆盖歌名/歌手名/专辑名，必须重新分发元数据，展示值才会立即改写。
+                inAppMetadata.metadataConfigurationDispatcher.dispatch()
+            }
             RootConstants.KEY_HOOK_APPLE_MUSIC_HIDE_MANDARIN_PINYIN -> {
                 lyricsPlayback.lyricsHooks.onAppleLyricsDisplayPreferenceChanged(AppleLyricsDisplayPreference.PRONUNCIATION)
             }

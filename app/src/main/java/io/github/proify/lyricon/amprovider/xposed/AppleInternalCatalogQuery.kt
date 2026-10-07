@@ -166,6 +166,17 @@ internal fun AppleInternalCatalogResolver.queryByConfiguredRegion(
     storefront: String,
     language: String,
     onResult: (Map<String, CatalogSong>) -> Unit,
+) = queryByConfiguredRegionResult(mediaIds, entityType, storefront, language) { songs ->
+    onResult(songs.orEmpty())
+}
+
+/** 同 [queryByConfiguredRegion]，但请求失败、超时或响应解析失败时回调 null，以区分目录空结果。 */
+internal fun AppleInternalCatalogResolver.queryByConfiguredRegionResult(
+    mediaIds: List<String>,
+    entityType: LocalizedEntityType,
+    storefront: String,
+    language: String,
+    onResult: (Map<String, CatalogSong>?) -> Unit,
 ) {
     val queryParams = linkedMapOf(
         "ids" to mediaIds.joinToString(","),
@@ -183,24 +194,24 @@ internal fun AppleInternalCatalogResolver.queryByConfiguredRegion(
         queryParams = queryParams,
     ) { response ->
         val songs = runCatching {
-            response?.let { parseCatalogEntities(it, language, entityType) }.orEmpty()
+            response?.let { parseCatalogEntities(it, language, entityType) }
         }.onFailure { error ->
             ProviderLogger.error(
                 "Apple 地区批量元数据响应解析失败: entityType=$entityType, " +
                     "ids=${mediaIds.size}, storefront=$storefront, language=$language",
                 error,
             )
-        }.getOrDefault(emptyList())
-        val byId = songs.mapNotNull { song ->
+        }.getOrNull()
+        val byId = songs.orEmpty().mapNotNull { song ->
             song.id?.let { it to song }
         }.toMap()
         byId.forEach { (id, song) -> rememberCatalogIdentity(id, song) }
         ProviderLogger.info(
             "Apple 地区批量元数据候选: entityType=$entityType, " +
                 "requested=${mediaIds.size}, resolved=${byId.size}, " +
-                "storefront=$storefront, language=$language"
+                "storefront=$storefront, language=$language, responded=${songs != null}"
         )
-        onResult(byId)
+        onResult(byId.takeIf { songs != null })
     }
 }
 

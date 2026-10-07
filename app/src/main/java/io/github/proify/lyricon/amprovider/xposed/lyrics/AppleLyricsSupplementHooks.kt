@@ -300,8 +300,8 @@ internal class AppleLyricsSupplementHooks(
 
     fun isSimplifyTraditionalLyricsEnabled(): Boolean =
         contentUiLanguagePrefs?.getBoolean(
-            RootConstants.KEY_HOOK_APPLE_MUSIC_SIMPLIFY_TRADITIONAL_LYRICS,
-            RootConstants.DEFAULT_HOOK_APPLE_MUSIC_SIMPLIFY_TRADITIONAL_LYRICS,
+            RootConstants.KEY_HOOK_APPLE_MUSIC_SIMPLIFY_TRADITIONAL_CONTENT,
+            RootConstants.DEFAULT_HOOK_APPLE_MUSIC_SIMPLIFY_TRADITIONAL_CONTENT,
         ) == true
 
     private val translationPreferenceHitLogged = AtomicBoolean(false)

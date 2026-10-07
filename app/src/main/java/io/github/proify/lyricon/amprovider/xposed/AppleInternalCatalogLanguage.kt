@@ -23,7 +23,8 @@ import java.util.concurrent.atomic.AtomicLong
 internal fun canonicalOriginalLanguage(language: String): String {
     val normalized = language.trim()
     return when (normalized.lowercase()) {
-        "zh-hans-cn", "zh-hant-hk", "zh-hant-tw", "zh-hk", "zh-mo", "zh-tw", "zh-cn" ->
+        "zh-hans-cn", "zh-hant-hk", "zh-hant-tw", "zh-hant-mo", "zh-hk", "zh-mo", "zh-tw",
+        "zh-cn" ->
             "zh-Hans-CN"
         else -> normalized
     }
@@ -59,6 +60,42 @@ internal fun isLegacyTraditionalChineseLanguage(language: String): Boolean =
         "zh-mo",
         "zh-tw",
     )
+
+/** 原地区中文条目查询的候选商店地区，按先后顺序串行回退。 */
+internal data class OriginalStorefrontCandidate(
+    val language: String,
+    val storefront: String,
+)
+
+/**
+ * 原地区目录可能整首省略条目（例如国区目录不含该曲），但同一 ID 在港/台仍有正式中文名，
+ * 所以中文原名按 cn → hk → tw → mo 逐地区回退；港澳台别名语义上仍归一到 zh-Hans-CN。
+ * 新加坡等地区对现代专辑只给英文译名、对老粤语专辑只罗马化歌手，不能作为中文原名来源。
+ */
+internal fun originalEntityStorefrontCandidates(
+    language: String,
+): List<OriginalStorefrontCandidate> =
+    when (val canonical = canonicalOriginalLanguage(language)) {
+        "zh-Hans-CN" -> listOf(
+            OriginalStorefrontCandidate(language = "zh-Hans-CN", storefront = "cn"),
+            OriginalStorefrontCandidate(language = "zh-Hant-HK", storefront = "hk"),
+            OriginalStorefrontCandidate(language = "zh-Hant-TW", storefront = "tw"),
+            // 澳门目录与港/台同样供货繁体中文名（Apple 对澳门商店的语言映射为 zh-HK），末位兜底。
+            OriginalStorefrontCandidate(language = "zh-Hant-MO", storefront = "mo"),
+        )
+        else -> listOfNotNull(
+            storefrontForOriginalLanguage(canonical)?.let { storefront ->
+                OriginalStorefrontCandidate(language = canonical, storefront = storefront)
+            },
+        )
+    }
+
+/**
+ * 回退地区的别名按原地区语言键归一：港澳台标签既会被 [isLegacyTraditionalChineseLanguage]
+ * 当作遗留缓存丢弃，也无法与既有 zh-Hans-CN 键匹配。
+ */
+internal fun normalizeOriginalEntityAlias(alias: Alias): Alias =
+    alias.copy(language = canonicalOriginalLanguage(alias.language))
 
 internal fun canonicalCachedOriginalAlias(alias: Alias): Alias? {
     if (isLegacyTraditionalChineseLanguage(alias.language)) return null
@@ -179,6 +216,7 @@ internal fun localizedStorefrontHeaderValue(
         "sa" -> "143479"
         "il" -> "143491"
         "ua" -> "143492"
+        "mo" -> "143515"
         "bg" -> "143526"
         else -> null
     } ?: return null
@@ -365,4 +403,3 @@ acceptableResults: List<Alias>,
 ?: acceptableResults.firstNotNullOfOrNull { result ->
     result.album.takeIf(String::isNotBlank)
 }
-

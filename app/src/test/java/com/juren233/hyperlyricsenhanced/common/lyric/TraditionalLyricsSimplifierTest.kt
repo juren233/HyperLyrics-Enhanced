@@ -14,6 +14,7 @@ class TraditionalLyricsSimplifierTest {
         val source = Song(
             id = "song-id",
             name = "歌曲名稱",
+            artist = "陳奕迅",
             lyrics = listOf(
                 RichLyricLine(
                     begin = 1_000L,
@@ -33,6 +34,8 @@ class TraditionalLyricsSimplifierTest {
             )
         )
         val replacements = mapOf(
+            "歌曲名稱" to "歌曲名称",
+            "陳奕迅" to "陈奕迅",
             "繁體歌詞" to "繁体歌词",
             "繁體" to "繁体",
             "伴唱歌詞" to "伴唱歌词",
@@ -49,7 +52,8 @@ class TraditionalLyricsSimplifierTest {
 
         assertNotSame(source, simplified)
         assertNotSame(source.lyrics.orEmpty().single(), line)
-        assertEquals("歌曲名稱", simplified.name)
+        assertEquals("歌曲名称", simplified.name)
+        assertEquals("陈奕迅", simplified.artist)
         assertEquals("繁体歌词", line.text)
         assertEquals("繁体", line.words.orEmpty().single().text)
         assertEquals("伴唱歌词", line.secondary)
@@ -62,6 +66,8 @@ class TraditionalLyricsSimplifierTest {
         assertEquals(true, line.metadata?.getBoolean(LyricMetadataKeys.GROUP_VOCALS))
         assertEquals("fan ti ge ci", line.roma)
         assertEquals(1_000L, line.begin)
+        assertEquals("歌曲名稱", source.name)
+        assertEquals("陳奕迅", source.artist)
         assertEquals("繁體歌詞", source.lyrics.orEmpty().single().text)
         assertEquals(
             "伴唱翻譯",
