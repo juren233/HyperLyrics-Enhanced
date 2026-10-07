@@ -558,9 +558,9 @@ class LyriconSource : LyricSource {
     ) ?: RootConstants.DEFAULT_HOOK_APPLE_MUSIC_RESTORE_CJK_ORIGINAL_METADATA
 
     private fun isSimplifyTraditionalLyricsEnabled(): Boolean = prefs?.getBoolean(
-        RootConstants.KEY_HOOK_APPLE_MUSIC_SIMPLIFY_TRADITIONAL_LYRICS,
-        RootConstants.DEFAULT_HOOK_APPLE_MUSIC_SIMPLIFY_TRADITIONAL_LYRICS,
-    ) ?: RootConstants.DEFAULT_HOOK_APPLE_MUSIC_SIMPLIFY_TRADITIONAL_LYRICS
+        RootConstants.KEY_HOOK_APPLE_MUSIC_SIMPLIFY_TRADITIONAL_CONTENT,
+        RootConstants.DEFAULT_HOOK_APPLE_MUSIC_SIMPLIFY_TRADITIONAL_CONTENT,
+    ) ?: RootConstants.DEFAULT_HOOK_APPLE_MUSIC_SIMPLIFY_TRADITIONAL_CONTENT
 
     internal fun hasTranslation(song: LocalSong?): Boolean = song?.lyrics?.any {
         OnlineTranslationContentPolicy.isMeaningful(it.translation)

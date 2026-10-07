@@ -28,7 +28,7 @@ internal fun LyriconSource.onPreferenceChanged(key: String?) {
     if (key == RootConstants.KEY_HOOK_APPLE_MUSIC_RESTORE_CJK_ORIGINAL_METADATA) {
         mainHandler.post { applyOriginalMetadataPreferenceChange() }
     }
-    if (key == RootConstants.KEY_HOOK_APPLE_MUSIC_SIMPLIFY_TRADITIONAL_LYRICS) {
+    if (key == RootConstants.KEY_HOOK_APPLE_MUSIC_SIMPLIFY_TRADITIONAL_CONTENT) {
         mainHandler.post { applySimplifiedLyricsPreferenceChange() }
     }
     if (key == RootConstants.KEY_HOOK_APPLE_MUSIC_NATIVE_ONLINE_TRANSLATION) {

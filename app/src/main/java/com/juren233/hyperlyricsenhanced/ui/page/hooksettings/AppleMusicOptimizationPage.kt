@@ -122,8 +122,8 @@ fun AppleMusicOptimizationPage(
     var simplifyTraditionalLyrics by remember {
         mutableStateOf(
             prefs.getBoolean(
-                RootConstants.KEY_HOOK_APPLE_MUSIC_SIMPLIFY_TRADITIONAL_LYRICS,
-                RootConstants.DEFAULT_HOOK_APPLE_MUSIC_SIMPLIFY_TRADITIONAL_LYRICS,
+                RootConstants.KEY_HOOK_APPLE_MUSIC_SIMPLIFY_TRADITIONAL_CONTENT,
+                RootConstants.DEFAULT_HOOK_APPLE_MUSIC_SIMPLIFY_TRADITIONAL_CONTENT,
             )
         )
     }
@@ -570,13 +570,13 @@ fun AppleMusicOptimizationPage(
             ) {
                 SwitchPreference(
                     title = stringResource(
-                        R.string.title_apple_music_simplify_traditional_lyrics
+                        R.string.title_apple_music_simplify_traditional_content
                     ),
                     checked = simplifyTraditionalLyrics,
                     onCheckedChange = { enabled ->
                         simplifyTraditionalLyrics = enabled
                         saveConfig(
-                            RootConstants.KEY_HOOK_APPLE_MUSIC_SIMPLIFY_TRADITIONAL_LYRICS,
+                            RootConstants.KEY_HOOK_APPLE_MUSIC_SIMPLIFY_TRADITIONAL_CONTENT,
                             enabled,
                         )
                     },

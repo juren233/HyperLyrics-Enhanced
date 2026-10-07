@@ -5,6 +5,7 @@
  */
 package io.github.proify.lyricon.amprovider.xposed
 
+import android.os.SystemClock
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -26,7 +27,9 @@ import java.util.concurrent.ConcurrentHashMap
  * pre-split inline `synchronized(cache)` blocks used — the helper methods are the only way to
  * touch a table, and they never hold a caller-supplied monitor while invoking host code.
  */
-internal class AppleInternalCatalogCaches {
+internal class AppleInternalCatalogCaches(
+    private val originalEntityMisses: OriginalEntityMissCache = OriginalEntityMissCache(),
+) {
 
     // ---- original-region song aliases (access-ordered LRU, bounded by CACHE_SIZE) ----
 
@@ -199,6 +202,15 @@ internal class AppleInternalCatalogCaches {
         synchronized(warmingSelections) { warmingSelections.remove(selection) }
     }
 
+    // ---- confirmed original-entity misses (short-lived negative cache) ----
+
+    fun isOriginalEntityMissFresh(key: String): Boolean = originalEntityMisses.isFresh(key)
+
+    fun rememberOriginalEntityMiss(key: String) = originalEntityMisses.remember(key)
+
+    fun forgetOriginalEntityMisses(directCacheKey: String) =
+        originalEntityMisses.forgetEndingWith("|$directCacheKey")
+
     // ---- immutable snapshots for diagnostics and tests ----
 
     /** Copy of the localized alias table for diagnostics/tests; never the live map. */
@@ -212,4 +224,38 @@ internal class AppleInternalCatalogCaches {
     /** Copy of the localized artist alias table in LRU order, for diagnostics/tests. */
     fun localizedArtistAliasSnapshot(): Map<String, Alias> =
         synchronized(localizedArtistAliasCache) { LinkedHashMap(localizedArtistAliasCache) }
+}
+
+/**
+ * 原地区实体在全部候选地区都确认缺失（目录正常响应但不含该条目）后的短时负缓存。
+ * 只在内存中保存，进程重启或 TTL 到期后重新查询；网络失败/超时不会写入。
+ * 避免同一缺失条目在页面反复可见时每次都串行打满全部回退地区。
+ */
+internal class OriginalEntityMissCache(
+    private val ttlMs: Long = ORIGINAL_ENTITY_MISS_TTL_MS,
+    private val maxSize: Int = ORIGINAL_ENTITY_MISS_CACHE_SIZE,
+    private val now: () -> Long = SystemClock::elapsedRealtime,
+) {
+    private val missedAt = object : LinkedHashMap<String, Long>(32, 0.75f, false) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Long>?): Boolean =
+            size > maxSize
+    }
+
+    fun isFresh(key: String): Boolean = synchronized(missedAt) {
+        val at = missedAt[key] ?: return false
+        if (now() - at < ttlMs) return true
+        missedAt.remove(key)
+        false
+    }
+
+    fun remember(key: String) {
+        synchronized(missedAt) {
+            missedAt.remove(key)
+            missedAt[key] = now()
+        }
+    }
+
+    fun forgetEndingWith(suffix: String) {
+        synchronized(missedAt) { missedAt.keys.removeAll { it.endsWith(suffix) } }
+    }
 }

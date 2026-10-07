@@ -45,11 +45,12 @@ internal class AppleMetadataOverrideApplicationCoordinator(
 
     fun publishCurrentPlaybackAlias(mediaId: String, alias: Alias) {
         if (playbackMetadataCoordinator.currentMetadataId() != mediaId) return
-        metadataStore.updateCurrentPlaybackOverride(alias)
+        val displayAlias = AppleLyricTextTransform.displayAlias(alias)
+        metadataStore.updateCurrentPlaybackOverride(displayAlias)
         val updated = MediaMetadataCache.updateDisplayMetadata(
             mediaId = mediaId,
-            title = alias.title,
-            artist = alias.artist,
+            title = displayAlias.title,
+            artist = displayAlias.artist,
         ) ?: return
         if (BuildConfig.DEBUG) AppleMetadataFlowDiagnostics.record("associated_artist_playback_publish") {
             "id=$mediaId title=${AppleMetadataFlowDiagnostics.text(updated.title)} " +

@@ -129,7 +129,7 @@ internal fun AppleInAppMetadataResolutionCoordinator.effectiveAlias(
     val originalArtistResolved = associatedArtistIds.isEmpty() ||
         !canUseAssociatedArtist ||
         metadataStore.isOriginalArtistResolved(mediaId)
-    return selectEffectiveMetadataAlias(
+    val effective = selectEffectiveMetadataAlias(
         restoreOriginalEnabled = host.isRestoreOriginalEnabled(),
         originalMetadataResolved = metadataStore.isOriginalResolved(mediaId),
         originalMetadata = originalMetadata,
@@ -143,6 +143,9 @@ internal fun AppleInAppMetadataResolutionCoordinator.effectiveAlias(
         originalArtist = originalArtist,
         localizedArtist = localizedArtist,
     )
+    // 这里返回的别名就是所有 App 内 UI / 通知 / 框架元数据实际写入的展示值，
+    // 繁转简只作用在此处；metadataStore 与持久化原名缓存仍保存繁体原值。
+    return effective?.let(AppleLyricTextTransform::displayAlias)
 }
 
 internal fun AppleInAppMetadataResolutionCoordinator.ensureAssociatedArtistOverride(
@@ -457,4 +460,3 @@ internal fun AppleInAppMetadataResolutionCoordinator.collectAssociatedArtistAlia
         }
     }
 }
-
