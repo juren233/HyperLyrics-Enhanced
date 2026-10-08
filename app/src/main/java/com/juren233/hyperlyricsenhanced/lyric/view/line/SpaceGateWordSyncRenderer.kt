@@ -100,6 +100,10 @@ internal class SpaceGateWordSyncRenderer(private val view: SpaceGateLyricLineVie
     var lastPosition = Long.MIN_VALUE
         private set
 
+    /** reset 后、seek 前的首个进度可走换句追赶，见 [SwitchProgressCatchUp]。 */
+    private var catchUpArmed = true
+    private var catchUpUntilMs = Long.MIN_VALUE
+
     private var lastTraceOffset = Float.NaN
 
     override val isPlaying get() = progressAnimator.isAnimating
@@ -146,6 +150,7 @@ internal class SpaceGateWordSyncRenderer(private val view: SpaceGateLyricLineVie
             val word = model.wordTimingNavigator.first(posMs)
             progressDiagnostics?.tick(posMs, word?.begin, word?.end)
         }
+        cancelSwitchCatchUp()
         progressAnimator.jumpTo(target)
         updateScrollState(model, state, viewWidth)
         lastPosition = posMs
@@ -168,10 +173,19 @@ internal class SpaceGateWordSyncRenderer(private val view: SpaceGateLyricLineVie
         if (BuildConfig.DEBUG && view.isRightSide) {
             progressDiagnostics?.tick(posMs, word?.begin, word?.end)
         }
+        if (posMs < catchUpUntilMs) {
+            // 追赶窗口内保持既定目标，窗口结束后由下方逐词动画接续。
+            lastPosition = posMs
+            return
+        }
         val target = animationTargetWidth(posMs, model, word)
 
-        if (word != null && progressAnimator.currentWidth == 0f) {
-            progressAnimator.jumpTo(exactTargetWidth(posMs, model, word))
+        if (progressAnimator.currentWidth == 0f) {
+            if (startSwitchCatchUp(posMs, model)) {
+                lastPosition = posMs
+                return
+            }
+            if (word != null) progressAnimator.jumpTo(exactTargetWidth(posMs, model, word))
         }
         if (target != progressAnimator.targetWidth) {
             progressAnimator.animateTo(target, remainingDuration(posMs, word))
@@ -228,11 +242,14 @@ internal class SpaceGateWordSyncRenderer(private val view: SpaceGateLyricLineVie
         progressAnimator.reset()
         state.reset()
         lastPosition = Long.MIN_VALUE
+        catchUpArmed = true
+        catchUpUntilMs = Long.MIN_VALUE
         lastTraceOffset = Float.NaN
         textDrawer.clearShaderCache()
     }
 
     fun freeze(model: LyricModel, state: LineState, viewWidth: Int) {
+        cancelSwitchCatchUp()
         progressAnimator.stopAtCurrent()
         updateScrollState(model, state, viewWidth)
         notifyProgress(model)
@@ -301,11 +318,36 @@ internal class SpaceGateWordSyncRenderer(private val view: SpaceGateLyricLineVie
         }
     }
 
-    private fun interpolateWordWidth(posMs: Long, word: WordModel): Float {
-        val duration = (word.end - word.begin).takeIf { it > 0 } ?: word.duration
-        if (duration <= 0L) return word.endPosition
-        val progress = ((posMs - word.begin).toFloat() / duration.toFloat()).coerceIn(0f, 1f)
-        return word.startPosition + (word.endPosition - word.startPosition) * progress
+    private fun interpolateWordWidth(posMs: Long, word: WordModel): Float =
+        SwitchProgressCatchUp.interpolate(
+            posMs, word.begin, word.end, word.duration, word.startPosition, word.endPosition
+        )
+
+    /** 新句首个进度已落后于开唱时，从 0 在有限窗口内补到窗口末端的同步宽度。 */
+    private fun startSwitchCatchUp(posMs: Long, model: LyricModel): Boolean {
+        if (!catchUpArmed) return false
+        // 尚未开唱时保持待命，首词开始后再判定。
+        if (SwitchProgressCatchUp.syncWidthAt(posMs, model) <= 0f) return false
+        catchUpArmed = false
+        val firstBegin = model.words.firstOrNull()?.begin ?: return false
+        val window = SwitchProgressCatchUp.windowMs(posMs - firstBegin) ?: return false
+        val untilMs = posMs + window
+        val target = SwitchProgressCatchUp.syncWidthAt(untilMs, model)
+        progressAnimator.animateTo(target, window)
+        catchUpUntilMs = untilMs
+        if (BuildConfig.DEBUG && view.isRightSide) {
+            HookLogger.d(
+                "SwitchCatchUp",
+                "view=${Integer.toHexString(System.identityHashCode(view))} lag=${posMs - firstBegin} " +
+                    "window=$window target=$target width=${model.width}"
+            )
+        }
+        return true
+    }
+
+    fun cancelSwitchCatchUp() {
+        catchUpArmed = false
+        catchUpUntilMs = Long.MIN_VALUE
     }
 
     private fun remainingDuration(posMs: Long, word: WordModel?): Long {

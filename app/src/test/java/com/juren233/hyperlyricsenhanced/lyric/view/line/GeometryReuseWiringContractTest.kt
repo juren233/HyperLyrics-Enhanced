@@ -159,6 +159,30 @@ class GeometryReuseWiringContractTest {
         assertFalse("Reset must retain pre-draw renderer publication semantics", reset.contains("clearSeamLayout()"))
     }
 
+    @Test
+    fun `configuration refreshes geometry once after size and typefaces are final`() {
+        views.forEach { file ->
+            val code = source(file)
+            val configure = block(code, "fun configureWith(")
+            assertFalse("$file configure must not use the refreshing setter", configure.contains("setTextSize("))
+            assertEquals(1, Regex("refreshSizes\\(").findAll(configure).count())
+            assertBefore(configure, "val textSizeChanged = applyTextSizeToPaints(text.size)", "baseTypeface = text.typeface")
+            assertBefore(configure, "narrowTypeface = text.narrowTypeface", "refreshSizes(GeometryReason.CONFIGURE)")
+            assertBefore(configure, "applyCurrentTypeface()", "refreshSizes(GeometryReason.CONFIGURE)")
+            assertBefore(configure, "refreshSizes(GeometryReason.CONFIGURE)",
+                "if (textSizeChanged) syncRenderer.updateLayout(")
+
+            // The standalone setter keeps its immediate refresh, relayout and invalidation.
+            val setter = compact(block(code, "fun setTextSize(size: Float)"))
+            assertTrue(setter.startsWith("if (!applyTextSizeToPaints(size)) return refreshSizes(GeometryReason.TEXT_SIZE)"))
+            assertTrue(setter.contains("syncRenderer.updateLayout(_model, lineState,"))
+            assertTrue(setter.endsWith("invalidate()"))
+            val paints = compact(block(code, "private fun applyTextSizeToPaints(size: Float): Boolean"))
+            assertFalse(paints.contains("refreshSizes("))
+            assertTrue(paints.contains("textPaint.textSize = size syncRenderer.setTextSize(size) return true"))
+        }
+    }
+
     // Same module/project-relative convention as RichLyricHugMeasureContractTest; walking
     // ancestors also supports a test runner started in a nested build directory.
     private fun source(name: String): String {

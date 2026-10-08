@@ -484,6 +484,16 @@ class RichLyricLineView(
         secondary.updatePosition(position)
     }
 
+    /**
+     * 宿主形变期间的逐字进度：内容、宽度、光晕与预览仍由延后批次在稳定后提交，
+     * 这里只让已上屏的逐字行继续走。不记 [lastPosition]，稳定后的 [setPosition] 照常完整执行。
+     */
+    fun advanceWordProgress(position: Long) {
+        if (animationTransition) return
+        main.updateWordProgress(position)
+        secondary.updateWordProgress(position)
+    }
+
     fun setPlaybackActive(active: Boolean) {
         main.setPlaybackActive(active)
         secondary.setPlaybackActive(active)

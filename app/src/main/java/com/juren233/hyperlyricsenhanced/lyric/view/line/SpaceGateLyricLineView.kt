@@ -332,13 +332,18 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
     }
 
     fun setTextSize(size: Float) {
-        val needsUpdate = textPaint.textSize != size || syncRenderer.bgPaint.textSize != size
-        if (!needsUpdate) return
-        textPaint.textSize = size
-        syncRenderer.setTextSize(size)
+        if (!applyTextSizeToPaints(size)) return
         refreshSizes(GeometryReason.TEXT_SIZE)
         syncRenderer.updateLayout(_model, lineState, getSpaceGateVirtualWidth(), measuredHeight)
         invalidate()
+    }
+
+    /** Paint 部分；调用方负责随后刷新几何与渲染器布局。返回字号是否实际改变。 */
+    private fun applyTextSizeToPaints(size: Float): Boolean {
+        if (textPaint.textSize == size && syncRenderer.bgPaint.textSize == size) return false
+        textPaint.textSize = size
+        syncRenderer.setTextSize(size)
+        return true
     }
 
     private fun applyCurrentTypeface() {
@@ -350,6 +355,7 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
 
     fun setLyric(rawLine: LyricLine?) {
         val line = if (rawLine?.text.isNullOrBlank()) null else rawLine
+        val previousModel = _model
 
         traceSwitch("before_bind", dumpHistory = true)
         reset()
@@ -358,6 +364,8 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
 
         _model = line?.normalize()?.createModel() ?: emptyLyricModel()
         geometryReuse.bind(_model)
+        // 设置刷新等同句重绑不是换句落地，保留原有直接同步，不从头重扫高亮。
+        if (SwitchProgressCatchUp.isSameLine(previousModel, _model)) syncRenderer.cancelSwitchCatchUp()
         rightPreview.bind(_model.metadata?.get(METADATA_NEXT_LINE_RIGHT_TEXT))
         updateRightPreviewMode()
         applyCurrentTypeface()
@@ -382,7 +390,8 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
     ) {
         this.centerIfPossible = center
         updateColor(text.color, highlight.background, highlight.foreground)
-        setTextSize(text.size)
+        // 字号、字体、混排配置全部就绪后只刷新一次几何，避免先按旧字体测一遍。
+        val textSizeChanged = applyTextSizeToPaints(text.size)
         baseTypeface = text.typeface
         narrowTypeface = text.narrowTypeface
         applyCurrentTypeface()
@@ -402,6 +411,7 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
         updateFadingEdges()
 
         refreshSizes(GeometryReason.CONFIGURE)
+        if (textSizeChanged) syncRenderer.updateLayout(_model, lineState, getSpaceGateVirtualWidth(), measuredHeight)
         animator.stop()
         if (!isStaticPreview && playbackActive) animator.startIfNeeded()
         invalidate()
@@ -483,6 +493,11 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
                 siblingView?.invalidate()
             }
         }
+    }
+
+    /** 宿主形变期间只推进逐字高亮；纯文本滚动与间奏指示仍随稳定后的延后批次开始。 */
+    fun updateWordProgress(posMs: Long) {
+        if (isWordSync && !isInterludeIndicator) updatePosition(posMs)
     }
 
     fun updatePosition(posMs: Long) {

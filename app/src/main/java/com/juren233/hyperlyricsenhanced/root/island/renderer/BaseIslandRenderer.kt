@@ -378,7 +378,14 @@ object BaseIslandRenderer : IslandRenderer {
         IslandViewRegistry.snapshotAttachedInjectedViews(lyricPkg)
             .forEach { (cv, indexedViews) ->
                 cv.post {
-                    if (retiredForReload || IslandContentUpdateCoordinator.deferContent(cv, isSeek = isSeek)) return@post
+                    if (retiredForReload) return@post
+                    if (IslandContentUpdateCoordinator.deferContent(cv, isSeek = isSeek)) {
+                        // 形变期间只放行逐字进度，新句不再停在开头等宿主稳定；seek 与其余内容仍整批延后。
+                        if (!isSeek && IslandContentUpdateCoordinator.isRealContent(cv)) {
+                            advanceWordProgress(cv, indexedViews, position)
+                        }
+                        return@post
+                    }
                     if (indexedViews.isEmpty()) {
                         updateViewPosition(
                             cv.findViewWithTag(IslandProbeUtils.LEFT_TEST_VIEW_TAG),
@@ -525,6 +532,21 @@ object BaseIslandRenderer : IslandRenderer {
         when (view) {
             is RichLyricLineView -> view.setPlaybackActive(isPlaying)
             is SpaceGateRichLyricLineView -> view.setPlaybackActive(isPlaying)
+        }
+    }
+
+    private fun advanceWordProgress(cv: ViewGroup, indexedViews: List<View>, position: Long) {
+        val views = indexedViews.ifEmpty {
+            listOf(
+                cv.findViewWithTag<View>(IslandProbeUtils.LEFT_TEST_VIEW_TAG),
+                cv.findViewWithTag<View>(IslandProbeUtils.RIGHT_TEST_VIEW_TAG),
+            )
+        }
+        views.forEach { view ->
+            when (view) {
+                is RichLyricLineView -> view.advanceWordProgress(position)
+                is SpaceGateRichLyricLineView -> view.advanceWordProgress(position)
+            }
         }
     }
 
