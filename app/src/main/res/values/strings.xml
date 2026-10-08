@@ -863,11 +863,4 @@
     <string name="island_touch_seek_seconds">跳转秒数</string>
     <string name="island_touch_seconds_value">%1$d 秒</string>
     <string name="island_touch_seconds_range">1–300 秒</string>
-    <string name="option_refresh_system_ui_hot_reload">系统界面（实验性热重载，有卡死风险）</string>
-    <string name="summary_refresh_hot_reload_no_root">实验性热重载无需 root；重启进程需要 root 权限</string>
-    <string name="toast_system_ui_hot_reload_success">系统界面模块更新已加载</string>
-    <string name="toast_system_ui_hot_reload_rejected">当前运行版本需要先重启一次系统界面</string>
-    <string name="toast_system_ui_hot_reload_unavailable">当前没有可热重载的系统界面模块更新</string>
-    <string name="toast_system_ui_hot_reload_pending">热重载仍在处理中，请稍后查看</string>
-    <string name="toast_system_ui_hot_reload_failed">热重载未完成；可手动选择重启系统界面</string>
 </resources>

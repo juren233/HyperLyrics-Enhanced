@@ -39,4 +39,21 @@ object TimelineContentPolicy {
         }
         return if (matches) Decision.APPLY else Decision.DROP_WRONG_TRACK
     }
+
+    /**
+     * 已应用内容由歌词源以自身包名声明、且与媒体锚点同包时，返回该播放器包名。
+     * 锚点可能选中任意媒体会话（含视频 App），只有来源声明过的包才算歌词来源播放器。
+     */
+    fun sourceDeclaredPlayer(content: TimelineContent, anchorTrack: TrackIdentity): String? {
+        val declared = content.track?.packageName?.trim().orEmpty()
+        if (declared.isEmpty() || declared != anchorTrack.packageName.trim()) return null
+        return declared
+    }
+
+    /**
+     * 同曲展示信息刷新只转发给时间轴已接管的曲目（已应用内容、标题回退或同包切歌过渡）。
+     * 锚点选中的视频等非作用域会话从未被接管，刷新不得写入歌词包名与标题（issue #39 同类路径）。
+     */
+    fun shouldForwardMetadataRefresh(appliedTrackKey: String?, track: TrackIdentity): Boolean =
+        appliedTrackKey != null && appliedTrackKey == track.normalizedKey()
 }

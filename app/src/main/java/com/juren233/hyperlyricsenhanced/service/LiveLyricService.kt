@@ -48,6 +48,7 @@ class LiveLyricService : NotificationListenerService() {
                 LogManager.w("LiveLyricService", "媒体会话访问失效，正在自动重绑通知监听服务")
                 ensureListenerBound(this)
             },
+            lyricPlayerPackage = { systemUiLyricPackage },
         )
         appLyricSink = AppLyricSink(this, serviceScope, notificationPresenter)
 
@@ -109,14 +110,23 @@ class LiveLyricService : NotificationListenerService() {
         @Volatile
         private var activeInstance: LiveLyricService? = null
 
-        fun requestClassicAodRefresh(context: Context) {
+        /** SystemUI 同步的当前歌词来源播放器包名，进程级保存以跨越监听服务重绑。 */
+        @Volatile
+        var systemUiLyricPackage: String? = null
+            private set
+
+        fun requestClassicAodRefresh(context: Context, lyricPackage: String?) {
+            if (!lyricPackage.isNullOrBlank()) systemUiLyricPackage = lyricPackage
             val service = activeInstance
             if (service == null) {
                 ensureListenerBound(context)
                 return
             }
             service.serviceScope.launch {
-                LogManager.d("LiveLyricService", "收到 SystemUI AOD 焦点通知刷新请求")
+                LogManager.d(
+                    "LiveLyricService",
+                    "收到 SystemUI AOD 焦点通知刷新请求: lyricPackage=$lyricPackage"
+                )
                 service.metadataSource.refreshNow()
                 service.notificationPresenter.refreshClassicAodSongInfo()
             }

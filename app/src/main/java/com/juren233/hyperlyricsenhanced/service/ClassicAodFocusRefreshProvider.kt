@@ -46,7 +46,9 @@ class ClassicAodFocusRefreshProvider : ContentProvider() {
             LogManager.w(TAG, "拒绝非系统来源的 AOD 焦点通知刷新请求: uid=$callingUid")
             throw SecurityException("Only the system process can request an AOD focus refresh")
         }
-        context?.let(LiveLyricService::requestClassicAodRefresh)
+        val lyricPackage =
+            extras?.getString(RootConstants.CLASSIC_AOD_FOCUS_EXTRA_LYRIC_PACKAGE)
+        context?.let { LiveLyricService.requestClassicAodRefresh(it, lyricPackage) }
         return Bundle.EMPTY
     }
 

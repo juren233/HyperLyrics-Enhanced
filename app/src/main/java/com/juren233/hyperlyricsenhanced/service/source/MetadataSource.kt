@@ -4,6 +4,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.media.MediaMetadata
 import android.media.session.MediaController
+import android.media.session.MediaSession
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
 import android.os.SystemClock
@@ -11,6 +12,7 @@ import com.juren233.hyperlyricsenhanced.common.PrefsBridge
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.common.image.AlbumImageHelper
 import com.juren233.hyperlyricsenhanced.lyric.DynamicLyricData
+import com.juren233.hyperlyricsenhanced.root.ClassicAodFocusNotificationPolicy
 import com.juren233.hyperlyricsenhanced.root.source.ActiveMediaSessionSnapshot
 import com.juren233.hyperlyricsenhanced.utils.LogManager
 import kotlinx.coroutines.CoroutineScope
@@ -26,6 +28,8 @@ class MetadataSource(
     private val scope: CoroutineScope,
     private val componentName: ComponentName,
     private val onMediaSessionAccessLost: () -> Unit = {},
+    /** SystemUI 确认的歌词来源播放器；多个会话并存时优先选它，未同步时为 null。 */
+    private val lyricPlayerPackage: () -> String? = { null },
 ) {
     private var mediaSessionManager: MediaSessionManager? = null
     private var activeSessionsListener: MediaSessionManager.OnActiveSessionsChangedListener? = null
@@ -40,6 +44,7 @@ class MetadataSource(
     private val maxBitmapRetries = 5
     private val bitmapRetryDelayMs = 500L
     private var currentSongIdentifier = ""
+    private var syncedSessionToken: MediaSession.Token? = null
     private var lastEmittedDynamicTitle = ""
     private var lastPublishedActiveMediaPackages: Set<String>? = null
     private var lastActiveMediaPackagesPublishedAtMs = 0L
@@ -52,17 +57,11 @@ class MetadataSource(
 
     private val mediaCallback = object : MediaController.Callback() {
         override fun onMetadataChanged(metadata: MediaMetadata?) {
-            val playingController = currentControllers.find {
-                it.playbackState?.state == PlaybackState.STATE_PLAYING
-            } ?: currentControllers.firstOrNull()
-            syncToGlobalData(playingController)
+            syncToGlobalData(selectTrackedController())
         }
 
         override fun onPlaybackStateChanged(state: PlaybackState?) {
-            val playingController = currentControllers.find {
-                it.playbackState?.state == PlaybackState.STATE_PLAYING
-            } ?: currentControllers.firstOrNull()
-            syncToGlobalData(playingController)
+            syncToGlobalData(selectTrackedController())
         }
 
         override fun onSessionDestroyed() {
@@ -223,9 +222,7 @@ class MetadataSource(
 
         emptySessionsSinceElapsedRealtime = null
         emptyStatePublished = false
-        val playingController = controllers.find {
-            it.playbackState?.state == PlaybackState.STATE_PLAYING
-        }
+        val playingController = preferLyricPlayer(controllers.filter(::isPlaying))
         LogManager.d(TAG, "控制器更新: 数量=${controllers.size}, 播放中=${playingController?.packageName}")
 
         if (playingController != null) {
@@ -242,6 +239,7 @@ class MetadataSource(
                 syncToGlobalData(playingController)
             }
         } else {
+            val preferredController = preferLyricPlayer(controllers)
             val currentTokens = currentControllers.map { it.sessionToken }.toSet()
             val newTokens = controllers.map { it.sessionToken }.toSet()
             if (currentTokens != newTokens) {
@@ -250,10 +248,27 @@ class MetadataSource(
                     currentControllers.add(controller)
                     controller.registerCallback(mediaCallback)
                 }
-                syncToGlobalData(controllers.first())
+                syncToGlobalData(preferredController)
+            } else if (preferredController?.sessionToken != syncedSessionToken) {
+                // 会话集合未变但 SystemUI 确认的歌词来源播放器变了：改为同步该播放器。
+                syncToGlobalData(preferredController)
             }
         }
     }
+
+    private fun isPlaying(controller: MediaController): Boolean =
+        controller.playbackState?.state == PlaybackState.STATE_PLAYING
+
+    private fun preferLyricPlayer(controllers: List<MediaController>): MediaController? =
+        ClassicAodFocusNotificationPolicy.preferLyricPlayer(
+            items = controllers,
+            packageOf = { it.packageName },
+            lyricPackageName = lyricPlayerPackage(),
+        )
+
+    private fun selectTrackedController(): MediaController? =
+        preferLyricPlayer(currentControllers.filter(::isPlaying))
+            ?: preferLyricPlayer(currentControllers)
 
     private fun requestMediaSessionRecovery() {
         val now = SystemClock.elapsedRealtime()
@@ -316,6 +331,7 @@ class MetadataSource(
             LogManager.d(TAG, "syncToGlobalData 跳过: playbackState 为 null, pkg=${controller.packageName}")
             return
         }
+        syncedSessionToken = controller.sessionToken
         val currentPackageName = controller.packageName ?: ""
 
         val rawTitle = (metadata.getString(MediaMetadata.METADATA_KEY_TITLE)

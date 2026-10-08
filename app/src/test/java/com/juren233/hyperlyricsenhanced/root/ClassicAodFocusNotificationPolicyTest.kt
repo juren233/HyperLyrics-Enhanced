@@ -100,4 +100,72 @@ class ClassicAodFocusNotificationPolicyTest {
     fun `fullscreen aod setting key matches the verified system key`() {
         assertEquals("full_screen_aod_on", ClassicAodFocusNotificationPolicy.SETTING_FULL_SCREEN_AOD_ON)
     }
+
+    @Test
+    fun `media session from the current lyric player is shown`() {
+        assertTrue(
+            ClassicAodFocusNotificationPolicy.isLyricPlayer(
+                targetPackageName = "com.netease.cloudmusic",
+                lyricPackageName = "com.netease.cloudmusic",
+            )
+        )
+    }
+
+    @Test
+    fun `media session from another app is not shown`() {
+        assertFalse(
+            ClassicAodFocusNotificationPolicy.isLyricPlayer(
+                targetPackageName = "tv.danmaku.bili",
+                lyricPackageName = "com.netease.cloudmusic",
+            )
+        )
+    }
+
+    @Test
+    fun `nothing is shown before systemui reports a lyric player`() {
+        assertFalse(
+            ClassicAodFocusNotificationPolicy.isLyricPlayer(
+                targetPackageName = "com.netease.cloudmusic",
+                lyricPackageName = null,
+            )
+        )
+        assertFalse(
+            ClassicAodFocusNotificationPolicy.isLyricPlayer(
+                targetPackageName = "",
+                lyricPackageName = "",
+            )
+        )
+    }
+
+    @Test
+    fun `prefers the lyric player among concurrent sessions`() {
+        val sessions = listOf("tv.danmaku.bili", "com.netease.cloudmusic")
+
+        assertEquals(
+            "com.netease.cloudmusic",
+            ClassicAodFocusNotificationPolicy.preferLyricPlayer(
+                items = sessions,
+                packageOf = { it },
+                lyricPackageName = "com.netease.cloudmusic",
+            ),
+        )
+    }
+
+    @Test
+    fun `keeps the first session when no lyric player is known or present`() {
+        val sessions = listOf("tv.danmaku.bili", "com.netease.cloudmusic")
+
+        assertEquals(
+            "tv.danmaku.bili",
+            ClassicAodFocusNotificationPolicy.preferLyricPlayer(sessions, { it }, null),
+        )
+        assertEquals(
+            "tv.danmaku.bili",
+            ClassicAodFocusNotificationPolicy.preferLyricPlayer(sessions, { it }, "com.spotify.music"),
+        )
+        assertEquals(
+            null,
+            ClassicAodFocusNotificationPolicy.preferLyricPlayer(emptyList<String>(), { it }, "x"),
+        )
+    }
 }

@@ -600,7 +600,11 @@ class HookEntry : XposedModule() {
             startupStage = "timeline"
             val anchor = SystemMediaPlaybackAnchor(app)
             playbackAnchor = anchor
-            val driver = LocalTimelineDriver(anchor, sink)
+            val driver = LocalTimelineDriver(
+                anchor = anchor,
+                renderSink = sink,
+                onLyricPlayerConfirmed = ClassicAodFocusNotificationRecovery::onLyricPlayerConfirmed,
+            )
             localTimelineDriver = driver
             driver.start()
             LyricRuntimeDiagnostics.record("runtime_timeline_started")
@@ -978,6 +982,7 @@ class HookEntry : XposedModule() {
         cleanup.attempt("performance") { RuntimePerfDiagnostics.stopForReload() }
         cleanup.attempt("artwork") { MediaMetadataHelper.clearArtworkResolution() }
         cleanup.attempt("system_media_providers") { OfficialProviderSystemMediaRuntime.releaseAll() }
+        ClassicAodFocusNotificationRecovery.resetConfirmedLyricPlayer()
         if (!forHotReload) {
             cleanup.attempt("album_style") { IslandAlbumCoverStyleHooker.cleanup() }
             cleanup.attempt("music_wave") { IslandMusicWaveColorHooker.cleanup() }

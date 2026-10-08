@@ -47,6 +47,8 @@ class LocalTimelineDriver(
     private val anchor: SystemMediaPlaybackAnchor,
     private val renderSink: LyricSink,
     private val mainHandler: Handler = Handler(Looper.getMainLooper()),
+    /** 确认某播放器正由歌词源提供内容（或为目录内音乐 App）时回调，用于经典AOD焦点通知。 */
+    private val onLyricPlayerConfirmed: (String) -> Unit = {},
 ) : LyricSink, SourceSelectionAwareSink, SystemMediaPlaybackAnchor.Listener {
 
     @Volatile
@@ -415,6 +417,10 @@ class LocalTimelineDriver(
 
     override fun onTrackMetadataRefreshed(track: TrackIdentity) {
         runOnMain {
+            if (!TimelineContentPolicy.shouldForwardMetadataRefresh(appliedTrackKey, track)) {
+                diagnostic("未接管曲目，跳过展示信息刷新: pkg=${track.packageName}")
+                return@runOnMain
+            }
             val appliedContent = appliedContentCache[track.normalizedKey()]
                 ?.takeIf { it.sourceId == activeSourceId }
             if (!XiaomiMusicMetadataRefreshPolicy.shouldForward(
@@ -560,6 +566,7 @@ class LocalTimelineDriver(
             pendingContent = content
             return
         }
+        TimelineContentPolicy.sourceDeclaredPlayer(content, track)?.let(onLyricPlayerConfirmed)
         val song = content.song
         if (song?.lyrics.isNullOrEmpty()) {
             applyTitleFallback(track, content.fallbackTitle)
@@ -656,6 +663,7 @@ class LocalTimelineDriver(
                 }
             }
             fallbackTrack?.let { track ->
+                onLyricPlayerConfirmed(track.packageName)
                 publishTitleFallback(track, track.title)
             }
         }

@@ -861,11 +861,4 @@
     <string name="island_touch_seek_seconds">Seek interval</string>
     <string name="island_touch_seconds_value">%1$d seconds</string>
     <string name="island_touch_seconds_range">1–300 seconds</string>
-    <string name="option_refresh_system_ui_hot_reload">SystemUI (experimental hot reload; may freeze)</string>
-    <string name="summary_refresh_hot_reload_no_root">Experimental hot reload needs no root; restarting processes requires root</string>
-    <string name="toast_system_ui_hot_reload_success">SystemUI module update loaded</string>
-    <string name="toast_system_ui_hot_reload_rejected">The running version needs one SystemUI restart first</string>
-    <string name="toast_system_ui_hot_reload_unavailable">No SystemUI module update is available for hot reload</string>
-    <string name="toast_system_ui_hot_reload_pending">Hot reload is still pending; please check again later</string>
-    <string name="toast_system_ui_hot_reload_failed">Hot reload did not complete; you can restart SystemUI manually</string>
 </resources>

@@ -6,6 +6,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.SharedPreferences
 import android.net.Uri
+import android.os.Bundle
 import android.os.SystemClock
 import android.provider.Settings
 import android.service.notification.NotificationListenerService
@@ -13,6 +14,7 @@ import com.juren233.hyperlyricsenhanced.common.ClassicAodSongInfoConfig
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.service.LiveLyricService
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
+import java.util.concurrent.Executors
 
 internal object ClassicAodFocusNotificationRecovery {
     private const val TAG = "ClassicAodFocusRecovery"
@@ -23,6 +25,14 @@ internal object ClassicAodFocusNotificationRecovery {
     private var recoveryRequested = false
     @Volatile
     private var lastRefreshBroadcastElapsedRealtime = 0L
+    @Volatile
+    private var confirmedLyricPlayer: String? = null
+    @Volatile
+    private var lastSentLyricPackage: String? = null
+    // 跨进程调用可能拉起 App 进程，不能阻塞 SystemUI 主线程或歌词回调线程。
+    private val refreshExecutor = Executors.newSingleThreadExecutor { task ->
+        Thread(task, "HyperLyrics Enhanced-ClassicAodFocus").apply { isDaemon = true }
+    }
 
     fun ensureListenerCanRecover(app: Application, prefs: SharedPreferences) {
         val requiresAutoStart = ClassicAodFocusNotificationPolicy.requiresAutoStart(
@@ -69,6 +79,24 @@ internal object ClassicAodFocusNotificationRecovery {
         }
     }
 
+    /**
+     * 由 [com.juren233.hyperlyricsenhanced.root.timeline.LocalTimelineDriver] 在确认歌词来源播放器时调用：
+     * 歌词源以自身包名提交并已应用的内容，或模块目录内音乐 App 的标题回退。
+     * 变化时同步给 App，经典AOD焦点通知只为该播放器发布，视频等媒体会话不会被当作歌曲。
+     */
+    fun onLyricPlayerConfirmed(packageName: String) {
+        if (packageName.isBlank()) return
+        confirmedLyricPlayer = packageName
+        if (packageName == lastSentLyricPackage) return
+        val context = HookEntry.instance?.runtimeAppContext() ?: return
+        requestAppRefresh(context, "lyric_player_confirmed")
+    }
+
+    fun resetConfirmedLyricPlayer() {
+        confirmedLyricPlayer = null
+        lastSentLyricPackage = null
+    }
+
     fun requestAppRefresh(context: Context, reason: String) {
         val prefs = HookEntry.instance?.prefs ?: return
         if (
@@ -90,22 +118,42 @@ internal object ClassicAodFocusNotificationRecovery {
             return
         }
 
+        val lyricPackage = confirmedLyricPlayer
         val now = SystemClock.elapsedRealtime()
-        if (now - lastRefreshBroadcastElapsedRealtime < REFRESH_BROADCAST_DEBOUNCE_MS) return
+        if (
+            lyricPackage == lastSentLyricPackage &&
+            now - lastRefreshBroadcastElapsedRealtime < REFRESH_BROADCAST_DEBOUNCE_MS
+        ) {
+            return
+        }
         lastRefreshBroadcastElapsedRealtime = now
+        // 先占位，避免元数据回调连续触发时重复排队；发送失败后清空以便下次重试。
+        if (lyricPackage != null) lastSentLyricPackage = lyricPackage
 
-        runCatching {
-            context.contentResolver.call(
-                Uri.parse(
-                    "content://${RootConstants.CLASSIC_AOD_FOCUS_REFRESH_AUTHORITY}"
-                ),
-                RootConstants.CLASSIC_AOD_FOCUS_REFRESH_METHOD,
-                reason,
-                null,
-            )
-            HookLogger.i(TAG, "已请求应用刷新 AOD 焦点通知: reason=$reason")
-        }.onFailure {
-            HookLogger.e(TAG, "请求应用刷新 AOD 焦点通知失败: reason=$reason", it)
+        val appContext = context.applicationContext ?: context
+        refreshExecutor.execute {
+            runCatching {
+                appContext.contentResolver.call(
+                    Uri.parse(
+                        "content://${RootConstants.CLASSIC_AOD_FOCUS_REFRESH_AUTHORITY}"
+                    ),
+                    RootConstants.CLASSIC_AOD_FOCUS_REFRESH_METHOD,
+                    reason,
+                    Bundle().apply {
+                        putString(
+                            RootConstants.CLASSIC_AOD_FOCUS_EXTRA_LYRIC_PACKAGE,
+                            lyricPackage,
+                        )
+                    },
+                )
+                HookLogger.i(
+                    TAG,
+                    "已请求应用刷新 AOD 焦点通知: reason=$reason, lyricPackage=$lyricPackage"
+                )
+            }.onFailure {
+                if (lastSentLyricPackage == lyricPackage) lastSentLyricPackage = null
+                HookLogger.e(TAG, "请求应用刷新 AOD 焦点通知失败: reason=$reason", it)
+            }
         }
     }
 }
@@ -129,6 +177,20 @@ internal object ClassicAodFocusNotificationPolicy {
         aodLyricsEnabled &&
             songInfoDisplayStyle ==
                 RootConstants.AOD_SONG_INFO_DISPLAY_STYLE_FOCUS_NOTIFICATION
+
+    /** 媒体会话来源必须是 SystemUI 确认的歌词来源播放器；尚未收到同步时不发布。 */
+    fun isLyricPlayer(targetPackageName: String, lyricPackageName: String?): Boolean =
+        targetPackageName.isNotBlank() && targetPackageName == lyricPackageName
+
+    /** 多个媒体会话并存时优先歌词来源播放器，否则保持原有的列表首项。 */
+    fun <T> preferLyricPlayer(
+        items: List<T>,
+        packageOf: (T) -> String?,
+        lyricPackageName: String?,
+    ): T? = lyricPackageName
+        ?.takeIf { it.isNotBlank() }
+        ?.let { lyricPackage -> items.firstOrNull { packageOf(it) == lyricPackage } }
+        ?: items.firstOrNull()
 
     fun songSignature(
         packageName: String,

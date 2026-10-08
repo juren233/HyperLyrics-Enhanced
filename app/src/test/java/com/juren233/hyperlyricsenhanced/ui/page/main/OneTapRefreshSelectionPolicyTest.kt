@@ -55,26 +55,6 @@ class OneTapRefreshSelectionPolicyTest {
     }
 
     @Test
-    fun `hot reload and restart are mutually exclusive`() {
-        val hot = OneTapRefreshSelectionPolicy.toggle(
-            setOf(OneTapRefreshSelectionPolicy.SYSTEM_UI_ID),
-            OneTapRefreshSelectionPolicy.SYSTEM_UI_HOT_RELOAD_ID, musicAppIds,
-        )
-        assertEquals(setOf(OneTapRefreshSelectionPolicy.SYSTEM_UI_HOT_RELOAD_ID), hot)
-        assertTrue(OneTapRefreshSelectionPolicy.selectedPackages(hot, emptyList()).isEmpty())
-        val restart = OneTapRefreshSelectionPolicy.toggle(hot, OneTapRefreshSelectionPolicy.SYSTEM_UI_ID, musicAppIds)
-        assertEquals(setOf(OneTapRefreshSelectionPolicy.SYSTEM_UI_ID), restart)
-    }
-
-    @Test
-    fun `hot reload with music app restart never kills system ui`() {
-        val selected = setOf(OneTapRefreshSelectionPolicy.SYSTEM_UI_HOT_RELOAD_ID,
-            OneTapRefreshSelectionPolicy.ALL_MUSIC_APPS_ID)
-        val apps = musicAppIds.map { OneTapRefreshMusicApp(it, it) }
-        assertEquals(musicAppIds, OneTapRefreshSelectionPolicy.selectedPackages(selected, apps).toSet())
-    }
-
-    @Test
     fun `all music apps cancels individual music app selections but preserves system ui`() {
         val selected = OneTapRefreshSelectionPolicy.toggle(
             selectedIds = setOf(
@@ -192,5 +172,44 @@ class OneTapRefreshSelectionPolicyTest {
 
         assertEquals(installed, targets.musicApps)
         assertTrue(targets.showAllMusicAppsOption)
+    }
+
+    @Test
+    fun `dialog defaults to system ui and all music apps`() {
+        val targets = OneTapRefreshCatalog.refreshTargets(
+            installedMusicApps = OneTapRefreshCatalog.installedMusicApps(installedLabels::get),
+            appleMusicOnly = false,
+        )
+
+        assertEquals(
+            setOf(
+                OneTapRefreshSelectionPolicy.SYSTEM_UI_ID,
+                OneTapRefreshSelectionPolicy.ALL_MUSIC_APPS_ID,
+            ),
+            OneTapRefreshSelectionPolicy.defaultSelection(targets),
+        )
+    }
+
+    @Test
+    fun `apple music only dialog defaults to system ui and apple music`() {
+        val targets = OneTapRefreshCatalog.refreshTargets(
+            installedMusicApps = OneTapRefreshCatalog.installedMusicApps(installedLabels::get),
+            appleMusicOnly = true,
+        )
+
+        assertEquals(
+            setOf(OneTapRefreshSelectionPolicy.SYSTEM_UI_ID, "com.apple.android.music"),
+            OneTapRefreshSelectionPolicy.defaultSelection(targets),
+        )
+    }
+
+    @Test
+    fun `dialog defaults to system ui only without installed music apps`() {
+        val targets = OneTapRefreshTargets(emptyList(), showAllMusicAppsOption = true)
+
+        assertEquals(
+            setOf(OneTapRefreshSelectionPolicy.SYSTEM_UI_ID),
+            OneTapRefreshSelectionPolicy.defaultSelection(targets),
+        )
     }
 }

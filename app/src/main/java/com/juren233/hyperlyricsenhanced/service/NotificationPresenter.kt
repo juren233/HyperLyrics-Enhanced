@@ -385,6 +385,11 @@ class NotificationPresenter(
         val artist = state.trackArtist.trim()
         val songInfo = ClassicAodSongInfoConfig.formatSongInfo(title, artist, format)
         val fullScreenAodActive = FullScreenAodSetting.isActive(context)
+        val lyricPackage = LiveLyricService.systemUiLyricPackage
+        val fromLyricPlayer = ClassicAodFocusNotificationPolicy.isLyricPlayer(
+            targetPackageName = state.targetPackageName,
+            lyricPackageName = lyricPackage,
+        )
         val shouldShow = prefs.getBoolean(
             RootConstants.KEY_HOOK_ENABLE_AOD_LYRICS,
             RootConstants.DEFAULT_HOOK_ENABLE_AOD_LYRICS,
@@ -393,11 +398,13 @@ class NotificationPresenter(
                 RootConstants.AOD_SONG_INFO_DISPLAY_STYLE_FOCUS_NOTIFICATION &&
             !isScreenInteractive() &&
             !fullScreenAodActive &&
+            fromLyricPlayer &&
             songInfo.isNotBlank()
         LogManager.i(
             "NotificationPresenter",
             "经典AOD歌曲信息: displayStyle=$displayStyle, format=$format, " +
                 "title=$title, artist=$artist, " +
+                "pkg=${state.targetPackageName}, lyricPackage=$lyricPackage, " +
                 "interactive=${isScreenInteractive()}, fullscreenAod=$fullScreenAodActive, " +
                 "shouldShow=$shouldShow"
         )

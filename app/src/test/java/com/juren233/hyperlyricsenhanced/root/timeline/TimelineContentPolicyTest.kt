@@ -141,4 +141,59 @@ class TimelineContentPolicyTest {
                 ),
         )
     }
+
+    @Test
+    fun `source declared player is confirmed only when it is the anchor package`() {
+        val content = TimelineContent(sourceId = "lyricon", track = anchor, song = null)
+
+        assertEquals("player.package", TimelineContentPolicy.sourceDeclaredPlayer(content, anchor))
+        assertEquals(
+            null,
+            TimelineContentPolicy.sourceDeclaredPlayer(
+                content,
+                anchor.copy(packageName = "video.package"),
+            ),
+        )
+    }
+
+    @Test
+    fun `content without a source package never confirms the anchor player`() {
+        val undeclared = TimelineContent(
+            sourceId = "lyricon",
+            track = anchor.copy(packageName = ""),
+            song = null,
+        )
+        val trackless = TimelineContent(sourceId = "lyricon", track = null, song = null)
+
+        assertEquals(null, TimelineContentPolicy.sourceDeclaredPlayer(undeclared, anchor))
+        assertEquals(null, TimelineContentPolicy.sourceDeclaredPlayer(trackless, anchor))
+    }
+
+    @Test
+    fun `metadata refresh is forwarded only for the track the timeline owns`() {
+        assertTrue(
+            TimelineContentPolicy.shouldForwardMetadataRefresh(
+                appliedTrackKey = anchor.normalizedKey(),
+                track = anchor.copy(album = "Restored Album"),
+            )
+        )
+    }
+
+    @Test
+    fun `metadata refresh of an unowned session is dropped`() {
+        val video = TrackIdentity(
+            packageName = "video.package",
+            mediaId = "video-1",
+            title = "Video",
+            durationMs = 60_000L,
+        )
+
+        assertFalse(TimelineContentPolicy.shouldForwardMetadataRefresh(null, video))
+        assertFalse(
+            TimelineContentPolicy.shouldForwardMetadataRefresh(
+                appliedTrackKey = anchor.normalizedKey(),
+                track = video,
+            )
+        )
+    }
 }
