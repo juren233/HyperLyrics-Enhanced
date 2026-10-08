@@ -9,6 +9,8 @@ import kotlin.math.abs
  * Native receives DOWN for its press/long-press handling. Custom gestures cancel that
  * stream before acting; unassigned drags hand the live stream back without replay.
  * Unassigned taps use the native click entry after the optional double-tap deadline.
+ * Continuous drags report horizontal travel from the press point on every move instead
+ * of a single swipe on release, so reversing direction before release moves back.
  */
 internal class IslandTouchGestureRouter<T>(
     private val slop: Float,
@@ -19,6 +21,9 @@ internal class IslandTouchGestureRouter<T>(
     private val isCustom: (T, IslandTouchGesture) -> Boolean,
     private val cancelNative: () -> Unit,
     private val emit: (T, IslandTouchGesture) -> Unit,
+    private val isContinuous: (T, IslandTouchGesture) -> Boolean = { _, _ -> false },
+    private val startDrag: (T, IslandTouchGesture) -> Unit = { _, _ -> },
+    private val dragTo: (T, Float) -> Unit = { _, _ -> },
 ) {
     private val detector = IslandTouchGestureDetector<T>(
         slop, swipeDistance, doubleTapSlop, longPressMs, doubleTapMs,
@@ -41,6 +46,7 @@ internal class IslandTouchGestureRouter<T>(
     private var nativeStarted = false
     private var customHandled = false
     private var drag: IslandTouchGesture? = null
+    private var continuous = false
     private var downX = 0f
     private var downY = 0f
     val nextDeadline: Long? get() = detector.nextDeadline
@@ -56,6 +62,7 @@ internal class IslandTouchGestureRouter<T>(
         nativeStarted = true
         customHandled = false
         drag = null
+        continuous = false
         downX = x
         downY = y
     }
@@ -78,6 +85,15 @@ internal class IslandTouchGestureRouter<T>(
             }
             drag = direction
             cancelNativeOnce()
+            if (isContinuous(target, direction)) {
+                continuous = true
+                detector.cancel() // Release must not also emit the swipe.
+                startDrag(target, direction)
+            }
+        }
+        if (continuous) {
+            dragTo(target, dx)
+            return true
         }
         detector.move(x, y)
         // Small motion must reach native to keep its long-press eligibility accurate.
@@ -89,13 +105,14 @@ internal class IslandTouchGestureRouter<T>(
         val consumed = !nativeOwnsContact
         if (consumed) {
             cancelNativeOnce()
-            detector.up(x, y, time)
+            if (!continuous) detector.up(x, y, time)
         }
         active = null
         nativeStarted = false
         nativeOwnsContact = false
         customHandled = false
         drag = null
+        continuous = false
         return consumed
     }
 
@@ -117,6 +134,7 @@ internal class IslandTouchGestureRouter<T>(
         active = null
         nativeOwnsContact = false
         drag = null
+        continuous = false
     }
 
     private fun cancelNativeOnce() {

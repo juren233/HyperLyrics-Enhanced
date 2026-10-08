@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import com.juren233.hyperlyricsenhanced.R
@@ -40,7 +41,7 @@ import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTitle
-import top.yukonga.miuix.kmp.basic.TabRow
+import top.yukonga.miuix.kmp.basic.TabRowWithContour
 import top.yukonga.miuix.kmp.basic.TabRowDefaults
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.blur.layerBackdrop
@@ -76,7 +77,8 @@ fun HelpPage() {
                         }
                     },
                     bottomContent = {
-                        TabRow(
+                        // Same segmented style as the HyperIsland touch side switcher.
+                        TabRowWithContour(
                             tabs = tabs,
                             selectedTabIndex = pagerState.currentPage,
                             onTabSelected = { index ->
@@ -86,7 +88,12 @@ fun HelpPage() {
                                 .fillMaxWidth()
                                 .padding(horizontal = 12.dp)
                                 .padding(bottom = 8.dp),
-                            colors = TabRowDefaults.tabRowColors(backgroundColor = Color.Transparent)
+                            colors = TabRowDefaults.tabRowColors(
+                                backgroundColor = MiuixTheme.colorScheme.surfaceContainer,
+                                selectedBackgroundColor = MiuixTheme.colorScheme.primary,
+                                selectedContentColor = MiuixTheme.colorScheme.onPrimary,
+                            ),
+                            maxWidth = Dp.Infinity,
                         )
                     }
                 )

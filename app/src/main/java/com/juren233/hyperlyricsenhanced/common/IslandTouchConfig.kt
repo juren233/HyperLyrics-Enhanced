@@ -9,11 +9,17 @@ enum class IslandTouchGesture(val key: String) {
 }
 enum class IslandTouchAction(val id: Int) {
     NONE(0), PLAY_PAUSE(1), PREVIOUS(2), NEXT(3), FORWARD(4), BACKWARD(5),
-    RESTART(6), TOGGLE_MUTE(12), VOLUME_UP(7), VOLUME_DOWN(8), OPEN_APP(9),
+    RESTART(6), TOGGLE_MUTE(12), VOLUME_UP(7), VOLUME_DOWN(8), VOLUME_CONTINUOUS(15), OPEN_APP(9),
     OPEN_APP_FREEFORM(11), EXPAND_ISLAND(10), OPEN_MEDIA_OUTPUT(14), COPY_CURRENT_LYRIC(13);
+
+    /** Continuous volume follows a live horizontal drag, so only swipe gestures can carry it. */
+    fun availableFor(gesture: IslandTouchGesture): Boolean = this != VOLUME_CONTINUOUS ||
+        gesture == IslandTouchGesture.SWIPE_LEFT || gesture == IslandTouchGesture.SWIPE_RIGHT
 
     companion object {
         fun fromId(id: Int): IslandTouchAction = entries.firstOrNull { it.id == id } ?: NONE
+        fun fromId(id: Int, gesture: IslandTouchGesture): IslandTouchAction =
+            fromId(id).takeIf { it.availableFor(gesture) } ?: NONE
     }
 }
 
@@ -88,7 +94,7 @@ data class IslandTouchConfig(
             IslandTouchConfig(boolean(ENABLED, false), buildMap {
                 for (side in IslandTouchSide.entries) for (gesture in IslandTouchGesture.entries) {
                     put(side to gesture, IslandTouchBinding(
-                        IslandTouchAction.fromId(int(actionKey(side, gesture), 0)),
+                        IslandTouchAction.fromId(int(actionKey(side, gesture), 0), gesture),
                         int(secondsKey(side, gesture), DEFAULT_SECONDS).coerceIn(MIN_SECONDS, MAX_SECONDS),
                     ))
                 }
@@ -100,7 +106,7 @@ data class IslandTouchConfig(
                 unifiedSides = boolean(UNIFIED_SIDES, false),
                 unifiedBindings = IslandTouchGesture.entries.associateWith { gesture ->
                     IslandTouchBinding(
-                        IslandTouchAction.fromId(int(unifiedActionKey(gesture), 0)),
+                        IslandTouchAction.fromId(int(unifiedActionKey(gesture), 0), gesture),
                         int(unifiedSecondsKey(gesture), DEFAULT_SECONDS).coerceIn(MIN_SECONDS, MAX_SECONDS),
                     )
                 })

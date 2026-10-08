@@ -29,6 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.content.edit
 import androidx.core.net.toUri
@@ -46,7 +47,7 @@ import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
-import top.yukonga.miuix.kmp.basic.TabRow
+import top.yukonga.miuix.kmp.basic.TabRowWithContour
 import top.yukonga.miuix.kmp.basic.TabRowDefaults
 import top.yukonga.miuix.kmp.basic.SnackbarDuration
 import top.yukonga.miuix.kmp.basic.SnackbarHost
@@ -276,7 +277,7 @@ fun DynamicIslandNotificationPage() {
                         }
                     },
                     bottomContent = {
-                        TabRow(
+                        TabRowWithContour(
                             tabs = tabs,
                             selectedTabIndex = pagerState.currentPage,
                             onTabSelected = {
@@ -290,7 +291,12 @@ fun DynamicIslandNotificationPage() {
                                 .fillMaxWidth()
                                 .padding(horizontal = 12.dp)
                                 .padding(bottom = 8.dp),
-                            colors = TabRowDefaults.tabRowColors(backgroundColor = Color.Transparent)
+                            colors = TabRowDefaults.tabRowColors(
+                                backgroundColor = MiuixTheme.colorScheme.surfaceContainer,
+                                selectedBackgroundColor = MiuixTheme.colorScheme.primary,
+                                selectedContentColor = MiuixTheme.colorScheme.onPrimary,
+                            ),
+                            maxWidth = Dp.Infinity,
                         )
                     }
                 )

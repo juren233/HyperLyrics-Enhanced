@@ -35,6 +35,7 @@ internal object IslandTouchHooker {
     private const val TAG = "IslandTouch"
 
     private val dispatchHooks = mutableListOf<DispatchHook>()
+    private const val VOLUME_TICK_SPACING_MS = 60L
 
     internal fun releaseForReload() {
         IslandMediaOutput.releaseForReload()
@@ -166,7 +167,24 @@ internal object IslandTouchHooker {
             isCustom = { target, gesture -> target.config.binding(target.side, gesture).action != IslandTouchAction.NONE },
             cancelNative = ::cancelNativeTouch,
             emit = ::perform,
+            isContinuous = { target, gesture ->
+                target.config.binding(target.side, gesture).action == IslandTouchAction.VOLUME_CONTINUOUS
+            },
+            startDrag = ::startVolumeDrag,
+            dragTo = { _, dx -> volumeDrag?.update(dx) },
         )
+        private var volumeDrag: IslandTouchContinuousVolume? = null
+        private var volumeTicks = 0
+        private var volumeTick: (() -> Unit)? = null
+        // Boundaries crossed in one move are played as separate, spaced pulses so each 10% is felt.
+        private val volumeTickRunner = object : Runnable {
+            override fun run() {
+                if (volumeTicks <= 0) return
+                volumeTicks--
+                volumeTick?.invoke()
+                if (volumeTicks > 0) handler.postDelayed(this, VOLUME_TICK_SPACING_MS)
+            }
+        }
         var consuming = false
             private set
         private var lastEvent: MotionEvent? = null
@@ -187,6 +205,7 @@ internal object IslandTouchHooker {
                 val target = resolve(host, event)
                 if (target == null) { cancel(); return false }
                 rememberEvent(event)
+                volumeDrag = null
                 consuming = true
                 router.down(target, event.rawX, event.rawY, event.eventTime,
                     doubleTapTimeoutMs = target.config.doubleTapMs.toLong(),
@@ -226,6 +245,9 @@ internal object IslandTouchHooker {
 
         fun cancel() {
             router.cancel()
+            volumeDrag = null
+            volumeTicks = 0
+            handler.removeCallbacks(volumeTickRunner)
             handler.removeCallbacks(timer)
             consuming = false
             lastEvent?.recycle()
@@ -303,6 +325,37 @@ internal object IslandTouchHooker {
                     ?.packageName == target.packageName
         }
 
+        private fun startVolumeDrag(target: Target, gesture: IslandTouchGesture) {
+            runCatching {
+                val host = window.get() ?: return
+                if (!valid(host, target)) return
+                val current = IslandTouchMediaActions.controller(host.context, target.packageName)
+                if (current?.sessionToken != target.controller?.sessionToken) return
+                haptic(host, target, gesture)
+                volumeTicks = 0
+                handler.removeCallbacks(volumeTickRunner)
+                volumeTick = { haptic(host, target, gesture) }
+                volumeDrag = IslandTouchContinuousVolume.start(host.context, current,
+                    host.resources.displayMetrics.density) { crossed ->
+                    val idle = volumeTicks == 0
+                    volumeTicks += crossed
+                    if (idle) volumeTickRunner.run()
+                }
+            }.onFailure { if (BuildConfig.DEBUG) HookLogger.w(TAG, "音量无级调节不可用: ${it.javaClass.simpleName}") }
+        }
+
+        // Acknowledge the recognized gesture before player command dispatch or expansion work.
+        // Haptic failure must never prevent the action from being dispatched.
+        private fun haptic(host: View, target: Target, gesture: IslandTouchGesture) {
+            if (!target.config.hapticFeedback) return
+            runCatching {
+                host.performHapticFeedback(if (gesture == IslandTouchGesture.LONG_PRESS)
+                    HapticFeedbackConstants.LONG_PRESS else HapticFeedbackConstants.CLOCK_TICK)
+            }.onFailure {
+                if (BuildConfig.DEBUG) HookLogger.d(TAG, "触觉反馈不可用: ${it.javaClass.simpleName}")
+            }
+        }
+
         private fun perform(target: Target, gesture: IslandTouchGesture) {
             // This also runs from the long-press/single-tap timer, outside the hook's try/catch.
             runCatching {
@@ -320,16 +373,7 @@ internal object IslandTouchHooker {
                 val current = if (isExpansion) null
                     else IslandTouchMediaActions.controller(host.context, target.packageName)
                 if (!isExpansion && current?.sessionToken != target.controller?.sessionToken) return
-                // Acknowledge the recognized gesture before player command dispatch or expansion work.
-                // Haptic failure must never prevent the action from being dispatched.
-                if (target.config.hapticFeedback) {
-                    runCatching {
-                        host.performHapticFeedback(if (gesture == IslandTouchGesture.LONG_PRESS)
-                            HapticFeedbackConstants.LONG_PRESS else HapticFeedbackConstants.CLOCK_TICK)
-                    }.onFailure {
-                        if (BuildConfig.DEBUG) HookLogger.d(TAG, "触觉反馈不可用: ${it.javaClass.simpleName}")
-                    }
-                }
+                haptic(host, target, gesture)
                 if (isExpansion) {
                     target.root.get()?.let { expansionApi?.expand(it) }
                 } else if (binding.action == IslandTouchAction.OPEN_APP_FREEFORM) {

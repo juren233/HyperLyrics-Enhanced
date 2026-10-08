@@ -287,4 +287,41 @@ class IslandTouchGestureRouterTest {
         router.up(-80f, 0f, 2000)
         assertEquals(listOf("cancel native", "custom left SWIPE_LEFT"), actions)
     }
+
+    @Test fun `continuous drag reports travel from the press and reverses without a release swipe`() {
+        val drags = mutableListOf<Float>()
+        val router = IslandTouchGestureRouter<String>(8f, 32f, 50f, 500, 300,
+            isCustom = { _, gesture -> gesture == SWIPE_LEFT },
+            cancelNative = { actions += "cancel native" },
+            emit = { side, gesture -> actions += "emit $side $gesture" },
+            isContinuous = { _, gesture -> gesture == SWIPE_LEFT },
+            startDrag = { side, gesture -> actions += "start $side $gesture" },
+            dragTo = { _, dx -> drags += dx },
+        )
+        router.down("left", 0f, 0f, 0)
+        assertFalse(router.move(-4f, 0f))
+        assertTrue(router.move(-20f, 2f))
+        assertTrue(router.move(-90f, 0f))
+        assertTrue(router.move(30f, 0f))
+        assertTrue(router.up(10f, 0f, 400))
+        router.advance(2000)
+        assertEquals(listOf("cancel native", "start left SWIPE_LEFT"), actions)
+        assertEquals(listOf(-20f, -90f, 30f, 10f), drags)
+        assertNull(router.nextDeadline)
+    }
+
+    @Test fun `continuous binding on one direction leaves the other direction to native`() {
+        val router = IslandTouchGestureRouter<String>(8f, 32f, 50f, 500, 300,
+            isCustom = { _, gesture -> gesture == SWIPE_LEFT },
+            cancelNative = { actions += "cancel native" },
+            emit = { side, gesture -> actions += "emit $side $gesture" },
+            isContinuous = { _, gesture -> gesture == SWIPE_LEFT },
+            startDrag = { _, _ -> actions += "start" },
+        )
+        router.down("left", 0f, 0f, 0)
+        assertFalse(router.move(20f, 0f))
+        assertTrue(router.nativeOwnsContact)
+        assertFalse(router.up(-80f, 0f, 400))
+        assertEquals(emptyList<String>(), actions)
+    }
 }

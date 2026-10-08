@@ -817,17 +817,17 @@
     <!-- HyperIsland touch controls -->
     <string name="title_island_touch_config">超级岛触控配置</string>
     <string name="island_touch_enable">启用自定义触控</string>
-    <string name="island_touch_description">仅作用于收起状态的音乐岛</string>
+    <string name="island_touch_description">仅作用于音乐岛</string>
     <string name="island_touch_double_disabled">不启用</string>
     <string name="island_touch_haptic">触觉反馈</string>
-    <string name="island_touch_haptic_description">识别自定义手势时轻震</string>
+    <string name="island_touch_haptic_description">识别到手势后轻震</string>
     <string name="island_touch_double_interval">双击间隔</string>
     <string name="island_touch_milliseconds_value">%1$d ms</string>
     <string name="island_touch_double_interval_range">150–500 ms</string>
     <string name="island_touch_long_press_time">长按时间</string>
     <string name="island_touch_long_press_range">200–1500 ms</string>
     <string name="island_touch_unified_sides">两侧统一设置</string>
-    <string name="island_touch_unified_sides_description">两侧共用一套动作，单独保存；关闭后恢复左右侧配置</string>
+    <string name="island_touch_unified_sides_description">开启后统一全岛手势</string>
     <string name="island_touch_help">使用说明</string>
     <string name="island_touch_help_expand">展开</string>
     <string name="island_touch_help_collapse">收起</string>
@@ -849,8 +849,11 @@
     <string name="island_touch_backward">倒退</string>
     <string name="island_touch_restart">从头播放</string>
     <string name="island_touch_toggle_mute">静音切换</string>
+    <string name="island_touch_toggle_mute_summary">仅作用于媒体音</string>
     <string name="island_touch_volume_up">音量 +</string>
     <string name="island_touch_volume_down">音量 −</string>
+    <string name="island_touch_volume_continuous">音量无级调节</string>
+    <string name="island_touch_volume_continuous_summary">未松手时反方向滑动可回调</string>
     <string name="island_touch_open_app">跳转 App</string>
     <string name="island_touch_open_app_freeform">小窗 App</string>
     <string name="island_touch_expand">展开超级岛</string>

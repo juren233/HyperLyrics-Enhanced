@@ -32,10 +32,12 @@ internal object IslandTouchMediaActions {
     fun execute(context: Context, packageName: String, controller: MediaController?, binding: IslandTouchBinding,
         source: android.view.View? = null): Boolean {
         if (binding.action == IslandTouchAction.NONE || binding.action == IslandTouchAction.EXPAND_ISLAND ||
-            binding.action == IslandTouchAction.OPEN_APP_FREEFORM) return false
+            binding.action == IslandTouchAction.OPEN_APP_FREEFORM ||
+            binding.action == IslandTouchAction.VOLUME_CONTINUOUS) return false
         return runCatching {
             when (binding.action) {
-                IslandTouchAction.NONE, IslandTouchAction.EXPAND_ISLAND, IslandTouchAction.OPEN_APP_FREEFORM -> Unit
+                IslandTouchAction.NONE, IslandTouchAction.EXPAND_ISLAND, IslandTouchAction.OPEN_APP_FREEFORM,
+                IslandTouchAction.VOLUME_CONTINUOUS -> Unit
                 IslandTouchAction.OPEN_APP -> {
                     if (!NotificationMediaCardClick.launch(packageName, controller?.sessionToken)) {
                         if (BuildConfig.DEBUG) HookLogger.d(TAG, "当前音乐通知没有可用的点击入口")

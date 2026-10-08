@@ -18,8 +18,10 @@ class IslandTouchConfigTest {
         assertEquals(IslandTouchAction.TOGGLE_MUTE, IslandTouchAction.fromId(12))
         assertEquals(IslandTouchAction.COPY_CURRENT_LYRIC, IslandTouchAction.fromId(13))
         assertEquals(IslandTouchAction.OPEN_MEDIA_OUTPUT, IslandTouchAction.fromId(14))
+        assertEquals(IslandTouchAction.VOLUME_CONTINUOUS, IslandTouchAction.fromId(15))
         val actions = IslandTouchAction.entries
         assertEquals(IslandTouchAction.TOGGLE_MUTE, actions[actions.indexOf(IslandTouchAction.RESTART) + 1])
+        assertEquals(IslandTouchAction.VOLUME_CONTINUOUS, actions[actions.indexOf(IslandTouchAction.VOLUME_DOWN) + 1])
         assertEquals(IslandTouchAction.OPEN_MEDIA_OUTPUT, actions[actions.indexOf(IslandTouchAction.EXPAND_ISLAND) + 1])
         assertEquals(IslandTouchAction.COPY_CURRENT_LYRIC, actions[actions.indexOf(IslandTouchAction.OPEN_MEDIA_OUTPUT) + 1])
         assertEquals(actions.size, actions.map { it.id }.toSet().size)
@@ -188,4 +190,24 @@ class IslandTouchConfigTest {
         assertFalse(IslandTouchHookProfile.WINDOW.startsWith("defpackage."))
         assertFalse(IslandTouchHookProfile.TOUCH_INTERACTOR.contains("AnonymousClass"))
     }
+
+    @Test fun `continuous volume is limited to horizontal swipes even when stored elsewhere`() {
+        val continuous = IslandTouchAction.VOLUME_CONTINUOUS
+        assertEquals(setOf(IslandTouchGesture.SWIPE_LEFT, IslandTouchGesture.SWIPE_RIGHT),
+            IslandTouchGesture.entries.filter { continuous.availableFor(it) }.toSet())
+        IslandTouchAction.entries.filter { it != continuous }.forEach { action ->
+            IslandTouchGesture.entries.forEach { assertTrue(action.availableFor(it)) }
+        }
+        for (unified in listOf(false, true)) {
+            val config = IslandTouchConfig.read({ key, fallback -> key == IslandTouchConfig.UNIFIED_SIDES && unified ||
+                key == IslandTouchConfig.ENABLED || fallback }, { key, fallback ->
+                if (key.endsWith("_action")) continuous.id else fallback
+            })
+            for (side in IslandTouchSide.entries) for (gesture in IslandTouchGesture.entries) {
+                assertEquals(if (continuous.availableFor(gesture)) continuous else IslandTouchAction.NONE,
+                    config.binding(side, gesture).action)
+            }
+        }
+    }
+
 }

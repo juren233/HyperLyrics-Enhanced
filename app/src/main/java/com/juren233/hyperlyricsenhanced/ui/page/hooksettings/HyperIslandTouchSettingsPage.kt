@@ -24,9 +24,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.juren233.hyperlyricsenhanced.R
@@ -41,8 +41,10 @@ import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.common.remem
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.common.rememberHookPrefs
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.BasicComponent
+import top.yukonga.miuix.kmp.basic.DropdownEntry
+import top.yukonga.miuix.kmp.basic.DropdownItem
 import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.TabRow
+import top.yukonga.miuix.kmp.basic.TabRowWithContour
 import top.yukonga.miuix.kmp.basic.TabRowDefaults
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.icon.MiuixIcons
@@ -151,13 +153,19 @@ fun HyperIslandTouchSettingsPage() {
                         enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
                         exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
                     ) {
-                        TabRow(
+                        // Segmented track matches the cards; the sliding primary thumb marks the edited side.
+                        TabRowWithContour(
                             tabs = listOf(stringResource(R.string.island_touch_left),
                                 stringResource(R.string.island_touch_right)),
                             selectedTabIndex = selectedSide,
                             onTabSelected = { selectedSide = it },
                             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(bottom = 12.dp),
-                            colors = TabRowDefaults.tabRowColors(backgroundColor = Color.Transparent),
+                            colors = TabRowDefaults.tabRowColors(
+                                backgroundColor = MiuixTheme.colorScheme.surfaceContainer,
+                                selectedBackgroundColor = MiuixTheme.colorScheme.primary,
+                                selectedContentColor = MiuixTheme.colorScheme.onPrimary,
+                            ),
+                            maxWidth = Dp.Infinity,
                         )
                     }
                     val side = IslandTouchSide.entries[selectedSide]
@@ -165,20 +173,22 @@ fun HyperIslandTouchSettingsPage() {
                         Column {
                             for (gesture in IslandTouchGesture.entries) {
                                 val binding = config.binding(side, gesture)
-                                val actionLabels = actions.map {
-                                    stringResource(if (it == IslandTouchAction.NONE &&
-                                        gesture == IslandTouchGesture.DOUBLE_TAP)
-                                        R.string.island_touch_double_disabled else actionLabel(it))
+                                val items = actions.filter { it.availableFor(gesture) }.map { action ->
+                                    DropdownItem(
+                                        text = stringResource(if (action == IslandTouchAction.NONE &&
+                                            gesture == IslandTouchGesture.DOUBLE_TAP)
+                                            R.string.island_touch_double_disabled else actionLabel(action)),
+                                        selected = action == binding.action,
+                                        summary = actionSummary(action)?.let { stringResource(it) },
+                                        onClick = {
+                                            update(side, gesture, binding.copy(action = action))
+                                            save(config.bindingActionKey(side, gesture), action.id)
+                                        },
+                                    )
                                 }
                                 OverlayDropdownPreference(
+                                    entry = DropdownEntry(items),
                                     title = stringResource(gestureLabel(gesture)),
-                                    items = actionLabels,
-                                    selectedIndex = actions.indexOf(binding.action),
-                                    onSelectedIndexChange = { index ->
-                                        val action = actions[index]
-                                        update(side, gesture, binding.copy(action = action))
-                                        save(config.bindingActionKey(side, gesture), action.id)
-                                    },
                                 )
                                 AnimatedVisibility(
                                     visible = binding.action == IslandTouchAction.FORWARD ||
@@ -302,9 +312,16 @@ private fun actionLabel(action: IslandTouchAction): Int = when (action) {
     IslandTouchAction.TOGGLE_MUTE -> R.string.island_touch_toggle_mute
     IslandTouchAction.VOLUME_UP -> R.string.island_touch_volume_up
     IslandTouchAction.VOLUME_DOWN -> R.string.island_touch_volume_down
+    IslandTouchAction.VOLUME_CONTINUOUS -> R.string.island_touch_volume_continuous
     IslandTouchAction.OPEN_APP -> R.string.island_touch_open_app
     IslandTouchAction.OPEN_APP_FREEFORM -> R.string.island_touch_open_app_freeform
     IslandTouchAction.EXPAND_ISLAND -> R.string.island_touch_expand
     IslandTouchAction.OPEN_MEDIA_OUTPUT -> R.string.island_touch_media_output
     IslandTouchAction.COPY_CURRENT_LYRIC -> R.string.island_touch_copy_current_lyric
+}
+
+private fun actionSummary(action: IslandTouchAction): Int? = when (action) {
+    IslandTouchAction.TOGGLE_MUTE -> R.string.island_touch_toggle_mute_summary
+    IslandTouchAction.VOLUME_CONTINUOUS -> R.string.island_touch_volume_continuous_summary
+    else -> null
 }

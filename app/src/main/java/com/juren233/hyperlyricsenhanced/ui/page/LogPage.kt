@@ -25,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.juren233.hyperlyricsenhanced.R
 import com.juren233.hyperlyricsenhanced.ui.component.SimpleDialog
@@ -50,7 +51,7 @@ import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SnackbarDuration
 import top.yukonga.miuix.kmp.basic.SnackbarHost
 import top.yukonga.miuix.kmp.basic.SnackbarHostState
-import top.yukonga.miuix.kmp.basic.TabRow
+import top.yukonga.miuix.kmp.basic.TabRowWithContour
 import top.yukonga.miuix.kmp.basic.TabRowDefaults
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.icon.MiuixIcons
@@ -283,7 +284,7 @@ fun LogPage() {
                         }
                     },
                     bottomContent = {
-                        TabRow(
+                        TabRowWithContour(
                             tabs = tabs,
                             selectedTabIndex = pagerState.currentPage,
                             onTabSelected = { index ->
@@ -293,7 +294,12 @@ fun LogPage() {
                                 .fillMaxWidth()
                                 .padding(horizontal = 12.dp)
                                 .padding(bottom = 8.dp),
-                            colors = TabRowDefaults.tabRowColors(backgroundColor = Color.Transparent)
+                            colors = TabRowDefaults.tabRowColors(
+                                backgroundColor = MiuixTheme.colorScheme.surfaceContainer,
+                                selectedBackgroundColor = MiuixTheme.colorScheme.primary,
+                                selectedContentColor = MiuixTheme.colorScheme.onPrimary,
+                            ),
+                            maxWidth = Dp.Infinity,
                         )
                     }
                 )

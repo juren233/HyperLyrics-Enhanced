@@ -814,17 +814,17 @@
     <!-- HyperIsland touch controls -->
     <string name="title_island_touch_config">HyperIsland touch controls</string>
     <string name="island_touch_enable">Enable custom touch controls</string>
-    <string name="island_touch_description">For the collapsed music island</string>
+    <string name="island_touch_description">For the music island only</string>
     <string name="island_touch_double_disabled">Disabled</string>
     <string name="island_touch_haptic">Haptic feedback</string>
-    <string name="island_touch_haptic_description">Vibrate when a custom gesture is recognized</string>
+    <string name="island_touch_haptic_description">Vibrate lightly after a gesture is recognized</string>
     <string name="island_touch_double_interval">Double-tap interval</string>
     <string name="island_touch_milliseconds_value">%1$d ms</string>
     <string name="island_touch_double_interval_range">150–500 ms</string>
     <string name="island_touch_long_press_time">Long-press time</string>
     <string name="island_touch_long_press_range">200–1500 ms</string>
     <string name="island_touch_unified_sides">Use the same settings on both sides</string>
-    <string name="island_touch_unified_sides_description">Use a separately saved set of actions on both sides. Turn off to restore individual settings.</string>
+    <string name="island_touch_unified_sides_description">Use the same gestures across the whole island</string>
     <string name="island_touch_help">How it works</string>
     <string name="island_touch_help_expand">Expand</string>
     <string name="island_touch_help_collapse">Collapse</string>
@@ -846,8 +846,11 @@
     <string name="island_touch_backward">Seek backward</string>
     <string name="island_touch_restart">Play from start</string>
     <string name="island_touch_toggle_mute">Toggle mute</string>
+    <string name="island_touch_toggle_mute_summary">Media volume only</string>
     <string name="island_touch_volume_up">Volume up</string>
     <string name="island_touch_volume_down">Volume down</string>
+    <string name="island_touch_volume_continuous">Continuous volume</string>
+    <string name="island_touch_volume_continuous_summary">Swipe back before releasing to reverse</string>
     <string name="island_touch_open_app">Open app</string>
     <string name="island_touch_open_app_freeform">Open app in floating window</string>
     <string name="island_touch_expand">Expand HyperIsland</string>
