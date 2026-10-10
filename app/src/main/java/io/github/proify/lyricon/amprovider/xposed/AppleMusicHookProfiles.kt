@@ -4017,6 +4017,35 @@ internal class AppleMusicHookResolver(
 
     val profile: AppleMusicHookProfile? = AppleMusicHookProfiles.profileFor(version)
 
+    @Volatile
+    var lyricsPreferenceBindings: AppleLyricsPreferenceBindings? = null
+        private set
+
+    /** Known builds retain the cheap verified path; unknown builds must prove semantic identity. */
+    fun exactLyricsPreferences(): AppleLyricsPreferenceBindings? {
+        if (profile == null) return null
+        return runCatching {
+            fun exactMethod(point: AppleMusicHookPoint): Method {
+                val target = AppleMusicHookProfiles.exactTargets(version, point).single()
+                return classLookup(target.className).declaredMethods.single {
+                    methodMatches(point, target, it)
+                }.apply { isAccessible = true }
+            }
+            val target = AppleMusicHookProfiles.exactTargets(version, AppleMusicHookPoint.APPLE_SHARED_PREFERENCES_CLASS).single()
+            val clazz = classLookup(target.className)
+            val translation = exactMethod(AppleMusicHookPoint.LYRICS_TRANSLATION_PREFERENCE)
+            val pronunciation = exactMethod(AppleMusicHookPoint.LYRICS_PRONUNCIATION_PREFERENCE)
+            check(translation.declaringClass == clazz && pronunciation.declaringClass == clazz)
+            AppleLyricsPreferenceBindings(
+                AppleLyricsPreferenceBinding(translation) { readAppleLyricsPreference(clazz, target, false) },
+                AppleLyricsPreferenceBinding(pronunciation) { readAppleLyricsPreference(clazz, target, true) },
+            )
+        }.getOrNull()?.also { lyricsPreferenceBindings = it }
+    }
+
+    fun discoverLyricsPreferences(): AppleLyricsPreferenceBindings? =
+        dexKitResolver?.discoverLyricsPreferences()?.also { lyricsPreferenceBindings = it }
+
     fun configuredClassNames(hookPoint: AppleMusicHookPoint): Set<String> {
         val exact = AppleMusicHookProfiles.exactTargets(version, hookPoint)
         val targets = if (exact.isNotEmpty()) {

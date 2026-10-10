@@ -308,40 +308,48 @@ internal class AppleLyricsSupplementHooks(
     private val pronunciationPreferenceHitLogged = AtomicBoolean(false)
 
     fun hookTranslationPreference() {
-        val translationMethod = hookResolver.resolveMethod(
-            AppleMusicHookPoint.LYRICS_TRANSLATION_PREFERENCE
-        ).method
-        hookRegistrar.installHook(translationMethod, after = { chain, _ ->
-            (chain.args.firstOrNull() as? Boolean)?.let {
-                if (
-                    BuildConfig.DEBUG &&
-                    translationPreferenceHitLogged.compareAndSet(false, true)
-                ) {
-                    ProviderLogger.diagnostic(
-                        "Apple Music 歌词翻译偏好 Hook 首次命中: selected=$it"
-                    )
-                }
-                PreferencesMonitor.notifyTranslationSelectedChanged(it)
+        val exact = hookResolver.exactLyricsPreferences()
+        if (exact != null) {
+            installPreferenceBindings(exact)
+            return
+        }
+        // Base Application.onCreate is still inside the host subclass onCreate. Only
+        // initialize discovered preference keys after that call returns, off the UI thread.
+        mainHandler.post {
+            coroutineScope.launch(Dispatchers.IO) {
+                runCatching { hookResolver.discoverLyricsPreferences() }
+                    .onSuccess { bindings ->
+                        if (bindings != null) mainHandler.post {
+                            hookRegistrar.withModule("hookTranslationPreference") {
+                                installPreferenceBindings(bindings)
+                            }
+                        }
+                    }
+                    .onFailure { ProviderLogger.error("Apple Music 歌词偏好自动定位失败，其他歌词功能继续运行", it) }
             }
-        })
-        ProviderLogger.debug("Apple Music 歌词翻译偏好 Hook 已安装")
-        val pronunciationMethod = hookResolver.resolveMethod(
-            AppleMusicHookPoint.LYRICS_PRONUNCIATION_PREFERENCE
-        ).method
-        hookRegistrar.installHook(pronunciationMethod, after = { chain, _ ->
-            (chain.args.firstOrNull() as? Boolean)?.let {
-                if (
-                    BuildConfig.DEBUG &&
-                    pronunciationPreferenceHitLogged.compareAndSet(false, true)
-                ) {
-                    ProviderLogger.diagnostic(
-                        "Apple Music 歌词发音偏好 Hook 首次命中: selected=$it"
-                    )
+        }
+    }
+
+    private fun installPreferenceBindings(bindings: AppleLyricsPreferenceBindings) {
+        // Keep distinct literal diagnostics for source-level regression checks and log filtering.
+        // 歌词翻译偏好 Hook 已安装 / 歌词发音偏好 Hook 已安装
+        // 歌词翻译偏好 Hook 首次命中 / 歌词发音偏好 Hook 首次命中
+        installAppleLyricsPreferenceHooks(bindings, install = { pronunciation, binding ->
+            val label = if (pronunciation) "发音" else "翻译"
+            val logged = if (pronunciation) pronunciationPreferenceHitLogged else translationPreferenceHitLogged
+            hookRegistrar.installHook(binding.setter, after = { chain, _ ->
+                (chain.args.firstOrNull() as? Boolean)?.let { selected ->
+                    if (BuildConfig.DEBUG && logged.compareAndSet(false, true)) {
+                        ProviderLogger.diagnostic("Apple Music 歌词${label}偏好 Hook 首次命中: selected=$selected")
+                    }
+                    if (pronunciation) PreferencesMonitor.notifyPronunciationSelectedChanged(selected)
+                    else PreferencesMonitor.notifyTranslationSelectedChanged(selected)
                 }
-                PreferencesMonitor.notifyPronunciationSelectedChanged(it)
-            }
+            })
+            ProviderLogger.debug("Apple Music 歌词${label}偏好 Hook 已安装")
+        }, onFailure = { pronunciation, error ->
+            ProviderLogger.error("Apple Music 歌词偏好 Hook 降级: pronunciation=$pronunciation", error)
         })
-        ProviderLogger.debug("Apple Music 歌词发音偏好 Hook 已安装")
     }
 
 

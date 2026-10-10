@@ -93,6 +93,30 @@ internal class AppleMusicDexKitResolver(
         }
     }
 
+    /** Called on a worker after host Application.onCreate has returned. */
+    fun discoverLyricsPreferences(): AppleLyricsPreferenceBindings? {
+        ensureDexKitLoaded()
+        val prefs = preferences()
+        val key = "lyrics-preferences-owner:v1:$runtimeCacheScope"
+        val cached = prefs.getString(key, null)
+        val start = android.os.SystemClock.elapsedRealtime()
+        val resolved = discoverAppleLyricsPreferences(dexKitBridge(), classLoader, cached)
+        if (resolved == null) {
+            prefs.edit().remove(key).apply()
+            ProviderLogger.info("Apple Music 歌词偏好语义定位未得到唯一完整目标，已降级")
+            return null
+        }
+        prefs.edit().putString(key, resolved.first).apply()
+        ProviderLogger.info(
+            "Apple Music 歌词偏好语义定位完成: owner=${resolved.first}, " +
+                "translation=${resolved.second.translation.setter.name}, " +
+                "pronunciation=${resolved.second.pronunciation.setter.name}, " +
+                "cacheHint=${cached == resolved.first}, " +
+                "elapsedMs=${android.os.SystemClock.elapsedRealtime() - start}",
+        )
+        return resolved.second
+    }
+
     fun recordMethodBaseline(
         hookPoint: AppleMusicHookPoint,
         target: AppleMusicHookTarget,
