@@ -159,5 +159,41 @@ class Actual1607ApkMutationTest(unittest.TestCase):
                 self.assertTrue(verify_profile(self.ctx, profile)['errors'])
 
 
+@unittest.skipUnless(os.getenv('HLE_APPLE_MUSIC_1609_APK') and os.getenv('HLE_APPLE_PROFILE_1609_EXPORT'),
+                     'requires original 1609 APK and current Kotlin profile export')
+class Actual1609ApkMutationTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.ctx = ApkDexContext(os.environ['HLE_APPLE_MUSIC_1609_APK'])
+        with open(os.environ['HLE_APPLE_PROFILE_1609_EXPORT']) as stream:
+            cls.profile = json.load(stream)
+
+    def test_current_profile(self):
+        self.assertEqual([], verify_profile(self.ctx, self.profile)['errors'])
+
+    def test_same_signature_different_roles_are_rejected(self):
+        mutations = [
+            ('MEDIA_API_CATALOG_REQUEST_EXECUTOR', 2, 'methodName', 'i', 'wrong catalogue route'),
+            ('IN_APP_ACTION_SHEET_BINDING', 0, 'className', 'q8.t7', 'CollectionItemView'),
+        ]
+        for point, index, member, value, expected in mutations:
+            with self.subTest(point=point):
+                profile = copy.deepcopy(self.profile)
+                target = profile['hookPoints'][point][index]
+                target[member] = value
+                self.assertEqual(1, len(matching_methods(self.ctx, target)))
+                errors = verify_profile(self.ctx, profile)['errors']
+                self.assertTrue(any(expected in error for error in errors), errors)
+
+    def test_unrelated_boolean_preference_getters_are_rejected(self):
+        for getter in ['a', 'd']:
+            with self.subTest(getter=getter):
+                profile = copy.deepcopy(self.profile)
+                profile['hookPoints']['APPLE_SHARED_PREFERENCES_CLASS'][0]['runtimeMemberNames'][
+                    'LYRICS_PREFERENCES_TRANSLATION_GETTER'] = getter
+                errors = verify_profile(self.ctx, profile)['errors']
+                self.assertTrue(any('translation getter reads the wrong' in e for e in errors), errors)
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -7,7 +7,19 @@ The checks establish member compatibility, not execution or visual acceptance.
 """
 
 
-def verify_consumer_members(ctx, points, field, method, require):
+def verify_consumer_members(ctx, points, field, method, require, version_code=1607):
+    # Consumer roles are unchanged in 1609; their Media3, lifecycle and Compose
+    # binary types moved. Keep the old APK contracts isolated from the new map.
+    if version_code == 1609:
+        names_1609 = {'z3.v': 'z3.w', 'z0.y0': 'z0.A0', 'z0.o1': 'z0.r1',
+                      'androidx.lifecycle.G': 'androidx.lifecycle.H'}
+        original_field, original_method = field, method
+        def field(owner, name, expected=None):
+            return original_field(names_1609.get(owner, owner), name, names_1609.get(expected, expected))
+        def method(owner, name, params=None, returns=None, static=None):
+            return original_method(names_1609.get(owner, owner), name,
+                                   None if params is None else [names_1609.get(p, p) for p in params],
+                                   names_1609.get(returns, returns), static)
     def one(point):
         return points[point][0]
 

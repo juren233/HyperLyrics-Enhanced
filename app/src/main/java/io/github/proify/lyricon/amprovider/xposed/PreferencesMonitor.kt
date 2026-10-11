@@ -36,12 +36,19 @@ object PreferencesMonitor {
 
     fun isTranslationSelected(): Boolean =
         runCatching {
+            val bindings = hookResolver.lyricsPreferenceBindings
+            if (bindings != null) return@runCatching bindings.translation.read()
+            // Unknown APKs wait for semantic discovery; never read a same-shaped old class.
+            if (hookResolver.profile == null) return@runCatching null
             val resolved = hookResolver.resolveClass(AppleMusicHookPoint.APPLE_SHARED_PREFERENCES_CLASS)
             readAppleLyricsPreference(resolved.clazz, resolved.target, pronunciation = false)
         }.getOrNull() ?: true
 
     fun isPronunciationSelected(): Boolean =
         runCatching {
+            val bindings = hookResolver.lyricsPreferenceBindings
+            if (bindings != null) return@runCatching pronunciationSnapshot.get() ?: bindings.pronunciation.read()
+            if (hookResolver.profile == null) return@runCatching null
             val resolved = hookResolver.resolveClass(AppleMusicHookPoint.APPLE_SHARED_PREFERENCES_CLASS)
             readAppleLyricsPreference(
                 resolved.clazz, resolved.target, pronunciation = true,

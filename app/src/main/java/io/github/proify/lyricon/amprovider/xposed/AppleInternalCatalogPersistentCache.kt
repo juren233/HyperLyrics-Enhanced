@@ -31,9 +31,14 @@ private const val STOREFRONT_APPLY_MAX_ATTEMPTS = 6
 internal fun AppleInternalCatalogResolver.applyContentUiLanguage(selection: Int) {
     contentUiLanguageSelection = selection
     warmPersistentLocalizedCache(selection)
-    if (activeCatalogRequest.get() != null) return
-    if (!restoreStorefrontAccess(isFirstAttempt = true)) {
-        scheduleStorefrontApplyRetry()
+    // The provider is assembled after Application.onCreate (the superclass), while
+    // AppleMusicApplication.onCreate is still initializing applicationConnector.
+    // Defer MediaApi access until that main-thread startup call has returned.
+    mainHandler.post {
+        if (activeCatalogRequest.get() != null) return@post
+        if (!restoreStorefrontAccess(isFirstAttempt = true)) {
+            scheduleStorefrontApplyRetry()
+        }
     }
 }
 
