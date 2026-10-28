@@ -148,6 +148,37 @@ internal fun OnlineLyricTargeter.isStrongDurationMatch(localDurationMs: Long, re
     localDurationMs <= 0L ||
         abs(localDurationMs - remoteDurationMs) < OnlineLyricTargeter.STRONG_DURATION_TOLERANCE_MS
 
+/** 无主源正文可交叉核对时，仅接纳同名、同歌手、同时长的版本，避免翻唱/现场错轴。 */
+internal fun OnlineLyricTargeter.isExactVersionMatch(
+    localTitle: String,
+    localArtists: List<String>,
+    localDurationMs: Long,
+    remoteTitle: String,
+    remoteArtists: List<String>,
+    remoteDurationMs: Long,
+    localFeatures: List<String> = emptyList(),
+    remoteFeatures: List<String> = emptyList(),
+): Boolean = localTitle.isNotBlank() && localTitle == remoteTitle &&
+    localArtists.filter(String::isNotBlank).toSet().let { artists ->
+        artists.isNotEmpty() && artists == remoteArtists.filter(String::isNotBlank).toSet()
+    } && localDurationMs > 0L && remoteDurationMs > 0L &&
+    isStrongDurationMatch(localDurationMs, remoteDurationMs) &&
+    localFeatures.toSet() == remoteFeatures.toSet()
+
+internal fun OnlineLyricTargeter.versionFeatures(title: String): List<String> {
+    val normalized = title.lowercase(java.util.Locale.ROOT)
+    return listOf(
+        "live" to listOf("live", "现场", "現場", "演唱会", "演唱會"),
+        "cover" to listOf("cover", "翻唱"),
+        "remix" to listOf("remix", "混音"),
+        "acoustic" to listOf("acoustic", "不插电", "不插電"),
+        "instrumental" to listOf("instrumental", "伴奏", "纯音乐", "純音樂"),
+    ).filter { (_, labels) -> labels.any { label ->
+        if (label.all { it in 'a'..'z' }) Regex("\\b$label\\b").containsMatchIn(normalized)
+        else label in normalized
+    } }.map { it.first }
+}
+
 internal fun OnlineLyricTargeter.isNearMissEligible(
     score: Int,
     titleMatched: Boolean,

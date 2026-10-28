@@ -72,8 +72,37 @@ private const val APP_ICON_BITMAP_SIZE_PX = 96
 
 @Composable
 fun HyperIslandAlbumCoverWhitelistPage() {
-    val context = LocalContext.current
     val prefs = rememberHookPrefs()
+    var enabledPackages by remember {
+        mutableStateOf(IslandAlbumCoverWhitelist.readEnabledPackages(prefs))
+    }
+    fun updateAppEnabled(packageName: String, enabled: Boolean) {
+        val updated = IslandAlbumCoverWhitelist.updateEnabledPackages(
+            current = prefs.getStringSet(RootConstants.KEY_HOOK_ISLAND_ALBUM_COVER_STYLE_APP_WHITELIST, null),
+            packageName = packageName,
+            enabled = enabled,
+        )
+        enabledPackages = updated
+        prefs.edit { putStringSet(RootConstants.KEY_HOOK_ISLAND_ALBUM_COVER_STYLE_APP_WHITELIST, updated) }
+        PrefsBridge.putStringSet(RootConstants.KEY_HOOK_ISLAND_ALBUM_COVER_STYLE_APP_WHITELIST, updated)
+    }
+
+    InstalledAppSelectionPage(
+        title = stringResource(R.string.title_island_album_cover_app_whitelist),
+        enabledPackages = enabledPackages,
+        onCheckedChange = ::updateAppEnabled,
+    )
+}
+
+/** 复用封面白名单的搜索、分组卡片与开关样式。 */
+@Composable
+internal fun InstalledAppSelectionPage(
+    title: String,
+    enabledPackages: Set<String>,
+    onCheckedChange: (String, Boolean) -> Unit,
+    includeNonLauncherApps: Boolean = false,
+) {
+    val context = LocalContext.current
     val installedAppsPermission = remember(context) {
         InstalledAppsPermission.resolve(context)
     }
@@ -84,9 +113,6 @@ fun HyperIslandAlbumCoverWhitelistPage() {
     }
     var searchQuery by remember { mutableStateOf("") }
     var installedApps by remember { mutableStateOf<List<InstalledApp>?>(null) }
-    var enabledPackages by remember {
-        mutableStateOf(IslandAlbumCoverWhitelist.readEnabledPackages(prefs))
-    }
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
     ) { granted ->
@@ -101,28 +127,22 @@ fun HyperIslandAlbumCoverWhitelistPage() {
         }
     }
 
-    LaunchedEffect(context, hasInstalledAppsPermission) {
+    LaunchedEffect(context, hasInstalledAppsPermission, includeNonLauncherApps) {
         installedApps = if (hasInstalledAppsPermission) {
             withContext(Dispatchers.IO) {
-                loadInstalledApps(context)
+                loadInstalledApps(context, includeNonLauncherApps)
             }
         } else {
             emptyList()
         }
     }
-
-    fun updateAppEnabled(packageName: String, enabled: Boolean) {
-        val updated = IslandAlbumCoverWhitelist.updateEnabledPackages(
-            current = prefs.getStringSet(RootConstants.KEY_HOOK_ISLAND_ALBUM_COVER_STYLE_APP_WHITELIST, null),
-            packageName = packageName,
-            enabled = enabled,
-        )
-        enabledPackages = updated
-        prefs.edit { putStringSet(RootConstants.KEY_HOOK_ISLAND_ALBUM_COVER_STYLE_APP_WHITELIST, updated) }
-        PrefsBridge.putStringSet(RootConstants.KEY_HOOK_ISLAND_ALBUM_COVER_STYLE_APP_WHITELIST, updated)
-    }
-
-    val filteredApps = installedApps.orEmpty().filter { app ->
+    val knownApps = installedApps.orEmpty()
+    // 已卸载或暂时不可见的包仍可从已启用组移除。
+    val apps = if (includeNonLauncherApps) {
+        knownApps + enabledPackages.filter { pkg -> knownApps.none { it.app.packageName == pkg } }
+            .map { pkg -> InstalledApp(IslandMusicAppCatalog.App(pkg, pkg), null) }
+    } else knownApps
+    val filteredApps = apps.filter { app ->
         val query = searchQuery.trim()
         query.isEmpty() || app.app.displayName.contains(query, ignoreCase = true) ||
             app.app.packageName.contains(query, ignoreCase = true)
@@ -130,7 +150,7 @@ fun HyperIslandAlbumCoverWhitelistPage() {
     val enabledApps = filteredApps.filter { it.app.packageName in enabledPackages }
     val disabledApps = filteredApps.filter { it.app.packageName !in enabledPackages }
 
-    XposedLyricSettingPage(title = stringResource(R.string.title_island_album_cover_app_whitelist)) {
+    XposedLyricSettingPage(title = title) {
         item(key = "search") {
             AppSearchField(
                 query = searchQuery,
@@ -143,7 +163,7 @@ fun HyperIslandAlbumCoverWhitelistPage() {
             apps = enabledApps,
             enabledPackages = enabledPackages,
             isLoading = installedApps == null,
-            onCheckedChange = ::updateAppEnabled,
+            onCheckedChange = onCheckedChange,
         )
         appSection(
             keyPrefix = "disabled",
@@ -151,7 +171,7 @@ fun HyperIslandAlbumCoverWhitelistPage() {
             apps = disabledApps,
             enabledPackages = enabledPackages,
             isLoading = installedApps == null,
-            onCheckedChange = ::updateAppEnabled,
+            onCheckedChange = onCheckedChange,
         )
     }
 }
@@ -312,6 +332,8 @@ private fun IslandMusicAppSwitchPreference(
 ) {
     SwitchPreference(
         title = app.displayName,
+        // 读不到应用名时名称即包名，不再重复显示。
+        summary = app.packageName.takeIf { it != app.displayName },
         checked = checked,
         onCheckedChange = onCheckedChange,
         startAction = {
@@ -350,19 +372,21 @@ private data class InstalledApp(
     val icon: Bitmap?,
 )
 
-private fun loadInstalledApps(context: Context): List<InstalledApp> {
+private fun loadInstalledApps(context: Context, includeNonLauncherApps: Boolean): List<InstalledApp> {
     val packageManager = LocaleUtils.systemLanguageContext(context).packageManager
     val launcherIntent = Intent(Intent.ACTION_MAIN).apply {
         addCategory(Intent.CATEGORY_LAUNCHER)
     }
 
-    return packageManager
-        .queryIntentActivities(
+    val applications = if (includeNonLauncherApps) {
+        packageManager.getInstalledApplications(PackageManager.ApplicationInfoFlags.of(0L))
+    } else {
+        packageManager.queryIntentActivities(
             launcherIntent,
             PackageManager.ResolveInfoFlags.of(PackageManager.MATCH_ALL.toLong()),
-        )
-        .asSequence()
-        .mapNotNull { it.activityInfo?.applicationInfo }
+        ).mapNotNull { it.activityInfo?.applicationInfo }
+    }
+    return applications.asSequence()
         .filter { it.packageName != context.packageName }
         .distinctBy { it.packageName }
         .map { applicationInfo ->

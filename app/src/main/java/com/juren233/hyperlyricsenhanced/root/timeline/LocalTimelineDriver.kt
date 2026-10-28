@@ -27,6 +27,9 @@ import com.juren233.hyperlyricsenhanced.root.utils.RuntimeResourceCleanup
 import com.juren233.hyperlyricsenhanced.root.utils.RuntimeCallbackGate
 import com.juren233.hyperlyricsenhanced.root.utils.RuntimeResourceCleanupException
 import com.juren233.hyperlyricsenhanced.timeline.model.TrackIdentity
+import com.juren233.hyperlyricsenhanced.common.MediaSessionOnlineFallbackPreferences.Settings
+import com.juren233.hyperlyricsenhanced.root.source.MediaSessionOnlineFallbackCoordinator
+import com.juren233.hyperlyricsenhanced.root.source.MediaSessionOnlineFallbackPolicy
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -77,6 +80,75 @@ class LocalTimelineDriver(
     private var renderedPlaying: Boolean? = null
 
     private var pendingContent: TimelineContent? = null
+    private var displayedContent: TimelineContent? = null
+    private var fallbackOwner: Any? = null
+    private var primaryContentListener: (() -> Unit)? = null
+
+    /** 每次运行只授权一个补充协调器，close 后排队回调也不能再发布。 */
+    internal fun openOnlineFallback(): MediaSessionOnlineFallbackCoordinator.Timeline {
+        val owner = Any()
+        fallbackOwner = owner
+        return object : MediaSessionOnlineFallbackCoordinator.Timeline {
+            private var closed = false
+            private var settings = Settings()
+            private var sessionUsable = false
+            private fun current() = !closed && !stopped && activeInstance === this@LocalTimelineDriver &&
+                fallbackOwner === owner
+
+            override fun hasPrimary(track: TrackIdentity): Boolean = current() &&
+                TimelineContentPolicy.hasPrimary(activeSourceId, track, displayedContent, appliedTrackKey)
+
+            override fun hasFallback(track: TrackIdentity): Boolean {
+                val shown = displayedContent ?: return false
+                return current() && shown.sourceId == MediaSessionOnlineFallbackPolicy.SOURCE_ID &&
+                    shown.track?.let { MediaSessionOnlineFallbackPolicy.sameLookupTrack(it, track) } == true
+            }
+
+            override fun authorize(settings: Settings, sessionUsable: Boolean) {
+                if (!current()) return
+                this.settings = settings
+                this.sessionUsable = sessionUsable
+                if (!MediaSessionOnlineFallbackPolicy.eligible(settings, anchor.currentTrack, sessionUsable)) {
+                    clearFallback()
+                } else {
+                    val shown = displayedContent
+                    val track = anchor.currentTrack
+                    if (shown?.sourceId == MediaSessionOnlineFallbackPolicy.SOURCE_ID &&
+                        track != null && shown.track != null &&
+                        !MediaSessionOnlineFallbackPolicy.sameLookupTrack(shown.track, track)
+                    ) prepareTrackTransition(track)
+                }
+            }
+
+            override fun submit(content: TimelineContent) = runOnMain {
+                if (current() && TimelineContentPolicy.admitsOnlineFallback(
+                        activeSourceId, anchor.currentTrack, content, displayedContent, settings, sessionUsable,
+                        appliedTrackKey,
+                    )
+                ) applyContent(content)
+            }
+
+            override fun listen(onPrimaryChanged: () -> Unit) {
+                if (current()) primaryContentListener = onPrimaryChanged
+            }
+
+            override fun close() {
+                closed = true
+                runOnMain {
+                    if (fallbackOwner !== owner) return@runOnMain
+                    fallbackOwner = null
+                    primaryContentListener = null
+                    clearFallback()
+                }
+            }
+        }
+    }
+
+    private fun clearFallback() {
+        if (displayedContent?.sourceId == MediaSessionOnlineFallbackPolicy.SOURCE_ID) {
+            clearTimeline(showTrackFallback = true)
+        }
+    }
     private val appliedContentCache = LinkedHashMap<String, TimelineContent>()
     private var streamingTrackKey: String? = null
     private val streamingLines = linkedMapOf<Long, RichLyricLine>()
@@ -116,6 +188,9 @@ class LocalTimelineDriver(
             appliedTrackKey = null
             appliedPackageName = null
             pendingContent = null
+            displayedContent = null
+            fallbackOwner = null
+            primaryContentListener = null
             appliedContentCache.clear()
             clearStreamingContent()
             resetSourceClock()
@@ -153,6 +228,7 @@ class LocalTimelineDriver(
             resetSourceClock()
             clearTimeline(showTrackFallback = true)
             diagnostic("活动来源=$sourceId")
+            primaryContentListener?.invoke()
         }
     }
 
@@ -164,6 +240,7 @@ class LocalTimelineDriver(
             clearStreamingContent()
             resetSourceClock()
             clearTimeline(showTrackFallback = false)
+            primaryContentListener?.invoke()
         }
     }
 
@@ -200,7 +277,12 @@ class LocalTimelineDriver(
     }
 
     override fun onStop() {
-        runOnMain { clearTimeline(showTrackFallback = true) }
+        runOnMain {
+            if (displayedContent?.sourceId != MediaSessionOnlineFallbackPolicy.SOURCE_ID) {
+                clearTimeline(showTrackFallback = true)
+            }
+            primaryContentListener?.invoke()
+        }
     }
 
     // 逐行兼容来源只提交内容；显示、播放时钟与滚动仍归本 driver。
@@ -252,6 +334,7 @@ class LocalTimelineDriver(
     private var lastSourceClockDiagAtMs = 0L
 
     private fun acceptSourceClock(position: Long, event: String) {
+        if (displayedContent?.sourceId == MediaSessionOnlineFallbackPolicy.SOURCE_ID) return
         if (appliedTrackKey == null) return
         val anchored = position.coerceAtLeast(0L)
         val now = SystemClock.elapsedRealtime()
@@ -432,8 +515,7 @@ class LocalTimelineDriver(
                 diagnostic("未接管曲目，跳过展示信息刷新: pkg=${track.packageName}")
                 return@runOnMain
             }
-            val appliedContent = appliedContentCache[track.normalizedKey()]
-                ?.takeIf { it.sourceId == activeSourceId }
+            val appliedContent = displayedContent
             if (TimelineContentPolicy.isSessionTextUntrusted(track, appliedContent?.song)) {
                 // 会话标题/歌手被车载歌词改写：展示已应用歌词内容里的名称，没有则清空歌词行；
                 // 污染确认前暂存的内容此时才能按污染感知的身份匹配，补一次应用。
@@ -532,6 +614,7 @@ class LocalTimelineDriver(
     }
 
     private fun sourceHintAllowed(nowMs: Long): Boolean =
+        displayedContent?.sourceId != MediaSessionOnlineFallbackPolicy.SOURCE_ID &&
         PlaybackSmoothingPolicy.allowsSourceHint(
             inactiveAnchorAgeMs = anchorInactiveSinceMs?.let { nowMs - it },
             sourceProgressAgeMs = sourceProgressWhileAnchorInactiveAtMs
@@ -606,6 +689,7 @@ class LocalTimelineDriver(
             return
         }
         if (!content.streaming) clearStreamingContent()
+        displayedContent = content
 
         LyriconDataBridge.updateLyricPackage(track.packageName)
         val sameTrack = appliedTrackKey == track.normalizedKey()
@@ -615,7 +699,7 @@ class LocalTimelineDriver(
         val trackKey = track.normalizedKey()
         appliedTrackKey = trackKey
         appliedPackageName = track.packageName
-        rememberAppliedContent(trackKey, content)
+        if (content.sourceId == activeSourceId) rememberAppliedContent(trackKey, content)
         pendingContent = null
         if (content.streaming) {
             // 流式兼容内容不触发整首歌词的在线/AI 翻译编排。
@@ -629,6 +713,7 @@ class LocalTimelineDriver(
         resetSourceClock()
         timelinePosition()?.let(renderSink::onPositionChanged)
         refreshRenderPlaybackState()
+        if (content.sourceId == activeSourceId) primaryContentListener?.invoke()
         HookLogger.i(
             TAG,
             "[TIMELINE] 已应用完整内容: source=${content.sourceId}, title=${track.title}, " +
@@ -679,6 +764,7 @@ class LocalTimelineDriver(
     }
 
     private fun clearTimeline(showTrackFallback: Boolean) {
+        displayedContent = null
         stopPositionLoop()
         appliedTrackKey = null
         appliedPackageName = null
@@ -717,6 +803,7 @@ class LocalTimelineDriver(
     }
 
     private fun prepareTrackTransition(track: TrackIdentity) {
+        displayedContent = null
         stopPositionLoop()
         // A same-player track change must keep its position clock even while
         // waiting for the new song's lyrics to arrive.

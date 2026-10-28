@@ -12,6 +12,48 @@ import org.junit.Test
 class OnlineLyricTargeterTest {
 
     @Test
+    fun `exact version rejects cover artists and changed recordings despite matching title`() {
+        fun matches(artist: String, duration: Long, title: String = "寂寞的恋人啊") =
+            OnlineLyricTargeter.isExactVersionMatch(
+                localTitle = "寂寞的恋人啊", localArtists = listOf("莫文蔚"), localDurationMs = 248_360,
+                remoteTitle = title, remoteArtists = listOf(artist), remoteDurationMs = duration,
+            )
+        assertEquals(true, matches("莫文蔚", 248_000))
+        assertEquals(false, matches("翻唱莫文蔚", 248_000))
+        assertEquals(false, matches("莫文蔚", 260_000))
+        assertEquals(false, matches("莫文蔚", 0))
+        assertEquals(false, matches("莫文蔚", 248_000, "寂寞的恋人啊live"))
+    }
+
+    @Test
+    fun `exact version requires nonempty exact artist credits but ignores their order`() {
+        assertEquals(true, OnlineLyricTargeter.isExactVersionMatch(
+            "song", listOf("a", "b"), 180_000, "song", listOf("b", "a"), 180_001,
+        ))
+        assertEquals(false, OnlineLyricTargeter.isExactVersionMatch(
+            "song", listOf("a"), 180_000, "song", listOf("a", "b"), 180_001,
+        ))
+        assertEquals(false, OnlineLyricTargeter.isExactVersionMatch(
+            "song", emptyList(), 180_000, "song", emptyList(), 180_001,
+        ))
+    }
+
+    @Test
+    fun `version labels cannot disappear through title bracket normalization`() {
+        val studio = OnlineLyricTargeter.versionFeatures("Song")
+        val live = OnlineLyricTargeter.versionFeatures("Song (Live)")
+        assertEquals(listOf("live"), live)
+        assertEquals(live, OnlineLyricTargeter.versionFeatures("Song（现场版）"))
+        assertEquals(emptyList<String>(), OnlineLyricTargeter.versionFeatures("Olivia"))
+        assertEquals(false, OnlineLyricTargeter.isExactVersionMatch(
+            "song", listOf("artist"), 180_000, "song", listOf("artist"), 180_001, studio, live,
+        ))
+        assertEquals(true, OnlineLyricTargeter.isExactVersionMatch(
+            "song", listOf("artist"), 180_000, "song", listOf("artist"), 180_001, live, live,
+        ))
+    }
+
+    @Test
     fun `netease preference searches netease first`() {
         assertEquals(
             listOf(Source.NE, Source.QM),

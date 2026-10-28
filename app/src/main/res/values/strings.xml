@@ -899,4 +899,6 @@
     <string name="provider_update_notification_name_separator">、</string>
     <string name="title_misc">杂项</string>
     <string name="title_review_setup">回顾基础设置流程页</string>
+    <string name="media_session_fallback_more_apps">更多App</string>
+    <string name="media_session_fallback_players_count">已添加 %1$d 个应用</string>
 </resources>

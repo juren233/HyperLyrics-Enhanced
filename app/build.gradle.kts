@@ -168,6 +168,7 @@ dependencies {
     implementation(libs.lyricon.provider)
 
     testImplementation(libs.junit)
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:${libs.versions.kotlinxCoroutines.get()}")
     testImplementation("org.json:json:20180813")
 
     // --- 布局兼容 ---

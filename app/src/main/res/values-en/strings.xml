@@ -897,4 +897,6 @@
     <string name="provider_update_notification_name_separator">" &amp; "</string>
     <string name="title_misc">Miscellaneous</string>
     <string name="title_review_setup">Revisit the basic setup flow</string>
+    <string name="media_session_fallback_more_apps">More Apps</string>
+    <string name="media_session_fallback_players_count">%1$d apps added</string>
 </resources>

@@ -65,6 +65,9 @@ class SystemMediaPlaybackAnchor(
          * 不得清空已应用的时间轴。
          */
         fun onTrackMetadataRefreshed(track: TrackIdentity) {}
+
+        /** 与是否推进时钟分开：暂停仍是有效会话，停止/错误/消失则作废。 */
+        fun onSessionValidityChanged(usable: Boolean) {}
     }
 
     @Volatile
@@ -73,6 +76,10 @@ class SystemMediaPlaybackAnchor(
 
     @Volatile
     private var currentAnchor: Anchor? = null
+
+    @Volatile
+    var sessionUsable: Boolean = false
+        private set
 
     @Volatile
     private var playbackActive: Boolean = false
@@ -195,6 +202,7 @@ class SystemMediaPlaybackAnchor(
         sessionUids.clear()
         activeController = null
         currentAnchor = null
+        sessionUsable = false
         currentTrack = null
         playbackActive = false
         timelineAdvancing = false
@@ -309,6 +317,7 @@ class SystemMediaPlaybackAnchor(
                 listeners.forEach { it.onTrackChanged(null) }
             }
             timelineAdvancing = false
+            publishSessionValidity(false)
             publishPlaybackActivity(false)
             return
         }
@@ -351,6 +360,16 @@ class SystemMediaPlaybackAnchor(
         // 播放面活动与时间轴推进必须分开：BUFFERING 保留歌词面，但
         // Anchor.isPlaying=false 使位置冻结。位置暂时不可用时也不得吞掉播放态。
         publishPlaybackActivity(PlaybackStateActivityPolicy.keepsSessionActive(stateCode))
+        publishSessionValidity(
+            track != null && (stateCode == PlaybackState.STATE_PLAYING ||
+                stateCode == PlaybackState.STATE_PAUSED || stateCode == PlaybackState.STATE_BUFFERING)
+        )
+    }
+
+    private fun publishSessionValidity(usable: Boolean) {
+        if (sessionUsable == usable) return
+        sessionUsable = usable
+        listeners.forEach { it.onSessionValidityChanged(usable) }
     }
 
     private fun publishPlaybackActivity(active: Boolean) {

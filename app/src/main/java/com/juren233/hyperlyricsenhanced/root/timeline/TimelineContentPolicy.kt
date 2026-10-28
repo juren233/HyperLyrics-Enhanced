@@ -10,9 +10,41 @@ import com.juren233.hyperlyricsenhanced.common.media.MediaSessionMetadataSanitiz
 import com.juren233.hyperlyricsenhanced.lyric.model.Song
 import com.juren233.hyperlyricsenhanced.lyric.source.TimelineContent
 import com.juren233.hyperlyricsenhanced.timeline.model.TrackIdentity
+import com.juren233.hyperlyricsenhanced.common.MediaSessionOnlineFallbackPreferences.Settings
+import com.juren233.hyperlyricsenhanced.root.source.MediaSessionOnlineFallbackPolicy
 
 /** 统一时间轴接收内容前的纯逻辑门禁。 */
 object TimelineContentPolicy {
+    /** 已接纳的主源按应用时的锚点键保留优先级，专辑等展示字段刷新不能使其失效。 */
+    internal fun hasPrimary(
+        activeSourceId: String?,
+        track: TrackIdentity?,
+        content: TimelineContent?,
+        appliedTrackKey: String? = content?.track?.normalizedKey(),
+    ): Boolean = content != null && activeSourceId != null && content.sourceId == activeSourceId &&
+        hasUsableLyrics(content.song) && track != null && appliedTrackKey == track.normalizedKey()
+
+    private fun hasUsableLyrics(song: Song?): Boolean = song?.lyrics.orEmpty().any {
+        it.begin >= 0L && it.end > it.begin && !it.text.isNullOrBlank()
+    }
+
+    /** 补充内容必须有独立身份、明确授权和严格曲目匹配，不能占用主源身份。 */
+    internal fun admitsOnlineFallback(
+        activeSourceId: String?,
+        currentTrack: TrackIdentity?,
+        content: TimelineContent,
+        displayed: TimelineContent?,
+        settings: Settings,
+        sessionUsable: Boolean,
+        appliedTrackKey: String? = displayed?.track?.normalizedKey(),
+    ): Boolean = activeSourceId != null &&
+        content.sourceId == MediaSessionOnlineFallbackPolicy.SOURCE_ID &&
+        content.strictIdentity && content.track != null && currentTrack != null &&
+        MediaSessionOnlineFallbackPolicy.sameLookupTrack(content.track, currentTrack) &&
+        hasUsableLyrics(content.song) &&
+        MediaSessionOnlineFallbackPolicy.eligible(settings, currentTrack, sessionUsable) &&
+        !hasPrimary(activeSourceId, currentTrack, displayed, appliedTrackKey)
+
     enum class Decision {
         APPLY,
         HOLD_FOR_TRACK,

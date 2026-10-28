@@ -297,23 +297,23 @@ private fun LazyListScope.enabledAppsSection(
                 .fillMaxWidth()
         ) {
             val apps = installedApps
-            when {
-                apps == null -> Unit
-                apps.isEmpty() -> Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 20.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = stringResource(R.string.title_online_translation_no_enabled_apps),
-                        fontSize = MiuixTheme.textStyles.headline1.fontSize,
-                        fontWeight = FontWeight.Medium,
-                        color = MiuixTheme.colorScheme.onSurfaceVariantActions,
-                    )
-                }
-                else -> Column {
-                    apps.forEach { installedApp ->
+            Column {
+                when {
+                    apps == null -> Unit
+                    apps.isEmpty() -> Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 20.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = stringResource(R.string.title_online_translation_no_enabled_apps),
+                            fontSize = MiuixTheme.textStyles.headline1.fontSize,
+                            fontWeight = FontWeight.Medium,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantActions,
+                        )
+                    }
+                    else -> apps.forEach { installedApp ->
                         AppSwitchPreference(
                             app = installedApp.app,
                             displayName = installedApp.displayName,
@@ -325,6 +325,7 @@ private fun LazyListScope.enabledAppsSection(
                         )
                     }
                 }
+                MediaSessionOnlineFallbackEntry()
             }
         }
     }

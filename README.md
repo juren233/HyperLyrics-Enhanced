@@ -221,6 +221,15 @@ HyperLyrics Enhanced 是为**小米 HyperOS 设备**打造的**超级岛 / 息�
 
 </details>
 
+<details>
+<summary><strong>浏览器、PWA 等没有歌词的播放器，怎么用在线源取词？</strong></summary>
+
+进入「歌词设置 → 三方在线源配置」，在「启用App」卡片底部点「更多App」，搜索并勾选需要的应用，包含没有桌面入口的 WebAPK。只对已勾选的应用取词，默认不勾选任何应用，此时不会查询。主源没有歌词时，按该页「平台来源」的顺序取词，主源歌词到达后优先使用主源，歌词源可继续选 Lyricon。
+
+播放器需提供可信的歌曲名、歌手和时长；在线候选的标题、歌手、版本标记（如现场、翻唱）也要一致，时长相差小于 1.5 秒，没有对应版本时可能无词。不确定该勾选哪个应用时，播放中执行 `adb shell dumpsys media_session`，找到当前会话的 `package`（PWA 可能使用独立 WebAPK 包名，也可能使用浏览器包名），在「更多App」中核对每个应用下方显示的包名。
+
+</details>
+
 ### 提交反馈
 
 请先查看 [已有 Issues](https://github.com/juren233/HyperLyrics-Enhanced/issues)，再提交可复现的问题。建议附上：

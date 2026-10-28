@@ -1,5 +1,9 @@
 package com.juren233.hyperlyricsenhanced.root.timeline
 
+import com.juren233.hyperlyricsenhanced.common.MediaSessionOnlineFallbackPreferences.Settings
+import com.juren233.hyperlyricsenhanced.lyric.model.RichLyricLine
+import com.juren233.hyperlyricsenhanced.lyric.model.Song
+import com.juren233.hyperlyricsenhanced.root.source.MediaSessionOnlineFallbackPolicy
 import com.juren233.hyperlyricsenhanced.lyric.source.TimelineContent
 import com.juren233.hyperlyricsenhanced.timeline.model.TrackIdentity
 import org.junit.Assert.assertEquals
@@ -195,5 +199,87 @@ class TimelineContentPolicyTest {
                 track = video,
             )
         )
+    }
+
+    private fun fallbackSong() = Song(
+        lyrics = listOf(RichLyricLine(
+            begin = 0, end = 1_000, duration = 1_000, text = "Line",
+        )),
+    )
+
+    private val fallbackSettings get() = Settings(packages = setOf(anchor.packageName))
+
+    private fun fallbackContent() = TimelineContent(
+        sourceId = MediaSessionOnlineFallbackPolicy.SOURCE_ID,
+        track = anchor, song = fallbackSong(), strictIdentity = true,
+    )
+
+    @Test
+    fun `authorized fallback enters timeline while Lyricon stays selected`() {
+        val fallback = fallbackContent()
+        assertEquals(TimelineContentPolicy.Decision.DROP_INACTIVE_SOURCE,
+            TimelineContentPolicy.decide("lyricon", anchor, fallback))
+        assertTrue(TimelineContentPolicy.admitsOnlineFallback(
+            "lyricon", anchor, fallback, null, fallbackSettings, true,
+        ))
+    }
+
+    @Test
+    fun `primary lyrics block fallback and later primary replaces displayed fallback`() {
+        val primary = TimelineContent("lyricon", anchor, fallbackSong())
+        val fallback = fallbackContent()
+        assertFalse(TimelineContentPolicy.admitsOnlineFallback(
+            "lyricon", anchor, fallback, primary, fallbackSettings, true,
+        ))
+        assertEquals(TimelineContentPolicy.Decision.APPLY,
+            TimelineContentPolicy.decide("lyricon", anchor, primary))
+        assertFalse(TimelineContentPolicy.hasPrimary("lyricon", anchor, fallback))
+        assertTrue(TimelineContentPolicy.hasPrimary("lyricon", anchor, primary))
+        assertFalse(TimelineContentPolicy.hasPrimary("lyricinfo", anchor, primary))
+    }
+
+    @Test
+    fun `fallback cannot forge source skip identity or enter after stop`() {
+        val content = fallbackContent()
+        fun admitted(candidate: TimelineContent, track: TrackIdentity? = anchor, active: String? = "lyricon") =
+            TimelineContentPolicy.admitsOnlineFallback(active, track, candidate, null, fallbackSettings, true)
+        assertFalse(admitted(content.copy(sourceId = "lyricon")))
+        assertFalse(admitted(content.copy(track = null)))
+        assertFalse(admitted(content.copy(strictIdentity = false)))
+        assertFalse(admitted(content.copy(track = anchor.copy(mediaId = "other"))))
+        assertFalse(admitted(content.copy(track = anchor.copy(packageName = "other.player"))))
+        assertFalse(admitted(content.copy(track = anchor.copy(title = "Another tab"))))
+        assertFalse(admitted(content, track = null))
+        assertFalse(admitted(content, active = null))
+        assertFalse(TimelineContentPolicy.admitsOnlineFallback(
+            "lyricon", anchor, content, null, fallbackSettings, false,
+        ))
+        assertFalse(TimelineContentPolicy.admitsOnlineFallback(
+            "lyricon", anchor, content, null, fallbackSettings.copy(packages = emptySet()), true,
+        ))
+    }
+
+    @Test
+    fun `empty lyrics never enter through fallback and empty primary does not claim priority`() {
+        val empty = TimelineContent("lyricon", anchor, fallbackSong().copy(lyrics = emptyList()))
+        assertFalse(TimelineContentPolicy.hasPrimary("lyricon", anchor, empty))
+        assertFalse(TimelineContentPolicy.admitsOnlineFallback(
+            "lyricon", anchor, fallbackContent().copy(song = null), null, fallbackSettings, true,
+        ))
+        assertTrue(TimelineContentPolicy.admitsOnlineFallback(
+            "lyricon", anchor, fallbackContent(), empty, fallbackSettings, true,
+        ))
+    }
+
+    @Test
+    fun `accepted primary with partial identity retains priority after album refresh`() {
+        val primary = TimelineContent("lyricon", anchor.copy(mediaId = null, durationMs = 0), fallbackSong())
+        val refreshed = anchor.copy(album = "Refreshed album")
+        assertTrue(TimelineContentPolicy.hasPrimary("lyricon", refreshed, primary, anchor.normalizedKey()))
+        assertFalse(TimelineContentPolicy.admitsOnlineFallback(
+            "lyricon", refreshed, fallbackContent().copy(track = refreshed), primary,
+            fallbackSettings, true, anchor.normalizedKey(),
+        ))
+        assertFalse(TimelineContentPolicy.hasPrimary("lyricon", refreshed, primary, "another-track"))
     }
 }

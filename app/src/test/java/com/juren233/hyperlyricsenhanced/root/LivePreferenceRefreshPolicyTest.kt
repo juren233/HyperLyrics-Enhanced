@@ -126,4 +126,11 @@ class LivePreferenceRefreshPolicyTest {
     fun `unrelated preferences do not use the island live refresh broadcast`() {
         assertFalse(LivePreferenceRefreshPolicy.contains("unrelated_preference"))
     }
+
+    @Test
+    fun `online fallback player list refreshes SystemUI immediately`() {
+        assertTrue(LivePreferenceRefreshPolicy.contains(
+            com.juren233.hyperlyricsenhanced.common.MediaSessionOnlineFallbackPreferences.PACKAGES,
+        ))
+    }
 }

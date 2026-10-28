@@ -64,6 +64,7 @@ object OnlineLyricTargeter {
         album: String? = null,
         originalAlbum: String? = null,
         collectSourceStatuses: Boolean = false,
+        requireExactVersion: Boolean = false,
     ): List<LrcLine>? = fetchBestLyricWithNearMiss(
         context = context,
         pkgName = pkgName,
@@ -81,6 +82,7 @@ object OnlineLyricTargeter {
         album = album,
         originalAlbum = originalAlbum,
         collectSourceStatuses = collectSourceStatuses,
+        requireExactVersion = requireExactVersion,
     ).lines
 
     suspend fun fetchBestLyricWithNearMiss(
@@ -101,6 +103,7 @@ object OnlineLyricTargeter {
         originalAlbum: String? = null,
         collectSourceStatuses: Boolean = false,
         allowArtistIdentityNearMiss: Boolean = false,
+        requireExactVersion: Boolean = false,
     ): FetchOutcome {
         val outcome = performSearch(
             context = context,
@@ -119,6 +122,7 @@ object OnlineLyricTargeter {
             album = album,
             originalAlbum = originalAlbum,
             collectSourceStatuses = collectSourceStatuses,
+            requireExactVersion = requireExactVersion,
             allowArtistIdentityNearMiss = allowArtistIdentityNearMiss,
         )
         if (outcome.lines != null) {
@@ -199,6 +203,7 @@ object OnlineLyricTargeter {
         originalAlbum: String?,
         collectSourceStatuses: Boolean,
         allowArtistIdentityNearMiss: Boolean = false,
+        requireExactVersion: Boolean = false,
     ): SearchOutcome {
         val ne = LyricApiProvider.getNeSource(context)
         val qm = LyricApiProvider.qmSource
@@ -261,6 +266,7 @@ object OnlineLyricTargeter {
                 album = album,
                 originalAlbum = originalAlbum,
                 collectSourceStatuses = collectSourceStatuses,
+                requireExactVersion = requireExactVersion,
                 allowArtistIdentityNearMiss = allowArtistIdentityNearMiss,
                 statusSources = if (index == 0) statusOnlySources else emptyList(),
             )
@@ -311,6 +317,7 @@ object OnlineLyricTargeter {
         collectSourceStatuses: Boolean,
         statusSources: List<SearchSource> = emptyList(),
         allowArtistIdentityNearMiss: Boolean = false,
+        requireExactVersion: Boolean = false,
     ): SearchOutcome {
 
         val keyword = "$title $artist"
@@ -332,7 +339,8 @@ object OnlineLyricTargeter {
                 "归一化=\"$cleanLocalAlbum\""
         )
         val featureKeywords = listOf("live", "remastered", "翻唱", "cover")
-        val localFeatures = featureKeywords.filter { title.lowercase().contains(it) }
+        val localFeatures = if (requireExactVersion) versionFeatures(title) else
+            featureKeywords.filter { title.lowercase().contains(it) }
 
         val parallelEvaluations = if (collectSourceStatuses) {
             val candidateTypes = sources.mapTo(linkedSetOf()) { it.sourceType }
@@ -359,6 +367,7 @@ object OnlineLyricTargeter {
                             localArtists = localArtists,
                             localFeatures = localFeatures,
                             cleanLocalAlbum = cleanLocalAlbum,
+                            requireExactVersion = requireExactVersion,
                             multiCredit = multiCredit,
                             allowFallbackRetry = allowFallbackRetry,
                         )
@@ -410,6 +419,7 @@ object OnlineLyricTargeter {
                     localArtists = localArtists,
                     localFeatures = localFeatures,
                     cleanLocalAlbum = cleanLocalAlbum,
+                    requireExactVersion = requireExactVersion,
                     multiCredit = multiCredit,
                     allowFallbackRetry = true,
                 )
@@ -486,6 +496,7 @@ object OnlineLyricTargeter {
         localArtists: List<String>,
         localFeatures: List<String>,
         cleanLocalAlbum: String,
+        requireExactVersion: Boolean,
         multiCredit: Boolean,
         allowFallbackRetry: Boolean,
     ): SourceEvaluation {
@@ -506,6 +517,7 @@ object OnlineLyricTargeter {
             localArtists = localArtists,
             localFeatures = localFeatures,
             cleanLocalAlbum = cleanLocalAlbum,
+            requireExactVersion = requireExactVersion,
         )
         statuses += attempt.status
         if (allowFallbackRetry && attempt.lines == null && !attempt.passAttempted) {
@@ -531,6 +543,7 @@ object OnlineLyricTargeter {
                     localArtists = localArtists,
                     localFeatures = localFeatures,
                     cleanLocalAlbum = cleanLocalAlbum,
+                    requireExactVersion = requireExactVersion,
                 )
                 statuses += retry.status
                 attempt = betterSourceAttempt(attempt, retry)
@@ -559,6 +572,7 @@ object OnlineLyricTargeter {
                 localArtists = localArtists,
                 localFeatures = localFeatures,
                 cleanLocalAlbum = cleanLocalAlbum,
+                requireExactVersion = requireExactVersion,
             )
             statuses += retry.status
             attempt = betterSourceAttempt(attempt, retry)
@@ -577,6 +591,7 @@ object OnlineLyricTargeter {
         localArtists: List<String>,
         localFeatures: List<String>,
         cleanLocalAlbum: String,
+        requireExactVersion: Boolean,
     ): SourceAttempt {
         val results = withTimeoutOrNull(TIMEOUT_MS) {
             try {
@@ -616,6 +631,17 @@ object OnlineLyricTargeter {
         var artistMatched = false
 
         for (song in results) {
+            if (requireExactVersion && !isExactVersionMatch(
+                    localTitle = cleanLocalTitle,
+                    localArtists = localArtists,
+                    localDurationMs = durationMs,
+                    remoteTitle = cleanString(context, song.title),
+                    remoteArtists = splitArtists(song.artist).map { cleanString(context, it) },
+                    remoteDurationMs = song.duration,
+                    localFeatures = localFeatures,
+                    remoteFeatures = versionFeatures(song.title),
+                )
+            ) continue
             val score = calculateScore(
                 context,
                 song,

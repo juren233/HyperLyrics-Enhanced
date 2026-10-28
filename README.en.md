@@ -221,6 +221,15 @@ No. The entry switch also disables the features it controls, saves their previou
 
 </details>
 
+<details>
+<summary><strong>How do I fetch online lyrics for a browser, PWA or another player without lyrics?</strong></summary>
+
+Open Lyrics settings → 3rd-Party Online Sources, tap “More Apps” at the bottom of the “Enabled Apps” card, then search for and select the apps, including WebAPKs without launcher entries. Only selected apps can fetch lyrics; nothing is selected by default, and an empty selection disables lookups. When the primary source has no lyrics, the platform source order on that page is used, and primary lyrics take over when they arrive. Lyricon can stay selected.
+
+The player must provide a trustworthy title, artist and duration. A candidate must also match the title, artist credits and version labels such as live or cover, with a duration within 1.5 seconds, so lyrics may be unavailable when no matching version exists. If you are unsure which app to select, run `adb shell dumpsys media_session` while playing and find the active session’s `package` (a PWA may use its own WebAPK package or the browser package), then check the package name shown under each app in “More Apps”.
+
+</details>
+
 ### Reporting an issue
 
 Check [existing issues](https://github.com/juren233/HyperLyrics-Enhanced/issues) before opening a reproducible report. Please include:
