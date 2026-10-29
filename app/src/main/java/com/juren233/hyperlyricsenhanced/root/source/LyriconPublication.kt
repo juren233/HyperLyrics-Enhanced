@@ -65,6 +65,12 @@ internal class LyriconPublication {
         appleNative = nativeSong
     }
 
+    /** The Pack withdrew the supplement for [songId]; its catalog selection no longer describes the lyrics. */
+    @Synchronized
+    fun revokeLyricsSelection(songId: String?) {
+        if (lyricsSelection?.songId == songId) lyricsSelection = null
+    }
+
     @Synchronized
     fun confirmLyricsSource(selection: ConfirmedLyricsSourceSelection) {
         // A delayed manual result may never change the next track's selected source.

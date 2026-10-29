@@ -30,8 +30,6 @@ import com.juren233.hyperlyricsenhanced.lyric.source.TimelineContent
 import com.juren233.hyperlyricsenhanced.online.OnlineLyricTargeter
 import com.juren233.hyperlyricsenhanced.online.OnlineTranslationSourcePreferences
 import com.juren233.hyperlyricsenhanced.online.model.Source
-import com.juren233.hyperlyricsenhanced.online.source.lunabeat.LunaBeatLookupResult
-import com.juren233.hyperlyricsenhanced.online.source.lunabeat.LunaBeatTtmlRepository
 import com.juren233.hyperlyricsenhanced.online.utils.ChineseUtils
 import com.juren233.hyperlyricsenhanced.root.LyriconDataBridge
 import com.juren233.hyperlyricsenhanced.root.island.renderer.BaseIslandRenderer
@@ -155,6 +153,8 @@ class LyriconSource : LyricSource {
     )
     internal val originalMetadataRequest = AppleOriginalMetadataRequestKey()
     internal val manualSourceRequests = AppleManualSourceRequestState()
+    internal val onlineTranslationFetchCache =
+        OnlineTranslationFetchCache(clockMs = android.os.SystemClock::elapsedRealtime)
     @Volatile
     internal var latestSourceSwitchTraceRequest: OnlineSourceSwitchRequest? = null
     internal val applePositionState = ApplePlaybackPositionState()
@@ -171,6 +171,9 @@ class LyriconSource : LyricSource {
     internal var lastTimingDiagnosticAtMs = 0L
     internal var lastTimingDiagnosticPosition = -1L
     internal var lastTimingDiagnosticState: String? = null
+
+    /** Song whose TTML catalog supplement the Pack withdrew; automatic line-to-word must not refetch it. */
+    internal var catalogRevokedSongId: String? = null
     internal var lastCentralPositionDiagnosticAtMs = 0L
 
     internal enum class OnlineTranslationPublicationStage {
@@ -528,6 +531,17 @@ class LyriconSource : LyricSource {
     internal fun configuredOnlineSources(): List<Source> =
         OnlineTranslationSourcePreferences.orderedSources(prefs)
 
+    /**
+     * 在线翻译/发音的候选来源：搜索源，加上 Apple Music 请求时的已启用 TTML 目录源
+     * （按 Apple ID 直取，文件自带翻译与音译）。其他播放器的歌曲 ID 未经验证，不参与目录源。
+     */
+    internal fun configuredTranslationSources(playerPackage: String): List<Source> =
+        configuredOnlineSources().filter { !it.isTtmlCatalog || playerPackage == APPLE_MUSIC_PACKAGE }
+
+    /** 已启用的 TTML 目录源，按用户配置的优先级排列。 */
+    internal fun enabledTtmlCatalogSources(): List<Source> =
+        configuredOnlineSources().filter(Source::isTtmlCatalog)
+
     internal fun isOnlineTranslationEnabledFor(packageName: String?): Boolean =
         OnlineTranslationSourcePreferences.isAppEnabled(
             prefs,
@@ -548,10 +562,10 @@ class LyriconSource : LyricSource {
         RootConstants.DEFAULT_HOOK_APPLE_MUSIC_FILL_MISSING_LYRICS
     ) ?: RootConstants.DEFAULT_HOOK_APPLE_MUSIC_FILL_MISSING_LYRICS
 
-    internal fun isLunaBeatWordLyricsEnabled(): Boolean = prefs?.getBoolean(
-        RootConstants.KEY_HOOK_APPLE_MUSIC_LUNABEAT_WORD_LYRICS,
-        RootConstants.DEFAULT_HOOK_APPLE_MUSIC_LUNABEAT_WORD_LYRICS,
-    ) ?: RootConstants.DEFAULT_HOOK_APPLE_MUSIC_LUNABEAT_WORD_LYRICS
+    internal fun isLineToWordLyricsEnabled(): Boolean = prefs?.getBoolean(
+        RootConstants.KEY_HOOK_APPLE_MUSIC_LINE_TO_WORD_LYRICS,
+        RootConstants.DEFAULT_HOOK_APPLE_MUSIC_LINE_TO_WORD_LYRICS,
+    ) ?: RootConstants.DEFAULT_HOOK_APPLE_MUSIC_LINE_TO_WORD_LYRICS
 
     internal fun isHideMandarinPinyinEnabled(): Boolean = prefs?.getBoolean(
         RootConstants.KEY_HOOK_APPLE_MUSIC_HIDE_MANDARIN_PINYIN,

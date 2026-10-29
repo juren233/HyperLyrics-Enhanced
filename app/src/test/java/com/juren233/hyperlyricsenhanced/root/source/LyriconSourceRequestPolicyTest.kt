@@ -124,7 +124,7 @@ class LyriconSourceRequestPolicyTest {
                 currentNativeLyrics = true,
                 currentSongHasNativeLyrics = true,
                 manualSourceSwitch = false,
-                automaticLunaBeatOverride = true,
+                automaticTtmlOverride = true,
             )
         )
     }

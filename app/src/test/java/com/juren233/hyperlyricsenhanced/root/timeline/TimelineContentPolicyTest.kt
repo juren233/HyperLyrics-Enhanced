@@ -1,6 +1,7 @@
 package com.juren233.hyperlyricsenhanced.root.timeline
 
 import com.juren233.hyperlyricsenhanced.common.MediaSessionOnlineFallbackPreferences.Settings
+import com.juren233.hyperlyricsenhanced.lyric.model.LyricWord
 import com.juren233.hyperlyricsenhanced.lyric.model.RichLyricLine
 import com.juren233.hyperlyricsenhanced.lyric.model.Song
 import com.juren233.hyperlyricsenhanced.root.source.MediaSessionOnlineFallbackPolicy
@@ -281,5 +282,67 @@ class TimelineContentPolicyTest {
             fallbackSettings, true, anchor.normalizedKey(),
         ))
         assertFalse(TimelineContentPolicy.hasPrimary("lyricon", refreshed, primary, "another-track"))
+    }
+
+    private fun lineSong() = Song(lyrics = listOf(RichLyricLine(begin = 0, end = 3_000, duration = 3_000, text = "整行")))
+    private fun wordSong() = Song(
+        lyrics = listOf(
+            RichLyricLine(
+                begin = 0, end = 3_000, duration = 3_000, text = "逐字",
+                words = listOf(LyricWord(begin = 0, end = 1_000, text = "逐"), LyricWord(begin = 1_000, end = 3_000, text = "字")),
+            )
+        )
+    )
+    private val settings = Settings(packages = setOf(anchor.packageName))
+    private fun fallback(song: Song) = TimelineContent(
+        sourceId = MediaSessionOnlineFallbackPolicy.SOURCE_ID,
+        track = anchor, song = song, strictIdentity = true,
+    )
+    private fun primary(song: Song) = TimelineContent(sourceId = "lyricon", track = anchor, song = song)
+
+    @Test
+    fun `word timing needs at least two timed words on a line`() {
+        assertTrue(TimelineContentPolicy.isWordTimed(wordSong()))
+        assertFalse(TimelineContentPolicy.isWordTimed(lineSong()))
+        assertFalse(TimelineContentPolicy.isWordTimed(null))
+    }
+
+    @Test
+    fun `line timed primary admits only a word timed fallback`() {
+        val displayed = primary(lineSong())
+        assertTrue(
+            TimelineContentPolicy.admitsOnlineFallback("lyricon", anchor, fallback(wordSong()), displayed, settings, true)
+        )
+        assertFalse(
+            TimelineContentPolicy.admitsOnlineFallback("lyricon", anchor, fallback(lineSong()), displayed, settings, true)
+        )
+    }
+
+    @Test
+    fun `word timed primary admits no fallback`() {
+        val displayed = primary(wordSong())
+        assertFalse(
+            TimelineContentPolicy.admitsOnlineFallback("lyricon", anchor, fallback(wordSong()), displayed, settings, true)
+        )
+    }
+
+    @Test
+    fun `shown word timed fallback is not replaced by a line timed search result`() {
+        val displayed = fallback(wordSong())
+        assertFalse(
+            TimelineContentPolicy.admitsOnlineFallback("lyricon", anchor, fallback(lineSong()), displayed, settings, true)
+        )
+        assertTrue(TimelineContentPolicy.showsWordTimed("lyricon", anchor, displayed))
+    }
+
+    @Test
+    fun `line timed primary resent later does not wipe a word timed fallback`() {
+        val displayed = fallback(wordSong())
+        assertTrue(TimelineContentPolicy.keepsWordTimedFallback("lyricon", anchor, displayed, primary(lineSong())))
+        // 主源自己给出逐字歌词时正常接管。
+        assertFalse(TimelineContentPolicy.keepsWordTimedFallback("lyricon", anchor, displayed, primary(wordSong())))
+        // 换曲后旧补充不再保护。
+        val other = anchor.copy(mediaId = "other", title = "Other")
+        assertFalse(TimelineContentPolicy.keepsWordTimedFallback("lyricon", other, displayed, primary(lineSong())))
     }
 }

@@ -213,16 +213,20 @@ object OnlineLyricTargeter {
             Source.KUWO to LyricApiProvider.kuwoSource,
             Source.KUGOU to LyricApiProvider.kugouSource,
         )
-        val resolvedSourceOrder = sourceOrder?.distinct().orEmpty().ifEmpty {
+        // TTML 目录源按平台 ID 直取，不参与歌名搜索；它们由调用方单独处理。
+        val requestedSourceOrder = sourceOrder?.distinct().orEmpty()
+        val resolvedSourceOrder = if (requestedSourceOrder.isEmpty()) {
             resolveSourceOrder(
                 pkgName = pkgName,
                 preferredSource = preferredSource,
                 fallbackToOtherSources = fallbackToOtherSources,
             )
+        } else {
+            requestedSourceOrder.filterNot(Source::isTtmlCatalog)
         }
         val sources = resolvedSourceOrder.mapNotNull(sourcesByType::get)
         val searchedSourceTypes = resolvedSourceOrder.toSet()
-        val statusOnlySources = statusSourceOrder
+        val statusOnlySources = statusSourceOrder?.filterNot(Source::isTtmlCatalog)
             ?.distinct()
             .orEmpty()
             .filterNot(searchedSourceTypes::contains)

@@ -83,7 +83,7 @@ Building on HyperLyric's system-level lyric display, Enhanced focuses on **fewer
 
 - **Built-in lyric integration:** Sync word-by-word lyrics, backing vocals, playback state and track information without a separate Apple Music Provider module.
 - **Supplement lyrics, translations and pronunciation:** Search online sources for tracks without lyrics, switch sources from the player and inspect match results. Native Apple content is retained by default, with missing content supplemented through third-party online sources and AI as configured.
-- **Word-by-word lyric enhancement:** Use the **LunaBeat TTML lyric library** to supply word-timed lyrics for some tracks that only have line-timed lyrics. This is experimental and depends on library coverage and matching.
+- **Word-by-word lyric enhancement:** Use open lyric libraries such as **AMLL TTML DB** and the **LunaBeat TTML lyric library** to supply word-timed lyrics for some tracks that only have line-timed lyrics. This is experimental and depends on library coverage and matching.
 - **Text and appearance:** Convert Traditional Chinese lyrics to Simplified Chinese, hide pinyin for Mandarin songs, adjust lyric blur and follow the system font. Some font-weight behavior is adapted specifically for HyperOS.
 - **Metadata and playback:** Change the region used for content UI language, localize track information, restore original regional names for Chinese, Japanese and Korean tracks, cache metadata lookups, open the full player directly from media notifications, and dynamically boost Dolby Atmos speaker volume.
 

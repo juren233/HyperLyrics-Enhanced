@@ -235,11 +235,11 @@ fun AppleMusicOptimizationPage(
             )
         )
     }
-    var lunaBeatWordLyrics by remember {
+    var lineToWordLyrics by remember {
         mutableStateOf(
             prefs.getBoolean(
-                RootConstants.KEY_HOOK_APPLE_MUSIC_LUNABEAT_WORD_LYRICS,
-                RootConstants.DEFAULT_HOOK_APPLE_MUSIC_LUNABEAT_WORD_LYRICS,
+                RootConstants.KEY_HOOK_APPLE_MUSIC_LINE_TO_WORD_LYRICS,
+                RootConstants.DEFAULT_HOOK_APPLE_MUSIC_LINE_TO_WORD_LYRICS,
             )
         )
     }
@@ -627,16 +627,16 @@ fun AppleMusicOptimizationPage(
                 SwitchPreference(
                     enabled = featuresEnabled,
                     title = stringResource(
-                        R.string.title_apple_music_lunabeat_word_lyrics
+                        R.string.title_apple_music_line_to_word_lyrics
                     ),
                     summary = stringResource(
-                        R.string.summary_apple_music_lunabeat_word_lyrics
+                        R.string.summary_apple_music_line_to_word_lyrics
                     ),
-                    checked = lunaBeatWordLyrics,
+                    checked = lineToWordLyrics,
                     onCheckedChange = { enabled ->
-                        lunaBeatWordLyrics = enabled
+                        lineToWordLyrics = enabled
                         saveConfig(
-                            RootConstants.KEY_HOOK_APPLE_MUSIC_LUNABEAT_WORD_LYRICS,
+                            RootConstants.KEY_HOOK_APPLE_MUSIC_LINE_TO_WORD_LYRICS,
                             enabled,
                         )
                     },

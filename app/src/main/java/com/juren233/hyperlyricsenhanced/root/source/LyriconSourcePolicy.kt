@@ -41,13 +41,13 @@ internal fun acceptsAppleOnlineLyricResult(
     currentNativeLyrics: Boolean,
     currentSongHasNativeLyrics: Boolean,
     manualSourceSwitch: Boolean,
-    automaticLunaBeatOverride: Boolean = false,
+    automaticTtmlOverride: Boolean = false,
     untimedNativeFallback: Boolean = false,
 ): Boolean = generation == currentGeneration &&
     sameTrack &&
     (!(currentNativeLyrics || currentSongHasNativeLyrics) ||
         manualSourceSwitch ||
-        automaticLunaBeatOverride ||
+        automaticTtmlOverride ||
         untimedNativeFallback)
 
 /**
@@ -198,8 +198,8 @@ internal fun mergeMissingLyricsSupplementMetadata(
         .getString(LyricMetadataKeys.APPLE_MISSING_LYRICS_SOURCE)
     if (hasConfirmedAppleNativeLyrics(incomingSong)) {
         return if (
-            authoritativeSource == Source.LB.name &&
-            previousSource == Source.LB.name &&
+            Source.isTtmlCatalogName(authoritativeSource) &&
+            previousSource == authoritativeSource &&
             previousMetadata
                 .getString(LyricMetadataKeys.APPLE_MISSING_LYRICS_SUPPLEMENT)
                 .toBoolean()
@@ -239,9 +239,9 @@ internal fun mergeMissingLyricsSupplementMetadata(
     listOf(
         LyricMetadataKeys.APPLE_MISSING_LYRICS_SOURCE,
         LyricMetadataKeys.APPLE_MISSING_LYRICS_SOURCE_STATUSES,
-        LyricMetadataKeys.LUNA_BEAT_RAW_TTML,
-        LyricMetadataKeys.LUNA_BEAT_HUB_ID,
-        LyricMetadataKeys.LUNA_BEAT_TTML_SHA256,
+        LyricMetadataKeys.TTML_SOURCE_RAW,
+        LyricMetadataKeys.TTML_SOURCE_LYRIC_ID,
+        LyricMetadataKeys.TTML_SOURCE_SHA256,
     ).forEach { key ->
         if (merged[key].isNullOrBlank()) {
             previousMetadata.getString(key)?.let { merged[key] = it }

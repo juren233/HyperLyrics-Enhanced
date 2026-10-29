@@ -40,22 +40,24 @@ internal fun LyriconSource.onPreferenceChanged(key: String?) {
     if (key == RootConstants.KEY_HOOK_APPLE_MUSIC_HIDE_MANDARIN_PINYIN) {
         mainHandler.post { applyMandarinPinyinPreferenceChange() }
     }
-    if (key == RootConstants.KEY_HOOK_APPLE_MUSIC_LUNABEAT_WORD_LYRICS) {
-        mainHandler.post { applyLunaBeatWordLyricsPreferenceChange() }
+    if (key == RootConstants.KEY_HOOK_APPLE_MUSIC_LINE_TO_WORD_LYRICS) {
+        mainHandler.post { applyLineToWordLyricsPreferenceChange() }
     }
 }
 
-private fun LyriconSource.applyLunaBeatWordLyricsPreferenceChange() {
+private fun LyriconSource.applyLineToWordLyricsPreferenceChange() {
+    catalogRevokedSongId = null
     val nativeSong = currentAppleNativeSong ?: currentAppleSong ?: return
-    cancelFallback(clearAppleSong = false, reason = "lunabeat_preference_changed")
-    if (isLunaBeatWordLyricsEnabled()) {
+    cancelFallback(clearAppleSong = false, reason = "line_to_word_preference_changed")
+    val lineToWordSource = enabledTtmlCatalogSources().firstOrNull()
+    if (isLineToWordLyricsEnabled() && lineToWordSource != null) {
         if (hasUntimedAppleNativeLyrics(nativeSong)) {
             scheduleFallback(baseSong = nativeSong, delayMs = 0L)
         } else {
             scheduleFallback(
                 baseSong = nativeSong,
                 delayMs = 0L,
-                preferredSourceOverride = Source.LB,
+                preferredSourceOverride = lineToWordSource,
                 strictSource = hasAppleNativeLyrics(nativeSong) || !isFillMissingLyricsEnabled(),
             )
         }
@@ -66,7 +68,8 @@ private fun LyriconSource.applyLunaBeatWordLyricsPreferenceChange() {
         return
     }
     if (currentAppleSong?.metadata
-            ?.getString(LyricMetadataKeys.APPLE_MISSING_LYRICS_SOURCE) == Source.LB.name
+            ?.getString(LyricMetadataKeys.APPLE_MISSING_LYRICS_SOURCE)
+            .let(Source::isTtmlCatalogName)
     ) {
         publication.acceptAppleInput(nativeSong, hasAppleNativeLyrics(nativeSong))
         publication.cancelAppleFallback(clearSong = false)

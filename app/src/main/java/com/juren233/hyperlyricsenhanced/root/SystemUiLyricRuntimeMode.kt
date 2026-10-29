@@ -27,10 +27,10 @@ internal enum class SystemUiLyricRuntimeMode {
             dynamicIsland: Boolean,
             nativeAppleTranslation: Boolean,
             fillMissingAppleLyrics: Boolean,
-            lunaBeatWordLyrics: Boolean,
+            lineToWordLyrics: Boolean,
         ): SystemUiLyricRuntimeMode = when {
             hyperIsland || aodLyrics || dynamicIsland -> LYRIC_DISPLAY
-            nativeAppleTranslation || fillMissingAppleLyrics || lunaBeatWordLyrics -> APPLE_DIRECT
+            nativeAppleTranslation || fillMissingAppleLyrics || lineToWordLyrics -> APPLE_DIRECT
             else -> DISABLED
         }
     }

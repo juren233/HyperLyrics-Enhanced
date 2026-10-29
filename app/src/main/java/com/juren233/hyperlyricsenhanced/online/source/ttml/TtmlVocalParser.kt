@@ -1,18 +1,24 @@
 /* Copyright 2026 juren233 */
-package com.juren233.hyperlyricsenhanced.online.source.lunabeat
+package com.juren233.hyperlyricsenhanced.online.source.ttml
 
 import com.juren233.hyperlyricsenhanced.online.model.LyricsWord
 import org.w3c.dom.Element
 import org.w3c.dom.Node
 
 /** Keeps x-bg descendants in their own timed stream instead of flattening a paragraph. */
-internal object LunaBeatVocalParser {
+internal object TtmlVocalParser {
     private const val TTM_NAMESPACE = "http://www.w3.org/ns/ttml#metadata"
+    private const val ROLE_TRANSLATION = "x-translation"
+    private const val ROLE_ROMAN = "x-roman"
 
     data class Vocals(
         val primary: List<LyricsWord>,
         val secondary: List<LyricsWord>,
         val hasWordTiming: Boolean,
+        /** Inline x-translation text carried by the paragraph itself (AMLL TTML DB style). */
+        val translation: String? = null,
+        /** Inline x-roman text carried by the paragraph itself (AMLL TTML DB style). */
+        val romanization: String? = null,
     )
 
     private data class Timing(val begin: Long, val end: Long)
@@ -21,6 +27,8 @@ internal object LunaBeatVocalParser {
         val primary = mutableListOf<LyricsWord>()
         val secondary = mutableListOf<LyricsWord>()
         var timedWords = 0
+        val translations = mutableListOf<Pair<Boolean, String>>()
+        val romanizations = mutableListOf<Pair<Boolean, String>>()
 
         fun append(text: String, background: Boolean, timing: Timing?) {
             if (text.isEmpty()) return
@@ -47,6 +55,17 @@ internal object LunaBeatVocalParser {
                 Node.ELEMENT_NODE -> {
                     val element = node as Element
                     val background = inheritedBackground || isBackground(element)
+                    // Inline annotations are not sung words: keep them out of the word streams.
+                    when (roleOf(element)) {
+                        ROLE_TRANSLATION -> {
+                            collectAnnotation(translations, background, element)
+                            return
+                        }
+                        ROLE_ROMAN -> {
+                            collectAnnotation(romanizations, background, element)
+                            return
+                        }
+                    }
                     val ownTiming = timing(element)
                     val currentTiming = ownTiming ?: inheritedTiming
                     if (ownTiming != null && !mustVisitChildren(element, background)) {
@@ -72,17 +91,37 @@ internal object LunaBeatVocalParser {
         }
         fun List<LyricsWord>.ordered() = sortedBy(LyricsWord::start)
             .distinctBy { Triple(it.start, it.end, it.text) }
-        return Vocals(primary.ordered(), secondary.ordered(), timedWords >= 2)
+        return Vocals(
+            primary = primary.ordered(),
+            secondary = secondary.ordered(),
+            hasWordTiming = timedWords >= 2,
+            translation = preferMainVoice(translations),
+            romanization = preferMainVoice(romanizations),
+        )
     }
 
-    private fun isBackground(element: Element): Boolean =
-        element.getAttributeNS(TTM_NAMESPACE, "role")
-            .ifBlank { element.getAttribute("ttm:role") } == "x-bg"
+    private fun collectAnnotation(
+        target: MutableList<Pair<Boolean, String>>,
+        background: Boolean,
+        element: Element,
+    ) {
+        val text = element.textContent.orEmpty().replace(Regex("\\s+"), " ").trim()
+        if (text.isNotEmpty()) target += background to text
+    }
+
+    /** The main voice's annotation wins; a background-only annotation is the fallback. */
+    private fun preferMainVoice(entries: List<Pair<Boolean, String>>): String? =
+        entries.firstOrNull { !it.first }?.second ?: entries.firstOrNull()?.second
+
+    private fun roleOf(element: Element): String =
+        element.getAttributeNS(TTM_NAMESPACE, "role").ifBlank { element.getAttribute("ttm:role") }
+
+    private fun isBackground(element: Element): Boolean = roleOf(element) == "x-bg"
 
     private fun timing(element: Element): Timing? {
         if (element.localName != "span" && element.nodeName != "span") return null
-        val begin = LunaBeatTtmlParser.parseTimeMs(element.getAttribute("begin")) ?: return null
-        val end = LunaBeatTtmlParser.parseTimeMs(element.getAttribute("end")) ?: return null
+        val begin = TtmlLyricsParser.parseTimeMs(element.getAttribute("begin")) ?: return null
+        val end = TtmlLyricsParser.parseTimeMs(element.getAttribute("end")) ?: return null
         return if (end > begin) Timing(begin, end) else null
     }
 

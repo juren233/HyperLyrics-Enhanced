@@ -658,6 +658,7 @@ object MediaMetadataHelper {
         playbackState: PlaybackState?,
     ): MediaInfoResult {
         val snapshot = snapshot()
+        if (BuildConfig.DEBUG) dumpMetadataKeysOnce(packageName, snapshot)
         // 对外的标题/歌手是展示与比对文本，车载歌词改写过的会话在这里还原；缓存键与身份签名仍用原始字段，
         // 它们在单曲内稳定，恢复发生在单曲中途时不应让缓存失效。
         val verdict = MediaSessionMetadataAdapter.processVerdict(packageName, this, playbackState)
@@ -687,6 +688,32 @@ object MediaMetadataHelper {
                 artworkSource = artwork?.source ?: ArtworkSource.NONE,
             ),
             artworkPending = artwork == null && !snapshot.artworkUri.isNullOrBlank(),
+        )
+    }
+
+    private val metadataDumpedTrack = HashMap<String, String>()
+
+    /**
+     * 仅 debug：每首歌一次，列出元数据的全部键与文本/整数值，用于确认各播放器是否带平台歌曲 ID。
+     * 不含位图；文本截断，避免日志膨胀。
+     */
+    private fun MediaMetadata.dumpMetadataKeysOnce(packageName: String, snapshot: MetadataSnapshot) {
+        val trackKey = "${snapshot.mediaId}|${snapshot.title}|${snapshot.artist}"
+        synchronized(metadataDumpedTrack) {
+            if (metadataDumpedTrack[packageName] == trackKey) return
+            metadataDumpedTrack[packageName] = trackKey
+        }
+        val entries = keySet().sorted().joinToString("; ") { key ->
+            val text = runCatching { getString(key) }.getOrNull()
+            val value = when {
+                text != null -> "\"" + text.replace('\n', ' ').take(160) + "\""
+                else -> runCatching { getLong(key) }.getOrNull()?.takeIf { it != 0L }?.toString() ?: "<non-text>"
+            }
+            "$key=$value"
+        }
+        android.util.Log.w(
+            "MediaMetaDump",
+            "pkg=$packageName descriptionMediaId=${description.mediaId} keys=[$entries]",
         )
     }
 

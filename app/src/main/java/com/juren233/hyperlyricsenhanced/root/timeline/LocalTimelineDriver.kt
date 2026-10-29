@@ -98,6 +98,9 @@ class LocalTimelineDriver(
             override fun hasPrimary(track: TrackIdentity): Boolean = current() &&
                 TimelineContentPolicy.hasPrimary(activeSourceId, track, displayedContent, appliedTrackKey)
 
+            override fun hasWordTimedContent(track: TrackIdentity): Boolean = current() &&
+                TimelineContentPolicy.showsWordTimed(activeSourceId, track, displayedContent, appliedTrackKey)
+
             override fun hasFallback(track: TrackIdentity): Boolean {
                 val shown = displayedContent ?: return false
                 return current() && shown.sourceId == MediaSessionOnlineFallbackPolicy.SOURCE_ID &&
@@ -649,6 +652,12 @@ class LocalTimelineDriver(
             content.song?.artist,
         )
         val decision = TimelineContentPolicy.decide(activeSourceId, anchor.currentTrack, content)
+        if (decision == TimelineContentPolicy.Decision.APPLY &&
+            TimelineContentPolicy.keepsWordTimedFallback(activeSourceId, anchor.currentTrack, displayedContent, content)
+        ) {
+            recordContentDecision(content, "KEEP_WORD_TIMED_FALLBACK")
+            return
+        }
         recordContentDecision(content, decision.name)
         when (decision) {
             TimelineContentPolicy.Decision.APPLY -> applyContent(content)

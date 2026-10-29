@@ -4,7 +4,7 @@
  * http://www.apache.org/licenses/LICENSE-2.0
  */
 
-package com.juren233.hyperlyricsenhanced.online.source.lunabeat
+package com.juren233.hyperlyricsenhanced.online.source.ttml
 
 import com.juren233.hyperlyricsenhanced.lyric.LrcLine
 import com.juren233.hyperlyricsenhanced.online.model.LyricsLine
@@ -13,18 +13,18 @@ import org.w3c.dom.Node
 import java.io.ByteArrayInputStream
 import javax.xml.parsers.DocumentBuilderFactory
 
-internal data class LunaBeatParsedLyrics(
+internal data class TtmlParsedLyrics(
     val wordLines: List<LyricsLine>,
     val lrcLines: List<LrcLine>,
 )
 
-/** Parses the Apple-compatible TTML subset published by LunaBeat TTML Hub. */
-internal object LunaBeatTtmlParser {
+/** Parses the Apple-compatible TTML subset published by TTML lyric catalogs (LunaBeat TTML Hub, AMLL TTML DB). */
+internal object TtmlLyricsParser {
     private const val ITUNES_NAMESPACE = "http://music.apple.com/lyric-ttml-internal"
     private const val MAX_LINES = 2_000
     private const val MAX_WORDS = 30_000
 
-    fun parseWordTimed(bytes: ByteArray): LunaBeatParsedLyrics? {
+    fun parseWordTimed(bytes: ByteArray): TtmlParsedLyrics? {
         if (bytes.isEmpty()) return null
         val prefix = bytes.decodeToString(0, minOf(bytes.size, 4_096)).lowercase()
         if ("<!doctype" in prefix || "<!entity" in prefix) return null
@@ -45,7 +45,9 @@ internal object LunaBeatTtmlParser {
         val root = document.documentElement ?: return null
         val timing = root.getAttributeNS(ITUNES_NAMESPACE, "timing")
             .ifBlank { root.getAttribute("itunes:timing") }
-        if (!timing.equals("Word", ignoreCase = true)) return null
+        // Catalogs such as AMLL TTML DB omit itunes:timing; real word timing is then decided
+        // by the content gate below. An explicit non-Word declaration is still rejected.
+        if (timing.isNotBlank() && !timing.equals("Word", ignoreCase = true)) return null
 
         val translations = metadataTextByLineKey(document, "translation")
         val transliterations = metadataTextByLineKey(document, "transliteration")
@@ -65,7 +67,7 @@ internal object LunaBeatTtmlParser {
                 ?: continue
             val key = paragraph.getAttributeNS(ITUNES_NAMESPACE, "key")
                 .ifBlank { paragraph.getAttribute("itunes:key") }
-            val vocals = LunaBeatVocalParser.parse(paragraph, begin, end)
+            val vocals = TtmlVocalParser.parse(paragraph, begin, end)
             // A standalone background-only paragraph still has visible content.
             val words = vocals.primary.ifEmpty { vocals.secondary }
             val secondaryWords = if (vocals.primary.isEmpty()) emptyList() else vocals.secondary
@@ -80,12 +82,12 @@ internal object LunaBeatTtmlParser {
             lrcLines += LrcLine(
                 startTimeMs = begin,
                 content = text,
-                translation = translations[key]?.takeIf(String::isNotBlank),
-                romanization = transliterations[key]?.takeIf(String::isNotBlank),
+                translation = (translations[key] ?: vocals.translation)?.takeIf(String::isNotBlank),
+                romanization = (transliterations[key] ?: vocals.romanization)?.takeIf(String::isNotBlank),
             )
         }
         if (!hasRealWordTiming || wordLines.isEmpty()) return null
-        return LunaBeatParsedLyrics(
+        return TtmlParsedLyrics(
             wordLines = wordLines.sortedBy(LyricsLine::start),
             lrcLines = lrcLines.sortedBy(LrcLine::startTimeMs),
         )

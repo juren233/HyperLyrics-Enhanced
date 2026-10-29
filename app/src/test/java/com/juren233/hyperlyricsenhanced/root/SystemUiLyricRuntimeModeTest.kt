@@ -63,7 +63,7 @@ class SystemUiLyricRuntimeModeTest {
                     dynamicIsland = displayMask and 4 != 0,
                     nativeAppleTranslation = appleMask and 1 != 0,
                     fillMissingAppleLyrics = appleMask and 2 != 0,
-                    lunaBeatWordLyrics = appleMask and 4 != 0,
+                    lineToWordLyrics = appleMask and 4 != 0,
                 )
                 val case = "display=$displayMask apple=$appleMask"
                 val expectedMode = when {

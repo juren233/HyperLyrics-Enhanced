@@ -37,8 +37,6 @@ import com.juren233.hyperlyricsenhanced.lyric.source.LyricSource
 import com.juren233.hyperlyricsenhanced.online.OnlineLyricTargeter
 import com.juren233.hyperlyricsenhanced.online.OnlineTranslationSourcePreferences
 import com.juren233.hyperlyricsenhanced.online.model.Source
-import com.juren233.hyperlyricsenhanced.online.source.lunabeat.LunaBeatLookupResult
-import com.juren233.hyperlyricsenhanced.online.source.lunabeat.LunaBeatTtmlRepository
 import com.juren233.hyperlyricsenhanced.online.utils.ChineseUtils
 import com.juren233.hyperlyricsenhanced.root.LyriconDataBridge
 import com.juren233.hyperlyricsenhanced.root.island.renderer.BaseIslandRenderer
@@ -74,6 +72,15 @@ internal fun LyriconSource.handleAppleSong(incomingSong: LocalSong?) {
     }
     val sameTrack = previousSong != null && incomingSong != null &&
         isSameTrack(previousSong, incomingSong)
+    // The Pack withdrew the catalog supplement for this song: the catalog selection no longer
+    // describes what Apple Music shows, so drop it and let the native lyrics take over.
+    val supplementRevoked = sameTrack && hasConfirmedAppleNativeLyrics(incomingSong) &&
+        incomingSong.metadata?.getString(LyricMetadataKeys.APPLE_SUPPLEMENT_REVOKED).toBoolean()
+    if (supplementRevoked) {
+        publication.revokeLyricsSelection(incomingSong.id)
+        catalogRevokedSongId = incomingSong.id
+        debug("Pack 已撤销目录源补充，回到原生歌词基准: id=${incomingSong.id}")
+    }
     val authoritativeLyricsSource = confirmedLyricsSourceSelection
         ?.takeIf { selection ->
             sameTrack &&
@@ -211,16 +218,24 @@ internal fun LyriconSource.handleAppleSong(incomingSong: LocalSong?) {
         debugError("Apple Music 歌曲发布失败: title=${song?.name}", it)
     }
 
+    val lineToWordSource = enabledTtmlCatalogSources().firstOrNull()
+    debug(
+        "逐行转逐字判定: id=${song?.id}, 补充歌词=${isMissingLyricsSupplement(song)}, " +
+            "开关=${isLineToWordLyricsEnabled()}, 首个目录源=$lineToWordSource, " +
+            "无时间轴原生=$untimedNativeLyrics, 原生歌词=${hasAppleNativeLyrics(song)}"
+    )
     if (
         song != null &&
         !isMissingLyricsSupplement(song) &&
-        isLunaBeatWordLyricsEnabled() &&
-        !untimedNativeLyrics
+        isLineToWordLyricsEnabled() &&
+        lineToWordSource != null &&
+        !untimedNativeLyrics &&
+        song.id != catalogRevokedSongId
     ) {
         scheduleFallback(
             baseSong = song,
             delayMs = 0L,
-            preferredSourceOverride = Source.LB,
+            preferredSourceOverride = lineToWordSource,
             strictSource = hasAppleNativeLyrics(song) || !isFillMissingLyricsEnabled(),
         )
     } else if (

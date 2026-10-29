@@ -17,6 +17,8 @@ object OnlineTranslationSourcePreferences {
     const val SALT_PACKAGE = "com.salt.music"
 
     val defaultOrder: List<Source> = listOf(
+        Source.AMLL,
+        Source.LB,
         Source.NE,
         Source.QM,
         Source.KUWO,
@@ -74,7 +76,8 @@ object OnlineTranslationSourcePreferences {
         Source.QM -> AppleMusicPreferenceKeys.KEY_HOOK_ONLINE_TRANSLATION_SOURCE_QQ
         Source.KUWO -> AppleMusicPreferenceKeys.KEY_HOOK_ONLINE_TRANSLATION_SOURCE_KUWO
         Source.KUGOU -> AppleMusicPreferenceKeys.KEY_HOOK_ONLINE_TRANSLATION_SOURCE_KUGOU
-        Source.LB -> AppleMusicPreferenceKeys.KEY_HOOK_APPLE_MUSIC_LUNABEAT_WORD_LYRICS
+        Source.LB -> AppleMusicPreferenceKeys.KEY_HOOK_ONLINE_SOURCE_LUNABEAT
+        Source.AMLL -> AppleMusicPreferenceKeys.KEY_HOOK_ONLINE_SOURCE_AMLL
     }
 
     fun sourceDefaultEnabled(source: Source): Boolean = when (source) {
@@ -82,7 +85,8 @@ object OnlineTranslationSourcePreferences {
         Source.QM -> AppleMusicPreferenceKeys.DEFAULT_HOOK_ONLINE_TRANSLATION_SOURCE_QQ
         Source.KUWO -> AppleMusicPreferenceKeys.DEFAULT_HOOK_ONLINE_TRANSLATION_SOURCE_KUWO
         Source.KUGOU -> AppleMusicPreferenceKeys.DEFAULT_HOOK_ONLINE_TRANSLATION_SOURCE_KUGOU
-        Source.LB -> AppleMusicPreferenceKeys.DEFAULT_HOOK_APPLE_MUSIC_LUNABEAT_WORD_LYRICS
+        Source.LB -> AppleMusicPreferenceKeys.DEFAULT_HOOK_ONLINE_SOURCE_LUNABEAT
+        Source.AMLL -> AppleMusicPreferenceKeys.DEFAULT_HOOK_ONLINE_SOURCE_AMLL
     }
 
     fun isSourceEnabled(prefs: SharedPreferences?, source: Source): Boolean =
@@ -129,6 +133,8 @@ object OnlineTranslationSourcePreferences {
         AppleMusicPreferenceKeys.KEY_HOOK_ONLINE_TRANSLATION_SOURCE_QQ,
         AppleMusicPreferenceKeys.KEY_HOOK_ONLINE_TRANSLATION_SOURCE_KUWO,
         AppleMusicPreferenceKeys.KEY_HOOK_ONLINE_TRANSLATION_SOURCE_KUGOU,
+        AppleMusicPreferenceKeys.KEY_HOOK_ONLINE_SOURCE_AMLL,
+        AppleMusicPreferenceKeys.KEY_HOOK_ONLINE_SOURCE_LUNABEAT,
     )
 
     fun isAppPreference(key: String?): Boolean = key in setOf(

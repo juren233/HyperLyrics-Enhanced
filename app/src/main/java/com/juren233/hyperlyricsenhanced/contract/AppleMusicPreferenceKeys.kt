@@ -43,8 +43,8 @@ object AppleMusicPreferenceKeys {
         "key_hook_apple_music_fill_missing_lyrics"
     const val KEY_HOOK_APPLE_MUSIC_HIDE_MANDARIN_PINYIN =
         "key_hook_apple_music_hide_mandarin_pinyin"
-    const val KEY_HOOK_APPLE_MUSIC_LUNABEAT_WORD_LYRICS =
-        "key_hook_apple_music_lunabeat_word_lyrics"
+    const val KEY_HOOK_APPLE_MUSIC_LINE_TO_WORD_LYRICS =
+        "key_hook_apple_music_upgrade_line_to_word_lyrics"
     const val KEY_HOOK_APPLE_MUSIC_LYRICS_BLUR_EFFECT =
         "key_hook_apple_music_lyrics_blur_effect"
     const val KEY_HOOK_APPLE_MUSIC_LYRICS_BLUR_ANIMATION =
@@ -81,7 +81,7 @@ object AppleMusicPreferenceKeys {
     const val DEFAULT_HOOK_APPLE_MUSIC_NATIVE_ONLINE_TRANSLATION = false
     const val DEFAULT_HOOK_APPLE_MUSIC_FILL_MISSING_LYRICS = false
     const val DEFAULT_HOOK_APPLE_MUSIC_HIDE_MANDARIN_PINYIN = false
-    const val DEFAULT_HOOK_APPLE_MUSIC_LUNABEAT_WORD_LYRICS = false
+    const val DEFAULT_HOOK_APPLE_MUSIC_LINE_TO_WORD_LYRICS = false
     const val APPLE_MUSIC_LYRICS_BLUR_EFFECT_OFF = 0
     const val DEFAULT_HOOK_APPLE_MUSIC_LYRICS_BLUR_EFFECT =
         APPLE_MUSIC_LYRICS_BLUR_EFFECT_OFF
@@ -112,18 +112,25 @@ object AppleMusicPreferenceKeys {
         "key_hook_online_translation_source_kuwo"
     const val KEY_HOOK_ONLINE_TRANSLATION_SOURCE_KUGOU =
         "key_hook_online_translation_source_kugou"
+    const val KEY_HOOK_ONLINE_SOURCE_AMLL =
+        "key_hook_online_source_amll"
+    const val KEY_HOOK_ONLINE_SOURCE_LUNABEAT =
+        "key_hook_online_source_lunabeat"
     const val KEY_HOOK_ONLINE_TRANSLATION_APP_QISHUI =
         "key_hook_online_translation_app_qishui"
     const val KEY_HOOK_ONLINE_TRANSLATION_APP_SPOTIFY =
         "key_hook_online_translation_app_spotify"
     const val KEY_HOOK_ONLINE_TRANSLATION_APP_SALT =
         "key_hook_online_translation_app_salt"
-    const val DEFAULT_HOOK_ONLINE_TRANSLATION_SOURCE_ORDER = "NE,QM,KUWO,KUGOU"
+    const val DEFAULT_HOOK_ONLINE_TRANSLATION_SOURCE_ORDER =
+        "AMLL,LB,NE,QM,KUWO,KUGOU"
     const val DEFAULT_HOOK_ONLINE_TRANSLATION_AUTO_SELECT_BEST_SOURCE = true
     const val DEFAULT_HOOK_ONLINE_TRANSLATION_SOURCE_NETEASE = true
     const val DEFAULT_HOOK_ONLINE_TRANSLATION_SOURCE_QQ = true
     const val DEFAULT_HOOK_ONLINE_TRANSLATION_SOURCE_KUWO = false
     const val DEFAULT_HOOK_ONLINE_TRANSLATION_SOURCE_KUGOU = false
+    const val DEFAULT_HOOK_ONLINE_SOURCE_AMLL = true
+    const val DEFAULT_HOOK_ONLINE_SOURCE_LUNABEAT = true
     const val DEFAULT_HOOK_ONLINE_TRANSLATION_APP_QISHUI = false
     const val DEFAULT_HOOK_ONLINE_TRANSLATION_APP_SPOTIFY = false
     const val DEFAULT_HOOK_ONLINE_TRANSLATION_APP_SALT = false

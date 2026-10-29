@@ -203,9 +203,9 @@ class AppleMissingLyricsSongMapperTest {
         assertEquals("I've said it all", line.text)
         assertEquals("I've said it all", line.words!!.joinToString("") { it.text.orEmpty() })
         assertEquals(2_877L, line.end)
-        assertEquals(rawTtml, mapped.metadata?.getString(LyricMetadataKeys.LUNA_BEAT_RAW_TTML))
-        assertEquals("hub-id", mapped.metadata?.getString(LyricMetadataKeys.LUNA_BEAT_HUB_ID))
-        assertEquals("a".repeat(64), mapped.metadata?.getString(LyricMetadataKeys.LUNA_BEAT_TTML_SHA256))
+        assertEquals(rawTtml, mapped.metadata?.getString(LyricMetadataKeys.TTML_SOURCE_RAW))
+        assertEquals("hub-id", mapped.metadata?.getString(LyricMetadataKeys.TTML_SOURCE_LYRIC_ID))
+        assertEquals("a".repeat(64), mapped.metadata?.getString(LyricMetadataKeys.TTML_SOURCE_SHA256))
     }
 
     @Test
@@ -215,9 +215,9 @@ class AppleMissingLyricsSongMapperTest {
                 id = "123",
                 duration = 5_000L,
                 metadata = lyricMetadataOf(
-                    LyricMetadataKeys.LUNA_BEAT_RAW_TTML to "stale",
-                    LyricMetadataKeys.LUNA_BEAT_HUB_ID to "stale-id",
-                    LyricMetadataKeys.LUNA_BEAT_TTML_SHA256 to "f".repeat(64),
+                    LyricMetadataKeys.TTML_SOURCE_RAW to "stale",
+                    LyricMetadataKeys.TTML_SOURCE_LYRIC_ID to "stale-id",
+                    LyricMetadataKeys.TTML_SOURCE_SHA256 to "f".repeat(64),
                 ),
             ),
             wordLines = listOf(line(0L, listOf(word(0L, 1_000L, "普通歌词")))),
@@ -225,9 +225,9 @@ class AppleMissingLyricsSongMapperTest {
             sourceInfo = AppleMissingLyricsSourceInfo("NE", emptyList()),
         ) ?: error("expected mapped song")
 
-        assertNull(mapped.metadata?.getString(LyricMetadataKeys.LUNA_BEAT_RAW_TTML))
-        assertNull(mapped.metadata?.getString(LyricMetadataKeys.LUNA_BEAT_HUB_ID))
-        assertNull(mapped.metadata?.getString(LyricMetadataKeys.LUNA_BEAT_TTML_SHA256))
+        assertNull(mapped.metadata?.getString(LyricMetadataKeys.TTML_SOURCE_RAW))
+        assertNull(mapped.metadata?.getString(LyricMetadataKeys.TTML_SOURCE_LYRIC_ID))
+        assertNull(mapped.metadata?.getString(LyricMetadataKeys.TTML_SOURCE_SHA256))
     }
 
 }

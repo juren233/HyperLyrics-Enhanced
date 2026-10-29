@@ -57,7 +57,7 @@ class OnlineTranslationMatcherTest {
     }
 
     @Test
-    fun `forced source without a candidate remains selected and uses the other source`() {
+    fun `forced source without a candidate is not selected and the other source stays`() {
         val base = Song(
             lyrics = listOf(RichLyricLine(text = "君の名は"))
         )
@@ -81,14 +81,14 @@ class OnlineTranslationMatcherTest {
 
         assertEquals("你的名字", result?.song?.lyrics?.single()?.translation)
         assertEquals(
-            "NE",
+            "QM",
             result?.song?.metadata
                 ?.getString(LyricMetadataKeys.ONLINE_TRANSLATION_SOURCE),
         )
     }
 
     @Test
-    fun `forced source without a candidate reuses current content and changes its label`() {
+    fun `forced source without a candidate keeps current content and its label`() {
         val base = Song(
             lyrics = listOf(RichLyricLine(text = "君の名は"))
         )
@@ -111,7 +111,7 @@ class OnlineTranslationMatcherTest {
 
         assertEquals("现有译文", result?.song?.lyrics?.single()?.translation)
         assertEquals(
-            "NE",
+            "QM",
             result?.song?.metadata
                 ?.getString(LyricMetadataKeys.ONLINE_TRANSLATION_SOURCE),
         )

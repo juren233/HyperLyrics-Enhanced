@@ -5,7 +5,7 @@ import com.juren233.hyperlyricsenhanced.common.lyric.AppleMissingLyricsSourceInf
 import com.juren233.hyperlyricsenhanced.common.lyric.LyricMetadataKeys
 import com.juren233.hyperlyricsenhanced.lyric.model.Song
 import com.juren233.hyperlyricsenhanced.lyric.view.LyricLineAssembler
-import com.juren233.hyperlyricsenhanced.online.source.lunabeat.LunaBeatTtmlParser
+import com.juren233.hyperlyricsenhanced.online.source.ttml.TtmlLyricsParser
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.decodeFromString
@@ -59,7 +59,7 @@ class LunaBeatVocalSeparationTest {
         val line = song.lyrics!!.single()
         assertEquals("I've said it all", line.text)
         assertEquals("back up", line.secondary)
-        assertTrue(song.metadata!!.getString(LyricMetadataKeys.LUNA_BEAT_RAW_TTML)!!.contains("ttm:role=\"x-bg\""))
+        assertTrue(song.metadata!!.getString(LyricMetadataKeys.TTML_SOURCE_RAW)!!.contains("ttm:role=\"x-bg\""))
     }
 
     @Test
@@ -128,7 +128,7 @@ class LunaBeatVocalSeparationTest {
 
     private fun map(body: String, metadata: String = ""): Song {
         val ttml = """<tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata" xmlns:itunes="http://music.apple.com/lyric-ttml-internal" itunes:timing="Word"><head><metadata>$metadata</metadata></head><body><div>$body</div></body></tt>"""
-        val parsed = requireNotNull(LunaBeatTtmlParser.parseWordTimed(ttml.toByteArray()))
+        val parsed = requireNotNull(TtmlLyricsParser.parseWordTimed(ttml.toByteArray()))
         return requireNotNull(AppleMissingLyricsSongMapper.map(
             baseSong = Song(id = "vocal-fixture", duration = 10_000L),
             wordLines = parsed.wordLines,
@@ -136,7 +136,7 @@ class LunaBeatVocalSeparationTest {
             sourceInfo = AppleMissingLyricsSourceInfo("LB", emptyList()),
             rawAppleTtml = ttml,
         )).also {
-            assertEquals(ttml, it.metadata!!.getString(LyricMetadataKeys.LUNA_BEAT_RAW_TTML))
+            assertEquals(ttml, it.metadata!!.getString(LyricMetadataKeys.TTML_SOURCE_RAW))
         }
     }
 }

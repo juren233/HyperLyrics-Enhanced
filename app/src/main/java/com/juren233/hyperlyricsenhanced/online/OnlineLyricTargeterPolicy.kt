@@ -26,6 +26,21 @@ import kotlinx.coroutines.withTimeoutOrNull
 import java.text.Normalizer
 import kotlin.math.abs
 
+/**
+ * TTML 目录文件的逐行翻译与音译未经过歌名搜索源的取词清洗。与其他来源一样只保留有意义的翻译、
+ * 拉丁字母音译（目录文件里也可能是假名读音，如英文歌词的片假名注音），否则选择器会把一份
+ * 显示不出来的音译当作有效发音源。
+ */
+internal fun List<LrcLine>.sanitizedForOnlineCandidate(): List<LrcLine> = map { line ->
+    line.copy(
+        translation = OnlineTranslationContentPolicy.sanitize(line.translation),
+        romanization = RomanizationPolicy.sanitize(
+            originalText = line.content,
+            pronunciation = line.romanization,
+        ),
+    )
+}
+
 internal fun OnlineLyricTargeter.nearMissFor(
     source: SearchSource,
     attempt: SourceAttempt,
@@ -246,6 +261,7 @@ internal fun OnlineLyricTargeter.resolveSourceOrder(
         Source.KUWO -> listOf(Source.KUWO, Source.NE, Source.QM)
         Source.KUGOU -> listOf(Source.KUGOU, Source.NE, Source.QM)
         Source.LB -> listOf(Source.LB)
+        Source.AMLL -> listOf(Source.AMLL)
         null -> when (pkgName) {
             "com.netease.cloudmusic" -> listOf(Source.NE, Source.QM)
             "com.tencent.qqmusic", "com.tencent.qqmusicpad" ->

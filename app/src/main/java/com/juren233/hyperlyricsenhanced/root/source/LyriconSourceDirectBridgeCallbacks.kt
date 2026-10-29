@@ -194,10 +194,10 @@ internal fun LyriconSource.onDirectOnlineLyricContentSourceRequested(
         songId != nativeSong.id ||
         requestedSource == null ||
         contentType !in setOf("translation", "pronunciation", "lyrics") ||
-        (requestedSource == Source.LB && contentType != "lyrics") ||
-        (contentType == "lyrics" && requestedSource == Source.LB &&
-            !isLunaBeatWordLyricsEnabled()) ||
-        (contentType == "lyrics" && requestedSource != Source.LB &&
+        (requestedSource.isTtmlCatalog && contentType != "lyrics") ||
+        (contentType == "lyrics" && requestedSource.isTtmlCatalog &&
+            requestedSource !in configuredOnlineSources()) ||
+        (contentType == "lyrics" && !requestedSource.isTtmlCatalog &&
             !isFillMissingLyricsEnabled())
     ) {
         AppleSourceSwitchPerformanceDiagnostics.coreStage(

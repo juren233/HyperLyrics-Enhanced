@@ -36,8 +36,9 @@ import com.juren233.hyperlyricsenhanced.lyric.source.LyricSource
 import com.juren233.hyperlyricsenhanced.online.OnlineLyricTargeter
 import com.juren233.hyperlyricsenhanced.online.OnlineTranslationSourcePreferences
 import com.juren233.hyperlyricsenhanced.online.model.Source
-import com.juren233.hyperlyricsenhanced.online.source.lunabeat.LunaBeatLookupResult
-import com.juren233.hyperlyricsenhanced.online.source.lunabeat.LunaBeatTtmlRepository
+import com.juren233.hyperlyricsenhanced.online.sanitizedForOnlineCandidate
+import com.juren233.hyperlyricsenhanced.online.source.ttml.CatalogPlatform
+import com.juren233.hyperlyricsenhanced.online.source.ttml.TtmlCatalogSources
 import com.juren233.hyperlyricsenhanced.online.utils.ChineseUtils
 import com.juren233.hyperlyricsenhanced.root.LyriconDataBridge
 import com.juren233.hyperlyricsenhanced.root.island.renderer.BaseIslandRenderer
@@ -210,7 +211,9 @@ internal fun LyriconSource.scheduleOnlineTranslation(baseSong: LocalSong): Boole
                     )
                     return@withLock
                 }
-                val configuredSources = configuredOnlineSources()
+                val configuredSources = configuredTranslationSources(
+                    activeCentralPlayerPackageName ?: LyriconSource.APPLE_MUSIC_PACKAGE
+                )
                 if (configuredSources.isEmpty()) {
                     postTranslationApply(
                         selection = null,
@@ -291,7 +294,9 @@ internal fun LyriconSource.scheduleOnlineTranslation(baseSong: LocalSong): Boole
                         "race=$raceEnabled,targetContent=$totalLineCount",
                 )
                 val fetchedCandidates = linkedMapOf<Source, OnlineTranslationSelector.Candidate>()
-                if (raceEnabled && remainingSources.size > 1) {
+                val answeredSources = linkedSetOf<Source>()
+                val answeredCandidates = linkedMapOf<Source, OnlineTranslationSelector.Candidate>()
+                if (remainingSources.size > 1) {
                     pronunciationDiagnostic(
                         "stage=race_started, generation=$generation, id=${baseSong.id}, " +
                             "sources=${remainingSources.joinToString("+")}"
@@ -323,8 +328,12 @@ internal fun LyriconSource.scheduleOnlineTranslation(baseSong: LocalSong): Boole
                                     error,
                                 )
                             }
+                            answeredSources += source
+                            candidate?.let { answeredCandidates[source] = it }
+                            var publishedFirstNow = false
                             if (candidate != null) {
-                                if (onlineRaceFirstPublishedGeneration != generation &&
+                                if (raceEnabled &&
+                                    onlineRaceFirstPublishedGeneration != generation &&
                                     candidate.matchedContentCount > 0
                                 ) {
                                     val firstSelection = OnlineTranslationSelection(
@@ -346,6 +355,7 @@ internal fun LyriconSource.scheduleOnlineTranslation(baseSong: LocalSong): Boole
                                         pronunciationRequested = completeOnlinePronunciation,
                                     )
                                     onlineTranslationRequest.markFirstPublished(generation)
+                                    publishedFirstNow = true
                                     pronunciationDiagnostic(
                                         "stage=race_first_ready, generation=$generation, " +
                                             "id=${baseSong.id}, source=$source, " +
@@ -356,6 +366,33 @@ internal fun LyriconSource.scheduleOnlineTranslation(baseSong: LocalSong): Boole
                                         publicationStage =
                                             LyriconSource.OnlineTranslationPublicationStage.RACE_FIRST,
                                         reason = "race_first_ready",
+                                    )
+                                }
+                            }
+                            if (raceEnabled && answeredSources.size < remainingSources.size) {
+                                // A slow source must not hold back what the others already found:
+                                // publish the sources answered so far. Lyric content still moves
+                                // only at a line boundary (see race_final_deferred), while the
+                                // per-source menu state is published at once.
+                                if (!publishedFirstNow &&
+                                    onlineRaceFirstPublishedGeneration == generation
+                                ) {
+                                    val partial = composeOnlineTranslationSelection(
+                                        baseSong = baseSong,
+                                        candidates = answeredCandidates,
+                                        requestedSources = remainingSources.filter(answeredSources::contains),
+                                        configuredSources = configuredSources,
+                                        preferredSource = preferredSource,
+                                        alternativeSource = alternativeSource,
+                                        totalLineCount = totalLineCount,
+                                        automaticSelection = automaticSelection,
+                                        completeOnlinePronunciation = completeOnlinePronunciation,
+                                    )
+                                    postTranslationApply(
+                                        selection = partial.selection,
+                                        publicationStage =
+                                            LyriconSource.OnlineTranslationPublicationStage.RACE_FINAL,
+                                        reason = "race_progress",
                                     )
                                 }
                             }
@@ -388,53 +425,22 @@ internal fun LyriconSource.scheduleOnlineTranslation(baseSong: LocalSong): Boole
                         )?.let { fetchedCandidates[source] = it }
                     }
                 }
-                val candidates = fetchedCandidates
-                val rankedCandidates = if (automaticSelection) {
-                    OnlineTranslationSelector.rank(
-                        candidates = candidates.values,
-                        totalLineCount = totalLineCount,
-                        tieBreakOrder = OnlineTranslationSourcePreferences.defaultOrder,
-                    )
-                } else {
-                    val preferredCandidate = candidates[preferredSource]
-                    val alternativeCandidate = alternativeSource?.let(candidates::get)
-                    val selectedCandidate = OnlineTranslationSelector.select(
-                        preferred = preferredCandidate,
-                        alternative = alternativeCandidate,
-                        totalLineCount = totalLineCount,
-                    )
-                    buildList {
-                        selectedCandidate?.let(::add)
-                        listOfNotNull(preferredCandidate, alternativeCandidate)
-                            .filterNot(::contains)
-                            .forEach(::add)
-                        candidates.values.filterNot(::contains).forEach(::add)
-                    }
-                }
-                val selected = rankedCandidates.firstOrNull()
-                val supplementalCandidates = rankedCandidates.drop(1)
-                val defaultTranslationCandidate = rankedCandidates
-                    .firstOrNull {
-                        OnlineTranslationMatcher.contributesTranslation(baseSong, it.result)
-                    }
-                val defaultPronunciationCandidate = rankedCandidates
-                    .firstOrNull {
-                        OnlineTranslationMatcher.contributesPronunciation(baseSong, it.result)
-                    }
-                val selection = OnlineTranslationSelection(
-                    onlineLinesBySource = candidates.mapValues { it.value.onlineLines },
+                val composed = composeOnlineTranslationSelection(
+                    baseSong = baseSong,
+                    candidates = fetchedCandidates,
                     requestedSources = remainingSources,
-                    defaultTranslationSource = defaultTranslationCandidate?.source,
-                    defaultPronunciationSource = defaultPronunciationCandidate?.source,
-                    forcedTranslationSource = manualSourceRequests.requestedTranslationSource(),
-                    forcedPronunciationSource = manualSourceRequests.requestedPronunciationSource(),
-                    sourceOrder = if (automaticSelection) {
-                        rankedCandidates.map { it.source }
-                    } else {
-                        configuredSources
-                    },
-                    pronunciationRequested = completeOnlinePronunciation,
+                    configuredSources = configuredSources,
+                    preferredSource = preferredSource,
+                    alternativeSource = alternativeSource,
+                    totalLineCount = totalLineCount,
+                    automaticSelection = automaticSelection,
+                    completeOnlinePronunciation = completeOnlinePronunciation,
                 )
+                val candidates = fetchedCandidates
+                val rankedCandidates = composed.rankedCandidates
+                val selected = composed.selected
+                val supplementalCandidates = rankedCandidates.drop(1)
+                val selection = composed.selection
                 val currentPublishedSong = (if (playerPackage == LyriconSource.APPLE_MUSIC_PACKAGE) {
                     currentPublishedAppleSong
                 } else {
@@ -551,6 +557,35 @@ internal fun LyriconSource.scheduleOnlineTranslation(baseSong: LocalSong): Boole
     return true
 }
 
+/**
+ * TTML 目录源（AMLL、LunaBeat）按 Apple Music ID 直取，不经歌名搜索。文件自带的逐行翻译与音译
+ * 作为与其他来源同等的翻译/发音候选，由同一套匹配与选择逻辑处理。
+ */
+private suspend fun LyriconSource.fetchCatalogTranslationOutcome(
+    application: Application,
+    baseSong: LocalSong,
+    source: Source,
+    forceRefresh: Boolean,
+): OnlineLyricTargeter.FetchOutcome {
+    val catalog = TtmlCatalogSources.of(source) ?: return OnlineLyricTargeter.FetchOutcome()
+    val lookup = catalog.findWordTimed(
+        context = application,
+        platform = CatalogPlatform.APPLE_MUSIC,
+        songId = baseSong.id.orEmpty(),
+        forceRefresh = forceRefresh,
+    )
+    val lines = lookup.match?.parsed?.lrcLines?.sanitizedForOnlineCandidate()
+    debug(
+        "目录源翻译候选: id=${baseSong.id}, source=$source, 已查=${lookup.searched}, " +
+            "行数=${lines?.size ?: 0}, 带翻译行=${lines?.count { !it.translation.isNullOrBlank() } ?: 0}, " +
+            "带音译行=${lines?.count { !it.romanization.isNullOrBlank() } ?: 0}"
+    )
+    return OnlineLyricTargeter.FetchOutcome(
+        lines = lines?.takeIf { it.isNotEmpty() },
+        selectedSource = source.takeIf { lines != null },
+    )
+}
+
 internal suspend fun LyriconSource.fetchOnlineTranslationCandidate(
     application: Application,
     baseSong: LocalSong,
@@ -574,23 +609,66 @@ internal suspend fun LyriconSource.fetchOnlineTranslationCandidate(
         ?.getString(LyricMetadataKeys.APPLE_ORIGINAL_ALBUM)
         ?.takeIf(String::isNotBlank)
     val albumForSearch = originalAlbum ?: mediaInfo.album
-    val fetchOutcome = OnlineLyricTargeter.fetchBestLyricWithNearMiss(
-        context = application,
-        pkgName = LyriconSource.APPLE_MUSIC_PACKAGE,
-        title = baseSong.name.orEmpty(),
-        artist = baseSong.artist.orEmpty(),
-        durationMs = searchDurationMs,
-        originalTitle = baseSong.metadata
-            ?.getString(LyricMetadataKeys.APPLE_ORIGINAL_TITLE),
-        originalArtist = baseSong.metadata
-            ?.getString(LyricMetadataKeys.APPLE_ORIGINAL_ARTIST),
-        preferOriginalMetadata = shouldPreferAppleOriginalMetadata(),
-        preferredSource = source,
-        requireTranslation = false,
-        fallbackToOtherSources = false,
-        album = albumForSearch,
-        originalAlbum = originalAlbum,
-    )
+    val cacheSongId = baseSong.id?.takeIf(String::isNotBlank)
+    val explicitlyRequested = manualSourceRequests.requestedTranslationSource() == source ||
+        manualSourceRequests.requestedPronunciationSource() == source
+    val queryKey = listOf(
+        baseSong.name,
+        baseSong.artist,
+        baseSong.metadata?.getString(LyricMetadataKeys.APPLE_ORIGINAL_TITLE),
+        baseSong.metadata?.getString(LyricMetadataKeys.APPLE_ORIGINAL_ARTIST),
+        albumForSearch,
+        originalAlbum,
+        shouldPreferAppleOriginalMetadata().toString(),
+        searchDurationMs.toString(),
+    ).joinToString("\u0000") { it.orEmpty() }
+    val cached = cacheSongId?.let { onlineTranslationFetchCache.get(it, source, queryKey) }
+    val fetchOutcome = when {
+        cached is OnlineTranslationFetchCache.Entry.Hit -> cached.outcome
+        cached is OnlineTranslationFetchCache.Entry.Miss && !explicitlyRequested ->
+            OnlineLyricTargeter.FetchOutcome()
+        else -> (
+            if (source.isTtmlCatalog) {
+                fetchCatalogTranslationOutcome(
+                    application = application,
+                    baseSong = baseSong,
+                    source = source,
+                    forceRefresh = cached is OnlineTranslationFetchCache.Entry.Miss && explicitlyRequested,
+                )
+            } else {
+                OnlineLyricTargeter.fetchBestLyricWithNearMiss(
+                    context = application,
+                    pkgName = LyriconSource.APPLE_MUSIC_PACKAGE,
+                    title = baseSong.name.orEmpty(),
+                    artist = baseSong.artist.orEmpty(),
+                    durationMs = searchDurationMs,
+                    originalTitle = baseSong.metadata
+                        ?.getString(LyricMetadataKeys.APPLE_ORIGINAL_TITLE),
+                    originalArtist = baseSong.metadata
+                        ?.getString(LyricMetadataKeys.APPLE_ORIGINAL_ARTIST),
+                    preferOriginalMetadata = shouldPreferAppleOriginalMetadata(),
+                    preferredSource = source,
+                    requireTranslation = false,
+                    fallbackToOtherSources = false,
+                    album = albumForSearch,
+                    originalAlbum = originalAlbum,
+                )
+            }
+            ).also { outcome ->
+            if (cacheSongId != null) {
+                onlineTranslationFetchCache.put(
+                    cacheSongId,
+                    source,
+                    queryKey,
+                    if (outcome.lines != null || outcome.nearMiss?.lines != null) {
+                        OnlineTranslationFetchCache.Entry.Hit(outcome)
+                    } else {
+                        OnlineTranslationFetchCache.Entry.Miss
+                    },
+                )
+            }
+        }
+    }
     val onlineLines = fetchOutcome.lines ?: fetchOutcome.nearMiss?.lines
     if (onlineLines == null) {
         sourceSwitchCoreStage(
@@ -735,3 +813,73 @@ internal suspend fun LyriconSource.fetchOnlineTranslationCandidate(
     return candidate
 }
 
+internal data class ComposedOnlineTranslation(
+    val rankedCandidates: List<OnlineTranslationSelector.Candidate>,
+    val selected: OnlineTranslationSelector.Candidate?,
+    val selection: OnlineTranslationSelection,
+)
+
+/**
+ * Ranks the candidates fetched so far and builds the selection from them. [requestedSources]
+ * lists only the sources that have answered: a source still searching must stay unreported
+ * so the menus show it as searching rather than as failed.
+ */
+internal fun LyriconSource.composeOnlineTranslationSelection(
+    baseSong: LocalSong,
+    candidates: Map<Source, OnlineTranslationSelector.Candidate>,
+    requestedSources: List<Source>,
+    configuredSources: List<Source>,
+    preferredSource: Source,
+    alternativeSource: Source?,
+    totalLineCount: Int,
+    automaticSelection: Boolean,
+    completeOnlinePronunciation: Boolean,
+): ComposedOnlineTranslation {
+    val rankedCandidates = if (automaticSelection) {
+                    OnlineTranslationSelector.rank(
+                        candidates = candidates.values,
+                        totalLineCount = totalLineCount,
+                        tieBreakOrder = OnlineTranslationSourcePreferences.defaultOrder,
+                    )
+                } else {
+                    val preferredCandidate = candidates[preferredSource]
+                    val alternativeCandidate = alternativeSource?.let(candidates::get)
+                    val selectedCandidate = OnlineTranslationSelector.select(
+                        preferred = preferredCandidate,
+                        alternative = alternativeCandidate,
+                        totalLineCount = totalLineCount,
+                    )
+                    buildList {
+                        selectedCandidate?.let(::add)
+                        listOfNotNull(preferredCandidate, alternativeCandidate)
+                            .filterNot(::contains)
+                            .forEach(::add)
+                        candidates.values.filterNot(::contains).forEach(::add)
+                    }
+                }
+                val selected = rankedCandidates.firstOrNull()
+                val supplementalCandidates = rankedCandidates.drop(1)
+                val defaultTranslationCandidate = rankedCandidates
+                    .firstOrNull {
+                        OnlineTranslationMatcher.contributesTranslation(baseSong, it.result)
+                    }
+                val defaultPronunciationCandidate = rankedCandidates
+                    .firstOrNull {
+                        OnlineTranslationMatcher.contributesPronunciation(baseSong, it.result)
+                    }
+                val selection = OnlineTranslationSelection(
+                    onlineLinesBySource = candidates.mapValues { it.value.onlineLines },
+                    requestedSources = requestedSources,
+                    defaultTranslationSource = defaultTranslationCandidate?.source,
+                    defaultPronunciationSource = defaultPronunciationCandidate?.source,
+                    forcedTranslationSource = manualSourceRequests.requestedTranslationSource(),
+                    forcedPronunciationSource = manualSourceRequests.requestedPronunciationSource(),
+                    sourceOrder = if (automaticSelection) {
+                        rankedCandidates.map { it.source }
+                    } else {
+                        configuredSources
+                    },
+                    pronunciationRequested = completeOnlinePronunciation,
+                )
+    return ComposedOnlineTranslation(rankedCandidates, selected, selection)
+}

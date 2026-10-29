@@ -48,10 +48,12 @@ internal object OnlineTranslationMatcher {
             ?.onlineContentSource(LyricMetadataKeys.ONLINE_TRANSLATION_SOURCE)
         val publishedPronunciationSource = currentPublishedSong
             ?.onlineContentSource(LyricMetadataKeys.ONLINE_PRONUNCIATION_SOURCE)
-        val translationSource = forcedTranslationSource
+        // A forced source that returned nothing must not be stamped onto content that came from
+        // elsewhere: the switch would be reported as successful while showing another source.
+        val translationSource = forcedTranslationSource?.takeIf(candidates::containsKey)
             ?: publishedTranslationSource
             ?: defaultTranslationSource
-        val pronunciationSource = forcedPronunciationSource
+        val pronunciationSource = forcedPronunciationSource?.takeIf(candidates::containsKey)
             ?: publishedPronunciationSource
             ?: defaultPronunciationSource
         if (translationSource == null && pronunciationSource == null) return null

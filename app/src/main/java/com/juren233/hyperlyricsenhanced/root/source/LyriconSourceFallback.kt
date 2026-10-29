@@ -30,14 +30,16 @@ import com.juren233.hyperlyricsenhanced.common.media.MediaMetadataHelper
 import com.juren233.hyperlyricsenhanced.common.media.NextTrackMetadataCache
 import com.juren233.hyperlyricsenhanced.lyric.LrcLine
 import com.juren233.hyperlyricsenhanced.lyric.model.Song as LocalSong
-import com.juren233.hyperlyricsenhanced.online.source.lunabeat.LunaBeatLookupResult
 import com.juren233.hyperlyricsenhanced.lyric.model.lyricMetadataOf
 import com.juren233.hyperlyricsenhanced.lyric.source.LyricSink
 import com.juren233.hyperlyricsenhanced.lyric.source.LyricSource
 import com.juren233.hyperlyricsenhanced.online.OnlineLyricTargeter
 import com.juren233.hyperlyricsenhanced.online.OnlineTranslationSourcePreferences
 import com.juren233.hyperlyricsenhanced.online.model.Source
-import com.juren233.hyperlyricsenhanced.online.source.lunabeat.LunaBeatTtmlRepository
+import com.juren233.hyperlyricsenhanced.online.source.ttml.CatalogPlatform
+import com.juren233.hyperlyricsenhanced.online.source.ttml.TtmlCatalogSources
+import com.juren233.hyperlyricsenhanced.online.source.ttml.TtmlLyricMatch
+import com.juren233.hyperlyricsenhanced.online.source.ttml.toSourceStatus
 import com.juren233.hyperlyricsenhanced.online.utils.ChineseUtils
 import com.juren233.hyperlyricsenhanced.root.LyriconDataBridge
 import com.juren233.hyperlyricsenhanced.root.island.renderer.BaseIslandRenderer
@@ -81,21 +83,34 @@ internal fun LyriconSource.scheduleFallback(
                 preferredSourceOverride == request.requestedSource
         }
     val fallbackEnabled = isOnlineTranslationEnabledFor(LyriconSource.APPLE_MUSIC_PACKAGE)
-    val supplementEnabled = isFillMissingLyricsEnabled() || isLunaBeatWordLyricsEnabled()
+    val supplementEnabled = isFillMissingLyricsEnabled() || isLineToWordLyricsEnabled()
     val untimedNativeFallback = allowsUntimedAppleOnlineFallback(
         appOnlineEnabled = fallbackEnabled,
         untimedNative = hasUntimedAppleNativeLyrics(baseSong),
     )
-    val lunaBeatRequested = preferredSourceOverride == Source.LB ||
-        (preferredSourceOverride == null && isLunaBeatWordLyricsEnabled())
+    // 目录类 TTML 源按 Apple Music ID 直取，不依赖歌名，故歌名为空也允许发起。
+    val ttmlRequested = preferredSourceOverride?.isTtmlCatalog == true ||
+        (preferredSourceOverride == null && isLineToWordLyricsEnabled())
     if (
-        (baseSong.name.isNullOrBlank() && !lunaBeatRequested) ||
+        (baseSong.name.isNullOrBlank() && !ttmlRequested) ||
         (!fallbackEnabled && !supplementEnabled && !untimedNativeFallback)
     ) {
+        debug(
+            "补充检索未发起: id=${baseSong.id}, 歌名为空=${baseSong.name.isNullOrBlank()}, " +
+                "目录请求=$ttmlRequested, 应用在线=$fallbackEnabled, 补充开关=$supplementEnabled, " +
+                "无时间轴回退=$untimedNativeFallback"
+        )
         return
     }
     val configuredSources = OnlineTranslationSourcePreferences.orderedSources(prefs)
-    if (configuredSources.isEmpty() && !lunaBeatRequested) return
+    if (configuredSources.isEmpty() && !ttmlRequested) {
+        debug("补充检索未发起: id=${baseSong.id}, 没有已启用来源")
+        return
+    }
+    debug(
+        "补充检索已排程: id=${baseSong.id}, 指定源=${preferredSourceOverride ?: "无"}, " +
+            "严格=$strictSource, 来源=${configuredSources.joinToString("+")}"
+    )
     val previousSnapshot = appleFallbackRequest.snapshot()
     val generation = appleFallbackRequest.invalidate(mainHandler::removeCallbacks)
     sourceSwitchCoreStage(
@@ -264,34 +279,54 @@ internal suspend fun LyriconSource.fetchAppleLyricsOutcome(
     strictSource: Boolean,
     fallbackEnabled: Boolean,
 ): OnlineLyricTargeter.FetchOutcome {
-    val shouldTryLunaBeat = preferredSourceOverride == Source.LB ||
-        (preferredSourceOverride == null && isLunaBeatWordLyricsEnabled())
-    var lunaBeatStatus: AppleMissingLyricsSourceStatus? = null
-    if (shouldTryLunaBeat) {
-        val lookup = LunaBeatTtmlRepository.findWordTimedByAppleMusicId(
-            context = application,
-            appleMusicId = baseSong.id.orEmpty(),
-        )
-        lunaBeatStatus = lookup.toSourceStatus()
-        lookup.match?.let { match ->
-            return OnlineLyricTargeter.FetchOutcome(
-                lines = match.parsed.lrcLines,
-                wordLines = match.parsed.wordLines,
-                sourceStatuses = listOf(lunaBeatStatus),
-                selectedSource = Source.LB,
-                rawAppleTtml = match.rawTtml,
-                sourceLyricId = match.hubId,
-                sourceLyricSha256 = match.sha256,
+    val ttmlOnlyRequest = preferredSourceOverride?.isTtmlCatalog == true
+    val manualTtmlSwitch = ttmlOnlyRequest &&
+        activeSourceSwitchTraceRequest(baseSong.id)?.let { request ->
+            request.contentType == "lyrics" && request.requestedSource == preferredSourceOverride
+        } == true
+    val searchSources = configuredSources.filterNot(Source::isTtmlCatalog)
+    val leadingTtmlSources = configuredSources.takeWhile(Source::isTtmlCatalog)
+    val trailingTtmlSources = configuredSources.drop(leadingTtmlSources.size)
+        .filter(Source::isTtmlCatalog)
+    // 原生已有歌词时，自动检索只负责翻译等补充，不应让 TTML 源抢占正文；
+    // 逐行转逐字（TTML 源请求）与手动来源切换不受此限。
+    val automaticTtmlAllowed = preferredSourceOverride == null &&
+        (!hasAppleNativeLyrics(baseSong) || hasUntimedAppleNativeLyrics(baseSong))
+    val ttmlStatuses = mutableListOf<AppleMissingLyricsSourceStatus>()
+    suspend fun lookupTtml(sources: List<Source>): OnlineLyricTargeter.FetchOutcome? {
+        for (source in sources) {
+            val catalog = TtmlCatalogSources.of(source) ?: continue
+            val lookup = catalog.findWordTimed(
+                context = application,
+                platform = CatalogPlatform.APPLE_MUSIC,
+                songId = baseSong.id.orEmpty(),
             )
-        }
-        if (strictSource || preferredSourceOverride == Source.LB && !isFillMissingLyricsEnabled()) {
-            return OnlineLyricTargeter.FetchOutcome(
-                sourceStatuses = listOfNotNull(lunaBeatStatus),
+            ttmlStatuses += lookup.toSourceStatus(source)
+            debug(
+                "目录源查询: id=${baseSong.id}, source=$source, 已查=${lookup.searched}, " +
+                    "命中=${lookup.match != null}, 行数=${lookup.match?.parsed?.wordLines?.size ?: 0}, " +
+                    "带翻译行=${lookup.match?.parsed?.lrcLines?.count { !it.translation.isNullOrBlank() } ?: 0}, " +
+                    "带音译行=${lookup.match?.parsed?.lrcLines?.count { !it.romanization.isNullOrBlank() } ?: 0}"
             )
+            lookup.match?.let { return it.toFetchOutcome(ttmlStatuses.toList()) }
         }
+        return null
+    }
+    when {
+        ttmlOnlyRequest -> {
+            // 手动切换只查被点选的源；自动逐行转逐字依次尝试已启用的 TTML 源。
+            val siblings = if (manualTtmlSwitch) emptyList() else configuredSources.filter(Source::isTtmlCatalog)
+            val requested = listOfNotNull(preferredSourceOverride) +
+                siblings.filterNot { it == preferredSourceOverride }
+            lookupTtml(requested)?.let { return it }
+            if (strictSource || !isFillMissingLyricsEnabled()) {
+                return OnlineLyricTargeter.FetchOutcome(sourceStatuses = ttmlStatuses.toList())
+            }
+        }
+        automaticTtmlAllowed -> lookupTtml(leadingTtmlSources)?.let { return it }
     }
 
-    val onlinePreferredSource = preferredSourceOverride?.takeUnless { it == Source.LB }
+    val onlinePreferredSource = preferredSourceOverride?.takeUnless(Source::isTtmlCatalog)
     val fillMissingLyricsEnabled = isFillMissingLyricsEnabled()
     val album = MediaMetadataHelper
         .getMediaInfo(application, LyriconSource.APPLE_MUSIC_PACKAGE, HookLogger)
@@ -337,7 +372,7 @@ internal suspend fun LyriconSource.fetchAppleLyricsOutcome(
         var statuses = emptyList<AppleMissingLyricsSourceStatus>()
         var usableOutcome: OnlineLyricTargeter.FetchOutcome? = null
         val candidates = coroutineScope {
-            configuredSources.map { source ->
+            searchSources.map { source ->
                 async {
                     // 本地时长输入可能失真（如目录 178s 被报成 165s），纯文本替换
                     // 允许「标题+歌手双匹配但时长不符」的近失候选进入，最终由下方
@@ -409,31 +444,37 @@ internal suspend fun LyriconSource.fetchAppleLyricsOutcome(
             sources = if (strictSource && onlinePreferredSource != null) {
                 listOf(onlinePreferredSource)
             } else {
-                configuredSources
+                searchSources
             },
             includeOtherStatuses = true,
         )
     }
-    return if (lunaBeatStatus == null) {
+    if (automaticTtmlAllowed && onlineOutcome.lines.isNullOrEmpty() && trailingTtmlSources.isNotEmpty()) {
+        lookupTtml(trailingTtmlSources)?.let { return it }
+    }
+    return if (ttmlStatuses.isEmpty()) {
         onlineOutcome
     } else {
         onlineOutcome.copy(
             sourceStatuses = AppleMissingLyricsSourceMetadata.mergeStatuses(
-                previous = listOf(lunaBeatStatus),
+                previous = ttmlStatuses.toList(),
                 incoming = onlineOutcome.sourceStatuses,
             )
         )
     }
 }
 
-internal fun LunaBeatLookupResult.toSourceStatus(): AppleMissingLyricsSourceStatus =
-    AppleMissingLyricsSourceStatus(
-        source = Source.LB.name,
-        searched = searched,
-        found = match != null,
-        wordTimed = match != null,
-        lineCount = match?.parsed?.wordLines?.size ?: 0,
-    )
+private fun TtmlLyricMatch.toFetchOutcome(
+    statuses: List<AppleMissingLyricsSourceStatus>,
+): OnlineLyricTargeter.FetchOutcome = OnlineLyricTargeter.FetchOutcome(
+    lines = parsed.lrcLines,
+    wordLines = parsed.wordLines,
+    sourceStatuses = statuses,
+    selectedSource = source,
+    rawAppleTtml = rawTtml,
+    sourceLyricId = sourceLyricId,
+    sourceLyricSha256 = sha256,
+)
 
 /** 全中文歌词不携带在线翻译：正文若全为中文，在线载荷的翻译列整体剔除。 */
 internal fun stripFullyChineseTranslations(lines: List<LrcLine>): List<LrcLine> {
@@ -481,9 +522,9 @@ internal fun LyriconSource.applyFallbackResult(
     val pendingSourceRequest = manualSourceRequests.lyricsRequestToComplete(requestedSource)
     val manualLyricsSourceSwitch = requestedSource != null &&
         pendingSourceRequest?.songId == baseSong.id
-    val automaticLunaBeatOverride = requestedSource == Source.LB &&
-        outcome.selectedSource == Source.LB &&
-        isLunaBeatWordLyricsEnabled()
+    val automaticTtmlOverride = requestedSource?.isTtmlCatalog == true &&
+        outcome.selectedSource?.isTtmlCatalog == true &&
+        isLineToWordLyricsEnabled()
     val requestStillCurrent = nativeSong != null && acceptsAppleOnlineLyricResult(
         generation = generation,
         currentGeneration = appleFallbackRequest.generation(),
@@ -491,7 +532,7 @@ internal fun LyriconSource.applyFallbackResult(
         currentNativeLyrics = currentAppleHasNativeLyrics,
         currentSongHasNativeLyrics = nativeSongHasNativeLyrics,
         manualSourceSwitch = manualLyricsSourceSwitch,
-        automaticLunaBeatOverride = automaticLunaBeatOverride,
+        automaticTtmlOverride = automaticTtmlOverride,
         untimedNativeFallback = untimedNativeFallback,
     )
     if (!requestStillCurrent) {
@@ -522,7 +563,7 @@ internal fun LyriconSource.applyFallbackResult(
     appleFallbackRequest.clearJob()
     var supplementSong: LocalSong? = null
     var enrichedLrcLines: List<LrcLine>? = null
-    if (isFillMissingLyricsEnabled() || outcome.selectedSource == Source.LB || untimedNativeFallback) {
+    if (isFillMissingLyricsEnabled() || outcome.selectedSource?.isTtmlCatalog == true || untimedNativeFallback) {
         val previousSourceInfo = AppleMissingLyricsSourceMetadata.decode(
             selectedSource = nativeSong.metadata
                 ?.getString(LyricMetadataKeys.APPLE_MISSING_LYRICS_SOURCE),
@@ -563,10 +604,11 @@ internal fun LyriconSource.applyFallbackResult(
                 "builtLines=${supplementSong?.lyrics.orEmpty().size}"
         )
         if (supplementSong != null) {
-            if (!untimedNativeFallback && outcome.selectedSource == Source.LB) {
+            val ttmlSelected = outcome.selectedSource?.takeIf(Source::isTtmlCatalog)
+            if (!untimedNativeFallback && ttmlSelected != null) {
                 publication.confirmLyricsSource(ConfirmedLyricsSourceSelection(
                     songId = baseSong.id.orEmpty(),
-                    source = Source.LB.name,
+                    source = ttmlSelected.name,
                 ))
             }
             val publishStartedAtNanos = SystemClock.elapsedRealtimeNanos()

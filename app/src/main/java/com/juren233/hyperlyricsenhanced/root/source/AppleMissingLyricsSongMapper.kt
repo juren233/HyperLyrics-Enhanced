@@ -16,6 +16,7 @@ import com.juren233.hyperlyricsenhanced.lyric.model.Song
 import com.juren233.hyperlyricsenhanced.lyric.model.lyricMetadataOf
 import com.juren233.hyperlyricsenhanced.lyric.LrcLine
 import com.juren233.hyperlyricsenhanced.online.model.LyricsLine
+import com.juren233.hyperlyricsenhanced.online.model.Source
 
 /**
  * 把三方在线源命中结果映射为「无歌词歌曲补充」回传载荷。
@@ -44,7 +45,7 @@ internal object AppleMissingLyricsSongMapper {
     ): Song? {
         val inputLines = wordLines.orEmpty()
         val fetchedTranslationLines = lrcLines.orEmpty()
-        val preserveSourceWhitespace = sourceInfo?.selectedSource == "LB"
+        val preserveSourceWhitespace = Source.isTtmlCatalogName(sourceInfo?.selectedSource)
         val previousTranslationLines = baseSong.lyrics.orEmpty()
         val normalizedLines = inputLines
             .asSequence()
@@ -140,14 +141,14 @@ internal object AppleMissingLyricsSongMapper {
         }
         if (richLines.isEmpty()) return null
 
-        val lunaBeatMetadataKeys = setOf(
-            LyricMetadataKeys.LUNA_BEAT_RAW_TTML,
-            LyricMetadataKeys.LUNA_BEAT_HUB_ID,
-            LyricMetadataKeys.LUNA_BEAT_TTML_SHA256,
+        val ttmlSourceMetadataKeys = setOf(
+            LyricMetadataKeys.TTML_SOURCE_RAW,
+            LyricMetadataKeys.TTML_SOURCE_LYRIC_ID,
+            LyricMetadataKeys.TTML_SOURCE_SHA256,
         )
         val metadataPairs = buildList<Pair<String, String?>> {
             addAll(baseSong.metadata.orEmpty().entries
-                .filterNot { it.key in lunaBeatMetadataKeys }
+                .filterNot { it.key in ttmlSourceMetadataKeys }
                 .map { it.key to it.value })
             add(LyricMetadataKeys.APPLE_MISSING_LYRICS_SUPPLEMENT to "true")
             sourceInfo?.selectedSource?.let {
@@ -158,13 +159,13 @@ internal object AppleMissingLyricsSongMapper {
                     add(LyricMetadataKeys.APPLE_MISSING_LYRICS_SOURCE_STATUSES to encoded)
                 }
             }
-            if (sourceInfo?.selectedSource == "LB" && !rawAppleTtml.isNullOrEmpty()) {
-                add(LyricMetadataKeys.LUNA_BEAT_RAW_TTML to rawAppleTtml)
+            if (Source.isTtmlCatalogName(sourceInfo?.selectedSource) && !rawAppleTtml.isNullOrEmpty()) {
+                add(LyricMetadataKeys.TTML_SOURCE_RAW to rawAppleTtml)
                 sourceLyricId?.takeIf(String::isNotBlank)?.let {
-                    add(LyricMetadataKeys.LUNA_BEAT_HUB_ID to it)
+                    add(LyricMetadataKeys.TTML_SOURCE_LYRIC_ID to it)
                 }
                 sourceLyricSha256?.takeIf(String::isNotBlank)?.let {
-                    add(LyricMetadataKeys.LUNA_BEAT_TTML_SHA256 to it.lowercase())
+                    add(LyricMetadataKeys.TTML_SOURCE_SHA256 to it.lowercase())
                 }
             }
         }

@@ -398,7 +398,8 @@ private fun Source.displayName(): String = when (this) {
     Source.QM -> stringResource(R.string.source_qq_music)
     Source.KUWO -> stringResource(R.string.source_kuwo_music)
     Source.KUGOU -> stringResource(R.string.source_kugou_music)
-    Source.LB -> "LunaBeat TTML"
+    Source.LB -> "LunaBeat"
+    Source.AMLL -> "AMLL"
 }
 
 private val SOURCE_ROW_HEIGHT = 64.dp

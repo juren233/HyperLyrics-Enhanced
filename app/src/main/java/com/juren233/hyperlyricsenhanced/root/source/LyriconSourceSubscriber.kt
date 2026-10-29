@@ -36,8 +36,6 @@ import com.juren233.hyperlyricsenhanced.lyric.source.LyricSource
 import com.juren233.hyperlyricsenhanced.online.OnlineLyricTargeter
 import com.juren233.hyperlyricsenhanced.online.OnlineTranslationSourcePreferences
 import com.juren233.hyperlyricsenhanced.online.model.Source
-import com.juren233.hyperlyricsenhanced.online.source.lunabeat.LunaBeatLookupResult
-import com.juren233.hyperlyricsenhanced.online.source.lunabeat.LunaBeatTtmlRepository
 import com.juren233.hyperlyricsenhanced.online.utils.ChineseUtils
 import com.juren233.hyperlyricsenhanced.root.LyriconDataBridge
 import com.juren233.hyperlyricsenhanced.root.island.renderer.BaseIslandRenderer

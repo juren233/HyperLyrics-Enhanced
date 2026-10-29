@@ -37,8 +37,6 @@ import com.juren233.hyperlyricsenhanced.lyric.source.LyricSource
 import com.juren233.hyperlyricsenhanced.online.OnlineLyricTargeter
 import com.juren233.hyperlyricsenhanced.online.OnlineTranslationSourcePreferences
 import com.juren233.hyperlyricsenhanced.online.model.Source
-import com.juren233.hyperlyricsenhanced.online.source.lunabeat.LunaBeatLookupResult
-import com.juren233.hyperlyricsenhanced.online.source.lunabeat.LunaBeatTtmlRepository
 import com.juren233.hyperlyricsenhanced.online.utils.ChineseUtils
 import com.juren233.hyperlyricsenhanced.root.LyriconDataBridge
 import com.juren233.hyperlyricsenhanced.root.island.renderer.BaseIslandRenderer
@@ -376,6 +374,14 @@ private fun LyriconSource.applyCurrentOnlineTranslationResult(
                 "stage=race_final_deferred, generation=$generation, id=${baseSong.id}, " +
                     "targetPosition=$targetPosition, currentPosition=${LyriconDataBridge.currentPosition}"
             )
+            // Deferral only protects what the lyrics show. The menus' per-source state is not
+            // lyric content, so publish it now with the displayed lyrics left unchanged.
+            if (appleRequest && isNativeOnlineTranslationEnabled()) {
+                directBridge?.publishOnlineTranslation(
+                    song = currentPublishedSong.withSourceMenuMetadataFrom(mergedResult.song),
+                    generation = generation,
+                )
+            }
             return
         }
     }
@@ -526,4 +532,21 @@ internal fun LyriconSource.cancelOnlineTranslation(
         directBridge?.clearOnlineTranslation(currentAppleSong?.id)
         publication.cancelEnrichment()
     }
+}
+
+/** Keeps this song's displayed content and takes only the source-menu metadata from [latest]. */
+private fun LocalSong.withSourceMenuMetadataFrom(latest: LocalSong): LocalSong {
+    val menuKeys = setOf(
+        LyricMetadataKeys.ONLINE_TRANSLATION_MATCH_STATS,
+        LyricMetadataKeys.ONLINE_PRONUNCIATION_MATCH_STATS,
+        LyricMetadataKeys.ONLINE_SOURCE_CONTENT_STATES,
+    )
+    val entries = metadata?.entries.orEmpty()
+        .filterNot { it.key in menuKeys }
+        .map { it.key to it.value }
+        .toMutableList()
+    menuKeys.forEach { key ->
+        latest.metadata?.getString(key)?.let { entries += key to it }
+    }
+    return copy(metadata = lyricMetadataOf(*entries.toTypedArray()))
 }

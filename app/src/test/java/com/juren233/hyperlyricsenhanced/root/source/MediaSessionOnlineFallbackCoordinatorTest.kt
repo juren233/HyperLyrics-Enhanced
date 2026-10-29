@@ -38,6 +38,7 @@ class MediaSessionOnlineFallbackCoordinatorTest {
         val tracks = FakeTracks(a)
         var settings = Settings(listOf(Source.NE, Source.QM), setOf(a.packageName))
         var primary = false
+        var wordTimed = false
         var primaryListener: (() -> Unit)? = null
         var closed = false
         var calls = 0
@@ -47,6 +48,7 @@ class MediaSessionOnlineFallbackCoordinatorTest {
             tracks = tracks,
             timeline = object : MediaSessionOnlineFallbackCoordinator.Timeline {
                 override fun hasPrimary(track: TrackIdentity) = primary
+                override fun hasWordTimedContent(track: TrackIdentity) = wordTimed
                 override fun hasFallback(track: TrackIdentity) = submissions.lastOrNull()?.track?.let {
                     MediaSessionOnlineFallbackPolicy.sameLookupTrack(it, track)
                 } == true
@@ -355,5 +357,55 @@ class MediaSessionOnlineFallbackCoordinatorTest {
         advanceUntilIdle()
         assertTrue(f.submissions.isEmpty())
         assertNull(f.tracks.listener)
+    }
+
+    @Test fun `non word timed primary on a catalog player only asks catalog sources`() = runTest {
+        val ne = a.copy(packageName = "com.netease.cloudmusic", mediaId = "401250892")
+        val f = Fixture(this)
+        f.tracks.current = ne
+        f.settings = Settings(listOf(Source.AMLL, Source.NE, Source.QM), setOf(ne.packageName))
+        f.primary = true
+        var asked: List<Source>? = null
+        f.fetch = { _, sources -> asked = sources; song }
+        f.coordinator.start()
+        advanceUntilIdle()
+        assertEquals(listOf(Source.AMLL), asked)
+        assertEquals(1, f.submissions.size)
+        f.coordinator.stop()
+    }
+
+    @Test fun `non word timed primary on a player without catalog id never fetches`() = runTest {
+        val f = Fixture(this)
+        f.settings = Settings(listOf(Source.AMLL, Source.NE), setOf(a.packageName))
+        f.primary = true
+        f.coordinator.start()
+        advanceUntilIdle()
+        assertEquals(0, f.calls)
+        f.coordinator.stop()
+    }
+
+    @Test fun `word timed content already shown stops any fetch`() = runTest {
+        val ne = a.copy(packageName = "com.netease.cloudmusic", mediaId = "401250892")
+        val f = Fixture(this)
+        f.tracks.current = ne
+        f.settings = Settings(listOf(Source.AMLL, Source.NE), setOf(ne.packageName))
+        f.wordTimed = true
+        f.coordinator.start()
+        advanceUntilIdle()
+        assertEquals(0, f.calls)
+        f.coordinator.stop()
+    }
+
+    @Test fun `no primary lets catalog and search sources run in configured order`() = runTest {
+        val ne = a.copy(packageName = "com.netease.cloudmusic", mediaId = "401250892")
+        val f = Fixture(this)
+        f.tracks.current = ne
+        f.settings = Settings(listOf(Source.AMLL, Source.NE, Source.QM), setOf(ne.packageName))
+        var asked: List<Source>? = null
+        f.fetch = { _, sources -> asked = sources; song }
+        f.coordinator.start()
+        advanceUntilIdle()
+        assertEquals(listOf(Source.AMLL, Source.NE, Source.QM), asked)
+        f.coordinator.stop()
     }
 }

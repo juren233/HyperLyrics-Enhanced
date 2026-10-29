@@ -18,16 +18,26 @@ object LyricMetadataKeys {
     const val APPLE_LYRICS_CACHE_SOURCE = "appleLyricsCacheSource"
     const val APPLE_NATIVE_LYRICS_CONFIRMED = "appleNativeLyricsConfirmed"
     const val APPLE_NATIVE_LYRICS_UNTIMED = "appleNativeLyricsUntimed"
+    /**
+     * Set by the Apple Music Pack on a confirmed native publication when it has withdrawn a
+     * TTML catalog supplement for the song, so the core stops treating that catalog as the
+     * displayed lyrics (translation matching must follow the native line timings).
+     */
+    const val APPLE_SUPPLEMENT_REVOKED = "appleSupplementRevoked"
     const val ONLINE_TRANSLATION_SOURCE = "onlineTranslationSource"
     const val ONLINE_TRANSLATION_MATCH_STATS = "onlineTranslationMatchStats"
+    /** Per-source search outcome for the translation/pronunciation menus; see [OnlineSourceContentStatesCodec]. */
+    const val ONLINE_SOURCE_CONTENT_STATES = "onlineSourceContentStates"
     const val ONLINE_PRONUNCIATION_SOURCE = "onlinePronunciationSource"
     const val ONLINE_PRONUNCIATION_MATCH_STATS = "onlinePronunciationMatchStats"
     const val APPLE_MISSING_LYRICS_SUPPLEMENT = "appleMissingLyricsSupplement"
     const val APPLE_MISSING_LYRICS_SOURCE = "appleMissingLyricsSource"
     const val APPLE_MISSING_LYRICS_SOURCE_STATUSES = "appleMissingLyricsSourceStatuses"
-    const val LUNA_BEAT_RAW_TTML = "lunaBeatRawTtml"
-    const val LUNA_BEAT_HUB_ID = "lunaBeatHubId"
-    const val LUNA_BEAT_TTML_SHA256 = "lunaBeatTtmlSha256"
+    // The wire values predate AMLL and still read "lunaBeat*": songs cached by earlier builds
+    // carry them, so only the Kotlin names are source-neutral.
+    const val TTML_SOURCE_RAW = "lunaBeatRawTtml"
+    const val TTML_SOURCE_LYRIC_ID = "lunaBeatHubId"
+    const val TTML_SOURCE_SHA256 = "lunaBeatTtmlSha256"
     const val GROUP_VOCALS = "groupVocals"
     const val BACKGROUND_VOCALS_TRANSLATION = "backgroundVocalsTranslation"
     const val CONCURRENT_SECONDARY_ALIGNED_RIGHT = "concurrentSecondaryAlignedRight"

@@ -9,6 +9,8 @@ package com.juren233.hyperlyricsenhanced.root.source
 import com.juren233.hyperlyricsenhanced.lyric.LrcLine
 import com.juren233.hyperlyricsenhanced.common.lyric.LyricMetadataKeys
 import com.juren233.hyperlyricsenhanced.common.lyric.OnlineTranslationContentPolicy
+import com.juren233.hyperlyricsenhanced.common.lyric.OnlineSourceContentState
+import com.juren233.hyperlyricsenhanced.common.lyric.OnlineSourceContentStatesCodec
 import com.juren233.hyperlyricsenhanced.common.lyric.OnlineTranslationMatchStat
 import com.juren233.hyperlyricsenhanced.common.lyric.OnlineTranslationMatchStatsCodec
 import com.juren233.hyperlyricsenhanced.lyric.model.Song
@@ -107,10 +109,23 @@ internal data class OnlineTranslationSelection(
         }
         val encodedTranslationStats = OnlineTranslationMatchStatsCodec.encode(translationStats)
         val encodedPronunciationStats = OnlineTranslationMatchStatsCodec.encode(pronunciationStats)
+        val encodedSourceStates = OnlineSourceContentStatesCodec.encode(
+            requestedSources.associate { source ->
+                val lines = onlineLinesBySource[source]
+                source.name to OnlineSourceContentState(
+                    hasTranslation = lines?.any {
+                        OnlineTranslationContentPolicy.isMeaningful(it.translation)
+                    } == true,
+                    hasPronunciation = lines?.any { !it.romanization.isNullOrBlank() } == true,
+                    searchFailed = lines == null,
+                )
+            }
+        )
         val metadataEntries = song.metadata?.entries
             ?.filterNot {
                 it.key == LyricMetadataKeys.ONLINE_TRANSLATION_MATCH_STATS ||
-                    it.key == LyricMetadataKeys.ONLINE_PRONUNCIATION_MATCH_STATS
+                    it.key == LyricMetadataKeys.ONLINE_PRONUNCIATION_MATCH_STATS ||
+                    it.key == LyricMetadataKeys.ONLINE_SOURCE_CONTENT_STATES
             }
             ?.map { it.key to it.value }
             .orEmpty()
@@ -120,6 +135,9 @@ internal data class OnlineTranslationSelection(
         }
         encodedPronunciationStats?.let {
             metadataEntries += LyricMetadataKeys.ONLINE_PRONUNCIATION_MATCH_STATS to it
+        }
+        encodedSourceStates?.let {
+            metadataEntries += LyricMetadataKeys.ONLINE_SOURCE_CONTENT_STATES to it
         }
         return copy(
             song = song.copy(

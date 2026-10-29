@@ -50,11 +50,13 @@ import com.juren233.hyperlyricsenhanced.root.source.RootLyricSink
 import com.juren233.hyperlyricsenhanced.root.source.SuperLyricSource
 import com.juren233.hyperlyricsenhanced.root.timeline.LocalTimelineDriver
 import com.juren233.hyperlyricsenhanced.root.timeline.SystemMediaPlaybackAnchor
+import com.juren233.hyperlyricsenhanced.root.source.MediaSessionLyricsFetcher
 import com.juren233.hyperlyricsenhanced.root.source.MediaSessionOnlineFallbackCoordinator
 import com.juren233.hyperlyricsenhanced.root.source.OnlineFallbackSongMapper
 import com.juren233.hyperlyricsenhanced.common.MediaSessionOnlineFallbackPreferences
 import com.juren233.hyperlyricsenhanced.online.OnlineLyricTargeter
 import com.juren233.hyperlyricsenhanced.online.OnlineTranslationSourcePreferences
+import com.juren233.hyperlyricsenhanced.online.source.ttml.CatalogPlatform
 import com.juren233.hyperlyricsenhanced.lyric.model.Song
 import com.juren233.hyperlyricsenhanced.timeline.model.TrackIdentity
 import com.juren233.hyperlyricsenhanced.root.aitrans.AITranslator
@@ -644,49 +646,20 @@ class HookEntry : XposedModule() {
                     val stored = MediaSessionOnlineFallbackPreferences.read(prefs)
                     stored.copy(
                         packages = if (SystemUiEnhancementGate.lyricRuntimeMode() == SystemUiLyricRuntimeMode.LYRIC_DISPLAY) {
-                            IslandRuntimePreferenceOverrides.getStringSet(
+                            val named = IslandRuntimePreferenceOverrides.getStringSet(
                                 MediaSessionOnlineFallbackPreferences.PACKAGES, stored.packages,
                             ).orEmpty()
+                            // Spotify 的开关是「启用App」里既有的那一个，不另存名单。
+                            val spotifyKey = OnlineTranslationSourcePreferences.appPreferenceKey(CatalogPlatform.SPOTIFY_PACKAGE)
+                            val spotifyOn = spotifyKey != null && IslandRuntimePreferenceOverrides.getBoolean(
+                                spotifyKey,
+                                OnlineTranslationSourcePreferences.isAppEnabled(prefs, CatalogPlatform.SPOTIFY_PACKAGE),
+                            )
+                            if (spotifyOn) named + CatalogPlatform.SPOTIFY_PACKAGE else named
                         } else emptySet(),
                     )
                 },
-                fetchSong = { track, sources ->
-                    if (com.juren233.hyperlyricsenhanced.BuildConfig.DEBUG) {
-                        HookLogger.d("MediaSessionOnlineFallback",
-                            "开始取词: pkg=${track.packageName}, title=${track.title}, " +
-                                "artist=${track.artist}, duration=${track.durationMs}, sources=$sources")
-                    }
-                    val lines = try {
-                        // 在线源需要宿主 Application 的存储与会话；模块 Context 只用于资源。
-                        OnlineLyricTargeter.fetchBestLyric(
-                            context = app,
-                            pkgName = track.packageName,
-                            title = track.title,
-                            artist = track.artist,
-                            durationMs = track.durationMs,
-                            album = track.album,
-                            sourceOrder = sources,
-                            requireExactVersion = true,
-                        )
-                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                        throw cancelled
-                    } catch (failure: Exception) {
-                        if (com.juren233.hyperlyricsenhanced.BuildConfig.DEBUG) {
-                            HookLogger.w("MediaSessionOnlineFallback", "取词失败: pkg=${track.packageName}", failure)
-                        }
-                        throw failure
-                    }
-                    if (com.juren233.hyperlyricsenhanced.BuildConfig.DEBUG) {
-                        HookLogger.d("MediaSessionOnlineFallback", "取词完成: lines=${lines?.size ?: 0}")
-                    }
-                    lines?.let {
-                        OnlineFallbackSongMapper.map(
-                            Song(id = track.normalizedKey(), name = track.title,
-                                artist = track.artist, duration = track.durationMs),
-                            it,
-                        )
-                    }
-                },
+                fetchSong = MediaSessionLyricsFetcher(app)::fetch,
             )
             mediaSessionOnlineFallback?.start()
             LyricRuntimeDiagnostics.record("runtime_timeline_started")
@@ -742,7 +715,8 @@ class HookEntry : XposedModule() {
                 if (SystemUiHookLifetime.retired || listenerEpoch != runtimeEpoch) return@OnSharedPreferenceChangeListener
                 IslandSlotRuntimeConfig.invalidate()
                 if (MediaSessionOnlineFallbackPreferences.isPreference(key) ||
-                    OnlineTranslationSourcePreferences.isSourcePreference(key)
+                    OnlineTranslationSourcePreferences.isSourcePreference(key) ||
+                    OnlineTranslationSourcePreferences.isAppPreference(key)
                 ) {
                     postRuntimeUpdate { mediaSessionOnlineFallback?.refresh() }
                 }
@@ -786,7 +760,7 @@ class HookEntry : XposedModule() {
                     key == RootConstants.KEY_HOOK_APPLE_MUSIC_NATIVE_ONLINE_TRANSLATION ||
                     key == RootConstants.KEY_HOOK_APPLE_MUSIC_FILL_MISSING_LYRICS ||
                     key == RootConstants.KEY_HOOK_APPLE_MUSIC_HIDE_MANDARIN_PINYIN ||
-                    key == RootConstants.KEY_HOOK_APPLE_MUSIC_LUNABEAT_WORD_LYRICS
+                    key == RootConstants.KEY_HOOK_APPLE_MUSIC_LINE_TO_WORD_LYRICS
                 ) {
                     lyriconSource.onPreferenceChanged(key)
                 }
@@ -822,7 +796,7 @@ class HookEntry : XposedModule() {
                     RootConstants.KEY_HOOK_ENABLE_DYNAMIC_ISLAND,
                     RootConstants.KEY_HOOK_APPLE_MUSIC_NATIVE_ONLINE_TRANSLATION,
                     RootConstants.KEY_HOOK_APPLE_MUSIC_FILL_MISSING_LYRICS,
-                    RootConstants.KEY_HOOK_APPLE_MUSIC_LUNABEAT_WORD_LYRICS -> {
+                    RootConstants.KEY_HOOK_APPLE_MUSIC_LINE_TO_WORD_LYRICS -> {
                         postRuntimeUpdate {
                             ClassicAodFocusNotificationRecovery.ensureListenerCanRecover(app, prefs)
                             updateFeatureRuntime()
@@ -1175,7 +1149,9 @@ class HookEntry : XposedModule() {
                     else -> return
                 }
                 IslandRuntimePreferenceOverrides.put(key, value)
-                if (MediaSessionOnlineFallbackPreferences.isPreference(key)) {
+                if (MediaSessionOnlineFallbackPreferences.isPreference(key) ||
+                    OnlineTranslationSourcePreferences.isAppPreference(key)
+                ) {
                     mediaSessionOnlineFallback?.refresh()
                 }
                 if (key in com.juren233.hyperlyricsenhanced.common.IslandTouchConfig.preferenceKeys) return

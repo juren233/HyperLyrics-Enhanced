@@ -101,6 +101,8 @@ internal fun InstalledAppSelectionPage(
     enabledPackages: Set<String>,
     onCheckedChange: (String, Boolean) -> Unit,
     includeNonLauncherApps: Boolean = false,
+    /** 已在别处单独外显的包：不出现在本页列表里，其开关状态不受影响。 */
+    excludedPackages: Set<String> = emptySet(),
 ) {
     val context = LocalContext.current
     val installedAppsPermission = remember(context) {
@@ -136,10 +138,11 @@ internal fun InstalledAppSelectionPage(
             emptyList()
         }
     }
-    val knownApps = installedApps.orEmpty()
+    val knownApps = installedApps.orEmpty().filter { it.app.packageName !in excludedPackages }
     // 已卸载或暂时不可见的包仍可从已启用组移除。
     val apps = if (includeNonLauncherApps) {
-        knownApps + enabledPackages.filter { pkg -> knownApps.none { it.app.packageName == pkg } }
+        knownApps + enabledPackages
+            .filter { pkg -> pkg !in excludedPackages && knownApps.none { it.app.packageName == pkg } }
             .map { pkg -> InstalledApp(IslandMusicAppCatalog.App(pkg, pkg), null) }
     } else knownApps
     val filteredApps = apps.filter { app ->

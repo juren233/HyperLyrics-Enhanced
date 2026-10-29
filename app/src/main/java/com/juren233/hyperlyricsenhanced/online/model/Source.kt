@@ -11,4 +11,18 @@ enum class Source {
     KUWO,
     KUGOU,
     LB,
+    AMLL,
+    ;
+
+    /**
+     * Word-timed TTML catalogs addressed by platform ID rather than searched by title.
+     * Must stay in step with [com.juren233.hyperlyricsenhanced.online.source.ttml.TtmlCatalogSources].
+     */
+    val isTtmlCatalog: Boolean get() = this == LB || this == AMLL
+
+    companion object {
+        /** For persisted source names (metadata, status records) that may be blank or unknown. */
+        fun isTtmlCatalogName(name: String?): Boolean =
+            entries.firstOrNull { it.name == name }?.isTtmlCatalog == true
+    }
 }

@@ -28,6 +28,40 @@ object TimelineContentPolicy {
         it.begin >= 0L && it.end > it.begin && !it.text.isNullOrBlank()
     }
 
+    /** 至少一行带逐字时间轴。整行歌词的 words 为空，单字行不足以算逐字。 */
+    internal fun isWordTimed(song: Song?): Boolean = song?.lyrics.orEmpty().any {
+        it.end > it.begin && (it.words?.size ?: 0) >= 2
+    }
+
+    /** [displayed] 是否为当前曲目的补充内容（而非主源内容）。 */
+    private fun isFallbackFor(displayed: TimelineContent?, currentTrack: TrackIdentity?): Boolean =
+        displayed != null && currentTrack != null &&
+            displayed.sourceId == MediaSessionOnlineFallbackPolicy.SOURCE_ID &&
+            displayed.track?.let { MediaSessionOnlineFallbackPolicy.sameLookupTrack(it, currentTrack) } == true
+
+    /** 当前曲目正在显示的内容（主源或补充）已经是逐字歌词。 */
+    internal fun showsWordTimed(
+        activeSourceId: String?,
+        currentTrack: TrackIdentity?,
+        displayed: TimelineContent?,
+        appliedTrackKey: String? = displayed?.track?.normalizedKey(),
+    ): Boolean = isWordTimed(displayed?.song) &&
+        (hasPrimary(activeSourceId, currentTrack, displayed, appliedTrackKey) ||
+            isFallbackFor(displayed, currentTrack))
+
+    /**
+     * 已显示的逐字补充歌词不能被同曲目、非逐字的主源重发内容覆盖；
+     * 否则 Provider 每次重发整首歌词都会把补上的逐字歌词冲掉。
+     */
+    internal fun keepsWordTimedFallback(
+        activeSourceId: String?,
+        currentTrack: TrackIdentity?,
+        displayed: TimelineContent?,
+        incoming: TimelineContent,
+    ): Boolean = incoming.sourceId == activeSourceId &&
+        isFallbackFor(displayed, currentTrack) && isWordTimed(displayed?.song) &&
+        !isWordTimed(incoming.song)
+
     /** 补充内容必须有独立身份、明确授权和严格曲目匹配，不能占用主源身份。 */
     internal fun admitsOnlineFallback(
         activeSourceId: String?,
@@ -43,7 +77,13 @@ object TimelineContentPolicy {
         MediaSessionOnlineFallbackPolicy.sameLookupTrack(content.track, currentTrack) &&
         hasUsableLyrics(content.song) &&
         MediaSessionOnlineFallbackPolicy.eligible(settings, currentTrack, sessionUsable) &&
-        !hasPrimary(activeSourceId, currentTrack, displayed, appliedTrackKey)
+        when {
+            // 已有逐字歌词（主源或此前补上的）不再被替换。
+            showsWordTimed(activeSourceId, currentTrack, displayed, appliedTrackKey) -> false
+            // 主源只有整行歌词时，补充内容必须是逐字歌词才有升级意义。
+            hasPrimary(activeSourceId, currentTrack, displayed, appliedTrackKey) -> isWordTimed(content.song)
+            else -> true
+        }
 
     enum class Decision {
         APPLY,

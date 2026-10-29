@@ -40,9 +40,9 @@ internal object SystemUiEnhancementGate {
                     RootConstants.KEY_HOOK_APPLE_MUSIC_FILL_MISSING_LYRICS,
                     RootConstants.DEFAULT_HOOK_APPLE_MUSIC_FILL_MISSING_LYRICS,
                 ),
-                lunaBeatWordLyrics = entry.prefs.getBoolean(
-                    RootConstants.KEY_HOOK_APPLE_MUSIC_LUNABEAT_WORD_LYRICS,
-                    RootConstants.DEFAULT_HOOK_APPLE_MUSIC_LUNABEAT_WORD_LYRICS,
+                lineToWordLyrics = entry.prefs.getBoolean(
+                    RootConstants.KEY_HOOK_APPLE_MUSIC_LINE_TO_WORD_LYRICS,
+                    RootConstants.DEFAULT_HOOK_APPLE_MUSIC_LINE_TO_WORD_LYRICS,
                 ),
             )
         }.onSuccess { mode ->

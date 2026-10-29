@@ -33,9 +33,9 @@ internal fun MediaSessionOnlineFallbackEntry() {
     }
     ArrowPreference(
         title = stringResource(R.string.media_session_fallback_more_apps),
-        summary = if (packages.isNotEmpty()) {
-            stringResource(R.string.media_session_fallback_players_count, packages.size)
-        } else null,
+        summary = (packages - ENABLED_APP_PACKAGES).takeIf { it.isNotEmpty() }?.let {
+            stringResource(R.string.media_session_fallback_players_count, it.size)
+        },
         onClick = { navigator.navigate(Route.MediaSessionOnlineFallbackPlayers) },
     )
 }
@@ -48,6 +48,7 @@ internal fun MediaSessionOnlineFallbackPlayersPage() {
         title = stringResource(R.string.media_session_fallback_more_apps),
         enabledPackages = packages,
         includeNonLauncherApps = true,
+        excludedPackages = ENABLED_APP_PACKAGES,
         onCheckedChange = { packageName, checked ->
             packages = if (checked) packages + packageName else packages - packageName
             prefs.edit { putStringSet(MediaSessionOnlineFallbackPreferences.PACKAGES, packages) }

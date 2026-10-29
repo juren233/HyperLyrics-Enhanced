@@ -23,10 +23,41 @@ object StorageKeyMigrator {
             RootConstants.KEY_HOOK_APPLE_MUSIC_SIMPLIFY_TRADITIONAL_CONTENT,
     )
 
+    /**
+     * 旧「使用开源仓库歌词源对部分逐行歌词转换为逐字歌词」开关同时承担两层含义：LunaBeat 源启用，
+     * 以及逐行转逐字。两者现已拆成独立键，旧值同时写入两个新键，保证升级后行为不变。
+     */
+    private const val LEGACY_LUNABEAT_WORD_LYRICS = "key_hook_apple_music_lunabeat_word_lyrics"
+
+    /** 旧值要写入哪些新键：已存在的新键保持不动。 */
+    internal fun lunaBeatWordLyricsWrites(
+        legacyValue: Boolean?,
+        existingKeys: Set<String>,
+    ): Map<String, Boolean> {
+        legacyValue ?: return emptyMap()
+        return listOf(
+            RootConstants.KEY_HOOK_ONLINE_SOURCE_LUNABEAT,
+            RootConstants.KEY_HOOK_APPLE_MUSIC_LINE_TO_WORD_LYRICS,
+        ).filterNot(existingKeys::contains).associateWith { legacyValue }
+    }
+
+    private fun migrateLunaBeatWordLyrics(
+        prefs: android.content.SharedPreferences,
+        edits: android.content.SharedPreferences.Editor,
+    ): Boolean {
+        val legacyValue = prefs.all[LEGACY_LUNABEAT_WORD_LYRICS] as? Boolean ?: return false
+        lunaBeatWordLyricsWrites(legacyValue, prefs.all.keys).forEach { (currentKey, value) ->
+            edits.putBoolean(currentKey, value)
+            LogManager.i(TAG, "migrated key=$LEGACY_LUNABEAT_WORD_LYRICS -> $currentKey value=$value")
+        }
+        edits.remove(LEGACY_LUNABEAT_WORD_LYRICS)
+        return true
+    }
+
     fun migrateLegacyKeys(context: Context) {
         val prefs = context.getSharedPreferences(PreferenceKeys.PREF_NAME, Context.MODE_PRIVATE)
         val edits = prefs.edit()
-        var dirty = false
+        var dirty = migrateLunaBeatWordLyrics(prefs, edits)
         renamedBooleanKeys.forEach { (legacyKey, currentKey) ->
             val legacyValue = prefs.all[legacyKey] as? Boolean ?: return@forEach
             if (!prefs.contains(currentKey)) {

@@ -12,9 +12,9 @@ import org.junit.Test
 
 class OnlineTranslationSourcePreferencesTest {
     @Test
-    fun `default order puts NetEase first`() {
+    fun `default order puts TTML catalogs before NetEase`() {
         assertEquals(
-            listOf(Source.NE, Source.QM, Source.KUWO, Source.KUGOU),
+            listOf(Source.AMLL, Source.LB, Source.NE, Source.QM, Source.KUWO, Source.KUGOU),
             OnlineTranslationSourcePreferences.defaultOrder,
         )
     }
@@ -41,7 +41,7 @@ class OnlineTranslationSourcePreferencesTest {
     @Test
     fun `manual selection restores stored priority order`() {
         assertEquals(
-            listOf(Source.KUGOU, Source.KUWO, Source.QM, Source.NE),
+            listOf(Source.KUGOU, Source.KUWO, Source.QM, Source.NE, Source.AMLL, Source.LB),
             OnlineTranslationSourcePreferences.resolveOrder(
                 rawOrder = "KUGOU,KUWO,QM,NE",
                 automaticSelection = false,
@@ -50,7 +50,9 @@ class OnlineTranslationSourcePreferencesTest {
     }
 
     @Test
-    fun `NetEase and QQ are enabled by default while added sources are opt in`() {
+    fun `catalogs NetEase and QQ are enabled by default while added search sources are opt in`() {
+        assertEquals(true, OnlineTranslationSourcePreferences.sourceDefaultEnabled(Source.AMLL))
+        assertEquals(true, OnlineTranslationSourcePreferences.sourceDefaultEnabled(Source.LB))
         assertEquals(true, OnlineTranslationSourcePreferences.sourceDefaultEnabled(Source.NE))
         assertEquals(true, OnlineTranslationSourcePreferences.sourceDefaultEnabled(Source.QM))
         assertEquals(false, OnlineTranslationSourcePreferences.sourceDefaultEnabled(Source.KUWO))
@@ -82,7 +84,7 @@ class OnlineTranslationSourcePreferencesTest {
     @Test
     fun `stored order is deduplicated and missing sources are appended`() {
         assertEquals(
-            listOf(Source.KUGOU, Source.NE, Source.QM, Source.KUWO),
+            listOf(Source.KUGOU, Source.NE, Source.AMLL, Source.LB, Source.QM, Source.KUWO),
             OnlineTranslationSourcePreferences.normalizeOrder("KUGOU,NE,KUGOU"),
         )
     }
@@ -90,7 +92,7 @@ class OnlineTranslationSourcePreferencesTest {
     @Test
     fun `unknown source values do not corrupt the configured order`() {
         assertEquals(
-            listOf(Source.QM, Source.NE, Source.KUWO, Source.KUGOU),
+            listOf(Source.QM, Source.AMLL, Source.LB, Source.NE, Source.KUWO, Source.KUGOU),
             OnlineTranslationSourcePreferences.normalizeOrder("unknown,QM"),
         )
     }
@@ -98,7 +100,7 @@ class OnlineTranslationSourcePreferencesTest {
     @Test
     fun `orderedSources defaults to enabled sources only`() {
         assertEquals(
-            listOf(Source.NE, Source.QM),
+            listOf(Source.AMLL, Source.LB, Source.NE, Source.QM),
             OnlineTranslationSourcePreferences.orderedSources(null),
         )
     }
@@ -118,7 +120,7 @@ class OnlineTranslationSourcePreferencesTest {
             )
         )
         assertEquals(
-            listOf(Source.KUGOU, Source.QM),
+            listOf(Source.KUGOU, Source.QM, Source.AMLL, Source.LB),
             OnlineTranslationSourcePreferences.orderedSources(prefs),
         )
     }
@@ -131,10 +133,12 @@ class OnlineTranslationSourcePreferencesTest {
                 OnlineTranslationSourcePreferences.sourcePreferenceKey(Source.QM) to false,
                 OnlineTranslationSourcePreferences.sourcePreferenceKey(Source.KUWO) to false,
                 OnlineTranslationSourcePreferences.sourcePreferenceKey(Source.KUGOU) to false,
+                OnlineTranslationSourcePreferences.sourcePreferenceKey(Source.AMLL) to false,
+                OnlineTranslationSourcePreferences.sourcePreferenceKey(Source.LB) to false,
             )
         )
         assertEquals(
-            listOf(Source.NE),
+            listOf(Source.AMLL),
             OnlineTranslationSourcePreferences.orderedSources(prefs),
         )
     }

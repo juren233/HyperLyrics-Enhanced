@@ -11,6 +11,7 @@ object LicenseProvider {
             LicenseItem("lyricon", "tomakino", "https://github.com/tomakino/lyricon"),
             LicenseItem("LyricProvider", "tomakino", "https://github.com/tomakino/LyricProvider"),
             LicenseItem("ttml-hub", "2755337087", "https://github.com/2755337087/ttml-hub"),
+            LicenseItem("amll-ttml-db", "amll-dev", "https://github.com/amll-dev/amll-ttml-db"),
             LicenseItem("kotlinx.serialization", "Kotlin", "https://github.com/Kotlin/kotlinx.serialization"),
             LicenseItem("Jetpack Compose", "Google", "https://developer.android.com/jetpack/compose"),
             LicenseItem("HyperCeiler", "Sevtinge", "https://github.com/ReChronoRain/HyperCeiler"),
