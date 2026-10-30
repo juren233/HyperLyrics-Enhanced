@@ -3,6 +3,11 @@ name: Android Build & Release
 on:
   push:
     branches: [main, '[0-9]+.[0-9]+.[0-9]+']
+    # 只改这些文件不产生新包；canary/beta 分支的每次触发都会消耗一个渠道编号。
+    paths-ignore:
+      - '.github/**'
+      - 'docs/**'
+      - '**.md'
   pull_request:
     branches: [main, '[0-9]+.[0-9]+.[0-9]+']
   workflow_dispatch:

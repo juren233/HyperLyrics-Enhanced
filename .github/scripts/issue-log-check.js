@@ -280,7 +280,93 @@ async function closeInvalid({ github, context, core }) {
     }
 }
 
-module.exports = { checkOpened, checkSupplement, closeInvalid };
+/**
+ * 手动补查存量：扫描所有开着的 bug issue，缺日志的补发指引并打「无效」标签。
+ * 发起人在任意评论里已带日志的、已打过无效标签的、已发过指引的都跳过。
+ * DRY_RUN=true 时只列出，不改动。
+ */
+async function backfillMissingLogs({ github, context, core }) {
+    const { owner, repo } = context.repo;
+    const dryRun = process.env.DRY_RUN !== 'false';
+    const failures = [];
+    const hits = [];
+
+    const items = await github.paginate(github.rest.issues.listForRepo, {
+        owner,
+        repo,
+        state: 'open',
+        labels: BUG_LABEL,
+        per_page: 100,
+    });
+
+    for (const item of items) {
+        if (item.pull_request) {
+            continue;
+        }
+        const label = `Issue #${item.number}`;
+        try {
+            if (item.user?.login?.toLowerCase() === owner.toLowerCase()) {
+                core.info(`${label}：由维护者本人发起，跳过。`);
+                continue;
+            }
+            if (hasLabel(item, INVALID_LABEL)) {
+                core.info(`${label}：已有无效标签，跳过。`);
+                continue;
+            }
+            const hasLogs = bugReportHasLogs(item.body);
+            if (hasLogs === null) {
+                core.info(`${label}：正文没有日志栏目，无法判断，跳过。`);
+                continue;
+            }
+            if (hasLogs) {
+                continue;
+            }
+            const comments = await listComments(github, owner, repo, item.number);
+            if (comments.some((entry) => entry.body?.includes(MARKER))) {
+                core.info(`${label}：已发过指引，跳过。`);
+                continue;
+            }
+            const authorLogin = item.user?.login?.toLowerCase();
+            if (comments.some((entry) =>
+                entry.user?.login?.toLowerCase() === authorLogin && hasLogEvidence(entry.body))) {
+                core.info(`${label}：发起人已在评论里提供日志，跳过。`);
+                continue;
+            }
+            hits.push(item.number);
+            if (dryRun) {
+                core.notice(`${label}：缺日志（试运行，未改动）：${item.title}`);
+                continue;
+            }
+            await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: item.number,
+                body: `${GUIDE_MESSAGE}\n\n${MARKER}`,
+            });
+            await github.rest.issues.addLabels({
+                owner,
+                repo,
+                issue_number: item.number,
+                labels: [INVALID_LABEL],
+            });
+            core.notice(`${label}：缺少日志，已回复指引并标记无效。`);
+        } catch (error) {
+            const message = error instanceof Error ? error.stack ?? error.message : String(error);
+            failures.push(`${label}: ${message}`);
+            core.error(`${label}：处理失败：${message}`);
+        }
+    }
+
+    core.info(
+        `${dryRun ? '试运行' : '已处理'}：共 ${hits.length} 个缺日志的 issue` +
+        `${hits.length ? `（${hits.map((n) => `#${n}`).join('、')}）` : ''}。`,
+    );
+    if (failures.length > 0) {
+        core.setFailed(`有 ${failures.length} 个项目处理失败，请查看日志。`);
+    }
+}
+
+module.exports = { checkOpened, checkSupplement, closeInvalid, backfillMissingLogs };
 module.exports.testables = {
     GUIDE_MESSAGE,
     bugReportHasLogs,
