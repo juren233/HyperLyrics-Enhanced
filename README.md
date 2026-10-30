@@ -16,7 +16,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Android-13%2B-3DDC84?style=flat-square" alt="最低 Android 13" />
   <img src="https://img.shields.io/badge/ABI-arm64--v8a-64748B?style=flat-square" alt="arm64-v8a" />
-  <a href="#compatibility"><img src="https://img.shields.io/badge/Apple%20Music-6.5.0%E2%80%936.5.3-FA243C?style=flat-square" alt="已支持 Apple Music 6.5.0–6.5.3" /></a>
+  <a href="#compatibility"><img src="https://img.shields.io/badge/Apple%20Music-6.5.0%E2%80%937.0.0-FA243C?style=flat-square" alt="已支持 Apple Music 6.5.0–7.0.0" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0-2563EB?style=flat-square" alt="GPL-3.0 许可证" /></a>
 </p>
 
@@ -178,7 +178,7 @@ HyperLyrics Enhanced 是为**小米 HyperOS 设备**打造的**超级岛 / 息�
 | 功能 | 环境与限制 |
 | :--- | :--- |
 | 超级岛与媒体卡片增强 | 面向 HyperOS 3 / 4 与 LSPosed v2.0+；依赖具体 SystemUI 及系统插件实现 |
-| Apple Music 深度适配 | Android 13+ 与 LSPosed；当前代码包含 Apple Music **6.5.0-6.5.3** 等版本的适配配置，不能据此保证任意版本可用 |
+| Apple Music 深度适配 | Android 13+ 与 LSPosed；当前代码包含 Apple Music **6.5.0-7.0.0** 等版本的适配配置，不能据此保证任意版本可用 |
 | 官方 Provider 插件 | 需要对应App、插件及作用域；可用版本和能力以插件目录及更新说明为准 |
 | 锁屏 AOD / 经典 AOD | 米系设备及兼容的 AOD 实现；不同系统的呈现方式可能不同 |
 | 通知歌词 | Android 13+；依赖权限、播放器输出及后台存活情况 |

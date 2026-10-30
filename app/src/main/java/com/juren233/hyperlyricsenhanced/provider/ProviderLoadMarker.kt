@@ -30,6 +30,8 @@ object ProviderLoadMarker {
         val versionCode: Int,
         val uncleanCount: Int,
         val lastAttemptAtMs: Long,
+        /** 写入标记的进程 pid；旧格式标记没有，为 0。用于核对该进程上次的退出原因。 */
+        val pid: Int = 0,
     )
 
     sealed interface Decision {
@@ -50,17 +52,19 @@ object ProviderLoadMarker {
     }
 
     fun encode(state: MarkerState): String =
-        "${state.versionCode}:${state.uncleanCount}:${state.lastAttemptAtMs}"
+        "${state.versionCode}:${state.uncleanCount}:${state.lastAttemptAtMs}" +
+            if (state.pid > 0) ":${state.pid}" else ""
 
     fun decode(raw: String?): MarkerState? {
         if (raw.isNullOrBlank()) return null
         val parts = raw.trim().split(':')
-        if (parts.size != 3) return null
+        if (parts.size != 3 && parts.size != 4) return null
         val versionCode = parts[0].toIntOrNull() ?: return null
         val count = parts[1].toIntOrNull() ?: return null
         val lastAttemptAtMs = parts[2].toLongOrNull() ?: return null
-        if (versionCode <= 0 || count <= 0 || lastAttemptAtMs <= 0) return null
-        return MarkerState(versionCode, count, lastAttemptAtMs)
+        val pid = if (parts.size == 4) parts[3].toIntOrNull() ?: return null else 0
+        if (versionCode <= 0 || count <= 0 || lastAttemptAtMs <= 0 || pid < 0) return null
+        return MarkerState(versionCode, count, lastAttemptAtMs, pid)
     }
 
     /**
@@ -72,6 +76,11 @@ object ProviderLoadMarker {
         marker: MarkerState?,
         previousVersionCode: Int,
         badVersionCodes: Set<Int> = emptySet(),
+        /**
+         * 留存标记的那次进程退出是否为应用自身崩溃。用户划掉、强制停止、系统回收等
+         * 不是插件导致的异常，不应计入崩溃次数；此时按「该次加载正常」处理。
+         */
+        previousExitWasCrash: Boolean = true,
         maxStrikes: Int = DEFAULT_MAX_STRIKES,
         nowMs: Long = System.currentTimeMillis(),
     ): Decision {
@@ -82,13 +91,15 @@ object ProviderLoadMarker {
         }
         if (marker != null && marker.versionCode == pendingVersionCode) {
             val decayed = nowMs - marker.lastAttemptAtMs > STRIKE_DECAY_MS
-            if (!decayed && marker.uncleanCount >= maxStrikes) {
+            // 标记里的计数包含上一次加载本身；该次不是崩溃退出时把它扣掉。
+            val crashStrikes = if (previousExitWasCrash) marker.uncleanCount else marker.uncleanCount - 1
+            if (!decayed && crashStrikes >= maxStrikes) {
                 return Decision.Rollback(
                     badVersionCode = pendingVersionCode,
                     fallbackVersionCode = fallbackVersionCode,
                 )
             }
-            val nextCount = if (decayed) 1 else marker.uncleanCount + 1
+            val nextCount = if (decayed) 1 else crashStrikes + 1
             return Decision.LoadNormally(
                 versionCode = pendingVersionCode,
                 newMarker = MarkerState(pendingVersionCode, nextCount, nowMs),

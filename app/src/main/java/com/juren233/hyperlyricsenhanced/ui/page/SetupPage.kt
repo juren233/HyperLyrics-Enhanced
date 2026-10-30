@@ -975,6 +975,7 @@ private fun LyricSourceSelectionPage(
                                     current.copy(
                                         installedVersionCode = manifest.versionCode,
                                         installedVersionName = manifest.versionName,
+                                        displayVersionName = manifest.versionName,
                                         enabled = true,
                                     )
                                 } else {

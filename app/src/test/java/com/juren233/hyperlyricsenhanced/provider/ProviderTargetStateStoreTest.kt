@@ -153,9 +153,15 @@ class ProviderHealthStoreScriptTest {
 
         val lines = script.trim().lineSequence().filter(String::isNotBlank).toList()
         assertEquals(3, lines.size)
-        assertTrue(lines[0].startsWith("for f in /data/user/*/com.netease.cloudmusic/files/hle_provider/*;"))
-        assertTrue(lines[0].endsWith("cat \"\$f\" 2>/dev/null; done"))
-        assertTrue(lines[1].startsWith("for f in /data/user/*/com.hihonor.cloudmusic/files/hle_provider/*;"))
+        assertTrue(
+            lines[0].startsWith(
+                "for f in /data/user/*/com.netease.cloudmusic/files/hle_provider/* " +
+                    "/data_mirror/data_ce/null/*/com.netease.cloudmusic/files/hle_provider/*;",
+            ),
+        )
+        // 状态文件无结尾换行，cat 后必须补 echo，避免下一个头行被接在内容后面。
+        assertTrue(lines[0].endsWith("cat \"\$f\" 2>/dev/null; echo; done"))
+        assertTrue(lines[1].startsWith("for f in /data/user/*/com.hihonor.cloudmusic/files/hle_provider/* "))
         assertEquals("exit 0", lines[2])
     }
 
@@ -177,7 +183,9 @@ class ProviderHealthStoreScriptTest {
         val lines = script.trim().lineSequence().toList()
         assertEquals(2, lines.size)
         assertEquals(
-            "rm -f /data/user/*/com.netease.cloudmusic/files/hle_provider/netease.marker 2>/dev/null",
+            "rm -f /data/user/*/com.netease.cloudmusic/files/hle_provider/netease.marker " +
+                "/data_mirror/data_ce/null/*/com.netease.cloudmusic/files/hle_provider/netease.marker " +
+                "2>/dev/null",
             lines.first(),
         )
 
@@ -231,6 +239,30 @@ class ProviderApplyStateTest {
     }
 }
 
+class ProviderApplyStateDisabledTest {
+
+    @Test
+    fun badInstalledWithoutLowerLoadedVersionIsDisabledNotRolledBack() {
+        // 酷我：已装 15 在坏版本里，没有上一版，目标进程不加载任何版本，`.loaded` 残留 15。
+        assertEquals(
+            ProviderApplyState.Badge.DISABLED,
+            ProviderApplyState.badge(15, 15, setOf(15)),
+        )
+        assertEquals(
+            ProviderApplyState.Badge.DISABLED,
+            ProviderApplyState.badge(15, 0, setOf(15)),
+        )
+    }
+
+    @Test
+    fun badInstalledWithLowerLoadedVersionIsRolledBack() {
+        assertEquals(
+            ProviderApplyState.Badge.ROLLED_BACK,
+            ProviderApplyState.badge(15, 14, setOf(15)),
+        )
+    }
+}
+
 class ProviderTargetStateSnapshotCodecTest {
 
     @Test
@@ -266,5 +298,28 @@ class ProviderTargetStateSnapshotCodecTest {
         assertEquals(ProviderTargetStateSnapshot.EMPTY, decoded)
         assertTrue(decoded.badVersionsByPlugin.isEmpty())
         assertTrue(decoded.loadedVersionByPlugin.isEmpty())
+    }
+}
+
+class ProviderTargetStateParserNoTrailingNewlineTest {
+
+    @Test
+    fun filesWithoutTrailingNewlineStayAttributedToTheirOwnPlugin() {
+        // 脚本在 cat 后补 echo；每个文件内容独占一行，头行不会被接在内容后面。
+        val snapshot = ProviderTargetStateParser.parse(
+            listOf(
+                "=== /data_mirror/data_ce/null/0/com.apple.android.music/files/hle_provider/applemusic.bad",
+                "4",
+                "=== /data_mirror/data_ce/null/0/com.apple.android.music/files/hle_provider/applemusic.loaded",
+                "20",
+                "=== /data_mirror/data_ce/null/0/com.kugou.android/files/hle_provider/kugou.loaded",
+                "19",
+                "",
+            ),
+        )
+
+        assertEquals(setOf(4), snapshot.badVersionsByPlugin["applemusic"])
+        assertEquals(20, snapshot.loadedVersionByPlugin["applemusic"])
+        assertEquals(19, snapshot.loadedVersionByPlugin["kugou"])
     }
 }

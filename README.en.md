@@ -16,7 +16,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Android-13%2B-3DDC84?style=flat-square" alt="Android 13 or later" />
   <img src="https://img.shields.io/badge/ABI-arm64--v8a-64748B?style=flat-square" alt="arm64-v8a" />
-  <a href="#compatibility"><img src="https://img.shields.io/badge/Apple%20Music-6.5.0%E2%80%936.5.3-FA243C?style=flat-square" alt="Supported Apple Music versions: 6.5.0–6.5.3" /></a>
+  <a href="#compatibility"><img src="https://img.shields.io/badge/Apple%20Music-6.5.0%E2%80%937.0.0-FA243C?style=flat-square" alt="Supported Apple Music versions: 6.5.0–7.0.0" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0-2563EB?style=flat-square" alt="GPL-3.0 license" /></a>
 </p>
 
@@ -178,7 +178,7 @@ If you only use Apple Music enhancements, you do not need to select system compo
 | Feature | Environment and limitations |
 | :--- | :--- |
 | HyperIsland and media-card enhancements | Targets HyperOS 3 / 4 with LSPosed v2.0+; depends on the specific SystemUI and system plugin implementations |
-| Apple Music enhancements | Android 13+ with LSPosed; the code includes adaptation profiles for **Apple Music 6.5.0–6.5.3**, not a guarantee of compatibility with arbitrary versions |
+| Apple Music enhancements | Android 13+ with LSPosed; the code includes adaptation profiles for **Apple Music 6.5.0–7.0.0**, not a guarantee of compatibility with arbitrary versions |
 | Project-maintained Provider plugins | Requires the relevant app, plugin and scope; consult the plugin catalog and release notes for versions and capabilities |
 | Lock-screen AOD / classic AOD | Xiaomi-family devices with a compatible AOD implementation; presentation varies by system |
 | Notification lyrics | Android 13+; depends on permissions, player output and background operation |

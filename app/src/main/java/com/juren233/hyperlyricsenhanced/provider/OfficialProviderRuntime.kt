@@ -103,11 +103,23 @@ object OfficialProviderRuntime {
             // 坏版本对所有进程生效，避免主进程已回退而子进程仍加载坏版本。
             val badVersionCodes = store?.readBadVersions(definition.id).orEmpty()
             val decision = if (isMainProcess) {
+                val marker = store?.readMarker(definition.id)
+                val previousExitReason = ProviderProcessExit.previousExitReason(packageName, marker)
+                val previousExitWasCrash = previousExitReason?.let(ProviderProcessExit::isCrashReason) ?: false
+                if (BuildConfig.DEBUG && marker != null) {
+                    module.log(
+                        Log.INFO,
+                        TAG,
+                        "留存标记的上次退出: id=${definition.id} marker=${ProviderLoadMarker.encode(marker)} " +
+                            "exitReason=$previousExitReason crash=$previousExitWasCrash",
+                    )
+                }
                 ProviderLoadMarker.decide(
                     pendingVersionCode = installedVersion,
-                    marker = store?.readMarker(definition.id),
+                    marker = marker,
                     previousVersionCode = previousVersionCode,
                     badVersionCodes = badVersionCodes,
+                    previousExitWasCrash = previousExitWasCrash,
                 )
             } else if (installedVersion in badVersionCodes) {
                 ProviderLoadMarker.decide(
@@ -132,6 +144,8 @@ object OfficialProviderRuntime {
                     store?.addBadVersion(definition.id, decision.badVersionCode)
                     val fallbackVersion = decision.fallbackVersionCode
                     if (fallbackVersion == null) {
+                        // 基线包若能加载，loadBaseline 会重写已加载版本；否则本次没有加载任何版本。
+                        store?.clearLoadedVersion(definition.id)
                         if (isAppleMusic) {
                             loadBaseline(
                                 module = module,
@@ -201,7 +215,10 @@ object OfficialProviderRuntime {
                         )
                     }
                     if (isMainProcess) {
-                        store?.writeMarker(definition.id, decision.newMarker)
+                        store?.writeMarker(
+                            definition.id,
+                            decision.newMarker.copy(pid = android.os.Process.myPid()),
+                        )
                     }
                     loadPlugin(
                         module = module,
@@ -261,7 +278,8 @@ object OfficialProviderRuntime {
             verified = verified,
             expectedVersion = verified.manifest.versionCode,
             source = "baseline",
-            store = null,
+            // 只用于写入「实际加载版本」供界面读回；基线包不参与崩溃标记与坏版本回退。
+            store = ProviderTargetStateStore.forTargetProcess(packageName),
             scheduleMarkerClear = false,
             loadTiming = "baseline",
         )
@@ -370,6 +388,15 @@ object OfficialProviderRuntime {
         host.logInstalled(definition.id)
         loadedPackages += packageName
         store?.writeLoadedVersion(definition.id, expectedVersion)
+        if (BuildConfig.DEBUG) {
+            module.log(
+                Log.INFO,
+                TAG,
+                "已加载版本记录: id=${definition.id} package=$packageName source=$source " +
+                    "version=$expectedVersion storeAvailable=${store != null} " +
+                    "readBack=${store?.readLoadedVersion(definition.id)}",
+            )
+        }
         if (scheduleMarkerClear) {
             scheduleMarkerClear(store, definition.id)
         }

@@ -6,6 +6,7 @@
 
 package com.juren233.hyperlyricsenhanced.provider
 
+import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.common.PrefsBridge
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.root.utils.ShellUtils
@@ -54,6 +55,13 @@ object OfficialProviderHealthStore {
             val lockedNow = System.currentTimeMillis()
             if (!force && lockedNow - cachedAtMs < CACHE_TTL_MS) return@withLock cached
             val readLines = ShellUtils.execRootScriptLines("sh", buildReadScript(targetPackages))
+            if (BuildConfig.DEBUG) {
+                OfficialProviderAcquisitionLog.info(
+                    "目标进程状态读回: packages=${targetPackages.joinToString()} " +
+                        "result=${if (readLines == null) "null" else "lines=${readLines.size}"} " +
+                        "raw=${readLines?.joinToString("|")?.take(800)}",
+                )
+            }
             val parsed = if (readLines != null) {
                 // 只有 root 读回真正成功才覆盖缓存，失败（无 root/被拒）保留旧值。
                 ProviderTargetStateParser.parse(readLines).also(::persistSnapshot)
@@ -127,15 +135,29 @@ object OfficialProviderHealthStore {
             .flatMap { it.targetPackages }
             .distinct()
 
+    /**
+     * 目标进程状态目录在 root 会话里的候选位置。KernelSU 等方案给 App 的 root 会话常在独立
+     * 挂载命名空间里，`/data/user/<id>/<包名>` 不可见（2026-10-30 真机探测：会话内
+     * `/data/data` 只有 3 个包目录），而 Android 的 `/data_mirror/data_ce/null/<id>/<包名>`
+     * 镜像仍可见并含目标进程写入的文件。两处都列出，哪处存在读哪处。
+     */
+    private fun stateDirectoryGlobs(pkg: String): List<String> = listOf(
+        "/data/user/*/$pkg/files/${ProviderTargetStateStore.DIRECTORY_NAME}",
+        "/data_mirror/data_ce/null/*/$pkg/files/${ProviderTargetStateStore.DIRECTORY_NAME}",
+    )
+
+    /**
+     * 状态文件（如 `20`）不带结尾换行，必须在 cat 后补一个换行，否则下一个文件的
+     * `=== 路径` 头会接在上一个文件内容之后，解析时头行丢失、内容被张冠李戴
+     * （2026-10-30 真机：酷狗的 `19` 被记成 Apple Music 的坏版本）。
+     */
     internal fun buildReadScript(targetPackages: List<String>): String = buildString {
         targetPackages.forEach { rawPackage ->
             // 目标包名来自内置目录（点分字母数字），剔除引号后可直接拼进路径。
             val pkg = rawPackage.replace("'", "").replace(" ", "")
-            append("for f in /data/user/*/")
-            append(pkg)
-            append("/files/")
-            append(ProviderTargetStateStore.DIRECTORY_NAME)
-            append("/*; do [ -f \"\$f\" ] || continue; echo \"=== \$f\"; cat \"\$f\" 2>/dev/null; done\n")
+            append("for f in ")
+            append(stateDirectoryGlobs(pkg).joinToString(" ") { "$it/*" })
+            append("; do [ -f \"\$f\" ] || continue; echo \"=== \$f\"; cat \"\$f\" 2>/dev/null; echo; done\n")
         }
         append("exit 0")
     }
@@ -148,14 +170,8 @@ object OfficialProviderHealthStore {
         targetPackages.forEach { rawPackage ->
             val pkg = rawPackage.replace("'", "").replace(" ", "")
             fileSuffixes.forEach { suffix ->
-                append("rm -f /data/user/*/")
-                append(pkg)
-                append("/files/")
-                append(ProviderTargetStateStore.DIRECTORY_NAME)
-                append("/")
-                append(pluginId)
-                append('.')
-                append(suffix)
+                append("rm -f ")
+                append(stateDirectoryGlobs(pkg).joinToString(" ") { "$it/$pluginId.$suffix" })
                 append(" 2>/dev/null\n")
             }
         }
@@ -186,7 +202,7 @@ data class ProviderTargetStateSnapshot(
  */
 object ProviderApplyState {
 
-    enum class Badge { NONE, RESTART_PENDING, ROLLED_BACK }
+    enum class Badge { NONE, RESTART_PENDING, ROLLED_BACK, DISABLED }
 
     fun badge(
         installedVersionCode: Int,
@@ -194,9 +210,51 @@ object ProviderApplyState {
         badVersionCodes: Set<Int>,
     ): Badge = when {
         installedVersionCode <= 0 -> Badge.NONE
-        installedVersionCode in badVersionCodes -> Badge.ROLLED_BACK
+        // 只有实际加载了比已装版本更低的版本才算「已回退」；没有可回退的上一版时目标进程
+        // 不加载任何版本（rollback_without_previous），`.loaded` 里残留的是更早成功加载的记录。
+        installedVersionCode in badVersionCodes ->
+            if (loadedVersionCode in 1 until installedVersionCode) Badge.ROLLED_BACK else Badge.DISABLED
         loadedVersionCode > 0 && loadedVersionCode < installedVersionCode -> Badge.RESTART_PENDING
         else -> Badge.NONE
+    }
+}
+
+/**
+ * 界面显示的版本名：优先显示目标进程实际加载的版本（已装版本可能与之不同，
+ * 例如内置基线包比已装远程包更新时加载的是基线包）。
+ */
+object ProviderLoadedVersion {
+
+    /**
+     * 实际会被加载的版本：内置基线包比已装远程包新时目标进程加载基线包
+     * （见 OfficialProviderRuntime），因此「已安装」与更新判断都以较新者为准。
+     */
+    fun effectiveVersionCode(installedVersionCode: Int, baselineVersionCode: Int): Int =
+        maxOf(installedVersionCode, baselineVersionCode)
+
+    fun effectiveVersionName(
+        installedVersionCode: Int,
+        installedVersionName: String?,
+        baselineVersionCode: Int,
+        baselineVersionName: String?,
+    ): String? =
+        if (baselineVersionCode > installedVersionCode) {
+            baselineVersionName ?: installedVersionName
+        } else {
+            installedVersionName
+        }
+
+    fun displayName(
+        loadedVersionCode: Int,
+        installedVersionCode: Int,
+        installedVersionName: String?,
+        baselineVersionCode: Int,
+        baselineVersionName: String?,
+        releaseVersionNames: Map<Int, String>,
+    ): String? = when {
+        loadedVersionCode <= 0 || loadedVersionCode == installedVersionCode -> installedVersionName
+        loadedVersionCode == baselineVersionCode -> baselineVersionName
+        else -> releaseVersionNames[loadedVersionCode] ?: loadedVersionCode.toString()
     }
 }
 

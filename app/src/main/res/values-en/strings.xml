@@ -283,6 +283,7 @@
     <string name="provider_status_restart_pending">Takes effect after the music app restarts</string>
     <string name="provider_status_core_update_required">Newer version requires an app update</string>
     <string name="provider_status_rolled_back">Rolled back to v%1$s</string>
+    <string name="provider_status_disabled_by_bad_version">Disabled after repeated crashes</string>
     <string name="provider_action_apply_now">Apply now (force-stop music app)</string>
     <string name="provider_apply_now_success">Music app stopped. Reopen it to apply.</string>
     <string name="provider_apply_now_failed">Failed to stop the music app. Restart it manually.</string>

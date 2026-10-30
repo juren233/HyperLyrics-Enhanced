@@ -284,6 +284,7 @@
     <string name="provider_status_restart_pending">重启音乐 App 后生效</string>
     <string name="provider_status_core_update_required">新版本需更新 App 后可用</string>
     <string name="provider_status_rolled_back">已回退至 v%1$s</string>
+    <string name="provider_status_disabled_by_bad_version">因连续异常已停用</string>
     <string name="provider_action_apply_now">立即生效（强行停止音乐 App）</string>
     <string name="provider_apply_now_success">已停止音乐 App，重新打开后生效</string>
     <string name="provider_apply_now_failed">停止音乐 App 失败，请手动重启后生效</string>

@@ -58,7 +58,10 @@ data class OfficialProviderItem(
     val badVersionCodes: Set<Int> = emptySet(),
     val restartPending: Boolean = false,
     val rolledBack: Boolean = false,
+    val disabledByBadVersion: Boolean = false,
     val rolledBackVersionName: String? = null,
+    val loadedVersionCode: Int = 0,
+    val displayVersionName: String? = installedVersionName,
 ) {
     val installed: Boolean get() = installedVersionCode > 0
 
@@ -156,10 +159,10 @@ object OfficialProviderRepository {
                 } else {
                     null
                 }
-                val effectiveVersionCode = installedVersionCode
-                    .takeIf { it > 0 }
-                    ?: baselineManifest?.versionCode
-                    ?: 0
+                val effectiveVersionCode = ProviderLoadedVersion.effectiveVersionCode(
+                    installedVersionCode = installedVersionCode,
+                    baselineVersionCode = baselineManifest?.versionCode ?: 0,
+                )
                 if (effectiveVersionCode <= 0) return@mapNotNull null
 
                 val installedManifest = if (installedVersionCode > 0) {
@@ -173,9 +176,14 @@ object OfficialProviderRepository {
                 }
                 val versionNameKey = OfficialProviderCatalog.installedVersionNameKey(definition.id)
                 val storedVersionName = PrefsBridge.getString(versionNameKey)
-                val installedVersionName = installedManifest?.versionName
-                    ?: baselineManifest?.versionName
-                    ?: storedVersionName
+                val installedVersionName = ProviderLoadedVersion.effectiveVersionName(
+                    installedVersionCode = installedVersionCode,
+                    installedVersionName = installedManifest?.versionName
+                        ?: baselineManifest?.versionName
+                        ?: storedVersionName,
+                    baselineVersionCode = baselineManifest?.versionCode ?: 0,
+                    baselineVersionName = baselineManifest?.versionName,
+                )
 
                 OfficialProviderItem(
                     catalog = ProviderCatalogEntry(
@@ -270,10 +278,10 @@ object OfficialProviderRepository {
             } else {
                 null
             }
-            val effectiveVersionCode = installedVersionCode
-                .takeIf { it > 0 }
-                ?: baselineManifest?.versionCode
-                ?: 0
+            val effectiveVersionCode = ProviderLoadedVersion.effectiveVersionCode(
+                installedVersionCode = installedVersionCode,
+                baselineVersionCode = baselineManifest?.versionCode ?: 0,
+            )
             val storedVersionName = PrefsBridge.getString(
                 OfficialProviderCatalog.installedVersionNameKey(definition.id),
             )
@@ -287,6 +295,12 @@ object OfficialProviderRepository {
                     installedVersionName,
                 )
             }
+            val effectiveVersionName = ProviderLoadedVersion.effectiveVersionName(
+                installedVersionCode = installedVersionCode,
+                installedVersionName = installedVersionName,
+                baselineVersionCode = baselineManifest?.versionCode ?: 0,
+                baselineVersionName = baselineManifest?.versionName,
+            )
             val needsRepair = installedVersionCode > 0 && context != null && installedManifest == null
             val badVersionCodes = targetState.badVersionsByPlugin[definition.id].orEmpty()
             val selectedRelease = ProviderReleaseSelection.selectLatestCompatible(
@@ -297,7 +311,7 @@ object OfficialProviderRepository {
             val coreUpdateRequired = installedVersionCode > 0 &&
                 ProviderReleaseSelection.coreUpdateRequired(
                     entry = entry,
-                    installedVersionCode = installedVersionCode,
+                    installedVersionCode = effectiveVersionCode,
                     coreVersionCode = BuildConfig.VERSION_CODE,
                     badVersionCodes = badVersionCodes,
                 )
@@ -310,7 +324,18 @@ object OfficialProviderRepository {
             OfficialProviderItem(
                 catalog = entry,
                 installedVersionCode = effectiveVersionCode,
-                installedVersionName = installedVersionName,
+                installedVersionName = effectiveVersionName,
+                loadedVersionCode = loadedVersionCode,
+                displayVersionName = ProviderLoadedVersion.displayName(
+                    loadedVersionCode = loadedVersionCode,
+                    installedVersionCode = effectiveVersionCode,
+                    installedVersionName = effectiveVersionName,
+                    baselineVersionCode = baselineManifest?.versionCode ?: 0,
+                    baselineVersionName = baselineManifest?.versionName,
+                    releaseVersionNames = entry.releases
+                        .mapNotNull { release -> release.versionName?.let { release.versionCode to it } }
+                        .toMap(),
+                ),
                 enabled = PrefsBridge.getBoolean(
                     OfficialProviderCatalog.enabledKey(definition.id),
                     definition.id == OfficialProviderCatalog.APPLE_MUSIC_PLUGIN_ID,
@@ -321,6 +346,7 @@ object OfficialProviderRepository {
                 badVersionCodes = badVersionCodes,
                 restartPending = applyBadge == ProviderApplyState.Badge.RESTART_PENDING,
                 rolledBack = applyBadge == ProviderApplyState.Badge.ROLLED_BACK,
+                disabledByBadVersion = applyBadge == ProviderApplyState.Badge.DISABLED,
                 rolledBackVersionName = entry.releases
                     .firstOrNull { it.versionCode == loadedVersionCode }
                     ?.versionName

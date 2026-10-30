@@ -190,6 +190,7 @@ fun LyricProviderPage() {
                                     current.copy(
                                         installedVersionCode = manifest.versionCode,
                                         installedVersionName = manifest.versionName,
+                                        displayVersionName = manifest.versionName,
                                         enabled = true,
                                     )
                                 } else {
@@ -245,6 +246,7 @@ fun LyricProviderPage() {
                                     current.copy(
                                         installedVersionCode = manifest.versionCode,
                                         installedVersionName = manifest.versionName,
+                                        displayVersionName = manifest.versionName,
                                         enabled = true,
                                         needsRepair = false,
                                     )

@@ -138,6 +138,9 @@ internal suspend fun refreshInstalledProviderUpdates(
                     installedVersionCode = localItem.installedVersionCode,
                     installedVersionName = localItem.installedVersionName
                         ?: remoteItem.installedVersionName,
+                    loadedVersionCode = remoteItem.loadedVersionCode,
+                    displayVersionName = remoteItem.displayVersionName
+                        ?: localItem.installedVersionName,
                     enabled = localItem.enabled,
                     needsRepair = localItem.needsRepair || remoteItem.needsRepair,
                 ) ?: localItem
@@ -284,7 +287,7 @@ internal fun LazyListScope.providerSections(
             }
             val isExpanded = expandedStates[packageName] ?: false
             val busy = item.catalog.id in officialUiState.busyPluginIds
-            val installedVersionName = item.installedVersionName ?: stringResource(R.string.unknown)
+            val installedVersionName = item.displayVersionName ?: stringResource(R.string.unknown)
             val providerDescription = OfficialProviderCatalog
                 .definitionForId(item.catalog.id)
                 ?.description
@@ -339,6 +342,9 @@ internal fun LazyListScope.providerSections(
                                         item.rolledBackVersionName ?: stringResource(R.string.unknown),
                                     ),
                                 )
+                            } else if (!busy && item.disabledByBadVersion) {
+                                append(" · ")
+                                append(stringResource(R.string.provider_status_disabled_by_bad_version))
                             } else if (!busy && item.restartPending) {
                                 append(" · ")
                                 append(stringResource(R.string.provider_status_restart_pending))
@@ -365,7 +371,8 @@ internal fun LazyListScope.providerSections(
                             } else {
                                 null
                             },
-                            onRepair = if (item.needsRepair && !busy) {
+                            // 因坏版本被停用时同样提供重装入口：重装会清掉目标进程里的坏版本记录。
+                            onRepair = if ((item.needsRepair || item.disabledByBadVersion) && !busy) {
                                 { onRepairOfficial(item) }
                             } else {
                                 null

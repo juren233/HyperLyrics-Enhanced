@@ -37,7 +37,10 @@ class ProviderLoadMarkerTest {
         assertNull(ProviderLoadMarker.decode("0:2:$nowMs"))
         assertNull(ProviderLoadMarker.decode("29:0:$nowMs"))
         assertNull(ProviderLoadMarker.decode("29:2:0"))
-        assertNull(ProviderLoadMarker.decode("29:2:${nowMs}:1"))
+        // 第 4 段是写入标记的进程 pid（可选），必须是非负整数；超过 4 段一律无效。
+        assertNull(ProviderLoadMarker.decode("29:2:${nowMs}:x"))
+        assertNull(ProviderLoadMarker.decode("29:2:${nowMs}:-1"))
+        assertNull(ProviderLoadMarker.decode("29:2:${nowMs}:1:2"))
     }
 
     @Test
@@ -204,5 +207,65 @@ class ProviderLoadMarkerTest {
         )
 
         assertEquals(ProviderLoadMarker.Decision.Rollback(28, null), decision)
+    }
+
+    @Test
+    fun markerWithPidRoundTripsAndLegacyFormatStillDecodes() {
+        val withPid = ProviderLoadMarker.MarkerState(15, 1, nowMs, pid = 4321)
+        assertEquals("15:1:$nowMs:4321", ProviderLoadMarker.encode(withPid))
+        assertEquals(withPid, ProviderLoadMarker.decode("15:1:$nowMs:4321"))
+        assertEquals(
+            ProviderLoadMarker.MarkerState(15, 1, nowMs, pid = 0),
+            ProviderLoadMarker.decode("15:1:$nowMs"),
+        )
+    }
+
+    @Test
+    fun userKillsBetweenLoadsNeverRollBack() {
+        // 标记计数 2 且已达上限，但上一次退出不是崩溃（划掉/强停/系统回收）：不回退，计数不增长。
+        val marker = ProviderLoadMarker.MarkerState(15, 2, nowMs - 1_000, pid = 99)
+        val decision = ProviderLoadMarker.decide(
+            pendingVersionCode = 15,
+            marker = marker,
+            previousVersionCode = 0,
+            previousExitWasCrash = false,
+            nowMs = nowMs,
+        ) as ProviderLoadMarker.Decision.LoadNormally
+        assertEquals(2, decision.newMarker.uncleanCount)
+    }
+
+    @Test
+    fun singleLoadKilledByUserStartsOverAtOne() {
+        val marker = ProviderLoadMarker.MarkerState(15, 1, nowMs - 1_000, pid = 99)
+        val decision = ProviderLoadMarker.decide(
+            pendingVersionCode = 15,
+            marker = marker,
+            previousVersionCode = 0,
+            previousExitWasCrash = false,
+            nowMs = nowMs,
+        ) as ProviderLoadMarker.Decision.LoadNormally
+        assertEquals(1, decision.newMarker.uncleanCount)
+    }
+
+    @Test
+    fun realCrashesStillRollBackAtTheLimit() {
+        val marker = ProviderLoadMarker.MarkerState(15, ProviderLoadMarker.DEFAULT_MAX_STRIKES, nowMs - 1_000, pid = 99)
+        val decision = ProviderLoadMarker.decide(
+            pendingVersionCode = 15,
+            marker = marker,
+            previousVersionCode = 14,
+            previousExitWasCrash = true,
+            nowMs = nowMs,
+        )
+        assertTrue(decision is ProviderLoadMarker.Decision.Rollback)
+    }
+
+    @Test
+    fun onlyCrashExitReasonsCount() {
+        assertTrue(ProviderProcessExit.isCrashReason(android.app.ApplicationExitInfo.REASON_CRASH))
+        assertTrue(ProviderProcessExit.isCrashReason(android.app.ApplicationExitInfo.REASON_CRASH_NATIVE))
+        assertEquals(false, ProviderProcessExit.isCrashReason(android.app.ApplicationExitInfo.REASON_USER_REQUESTED))
+        assertEquals(false, ProviderProcessExit.isCrashReason(android.app.ApplicationExitInfo.REASON_OTHER))
+        assertEquals(false, ProviderProcessExit.isCrashReason(android.app.ApplicationExitInfo.REASON_LOW_MEMORY))
     }
 }

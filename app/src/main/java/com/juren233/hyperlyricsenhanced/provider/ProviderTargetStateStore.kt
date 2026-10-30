@@ -52,6 +52,11 @@ class ProviderTargetStateStore(private val dir: File) {
         writeFile(loadedVersionFile(pluginId), versionCode.toString())
     }
 
+    /** 本次启动没有加载任何版本（无可回退的上一版）时清掉过期的已加载记录。 */
+    fun clearLoadedVersion(pluginId: String) {
+        runCatching { loadedVersionFile(pluginId).delete() }
+    }
+
     private fun markerFile(pluginId: String) = File(dir, "$pluginId.marker")
     private fun badVersionsFile(pluginId: String) = File(dir, "$pluginId.bad")
     private fun loadedVersionFile(pluginId: String) = File(dir, "$pluginId.loaded")
