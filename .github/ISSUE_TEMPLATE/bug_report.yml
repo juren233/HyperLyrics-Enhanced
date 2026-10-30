@@ -10,8 +10,24 @@ body:
         注意：本项目不接受任何移植包、官改包以及修改版 com.android.systemui 或 miui.systemui.plugin 的问题反馈。
         Note: Bug reports from ported ROMs, custom official ROMs, or modified com.android.systemui / miui.systemui.plugin are not accepted.
 
-        提示：请在导出日志前，先在应用设置内将“日志输出等级”改为“调试日志”，然后复现一次您遇到的问题，再行导出日志。
-        Tip: Before exporting logs, please change "Log Level" to "Debug" in the app settings, reproduce the issue, and then export the logs.
+        ## 如何更快解决问题 / How to get your issue solved faster
+        **没有日志的反馈无法定位问题，将被自动标记为「无效」，3 天内未补充会被关闭。请务必先按下面的流程获取 Debug 日志，再提交。**
+        Reports without logs cannot be investigated; they are labeled "invalid" automatically and closed if no logs are added within 3 days. Please follow the steps below to get Debug logs before submitting.
+
+        1. 安装 Debug 包（如果当前已经是 Debug 包，无需重复安装）：前往 [Releases](https://github.com/juren233/HyperLyrics-Enhanced/releases) 下载文件名含 `debug` 的 APK 安装，安装后点击主页右上角的刷新按钮，重启一次系统界面与所有音乐 App。
+        2. 将日志输出等级改为调试：HyperLyrics Enhanced 设置 →「调试信息」→「日志输出等级」→「调试日志」。
+        3. 复现问题：保持上述设置，重新操作一遍出问题的步骤。
+        4. 导出全部日志：复现后立即在同一「调试信息」页面点击「导出全部日志」。
+        5. 把导出的日志文件拖进下方「日志」一栏上传。
+
+        1. Install the Debug build (no need to reinstall if you are already on one): download the APK whose file name contains `debug` from [Releases](https://github.com/juren233/HyperLyrics-Enhanced/releases). After installing, tap the refresh button at the top right of the home page to restart System UI and all music apps once.
+        2. Set the log level to Debug: HyperLyrics Enhanced Settings → "Debug Info" → "Log Level" → "Debug".
+        3. Reproduce the problem: keep that setting and repeat the steps that trigger the issue.
+        4. Export all logs: right after reproducing, tap "Export All Logs" on the same "Debug Info" page.
+        5. Drag the exported log file into the "Logs" field below.
+
+        提交前请先搜索现有 issue，避免重复反馈；描述请写清楚「做了什么、期望什么、实际发生了什么」。
+        Please search existing issues first to avoid duplicates, and describe what you did, what you expected, and what actually happened.
   - type: dropdown
     id: system_platform
     attributes:

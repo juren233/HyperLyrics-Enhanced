@@ -1,0 +1,57 @@
+name: Issue 日志检查与无效 Issue 清理
+
+on:
+  issues:
+    types: [opened, edited]
+  issue_comment:
+    types: [created]
+  schedule:
+    - cron: '41 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: issue-log-check-${{ github.event.issue.number || 'schedule' }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    if: github.event_name != 'schedule' && github.event_name != 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: 拉取代码 Checkout
+        uses: actions/checkout@v6
+
+      - name: 检查日志并回复指引 Check Logs
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const { checkOpened, checkSupplement } = require('./.github/scripts/issue-log-check.js');
+            if (context.eventName === 'issues' && context.payload.action === 'opened') {
+              await checkOpened({ github, context, core });
+            } else {
+              await checkSupplement({ github, context, core });
+            }
+
+  close-invalid:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: 拉取代码 Checkout
+        uses: actions/checkout@v6
+
+      - name: 关闭无效 Issue Close Invalid Issues
+        uses: actions/github-script@v9
+        env:
+          INVALID_TIMEOUT_DAYS: '3'
+        with:
+          script: |
+            const { closeInvalid } = require('./.github/scripts/issue-log-check.js');
+            await closeInvalid({ github, context, core });
