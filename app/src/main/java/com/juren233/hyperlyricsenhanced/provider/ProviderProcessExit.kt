@@ -63,10 +63,10 @@ object ProviderProcessExit {
             // getList 在新版本里声明于父类 BaseParceledListSlice，沿继承链查找声明处。
             val getList = generateSequence<Class<*>>(slice.javaClass) { it.superclass }
                 .firstNotNullOf { type ->
-                    @Suppress("UNCHECKED_CAST")
-                    (HiddenApiBypass.getDeclaredMethods(type) as List<java.lang.reflect.Method>).firstOrNull {
-                        it.name == "getList" && it.parameterCount == 0
-                    }
+                    // 返回的列表同时含构造器（Executable），必须按元素过滤而不是强转整张列表。
+                    HiddenApiBypass.getDeclaredMethods(type)
+                        .filterIsInstance<java.lang.reflect.Method>()
+                        .firstOrNull { it.name == "getList" && it.parameterCount == 0 }
                 }
             @Suppress("UNCHECKED_CAST")
             getList.invoke(slice) as List<ApplicationExitInfo>
