@@ -11,7 +11,6 @@ import android.app.ApplicationExitInfo
 import android.content.Context
 import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
-import org.lsposed.hiddenapibypass.HiddenApiBypass
 
 /**
  * 判定留存崩溃标记的那次进程退出是否为应用自身崩溃（Java 未捕获异常或 native 崩溃）。
@@ -69,30 +68,18 @@ object ProviderProcessExit {
      */
     private fun queryViaActivityService(packageName: String, pid: Int): List<ApplicationExitInfo>? =
         runCatching {
-            // 目标进程按普通 App 受 hidden API 限制；HiddenApiBypass 只对这几次反射取得的 Method 解除限制，
-            // 不改动进程级豁免名单，不会覆盖同进程其它模块的设置。
-            val getService = HiddenApiBypass.getDeclaredMethod(ActivityManager::class.java, "getService")
-            val service = getService.invoke(null)!!
-            val query = HiddenApiBypass.getDeclaredMethod(
-                Class.forName("android.app.IActivityManager"),
-                "getHistoricalProcessExitReasons",
-                String::class.java,
-                Int::class.javaPrimitiveType,
-                Int::class.javaPrimitiveType,
-                Int::class.javaPrimitiveType,
-            )
+            // 只用普通反射，不走 HiddenApiBypass：4.3 的 getDeclaredMethod(s) 依赖 Unsafe 改写 ART 内部字段，
+            // 在 Android 17 上疑似直接 native 崩溃（issue #66 canary.8/9）。被 hidden API 限制挡住时
+            // 这里抛异常返回 null，回退到建系统 Context 的路径，那条路径的重入已由两层拦截兜住。
+            val service = ActivityManager::class.java.getDeclaredMethod("getService").invoke(null)!!
+            val query = service.javaClass.methods.first {
+                it.name == "getHistoricalProcessExitReasons" && it.parameterTypes.size == 4
+            }
             val userId = android.os.Process.myUid() / PER_USER_RANGE
             val slice = query.invoke(service, packageName, pid, 1, userId) ?: return@runCatching emptyList()
-            // getList 在新版本里声明于父类 BaseParceledListSlice，沿继承链查找声明处。
-            val getList = generateSequence<Class<*>>(slice.javaClass) { it.superclass }
-                .firstNotNullOf { type ->
-                    // 返回的列表同时含构造器（Executable），必须按元素过滤而不是强转整张列表。
-                    HiddenApiBypass.getDeclaredMethods(type)
-                        .filterIsInstance<java.lang.reflect.Method>()
-                        .firstOrNull { it.name == "getList" && it.parameterCount == 0 }
-                }
+            // getList 是 BaseParceledListSlice 的 public 方法，getMethod 会沿继承链找到。
             @Suppress("UNCHECKED_CAST")
-            getList.invoke(slice) as List<ApplicationExitInfo>
+            slice.javaClass.getMethod("getList").invoke(slice) as List<ApplicationExitInfo>
         }.onFailure {
             // 仅 debug 构建记录，走 HookLogger 以便出现在导出的模块日志里；
             // 直连失败会回退到建系统 Context 的旧路径。

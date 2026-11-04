@@ -77,6 +77,26 @@ class TargetCrashRecorderTest {
     }
 
     @Test
+    fun `installed handler records the crash then hands it to the previous handler`() {
+        val original = Thread.getDefaultUncaughtExceptionHandler()
+        val delegated = mutableListOf<Throwable>()
+        try {
+            Thread.setDefaultUncaughtExceptionHandler { _, error -> delegated += error }
+            TargetCrashRecorder.install("com.apple.android.music", "com.apple.android.music")
+            TargetCrashRecorder.install("com.apple.android.music", "com.apple.android.music")
+
+            val crash = IllegalStateException("startup crash")
+            Thread.getDefaultUncaughtExceptionHandler()!!.uncaughtException(Thread.currentThread(), crash)
+
+            assertSame(crash, entries.single().error)
+            // 崩溃仍交回原处理器，且重复 install 不会叠出第二层包装。
+            assertEquals(listOf<Throwable>(crash), delegated)
+        } finally {
+            Thread.setDefaultUncaughtExceptionHandler(original)
+        }
+    }
+
+    @Test
     fun `description identifies process and thread`() {
         val thread = Thread({}, "main")
         assertEquals(

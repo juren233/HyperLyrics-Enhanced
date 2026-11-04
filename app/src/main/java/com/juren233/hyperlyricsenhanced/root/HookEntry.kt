@@ -400,7 +400,7 @@ class HookEntry : XposedModule() {
             packageName != "com.android.settings"
         ) {
             // 目标 App 的崩溃栈写进模块日志，用户导出一份日志即可定位闪退，不用另抓 logcat。
-            TargetCrashRecorder.install(this, packageName, processName)
+            TargetCrashRecorder.install(packageName, processName)
             runCatching {
                 LyriconProviderControlFrameBridge.install(
                     module = this,
