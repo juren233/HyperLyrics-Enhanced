@@ -29,14 +29,39 @@ object ProviderProcessExit {
     /** 标记所属进程的退出原因（[ApplicationExitInfo] 的 REASON_*）；查不到为 null。 */
     fun previousExitReason(packageName: String, marker: ProviderLoadMarker.MarkerState?): Int? {
         if (marker == null || marker.pid <= 0) return null
-        val context = targetContext() ?: return null
-        val manager = context.getSystemService(ActivityManager::class.java) ?: return null
-        val exits = runCatching {
-            manager.getHistoricalProcessExitReasons(packageName, marker.pid, 1)
-        }.getOrNull().orEmpty()
+        // 先走系统服务直连：不构建任何 Context，onPackageLoaded 阶段也不会触发 LoadedApk 新建与框架重入。
+        val exits = queryViaActivityService(packageName, marker.pid)
+            ?: queryViaContext(packageName, marker.pid)
+            ?: return null
         // 记录必须发生在写入标记之后，避免 pid 复用时误取更早的进程。
         return exits.firstOrNull { it.timestamp >= marker.lastAttemptAtMs }?.reason
     }
+
+    /**
+     * 反射调用 IActivityManager.getHistoricalProcessExitReasons(String, int, int, int)
+     * （AOSP android11-release 与 main 的 AIDL 签名一致）。失败返回 null，由调用方回退。
+     */
+    private fun queryViaActivityService(packageName: String, pid: Int): List<ApplicationExitInfo>? =
+        runCatching {
+            val service = ActivityManager::class.java.getDeclaredMethod("getService").invoke(null)!!
+            val method = service.javaClass.methods.first {
+                it.name == "getHistoricalProcessExitReasons" && it.parameterTypes.size == 4
+            }
+            val userId = android.os.Process.myUid() / PER_USER_RANGE
+            val slice = method.invoke(service, packageName, pid, 1, userId) ?: return@runCatching emptyList()
+            @Suppress("UNCHECKED_CAST")
+            slice.javaClass.getMethod("getList").invoke(slice) as List<ApplicationExitInfo>
+        }.getOrNull()
+
+    private fun queryViaContext(packageName: String, pid: Int): List<ApplicationExitInfo>? {
+        val context = targetContext() ?: return null
+        val manager = context.getSystemService(ActivityManager::class.java) ?: return null
+        return runCatching {
+            manager.getHistoricalProcessExitReasons(packageName, pid, 1)
+        }.getOrNull().orEmpty()
+    }
+
+    private const val PER_USER_RANGE = 100000
 
     private fun targetContext(): Context? = runCatching {
         val activityThread = Class.forName("android.app.ActivityThread")

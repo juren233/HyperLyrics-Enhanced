@@ -369,7 +369,21 @@ class HookEntry : XposedModule() {
         )
     }
 
+    /** 正在处理 onPackageLoaded 的包名，用于拦截处理过程中框架对同一包名的重入回调。 */
+    private val packagesInLoad = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
     override fun onPackageLoaded(param: PackageLoadedParam) {
+        // 处理过程中若构建了系统 Context（新建 LoadedApk），框架会对同一包名再回调一次；
+        // 重入时整段跳过，避免 Hook 与控制帧通道被重复安装。
+        if (!packagesInLoad.add(param.packageName)) return
+        try {
+            handlePackageLoaded(param)
+        } finally {
+            packagesInLoad.remove(param.packageName)
+        }
+    }
+
+    private fun handlePackageLoaded(param: PackageLoadedParam) {
         val processName = runCatching { android.app.Application.getProcessName() }.getOrNull() ?: ""
         val packageName = param.packageName
 
