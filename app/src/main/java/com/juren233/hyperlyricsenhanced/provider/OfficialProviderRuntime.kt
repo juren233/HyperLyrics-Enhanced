@@ -26,7 +26,29 @@ object OfficialProviderRuntime {
     private val loadedPackages = ConcurrentHashMap.newKeySet<String>()
     private val loggedUnavailableReasons = ConcurrentHashMap.newKeySet<String>()
 
+    /** 正在安装中的包名，用于拦截安装过程触发的 onPackageLoaded 重入。 */
+    private val installingPackages = ConcurrentHashMap.newKeySet<String>()
+
+    /**
+     * onPackageLoaded 发生在 Application 创建之前。安装过程中读取退出记录需要系统 Context，
+     * 普通 App 进程里首次取系统 Context 会新建 LoadedApk，框架会对同一包名再回调一次
+     * onPackageLoaded；此处拦截同包重入，避免外层尚未返回时无限递归。
+     */
     fun installIfAvailable(
+        module: XposedModule,
+        targetClassLoader: ClassLoader,
+        packageName: String,
+        processName: String,
+    ): Boolean {
+        if (!installingPackages.add(packageName)) return false
+        return try {
+            installGuarded(module, targetClassLoader, packageName, processName)
+        } finally {
+            installingPackages.remove(packageName)
+        }
+    }
+
+    private fun installGuarded(
         module: XposedModule,
         targetClassLoader: ClassLoader,
         packageName: String,
