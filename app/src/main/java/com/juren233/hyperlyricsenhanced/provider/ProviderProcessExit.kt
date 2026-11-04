@@ -9,6 +9,8 @@ package com.juren233.hyperlyricsenhanced.provider
 import android.app.ActivityManager
 import android.app.ApplicationExitInfo
 import android.content.Context
+import android.util.Log
+import com.juren233.hyperlyricsenhanced.BuildConfig
 
 /**
  * 判定留存崩溃标记的那次进程退出是否为应用自身崩溃（Java 未捕获异常或 native 崩溃）。
@@ -43,6 +45,11 @@ object ProviderProcessExit {
      */
     private fun queryViaActivityService(packageName: String, pid: Int): List<ApplicationExitInfo>? =
         runCatching {
+            // 目标进程按普通 App 受 hidden API 限制，先精确解除这两个入口的限制（不放开其它接口）。
+            org.lsposed.hiddenapibypass.HiddenApiBypass.addHiddenApiExemptions(
+                "Landroid/app/ActivityManager;->getService",
+                "Landroid/app/IActivityManager",
+            )
             val service = ActivityManager::class.java.getDeclaredMethod("getService").invoke(null)!!
             val method = service.javaClass.methods.first {
                 it.name == "getHistoricalProcessExitReasons" && it.parameterTypes.size == 4
@@ -51,6 +58,9 @@ object ProviderProcessExit {
             val slice = method.invoke(service, packageName, pid, 1, userId) ?: return@runCatching emptyList()
             @Suppress("UNCHECKED_CAST")
             slice.javaClass.getMethod("getList").invoke(slice) as List<ApplicationExitInfo>
+        }.onFailure {
+            // 仅 debug 构建记录：直连失败会回退到建系统 Context 的旧路径，需要能看出是否生效。
+            if (BuildConfig.DEBUG) Log.w(TAG, "直连 ActivityManager 查询退出原因失败，回退 Context 路径", it)
         }.getOrNull()
 
     private fun queryViaContext(packageName: String, pid: Int): List<ApplicationExitInfo>? {
@@ -61,6 +71,7 @@ object ProviderProcessExit {
         }.getOrNull().orEmpty()
     }
 
+    private const val TAG = "ProviderProcessExit"
     private const val PER_USER_RANGE = 100000
 
     private fun targetContext(): Context? = runCatching {
