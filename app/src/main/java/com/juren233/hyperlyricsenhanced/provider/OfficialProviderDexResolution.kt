@@ -64,7 +64,7 @@ internal fun OfficialProviderHookHost.resolveDexMethod(
         val cachedResolution = runCatching { resolveMethod(cachedTarget) }
         if (cachedResolution.isSuccess) {
             recordDexMethodBaseline(application, query, cachedTarget)
-            module.log(
+            module.persistentLog(
                 Log.INFO,
                 tag,
                 "官方 Provider DexKit 缓存命中: package=$packageName " +
@@ -79,7 +79,7 @@ internal fun OfficialProviderHookHost.resolveDexMethod(
             return cachedTarget
         }
         preferences.edit().remove(cacheKey).apply()
-        module.log(
+        module.persistentLog(
             Log.WARN,
             tag,
             "官方 Provider DexKit 缓存失效，重新查询: package=$packageName " +
@@ -103,7 +103,7 @@ internal fun OfficialProviderHookHost.resolveDexMethod(
                         OfficialProviderDexMethodCacheCodec.encode(preferredTarget),
                     )
                     .apply()
-                module.log(
+                module.persistentLog(
                     Log.INFO,
                     tag,
                     "官方 Provider 首选目标命中并缓存: package=$packageName " +
@@ -117,7 +117,7 @@ internal fun OfficialProviderHookHost.resolveDexMethod(
                 )
                 return preferredTarget
             }
-            module.log(
+            module.persistentLog(
                 Log.WARN,
                 tag,
                 "官方 Provider 首选目标失效，进入 DexKit: package=$packageName " +
@@ -128,7 +128,7 @@ internal fun OfficialProviderHookHost.resolveDexMethod(
 
     val startNanos = System.nanoTime()
     val threadCount = selectDexKitThreadCount(application)
-    module.log(
+    module.persistentLog(
         Log.INFO,
         tag,
         "官方 Provider DexKit 开始查询: package=$packageName process=$processName " +
@@ -197,7 +197,7 @@ internal fun OfficialProviderHookHost.resolveDexMethod(
             }
         }
         if (semanticMatches.size != found.size) {
-            module.log(
+            module.persistentLog(
                 Log.INFO,
                 tag,
                 "官方 Provider DexKit 调用负约束过滤: package=$packageName " +
@@ -226,7 +226,7 @@ internal fun OfficialProviderHookHost.resolveDexMethod(
         .putString(cacheKey, OfficialProviderDexMethodCacheCodec.encode(target))
         .apply()
     val elapsedMs = (System.nanoTime() - startNanos) / 1_000_000L
-    module.log(
+    module.persistentLog(
         Log.INFO,
         tag,
         "官方 Provider DexKit 查询并校验成功: package=$packageName " +
@@ -280,7 +280,7 @@ internal fun OfficialProviderHookHost.startDexBatchResolution(
             registration.resolutionRunning.set(false)
             result.onSuccess { targets ->
                 if (forceFresh) {
-                    module.log(
+                    module.persistentLog(
                         Log.INFO,
                         tag,
                         "官方 Provider DexKit 批量自修复成功: package=$packageName " +
@@ -290,7 +290,7 @@ internal fun OfficialProviderHookHost.startDexBatchResolution(
                 }
                 runCatching { registration.callback.onMethodsResolved(targets) }
                     .onFailure { error ->
-                        module.log(
+                        module.persistentLog(
                             Log.ERROR,
                             tag,
                             "官方 Provider DexKit 批量回调失败: package=$packageName " +
@@ -299,7 +299,7 @@ internal fun OfficialProviderHookHost.startDexBatchResolution(
                         )
                     }
             }.onFailure { error ->
-                module.log(
+                module.persistentLog(
                     Log.ERROR,
                     tag,
                     "官方 Provider DexKit 批量解析失败: package=$packageName " +
@@ -361,7 +361,7 @@ internal fun OfficialProviderHookHost.startDexHookResolution(
             registration.resolutionRunning.set(false)
             result.onSuccess { target ->
                 if (forceFresh) {
-                    module.log(
+                    module.persistentLog(
                         Log.INFO,
                         tag,
                         "官方 Provider DexKit 单方法自修复成功: package=$packageName " +
@@ -370,7 +370,7 @@ internal fun OfficialProviderHookHost.startDexHookResolution(
                     )
                 }
             }.onFailure { error ->
-                module.log(
+                module.persistentLog(
                     Log.ERROR,
                     tag,
                     "官方 Provider DexKit Hook 失败: package=$packageName " +
@@ -415,7 +415,7 @@ internal fun OfficialProviderHookHost.requestDexHookRepair(
         ?.replace('\n', ' ')
         ?.replace('\r', ' ')
         ?.take(OfficialProviderHookHost.MAX_WATCHDOG_DETAIL_LENGTH)
-    module.log(
+    module.persistentLog(
         Log.WARN,
         tag,
         "官方 Provider DexKit 触发一次有界单方法自修复: package=$packageName " +
@@ -438,7 +438,7 @@ internal fun OfficialProviderHookHost.requestDexBatchRepair(
         ?.replace('\n', ' ')
         ?.replace('\r', ' ')
         ?.take(OfficialProviderHookHost.MAX_WATCHDOG_DETAIL_LENGTH)
-    module.log(
+    module.persistentLog(
         Log.WARN,
         tag,
         "官方 Provider DexKit 触发一次有界批量自修复: package=$packageName " +
@@ -532,7 +532,7 @@ internal fun OfficialProviderHookHost.logDexWatchdogEvent(event: DexWatchdogEven
         ?.replace('\n', ' ')
         ?.replace('\r', ' ')
         ?.take(OfficialProviderHookHost.MAX_WATCHDOG_DETAIL_LENGTH)
-    module.log(
+    module.persistentLog(
         Log.INFO,
         tag,
         "[ProviderDexWatchdog] stage=${event.stage}, result=${event.result}, " +
@@ -567,7 +567,7 @@ internal fun OfficialProviderHookHost.installAfterMethod(
     watchdogCacheKey?.let { key ->
         dexWatchdog?.hookInstalled(key, descriptor)
     }
-    module.log(Log.INFO, tag, "官方 Provider 方法 Hook 已安装: target=$descriptor")
+    module.persistentLog(Log.INFO, tag, "官方 Provider 方法 Hook 已安装: target=$descriptor")
 }
 
 internal fun OfficialProviderHookHost.resolveMethod(target: OfficialProviderMethodTarget): java.lang.reflect.Method {
@@ -634,7 +634,7 @@ internal fun OfficialProviderHookHost.selectDexMethodMatch(
             "count=${matches.size} repaired=${repaired.size} " +
             "targets=${matches.joinToString { describe(it) }}"
     }
-    module.log(
+    module.persistentLog(
         Log.INFO,
         tag,
         "官方 Provider DexKit 使用跨版本结构基线消歧: package=$packageName " +

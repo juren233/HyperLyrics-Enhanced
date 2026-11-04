@@ -65,6 +65,7 @@ import com.juren233.hyperlyricsenhanced.root.utils.LyricRuntimeDiagnostics
 import com.juren233.hyperlyricsenhanced.root.utils.IslandSystemFontWeight
 import com.juren233.hyperlyricsenhanced.root.utils.RuntimePerfDiagnostics
 import com.juren233.hyperlyricsenhanced.root.utils.RuntimeResourceCleanup
+import com.juren233.hyperlyricsenhanced.root.utils.TargetCrashRecorder
 import com.juren233.hyperlyricsenhanced.common.PreferenceDiagnostics
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.common.IslandFontWeightMode
@@ -398,6 +399,8 @@ class HookEntry : XposedModule() {
         if (packageName != "com.android.systemui" && packageName != "miui.systemui.plugin" &&
             packageName != "com.android.settings"
         ) {
+            // 目标 App 的崩溃栈写进模块日志，用户导出一份日志即可定位闪退，不用另抓 logcat。
+            TargetCrashRecorder.install(this, packageName, processName)
             runCatching {
                 LyriconProviderControlFrameBridge.install(
                     module = this,

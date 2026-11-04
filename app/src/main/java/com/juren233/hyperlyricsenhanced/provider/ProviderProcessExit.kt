@@ -30,15 +30,38 @@ object ProviderProcessExit {
         previousExitReason(packageName, marker)?.let(::isCrashReason) ?: false
 
     /** 标记所属进程的退出原因（[ApplicationExitInfo] 的 REASON_*）；查不到为 null。 */
-    fun previousExitReason(packageName: String, marker: ProviderLoadMarker.MarkerState?): Int? {
+    fun previousExitReason(packageName: String, marker: ProviderLoadMarker.MarkerState?): Int? =
+        previousExit(packageName, marker)?.reason
+
+    /** 标记所属进程的退出记录；查不到为 null。 */
+    fun previousExit(packageName: String, marker: ProviderLoadMarker.MarkerState?): ApplicationExitInfo? {
         if (marker == null || marker.pid <= 0) return null
         // 先走系统服务直连：不构建任何 Context，onPackageLoaded 阶段也不会触发 LoadedApk 新建与框架重入。
         val exits = queryViaActivityService(packageName, marker.pid)
             ?: queryViaContext(packageName, marker.pid)
             ?: return null
         // 记录必须发生在写入标记之后，避免 pid 复用时误取更早的进程。
-        return exits.firstOrNull { it.timestamp >= marker.lastAttemptAtMs }?.reason
+        return exits.firstOrNull { it.timestamp >= marker.lastAttemptAtMs }
     }
+
+    /**
+     * 值得写进模块日志的退出：崩溃与 ANR。native 崩溃与 ANR 不经过 Java 未捕获异常分发，
+     * 进程内抓不到，只能在下次启动时从系统退出记录里补记。
+     */
+    fun isAbnormalReason(reason: Int): Boolean =
+        isCrashReason(reason) || reason == ApplicationExitInfo.REASON_ANR
+
+    fun reasonLabel(reason: Int): String = when (reason) {
+        ApplicationExitInfo.REASON_CRASH -> "crash"
+        ApplicationExitInfo.REASON_CRASH_NATIVE -> "crash_native"
+        ApplicationExitInfo.REASON_ANR -> "anr"
+        else -> "reason_$reason"
+    }
+
+    /** native 崩溃时 status 为信号编号（如 11 = SIGSEGV），其余情况为退出码。 */
+    fun describeExit(reason: Int, status: Int, description: String?, timestamp: Long, pid: Int): String =
+        "reason=${reasonLabel(reason)} status=$status pid=$pid timestamp=$timestamp " +
+            "description=${description?.trim()?.takeIf(String::isNotEmpty) ?: "none"}"
 
     /**
      * 反射调用 IActivityManager.getHistoricalProcessExitReasons(String, int, int, int)

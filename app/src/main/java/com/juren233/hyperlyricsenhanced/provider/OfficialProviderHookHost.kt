@@ -89,7 +89,7 @@ internal class OfficialProviderHookHost(
         RuntimePerfDiagnostics.start(application, scope = "provider:$packageName")
         runCatching { callback.onApplicationCreated(application) }
             .onSuccess {
-                module.log(
+                module.persistentLog(
                     Log.INFO,
                     tag,
                     "官方 Provider 生命周期回调成功: package=$packageName source=$source app=${application::class.java.name}",
@@ -97,7 +97,7 @@ internal class OfficialProviderHookHost(
             }
             .onFailure { error ->
                 handledApplications.remove(application)
-                module.log(
+                module.persistentLog(
                     Log.ERROR,
                     tag,
                     "官方 Provider 生命周期回调失败: package=$packageName source=$source error=${error.message}",
@@ -150,7 +150,7 @@ internal class OfficialProviderHookHost(
             }
         }
 
-        module.log(
+        module.persistentLog(
             Log.INFO,
             tag,
             "官方 Provider 生命周期 Hook 已安装: package=$packageName",
@@ -177,7 +177,7 @@ internal class OfficialProviderHookHost(
                     interceptor = interceptor,
                     onFirstCallback = {
                         if (BuildConfig.DEBUG) {
-                            module.log(
+                            module.persistentLog(
                                 Log.INFO,
                                 tag,
                                 "官方 Provider 拦截 Hook 首次命中: target=$descriptor",
@@ -186,7 +186,7 @@ internal class OfficialProviderHookHost(
                     },
                     onFallback = { error ->
                         if (BuildConfig.DEBUG) {
-                            module.log(
+                            module.persistentLog(
                                 Log.ERROR,
                                 tag,
                                 "官方 Provider 拦截回调异常，已回退原调用结果: " +
@@ -198,7 +198,7 @@ internal class OfficialProviderHookHost(
             )
         }
         if (BuildConfig.DEBUG) {
-            module.log(Log.INFO, tag, "官方 Provider 拦截 Hook 已安装: target=$descriptor")
+            module.persistentLog(Log.INFO, tag, "官方 Provider 拦截 Hook 已安装: target=$descriptor")
         }
         return OfficialProviderHookHandle { runCatching { handle.unhook() } }
     }
@@ -216,7 +216,7 @@ internal class OfficialProviderHookHost(
             bridge.setMaxConcurrentQueries(1)
         }
     }.onFailure { error ->
-        module.log(
+        module.persistentLog(
             Log.ERROR,
             tag,
             "官方 Provider DexKit 打开失败: package=$packageName error=${error.message}",
@@ -233,7 +233,7 @@ internal class OfficialProviderHookHost(
             applicationProvider = ::findCurrentApplication,
             notificationAnchors = true,
             diagnostic = if (BuildConfig.DEBUG) {
-                { message -> module.log(Log.INFO, tag, message) }
+                { message -> module.persistentLog(Log.INFO, tag, message) }
             } else {
                 null
             },
@@ -278,7 +278,7 @@ internal class OfficialProviderHookHost(
                 ),
             )
         }
-        module.log(
+        module.persistentLog(
             Log.INFO,
             tag,
             "官方 Provider MediaSession Hook 已安装: package=$packageName",
@@ -309,7 +309,7 @@ internal class OfficialProviderHookHost(
                 ),
             )
         }
-        module.log(Log.INFO, tag, "官方 Provider 方法结果 Hook 已安装: target=$descriptor")
+        module.persistentLog(Log.INFO, tag, "官方 Provider 方法结果 Hook 已安装: target=$descriptor")
     }
 
     override fun hookAfterConstructor(
@@ -341,7 +341,7 @@ internal class OfficialProviderHookHost(
                 ),
             )
         }
-        module.log(Log.INFO, tag, "官方 Provider 构造 Hook 已安装: target=$descriptor")
+        module.persistentLog(Log.INFO, tag, "官方 Provider 构造 Hook 已安装: target=$descriptor")
     }
 
     override fun hookAfterDexMethod(
@@ -467,7 +467,7 @@ internal class OfficialProviderHookHost(
             .replace('\n', ' ')
             .replace('\r', ' ')
             .take(MAX_PROVIDER_DIAGNOSTIC_MESSAGE_LENGTH)
-        module.log(
+        module.persistentLog(
             Log.INFO,
             "OfficialProvider/$safeTag",
             safeMessage,
@@ -528,7 +528,7 @@ internal class OfficialProviderHookHost(
                 val firstHit = firstCallbackRecorded.compareAndSet(false, true)
                 if (BuildConfig.DEBUG) {
                     val now = SystemClock.elapsedRealtime()
-                    module.log(
+                    module.persistentLog(
                         Log.INFO,
                         "OfficialProviderHookHost",
                         "[LyricPositionDiag] stage=media_session_state_hook, " +
@@ -539,14 +539,14 @@ internal class OfficialProviderHookHost(
                             "speed=${state?.playbackSpeed}, buffered=${state?.bufferedPosition}",
                     )
                 } else if (firstHit) {
-                    module.log(
+                    module.persistentLog(
                         Log.INFO,
                         "OfficialProviderHookHost",
                         "官方 Provider PlaybackState Hook 首次命中: package=$packageName",
                     )
                 }
             }.onFailure { error ->
-                module.log(
+                module.persistentLog(
                     Log.ERROR,
                     "OfficialProviderHookHost",
                     "官方 Provider PlaybackState 回调失败: " +
@@ -559,7 +559,7 @@ internal class OfficialProviderHookHost(
         private fun deliverCurrentMetadataSnapshot(session: MediaSession?, state: PlaybackState?) {
             val snapshot = runCatching { session?.controller?.metadata }
                 .onFailure { error ->
-                    module.log(
+                    module.persistentLog(
                         Log.ERROR,
                         "OfficialProviderHookHost",
                         "官方 Provider MediaSession Metadata 快照读取失败: " +
@@ -575,7 +575,7 @@ internal class OfficialProviderHookHost(
                         )
                     }.onSuccess {
                         if (BuildConfig.DEBUG) {
-                            module.log(
+                            module.persistentLog(
                                 Log.INFO,
                                 "OfficialProviderHookHost",
                                 "[MediaSessionSnapshotDiag] " +
@@ -587,7 +587,7 @@ internal class OfficialProviderHookHost(
                         }
                     }.onFailure { error ->
                         metadataGate.release(session)
-                        module.log(
+                        module.persistentLog(
                             Log.ERROR,
                             "OfficialProviderHookHost",
                             "官方 Provider MediaSession Metadata 快照回调失败: " +
@@ -598,7 +598,7 @@ internal class OfficialProviderHookHost(
 
                 OfficialProviderMediaSessionMetadataGate.SnapshotDecision.MISSING_FIRST -> {
                     if (BuildConfig.DEBUG) {
-                        module.log(
+                        module.persistentLog(
                             Log.INFO,
                             "OfficialProviderHookHost",
                             "[MediaSessionSnapshotDiag] " +
@@ -641,7 +641,7 @@ internal class OfficialProviderHookHost(
                 )
             }.onSuccess {
                 if (firstCallbackRecorded.compareAndSet(false, true)) {
-                    module.log(
+                    module.persistentLog(
                         Log.INFO,
                         "OfficialProviderHookHost",
                         "官方 Provider Metadata Hook 首次命中: package=$packageName",
@@ -649,7 +649,7 @@ internal class OfficialProviderHookHost(
                 }
             }.onFailure { error ->
                 metadataGate.release(session)
-                module.log(
+                module.persistentLog(
                     Log.ERROR,
                     "OfficialProviderHookHost",
                     "官方 Provider Metadata 回调失败: " +
@@ -672,7 +672,7 @@ internal class OfficialProviderHookHost(
             val result = chain.proceed()
             if (firstCallbackRecorded.compareAndSet(false, true)) {
                 onFirstCallback?.invoke()
-                module.log(
+                module.persistentLog(
                     Log.INFO,
                     "OfficialProviderHookHost",
                     "官方 Provider 方法 Hook 首次命中: target=$descriptor",
@@ -681,7 +681,7 @@ internal class OfficialProviderHookHost(
             runCatching {
                 callback.onMethodCalled(chain.thisObject, chain.args.toTypedArray())
             }.onFailure { error ->
-                module.log(
+                module.persistentLog(
                     Log.ERROR,
                     "OfficialProviderHookHost",
                     "官方 Provider 方法回调失败: target=$descriptor error=${error.message}",
@@ -702,7 +702,7 @@ internal class OfficialProviderHookHost(
         override fun intercept(chain: XposedInterface.Chain): Any? {
             val original = chain.proceed()
             if (firstCallbackRecorded.compareAndSet(false, true)) {
-                module.log(
+                module.persistentLog(
                     Log.INFO,
                     "OfficialProviderHookHost",
                     "官方 Provider 方法结果 Hook 首次命中: target=$descriptor",
@@ -715,7 +715,7 @@ internal class OfficialProviderHookHost(
                     original,
                 )
             }.onFailure { error ->
-                module.log(
+                module.persistentLog(
                     Log.ERROR,
                     "OfficialProviderHookHost",
                     "官方 Provider 方法结果回调失败: target=$descriptor error=${error.message}",
@@ -735,7 +735,7 @@ internal class OfficialProviderHookHost(
         override fun intercept(chain: XposedInterface.Chain): Any? {
             val result = chain.proceed()
             if (firstCallbackRecorded.compareAndSet(false, true)) {
-                module.log(
+                module.persistentLog(
                     Log.INFO,
                     "OfficialProviderHookHost",
                     "官方 Provider 构造 Hook 首次命中: target=$descriptor",
@@ -744,7 +744,7 @@ internal class OfficialProviderHookHost(
             runCatching {
                 callback.onConstructed(chain.thisObject, chain.args.toTypedArray())
             }.onFailure { error ->
-                module.log(
+                module.persistentLog(
                     Log.ERROR,
                     "OfficialProviderHookHost",
                     "官方 Provider 构造回调失败: target=$descriptor error=${error.message}",
@@ -797,7 +797,7 @@ internal class OfficialProviderHookHost(
     }
 
     fun logInstalled(pluginId: String) {
-        module.log(
+        module.persistentLog(
             Log.INFO,
             tag,
             "官方 Provider Hook 已安装: id=$pluginId package=$packageName",

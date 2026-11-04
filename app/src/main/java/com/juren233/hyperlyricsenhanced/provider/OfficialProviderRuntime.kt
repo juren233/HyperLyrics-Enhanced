@@ -126,10 +126,26 @@ object OfficialProviderRuntime {
             val badVersionCodes = store?.readBadVersions(definition.id).orEmpty()
             val decision = if (isMainProcess) {
                 val marker = store?.readMarker(definition.id)
-                val previousExitReason = ProviderProcessExit.previousExitReason(packageName, marker)
+                val previousExit = ProviderProcessExit.previousExit(packageName, marker)
+                val previousExitReason = previousExit?.reason
                 val previousExitWasCrash = previousExitReason?.let(ProviderProcessExit::isCrashReason) ?: false
+                if (previousExit != null && ProviderProcessExit.isAbnormalReason(previousExit.reason)) {
+                    // Java 崩溃栈由 TargetCrashRecorder 在当时记下；native 崩溃与 ANR 只能在这里补记。
+                    module.persistentLog(
+                        Log.WARN,
+                        TAG,
+                        "上次进程异常退出: id=${definition.id} package=$packageName " +
+                            ProviderProcessExit.describeExit(
+                                reason = previousExit.reason,
+                                status = previousExit.status,
+                                description = previousExit.description,
+                                timestamp = previousExit.timestamp,
+                                pid = previousExit.pid,
+                            ),
+                    )
+                }
                 if (BuildConfig.DEBUG && marker != null) {
-                    module.log(
+                    module.persistentLog(
                         Log.INFO,
                         TAG,
                         "留存标记的上次退出: id=${definition.id} marker=${ProviderLoadMarker.encode(marker)} " +
@@ -199,7 +215,7 @@ object OfficialProviderRuntime {
                             module, definition.id, packageName, "rollback_file_missing:$fallbackName",
                         )
                     }
-                    module.log(
+                    module.persistentLog(
                         Log.WARN,
                         TAG,
                         "插件连续异常启动，回退上一版本: id=${definition.id} " +
@@ -256,7 +272,7 @@ object OfficialProviderRuntime {
                 }
             }
         } catch (error: Throwable) {
-            module.log(
+            module.persistentLog(
                 Log.ERROR,
                 TAG,
                 "官方 Provider 加载失败: id=${definition.id} package=$packageName",
@@ -283,7 +299,7 @@ object OfficialProviderRuntime {
         if (verified.manifest.pluginId != definition.id ||
             packageName !in verified.manifest.targetPackages
         ) {
-            module.log(
+            module.persistentLog(
                 Log.WARN,
                 TAG,
                 "基线包与当前目标不匹配，跳过: expected=${definition.id}/$packageName " +
@@ -318,7 +334,7 @@ object OfficialProviderRuntime {
         store: ProviderTargetStateStore?,
         scheduleMarkerClear: Boolean,
     ): Boolean {
-        module.log(
+        module.persistentLog(
             Log.INFO,
             TAG,
             "开始加载官方 Provider: id=${definition.id} package=$packageName " +
@@ -411,7 +427,7 @@ object OfficialProviderRuntime {
         loadedPackages += packageName
         store?.writeLoadedVersion(definition.id, expectedVersion)
         if (BuildConfig.DEBUG) {
-            module.log(
+            module.persistentLog(
                 Log.INFO,
                 TAG,
                 "已加载版本记录: id=${definition.id} package=$packageName source=$source " +
@@ -423,7 +439,7 @@ object OfficialProviderRuntime {
             scheduleMarkerClear(store, definition.id)
         }
         if (BuildConfig.DEBUG) {
-            module.log(
+            module.persistentLog(
                 Log.INFO,
                 TAG,
                 "官方 Provider 加载耗时: id=${definition.id} package=$packageName source=$source " +
@@ -432,7 +448,7 @@ object OfficialProviderRuntime {
                     "hooks=${host.hookInstallCount()} hookUs=${host.hookInstallDurationNanos() / 1_000}",
             )
         }
-        module.log(
+        module.persistentLog(
             Log.INFO,
             TAG,
             "官方 Provider 已加载: id=${definition.id} package=$packageName " +
@@ -466,7 +482,7 @@ object OfficialProviderRuntime {
         reason: String,
     ): Boolean {
         if (loggedUnavailableReasons.add("$packageName:$reason")) {
-            module.log(
+            module.persistentLog(
                 Log.INFO,
                 TAG,
                 "官方 Provider 未加载: id=$pluginId package=$packageName reason=$reason",

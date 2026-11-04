@@ -118,7 +118,7 @@ object OfficialProviderSystemMediaRuntime {
             plugin.installSystemMedia(host)
             val installNs = System.nanoTime() - installStartNs
             if (BuildConfig.DEBUG) {
-                module.log(
+                module.persistentLog(
                     Log.INFO,
                     TAG,
                     "SystemMedia Provider 加载耗时: id=${definition.id} package=$targetPackage " +
@@ -128,7 +128,7 @@ object OfficialProviderSystemMediaRuntime {
                         "installUs=${installNs / 1_000}",
                 )
             }
-            runCatching { module.log(
+            runCatching { module.persistentLog(
                 Log.INFO,
                 TAG,
                 "SystemMedia Provider 已加载: id=${definition.id} package=$targetPackage " +
@@ -146,7 +146,7 @@ object OfficialProviderSystemMediaRuntime {
                     throw error
                 }
             }
-            runCatching { module.log(
+            runCatching { module.persistentLog(
                 Log.WARN,
                 TAG,
                 "SystemMedia Provider 未加载: id=${definition.id} package=$targetPackage " +
