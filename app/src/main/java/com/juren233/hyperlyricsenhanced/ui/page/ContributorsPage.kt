@@ -2,6 +2,15 @@
 
 package com.juren233.hyperlyricsenhanced.ui.page
 
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinListPage
+import com.juren233.hyperlyricsenhanced.ui.skin.ArrowPreference
+import com.juren233.hyperlyricsenhanced.ui.skin.BasicComponent
+import com.juren233.hyperlyricsenhanced.ui.skin.Card
+import com.juren233.hyperlyricsenhanced.ui.skin.Icon
+import com.juren233.hyperlyricsenhanced.ui.skin.IconButton
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinIcons
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinTheme
+import com.juren233.hyperlyricsenhanced.ui.skin.SmallTitle
 import android.content.Intent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,27 +32,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.juren233.hyperlyricsenhanced.R
 import com.juren233.hyperlyricsenhanced.ui.navigation.LocalNavigator
-import com.juren233.hyperlyricsenhanced.ui.utils.BlurredBar
 import com.juren233.hyperlyricsenhanced.ui.utils.ContributorItem
 import com.juren233.hyperlyricsenhanced.ui.utils.ContributorsProvider
-import com.juren233.hyperlyricsenhanced.ui.utils.pageScrollModifiers
-import com.juren233.hyperlyricsenhanced.ui.utils.rememberBlurBackdrop
-import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.IconButton
-import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
-import top.yukonga.miuix.kmp.basic.Scaffold
-import top.yukonga.miuix.kmp.basic.SmallTitle
-import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.basic.VerticalScrollBar
 import top.yukonga.miuix.kmp.basic.rememberScrollBarAdapter
-import top.yukonga.miuix.kmp.blur.layerBackdrop
-import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.interfaces.ExperimentalScrollBarApi
-import top.yukonga.miuix.kmp.basic.BasicComponent
-import top.yukonga.miuix.kmp.theme.MiuixTheme
-import top.yukonga.miuix.kmp.preference.ArrowPreference
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.net.toUri
 import androidx.compose.foundation.Image
@@ -58,51 +51,13 @@ import androidx.compose.ui.layout.ContentScale
 @Composable
 fun ContributorsPage() {
     val navigator = LocalNavigator.current
-    val backdrop = rememberBlurBackdrop()
-    val blurActive = backdrop != null
-    val barColor = if (blurActive) Color.Transparent else MiuixTheme.colorScheme.surface
-    val topAppBarScrollBehavior = MiuixScrollBehavior()
-    Scaffold(
-        topBar = {
-            BlurredBar(backdrop, blurActive) {
-                TopAppBar(
-                    color = barColor,
-                    title = stringResource(R.string.title_contributors),
-                    scrollBehavior = topAppBarScrollBehavior,
-                    navigationIcon = {
-                        IconButton(onClick = { navigator.pop() }) {
-                            Icon(imageVector = MiuixIcons.Back, contentDescription = stringResource(R.string.back))
-                        }
-                    }
-                )
-            }
-        }
-    ) { innerPadding ->
         val lazyListState = rememberLazyListState()
-        val top = innerPadding.calculateTopPadding()
-        val bottom = innerPadding.calculateBottomPadding()
-        val contentPadding = remember(top, bottom) {
-            PaddingValues(
-                top = top,
-                start = 0.dp,
-                end = 0.dp,
-                bottom = bottom + 16.dp
-            )
-        }
-        Box(modifier = if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier) {
-            LazyColumn(
-                state = lazyListState,
-                modifier = Modifier.pageScrollModifiers(true, true, topAppBarScrollBehavior),
-                contentPadding = contentPadding,
-            ) {
+    SkinListPage(
+        title = stringResource(R.string.title_contributors),
+        onBack = { navigator.pop() },
+        listState = lazyListState,
+    ) {
                 contributorsPageSections()
-            }
-            VerticalScrollBar(
-                adapter = rememberScrollBarAdapter(lazyListState),
-                modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
-                trackPadding = contentPadding,
-            )
-        }
     }
 }
 
@@ -174,7 +129,7 @@ private fun ContributorEntry(contributor: ContributorItem) {
                     .padding(end = 8.dp)
                     .size(40.dp)
                     .clip(CircleShape)
-                    .background(MiuixTheme.colorScheme.primaryContainer)
+                    .background(SkinTheme.colors.primaryContainer)
             )
         },
         onClick = {

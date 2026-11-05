@@ -6,6 +6,11 @@
 
 package com.juren233.hyperlyricsenhanced.ui.page.main
 
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinSnackbarHostState
+import com.juren233.hyperlyricsenhanced.ui.skin.BasicComponent
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinSnackbarHost
+import com.juren233.hyperlyricsenhanced.ui.skin.TextButton
+import com.juren233.hyperlyricsenhanced.ui.skin.rememberSkinSnackbarHostState
 import android.content.Context
 import android.content.pm.PackageManager
 import androidx.compose.foundation.layout.Arrangement
@@ -36,12 +41,18 @@ import com.juren233.hyperlyricsenhanced.ui.component.AppWindowDialog
 import com.juren233.hyperlyricsenhanced.ui.utils.LocaleUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
-import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
-import top.yukonga.miuix.kmp.basic.Checkbox
-import top.yukonga.miuix.kmp.basic.SnackbarDuration
-import top.yukonga.miuix.kmp.basic.SnackbarHostState
-import top.yukonga.miuix.kmp.basic.TextButton
+import com.juren233.hyperlyricsenhanced.ui.skin.Checkbox
+import androidx.compose.foundation.layout.padding
+import androidx.compose.runtime.LaunchedEffect
+import com.juren233.hyperlyricsenhanced.ui.skin.LocalUiStyle
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinTheme
+import com.juren233.hyperlyricsenhanced.ui.skin.Text
+import com.juren233.hyperlyricsenhanced.ui.skin.isGlasmio
+import io.github.neoruaa.glasmio.ui.GlasmioBottomSheet
+import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
+import io.github.neoruaa.glasmio.ui.GlasmioListRow
+import kotlinx.coroutines.delay
 
 internal data class OneTapRefreshMusicApp(
     val packageName: String,
@@ -171,6 +182,9 @@ internal object OneTapRefreshSelectionPolicy {
     }
 }
 
+/** Glasmio Sheet 收起动画的等待时长，之后再执行刷新。 */
+private const val SHEET_DISMISS_SETTLE_MILLIS = 450L
+
 @Composable
 internal fun OneTapRefreshDialog(
     show: Boolean,
@@ -183,6 +197,91 @@ internal fun OneTapRefreshDialog(
     onDismissFinished: () -> Unit,
     onConfirm: () -> Unit,
 ) {
+    if (LocalUiStyle.current.isGlasmio) {
+        // Glasmio 的 Sheet 不提供“退场结束”回调：面板关闭后等一个 Sheet 收起时长再结束进程。
+        LaunchedEffect(show) {
+            if (!show) {
+                delay(SHEET_DISMISS_SETTLE_MILLIS)
+                onDismissFinished()
+            }
+        }
+        GlasmioBottomSheet(
+            onDismissRequest = onDismiss,
+            visible = show,
+            fitContent = true,
+            title = stringResource(R.string.title_one_tap_refresh),
+        ) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 16.dp)) {
+                Text(
+                    text = stringResource(R.string.title_one_tap_refresh),
+                    color = SkinTheme.colors.onBackground,
+                    modifier = Modifier.padding(vertical = 12.dp),
+                )
+                if (hasRootAccess == false) {
+                    Text(
+                        text = stringResource(R.string.summary_one_tap_refresh_root_required),
+                        color = SkinTheme.colors.onSurfaceVariantSummary,
+                        modifier = Modifier.padding(bottom = 12.dp),
+                    )
+                }
+                Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
+                    GlasmioGroupedList {
+                        GlasmioListRow(
+                            title = stringResource(R.string.option_refresh_system_ui),
+                            onClick = { onToggle(OneTapRefreshSelectionPolicy.SYSTEM_UI_ID) },
+                            trailing = {
+                                Checkbox(
+                                    checked = OneTapRefreshSelectionPolicy.SYSTEM_UI_ID in selectedIds,
+                                    onClick = { onToggle(OneTapRefreshSelectionPolicy.SYSTEM_UI_ID) },
+                                )
+                            },
+                        )
+                        if (musicApps.isNotEmpty()) {
+                            if (showAllMusicAppsOption) {
+                                GlasmioListRow(
+                                    title = stringResource(R.string.option_refresh_all_music_apps),
+                                    onClick = { onToggle(OneTapRefreshSelectionPolicy.ALL_MUSIC_APPS_ID) },
+                                    trailing = {
+                                        Checkbox(
+                                            checked = OneTapRefreshSelectionPolicy.ALL_MUSIC_APPS_ID in selectedIds,
+                                            onClick = { onToggle(OneTapRefreshSelectionPolicy.ALL_MUSIC_APPS_ID) },
+                                        )
+                                    },
+                                )
+                            }
+                            musicApps.forEach { app ->
+                                GlasmioListRow(
+                                    title = app.displayName,
+                                    onClick = { onToggle(app.packageName) },
+                                    trailing = {
+                                        Checkbox(
+                                            checked = app.packageName in selectedIds,
+                                            onClick = { onToggle(app.packageName) },
+                                        )
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
+                Row(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    TextButton(
+                        text = stringResource(R.string.cancel),
+                        onClick = onDismiss,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(
+                        text = stringResource(R.string.confirm),
+                        primary = true,
+                        enabled = selectedIds.isNotEmpty(),
+                        onClick = onConfirm,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+        }
+        return
+    }
     AppWindowDialog(
         title = stringResource(R.string.title_one_tap_refresh),
         // 仅在确认无 root 时提示；null 表示检查进行中，保持上一次结果避免副标题闪现
@@ -237,7 +336,7 @@ internal fun OneTapRefreshDialog(
                 Spacer(modifier = Modifier.width(20.dp))
                 TextButton(
                     text = stringResource(R.string.confirm),
-                    colors = ButtonDefaults.textButtonColorsPrimary(),
+                    primary = true,
                     enabled = selectedIds.isNotEmpty(),
                     onClick = onConfirm,
                     modifier = Modifier.weight(1f),
@@ -258,8 +357,8 @@ private fun OneTapRefreshOption(
         onClick = onClick,
         endActions = {
             Checkbox(
-                state = ToggleableState(selected),
-                onClick = onClick,
+ checked = selected,
+ onClick = onClick,
             )
         },
     )
@@ -275,7 +374,7 @@ private fun OneTapRefreshOption(
 internal class OneTapRefreshController(
     private val context: Context,
     private val scope: CoroutineScope,
-    private val snackbarHostState: SnackbarHostState,
+    private val snackbarHostState: SkinSnackbarHostState,
     private val noRootMessage: String,
 ) {
     var showDialog by mutableStateOf(false)
@@ -359,7 +458,7 @@ internal class OneTapRefreshController(
             if (!success) {
                 snackbarHostState.showSnackbar(
                     message = noRootMessage,
-                    duration = SnackbarDuration.Custom(2000L),
+                    durationMillis = 2000L,
                 )
             }
         }
@@ -368,7 +467,7 @@ internal class OneTapRefreshController(
 
 @Composable
 internal fun rememberOneTapRefreshController(
-    snackbarHostState: SnackbarHostState,
+    snackbarHostState: SkinSnackbarHostState,
 ): OneTapRefreshController {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()

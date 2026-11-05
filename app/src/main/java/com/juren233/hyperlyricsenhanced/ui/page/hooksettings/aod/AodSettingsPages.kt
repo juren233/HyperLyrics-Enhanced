@@ -1,5 +1,12 @@
 package com.juren233.hyperlyricsenhanced.ui.page.hooksettings.aod
 
+import com.juren233.hyperlyricsenhanced.ui.skin.ArrowPreference
+import com.juren233.hyperlyricsenhanced.ui.skin.Card
+import com.juren233.hyperlyricsenhanced.ui.skin.OverlayDropdownPreference
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinTheme
+import com.juren233.hyperlyricsenhanced.ui.skin.SmallTitle
+import com.juren233.hyperlyricsenhanced.ui.skin.SwitchPreference
+import com.juren233.hyperlyricsenhanced.ui.skin.Text
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -38,13 +45,6 @@ import com.juren233.hyperlyricsenhanced.ui.component.SimpleDialog
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.common.XposedLyricSettingPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.common.rememberHookConfigSaver
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.common.rememberHookPrefs
-import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.SmallTitle
-import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.preference.ArrowPreference
-import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
-import top.yukonga.miuix.kmp.preference.SwitchPreference
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 private data class AodSettingsSpec(
     val titleRes: Int,
@@ -802,7 +802,7 @@ private fun AodTextSizeValue(
 ) {
     Text(
         text = value.toString(),
-        fontSize = MiuixTheme.textStyles.body2.fontSize,
-        color = MiuixTheme.colorScheme.onSurfaceVariantActions,
+        fontSize = SkinTheme.textStyles.body2.fontSize,
+        color = SkinTheme.colors.onSurfaceVariantActions,
     )
 }

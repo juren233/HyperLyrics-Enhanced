@@ -1,5 +1,13 @@
 package com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.display
 
+import com.juren233.hyperlyricsenhanced.ui.skin.ArrowPreference
+import com.juren233.hyperlyricsenhanced.ui.skin.BasicComponent
+import com.juren233.hyperlyricsenhanced.ui.skin.Card
+import com.juren233.hyperlyricsenhanced.ui.skin.OverlayDropdownPreference
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinTheme
+import com.juren233.hyperlyricsenhanced.ui.skin.SmallTitle
+import com.juren233.hyperlyricsenhanced.ui.skin.SwitchPreference
+import com.juren233.hyperlyricsenhanced.ui.skin.Text
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -16,14 +24,6 @@ import androidx.compose.ui.unit.dp
 import com.juren233.hyperlyricsenhanced.R
 import com.juren233.hyperlyricsenhanced.common.IslandFontWeightMode
 import com.juren233.hyperlyricsenhanced.ui.component.CustomFontColorPreview
-import top.yukonga.miuix.kmp.basic.BasicComponent
-import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.SmallTitle
-import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.preference.ArrowPreference
-import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
-import top.yukonga.miuix.kmp.preference.SwitchPreference
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 fun LazyListScope.lyricDisplaySections(
     textSize: Int,
@@ -66,8 +66,8 @@ fun LazyListScope.lyricDisplaySections(
                         endActions = {
                             Text(
                                 "$textSize",
-                                fontSize = MiuixTheme.textStyles.body2.fontSize,
-                                color = MiuixTheme.colorScheme.onSurfaceVariantActions
+                                fontSize = SkinTheme.textStyles.body2.fontSize,
+                                color = SkinTheme.colors.onSurfaceVariantActions
                             )
                         },
                         onClick = onTextSizeClick
@@ -77,8 +77,8 @@ fun LazyListScope.lyricDisplaySections(
                         endActions = {
                             Text(
                                 stringResource(id = R.string.format_percent, (textSizeRatio * 100).toInt()),
-                                fontSize = MiuixTheme.textStyles.body2.fontSize,
-                                color = MiuixTheme.colorScheme.onSurfaceVariantActions
+                                fontSize = SkinTheme.textStyles.body2.fontSize,
+                                color = SkinTheme.colors.onSurfaceVariantActions
                             )
                         },
                         onClick = onTextSizeRatioClick
@@ -88,8 +88,8 @@ fun LazyListScope.lyricDisplaySections(
                         endActions = {
                             Text(
                                 "$fadingEdge",
-                                fontSize = MiuixTheme.textStyles.body2.fontSize,
-                                color = MiuixTheme.colorScheme.onSurfaceVariantActions
+                                fontSize = SkinTheme.textStyles.body2.fontSize,
+                                color = SkinTheme.colors.onSurfaceVariantActions
                             )
                         },
                         onClick = onFadingEdgeClick
@@ -176,8 +176,8 @@ fun LazyListScope.lyricDisplaySections(
                         endActions = {
                             Text(
                                 customFontPath.ifEmpty { stringResource(id = R.string.summary_default_font) },
-                                fontSize = MiuixTheme.textStyles.body2.fontSize,
-                                color = MiuixTheme.colorScheme.onSurfaceVariantActions
+                                fontSize = SkinTheme.textStyles.body2.fontSize,
+                                color = SkinTheme.colors.onSurfaceVariantActions
                             )
                         },
                         onClick = onFontPathClick
@@ -201,8 +201,8 @@ fun LazyListScope.lyricDisplaySections(
                             endActions = {
                                 Text(
                                     fontWeight.toString(),
-                                    fontSize = MiuixTheme.textStyles.body2.fontSize,
-                                    color = MiuixTheme.colorScheme.onSurfaceVariantActions,
+                                    fontSize = SkinTheme.textStyles.body2.fontSize,
+                                    color = SkinTheme.colors.onSurfaceVariantActions,
                                 )
                             },
                             onClick = onFontWeightClick,

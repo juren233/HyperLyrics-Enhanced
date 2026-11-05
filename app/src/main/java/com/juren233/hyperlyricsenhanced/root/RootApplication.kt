@@ -17,6 +17,7 @@ import com.juren233.hyperlyricsenhanced.provider.OfficialProviderScopeManager
 import com.juren233.hyperlyricsenhanced.root.utils.RuntimePerfDiagnostics
 import com.juren233.hyperlyricsenhanced.ui.utils.AppUtils
 import com.juren233.hyperlyricsenhanced.ui.utils.LocaleUtils
+import com.juren233.hyperlyricsenhanced.utils.AppCrashRecorder
 import com.juren233.hyperlyricsenhanced.utils.LogManager
 import io.github.libxposed.service.XposedService
 import io.github.libxposed.service.XposedServiceHelper
@@ -30,6 +31,7 @@ class RootApplication : Application() {
         AppUtils.initPredictiveBackGesture(this)
         applyBuildDefaultLogLevel()
         LogManager.init(this)
+        AppCrashRecorder.install(this)
         // debug 包专用：性能/功耗采样（含设置页窗口帧耗时），release 为空操作。
         RuntimePerfDiagnostics.start(
             app = this,

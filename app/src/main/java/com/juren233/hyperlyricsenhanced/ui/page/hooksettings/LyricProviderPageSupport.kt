@@ -6,6 +6,18 @@
 
 package com.juren233.hyperlyricsenhanced.ui.page.hooksettings
 
+import com.juren233.hyperlyricsenhanced.ui.skin.Card
+import com.juren233.hyperlyricsenhanced.ui.skin.HorizontalDivider
+import com.juren233.hyperlyricsenhanced.ui.skin.Icon
+import com.juren233.hyperlyricsenhanced.ui.skin.IconButton
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinSnackbarHost
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinTheme
+import com.juren233.hyperlyricsenhanced.ui.skin.Slider
+import com.juren233.hyperlyricsenhanced.ui.skin.SmallTitle
+import com.juren233.hyperlyricsenhanced.ui.skin.Text
+import com.juren233.hyperlyricsenhanced.ui.skin.TextButton
+import com.juren233.hyperlyricsenhanced.ui.skin.WindowDropdownPreference
+import com.juren233.hyperlyricsenhanced.ui.skin.rememberSkinSnackbarHostState
 import android.content.Context
 import android.content.Intent
 import androidx.compose.animation.AnimatedVisibility
@@ -76,29 +88,16 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
-import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.HorizontalDivider
-import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.PullToRefresh
 import top.yukonga.miuix.kmp.basic.Scaffold
-import top.yukonga.miuix.kmp.basic.SnackbarDuration
-import top.yukonga.miuix.kmp.basic.SnackbarHost
-import top.yukonga.miuix.kmp.basic.SnackbarHostState
-import top.yukonga.miuix.kmp.basic.Slider
 import top.yukonga.miuix.kmp.basic.SliderDefaults
-import top.yukonga.miuix.kmp.basic.SmallTitle
-import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.basic.rememberPullToRefreshState
 import top.yukonga.miuix.kmp.blur.layerBackdrop
-import top.yukonga.miuix.kmp.preference.WindowDropdownPreference
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.icon.extended.Download
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 internal suspend fun loadLocalProviderState(
     context: android.content.Context,
@@ -412,7 +411,7 @@ internal fun LazyListScope.providerSections(
                     Icon(
                         painter = painterResource(R.drawable.ic_github),
                         contentDescription = stringResource(R.string.github),
-                        tint = MiuixTheme.colorScheme.onBackground,
+                        tint = SkinTheme.colors.onBackground,
                         modifier = Modifier.size(40.dp),
                     )
                 },
@@ -509,7 +508,7 @@ internal fun LegacyProviderCard(
                 endActions = {
                     Text(
                         text = formatProviderDelay(delayState.currentDelay),
-                        color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                        color = SkinTheme.colors.onSurface.copy(alpha = 0.5f),
                         fontSize = 14.sp,
                     )
                 },
@@ -567,20 +566,20 @@ internal fun ProviderDelayEditor(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = stringResource(R.string.title_lyric_delay),
-                        color = MiuixTheme.colorScheme.onBackground,
+                        color = SkinTheme.colors.onBackground,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.SemiBold,
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = stringResource(R.string.summary_lyric_delay),
-                        color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                        color = SkinTheme.colors.onSurface.copy(alpha = 0.5f),
                         fontSize = 12.sp,
                     )
                 }
                 Text(
                     text = formatProviderDelay(editorState.currentDelay),
-                    color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                    color = SkinTheme.colors.onSurface.copy(alpha = 0.5f),
                     fontSize = 14.sp,
                 )
             }
@@ -594,9 +593,8 @@ internal fun ProviderDelayEditor(
                 },
                 valueRange = RootConstants.MIN_HOOK_LYRICON_PROVIDER_DELAY.toFloat()..RootConstants.MAX_HOOK_LYRICON_PROVIDER_DELAY.toFloat(),
                 steps = 199,
-                showKeyPoints = true,
                 keyPoints = listOf(-5000f, -4000f, -3000f, -2000f, -1000f, 0f, 1000f, 2000f, 3000f, 4000f, 5000f),
-                hapticEffect = SliderDefaults.SliderHapticEffect.Step,
+                stepHaptics = true,
             )
             if (onUpdate != null || onRepair != null || onRemove != null || onApplyNow != null) {
                 Spacer(modifier = Modifier.height(16.dp))

@@ -1,5 +1,17 @@
 package com.juren233.hyperlyricsenhanced.ui.page.hooksettings
 
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinListPage
+import com.juren233.hyperlyricsenhanced.ui.skin.ArrowPreference
+import com.juren233.hyperlyricsenhanced.ui.skin.BasicComponent
+import com.juren233.hyperlyricsenhanced.ui.skin.Card
+import com.juren233.hyperlyricsenhanced.ui.skin.Icon
+import com.juren233.hyperlyricsenhanced.ui.skin.IconButton
+import com.juren233.hyperlyricsenhanced.ui.skin.OverlayDropdownPreference
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinIcons
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinTheme
+import com.juren233.hyperlyricsenhanced.ui.skin.SmallTitle
+import com.juren233.hyperlyricsenhanced.ui.skin.SwitchPreference
+import com.juren233.hyperlyricsenhanced.ui.skin.Text
 import android.content.Context
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
@@ -37,25 +49,6 @@ import com.juren233.hyperlyricsenhanced.ui.component.CustomFontColorPickerDialog
 import com.juren233.hyperlyricsenhanced.ui.component.CustomFontColorPreview
 import com.juren233.hyperlyricsenhanced.ui.navigation.LocalNavigator
 import com.juren233.hyperlyricsenhanced.ui.navigation.Route
-import com.juren233.hyperlyricsenhanced.ui.utils.BlurredBar
-import com.juren233.hyperlyricsenhanced.ui.utils.pageScrollModifiers
-import com.juren233.hyperlyricsenhanced.ui.utils.rememberBlurBackdrop
-import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.BasicComponent
-import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.IconButton
-import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
-import top.yukonga.miuix.kmp.basic.Scaffold
-import top.yukonga.miuix.kmp.basic.SmallTitle
-import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.basic.TopAppBar
-import top.yukonga.miuix.kmp.blur.layerBackdrop
-import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.Back
-import top.yukonga.miuix.kmp.preference.ArrowPreference
-import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
-import top.yukonga.miuix.kmp.preference.SwitchPreference
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 import androidx.compose.ui.res.stringResource
 import com.juren233.hyperlyricsenhanced.R
 
@@ -363,73 +356,13 @@ fun HyperIslandSettingsPage() {
         )
     }.map { stringResource(id = it) }
 
-    val backdrop = rememberBlurBackdrop()
-    val blurActive = backdrop != null
-    val barColor = if (blurActive) Color.Transparent else MiuixTheme.colorScheme.surface
-    val topAppBarScrollBehavior = MiuixScrollBehavior()
-    Scaffold(
-        topBar = {
-            BlurredBar(backdrop, blurActive) {
-                TopAppBar(
-                    color = barColor,
-                    title = stringResource(id = R.string.title_hyper_island),
-                    subtitle = stringResource(id = R.string.subtitle_hyper_island),
-                    scrollBehavior = topAppBarScrollBehavior,
-                    navigationIcon = {
-                        IconButton(onClick = { navigator.pop() }) { Icon(imageVector = MiuixIcons.Back, contentDescription = stringResource(id = R.string.back)) }
-                    }
-                )
-            }
-        }
-    ) { innerPadding ->
         val lazyListState = rememberLazyListState()
-        NumberInputDialog(
-            show = showLeftContentWidthDialog && !dynamicLimit,
-            title = stringResource(id = R.string.title_left_content_width), 
-            label = stringResource(id = R.string.label_content_width_range), 
-            initialValue = leftContentWidth, 
-            min = 0,
-            max = 500,
-            onDismiss = { showLeftContentWidthDialog = false }, 
-            onConfirm = { value -> if (!dynamicLimit) { leftContentWidth = value; saveConfig(RootConstants.KEY_HOOK_ISLAND_LEFT_CONTENT_MAX_WIDTH, value) } }
-        )
-        NumberInputDialog(
-            show = showRightContentWidthDialog && !dynamicLimit,
-            title = stringResource(id = R.string.title_right_content_width), 
-            label = stringResource(id = R.string.label_content_width_range), 
-            initialValue = rightContentWidth, 
-            min = 0,
-            max = 500,
-            onDismiss = { showRightContentWidthDialog = false }, 
-            onConfirm = { value -> if (!dynamicLimit) { rightContentWidth = value; saveConfig(RootConstants.KEY_HOOK_ISLAND_RIGHT_CONTENT_MAX_WIDTH, value) } }
-        )
-        PaddingInputDialog(show = showLeftPaddingDialog, title = stringResource(id = R.string.title_left_padding), initialLeft = leftPaddingLeft, initialRight = leftPaddingRight, onDismiss = { showLeftPaddingDialog = false }, onConfirm = { l, r -> leftPaddingLeft = l; leftPaddingRight = r; saveConfig(RootConstants.KEY_HOOK_ISLAND_LEFT_PADDING_LEFT, l); saveConfig(RootConstants.KEY_HOOK_ISLAND_LEFT_PADDING_RIGHT, r) })
-        PaddingInputDialog(show = showRightPaddingDialog, title = stringResource(id = R.string.title_right_padding), initialLeft = rightPaddingLeft, initialRight = rightPaddingRight, onDismiss = { showRightPaddingDialog = false }, onConfirm = { l, r -> rightPaddingLeft = l; rightPaddingRight = r; saveConfig(RootConstants.KEY_HOOK_ISLAND_RIGHT_PADDING_LEFT, l); saveConfig(RootConstants.KEY_HOOK_ISLAND_RIGHT_PADDING_RIGHT, r) })
-        CustomFontColorPickerDialog(
-            show = showProgressCustomColorDialog,
-            initialColor = progressCustomColor,
-            onDismiss = { showProgressCustomColorDialog = false },
-            onConfirm = { color ->
-                progressCustomColor = color
-                saveConfig(RootConstants.KEY_HOOK_ISLAND_PROGRESS_CUSTOM_COLOR, color)
-            },
-        )
-
-        val top = innerPadding.calculateTopPadding()
-        val bottom = innerPadding.calculateBottomPadding()
-        val contentPadding = remember(top, bottom) {
-            PaddingValues(top = top, start = 0.dp, end = 0.dp, bottom = bottom)
-        }
-        Box(modifier = if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier) {
-            LazyColumn(
-                state = lazyListState,
-                modifier = Modifier.pageScrollModifiers(
-                    enableScrollEndHaptic = true,
-                    showTopAppBar = true,
-                    topAppBarScrollBehavior = topAppBarScrollBehavior
-                ),
-                contentPadding = contentPadding,
-            ) {
+    SkinListPage(
+        title = stringResource(id = R.string.title_hyper_island),
+        subtitle = stringResource(id = R.string.subtitle_hyper_island),
+        onBack = { navigator.pop() },
+        listState = lazyListState,
+    ) {
                 item(key = "layout_title") { SmallTitle(text = stringResource(id = R.string.title_layout)) }
                 item(key = "layout_content") {
                     Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
@@ -479,13 +412,13 @@ fun HyperIslandSettingsPage() {
                                 Column {
                                     ArrowPreference(
                                         title = stringResource(id = R.string.title_left_content_width),
-                                        endActions = { Text("$leftContentWidth", fontSize = MiuixTheme.textStyles.body2.fontSize, color = MiuixTheme.colorScheme.onSurfaceVariantActions) },
+                                        endActions = { Text("$leftContentWidth", fontSize = SkinTheme.textStyles.body2.fontSize, color = SkinTheme.colors.onSurfaceVariantActions) },
                                         enabled = !dynamicLimit,
                                         onClick = { if (!dynamicLimit) showLeftContentWidthDialog = true }
                                     )
                                     ArrowPreference(
                                         title = stringResource(id = R.string.title_right_content_width),
-                                        endActions = { Text("$rightContentWidth", fontSize = MiuixTheme.textStyles.body2.fontSize, color = MiuixTheme.colorScheme.onSurfaceVariantActions) },
+                                        endActions = { Text("$rightContentWidth", fontSize = SkinTheme.textStyles.body2.fontSize, color = SkinTheme.colors.onSurfaceVariantActions) },
                                         enabled = !dynamicLimit,
                                         onClick = { if (!dynamicLimit) showRightContentWidthDialog = true }
                                     )
@@ -493,12 +426,12 @@ fun HyperIslandSettingsPage() {
                             }
                             ArrowPreference(
                                 title = stringResource(id = R.string.title_left_padding), 
-                                endActions = { Text(stringResource(id = R.string.format_padding_pair, leftPaddingLeft, leftPaddingRight), fontSize = MiuixTheme.textStyles.body2.fontSize, color = MiuixTheme.colorScheme.onSurfaceVariantActions) }, 
+                                endActions = { Text(stringResource(id = R.string.format_padding_pair, leftPaddingLeft, leftPaddingRight), fontSize = SkinTheme.textStyles.body2.fontSize, color = SkinTheme.colors.onSurfaceVariantActions) }, 
                                 onClick = { showLeftPaddingDialog = true }
                             )
                             ArrowPreference(
                                 title = stringResource(id = R.string.title_right_padding), 
-                                endActions = { Text(stringResource(id = R.string.format_padding_pair, rightPaddingLeft, rightPaddingRight), fontSize = MiuixTheme.textStyles.body2.fontSize, color = MiuixTheme.colorScheme.onSurfaceVariantActions) }, 
+                                endActions = { Text(stringResource(id = R.string.format_padding_pair, rightPaddingLeft, rightPaddingRight), fontSize = SkinTheme.textStyles.body2.fontSize, color = SkinTheme.colors.onSurfaceVariantActions) }, 
                                 onClick = { showRightPaddingDialog = true }
                             )
                         }
@@ -819,7 +752,5 @@ fun HyperIslandSettingsPage() {
                         }
                     }
                 }
-            }
-        }
     }
 }

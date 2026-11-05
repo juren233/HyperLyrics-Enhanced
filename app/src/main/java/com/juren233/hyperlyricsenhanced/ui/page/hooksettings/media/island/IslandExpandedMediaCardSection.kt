@@ -1,5 +1,13 @@
 package com.juren233.hyperlyricsenhanced.ui.page.hooksettings.media.island
 
+import com.juren233.hyperlyricsenhanced.ui.skin.BasicComponent
+import com.juren233.hyperlyricsenhanced.ui.skin.Card
+import com.juren233.hyperlyricsenhanced.ui.skin.OverlayDropdownPreference
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinTheme
+import com.juren233.hyperlyricsenhanced.ui.skin.Slider
+import com.juren233.hyperlyricsenhanced.ui.skin.SmallTitle
+import com.juren233.hyperlyricsenhanced.ui.skin.SwitchPreference
+import com.juren233.hyperlyricsenhanced.ui.skin.Text
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -14,14 +22,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.juren233.hyperlyricsenhanced.R
 import com.juren233.hyperlyricsenhanced.common.RootConstants
-import top.yukonga.miuix.kmp.basic.BasicComponent
-import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.Slider
-import top.yukonga.miuix.kmp.basic.SmallTitle
-import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
-import top.yukonga.miuix.kmp.preference.SwitchPreference
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 import kotlin.math.roundToInt
 
 fun LazyListScope.islandExpandedMediaCardSection(
@@ -201,8 +201,8 @@ fun LazyListScope.islandExpandedMediaCardSection(
                                 endActions = {
                                     Text(
                                         text = sliderValue.toString(),
-                                        fontSize = MiuixTheme.textStyles.body2.fontSize,
-                                        color = MiuixTheme.colorScheme.onSurfaceVariantActions
+                                        fontSize = SkinTheme.textStyles.body2.fontSize,
+                                        color = SkinTheme.colors.onSurfaceVariantActions
                                     )
                                 },
                                 bottomAction = {

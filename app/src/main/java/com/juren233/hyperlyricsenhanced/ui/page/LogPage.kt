@@ -2,6 +2,17 @@
 
 package com.juren233.hyperlyricsenhanced.ui.page
 
+import com.juren233.hyperlyricsenhanced.ui.skin.Icon
+import com.juren233.hyperlyricsenhanced.ui.skin.IconButton
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinIcons
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinSnackbarHost
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinTheme
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinMenuItem
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinMoreMenu
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinTabbedListPage
+import com.juren233.hyperlyricsenhanced.ui.skin.rememberSkinSnackbarHostState
+import androidx.compose.foundation.lazy.rememberLazyListState
+import com.juren233.hyperlyricsenhanced.ui.page.log.logTabItems
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
@@ -42,22 +53,13 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.DropdownEntry
 import top.yukonga.miuix.kmp.basic.DropdownItem
-import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.ListPopupDefaults
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.PopupPositionProvider
 import top.yukonga.miuix.kmp.basic.Scaffold
-import top.yukonga.miuix.kmp.basic.SnackbarDuration
-import top.yukonga.miuix.kmp.basic.SnackbarHost
-import top.yukonga.miuix.kmp.basic.SnackbarHostState
 import top.yukonga.miuix.kmp.basic.TabRowWithContour
 import top.yukonga.miuix.kmp.basic.TabRowDefaults
 import top.yukonga.miuix.kmp.basic.TopAppBar
-import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.Back
-import top.yukonga.miuix.kmp.icon.extended.More
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.interfaces.ExperimentalScrollBarApi
 import top.yukonga.miuix.kmp.window.WindowCascadingListPopup
 import java.io.IOException
@@ -77,8 +79,8 @@ fun LogPage() {
     val topAppBarScrollBehavior = MiuixScrollBehavior()
     val backdrop = rememberBlurBackdrop()
     val blurActive = backdrop != null
-    val barColor = if (blurActive) Color.Transparent else MiuixTheme.colorScheme.surface
-    val snackbarHostState = remember { SnackbarHostState() }
+    val barColor = if (blurActive) Color.Transparent else SkinTheme.colors.surface
+    val snackbarHostState = rememberSkinSnackbarHostState()
 
     val tabs = listOf(stringResource(R.string.title_app_logs), stringResource(R.string.title_module_logs))
     val pagerState = rememberPagerState { tabs.size }
@@ -187,14 +189,14 @@ fun LogPage() {
                     withContext(Dispatchers.Main) {
                         snackbarHostState.showSnackbar(
                             message = exportSuccessMsg,
-                            duration = SnackbarDuration.Custom(2000L)
+                            durationMillis = 2000L
                         )
                     }
                 } catch (e: Exception) {
                     withContext(Dispatchers.Main) {
                         snackbarHostState.showSnackbar(
                             message = String.format(exportFailedMsg, e.message),
-                            duration = SnackbarDuration.Custom(2000L)
+                            durationMillis = 2000L
                         )
                     }
                 }
@@ -213,125 +215,66 @@ fun LogPage() {
     val levelCrash = stringResource(R.string.level_crash)
 
     val currentSelectedLevel = if (isAppTab) appSelectedLevel else moduleSelectedLevel
-    val logEntries = remember(currentSelectedLevel, isAppTab, filterLabel, exportLabel, clearLabel, allLabel, levelDebug, levelInfo, levelWarn, levelError, levelCrash) {
+    val menuGroups = remember(currentSelectedLevel, isAppTab, filterLabel, exportLabel, clearLabel, allLabel, levelDebug, levelInfo, levelWarn, levelError, levelCrash) {
         val levels = listOf("ALL", "D", "I", "W", "E", "C")
         val levelNames = listOf(allLabel, levelDebug, levelInfo, levelWarn, levelError, levelCrash)
         listOf(
-            DropdownEntry(
-                items = listOf(
-                    DropdownItem(
-                        text = filterLabel,
-                        children = levels.mapIndexed { index, level ->
-                            DropdownItem(
-                                text = levelNames[index],
-                                selected = currentSelectedLevel == level,
-                                onClick = {
-                                    if (isAppTab) appSelectedLevel = level else moduleSelectedLevel = level
-                                }
-                            )
-                        }
-                    )
-                )
+            listOf(
+                SkinMenuItem(
+                    text = filterLabel,
+                    children = levels.mapIndexed { index, level ->
+                        SkinMenuItem(
+                            text = levelNames[index],
+                            selected = currentSelectedLevel == level,
+                            onClick = { if (isAppTab) appSelectedLevel = level else moduleSelectedLevel = level },
+                        )
+                    },
+                ),
             ),
-            DropdownEntry(
-                items = listOf(
-                    DropdownItem(
-                        text = exportLabel,
-                        onClick = {
-                            pendingExportRequest = LogExportRequest(
-                                isAppLog = isAppTab,
-                                level = currentSelectedLevel
-                            )
-                            val dateTime = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmm"))
-                            val prefix = if (isAppTab) "hyperlyricsenhanced_app" else "hyperlyricsenhanced_module"
-                            exportLauncher.launch("${prefix}_logs_$dateTime.txt")
-                        }
-                    ),
-                    DropdownItem(
-                        text = clearLabel,
-                        onClick = { showClearDialog = true }
-                    )
-                )
-            )
+            listOf(
+                SkinMenuItem(
+                    text = exportLabel,
+                    onClick = {
+                        pendingExportRequest = LogExportRequest(isAppLog = isAppTab, level = currentSelectedLevel)
+                        val dateTime = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmm"))
+                        val prefix = if (isAppTab) "hyperlyricsenhanced_app" else "hyperlyricsenhanced_module"
+                        exportLauncher.launch("${prefix}_logs_$dateTime.txt")
+                    },
+                ),
+                SkinMenuItem(text = clearLabel, onClick = { showClearDialog = true }),
+            ),
         )
     }
 
-    Scaffold(
-        snackbarHost = { SnackbarHost(state = snackbarHostState) },
-        topBar = {
-            BlurredBar(backdrop, blurActive) {
-                TopAppBar(
-                    color = barColor,
-                    title = stringResource(R.string.title_view_logs),
-                    scrollBehavior = topAppBarScrollBehavior,
-                    navigationIcon = {
-                        IconButton(onClick = { navigator.pop() }) {
-                            Icon(imageVector = MiuixIcons.Back, contentDescription = stringResource(R.string.back))
-                        }
-                    },
-                    actions = {
-                        Box {
-                            IconButton(onClick = { showMorePopup = true }, holdDownState = showMorePopup) {
-                                Icon(imageVector = MiuixIcons.More, contentDescription = stringResource(R.string.more))
-                            }
-                            WindowCascadingListPopup(
-                                show = showMorePopup,
-                                entries = logEntries,
-                                alignment = PopupPositionProvider.Align.TopEnd,
-                                popupPositionProvider = ListPopupDefaults.ContextMenuPositionProvider,
-                                onDismissRequest = { showMorePopup = false }
-                            )
-                        }
-                    },
-                    bottomContent = {
-                        TabRowWithContour(
-                            tabs = tabs,
-                            selectedTabIndex = pagerState.currentPage,
-                            onTabSelected = { index ->
-                                coroutineScope.launch { pagerState.animateScrollToPage(index) }
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 12.dp)
-                                .padding(bottom = 8.dp),
-                            colors = TabRowDefaults.tabRowColors(
-                                backgroundColor = MiuixTheme.colorScheme.surfaceContainer,
-                                selectedBackgroundColor = MiuixTheme.colorScheme.primary,
-                                selectedContentColor = MiuixTheme.colorScheme.onPrimary,
-                            ),
-                            maxWidth = Dp.Infinity,
-                        )
-                    }
-                )
-            }
-        }
-    ) { padding ->
-        Box(modifier = if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier) {
-            HorizontalPager(
-                state = pagerState,
-                verticalAlignment = Alignment.Top,
-                beyondViewportPageCount = 1
-            ) { page ->
-                val isApp = page == 0
-                val currentLogs = if (isApp) filteredAppLogs else filteredModuleLogs
-                val currentLoading = if (isApp) appIsLoading else moduleIsLoading
-                val top = padding.calculateTopPadding()
-                val bottom = padding.calculateBottomPadding()
-                val contentPadding = remember(top, bottom) {
-                    PaddingValues(top = top, bottom = bottom + 16.dp)
-                }
-
-                LogTabContent(
-                    logs = currentLogs,
-                    isLoading = currentLoading,
-                    onRefresh = { if (isApp) reloadAppLogs() else reloadModuleLogs() },
-                    topAppBarScrollBehavior = topAppBarScrollBehavior,
-                    contentPadding = contentPadding,
-                    copiedMsg = copiedMsg,
-                    snackbarHostState = snackbarHostState
-                )
-            }
-        }
+    val listStates = listOf(rememberLazyListState(), rememberLazyListState())
+    SkinTabbedListPage(
+        title = stringResource(R.string.title_view_logs),
+        tabs = tabs,
+        pagerState = pagerState,
+        listStates = listStates,
+        onBack = { navigator.pop() },
+        snackbarHostState = snackbarHostState,
+        trailingContent = { SkinMoreMenu(groups = menuGroups, contentDescription = stringResource(R.string.more)) },
+        miuixPage = { page, contentPadding, behavior ->
+            val isApp = page == 0
+            LogTabContent(
+                logs = if (isApp) filteredAppLogs else filteredModuleLogs,
+                isLoading = if (isApp) appIsLoading else moduleIsLoading,
+                onRefresh = { if (isApp) reloadAppLogs() else reloadModuleLogs() },
+                topAppBarScrollBehavior = behavior,
+                contentPadding = contentPadding,
+                copiedMsg = copiedMsg,
+                snackbarHostState = snackbarHostState,
+            )
+        },
+    ) { page ->
+        val isApp = page == 0
+        logTabItems(
+            logs = if (isApp) filteredAppLogs else filteredModuleLogs,
+            isLoading = if (isApp) appIsLoading else moduleIsLoading,
+            copiedMsg = copiedMsg,
+            snackbarHostState = snackbarHostState,
+        )
     }
 
     SimpleDialog(

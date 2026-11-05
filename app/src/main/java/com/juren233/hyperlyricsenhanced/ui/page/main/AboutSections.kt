@@ -1,5 +1,11 @@
 package com.juren233.hyperlyricsenhanced.ui.page.main
 
+import androidx.compose.ui.graphics.Color
+import com.juren233.hyperlyricsenhanced.ui.skin.ArrowPreference
+import com.juren233.hyperlyricsenhanced.ui.skin.BasicComponent
+import com.juren233.hyperlyricsenhanced.ui.skin.Card
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinTheme
+import com.juren233.hyperlyricsenhanced.ui.skin.Text
 import android.content.Intent
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -17,13 +23,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.net.toUri
 import com.juren233.hyperlyricsenhanced.R
-import top.yukonga.miuix.kmp.basic.BasicComponent
-import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardColors
 import top.yukonga.miuix.kmp.basic.CardDefaults
-import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.preference.ArrowPreference
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /** 组装关于页的品牌头部、设备信息和功能入口。 */
 fun LazyListScope.aboutPageSections(
@@ -43,7 +44,7 @@ fun LazyListScope.aboutPageSections(
 ) {
     item(key = "about_header") {
         val version = aboutAppVersion ?: stringResource(R.string.version_unknown)
-        val secondaryColor = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.66f)
+        val secondaryColor = SkinTheme.colors.onSurface.copy(alpha = 0.66f)
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -83,14 +84,14 @@ fun LazyListScope.aboutPageSections(
     item(key = "system_info_content") {
         Card(
             modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth(),
-            colors = aboutCardColors(cardSurfaceRestoreProgress),
+            containerColor = aboutCardColor(cardSurfaceRestoreProgress),
         ) {
             Column {
                 Text(
                     text = aboutDeviceName,
-                    style = MiuixTheme.textStyles.title2,
+                    style = SkinTheme.textStyles.title2,
                     fontWeight = FontWeight.Bold,
-                    color = MiuixTheme.colorScheme.onSurface,
+                    color = SkinTheme.colors.onSurface,
                     modifier = Modifier.fillMaxWidth().padding(
                         start = 16.dp,
                         top = 18.dp,
@@ -108,7 +109,7 @@ fun LazyListScope.aboutPageSections(
     item(key = "help_content") {
         Card(
             modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth(),
-            colors = aboutCardColors(cardSurfaceRestoreProgress),
+            containerColor = aboutCardColor(cardSurfaceRestoreProgress),
         ) {
             Column {
                 ArrowPreference(
@@ -127,7 +128,7 @@ fun LazyListScope.aboutPageSections(
         val context = LocalContext.current
         Card(
             modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth(),
-            colors = aboutCardColors(cardSurfaceRestoreProgress),
+            containerColor = aboutCardColor(cardSurfaceRestoreProgress),
         ) {
 
             ArrowPreference(
@@ -152,12 +153,9 @@ fun LazyListScope.aboutPageSections(
 
 /** 流光完整显示时透出背景，背景淡出后恢复本项目正常卡片色。 */
 @Composable
-private fun aboutCardColors(surfaceRestoreProgress: Float): CardColors {
-    val color = MiuixTheme.colorScheme.surfaceContainer.copy(
+private fun aboutCardColor(surfaceRestoreProgress: Float): Color {
+    return SkinTheme.colors.surfaceContainer.copy(
         alpha = aboutCardContainerAlpha(surfaceRestoreProgress),
-    )
-    return CardDefaults.defaultColors(
-        color = color,
     )
 }
 

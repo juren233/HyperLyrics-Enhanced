@@ -6,6 +6,15 @@
 
 package com.juren233.hyperlyricsenhanced.ui.component
 
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinSnackbarHostState
+import com.juren233.hyperlyricsenhanced.ui.skin.ArrowPreference
+import com.juren233.hyperlyricsenhanced.ui.skin.Card
+import com.juren233.hyperlyricsenhanced.ui.skin.Icon
+import com.juren233.hyperlyricsenhanced.ui.skin.IconButton
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinIcons
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinSnackbarHost
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinTheme
+import com.juren233.hyperlyricsenhanced.ui.skin.rememberSkinSnackbarHostState
 import android.Manifest
 import android.content.Context
 import android.content.Intent
@@ -18,6 +27,15 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Arrangement
+import com.juren233.hyperlyricsenhanced.ui.skin.LocalUiStyle
+import com.juren233.hyperlyricsenhanced.ui.skin.isGlasmio
+import com.juren233.hyperlyricsenhanced.ui.skin.Text
+import com.juren233.hyperlyricsenhanced.ui.skin.TextButton
+import io.github.neoruaa.glasmio.ui.GlasmioBottomSheet
+import io.github.neoruaa.glasmio.ui.GlasmioGroupedList
+import io.github.neoruaa.glasmio.ui.GlasmioListRow
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Immutable
@@ -45,17 +63,6 @@ import com.juren233.hyperlyricsenhanced.service.LiveLyricService
 import com.juren233.hyperlyricsenhanced.ui.utils.LocaleUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
-import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.IconButton
-import top.yukonga.miuix.kmp.basic.SnackbarDuration
-import top.yukonga.miuix.kmp.basic.SnackbarHost
-import top.yukonga.miuix.kmp.basic.SnackbarHostState
-import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.Close
-import top.yukonga.miuix.kmp.icon.extended.Ok
-import top.yukonga.miuix.kmp.preference.ArrowPreference
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.window.WindowBottomSheet
 
 /**
@@ -108,7 +115,7 @@ class LyricHookSwitchController internal constructor(
         private set
 
     /** 授权面板内的 Snackbar 宿主（与原主页实现保持一致，提示落在面板内）。 */
-    val sheetSnackbarHostState = SnackbarHostState()
+    val sheetSnackbarHostState = SkinSnackbarHostState()
 
     internal val listener = SharedPreferences.OnSharedPreferenceChangeListener { p, key ->
         when (key) {
@@ -231,7 +238,7 @@ class LyricHookSwitchController internal constructor(
             scope.launch {
                 sheetSnackbarHostState.showSnackbar(
                     message = messages.xposedNotActive,
-                    duration = SnackbarDuration.Custom(2000L),
+                    durationMillis = 2000L,
                 )
             }
         } else if (checked != currentValue) {
@@ -245,7 +252,7 @@ class LyricHookSwitchController internal constructor(
         scope.launch {
             sheetSnackbarHostState.showSnackbar(
                 message = message,
-                duration = SnackbarDuration.Custom(2000L),
+                durationMillis = 2000L,
             )
         }
     }
@@ -293,26 +300,65 @@ fun LyricHookPermissionSheet(controller: LyricHookSwitchController) {
         onResult = controller::onNotificationPermissionResult,
     )
 
+    if (LocalUiStyle.current.isGlasmio) {
+        if (controller.showPermissionSheet) {
+            GlasmioBottomSheet(onDismissRequest = controller::dismissPermissionSheet, fitContent = true) {
+                Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 16.dp)) {
+                    Text(
+                        text = stringResource(R.string.sheet_permission_title),
+                        color = SkinTheme.colors.onBackground,
+                        modifier = Modifier.padding(vertical = 12.dp),
+                    )
+                    GlasmioGroupedList {
+                        GlasmioListRow(
+                            title = stringResource(R.string.title_permission_post_notification),
+                            onClick = { notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS) },
+                        )
+                        GlasmioListRow(
+                            title = stringResource(R.string.title_permission_listener),
+                            onClick = controller::openNotificationListenerSettings,
+                        )
+                    }
+                    Row(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        TextButton(
+                            text = stringResource(R.string.close),
+                            onClick = controller::dismissPermissionSheet,
+                            modifier = Modifier.weight(1f),
+                        )
+                        TextButton(
+                            text = stringResource(R.string.confirm),
+                            onClick = controller::confirmPermissionSheet,
+                            modifier = Modifier.weight(1f),
+                            primary = true,
+                        )
+                    }
+                }
+                SkinSnackbarHost(state = controller.sheetSnackbarHostState)
+            }
+        }
+        return
+    }
+
     WindowBottomSheet(
         show = controller.showPermissionSheet,
         title = stringResource(R.string.sheet_permission_title),
         allowDismiss = false,
-        backgroundColor = MiuixTheme.colorScheme.surface,
+        backgroundColor = SkinTheme.colors.surface,
         startAction = LocaleUtils.localizedWindowContent {
             IconButton(onClick = controller::dismissPermissionSheet) {
                 Icon(
-                    imageVector = MiuixIcons.Close,
+                    icon = SkinIcons.Close,
                     contentDescription = stringResource(R.string.close),
-                    tint = MiuixTheme.colorScheme.onBackground,
+                    tint = SkinTheme.colors.onBackground,
                 )
             }
         },
         endAction = LocaleUtils.localizedWindowContent {
             IconButton(onClick = controller::confirmPermissionSheet) {
                 Icon(
-                    imageVector = MiuixIcons.Ok,
+                    icon = SkinIcons.Ok,
                     contentDescription = stringResource(R.string.confirm),
-                    tint = MiuixTheme.colorScheme.onBackground,
+                    tint = SkinTheme.colors.onBackground,
                 )
             }
         },
@@ -351,7 +397,7 @@ fun LyricHookPermissionSheet(controller: LyricHookSwitchController) {
                         )
                     }
                 }
-                SnackbarHost(
+                SkinSnackbarHost(
                     state = controller.sheetSnackbarHostState,
                     modifier = Modifier.align(Alignment.BottomCenter),
                 )

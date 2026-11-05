@@ -1,5 +1,17 @@
 package com.juren233.hyperlyricsenhanced.ui.page
 
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinListPage
+import com.juren233.hyperlyricsenhanced.ui.skin.ArrowPreference
+import com.juren233.hyperlyricsenhanced.ui.skin.Card
+import com.juren233.hyperlyricsenhanced.ui.skin.Icon
+import com.juren233.hyperlyricsenhanced.ui.skin.IconButton
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinIcons
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinSnackbarHost
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinTheme
+import com.juren233.hyperlyricsenhanced.ui.skin.SmallTitle
+import com.juren233.hyperlyricsenhanced.ui.skin.SwitchPreference
+import com.juren233.hyperlyricsenhanced.ui.skin.WindowDropdownPreference
+import com.juren233.hyperlyricsenhanced.ui.skin.rememberSkinSnackbarHostState
 import android.content.Context
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -49,10 +61,7 @@ import com.juren233.hyperlyricsenhanced.ui.navigation.LocalNavigator
 import com.juren233.hyperlyricsenhanced.ui.navigation.Route
 import com.juren233.hyperlyricsenhanced.ui.page.main.MainTabPolicy
 import com.juren233.hyperlyricsenhanced.ui.utils.AppUtils
-import com.juren233.hyperlyricsenhanced.ui.utils.BlurredBar
 import com.juren233.hyperlyricsenhanced.ui.utils.LocaleUtils
-import com.juren233.hyperlyricsenhanced.ui.utils.pageScrollModifiers
-import com.juren233.hyperlyricsenhanced.ui.utils.rememberBlurBackdrop
 import com.juren233.hyperlyricsenhanced.ui.utils.rememberIsWideScreen
 import com.juren233.hyperlyricsenhanced.utils.LOG_EXPORT_LEVEL_DEBUG
 import com.juren233.hyperlyricsenhanced.utils.LogExportEnvironmentCollector
@@ -60,22 +69,6 @@ import com.juren233.hyperlyricsenhanced.utils.LogManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.IconButton
-import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
-import top.yukonga.miuix.kmp.basic.Scaffold
-import top.yukonga.miuix.kmp.basic.SmallTitle
-import top.yukonga.miuix.kmp.basic.SnackbarHost
-import top.yukonga.miuix.kmp.basic.SnackbarHostState
-import top.yukonga.miuix.kmp.basic.TopAppBar
-import top.yukonga.miuix.kmp.blur.layerBackdrop
-import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.Back
-import top.yukonga.miuix.kmp.preference.ArrowPreference
-import top.yukonga.miuix.kmp.preference.WindowDropdownPreference
-import top.yukonga.miuix.kmp.preference.SwitchPreference
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 import java.io.IOException
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
@@ -93,11 +86,7 @@ fun SettingsPage(scrollToFeatureSwitches: Boolean = false) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
-    val backdrop = rememberBlurBackdrop()
-    val blurActive = backdrop != null
-    val barColor = if (blurActive) Color.Transparent else MiuixTheme.colorScheme.surface
-    val topAppBarScrollBehavior = MiuixScrollBehavior()
-    val snackbarHostState = remember { SnackbarHostState() }
+    val snackbarHostState = rememberSkinSnackbarHostState()
     val backupRestoreHelper = com.juren233.hyperlyricsenhanced.utils.rememberBackupRestoreHelper(snackbarHostState)
     val exportHeader = stringResource(R.string.export_header)
     val exportEnvironmentTitle = stringResource(R.string.export_environment_title)
@@ -186,14 +175,14 @@ fun SettingsPage(scrollToFeatureSwitches: Boolean = false) {
                     withContext(Dispatchers.Main) {
                         snackbarHostState.showSnackbar(
                             message = exportSuccessMsg,
-                            duration = top.yukonga.miuix.kmp.basic.SnackbarDuration.Custom(2000L),
+                            durationMillis = 2000L,
                         )
                     }
                 } catch (e: Exception) {
                     withContext(Dispatchers.Main) {
                         snackbarHostState.showSnackbar(
                             message = String.format(exportFailedMsg, e.message),
-                            duration = top.yukonga.miuix.kmp.basic.SnackbarDuration.Custom(2000L),
+                            durationMillis = 2000L,
                         )
                     }
                 }
@@ -254,50 +243,24 @@ fun SettingsPage(scrollToFeatureSwitches: Boolean = false) {
         dynamicIslandEntryEnabled = dynamicIslandEntryEnabled,
     )
 
-    Scaffold(
-        snackbarHost = { SnackbarHost(state = snackbarHostState) },
-        topBar = {
-            BlurredBar(backdrop, blurActive) {
-                TopAppBar(
-                    color = barColor,
-                    title = stringResource(R.string.title_settings_page),
-                    scrollBehavior = topAppBarScrollBehavior,
-                    navigationIcon = {
-                        IconButton(onClick = { navigator.pop() }) {
-                            Icon(imageVector = MiuixIcons.Back, contentDescription = stringResource(R.string.back))
-                        }
-                    }
-                )
-            }
+    // “功能开关”分组前的条目数，与 settingsSections 里的 key 顺序保持一致：
+    // 主页隐藏时其迁移区块（4 项 + 通知型灵动岛 1 项）排在最前，另有个性化标题与内容 2 项。
+    val featureSwitchesItemIndex = (
+        if (!homePageVisible) {
+            4 + if (dynamicIslandEntryEnabled) 1 else 0
+        } else {
+            0
         }
-    ) { innerPadding ->
-        // “功能开关”分组前的条目数，与 settingsSections 里的 key 顺序保持一致：
-        // 主页隐藏时其迁移区块（4 项 + 通知型灵动岛 1 项）排在最前，另有个性化标题与内容 2 项。
-        val featureSwitchesItemIndex = (
-            if (!homePageVisible) {
-                4 + if (dynamicIslandEntryEnabled) 1 else 0
-            } else {
-                0
-            }
-            ) + 2
-        val lazyListState = rememberLazyListState(
-            initialFirstVisibleItemIndex = if (scrollToFeatureSwitches) featureSwitchesItemIndex else 0,
-        )
-        val top = innerPadding.calculateTopPadding()
-        val bottom = innerPadding.calculateBottomPadding()
-        val contentPadding = remember(top, bottom) {
-            PaddingValues(top = top, start = 0.dp, end = 0.dp, bottom = bottom + 16.dp)
-        }
-        Box(modifier = if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier) {
-            LazyColumn(
-                state = lazyListState,
-                modifier = Modifier.pageScrollModifiers(
-                    enableScrollEndHaptic = true,
-                    showTopAppBar = true,
-                    topAppBarScrollBehavior = topAppBarScrollBehavior
-                ),
-                contentPadding = contentPadding,
-            ) {
+        ) + 2
+    val lazyListState = rememberLazyListState(
+        initialFirstVisibleItemIndex = if (scrollToFeatureSwitches) featureSwitchesItemIndex else 0,
+    )
+    SkinListPage(
+        title = stringResource(R.string.title_settings_page),
+        onBack = { navigator.pop() },
+        snackbarHostState = snackbarHostState,
+        listState = lazyListState,
+    ) {
                 settingsSections(
                     backupRestoreHelper = backupRestoreHelper,
                     onExportAllLogs = {
@@ -347,8 +310,6 @@ fun SettingsPage(scrollToFeatureSwitches: Boolean = false) {
                         )
                     },
                 )
-            }
-        }
     }
 
     LyricHookPermissionSheet(controller = lyricHookSwitches)
@@ -444,6 +405,23 @@ private fun LazyListScope.settingsSections(
 
         Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
             Column {
+                var uiStyle by remember { mutableIntStateOf(prefs.getInt(UIConstants.KEY_UI_STYLE, UIConstants.DEFAULT_UI_STYLE)) }
+                WindowDropdownPreference(
+                    title = stringResource(R.string.title_ui_style),
+                    items = listOf(stringResource(R.string.ui_style_miuix), stringResource(R.string.ui_style_glasmio)),
+                    selectedIndex = uiStyle,
+                    onSelectedIndexChange = { selected ->
+                        if (selected != uiStyle) {
+                            uiStyle = selected
+                            // 界面风格的组件树结构不同，不做原地热切换：同步落盘后重建 Activity，由新的组合树整体读取新风格。
+                            prefs.edit(commit = true) { putInt(UIConstants.KEY_UI_STYLE, selected) }
+                            generateSequence(context) { (it as? android.content.ContextWrapper)?.baseContext }
+                                .filterIsInstance<android.app.Activity>()
+                                .firstOrNull()
+                                ?.recreate()
+                        }
+                    },
+                )
                 WindowDropdownPreference(title = stringResource(R.string.title_theme), items = themeOptions, selectedIndex = themeMode, onSelectedIndexChange = { themeMode = it; prefs.edit { putInt(UIConstants.KEY_THEME_MODE, it) } })
                 WindowDropdownPreference(
                     title = stringResource(R.string.title_app_language),

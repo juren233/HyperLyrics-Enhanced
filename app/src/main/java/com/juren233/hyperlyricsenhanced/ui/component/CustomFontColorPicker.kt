@@ -6,6 +6,9 @@
 
 package com.juren233.hyperlyricsenhanced.ui.component
 
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinTheme
+import com.juren233.hyperlyricsenhanced.ui.skin.Text
+import com.juren233.hyperlyricsenhanced.ui.skin.TextButton
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,6 +20,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import com.juren233.hyperlyricsenhanced.ui.skin.LocalUiStyle
+import com.juren233.hyperlyricsenhanced.ui.skin.isGlasmio
+import io.github.neoruaa.glasmio.ui.GlasmioColorPicker
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -32,12 +38,9 @@ import com.juren233.hyperlyricsenhanced.R
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.ColorPicker
 import top.yukonga.miuix.kmp.basic.ColorSpace
-import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.drawCheckerboard
 import top.yukonga.miuix.kmp.squircle.squircleBorder
 import top.yukonga.miuix.kmp.squircle.squircleClip
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
 fun CustomFontColorPreview(
@@ -51,7 +54,7 @@ fun CustomFontColorPreview(
             .drawCheckerboard()
             .squircleBorder(
                 width = 1.dp,
-                color = MiuixTheme.colorScheme.outline,
+                color = SkinTheme.colors.outline,
                 cornerRadius = 9.dp,
             ),
     ) {
@@ -76,6 +79,17 @@ fun CustomFontColorPickerDialog(
         if (show) draftColor = initialColor
     }
 
+    if (LocalUiStyle.current.isGlasmio) {
+        GlasmioColorPicker(
+            visible = show,
+            selectedColor = Color(initialColor),
+            onColorSelected = { onConfirm(it.toArgb()) },
+            onDismiss = onDismiss,
+            title = stringResource(R.string.title_custom_font_color),
+        )
+        return
+    }
+
     AppWindowDialog(
         title = stringResource(R.string.title_custom_font_color),
         show = show,
@@ -91,13 +105,13 @@ fun CustomFontColorPickerDialog(
             ) {
                 Text(
                     text = stringResource(R.string.summary_custom_font_color_picker),
-                    fontSize = MiuixTheme.textStyles.body2.fontSize,
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    fontSize = SkinTheme.textStyles.body2.fontSize,
+                    color = SkinTheme.colors.onSurfaceVariantSummary,
                 )
                 Text(
                     text = String.format("#%08X", draftColor),
-                    fontSize = MiuixTheme.textStyles.body2.fontSize,
-                    color = MiuixTheme.colorScheme.onSurfaceVariantActions,
+                    fontSize = SkinTheme.textStyles.body2.fontSize,
+                    color = SkinTheme.colors.onSurfaceVariantActions,
                 )
             }
             ColorPicker(
@@ -126,7 +140,7 @@ fun CustomFontColorPickerDialog(
                         onDismiss()
                     },
                     modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.textButtonColorsPrimary(),
+                    primary = true,
                 )
             }
         }

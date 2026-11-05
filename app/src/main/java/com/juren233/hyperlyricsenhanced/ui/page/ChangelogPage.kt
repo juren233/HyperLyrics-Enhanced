@@ -2,6 +2,14 @@
 
 package com.juren233.hyperlyricsenhanced.ui.page
 
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinListPage
+import com.juren233.hyperlyricsenhanced.ui.skin.ArrowPreference
+import com.juren233.hyperlyricsenhanced.ui.skin.Card
+import com.juren233.hyperlyricsenhanced.ui.skin.Icon
+import com.juren233.hyperlyricsenhanced.ui.skin.IconButton
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinIcons
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinTheme
+import com.juren233.hyperlyricsenhanced.ui.skin.SmallTitle
 import android.content.Intent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -34,26 +42,11 @@ import com.juren233.hyperlyricsenhanced.R
 import com.juren233.hyperlyricsenhanced.ui.component.MarkdownText
 import com.juren233.hyperlyricsenhanced.ui.component.SuperComponent
 import com.juren233.hyperlyricsenhanced.ui.navigation.LocalNavigator
-import com.juren233.hyperlyricsenhanced.ui.utils.BlurredBar
-import com.juren233.hyperlyricsenhanced.ui.utils.pageScrollModifiers
-import com.juren233.hyperlyricsenhanced.ui.utils.rememberBlurBackdrop
 import com.juren233.hyperlyricsenhanced.utils.ChangelogData
-import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.CircularProgressIndicator
-import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.IconButton
-import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
-import top.yukonga.miuix.kmp.basic.Scaffold
-import top.yukonga.miuix.kmp.basic.SmallTitle
-import top.yukonga.miuix.kmp.basic.TopAppBar
+import com.juren233.hyperlyricsenhanced.ui.skin.CircularProgressIndicator
 import top.yukonga.miuix.kmp.basic.VerticalScrollBar
 import top.yukonga.miuix.kmp.basic.rememberScrollBarAdapter
-import top.yukonga.miuix.kmp.blur.layerBackdrop
-import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.interfaces.ExperimentalScrollBarApi
-import top.yukonga.miuix.kmp.theme.MiuixTheme
-import top.yukonga.miuix.kmp.preference.ArrowPreference
 
 private sealed interface ChangelogUiState {
     data object Loading : ChangelogUiState
@@ -65,10 +58,6 @@ private sealed interface ChangelogUiState {
 fun ChangelogPage() {
     val navigator = LocalNavigator.current
     val context = LocalContext.current
-    val backdrop = rememberBlurBackdrop()
-    val blurActive = backdrop != null
-    val barColor = if (blurActive) Color.Transparent else MiuixTheme.colorScheme.surface
-    val topAppBarScrollBehavior = MiuixScrollBehavior()
     var reloadKey by remember { mutableIntStateOf(0) }
     var uiState by remember { mutableStateOf<ChangelogUiState>(ChangelogUiState.Loading) }
 
@@ -85,43 +74,12 @@ fun ChangelogPage() {
         }
     }
 
-    Scaffold(
-        topBar = {
-            BlurredBar(backdrop, blurActive) {
-                TopAppBar(
-                    color = barColor,
-                    title = stringResource(R.string.title_changelog),
-                    scrollBehavior = topAppBarScrollBehavior,
-                    navigationIcon = {
-                        IconButton(onClick = { navigator.pop() }) {
-                            Icon(imageVector = MiuixIcons.Back, contentDescription = stringResource(R.string.back))
-                        }
-                    }
-                )
-            }
-        }
-    ) { innerPadding ->
         val lazyListState = rememberLazyListState()
-        val top = innerPadding.calculateTopPadding()
-        val bottom = innerPadding.calculateBottomPadding()
-        val contentPadding = remember(top, bottom) {
-            PaddingValues(
-                top = top,
-                start = 0.dp,
-                end = 0.dp,
-                bottom = bottom + 20.dp
-            )
-        }
-        Box(modifier = if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier) {
-            LazyColumn(
-                state = lazyListState,
-                modifier = Modifier.pageScrollModifiers(
-                    enableScrollEndHaptic = true,
-                    showTopAppBar = true,
-                    topAppBarScrollBehavior = topAppBarScrollBehavior
-                ),
-                contentPadding = contentPadding,
-            ) {
+    SkinListPage(
+        title = stringResource(R.string.title_changelog),
+        onBack = { navigator.pop() },
+        listState = lazyListState,
+    ) {
                 changelogPageSections(
                     state = uiState,
                     onRetry = { reloadKey++ },
@@ -134,13 +92,6 @@ fun ChangelogPage() {
                         )
                     }
                 )
-            }
-            VerticalScrollBar(
-                adapter = rememberScrollBarAdapter(lazyListState),
-                modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
-                trackPadding = contentPadding,
-            )
-        }
     }
 }
 
@@ -196,9 +147,9 @@ private fun LazyListScope.changelogPageSections(
                                 if (item.title.isNotBlank()) {
                                     top.yukonga.miuix.kmp.basic.Text(
                                         text = item.title,
-                                        fontSize = MiuixTheme.textStyles.headline1.fontSize,
+                                        fontSize = SkinTheme.textStyles.headline1.fontSize,
                                         fontWeight = FontWeight.Medium,
-                                        color = MiuixTheme.colorScheme.onBackground,
+                                        color = SkinTheme.colors.onBackground,
                                     )
                                 }
                                 if (item.title.isNotBlank() && item.summary.isNotBlank()) {

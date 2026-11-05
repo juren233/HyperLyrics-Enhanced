@@ -1,5 +1,10 @@
 package com.juren233.hyperlyricsenhanced.ui.page.main
 
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinListPage
+import com.juren233.hyperlyricsenhanced.ui.skin.Icon
+import com.juren233.hyperlyricsenhanced.ui.skin.IconButton
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinIcons
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -17,19 +22,7 @@ import com.juren233.hyperlyricsenhanced.R
 import com.juren233.hyperlyricsenhanced.ui.component.AppSettingsIconButton
 import com.juren233.hyperlyricsenhanced.ui.component.CompactBarTitle
 import com.juren233.hyperlyricsenhanced.ui.component.LyricHookSwitchController
-import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
-import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.IconButton
-import top.yukonga.miuix.kmp.basic.Scaffold
-import top.yukonga.miuix.kmp.basic.TopAppBar
-import top.yukonga.miuix.kmp.blur.layerBackdrop
-import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.Refresh
-import top.yukonga.miuix.kmp.theme.MiuixTheme
-import com.juren233.hyperlyricsenhanced.ui.utils.BlurredBar
 import com.juren233.hyperlyricsenhanced.ui.utils.pageContentPadding
-import com.juren233.hyperlyricsenhanced.ui.utils.pageScrollModifiers
-import com.juren233.hyperlyricsenhanced.ui.utils.rememberBlurBackdrop
 
 @Composable
 fun HomePage(
@@ -54,56 +47,25 @@ fun HomePage(
     onAppSettingsClick: () -> Unit,
     sectionLimit: Int = Int.MAX_VALUE,
 ) {
-    val backdrop = rememberBlurBackdrop()
-    val blurActive = backdrop != null
-    val barColor = if (blurActive) Color.Transparent else MiuixTheme.colorScheme.surface
-    val topAppBarScrollBehavior = MiuixScrollBehavior()
     val lazyListState = rememberLazyListState()
 
-    Scaffold(
-        topBar = {
-            BlurredBar(backdrop, blurActive) {
-                // 顶栏左右都有按钮时，收起标题用略小字号。
-                CompactBarTitle {
-                    TopAppBar(
-                        color = barColor,
-                        title = "HyperLyrics Enhanced",
-                        scrollBehavior = topAppBarScrollBehavior,
-                        navigationIcon = {
+    SkinListPage(
+        title = "HyperLyrics Enhanced",
+        outerPadding = outerPadding,
+        leadingContent = {
                             AppSettingsIconButton(onClick = onAppSettingsClick)
                         },
-                        actions = {
+        trailingContent = {
                             IconButton(onClick = onRefreshClick) {
                                 Icon(
-                                    imageVector = MiuixIcons.Refresh,
+                                    icon = SkinIcons.Refresh,
                                     contentDescription = stringResource(R.string.title_one_tap_refresh),
                                     modifier = Modifier.size(26.dp),
                                 )
                             }
                         },
-                    )
-                }
-            }
-        }
-    ) { innerPadding ->
-        val contentPadding = pageContentPadding(
-            innerPadding = innerPadding,
-            outerPadding = outerPadding,
-            isWideScreen = false,
-            extraStart = 0.dp,
-            extraEnd = 0.dp,
-        )
-
-        Box(modifier = if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier) {
-            LazyColumn(
-                state = lazyListState,
-                modifier = Modifier.pageScrollModifiers(
-                    enableScrollEndHaptic = true,
-                    showTopAppBar = true,
-                    topAppBarScrollBehavior = topAppBarScrollBehavior,
-                ),
-                contentPadding = contentPadding,
-            ) {
+        listState = lazyListState,
+    ) {
                 homePageSections(
                     availableUpdateVersion = availableUpdateVersion,
                     showHyperIslandEntry = showHyperIslandEntry,
@@ -123,7 +85,5 @@ fun HomePage(
                     onClassicAodConfigClick = onClassicAodConfigClick,
                     sectionLimit = sectionLimit,
                 )
-            }
-        }
     }
 }

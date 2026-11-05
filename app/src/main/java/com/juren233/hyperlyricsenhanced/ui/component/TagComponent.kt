@@ -3,6 +3,12 @@
 
 package com.juren233.hyperlyricsenhanced.ui.component
 
+import androidx.compose.ui.graphics.vector.ImageVector
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinPress
+import com.juren233.hyperlyricsenhanced.ui.skin.Card
+import com.juren233.hyperlyricsenhanced.ui.skin.Icon
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinTheme
+import com.juren233.hyperlyricsenhanced.ui.skin.Text
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
@@ -12,17 +18,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.CardDefaults
-import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.theme.MiuixTheme
-import top.yukonga.miuix.kmp.utils.PressFeedbackType
 
 /**
  * A small tag component used to display status or categories.
@@ -35,15 +34,15 @@ fun TagComponent(
     iconRes: Int? = null,
     imageVector: ImageVector? = null,
     isRainbow: Boolean = false,
-    containerColor: Color = MiuixTheme.colorScheme.surface,
-    contentColor: Color = if (isRainbow) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.onSurfaceVariantSummary,
+    containerColor: Color = SkinTheme.colors.surface,
+    contentColor: Color = if (isRainbow) SkinTheme.colors.primary else SkinTheme.colors.onSurfaceVariantSummary,
     onClick: (() -> Unit)? = null
 ) {
     Card(
         modifier = modifier,
-        colors = CardDefaults.defaultColors(color = containerColor),
+        containerColor = containerColor,
         onClick = onClick,
-        pressFeedbackType = if (onClick != null) PressFeedbackType.Sink else PressFeedbackType.None
+        press = if (onClick != null) SkinPress.Sink else SkinPress.None,
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
@@ -69,7 +68,7 @@ fun TagComponent(
 
             Text(
                 text = text,
-                style = MiuixTheme.textStyles.body2,
+                style = SkinTheme.textStyles.body2,
                 color = contentColor,
                 fontWeight = if (isRainbow) FontWeight.Bold else FontWeight.Medium
             )

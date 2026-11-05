@@ -4,6 +4,13 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.ui.Alignment
+import com.juren233.hyperlyricsenhanced.ui.skin.LocalUiStyle
+import com.juren233.hyperlyricsenhanced.ui.skin.isGlasmio
+import io.github.neoruaa.glasmio.ui.GlasmioTopBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
@@ -83,6 +90,41 @@ fun AboutPage(
                 scrollOffsetPx = currentScrollOffset,
             ),
         )
+    }
+
+    if (LocalUiStyle.current.isGlasmio) {
+        // Glasmio：全屏动态背景由主页面的原生视图绘制；这里只有列表和一个固定顶栏，
+        // 品牌区滚出后顶栏小标题淡入（collapseProgress 复用品牌区的淡出进度）。
+        Box(Modifier.fillMaxSize()) {
+            LazyColumn(
+                state = lazyListState,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(bottom = outerPadding.calculateBottomPadding()),
+            ) {
+                aboutPageSections(
+                    aboutAppVersion = aboutAppVersion,
+                    availableUpdateVersion = availableUpdateVersion,
+                    aboutDeviceName = aboutDeviceName,
+                    aboutDeviceModel = aboutDeviceModel,
+                    aboutOsVersion = aboutOsVersion,
+                    aboutAndroidVersion = aboutAndroidVersion,
+                    headerVersionAlpha = 1f - versionFadeProgress,
+                    headerVersionScale = 1f -
+                        (currentScrollOffset / backgroundFadeDistance).coerceIn(0f, 1f) * 0.1f,
+                    cardSurfaceRestoreProgress = 1f - backgroundAlpha,
+                    onHelpClick = onHelpClick,
+                    onLicensesClick = onLicensesClick,
+                    onChangelogClick = onChangelogClick,
+                    onContributorsClick = onContributorsClick,
+                )
+            }
+            GlasmioTopBar(
+                title = pageTitle,
+                collapseProgress = logoFadeProgress,
+                modifier = Modifier.fillMaxWidth().statusBarsPadding().align(Alignment.TopCenter),
+            )
+        }
+        return
     }
 
     Scaffold(

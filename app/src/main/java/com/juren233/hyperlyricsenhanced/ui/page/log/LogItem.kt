@@ -1,5 +1,11 @@
 package com.juren233.hyperlyricsenhanced.ui.page.log
 
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinSnackbarHostState
+import com.juren233.hyperlyricsenhanced.ui.skin.Card
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinSnackbarHost
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinTheme
+import com.juren233.hyperlyricsenhanced.ui.skin.Text
+import com.juren233.hyperlyricsenhanced.ui.skin.rememberSkinSnackbarHostState
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -28,11 +34,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
-import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.SnackbarDuration
-import top.yukonga.miuix.kmp.basic.SnackbarHostState
-import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 private fun formatTimestamp(raw: String): String {
     val dotIndex = raw.lastIndexOf('.')
@@ -43,7 +44,7 @@ private fun formatTimestamp(raw: String): String {
 fun LogItem(
     entry: LogEntry,
     copiedMsg: String,
-    snackbarHostState: SnackbarHostState
+    snackbarHostState: SkinSnackbarHostState
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -54,7 +55,6 @@ fun LogItem(
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 4.dp),
         insideMargin = PaddingValues(12.dp),
-        showIndication = true,
         onClick = { expanded = !expanded },
         onLongPress = {
             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -63,7 +63,7 @@ fun LogItem(
             scope.launch {
                 snackbarHostState.showSnackbar(
                     message = copiedMsg,
-                    duration = SnackbarDuration.Custom(2000L)
+                    durationMillis = 2000L
                 )
             }
         }
@@ -86,13 +86,13 @@ fun LogItem(
                 text = entry.displaySource,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
-                color = MiuixTheme.colorScheme.onSurface
+                color = SkinTheme.colors.onSurface
             )
             Spacer(Modifier.weight(1f))
             Text(
                 text = formatTimestamp(entry.timestamp),
                 fontSize = 11.sp,
-                color = MiuixTheme.colorScheme.onSurfaceSecondary
+                color = SkinTheme.colors.onSurfaceSecondary
             )
         }
         Spacer(Modifier.height(4.dp))
@@ -101,7 +101,7 @@ fun LogItem(
             text = entry.message,
             fontSize = 13.sp,
             maxLines = if (expanded) Int.MAX_VALUE else 2,
-            color = if (entry.level == "E" || entry.level == "C") Color(0xFFF44336) else MiuixTheme.colorScheme.onSurface
+            color = if (entry.level == "E" || entry.level == "C") Color(0xFFF44336) else SkinTheme.colors.onSurface
         )
     }
 }

@@ -1,5 +1,11 @@
 package com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.scroll
 
+import com.juren233.hyperlyricsenhanced.ui.skin.ArrowPreference
+import com.juren233.hyperlyricsenhanced.ui.skin.Card
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinTheme
+import com.juren233.hyperlyricsenhanced.ui.skin.SmallTitle
+import com.juren233.hyperlyricsenhanced.ui.skin.SwitchPreference
+import com.juren233.hyperlyricsenhanced.ui.skin.Text
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -9,12 +15,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.juren233.hyperlyricsenhanced.R
 import com.juren233.hyperlyricsenhanced.common.RootConstants
-import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.SmallTitle
-import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.preference.ArrowPreference
-import top.yukonga.miuix.kmp.preference.SwitchPreference
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 fun LazyListScope.lyricScrollSections(
     lyricMode: Int,
@@ -57,8 +57,8 @@ fun LazyListScope.lyricScrollSections(
                         endActions = {
                             Text(
                                 "$marqueeSpeed",
-                                fontSize = MiuixTheme.textStyles.body2.fontSize,
-                                color = if (marqueeMode) MiuixTheme.colorScheme.onSurfaceVariantActions else MiuixTheme.colorScheme.disabledOnSecondaryVariant
+                                fontSize = SkinTheme.textStyles.body2.fontSize,
+                                color = if (marqueeMode) SkinTheme.colors.onSurfaceVariantActions else SkinTheme.colors.disabledOnSecondaryVariant
                             )
                         },
                         onClick = onMarqueeSpeedClick,
@@ -69,8 +69,8 @@ fun LazyListScope.lyricScrollSections(
                         endActions = {
                             Text(
                                 stringResource(id = R.string.format_ms, marqueeDelay),
-                                fontSize = MiuixTheme.textStyles.body2.fontSize,
-                                color = if (marqueeMode) MiuixTheme.colorScheme.onSurfaceVariantActions else MiuixTheme.colorScheme.disabledOnSecondaryVariant
+                                fontSize = SkinTheme.textStyles.body2.fontSize,
+                                color = if (marqueeMode) SkinTheme.colors.onSurfaceVariantActions else SkinTheme.colors.disabledOnSecondaryVariant
                             )
                         },
                         onClick = onMarqueeDelayClick,
@@ -87,8 +87,8 @@ fun LazyListScope.lyricScrollSections(
                         endActions = {
                             Text(
                                 stringResource(id = R.string.format_ms, marqueeLoop),
-                                fontSize = MiuixTheme.textStyles.body2.fontSize,
-                                color = if (marqueeMode) MiuixTheme.colorScheme.onSurfaceVariantActions else MiuixTheme.colorScheme.disabledOnSecondaryVariant
+                                fontSize = SkinTheme.textStyles.body2.fontSize,
+                                color = if (marqueeMode) SkinTheme.colors.onSurfaceVariantActions else SkinTheme.colors.disabledOnSecondaryVariant
                             )
                         },
                         onClick = onMarqueeLoopClick,
@@ -118,8 +118,8 @@ fun LazyListScope.lyricScrollSections(
                             endActions = {
                                 Text(
                                     "$marqueeMetadataSpeed",
-                                    fontSize = MiuixTheme.textStyles.body2.fontSize,
-                                    color = if (marqueeMetadataMode) MiuixTheme.colorScheme.onSurfaceVariantActions else MiuixTheme.colorScheme.disabledOnSecondaryVariant
+                                    fontSize = SkinTheme.textStyles.body2.fontSize,
+                                    color = if (marqueeMetadataMode) SkinTheme.colors.onSurfaceVariantActions else SkinTheme.colors.disabledOnSecondaryVariant
                                 )
                             }
                         )
@@ -130,8 +130,8 @@ fun LazyListScope.lyricScrollSections(
                             endActions = {
                                 Text(
                                     stringResource(id = R.string.format_ms, marqueeMetadataDelay),
-                                    fontSize = MiuixTheme.textStyles.body2.fontSize,
-                                    color = if (marqueeMetadataMode) MiuixTheme.colorScheme.onSurfaceVariantActions else MiuixTheme.colorScheme.disabledOnSecondaryVariant
+                                    fontSize = SkinTheme.textStyles.body2.fontSize,
+                                    color = if (marqueeMetadataMode) SkinTheme.colors.onSurfaceVariantActions else SkinTheme.colors.disabledOnSecondaryVariant
                                 )
                             }
                         )
@@ -148,8 +148,8 @@ fun LazyListScope.lyricScrollSections(
                             endActions = {
                                 Text(
                                     stringResource(id = R.string.format_ms, marqueeMetadataLoopDelay),
-                                    fontSize = MiuixTheme.textStyles.body2.fontSize,
-                                    color = if (marqueeMetadataMode) MiuixTheme.colorScheme.onSurfaceVariantActions else MiuixTheme.colorScheme.disabledOnSecondaryVariant
+                                    fontSize = SkinTheme.textStyles.body2.fontSize,
+                                    color = if (marqueeMetadataMode) SkinTheme.colors.onSurfaceVariantActions else SkinTheme.colors.disabledOnSecondaryVariant
                                 )
                             }
                         )

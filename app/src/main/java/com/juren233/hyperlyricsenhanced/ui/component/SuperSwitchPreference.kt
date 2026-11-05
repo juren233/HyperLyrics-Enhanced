@@ -8,6 +8,11 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Column
+import com.juren233.hyperlyricsenhanced.ui.skin.LocalUiStyle
+import com.juren233.hyperlyricsenhanced.ui.skin.isGlasmio
+import io.github.neoruaa.glasmio.ui.GlasmioListRow
+import io.github.neoruaa.glasmio.ui.GlasmioSwitch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.NonRestartableComposable
 import androidx.compose.runtime.getValue
@@ -18,7 +23,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import top.yukonga.miuix.kmp.basic.BasicComponentColors
 import top.yukonga.miuix.kmp.basic.BasicComponentDefaults
-import top.yukonga.miuix.kmp.basic.Switch
+import top.yukonga.miuix.kmp.basic.Switch as MiuixSwitch
 import top.yukonga.miuix.kmp.basic.SwitchColors
 import top.yukonga.miuix.kmp.basic.SwitchDefaults
 
@@ -63,6 +68,26 @@ fun SuperSwitchPreference(
     val currentOnCheckedChange by rememberUpdatedState(onCheckedChange)
     val currentOnClick by rememberUpdatedState(onClick)
 
+    if (LocalUiStyle.current.isGlasmio) {
+        Column(modifier) {
+            GlasmioListRow(
+                title = title,
+                subtitle = summary,
+                leading = startAction,
+                onClick = if (onClick != null) ({ currentOnClick?.invoke() }) else null,
+                trailing = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        endActions()
+                        GlasmioSwitch(checked = checked, onCheckedChange = currentOnCheckedChange, enabled = enabled)
+                    }
+                },
+                enabled = enabled,
+            )
+            bottomAction?.invoke()
+        }
+        return
+    }
+
     ProComponent(
         modifier = modifier,
         insideMargin = insideMargin,
@@ -88,7 +113,7 @@ fun SuperSwitchPreference(
                     .padding(start = 8.dp)
                     .align(Alignment.CenterVertically)
             ) {
-                Switch(
+                MiuixSwitch(
                     checked = checked,
                     onCheckedChange = currentOnCheckedChange,
                     enabled = enabled,

@@ -1,5 +1,18 @@
 package com.juren233.hyperlyricsenhanced.ui.page.lyricnotification
 
+import com.juren233.hyperlyricsenhanced.ui.skin.ArrowPreference
+import com.juren233.hyperlyricsenhanced.ui.skin.BasicComponent
+import com.juren233.hyperlyricsenhanced.ui.skin.Card
+import com.juren233.hyperlyricsenhanced.ui.skin.Icon
+import com.juren233.hyperlyricsenhanced.ui.skin.IconButton
+import com.juren233.hyperlyricsenhanced.ui.skin.OverlayDropdownPreference
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinIcons
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinTheme
+import com.juren233.hyperlyricsenhanced.ui.skin.Slider
+import com.juren233.hyperlyricsenhanced.ui.skin.SmallTitle
+import com.juren233.hyperlyricsenhanced.ui.skin.SwitchPreference
+import com.juren233.hyperlyricsenhanced.ui.skin.Text
+import com.juren233.hyperlyricsenhanced.ui.skin.WindowDropdownPreference
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -16,20 +29,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.juren233.hyperlyricsenhanced.R
 import com.juren233.hyperlyricsenhanced.lyric.commonMusicApps
-import top.yukonga.miuix.kmp.basic.BasicComponent
-import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.IconButton
-import top.yukonga.miuix.kmp.basic.Slider
-import top.yukonga.miuix.kmp.basic.SmallTitle
-import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.Delete
-import top.yukonga.miuix.kmp.preference.ArrowPreference
-import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
-import top.yukonga.miuix.kmp.preference.SwitchPreference
-import top.yukonga.miuix.kmp.preference.WindowDropdownPreference
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 fun LazyListScope.configSections(
     notificationType: Int,
@@ -162,8 +161,8 @@ fun LazyListScope.configSections(
                         endActions = {
                             Text(
                                 "$sliderDragValue",
-                                fontSize = MiuixTheme.textStyles.body2.fontSize,
-                                color = MiuixTheme.colorScheme.onSurfaceVariantActions
+                                fontSize = SkinTheme.textStyles.body2.fontSize,
+                                color = SkinTheme.colors.onSurfaceVariantActions
                             )
                         },
                         bottomAction = {
@@ -340,9 +339,9 @@ fun LazyListScope.whitelistSections(
                         endActions = {
                             IconButton(onClick = { onDeleteClick(packageName) }) {
                                 Icon(
-                                    imageVector = MiuixIcons.Delete,
+                                    icon = SkinIcons.Delete,
                                     contentDescription = stringResource(R.string.delete),
-                                    tint = MiuixTheme.colorScheme.onSurfaceVariantActions
+                                    tint = SkinTheme.colors.onSurfaceVariantActions
                                 )
                             }
                         },

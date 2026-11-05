@@ -6,23 +6,22 @@
 
 package com.juren233.hyperlyricsenhanced.ui.component
 
+import com.juren233.hyperlyricsenhanced.ui.skin.Icon
+import com.juren233.hyperlyricsenhanced.ui.skin.IconButton
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinIcons
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.juren233.hyperlyricsenhanced.R
-import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.IconButton
-import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.Settings
 
 /** 顶栏左侧的应用设置入口。 */
 @Composable
 fun AppSettingsIconButton(onClick: () -> Unit) {
     IconButton(onClick = onClick) {
         Icon(
-            imageVector = MiuixIcons.Settings,
+            icon = SkinIcons.Settings,
             contentDescription = stringResource(R.string.title_app_settings),
             modifier = Modifier.size(26.dp),
         )

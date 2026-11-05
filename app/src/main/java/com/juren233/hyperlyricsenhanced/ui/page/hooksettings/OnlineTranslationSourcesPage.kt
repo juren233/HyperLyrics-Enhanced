@@ -6,6 +6,13 @@
 
 package com.juren233.hyperlyricsenhanced.ui.page.hooksettings
 
+import com.juren233.hyperlyricsenhanced.ui.skin.Card
+import com.juren233.hyperlyricsenhanced.ui.skin.Icon
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinIcons
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinTheme
+import com.juren233.hyperlyricsenhanced.ui.skin.SmallTitle
+import com.juren233.hyperlyricsenhanced.ui.skin.SwitchPreference
+import com.juren233.hyperlyricsenhanced.ui.skin.Text
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.graphics.drawable.Drawable
@@ -56,14 +63,6 @@ import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.common.remem
 import com.juren233.hyperlyricsenhanced.ui.utils.LocaleUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.SmallTitle
-import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.Music
-import top.yukonga.miuix.kmp.preference.SwitchPreference
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
 fun OnlineTranslationSourcesPage() {
@@ -335,9 +334,9 @@ private fun LazyListScope.enabledAppsSection(
                     ) {
                         Text(
                             text = stringResource(R.string.title_online_translation_no_enabled_apps),
-                            fontSize = MiuixTheme.textStyles.headline1.fontSize,
+                            fontSize = SkinTheme.textStyles.headline1.fontSize,
                             fontWeight = FontWeight.Medium,
-                            color = MiuixTheme.colorScheme.onSurfaceVariantActions,
+                            color = SkinTheme.colors.onSurfaceVariantActions,
                         )
                     }
                     else -> apps.forEach { installedApp ->
@@ -395,7 +394,7 @@ private fun AppIcon(icon: Drawable?) {
             )
         } else {
             Icon(
-                imageVector = MiuixIcons.Music,
+                icon = SkinIcons.Music,
                 contentDescription = null,
                 modifier = Modifier
                     .fillMaxSize()

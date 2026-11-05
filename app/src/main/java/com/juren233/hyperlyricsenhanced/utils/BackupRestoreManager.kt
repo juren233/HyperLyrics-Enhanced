@@ -3,8 +3,7 @@ package com.juren233.hyperlyricsenhanced.utils
 import android.content.Context
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import top.yukonga.miuix.kmp.basic.SnackbarDuration
-import top.yukonga.miuix.kmp.basic.SnackbarHostState
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinSnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -98,7 +97,7 @@ class BackupRestoreHelper(
 }
 
 @Composable
-fun rememberBackupRestoreHelper(snackbarHostState: SnackbarHostState): BackupRestoreHelper {
+fun rememberBackupRestoreHelper(snackbarHostState: SkinSnackbarHostState): BackupRestoreHelper {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
@@ -124,12 +123,12 @@ fun rememberBackupRestoreHelper(snackbarHostState: SnackbarHostState): BackupRes
                     }
                     snackbarHostState.showSnackbar(
                         message = msgBackupSuccess,
-                        duration = SnackbarDuration.Custom(2000L)
+                        durationMillis = 2000L
                     )
                 } catch (e: Exception) {
                     snackbarHostState.showSnackbar(
                         message = fmtBackupFailed.format(e.message),
-                        duration = SnackbarDuration.Custom(2000L)
+                        durationMillis = 2000L
                     )
                 }
             }
@@ -150,7 +149,7 @@ fun rememberBackupRestoreHelper(snackbarHostState: SnackbarHostState): BackupRes
                     if (json.isBlank()) {
                         snackbarHostState.showSnackbar(
                             message = msgRestoreEmpty,
-                            duration = SnackbarDuration.Custom(2000L)
+                            durationMillis = 2000L
                         )
                         return@launch
                     }
@@ -158,12 +157,12 @@ fun rememberBackupRestoreHelper(snackbarHostState: SnackbarHostState): BackupRes
                     if (success) RootApplication.syncAllPreferences()
                     snackbarHostState.showSnackbar(
                         message = if (success) msgRestoreSuccess else msgRestoreInvalid,
-                        duration = SnackbarDuration.Custom(2000L)
+                        durationMillis = 2000L
                     )
                 } catch (_: Exception) {
                     snackbarHostState.showSnackbar(
                         message = msgRestoreFailed,
-                        duration = SnackbarDuration.Custom(2000L)
+                        durationMillis = 2000L
                     )
                 }
             }

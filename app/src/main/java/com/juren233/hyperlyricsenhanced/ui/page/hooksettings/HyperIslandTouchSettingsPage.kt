@@ -1,6 +1,21 @@
 /* Copyright 2026 juren233 */
 package com.juren233.hyperlyricsenhanced.ui.page.hooksettings
 
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinDropdownPopup
+import com.juren233.hyperlyricsenhanced.ui.skin.LocalUiStyle
+import com.juren233.hyperlyricsenhanced.ui.skin.isGlasmio
+import io.github.neoruaa.glasmio.ui.GlasmioPopUpButton
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinDropdownArrow
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinDropdownItem
+import com.juren233.hyperlyricsenhanced.ui.skin.ArrowPreference
+import com.juren233.hyperlyricsenhanced.ui.skin.BasicComponent
+import com.juren233.hyperlyricsenhanced.ui.skin.Card
+import com.juren233.hyperlyricsenhanced.ui.skin.Icon
+import com.juren233.hyperlyricsenhanced.ui.skin.OverlayDropdownPreference
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinIcons
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinTheme
+import com.juren233.hyperlyricsenhanced.ui.skin.SwitchPreference
+import com.juren233.hyperlyricsenhanced.ui.skin.Text
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
@@ -22,9 +37,6 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
-import top.yukonga.miuix.kmp.basic.DropdownArrowEndAction
-import top.yukonga.miuix.kmp.basic.DropdownDefaults
-import top.yukonga.miuix.kmp.popup.OverlayDropdownPopup
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -54,18 +66,6 @@ import com.juren233.hyperlyricsenhanced.ui.component.SwipeableSegmentedTabs
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.common.XposedLyricSettingPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.common.rememberHookConfigSaver
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.common.rememberHookPrefs
-import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.BasicComponent
-import top.yukonga.miuix.kmp.basic.DropdownEntry
-import top.yukonga.miuix.kmp.basic.DropdownItem
-import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.ChevronBackward
-import top.yukonga.miuix.kmp.theme.MiuixTheme
-import top.yukonga.miuix.kmp.preference.ArrowPreference
-import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
-import top.yukonga.miuix.kmp.preference.SwitchPreference
 
 @Composable
 fun HyperIslandTouchSettingsPage() {
@@ -91,7 +91,7 @@ fun HyperIslandTouchSettingsPage() {
             for (gesture in IslandTouchGesture.entries) {
                 val binding = config.binding(side, gesture)
                 val items = actions.filter { it.availableFor(gesture) }.map { action ->
-                    DropdownItem(
+                    SkinDropdownItem(
                         text = stringResource(if (action == IslandTouchAction.NONE &&
                             gesture == IslandTouchGesture.DOUBLE_TAP)
                             R.string.island_touch_double_disabled else actionLabel(action)),
@@ -107,7 +107,7 @@ fun HyperIslandTouchSettingsPage() {
                     binding.action == IslandTouchAction.BACKWARD) {
                     // The left side edits the duration; only the right-side value opens the action list.
                     SeekActionPreference(
-                        entry = DropdownEntry(items),
+                        entries = items,
                         title = stringResource(gestureLabel(gesture)),
                         summary = stringResource(R.string.island_touch_seek_edit_hint),
                         value = stringResource(
@@ -120,7 +120,7 @@ fun HyperIslandTouchSettingsPage() {
                     )
                 } else {
                     OverlayDropdownPreference(
-                        entry = DropdownEntry(items),
+                        entries = items,
                         title = stringResource(gestureLabel(gesture)),
                     )
                 }
@@ -178,7 +178,7 @@ fun HyperIslandTouchSettingsPage() {
                             title = stringResource(R.string.island_touch_double_interval),
                             endActions = {
                                 Text(stringResource(R.string.island_touch_milliseconds_value, config.doubleTapMs),
-                                    color = MiuixTheme.colorScheme.onSurfaceVariantActions)
+                                    color = SkinTheme.colors.onSurfaceVariantActions)
                             },
                             onClick = { editingDoubleTap = true },
                         )
@@ -192,7 +192,7 @@ fun HyperIslandTouchSettingsPage() {
                             title = stringResource(R.string.island_touch_long_press_time),
                             endActions = {
                                 Text(stringResource(R.string.island_touch_milliseconds_value, config.longPressMs),
-                                    color = MiuixTheme.colorScheme.onSurfaceVariantActions)
+                                    color = SkinTheme.colors.onSurfaceVariantActions)
                             },
                             onClick = { editingLongPress = true },
                         )
@@ -244,7 +244,7 @@ fun HyperIslandTouchSettingsPage() {
                                 animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
                                 label = "helpIconRotation",
                             )
-                            Icon(MiuixIcons.ChevronBackward, contentDescription = null,
+                            Icon(SkinIcons.ChevronBackward, contentDescription = null,
                                 modifier = Modifier.rotate(helpIconRotation))
                         },
                     )
@@ -268,9 +268,9 @@ fun HyperIslandTouchSettingsPage() {
                             )) {
                                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                     Text(stringResource(title), fontSize = 15.sp, fontWeight = FontWeight.Medium,
-                                        color = MiuixTheme.colorScheme.onSurface)
+                                        color = SkinTheme.colors.onSurface)
                                     Text(stringResource(body), fontSize = 14.sp, lineHeight = 21.sp,
-                                        color = MiuixTheme.colorScheme.onSurfaceVariantActions)
+                                        color = SkinTheme.colors.onSurfaceVariantActions)
                                 }
                             }
                         }
@@ -330,15 +330,34 @@ fun HyperIslandTouchSettingsPage() {
  */
 @Composable
 private fun SeekActionPreference(
-    entry: DropdownEntry,
+    entries: List<SkinDropdownItem>,
     title: String,
     summary: String,
     value: String,
     onEditSeconds: () -> Unit,
 ) {
+    if (LocalUiStyle.current.isGlasmio) {
+        BasicComponent(
+            title = title,
+            summary = summary,
+            onClick = onEditSeconds,
+            endActions = {
+                val current = entries.firstOrNull { it.selected } ?: entries.firstOrNull()
+                if (current != null) {
+                    GlasmioPopUpButton(
+                        selected = current,
+                        items = entries,
+                        onSelected = { it.onClick() },
+                        label = { if (it === current) value else it.text },
+                    )
+                }
+            },
+        )
+        return
+    }
     var expanded by remember { mutableStateOf(false) }
     val haptic = LocalHapticFeedback.current
-    val actionColor = MiuixTheme.colorScheme.onSurfaceVariantActions
+    val actionColor = SkinTheme.colors.onSurfaceVariantActions
     BasicComponent(
         title = title,
         summary = summary,
@@ -361,22 +380,13 @@ private fun SeekActionPreference(
                 Text(
                     text = value,
                     modifier = Modifier.padding(start = 16.dp, end = 8.dp).weight(1f, fill = false),
-                    fontSize = MiuixTheme.textStyles.body2.fontSize,
+                    fontSize = SkinTheme.textStyles.body2.fontSize,
                     color = actionColor,
                     textAlign = TextAlign.End,
                 )
-                DropdownArrowEndAction(actionColor = actionColor)
+                SkinDropdownArrow(color = actionColor)
             }
-            OverlayDropdownPopup(
-                entry = entry,
-                show = expanded,
-                onDismiss = { expanded = false },
-                onDismissFinished = {},
-                maxHeight = null,
-                dropdownColors = DropdownDefaults.dropdownColors(),
-                renderInRootScaffold = true,
-                collapseOnSelection = true,
-            )
+            SkinDropdownPopup(entries = entries, show = expanded, onDismiss = { expanded = false })
         },
     )
 }

@@ -2,6 +2,11 @@
 
 package com.juren233.hyperlyricsenhanced.ui.page.log
 
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinSnackbarHostState
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinSnackbarHost
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinTheme
+import com.juren233.hyperlyricsenhanced.ui.skin.Text
+import com.juren233.hyperlyricsenhanced.ui.skin.rememberSkinSnackbarHostState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
@@ -11,6 +16,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -21,13 +29,10 @@ import com.juren233.hyperlyricsenhanced.ui.utils.pageScrollModifiers
 import top.yukonga.miuix.kmp.basic.CircularProgressIndicator
 import top.yukonga.miuix.kmp.basic.ScrollBehavior
 import top.yukonga.miuix.kmp.basic.PullToRefresh
-import top.yukonga.miuix.kmp.basic.SnackbarHostState
-import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.VerticalScrollBar
 import top.yukonga.miuix.kmp.basic.rememberPullToRefreshState
 import top.yukonga.miuix.kmp.basic.rememberScrollBarAdapter
 import top.yukonga.miuix.kmp.interfaces.ExperimentalScrollBarApi
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
 fun LogTabContent(
@@ -37,7 +42,7 @@ fun LogTabContent(
     topAppBarScrollBehavior: ScrollBehavior,
     contentPadding: PaddingValues,
     copiedMsg: String,
-    snackbarHostState: SnackbarHostState
+    snackbarHostState: SkinSnackbarHostState
 ) {
     val pullToRefreshState = rememberPullToRefreshState()
 
@@ -75,7 +80,7 @@ fun LogTabContent(
                 } else if (logs.isEmpty()) {
                     item {
                         Box(modifier = Modifier.fillParentMaxSize(), contentAlignment = Alignment.Center) {
-                            Text(stringResource(R.string.no_logs_found), color = MiuixTheme.colorScheme.onSurfaceSecondary)
+                            Text(stringResource(R.string.no_logs_found), color = SkinTheme.colors.onSurfaceSecondary)
                         }
                     }
                 } else {
@@ -95,6 +100,37 @@ fun LogTabContent(
                 modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
                 trackPadding = contentPadding,
             )
+        }
+    }
+}
+
+/** 日志列表项（加载中、空、正常三种状态）；Glasmio 风格直接作为页面列表内容使用。 */
+fun LazyListScope.logTabItems(
+    logs: List<LogEntry>,
+    isLoading: Boolean,
+    copiedMsg: String,
+    snackbarHostState: SkinSnackbarHostState,
+) {
+    if (isLoading) {
+        item(key = "log-loading") {
+            Box(modifier = Modifier.fillMaxWidth().padding(vertical = 48.dp), contentAlignment = Alignment.Center) {
+                Text(stringResource(R.string.refreshing), color = SkinTheme.colors.onSurfaceSecondary)
+            }
+        }
+    } else if (logs.isEmpty()) {
+        item(key = "log-empty") {
+            Box(modifier = Modifier.fillMaxWidth().padding(vertical = 48.dp), contentAlignment = Alignment.Center) {
+                Text(stringResource(R.string.no_logs_found), color = SkinTheme.colors.onSurfaceSecondary)
+            }
+        }
+    } else {
+        itemsIndexed(
+            logs,
+            key = { index, entry ->
+                entry.id.ifEmpty { "log_fallback_${index}_${entry.timestamp}_${entry.level}_${entry.tag}" }
+            },
+        ) { _, entry ->
+            LogItem(entry = entry, copiedMsg = copiedMsg, snackbarHostState = snackbarHostState)
         }
     }
 }

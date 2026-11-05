@@ -6,6 +6,8 @@
 
 package com.juren233.hyperlyricsenhanced.ui.page.setup
 
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinTheme
+import com.juren233.hyperlyricsenhanced.ui.skin.Text
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -70,8 +72,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.lerp
 import com.juren233.hyperlyricsenhanced.R
-import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
@@ -293,8 +293,8 @@ internal fun SetupIntro(
     val density = LocalDensity.current
     val haptic = LocalHapticFeedback.current
     val palette = rememberIslandLogoPalette()
-    val surface = MiuixTheme.colorScheme.surface
-    val onSurface = MiuixTheme.colorScheme.onSurface
+    val surface = SkinTheme.colors.surface
+    val onSurface = SkinTheme.colors.onSurface
     val appName = stringResource(R.string.app_name)
     val statusBarTop = WindowInsets.statusBars.getTop(density)
     val currentOnReveal by rememberUpdatedState(onReveal)
@@ -524,7 +524,7 @@ internal fun SetupIntro(
         Text(
             text = stringResource(R.string.setup_intro_skip_hint),
             fontSize = 13.sp,
-            color = MiuixTheme.colorScheme.onSurfaceSecondary,
+            color = SkinTheme.colors.onSurfaceSecondary,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .windowInsetsPadding(WindowInsets.navigationBars)

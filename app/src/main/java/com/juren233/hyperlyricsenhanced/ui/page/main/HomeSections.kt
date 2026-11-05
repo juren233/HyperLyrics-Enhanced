@@ -1,5 +1,9 @@
 package com.juren233.hyperlyricsenhanced.ui.page.main
 
+import com.juren233.hyperlyricsenhanced.ui.skin.ArrowPreference
+import com.juren233.hyperlyricsenhanced.ui.skin.Card
+import com.juren233.hyperlyricsenhanced.ui.skin.SmallTitle
+import com.juren233.hyperlyricsenhanced.ui.skin.SwitchPreference
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,10 +17,6 @@ import com.juren233.hyperlyricsenhanced.R
 import com.juren233.hyperlyricsenhanced.ui.component.EnhancedVersionNotice
 import com.juren233.hyperlyricsenhanced.ui.component.LyricHookSwitchController
 import com.juren233.hyperlyricsenhanced.ui.page.setup.setupOutroItemReveal
-import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.SmallTitle
-import top.yukonga.miuix.kmp.preference.ArrowPreference
-import top.yukonga.miuix.kmp.preference.SwitchPreference
 
 /** 首页最多的列表项数，分帧组合时按此分阶段。 */
 const val HOME_SECTION_MAX = 8

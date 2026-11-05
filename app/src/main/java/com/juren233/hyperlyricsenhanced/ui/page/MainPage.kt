@@ -2,13 +2,25 @@
 
 package com.juren233.hyperlyricsenhanced.ui.page
 
+import com.juren233.hyperlyricsenhanced.ui.skin.isGlasmio
+import com.juren233.hyperlyricsenhanced.ui.skin.LocalUiStyle
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinBottomNavigation
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinNavItem
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinScaffold
+import com.juren233.hyperlyricsenhanced.ui.skin.BasicComponent
+import com.juren233.hyperlyricsenhanced.ui.skin.Card
+import com.juren233.hyperlyricsenhanced.ui.skin.Icon
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinIcons
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinSnackbarHost
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinTheme
+import com.juren233.hyperlyricsenhanced.ui.skin.Text
+import com.juren233.hyperlyricsenhanced.ui.skin.TextButton
+import com.juren233.hyperlyricsenhanced.ui.skin.VerticalDivider
+import com.juren233.hyperlyricsenhanced.ui.skin.rememberSkinSnackbarHostState
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.os.Build
-import top.yukonga.miuix.kmp.basic.SnackbarDuration
-import top.yukonga.miuix.kmp.basic.SnackbarHost
-import top.yukonga.miuix.kmp.basic.SnackbarHostState
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
@@ -105,35 +117,13 @@ import com.juren233.hyperlyricsenhanced.ui.page.main.OneTapRefreshRequest
 import com.juren233.hyperlyricsenhanced.ui.page.main.rememberOneTapRefreshController
 import com.juren233.hyperlyricsenhanced.ui.page.main.rememberMainPagerState
 import kotlinx.coroutines.launch
-import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
-import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.FloatingNavigationBar
-import top.yukonga.miuix.kmp.basic.FloatingToolbarDefaults
-import top.yukonga.miuix.kmp.basic.FloatingNavigationBarItem
-import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.NavigationBar
-import top.yukonga.miuix.kmp.basic.NavigationBarItem
-import top.yukonga.miuix.kmp.basic.NavigationItem
 import top.yukonga.miuix.kmp.basic.NavigationRail
 import top.yukonga.miuix.kmp.basic.NavigationRailDefaults
 import top.yukonga.miuix.kmp.basic.NavigationRailItem
 import top.yukonga.miuix.kmp.basic.rememberNavigationRailState
-import top.yukonga.miuix.kmp.basic.Scaffold
-import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.basic.TextButton
-import top.yukonga.miuix.kmp.basic.VerticalDivider
-import top.yukonga.miuix.kmp.blur.BlendColorEntry
-import top.yukonga.miuix.kmp.blur.BlurColors
-import top.yukonga.miuix.kmp.blur.highlight.Highlight
 import top.yukonga.miuix.kmp.blur.layerBackdrop
-import top.yukonga.miuix.kmp.blur.textureBlur
-import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.Info
-import top.yukonga.miuix.kmp.icon.extended.Music
-import top.yukonga.miuix.kmp.icon.extended.Tune
 import top.yukonga.miuix.kmp.interfaces.ExperimentalScrollBarApi
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 import androidx.core.net.toUri
 
 /** 底栏渐进模糊向上延伸的渐隐高度，与顶栏 PageUtils.TOP_BAR_BLUR_FADE_HEIGHT 一致。 */
@@ -164,7 +154,7 @@ fun MainPage(outroStage: Int = MAIN_PAGE_OUTRO_STAGES) {
     val context = LocalContext.current
     val navigator = LocalNavigator.current
     val scope = rememberCoroutineScope()
-    val snackbarHostState = remember { SnackbarHostState() }
+    val snackbarHostState = rememberSkinSnackbarHostState()
     val availableUpdate by UpdateData.availableUpdate.collectAsState()
     val isWideScreen = rememberIsWideScreen()
     val navigationRailState = rememberNavigationRailState()
@@ -262,7 +252,8 @@ fun MainPage(outroStage: Int = MAIN_PAGE_OUTRO_STAGES) {
         mutableStateOf(prefs.getBoolean(UIConstants.KEY_PARALLEL_WINDOW_UI, UIConstants.DEFAULT_PARALLEL_WINDOW_UI))
     }
     // 平行窗口 UI：仅宽屏且开关开启时启用（侧栏 + 双栏场景），关闭后回落为底部栏单栏布局
-    val parallelWindowUi = isWideScreen && parallelWindowUiEnabled
+    // 侧栏 + 双栏布局是 Miuix 风格的形态；Glasmio 风格始终使用底部玻璃导航栏。
+    val parallelWindowUi = isWideScreen && parallelWindowUiEnabled && !LocalUiStyle.current.isGlasmio
     var enableHyperIsland by remember {
         mutableStateOf(prefs.getBoolean(RootConstants.KEY_HOOK_ENABLE_HYPER_ISLAND, RootConstants.DEFAULT_HOOK_ENABLE_HYPER_ISLAND))
     }
@@ -348,7 +339,7 @@ fun MainPage(outroStage: Int = MAIN_PAGE_OUTRO_STAGES) {
                 scope.launch {
                     snackbarHostState.showSnackbar(
                         message = msgXposedNotActive,
-                        duration = SnackbarDuration.Custom(2000L)
+                        durationMillis = 2000L
                     )
                 }
             }
@@ -369,7 +360,7 @@ fun MainPage(outroStage: Int = MAIN_PAGE_OUTRO_STAGES) {
                 scope.launch {
                     snackbarHostState.showSnackbar(
                         message = msgXposedNotActive,
-                        duration = SnackbarDuration.Custom(2000L)
+                        durationMillis = 2000L
                     )
                 }
             }
@@ -436,9 +427,9 @@ fun MainPage(outroStage: Int = MAIN_PAGE_OUTRO_STAGES) {
     val navItems = remember(mainTabs, homeLabel, appleMusicOptimizationLabel, aboutLabel) {
         mainTabs.mapNotNull { tab ->
             when (tab) {
-                MainTab.Home -> NavigationItem(homeLabel, MiuixIcons.Tune)
-                MainTab.AppleMusic -> NavigationItem(appleMusicOptimizationLabel, MiuixIcons.Music)
-                MainTab.About -> NavigationItem(aboutLabel, MiuixIcons.Info)
+                MainTab.Home -> SkinNavItem(homeLabel, SkinIcons.Tune)
+                MainTab.AppleMusic -> SkinNavItem(appleMusicOptimizationLabel, SkinIcons.Music)
+                MainTab.About -> SkinNavItem(aboutLabel, SkinIcons.Info)
                 MainTab.Unsupported -> null
             }
         }
@@ -449,7 +440,7 @@ fun MainPage(outroStage: Int = MAIN_PAGE_OUTRO_STAGES) {
     // --- outer backdrop (bottom bar blur) ---
     val outerBackdrop = rememberBlurBackdrop()
     val outerBlurActive = outerBackdrop != null
-    val outerBarColor = if (outerBlurActive) Color.Transparent else MiuixTheme.colorScheme.surface
+    val outerBarColor = if (outerBlurActive) Color.Transparent else SkinTheme.colors.surface
     val appName = stringResource(R.string.app_name)
     val darkMode = isSystemInDarkTheme()
     val aboutPageIndex = mainTabs.indexOf(MainTab.About)
@@ -494,7 +485,6 @@ fun MainPage(outroStage: Int = MAIN_PAGE_OUTRO_STAGES) {
     AppWindowDialog(
         title = migrationTitle,
         show = showMigrationDialog,
-        onDismissRequest = {},
         onDismissFinished = { migrationNotes = emptyList() },
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -518,7 +508,7 @@ fun MainPage(outroStage: Int = MAIN_PAGE_OUTRO_STAGES) {
             }
             TextButton(
                 text = stringResource(R.string.confirm),
-                colors = ButtonDefaults.textButtonColorsPrimary(),
+                primary = true,
                 modifier = Modifier.fillMaxWidth(),
                 onClick = {
                     val pInfo = context.packageManager.getPackageInfo(context.packageName, 0)
@@ -530,77 +520,19 @@ fun MainPage(outroStage: Int = MAIN_PAGE_OUTRO_STAGES) {
         }
     }
 
-    Scaffold(
-        snackbarHost = { SnackbarHost(state = snackbarHostState) },
+    SkinScaffold(
         modifier = Modifier.fillMaxSize(),
+        snackbarHostState = snackbarHostState,
         bottomBar = {
             if (stage >= MAIN_STAGE_BARS) {
-                AnimatedVisibility(
-                    visible = showMainNavigation && !floatingNavBarEnabled && !parallelWindowUi,
-                    enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
-                    exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
-                ) {
-                    BlurredBottomBar(outerBackdrop, outerBlurActive) {
-                        Box(
-                            modifier = Modifier
-                                .background(outerBarColor)
-                        ) {
-                            NavigationBar(color = outerBarColor, showDivider = false) {
-                                navItems.forEachIndexed { index, item ->
-                                    NavigationBarItem(
-                                        selected = mainPagerState.selectedPage == index,
-                                        onClick = { mainPagerState.animateToPage(index) },
-                                        icon = item.icon,
-                                        label = item.label
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-                AnimatedVisibility(
-                    visible = showMainNavigation && floatingNavBarEnabled && !parallelWindowUi,
-                    enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
-                    exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
-                ) {
-                    val floatingBarColor = if (outerBlurActive) Color.Transparent else MiuixTheme.colorScheme.surfaceContainer
-                    val floatingBarShape = RoundedCornerShape(FloatingToolbarDefaults.CornerRadius)
-                    val isDark = isSystemInDarkTheme()
-                    val floatingHighlight = remember(isDark) {
-                        if (isDark) Highlight.GlassStrokeSmallDark else Highlight.GlassStrokeSmallLight
-                    }
-                    FloatingNavigationBar(
-                        modifier = (if (outerBlurActive) {
-                            Modifier
-                                .textureBlur(
-                                    backdrop = outerBackdrop,
-                                    shape = floatingBarShape,
-                                    blurRadius = 12f,
-                                    colors = BlurColors(
-                                        blendColors = listOf(
-                                            BlendColorEntry(color = MiuixTheme.colorScheme.surfaceContainer.copy(0.6f)),
-                                        ),
-                                    ),
-                                    highlight = floatingHighlight,
-                                )
-                        } else {
-                            Modifier
-                        }).padding(horizontal = 12.dp),
-                        color = floatingBarColor,
-                    ) {
-                        navItems.forEachIndexed { index, item ->
-                            FloatingNavigationBarItem(
-                                selected = mainPagerState.selectedPage == index,
-                                onClick = { mainPagerState.animateToPage(index) },
-                                icon = item.icon,
-                                label = item.label
-                            )
-                            if (index < navItems.size - 1) {
-                                Spacer(Modifier.width(12.dp))
-                            }
-                        }
-                    }
-                }
+                SkinBottomNavigation(
+                    visible = showMainNavigation && !parallelWindowUi,
+                    items = navItems,
+                    selectedIndex = mainPagerState.selectedPage,
+                    onSelect = { mainPagerState.animateToPage(it) },
+                    floating = floatingNavBarEnabled,
+                    miuixBackdrop = outerBackdrop,
+                )
             }
         }
     ) { innerPadding ->
@@ -624,7 +556,7 @@ fun MainPage(outroStage: Int = MAIN_PAGE_OUTRO_STAGES) {
                             .fillMaxHeight(),
                     ) {
                         VerticalDivider(
-                            color = MiuixTheme.colorScheme.dividerLine.copy(alpha = PARALLEL_WINDOW_DIVIDER_ALPHA),
+                            color = SkinTheme.colors.dividerLine.copy(alpha = PARALLEL_WINDOW_DIVIDER_ALPHA),
                         )
                     }
                 }
@@ -741,7 +673,7 @@ private const val RAIL_LABEL_SHOW_DELAY = 500L
 @Composable
 private fun RailNavItem(
     labelAlpha: () -> Float,
-    item: NavigationItem,
+    item: SkinNavItem,
     selected: Boolean,
     onClick: () -> Unit,
 ) {
@@ -749,7 +681,7 @@ private fun RailNavItem(
         NavigationRailItem(
             selected = selected,
             onClick = onClick,
-            icon = item.icon,
+            icon = item.icon.miuix,
             label = "",
             modifier = Modifier.fillMaxWidth(),
         )
@@ -767,7 +699,7 @@ private fun RailNavItem(
                         NavigationRailDefaults.ExpandedItemContentHorizontalPadding,
                 )
                 .graphicsLayer { alpha = labelAlpha() },
-            color = MiuixTheme.colorScheme.onSurfaceContainer,
+            color = SkinTheme.colors.onSurfaceContainer,
             fontSize = NavigationRailDefaults.ExpandedLabelFontSize,
             fontWeight = FontWeight.Medium,
             maxLines = 1,

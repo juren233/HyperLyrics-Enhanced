@@ -1,5 +1,12 @@
 package com.juren233.hyperlyricsenhanced.ui.page.hooksettings
 
+import com.juren233.hyperlyricsenhanced.ui.skin.ArrowPreference
+import com.juren233.hyperlyricsenhanced.ui.skin.Card
+import com.juren233.hyperlyricsenhanced.ui.skin.OverlayDropdownPreference
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinTheme
+import com.juren233.hyperlyricsenhanced.ui.skin.SmallTitle
+import com.juren233.hyperlyricsenhanced.ui.skin.SwitchPreference
+import com.juren233.hyperlyricsenhanced.ui.skin.Text
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -28,13 +35,6 @@ import com.juren233.hyperlyricsenhanced.ui.navigation.Route
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.common.XposedLyricSettingPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.common.rememberHookConfigSaver
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.common.rememberHookPrefs
-import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.SmallTitle
-import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.preference.ArrowPreference
-import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
-import top.yukonga.miuix.kmp.preference.SwitchPreference
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
 fun LyricSettingsPage() {
@@ -322,8 +322,8 @@ fun LyricSettingsPage() {
                         endActions = {
                             Text(
                                 stringResource(R.string.early_next_line_preview_ms, earlyNextLinePreviewCustomMs),
-                                fontSize = MiuixTheme.textStyles.body2.fontSize,
-                                color = MiuixTheme.colorScheme.onSurfaceVariantActions,
+                                fontSize = SkinTheme.textStyles.body2.fontSize,
+                                color = SkinTheme.colors.onSurfaceVariantActions,
                             )
                         },
                         onClick = { showEarlyNextLinePreviewDialog = true },
@@ -410,8 +410,8 @@ fun LyricSettingsPage() {
                                 endActions = {
                                     Text(
                                         targetLang,
-                                        fontSize = MiuixTheme.textStyles.body2.fontSize,
-                                        color = MiuixTheme.colorScheme.onSurfaceVariantActions,
+                                        fontSize = SkinTheme.textStyles.body2.fontSize,
+                                        color = SkinTheme.colors.onSurfaceVariantActions,
                                     )
                                 },
                                 onClick = { showTargetLangDialog = true },
@@ -425,8 +425,8 @@ fun LyricSettingsPage() {
                                         } else {
                                             stringResource(R.string.summary_not_configured)
                                         },
-                                        fontSize = MiuixTheme.textStyles.body2.fontSize,
-                                        color = MiuixTheme.colorScheme.onSurfaceVariantActions,
+                                        fontSize = SkinTheme.textStyles.body2.fontSize,
+                                        color = SkinTheme.colors.onSurfaceVariantActions,
                                     )
                                 },
                                 onClick = { showApiKeyDialog = true },
@@ -436,8 +436,8 @@ fun LyricSettingsPage() {
                                 endActions = {
                                     Text(
                                         model,
-                                        fontSize = MiuixTheme.textStyles.body2.fontSize,
-                                        color = MiuixTheme.colorScheme.onSurfaceVariantActions,
+                                        fontSize = SkinTheme.textStyles.body2.fontSize,
+                                        color = SkinTheme.colors.onSurfaceVariantActions,
                                     )
                                 },
                                 onClick = { showModelDialog = true },

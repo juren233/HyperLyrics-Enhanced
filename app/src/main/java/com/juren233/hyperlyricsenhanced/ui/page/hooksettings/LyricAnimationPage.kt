@@ -1,5 +1,14 @@
 ﻿package com.juren233.hyperlyricsenhanced.ui.page.hooksettings
 
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinListPage
+import com.juren233.hyperlyricsenhanced.ui.skin.ArrowPreference
+import com.juren233.hyperlyricsenhanced.ui.skin.Card
+import com.juren233.hyperlyricsenhanced.ui.skin.Icon
+import com.juren233.hyperlyricsenhanced.ui.skin.IconButton
+import com.juren233.hyperlyricsenhanced.ui.skin.OverlayDropdownPreference
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinIcons
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinTheme
+import com.juren233.hyperlyricsenhanced.ui.skin.Text
 import android.content.Context
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
@@ -33,24 +42,8 @@ import com.juren233.hyperlyricsenhanced.common.UIConstants
 import com.juren233.hyperlyricsenhanced.common.PrefsBridge
 import com.juren233.hyperlyricsenhanced.ui.component.FloatInputDialog
 import com.juren233.hyperlyricsenhanced.ui.navigation.LocalNavigator
-import com.juren233.hyperlyricsenhanced.ui.utils.BlurredBar
-import com.juren233.hyperlyricsenhanced.ui.utils.pageScrollModifiers
-import com.juren233.hyperlyricsenhanced.ui.utils.rememberBlurBackdrop
 import com.juren233.hyperlyricsenhanced.lyric.view.yoyo.YoYoPresets
-import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.IconButton
-import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
-import top.yukonga.miuix.kmp.basic.Scaffold
-import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.basic.TopAppBar
-import top.yukonga.miuix.kmp.blur.layerBackdrop
-import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.Back
-import top.yukonga.miuix.kmp.preference.ArrowPreference
-import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
-import top.yukonga.miuix.kmp.preference.RadioButtonPreference
-import top.yukonga.miuix.kmp.theme.MiuixTheme
+import com.juren233.hyperlyricsenhanced.ui.skin.RadioButtonPreference
 
 private val animLabelResMap = mapOf(
     "default" to R.string.option_anim_default,
@@ -86,10 +79,6 @@ fun LyricAnimationPage() {
     val context = LocalContext.current
     val navigator = LocalNavigator.current
 
-    val backdrop = rememberBlurBackdrop()
-    val blurActive = backdrop != null
-    val barColor = if (blurActive) Color.Transparent else MiuixTheme.colorScheme.surface
-    val topAppBarScrollBehavior = MiuixScrollBehavior()
 
     // 无动画=样式切换动画关闭，此时动画速率整卡置灰（速率只作用于样式切换动画）。
     val prefs = remember { context.getSharedPreferences(UIConstants.PREF_NAME, Context.MODE_PRIVATE) }
@@ -97,43 +86,14 @@ fun LyricAnimationPage() {
         mutableStateOf(prefs.getBoolean(RootConstants.KEY_HOOK_ANIM_ENABLE, RootConstants.DEFAULT_HOOK_ANIM_ENABLE))
     }
     val onAnimEnableChange: (Boolean) -> Unit = { animEnable = it }
-    Scaffold(
-        topBar = {
-            BlurredBar(backdrop, blurActive) {
-                TopAppBar(
-                    color = barColor,
-                    title = stringResource(id = R.string.title_lyric_anim),
-                    scrollBehavior = topAppBarScrollBehavior,
-                    navigationIcon = {
-                        IconButton(onClick = { navigator.pop() }) {
-                            Icon(imageVector = MiuixIcons.Back, contentDescription = stringResource(id = R.string.back))
-                        }
-                    }
-                )
-            }
-        }
-    ) { innerPadding ->
         val lazyListState = rememberLazyListState()
-        val top = innerPadding.calculateTopPadding()
-        val bottom = innerPadding.calculateBottomPadding()
-        val contentPadding = remember(top, bottom) {
-            PaddingValues(
-                top = top,
-                start = 0.dp,
-                end = 0.dp,
-                bottom = bottom
-            )
-        }
-        Box(modifier = if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier) {
-            LazyColumn(
-                state = lazyListState,
-                modifier = Modifier.pageScrollModifiers(true, true, topAppBarScrollBehavior),
-                contentPadding = contentPadding,
-            ) {
+    SkinListPage(
+        title = stringResource(id = R.string.title_lyric_anim),
+        onBack = { navigator.pop() },
+        listState = lazyListState,
+    ) {
                 animationRateSection(enabled = animEnable)
                 animationPageSections(animEnable = animEnable, onAnimEnableChange = onAnimEnableChange)
-            }
-        }
     }
 }
 
@@ -210,11 +170,11 @@ private fun LazyListScope.animationRateSection(enabled: Boolean) {
                             endActions = {
                                 Text(
                                     String.format("%.1f", customRate) + "x",
-                                    fontSize = MiuixTheme.textStyles.body2.fontSize,
+                                    fontSize = SkinTheme.textStyles.body2.fontSize,
                                     color = if (enabled) {
-                                        MiuixTheme.colorScheme.onSurfaceVariantActions
+                                        SkinTheme.colors.onSurfaceVariantActions
                                     } else {
-                                        MiuixTheme.colorScheme.disabledOnSecondaryVariant
+                                        SkinTheme.colors.disabledOnSecondaryVariant
                                     }
                                 )
                             },

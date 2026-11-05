@@ -6,6 +6,8 @@
 
 package com.juren233.hyperlyricsenhanced.ui.page.setup
 
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinTheme
+import com.juren233.hyperlyricsenhanced.ui.skin.Text
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -56,10 +58,8 @@ import androidx.compose.ui.util.lerp
 import com.juren233.hyperlyricsenhanced.R
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import top.yukonga.miuix.kmp.basic.Text
 import com.juren233.hyperlyricsenhanced.ui.utils.LocalAppThemeController
 import top.yukonga.miuix.kmp.theme.ColorSchemeMode
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.ThemeController
 import kotlin.math.hypot
 
@@ -111,7 +111,7 @@ internal fun rememberIslandLogoPalette(): IslandLogoPalette {
         accentStart = colorResource(R.color.logo_accent_start)
         accentEnd = colorResource(R.color.logo_accent_end)
     }
-    val dark = MiuixTheme.colorScheme.surface.luminance() < 0.5f
+    val dark = SkinTheme.colors.surface.luminance() < 0.5f
     return remember(body, detail, accentStart, accentEnd, dark) {
         IslandLogoPalette(
             body = body,
@@ -282,8 +282,8 @@ internal fun IslandLogoMark(modifier: Modifier = Modifier) {
 /** 引导步骤指示：当前步骤展开成胶囊，已完成步骤保留浅色主题色。 */
 @Composable
 internal fun SetupStepIndicator(count: Int, current: Int, modifier: Modifier = Modifier) {
-    val primary = MiuixTheme.colorScheme.primary
-    val idle = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.14f)
+    val primary = SkinTheme.colors.primary
+    val idle = SkinTheme.colors.onSurface.copy(alpha = 0.14f)
     Row(
         modifier = modifier,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -321,9 +321,9 @@ internal fun SetupCheckMark(checked: Boolean, modifier: Modifier = Modifier) {
         animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
         label = "setup_check",
     )
-    val primary = MiuixTheme.colorScheme.primary
-    val onPrimary = MiuixTheme.colorScheme.onPrimary
-    val outline = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.22f)
+    val primary = SkinTheme.colors.primary
+    val onPrimary = SkinTheme.colors.onPrimary
+    val outline = SkinTheme.colors.onSurface.copy(alpha = 0.22f)
     Canvas(modifier.size(22.dp)) {
         val radius = size.minDimension / 2f
         val ring = 1.5.dp.toPx()
@@ -373,8 +373,8 @@ internal fun SetupCompletionMark(modifier: Modifier = Modifier) {
         delay(260)
         check.animateTo(1f, tween(durationMillis = 360, easing = FastOutSlowInEasing))
     }
-    val primary = MiuixTheme.colorScheme.primary
-    val onPrimary = MiuixTheme.colorScheme.onPrimary
+    val primary = SkinTheme.colors.primary
+    val onPrimary = SkinTheme.colors.onPrimary
     Canvas(modifier.size(96.dp)) {
         val base = 38.dp.toPx()
         drawCircle(primary, radius = base * circle.value)
@@ -506,13 +506,13 @@ internal fun SetupPageTitle(title: String, summary: String? = null, modifier: Mo
             fontSize = 28.sp,
             lineHeight = 36.sp,
             fontWeight = FontWeight.Bold,
-            color = MiuixTheme.colorScheme.onSurface,
+            color = SkinTheme.colors.onSurface,
         )
         if (summary != null) {
             Text(
                 text = summary,
                 fontSize = 14.sp,
-                color = MiuixTheme.colorScheme.onSurfaceSecondary,
+                color = SkinTheme.colors.onSurfaceSecondary,
                 modifier = Modifier.padding(top = 6.dp),
             )
         }

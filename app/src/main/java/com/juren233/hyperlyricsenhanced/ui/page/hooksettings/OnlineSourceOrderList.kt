@@ -6,6 +6,10 @@
 
 package com.juren233.hyperlyricsenhanced.ui.page.hooksettings
 
+import com.juren233.hyperlyricsenhanced.ui.skin.Card
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinTheme
+import com.juren233.hyperlyricsenhanced.ui.skin.Switch
+import com.juren233.hyperlyricsenhanced.ui.skin.Text
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
@@ -63,10 +67,6 @@ import androidx.compose.ui.zIndex
 import com.juren233.hyperlyricsenhanced.R
 import com.juren233.hyperlyricsenhanced.online.OnlineTranslationSourcePreferences
 import com.juren233.hyperlyricsenhanced.online.model.Source
-import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.Switch
-import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
 internal fun OnlineSourceOrderList(
@@ -219,7 +219,7 @@ internal fun OnlineSourceOrderList(
                                 },
                             )
                         } else Modifier
-                    val floatingColor = MiuixTheme.colorScheme.surfaceContainer
+                    val floatingColor = SkinTheme.colors.surfaceContainer
                     Box(
                         Modifier.fillMaxWidth()
                             .zIndex(if (active) 1f else 0f)
@@ -318,9 +318,9 @@ private fun SourceOrderPreference(
         Text(
             text = source.displayName(),
             modifier = Modifier.weight(1f),
-            fontSize = MiuixTheme.textStyles.headline1.fontSize,
+            fontSize = SkinTheme.textStyles.headline1.fontSize,
             fontWeight = FontWeight.Medium,
-            color = MiuixTheme.colorScheme.onBackground,
+            color = SkinTheme.colors.onBackground,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
@@ -353,7 +353,7 @@ private fun SourceOrderPreference(
                     modifier = Modifier.size(SOURCE_HANDLE_SIZE).then(handleModifier),
                     contentAlignment = Alignment.Center,
                 ) {
-                    val handleColor = MiuixTheme.colorScheme.onSurfaceVariantActions
+                    val handleColor = SkinTheme.colors.onSurfaceVariantActions
                     Canvas(Modifier.size(22.dp)) {
                         val stroke = 2.dp.toPx()
                         for (fraction in listOf(0.25f, 0.5f, 0.75f)) {
@@ -380,12 +380,12 @@ private fun SourcePriorityBadge(priority: Int) {
         modifier = Modifier
             .size(SOURCE_PRIORITY_BADGE_SIZE)
             .clip(CircleShape)
-            .background(MiuixTheme.colorScheme.surfaceContainerHigh),
+            .background(SkinTheme.colors.surfaceContainerHigh),
     ) {
         Text(
             text = priority.toString(),
-            color = MiuixTheme.colorScheme.onSurfaceContainerHigh,
-            fontSize = MiuixTheme.textStyles.body2.fontSize,
+            color = SkinTheme.colors.onSurfaceContainerHigh,
+            fontSize = SkinTheme.textStyles.body2.fontSize,
             fontWeight = FontWeight.SemiBold,
         )
     }

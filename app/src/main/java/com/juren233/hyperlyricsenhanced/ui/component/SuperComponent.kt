@@ -3,6 +3,10 @@
 
 package com.juren233.hyperlyricsenhanced.ui.component
 
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinPress
+import com.juren233.hyperlyricsenhanced.ui.skin.Card
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinTheme
+import com.juren233.hyperlyricsenhanced.ui.skin.Text
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -19,10 +23,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.theme.MiuixTheme
-import top.yukonga.miuix.kmp.utils.PressFeedbackType
 
 /**
  * A "Super" Component that supports expandable summary and custom styling.
@@ -46,7 +46,7 @@ fun SuperComponent(
     summaryMaxLines: Int = 2,
     onClick: (() -> Unit)? = null,
     insideMargin: PaddingValues = PaddingValues(16.dp),
-    pressFeedbackType: PressFeedbackType = PressFeedbackType.None,
+    press: SkinPress = SkinPress.None,
     enabled: Boolean = true,
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -59,7 +59,7 @@ fun SuperComponent(
                 onClick?.invoke()
             }
         },
-        pressFeedbackType = pressFeedbackType,
+        press = press,
         insideMargin = insideMargin
     ) {
         Column(
@@ -71,9 +71,9 @@ fun SuperComponent(
             if (title.isNotBlank()) {
                 Text(
                     text = title,
-                    fontSize = MiuixTheme.textStyles.headline1.fontSize,
+                    fontSize = SkinTheme.textStyles.headline1.fontSize,
                     fontWeight = FontWeight.Medium,
-                    color = if (enabled) MiuixTheme.colorScheme.onBackground else MiuixTheme.colorScheme.disabledOnSecondaryVariant,
+                    color = if (enabled) SkinTheme.colors.onBackground else SkinTheme.colors.disabledOnSecondaryVariant,
                     maxLines = if (expanded) Int.MAX_VALUE else titleMaxLines,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -84,8 +84,8 @@ fun SuperComponent(
                 }
                 Text(
                     text = summary,
-                    fontSize = MiuixTheme.textStyles.body2.fontSize,
-                    color = if (enabled) MiuixTheme.colorScheme.onSurfaceVariantSummary else MiuixTheme.colorScheme.disabledOnSecondaryVariant,
+                    fontSize = SkinTheme.textStyles.body2.fontSize,
+                    color = if (enabled) SkinTheme.colors.onSurfaceVariantSummary else SkinTheme.colors.disabledOnSecondaryVariant,
                     maxLines = if (expanded) Int.MAX_VALUE else summaryMaxLines,
                     overflow = if (expanded) TextOverflow.Clip else TextOverflow.Ellipsis
                 )

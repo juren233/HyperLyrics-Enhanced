@@ -6,6 +6,13 @@
 
 package com.juren233.hyperlyricsenhanced.ui.page.hooksettings
 
+import com.juren233.hyperlyricsenhanced.ui.skin.Card
+import com.juren233.hyperlyricsenhanced.ui.skin.Icon
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinIcons
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinTheme
+import com.juren233.hyperlyricsenhanced.ui.skin.SmallTitle
+import com.juren233.hyperlyricsenhanced.ui.skin.SwitchPreference
+import com.juren233.hyperlyricsenhanced.ui.skin.Text
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -27,6 +34,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.itemsIndexed
+import com.juren233.hyperlyricsenhanced.ui.skin.LocalUiStyle
+import com.juren233.hyperlyricsenhanced.ui.skin.isGlasmio
+import io.github.neoruaa.glasmio.ui.GlasmioSearchBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -56,17 +66,7 @@ import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.common.remem
 import com.juren233.hyperlyricsenhanced.ui.utils.LocaleUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.InputField
-import top.yukonga.miuix.kmp.basic.SmallTitle
-import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.basic.Search
-import top.yukonga.miuix.kmp.icon.basic.SearchCleanup
-import top.yukonga.miuix.kmp.icon.extended.Music
-import top.yukonga.miuix.kmp.preference.SwitchPreference
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 private const val APP_ICON_BITMAP_SIZE_PX = 96
 
@@ -184,6 +184,22 @@ private fun AppSearchField(
     query: String,
     onQueryChange: (String) -> Unit,
 ) {
+    if (LocalUiStyle.current.isGlasmio) {
+        var field by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(query)) }
+        val shown = if (field.text == query) field else androidx.compose.ui.text.input.TextFieldValue(query)
+        var active by remember { mutableStateOf(false) }
+        GlasmioSearchBar(
+            query = shown,
+            onQueryChange = { field = it; onQueryChange(it.text) },
+            active = active,
+            onActiveChange = { active = it },
+            onClose = { active = false; field = androidx.compose.ui.text.input.TextFieldValue(""); onQueryChange("") },
+            placeholder = stringResource(R.string.hint_island_album_cover_whitelist_search),
+            closeContentDescription = stringResource(android.R.string.cancel),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(bottom = 8.dp),
+        )
+        return
+    }
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     var expanded by remember { mutableStateOf(false) }
     var allowSearchFocus by remember { mutableStateOf(false) }
@@ -203,18 +219,18 @@ private fun AppSearchField(
         label = stringResource(R.string.hint_island_album_cover_whitelist_search),
         leadingIcon = {
             Icon(
-                imageVector = MiuixIcons.Basic.Search,
+                icon = SkinIcons.Search,
                 contentDescription = stringResource(R.string.search),
                 modifier = Modifier
                     .size(44.dp)
                     .padding(start = 16.dp, end = 8.dp),
-                tint = MiuixTheme.colorScheme.onSurfaceContainerHigh,
+                tint = SkinTheme.colors.onSurfaceContainerHigh,
             )
         },
         trailingIcon = {
             if (query.isNotEmpty()) {
                 Icon(
-                    imageVector = MiuixIcons.Basic.SearchCleanup,
+                    icon = SkinIcons.SearchCleanup,
                     contentDescription = stringResource(R.string.search),
                     modifier = Modifier
                         .size(44.dp)
@@ -224,7 +240,7 @@ private fun AppSearchField(
                             indication = null,
                             onClick = { onQueryChange("") },
                         ),
-                    tint = MiuixTheme.colorScheme.onSurface,
+                    tint = SkinTheme.colors.onSurface,
                 )
             }
         },
@@ -274,9 +290,9 @@ private fun LazyListScope.appSection(
                                 R.string.title_island_album_cover_whitelist_no_apps
                             },
                         ),
-                        fontSize = MiuixTheme.textStyles.headline1.fontSize,
+                        fontSize = SkinTheme.textStyles.headline1.fontSize,
                         fontWeight = FontWeight.Medium,
-                        color = MiuixTheme.colorScheme.onSurfaceVariantActions,
+                        color = SkinTheme.colors.onSurfaceVariantActions,
                     )
                 }
             }
@@ -309,7 +325,7 @@ private fun LazyListScope.appSection(
                     .padding(bottom = if (index == apps.lastIndex) 12.dp else 0.dp)
                     .fillMaxWidth()
                     .background(
-                        color = MiuixTheme.colorScheme.surfaceContainer,
+                        color = SkinTheme.colors.surfaceContainer,
                         shape = shape,
                     ),
             ) {
@@ -360,7 +376,7 @@ private fun AppIcon(icon: Bitmap?) {
             )
         } else {
             Icon(
-                imageVector = MiuixIcons.Music,
+                icon = SkinIcons.Music,
                 contentDescription = null,
                 modifier = Modifier
                     .fillMaxSize()

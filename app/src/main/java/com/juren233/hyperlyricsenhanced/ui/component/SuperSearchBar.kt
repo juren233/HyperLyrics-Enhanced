@@ -1,5 +1,9 @@
 package com.juren233.hyperlyricsenhanced.ui.component
 
+import com.juren233.hyperlyricsenhanced.ui.skin.Icon
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinIcons
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinTheme
+import com.juren233.hyperlyricsenhanced.ui.skin.Text
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -53,13 +57,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.max
 import androidx.compose.ui.zIndex
-import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.InputField
-import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.basic.Search
-import top.yukonga.miuix.kmp.icon.basic.SearchCleanup
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 
 // Search Pager Composable
@@ -104,7 +102,7 @@ fun SearchStatus.SearchPager(
         label = "SearchPagerSurfaceAlpha",
     )
 
-    val surfaceColor = MiuixTheme.colorScheme.surface
+    val surfaceColor = SkinTheme.colors.surface
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -121,7 +119,7 @@ fun SearchStatus.SearchPager(
                 .padding(top = topPadding)
                 .then(
                     if (!searchStatus.isCollapsed()) {
-                        Modifier.background(MiuixTheme.colorScheme.surface)
+                        Modifier.background(SkinTheme.colors.surface)
                     } else {
                         Modifier
                     },
@@ -133,7 +131,7 @@ fun SearchStatus.SearchPager(
                 Box(
                     modifier = Modifier
                         .weight(1f)
-                        .background(MiuixTheme.colorScheme.surface),
+                        .background(SkinTheme.colors.surface),
                 ) {
                     expandBar(searchStatus, onSearchStatusChange)
                 }
@@ -146,7 +144,7 @@ fun SearchStatus.SearchPager(
                 Text(
                     text = stringResource(android.R.string.cancel),
                     fontWeight = FontWeight.Bold,
-                    color = MiuixTheme.colorScheme.primary,
+                    color = SkinTheme.colors.primary,
                     modifier = Modifier
                         .padding(end = 16.dp, bottom = 6.dp)
                         .clickable(
@@ -201,12 +199,12 @@ fun SearchBar(
         label = searchStatus.label,
         leadingIcon = {
             Icon(
-                imageVector = MiuixIcons.Basic.Search,
+                icon = SkinIcons.Search,
                 contentDescription = "search",
                 modifier = Modifier
                     .size(44.dp)
                     .padding(start = 16.dp, end = 8.dp),
-                tint = MiuixTheme.colorScheme.onSurfaceContainerHigh,
+                tint = SkinTheme.colors.onSurfaceContainerHigh,
             )
         },
         trailingIcon = {
@@ -216,8 +214,8 @@ fun SearchBar(
                 exit = fadeOut() + scaleOut(),
             ) {
                 Icon(
-                    imageVector = MiuixIcons.Basic.SearchCleanup,
-                    tint = MiuixTheme.colorScheme.onSurface,
+                    icon = SkinIcons.SearchCleanup,
+                    tint = SkinTheme.colors.onSurface,
                     contentDescription = "Clean",
                     modifier = Modifier
                         .size(44.dp)
@@ -263,12 +261,12 @@ fun SearchBarFake(
         label = label,
         leadingIcon = {
             Icon(
-                imageVector = MiuixIcons.Basic.Search,
+                icon = SkinIcons.Search,
                 contentDescription = "Search",
                 modifier = Modifier
                     .size(44.dp)
                     .padding(start = 16.dp, end = 8.dp),
-                tint = MiuixTheme.colorScheme.onSurfaceContainerHigh,
+                tint = SkinTheme.colors.onSurfaceContainerHigh,
             )
         },
         modifier = Modifier

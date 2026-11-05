@@ -1,5 +1,13 @@
 package com.juren233.hyperlyricsenhanced.ui.page
 
+import com.juren233.hyperlyricsenhanced.ui.skin.BasicComponent
+import com.juren233.hyperlyricsenhanced.ui.skin.Card
+import com.juren233.hyperlyricsenhanced.ui.skin.Icon
+import com.juren233.hyperlyricsenhanced.ui.skin.IconButton
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinIcons
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinTabbedListPage
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinTheme
+import com.juren233.hyperlyricsenhanced.ui.skin.SmallTitle
 import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -34,104 +42,30 @@ import com.juren233.hyperlyricsenhanced.ui.utils.BlurredBar
 import com.juren233.hyperlyricsenhanced.ui.utils.pageScrollModifiers
 import com.juren233.hyperlyricsenhanced.ui.utils.rememberBlurBackdrop
 import kotlinx.coroutines.launch
-import top.yukonga.miuix.kmp.basic.BasicComponent
-import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
-import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.TabRowWithContour
 import top.yukonga.miuix.kmp.basic.TabRowDefaults
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.blur.layerBackdrop
-import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.Back
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
 fun HelpPage() {
     val navigator = LocalNavigator.current
-    val backdrop = rememberBlurBackdrop()
-    val blurActive = backdrop != null
-    val barColor = if (blurActive) Color.Transparent else MiuixTheme.colorScheme.surface
-    val topAppBarScrollBehavior = MiuixScrollBehavior()
-
     val tabs = listOf(stringResource(R.string.title_mi_hyper_island_lyrics), stringResource(R.string.title_dynamic_island_lyrics))
     val pagerState = rememberPagerState { tabs.size }
-    val coroutineScope = rememberCoroutineScope()
+    val listStates = listOf(rememberLazyListState(), rememberLazyListState())
 
-    val hyperIslandListState = rememberLazyListState()
-    val dynamicIslandListState = rememberLazyListState()
-
-    Scaffold(
-        topBar = {
-            BlurredBar(backdrop, blurActive) {
-                TopAppBar(
-                    color = barColor,
-                    title = stringResource(R.string.title_help),
-                    scrollBehavior = topAppBarScrollBehavior,
-                    navigationIcon = {
-                        IconButton(onClick = { navigator.pop() }) {
-                            Icon(imageVector = MiuixIcons.Back, contentDescription = stringResource(R.string.back))
-                        }
-                    },
-                    bottomContent = {
-                        // Same segmented style as the HyperIsland touch side switcher.
-                        TabRowWithContour(
-                            tabs = tabs,
-                            selectedTabIndex = pagerState.currentPage,
-                            onTabSelected = { index ->
-                                coroutineScope.launch { pagerState.animateScrollToPage(index) }
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 12.dp)
-                                .padding(bottom = 8.dp),
-                            colors = TabRowDefaults.tabRowColors(
-                                backgroundColor = MiuixTheme.colorScheme.surfaceContainer,
-                                selectedBackgroundColor = MiuixTheme.colorScheme.primary,
-                                selectedContentColor = MiuixTheme.colorScheme.onPrimary,
-                            ),
-                            maxWidth = Dp.Infinity,
-                        )
-                    }
-                )
-            }
-        }
-    ) { innerPadding ->
-        Box(modifier = if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier) {
-            HorizontalPager(state = pagerState, verticalAlignment = Alignment.Top, beyondViewportPageCount = 1) { page ->
-                val listState = if (page == 0) hyperIslandListState else dynamicIslandListState
-                val topPadding = innerPadding.calculateTopPadding()
-                val bottomPadding = innerPadding.calculateBottomPadding()
-                val contentPadding = remember(topPadding, bottomPadding) {
-                    PaddingValues(
-                        top = topPadding,
-                        start = 0.dp,
-                        end = 0.dp,
-                        bottom = bottomPadding + 16.dp
-                    )
-                }
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier.pageScrollModifiers(
-                        enableScrollEndHaptic = true,
-                        showTopAppBar = true,
-                        topAppBarScrollBehavior = topAppBarScrollBehavior
-                    ),
-                    contentPadding = contentPadding,
-                ) {
-                    when (page) {
-                        0 -> hyperIslandHelpSections(
-                            onOpenLyriconConfig = {
-                                navigator.navigate(Route.LyricProvider)
-                            }
-                        )
-                        1 -> dynamicIslandHelpSections()
-                    }
-                }
-            }
+    SkinTabbedListPage(
+        title = stringResource(R.string.title_help),
+        tabs = tabs,
+        pagerState = pagerState,
+        listStates = listStates,
+        onBack = { navigator.pop() },
+    ) { page ->
+        when (page) {
+            0 -> hyperIslandHelpSections(onOpenLyriconConfig = { navigator.navigate(Route.LyricProvider) })
+            1 -> dynamicIslandHelpSections()
         }
     }
 }

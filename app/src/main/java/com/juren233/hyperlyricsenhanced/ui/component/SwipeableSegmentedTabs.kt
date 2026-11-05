@@ -1,6 +1,8 @@
 /* Copyright 2026 juren233 */
 package com.juren233.hyperlyricsenhanced.ui.component
 
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinTheme
+import com.juren233.hyperlyricsenhanced.ui.skin.Text
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
@@ -14,6 +16,9 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.PagerState
+import com.juren233.hyperlyricsenhanced.ui.skin.LocalUiStyle
+import com.juren233.hyperlyricsenhanced.ui.skin.isGlasmio
+import io.github.neoruaa.glasmio.ui.GlasmioSegmentedControl
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
@@ -34,9 +39,7 @@ import androidx.compose.ui.unit.dp
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
-import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.squircle.squircleBackground
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /**
  * Segmented switcher whose thumb tracks [pagerState] live. Dragging the thumb scrolls the pager
@@ -48,13 +51,23 @@ fun SwipeableSegmentedTabs(
     labels: List<String>,
     pagerState: PagerState,
     modifier: Modifier = Modifier,
-    trackColor: Color = MiuixTheme.colorScheme.surfaceContainer,
-    thumbColor: Color = MiuixTheme.colorScheme.primary,
-    selectedContentColor: Color = MiuixTheme.colorScheme.onPrimary,
-    contentColor: Color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+    trackColor: Color = SkinTheme.colors.surfaceContainer,
+    thumbColor: Color = SkinTheme.colors.primary,
+    selectedContentColor: Color = SkinTheme.colors.onPrimary,
+    contentColor: Color = SkinTheme.colors.onSurfaceVariantSummary,
 ) {
     val count = labels.size
     val scope = rememberCoroutineScope()
+    if (LocalUiStyle.current.isGlasmio) {
+        // Glasmio：分段控件自身带滑块动画；页面横滑时跟随 currentPage，点选则动画翻页。
+        GlasmioSegmentedControl(
+            items = labels.mapIndexed { index, label -> index to label },
+            selected = pagerState.currentPage,
+            onSelected = { index -> scope.launch { pagerState.animateScrollToPage(index.coerceIn(0, count - 1)) } },
+            modifier = modifier.fillMaxWidth(),
+        )
+        return
+    }
     val position = (pagerState.currentPage + pagerState.currentPageOffsetFraction)
         .coerceIn(0f, (count - 1).coerceAtLeast(0).toFloat())
     fun goTo(index: Int) {
@@ -108,7 +121,7 @@ fun SwipeableSegmentedTabs(
                 ) {
                     Text(
                         text = label,
-                        fontSize = MiuixTheme.textStyles.body2.fontSize,
+                        fontSize = SkinTheme.textStyles.body2.fontSize,
                         fontWeight = if (nearness >= 0.5f) FontWeight.Bold else FontWeight.Normal,
                         color = lerp(contentColor, selectedContentColor, nearness),
                         maxLines = 1,

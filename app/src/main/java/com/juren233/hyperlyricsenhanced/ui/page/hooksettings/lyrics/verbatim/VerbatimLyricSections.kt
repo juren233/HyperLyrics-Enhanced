@@ -1,5 +1,11 @@
 package com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.verbatim
 
+import com.juren233.hyperlyricsenhanced.ui.skin.ArrowPreference
+import com.juren233.hyperlyricsenhanced.ui.skin.Card
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinTheme
+import com.juren233.hyperlyricsenhanced.ui.skin.SmallTitle
+import com.juren233.hyperlyricsenhanced.ui.skin.SwitchPreference
+import com.juren233.hyperlyricsenhanced.ui.skin.Text
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -9,12 +15,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.juren233.hyperlyricsenhanced.R
-import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.SmallTitle
-import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.preference.ArrowPreference
-import top.yukonga.miuix.kmp.preference.SwitchPreference
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 fun LazyListScope.verbatimLyricSections(
     gradientStyle: Boolean,
@@ -72,8 +72,8 @@ fun LazyListScope.verbatimLyricSections(
                                 endActions = {
                                     Text(
                                         String.format("%.2f", wordMotionCjkLift),
-                                        fontSize = MiuixTheme.textStyles.body2.fontSize,
-                                        color = MiuixTheme.colorScheme.onSurfaceVariantActions
+                                        fontSize = SkinTheme.textStyles.body2.fontSize,
+                                        color = SkinTheme.colors.onSurfaceVariantActions
                                     )
                                 }
                             )
@@ -82,8 +82,8 @@ fun LazyListScope.verbatimLyricSections(
                                 endActions = {
                                     Text(
                                         String.format("%.2f", wordMotionCjkWave),
-                                        fontSize = MiuixTheme.textStyles.body2.fontSize,
-                                        color = MiuixTheme.colorScheme.onSurfaceVariantActions
+                                        fontSize = SkinTheme.textStyles.body2.fontSize,
+                                        color = SkinTheme.colors.onSurfaceVariantActions
                                     )
                                 },
                                 onClick = onWordMotionCjkWaveClick
@@ -93,8 +93,8 @@ fun LazyListScope.verbatimLyricSections(
                                 endActions = {
                                     Text(
                                         String.format("%.2f", wordMotionLatinLift),
-                                        fontSize = MiuixTheme.textStyles.body2.fontSize,
-                                        color = MiuixTheme.colorScheme.onSurfaceVariantActions
+                                        fontSize = SkinTheme.textStyles.body2.fontSize,
+                                        color = SkinTheme.colors.onSurfaceVariantActions
                                     )
                                 },
                                 onClick = onWordMotionLatinLiftClick
@@ -104,8 +104,8 @@ fun LazyListScope.verbatimLyricSections(
                                 endActions = {
                                     Text(
                                         String.format("%.2f", wordMotionLatinWave),
-                                        fontSize = MiuixTheme.textStyles.body2.fontSize,
-                                        color = MiuixTheme.colorScheme.onSurfaceVariantActions
+                                        fontSize = SkinTheme.textStyles.body2.fontSize,
+                                        color = SkinTheme.colors.onSurfaceVariantActions
                                     )
                                 },
                                 onClick = onWordMotionLatinWaveClick

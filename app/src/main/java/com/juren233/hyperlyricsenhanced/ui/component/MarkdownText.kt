@@ -3,6 +3,7 @@
 
 package com.juren233.hyperlyricsenhanced.ui.component
 
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinTheme
 import android.graphics.Color as AndroidColor
 import android.text.method.LinkMovementMethod
 import android.widget.TextView
@@ -13,7 +14,6 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import io.noties.markwon.Markwon
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
 fun MarkdownText(
@@ -22,9 +22,9 @@ fun MarkdownText(
 ) {
     val context = LocalContext.current
     val markwon = remember(context) { Markwon.create(context) }
-    val textColor = MiuixTheme.colorScheme.onSurfaceVariantSummary.toArgb()
-    val linkColor = MiuixTheme.colorScheme.primary.toArgb()
-    val textSize = MiuixTheme.textStyles.body2.fontSize.value
+    val textColor = SkinTheme.colors.onSurfaceVariantSummary.toArgb()
+    val linkColor = SkinTheme.colors.primary.toArgb()
+    val textSize = SkinTheme.textStyles.body2.fontSize.value
 
     AndroidView(
         modifier = modifier,

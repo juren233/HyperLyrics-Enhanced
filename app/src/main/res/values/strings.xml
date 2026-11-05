@@ -156,6 +156,9 @@
     <string name="theme_light_monet">浅色（莫奈）</string>
     <string name="theme_dark_monet">深色（莫奈）</string>
     <string name="title_theme">主题颜色</string>
+    <string name="title_ui_style">主题风格</string>
+    <string name="ui_style_miuix">Miuix</string>
+    <string name="ui_style_glasmio">Glasmio</string>
     <string name="title_app_language">应用显示语言</string>
     <string name="language_system">跟随系统</string>
     <string name="language_simplified_chinese">简体中文</string>

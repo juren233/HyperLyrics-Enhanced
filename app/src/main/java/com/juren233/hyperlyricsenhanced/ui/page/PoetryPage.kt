@@ -2,6 +2,12 @@
 
 package com.juren233.hyperlyricsenhanced.ui.page
 
+import com.juren233.hyperlyricsenhanced.ui.skin.Card
+import com.juren233.hyperlyricsenhanced.ui.skin.Icon
+import com.juren233.hyperlyricsenhanced.ui.skin.IconButton
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinIcons
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinTheme
+import com.juren233.hyperlyricsenhanced.ui.skin.Text
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -17,6 +23,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.ui.text.input.TextFieldValue
+import com.juren233.hyperlyricsenhanced.ui.skin.LocalUiStyle
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinListPage
+import com.juren233.hyperlyricsenhanced.ui.skin.isGlasmio
+import io.github.neoruaa.glasmio.ui.GlasmioSearchBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -46,26 +57,59 @@ import com.juren233.hyperlyricsenhanced.ui.utils.BlurredBar
 import com.juren233.hyperlyricsenhanced.ui.utils.pageScrollModifiers
 import com.juren233.hyperlyricsenhanced.ui.utils.rememberBlurBackdrop
 import kotlinx.coroutines.launch
-import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.FloatingActionButton
-import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
-import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.basic.VerticalScrollBar
 import top.yukonga.miuix.kmp.basic.rememberScrollBarAdapter
 import top.yukonga.miuix.kmp.blur.layerBackdrop
-import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.interfaces.ExperimentalScrollBarApi
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 import androidx.compose.ui.Alignment
 import androidx.compose.foundation.layout.fillMaxHeight
 
 @Composable
 fun PoetryPage() {
+    if (LocalUiStyle.current.isGlasmio) PoetryGlasmioPage() else PoetryMiuixPage()
+}
+
+/** Glasmio 风格：固定顶栏 + 列表首项搜索栏；没有悬浮「回到顶部」按钮（Glasmio 无对应组件）。 */
+@Composable
+private fun PoetryGlasmioPage() {
+    val navigator = LocalNavigator.current
+    val searchLabel = stringResource(R.string.search)
+    var query by remember { mutableStateOf(TextFieldValue()) }
+    var searching by remember { mutableStateOf(false) }
+    val filteredQuotes = remember(query.text) {
+        if (query.text.isBlank()) QuotesData.list
+        else QuotesData.list.filter { it.contains(query.text, ignoreCase = true) }
+    }
+    SkinListPage(
+        title = "HyperLyrics Enhanced",
+        onBack = { navigator.pop() },
+    ) {
+        item(key = "poetry-search") {
+            GlasmioSearchBar(
+                query = query,
+                onQueryChange = { query = it },
+                active = searching,
+                onActiveChange = { searching = it },
+                onClose = { searching = false; query = TextFieldValue() },
+                placeholder = searchLabel,
+                closeContentDescription = stringResource(android.R.string.cancel),
+                modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 8.dp).fillMaxWidth(),
+            )
+        }
+        items(filteredQuotes, key = { it }) { quote ->
+            Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
+                Text(text = quote, color = SkinTheme.colors.onSurface, modifier = Modifier.padding(16.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun PoetryMiuixPage() {
     val navigator = LocalNavigator.current
     val searchLabel = stringResource(R.string.search)
     var searchStatus by remember { mutableStateOf(SearchStatus(label = searchLabel)) }
@@ -83,7 +127,7 @@ fun PoetryPage() {
 
     val backdrop = rememberBlurBackdrop()
     val blurActive = backdrop != null
-    val barColor = if (blurActive) Color.Transparent else MiuixTheme.colorScheme.surface
+    val barColor = if (blurActive) Color.Transparent else SkinTheme.colors.surface
 
     Scaffold(
         topBar = {
@@ -95,7 +139,7 @@ fun PoetryPage() {
                         scrollBehavior = topAppBarScrollBehavior,
                         navigationIcon = {
                             IconButton(onClick = { navigator.pop() }) {
-                                Icon(imageVector = MiuixIcons.Back, contentDescription = stringResource(R.string.back))
+                                Icon(icon = SkinIcons.Back, contentDescription = stringResource(R.string.back))
                             }
                         },
                         bottomContent = {
@@ -121,7 +165,7 @@ fun PoetryPage() {
         floatingActionButton = {
             AnimatedVisibility(visible = showFab && searchStatus.shouldCollapsed(), enter = fadeIn() + scaleIn(), exit = fadeOut() + scaleOut()) {
                 FloatingActionButton(onClick = { coroutineScope.launch { listState.animateScrollToItem(0) } }) {
-                    Icon(imageVector = MiuixIcons.Back, contentDescription = stringResource(R.string.back_to_top), modifier = Modifier.rotate(90f), tint = Color.White)
+                    Icon(icon = SkinIcons.Back, contentDescription = stringResource(R.string.back_to_top), modifier = Modifier.rotate(90f), tint = Color.White)
                 }
             }
         },
@@ -134,7 +178,7 @@ fun PoetryPage() {
                 if (searchStatus.searchText.isNotBlank()) {
                     items(filteredQuotes, key = { it }) { quote ->
                         Card(modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp).fillMaxWidth()) {
-                            Text(text = quote, fontSize = 14.sp, lineHeight = 20.sp, color = MiuixTheme.colorScheme.onSurface, modifier = Modifier.padding(16.dp))
+                            Text(text = quote, fontSize = 14.sp, lineHeight = 20.sp, color = SkinTheme.colors.onSurface, modifier = Modifier.padding(16.dp))
                         }
                     }
                     item { Spacer(Modifier.height(16.dp)) }
@@ -160,7 +204,7 @@ fun PoetryPage() {
                 ) {
                     items(filteredQuotes, key = { it }) { quote ->
                         Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
-                            Text(text = quote, fontSize = 14.sp, lineHeight = 20.sp, color = MiuixTheme.colorScheme.onSurface, modifier = Modifier.padding(16.dp))
+                            Text(text = quote, fontSize = 14.sp, lineHeight = 20.sp, color = SkinTheme.colors.onSurface, modifier = Modifier.padding(16.dp))
                         }
                     }
                 }

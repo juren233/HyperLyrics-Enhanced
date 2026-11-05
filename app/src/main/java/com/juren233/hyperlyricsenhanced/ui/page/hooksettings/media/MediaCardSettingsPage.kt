@@ -1,5 +1,10 @@
 package com.juren233.hyperlyricsenhanced.ui.page.hooksettings.media
 
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinListPage
+import com.juren233.hyperlyricsenhanced.ui.skin.Icon
+import com.juren233.hyperlyricsenhanced.ui.skin.IconButton
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinIcons
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinTheme
 import android.content.Context
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -24,18 +29,6 @@ import com.juren233.hyperlyricsenhanced.common.UIConstants
 import com.juren233.hyperlyricsenhanced.ui.navigation.LocalNavigator
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.media.island.islandExpandedMediaCardSection
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.media.notification.notificationCenterMediaCardSection
-import com.juren233.hyperlyricsenhanced.ui.utils.BlurredBar
-import com.juren233.hyperlyricsenhanced.ui.utils.pageScrollModifiers
-import com.juren233.hyperlyricsenhanced.ui.utils.rememberBlurBackdrop
-import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.IconButton
-import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
-import top.yukonga.miuix.kmp.basic.Scaffold
-import top.yukonga.miuix.kmp.basic.TopAppBar
-import top.yukonga.miuix.kmp.blur.layerBackdrop
-import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.Back
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
 fun MediaCardSettingsPage() {
@@ -243,51 +236,14 @@ fun MediaCardSettingsPage() {
         )
     }
 
-    val backdrop = rememberBlurBackdrop()
-    val blurActive = backdrop != null
-    val barColor = if (blurActive) Color.Transparent else MiuixTheme.colorScheme.surface
-    val topAppBarScrollBehavior = MiuixScrollBehavior()
 
-    Scaffold(
-        topBar = {
-            BlurredBar(backdrop, blurActive) {
-                TopAppBar(
-                    color = barColor,
-                    title = stringResource(R.string.title_media_cards),
-                    subtitle = stringResource(R.string.summary_media_cards),
-                    scrollBehavior = topAppBarScrollBehavior,
-                    navigationIcon = {
-                        IconButton(onClick = { navigator.pop() }) {
-                            Icon(
-                                imageVector = MiuixIcons.Back,
-                                contentDescription = stringResource(R.string.back)
-                            )
-                        }
-                    }
-                )
-            }
-        }
-    ) { innerPadding ->
         val lazyListState = rememberLazyListState()
-        val top = innerPadding.calculateTopPadding()
-        val bottom = innerPadding.calculateBottomPadding()
-        val contentPadding = remember(top, bottom) {
-            PaddingValues(
-                top = top,
-                bottom = bottom + 16.dp
-            )
-        }
-
-        Box(modifier = if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier) {
-            LazyColumn(
-                state = lazyListState,
-                modifier = Modifier.pageScrollModifiers(
-                    enableScrollEndHaptic = true,
-                    showTopAppBar = true,
-                    topAppBarScrollBehavior = topAppBarScrollBehavior
-                ),
-                contentPadding = contentPadding
-            ) {
+    SkinListPage(
+        title = stringResource(R.string.title_media_cards),
+        subtitle = stringResource(R.string.summary_media_cards),
+        onBack = { navigator.pop() },
+        listState = lazyListState,
+    ) {
                 notificationCenterMediaCardSection(
                     cardTheme = notificationCardTheme,
                     onCardThemeChange = { theme ->
@@ -574,7 +530,5 @@ fun MediaCardSettingsPage() {
                         )
                     }
                 )
-            }
-        }
     }
 }

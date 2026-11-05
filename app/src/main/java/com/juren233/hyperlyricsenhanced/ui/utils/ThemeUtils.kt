@@ -19,6 +19,7 @@ import androidx.core.view.WindowCompat
 import top.yukonga.miuix.kmp.theme.ColorSchemeMode
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import com.juren233.hyperlyricsenhanced.common.UIConstants
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinHost
 import top.yukonga.miuix.kmp.theme.ThemeController
 
 /** 应用当前的主题设置（配色模式与莫奈主题色），供需要按同一设置自行配色的界面读取。 */
@@ -108,7 +109,7 @@ object ThemeUtils {
 
         CompositionLocalProvider(LocalAppThemeController provides themeController) {
             MiuixTheme(controller = themeController) {
-                content()
+                SkinHost(isDark = isDark, content = content)
             }
         }
     }

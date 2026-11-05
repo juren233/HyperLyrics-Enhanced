@@ -1,5 +1,18 @@
 package com.juren233.hyperlyricsenhanced.ui.page
 
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinPress
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinSnackbarHostState
+import com.juren233.hyperlyricsenhanced.ui.skin.ArrowPreference
+import com.juren233.hyperlyricsenhanced.ui.skin.BasicComponent
+import com.juren233.hyperlyricsenhanced.ui.skin.Card
+import com.juren233.hyperlyricsenhanced.ui.skin.Icon
+import com.juren233.hyperlyricsenhanced.ui.skin.OverlayDropdownPreference
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinIcons
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinSnackbarHost
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinTheme
+import com.juren233.hyperlyricsenhanced.ui.skin.Text
+import com.juren233.hyperlyricsenhanced.ui.skin.TextButton
+import com.juren233.hyperlyricsenhanced.ui.skin.rememberSkinSnackbarHostState
 import android.Manifest
 import android.content.Context
 import android.content.Intent
@@ -42,6 +55,8 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
+import com.juren233.hyperlyricsenhanced.ui.skin.LocalUiStyle
+import com.juren233.hyperlyricsenhanced.ui.skin.isGlasmio
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -115,30 +130,16 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
-import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
-import top.yukonga.miuix.kmp.basic.Checkbox
-import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.Scaffold
+import com.juren233.hyperlyricsenhanced.ui.skin.Checkbox
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinPlainScaffold
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 import com.juren233.hyperlyricsenhanced.ui.utils.BlurredBar
 import com.juren233.hyperlyricsenhanced.ui.utils.BlurredBottomBar
 import com.juren233.hyperlyricsenhanced.ui.utils.rememberBlurBackdrop
 import top.yukonga.miuix.kmp.blur.layerBackdrop
-import top.yukonga.miuix.kmp.basic.SnackbarDuration
-import top.yukonga.miuix.kmp.basic.SnackbarHost
-import top.yukonga.miuix.kmp.basic.SnackbarHostState
-import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.basic.TextButton
-import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.Messages
-import top.yukonga.miuix.kmp.icon.extended.Music
-import top.yukonga.miuix.kmp.preference.ArrowPreference
-import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.utils.PressFeedbackType
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -156,7 +157,7 @@ fun SetupPage(onNavigateToMain: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val prefs = remember { context.getSharedPreferences(UIConstants.PREF_NAME, Context.MODE_PRIVATE) }
-    val snackbarHostState = remember { SnackbarHostState() }
+    val snackbarHostState = rememberSkinSnackbarHostState()
     val msgXposedNotActive = stringResource(R.string.toast_xposed_module_not_active)
 
     var workMode by remember {
@@ -268,18 +269,19 @@ fun SetupPage(onNavigateToMain: () -> Unit) {
         }
     }
 
-    val backdrop = rememberBlurBackdrop()
+    // Glasmio 风格不使用 Miuix 的模糊叠层，栏背景用主题底色。
+    val backdrop = if (LocalUiStyle.current.isGlasmio) null else rememberBlurBackdrop()
     val blurActive = backdrop != null
-    val barColor = if (blurActive) Color.Transparent else MiuixTheme.colorScheme.surface
+    val barColor = if (blurActive) Color.Transparent else SkinTheme.colors.surface
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MiuixTheme.colorScheme.surface)
+            .background(SkinTheme.colors.surface)
     ) {
-        Scaffold(
+        SkinPlainScaffold(
             modifier = Modifier.graphicsLayer { alpha = reveal.value },
-            snackbarHost = { SnackbarHost(state = snackbarHostState) },
+            snackbarHost = { SkinSnackbarHost(state = snackbarHostState) },
             topBar = {
                 BlurredBar(backdrop, blurActive) {
                     Box(Modifier.background(barColor)) {
@@ -317,7 +319,7 @@ fun SetupPage(onNavigateToMain: () -> Unit) {
                                         scope.launch {
                                             snackbarHostState.showSnackbar(
                                                 message = msgXposedNotActive,
-                                                duration = SnackbarDuration.Custom(2000L)
+                                                durationMillis = 2000L
                                             )
                                         }
                                     } else {
@@ -486,7 +488,7 @@ private fun SetupBottomBar(
             }
             TextButton(
                 text = nextText,
-                colors = ButtonDefaults.textButtonColorsPrimary(),
+                primary = true,
                 enabled = nextEnabled,
                 onClick = onNext,
                 modifier = Modifier.weight(1f)
@@ -598,7 +600,7 @@ private fun ModeSelectionPage(selectedMode: Int, onModeSelected: (Int) -> Unit) 
                 onClick = { onModeSelected(SETUP_MODE_DYNAMIC_ISLAND) },
                 modifier = Modifier.setupStagger(2),
                 glyph = { tint ->
-                    Icon(imageVector = MiuixIcons.Messages, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
+                    Icon(icon = SkinIcons.Messages, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
                 },
             )
         }
@@ -610,7 +612,7 @@ private fun ModeSelectionPage(selectedMode: Int, onModeSelected: (Int) -> Unit) 
                 onClick = { onModeSelected(SETUP_MODE_APPLE_MUSIC_ONLY) },
                 modifier = Modifier.setupStagger(3),
                 glyph = { tint ->
-                    Icon(imageVector = MiuixIcons.Music, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
+                    Icon(icon = SkinIcons.Music, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
                 },
             )
         }
@@ -627,8 +629,8 @@ private fun SetupModeCard(
     modifier: Modifier = Modifier,
     glyph: @Composable (tint: Color) -> Unit,
 ) {
-    val primary = MiuixTheme.colorScheme.primary
-    val surfaceContainer = MiuixTheme.colorScheme.surfaceContainer
+    val primary = SkinTheme.colors.primary
+    val surfaceContainer = SkinTheme.colors.surfaceContainer
     val spec = tween<Color>(durationMillis = 300, easing = FastOutSlowInEasing)
     val containerColor by animateColorAsState(
         targetValue = if (selected) primary.copy(alpha = 0.12f).compositeOver(surfaceContainer) else surfaceContainer,
@@ -636,25 +638,25 @@ private fun SetupModeCard(
         label = "setup_mode_container",
     )
     val badgeColor by animateColorAsState(
-        targetValue = if (selected) primary else MiuixTheme.colorScheme.onSurface.copy(alpha = 0.06f),
+        targetValue = if (selected) primary else SkinTheme.colors.onSurface.copy(alpha = 0.06f),
         animationSpec = spec,
         label = "setup_mode_badge",
     )
     val glyphTint by animateColorAsState(
-        targetValue = if (selected) MiuixTheme.colorScheme.onPrimary else MiuixTheme.colorScheme.onSurfaceSecondary,
+        targetValue = if (selected) SkinTheme.colors.onPrimary else SkinTheme.colors.onSurfaceSecondary,
         animationSpec = spec,
         label = "setup_mode_glyph",
     )
     val titleColor by animateColorAsState(
-        targetValue = if (selected) primary else MiuixTheme.colorScheme.onSurface,
+        targetValue = if (selected) primary else SkinTheme.colors.onSurface,
         animationSpec = spec,
         label = "setup_mode_title",
     )
     Card(
         modifier = modifier.fillMaxWidth(),
         onClick = onClick,
-        pressFeedbackType = PressFeedbackType.Tilt,
-        colors = CardDefaults.defaultColors(color = containerColor)
+        press = SkinPress.Tilt,
+        containerColor = containerColor,
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 18.dp),
@@ -683,7 +685,7 @@ private fun SetupModeCard(
                 Text(
                     text = summary,
                     fontSize = 13.sp,
-                    color = MiuixTheme.colorScheme.onSurfaceSecondary,
+                    color = SkinTheme.colors.onSurfaceSecondary,
                     modifier = Modifier.padding(top = 3.dp)
                 )
             }
@@ -907,8 +909,8 @@ private fun WhitelistPage() {
                             },
                             endActions = {
                                 Checkbox(
-                                    state = ToggleableState(isChecked),
-                                    onClick = {
+ checked = isChecked,
+ onClick = {
                                         val checked = !isChecked
                                         if (checked) {
                                             ConfigRepository.addPackageToWhitelist(context, pkg)
@@ -929,7 +931,7 @@ private fun WhitelistPage() {
 @Composable
 private fun LyricSourceSelectionPage(
     selectedSource: String,
-    snackbarHostState: SnackbarHostState,
+    snackbarHostState: SkinSnackbarHostState,
     onSourceSelected: (String) -> Unit,
 ) {
     val context = LocalContext.current
@@ -987,7 +989,7 @@ private fun LyricSourceSelectionPage(
                     }
                     snackbarHostState.showSnackbar(
                         message = addSuccessFormat.replace("%1\$s", item.catalog.displayName),
-                        duration = SnackbarDuration.Custom(2500L),
+                        durationMillis = 2500L,
                     )
                 }.onFailure { error ->
                     providerStateFlow.update { state ->
@@ -998,7 +1000,7 @@ private fun LyricSourceSelectionPage(
                             "%1\$s",
                             error.message ?: unknownText,
                         ),
-                        duration = SnackbarDuration.Custom(3500L),
+                        durationMillis = 3500L,
                     )
                 }
             }
@@ -1099,7 +1101,7 @@ private fun LyricSourceSelectionPage(
                         endActions = {
                             Text(
                                 text = stringResource(R.string.setup_provider_added),
-                                color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+                                color = SkinTheme.colors.onSurface.copy(alpha = 0.38f),
                                 fontSize = 14.sp,
                             )
                         },
@@ -1166,9 +1168,9 @@ private fun LyricSourceSelectionPage(
                                             else -> stringResource(R.string.provider_status_unavailable)
                                         },
                                         color = if (!added && (available || busy)) {
-                                            MiuixTheme.colorScheme.primary
+                                            SkinTheme.colors.primary
                                         } else {
-                                            MiuixTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                                            SkinTheme.colors.onSurface.copy(alpha = 0.38f)
                                         },
                                         fontSize = 14.sp,
                                     )
@@ -1209,7 +1211,7 @@ private fun CompletionPage(appleMusicOnly: Boolean = false) {
                 else R.string.setup_completion_restart_hint
             ),
             fontSize = 14.sp,
-            color = MiuixTheme.colorScheme.onSurfaceSecondary,
+            color = SkinTheme.colors.onSurfaceSecondary,
             textAlign = TextAlign.Center,
             modifier = Modifier.setupStagger(5)
         )
@@ -1236,7 +1238,7 @@ private fun SetupProviderStateCard(
                 {
                     Text(
                         text = actionText,
-                        color = MiuixTheme.colorScheme.primary,
+                        color = SkinTheme.colors.primary,
                         fontSize = 14.sp,
                     )
                 }

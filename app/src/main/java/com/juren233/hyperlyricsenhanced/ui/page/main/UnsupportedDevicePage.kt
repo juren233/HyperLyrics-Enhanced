@@ -6,6 +6,10 @@
 
 package com.juren233.hyperlyricsenhanced.ui.page.main
 
+import com.juren233.hyperlyricsenhanced.ui.skin.Icon
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinIcons
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinTheme
+import com.juren233.hyperlyricsenhanced.ui.skin.Text
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,13 +24,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.juren233.hyperlyricsenhanced.R
-import top.yukonga.miuix.kmp.basic.Button
+import com.juren233.hyperlyricsenhanced.ui.skin.TextButton
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
-import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.Help
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /**
  * 功能入口全部关闭时的引导页。
@@ -41,7 +40,7 @@ fun UnsupportedDevicePage(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MiuixTheme.colorScheme.surface),
+            .background(SkinTheme.colors.surface),
         contentAlignment = Alignment.Center,
     ) {
         Column(
@@ -50,32 +49,28 @@ fun UnsupportedDevicePage(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Icon(
-                imageVector = MiuixIcons.Help,
+                icon = SkinIcons.Help,
                 contentDescription = null,
-                tint = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                tint = SkinTheme.colors.onSurfaceVariantSummary,
                 modifier = Modifier.size(64.dp),
             )
             Text(
                 text = stringResource(R.string.title_unsupported_device),
-                style = MiuixTheme.textStyles.title3,
+                style = SkinTheme.textStyles.title3,
                 textAlign = TextAlign.Center,
             )
             Text(
                 text = stringResource(R.string.summary_unsupported_device),
-                style = MiuixTheme.textStyles.body2,
-                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                style = SkinTheme.textStyles.body2,
+                color = SkinTheme.colors.onSurfaceVariantSummary,
                 textAlign = TextAlign.Center,
             )
-            Button(
+            TextButton(
+                text = stringResource(R.string.action_enter_app_settings),
                 onClick = onEnterAppSettings,
-                colors = ButtonDefaults.buttonColorsPrimary(),
                 modifier = Modifier.padding(top = 12.dp),
-            ) {
-                Text(
-                    text = stringResource(R.string.action_enter_app_settings),
-                    style = MiuixTheme.textStyles.button,
-                )
-            }
+                primary = true,
+            )
         }
     }
 }

@@ -1,5 +1,12 @@
 package com.juren233.hyperlyricsenhanced.ui.page
 
+import com.juren233.hyperlyricsenhanced.ui.skin.Icon
+import com.juren233.hyperlyricsenhanced.ui.skin.IconButton
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinIcons
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinSnackbarHost
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinTabbedListPage
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinTheme
+import com.juren233.hyperlyricsenhanced.ui.skin.rememberSkinSnackbarHostState
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
@@ -43,21 +50,16 @@ import com.juren233.hyperlyricsenhanced.ui.utils.BlurredBar
 import com.juren233.hyperlyricsenhanced.ui.utils.rememberBlurBackdrop
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import kotlinx.coroutines.launch
-import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.TabRowWithContour
 import top.yukonga.miuix.kmp.basic.TabRowDefaults
-import top.yukonga.miuix.kmp.basic.SnackbarDuration
-import top.yukonga.miuix.kmp.basic.SnackbarHost
-import top.yukonga.miuix.kmp.basic.SnackbarHostState
 import top.yukonga.miuix.kmp.basic.TopAppBar
-import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.Back
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 
+import androidx.compose.foundation.lazy.LazyListScope
 import com.juren233.hyperlyricsenhanced.ui.page.lyricnotification.LyricNotificationConfigTab
+import com.juren233.hyperlyricsenhanced.ui.page.lyricnotification.configSections
+import com.juren233.hyperlyricsenhanced.ui.page.lyricnotification.whitelistSections
 import com.juren233.hyperlyricsenhanced.ui.page.lyricnotification.LyricNotificationWhitelistTab
 import com.juren233.hyperlyricsenhanced.service.utils.shizuku.ShizukuManager
 
@@ -73,8 +75,8 @@ fun DynamicIslandNotificationPage() {
     val whitelistLazyListState = rememberLazyListState()
     val backdrop = rememberBlurBackdrop()
     val blurActive = backdrop != null
-    val barColor = if (blurActive) Color.Transparent else MiuixTheme.colorScheme.surface
-    val snackbarHostState = remember { SnackbarHostState() }
+    val barColor = if (blurActive) Color.Transparent else SkinTheme.colors.surface
+    val snackbarHostState = rememberSkinSnackbarHostState()
 
     var lyricSource by remember {
         mutableIntStateOf(
@@ -260,116 +262,8 @@ fun DynamicIslandNotificationPage() {
         )
     }
 
-    Scaffold(
-        snackbarHost = { SnackbarHost(state = snackbarHostState) },
-        topBar = {
-            BlurredBar(backdrop, blurActive) {
-                TopAppBar(
-                    color = barColor,
-                    title = stringResource(R.string.title_dynamic_island_lyrics),
-                    scrollBehavior = scrollBehavior,
-                    navigationIcon = {
-                        IconButton(onClick = { navigator.pop() }) {
-                            Icon(
-                                imageVector = MiuixIcons.Back,
-                                contentDescription = stringResource(R.string.back)
-                            )
-                        }
-                    },
-                    bottomContent = {
-                        TabRowWithContour(
-                            tabs = tabs,
-                            selectedTabIndex = pagerState.currentPage,
-                            onTabSelected = {
-                                coroutineScope.launch {
-                                    pagerState.animateScrollToPage(
-                                        it
-                                    )
-                                }
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 12.dp)
-                                .padding(bottom = 8.dp),
-                            colors = TabRowDefaults.tabRowColors(
-                                backgroundColor = MiuixTheme.colorScheme.surfaceContainer,
-                                selectedBackgroundColor = MiuixTheme.colorScheme.primary,
-                                selectedContentColor = MiuixTheme.colorScheme.onPrimary,
-                            ),
-                            maxWidth = Dp.Infinity,
-                        )
-                    }
-                )
-            }
-        }
-    ) { padding ->
-        val topPadding = padding.calculateTopPadding()
-        val bottomPadding = padding.calculateBottomPadding()
-        val contentPadding = remember(topPadding, bottomPadding) {
-            PaddingValues(
-                top = topPadding,
-                start = 0.dp,
-                end = 0.dp,
-                bottom = bottomPadding + 16.dp
-            )
-        }
-
-
-
-        TextInputDialog(
-            show = showAddWhitelistDialog,
-            title = stringResource(R.string.dialog_add_whitelist_title),
-            initialValue = tempWhitelistInput,
-            label = stringResource(R.string.dialog_add_whitelist_hint),
-            confirmText = stringResource(R.string.save),
-            onDismiss = { showAddWhitelistDialog = false },
-            onConfirm = { input ->
-                if (input.isNotBlank()) {
-                    val success = ConfigRepository.addPackageToWhitelist(context, input)
-                    if (success) {
-                        showAddWhitelistDialog = false
-                    } else {
-                        coroutineScope.launch {
-                            snackbarHostState.showSnackbar(
-                                message = msgAppExists,
-                                duration = SnackbarDuration.Custom(2000L)
-                            )
-                        }
-                    }
-                } else {
-                    coroutineScope.launch {
-                        snackbarHostState.showSnackbar(
-                            message = msgPkgEmpty,
-                            duration = SnackbarDuration.Custom(2000L)
-                        )
-                    }
-                }
-            }
-        )
-
-        SimpleDialog(
-            show = showDeleteWhitelistDialog,
-            title = stringResource(R.string.dialog_delete_whitelist_title),
-            onDismiss = { showDeleteWhitelistDialog = false },
-            onConfirm = {
-                ConfigRepository.removePackageFromWhitelist(context, packageToDelete)
-                showDeleteWhitelistDialog = false
-            }
-        )
-
-        Box(modifier = if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier) {
-            HorizontalPager(
-                state = pagerState,
-                modifier = Modifier.fillMaxSize(),
-                userScrollEnabled = true,
-                beyondViewportPageCount = 1
-            ) { page ->
-                when (page) {
-                    0 -> {
-                        LyricNotificationConfigTab(
-                            lazyListState = configLazyListState,
-                            scrollBehavior = scrollBehavior,
-                            contentPadding = contentPadding,
+    val configItems: LazyListScope.() -> Unit = {
+        configSections(
                             notificationType = notificationType,
                             onNotificationTypeChange = { index ->
                                 val oldTypeKey = if (notificationType == 1) ServiceConstants.KEY_ISLAND_LEFT_ICON_FOCUS else ServiceConstants.KEY_ISLAND_LEFT_ICON_NORMAL
@@ -456,7 +350,7 @@ fun DynamicIslandNotificationPage() {
                                         context.startActivity(intent)
                                     } catch (_: Exception) {
                                         coroutineScope.launch {
-                                            snackbarHostState.showSnackbar(message = msgAutostartFailed, duration = SnackbarDuration.Custom(2000L))
+                                            snackbarHostState.showSnackbar(message = msgAutostartFailed, durationMillis = 2000L)
                                         }
                                     }
                                 }
@@ -464,11 +358,11 @@ fun DynamicIslandNotificationPage() {
                             onBatteryOptimizationClick = {
                                 if (BatteryOptimization.isSatisfied(context)) {
                                     coroutineScope.launch {
-                                        snackbarHostState.showSnackbar(message = msgBatteryIgnored, duration = SnackbarDuration.Custom(2000L))
+                                        snackbarHostState.showSnackbar(message = msgBatteryIgnored, durationMillis = 2000L)
                                     }
                                 } else if (!BatteryOptimization.request(context)) {
                                     coroutineScope.launch {
-                                        snackbarHostState.showSnackbar(message = msgBatteryFailed, duration = SnackbarDuration.Custom(2000L))
+                                        snackbarHostState.showSnackbar(message = msgBatteryFailed, durationMillis = 2000L)
                                     }
                                 }
                             },
@@ -496,7 +390,7 @@ fun DynamicIslandNotificationPage() {
                                             prefs.edit { putBoolean(ServiceConstants.KEY_BYPASS_FOCUS_NOTIFICATION_LIMIT, false) }
                                             snackbarHostState.showSnackbar(
                                                 message = msgShizukuNotRunning,
-                                                duration = SnackbarDuration.Custom(2000L)
+                                                durationMillis = 2000L
                                             )
                                             return@launch
                                         }
@@ -510,7 +404,7 @@ fun DynamicIslandNotificationPage() {
                                             prefs.edit { putBoolean(ServiceConstants.KEY_BYPASS_FOCUS_NOTIFICATION_LIMIT, false) }
                                             snackbarHostState.showSnackbar(
                                                 message = msgShizukuPermissionRequired,
-                                                duration = SnackbarDuration.Custom(2000L)
+                                                durationMillis = 2000L
                                             )
                                         }
                                     }
@@ -519,14 +413,11 @@ fun DynamicIslandNotificationPage() {
                                     prefs.edit { putBoolean(ServiceConstants.KEY_BYPASS_FOCUS_NOTIFICATION_LIMIT, false) }
                                 }
                             }
-                        )
-                    }
-
-                    1 -> {
-                        LyricNotificationWhitelistTab(
-                            lazyListState = whitelistLazyListState,
-                            scrollBehavior = scrollBehavior,
-                            contentPadding = contentPadding,
+                        
+        )
+    }
+    val whitelistItems: LazyListScope.() -> Unit = {
+        whitelistSections(
                             whitelist = whitelist,
                             onAddClick = {
                                 tempWhitelistInput = ""
@@ -539,10 +430,76 @@ fun DynamicIslandNotificationPage() {
                             },
                             showDeleteDialog = showDeleteWhitelistDialog,
                             packageToDelete = packageToDelete
+                        
+        )
+    }
+
+    TextInputDialog(
+        show = showAddWhitelistDialog,
+        title = stringResource(R.string.dialog_add_whitelist_title),
+        initialValue = tempWhitelistInput,
+        label = stringResource(R.string.dialog_add_whitelist_hint),
+        confirmText = stringResource(R.string.save),
+        onDismiss = { showAddWhitelistDialog = false },
+        onConfirm = { input ->
+            if (input.isNotBlank()) {
+                val success = ConfigRepository.addPackageToWhitelist(context, input)
+                if (success) {
+                    showAddWhitelistDialog = false
+                } else {
+                    coroutineScope.launch {
+                        snackbarHostState.showSnackbar(
+                            message = msgAppExists,
+                            durationMillis = 2000L
                         )
                     }
                 }
+            } else {
+                coroutineScope.launch {
+                    snackbarHostState.showSnackbar(
+                        message = msgPkgEmpty,
+                        durationMillis = 2000L
+                    )
+                }
             }
         }
+    )
+
+    SimpleDialog(
+        show = showDeleteWhitelistDialog,
+        title = stringResource(R.string.dialog_delete_whitelist_title),
+        onDismiss = { showDeleteWhitelistDialog = false },
+        onConfirm = {
+            ConfigRepository.removePackageFromWhitelist(context, packageToDelete)
+            showDeleteWhitelistDialog = false
+        }
+    )
+
+
+    SkinTabbedListPage(
+        title = stringResource(R.string.title_dynamic_island_lyrics),
+        tabs = tabs,
+        pagerState = pagerState,
+        listStates = listOf(configLazyListState, whitelistLazyListState),
+        onBack = { navigator.pop() },
+        snackbarHostState = snackbarHostState,
+        miuixPage = { page, contentPadding, behavior ->
+            when (page) {
+                0 -> LyricNotificationConfigTab(
+                    lazyListState = configLazyListState,
+                    scrollBehavior = behavior,
+                    contentPadding = contentPadding,
+                    items = configItems,
+                )
+                else -> LyricNotificationWhitelistTab(
+                    lazyListState = whitelistLazyListState,
+                    scrollBehavior = behavior,
+                    contentPadding = contentPadding,
+                    items = whitelistItems,
+                )
+            }
+        },
+    ) { page ->
+        if (page == 0) configItems() else whitelistItems()
     }
 }

@@ -3,6 +3,8 @@
 
 package com.juren233.hyperlyricsenhanced.ui.component
 
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinTheme
+import com.juren233.hyperlyricsenhanced.ui.skin.Text
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -16,6 +18,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import com.juren233.hyperlyricsenhanced.ui.skin.LocalUiStyle
+import com.juren233.hyperlyricsenhanced.ui.skin.isGlasmio
+import io.github.neoruaa.glasmio.ui.GlasmioListRow
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -28,8 +33,6 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import top.yukonga.miuix.kmp.basic.BasicComponentColors
 import top.yukonga.miuix.kmp.basic.BasicComponentDefaults
-import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.utils.MiuixIndication
 
 /**
@@ -52,6 +55,21 @@ fun ProComponent(
     enabled: Boolean = true,
     role: Role? = null,
 ) {
+    if (LocalUiStyle.current.isGlasmio) {
+        // Glasmio 没有「去除按压指示」「自定义内边距」的概念：行高与内边距由 GlasmioListRow 决定。
+        Column(modifier) {
+            GlasmioListRow(
+                title = title.orEmpty(),
+                subtitle = summary,
+                leading = startAction,
+                onClick = onClick,
+                trailing = endActions?.let { actions -> { Row { actions() } } },
+                enabled = enabled,
+            )
+            bottomAction?.invoke()
+        }
+        return
+    }
     ProComponent(
         modifier = modifier,
         startAction = startAction,
@@ -66,7 +84,7 @@ fun ProComponent(
         if (title != null) {
             Text(
                 text = title,
-                fontSize = MiuixTheme.textStyles.headline1.fontSize,
+                fontSize = SkinTheme.textStyles.headline1.fontSize,
                 fontWeight = FontWeight.Medium,
                 color = if (enabled) titleColor.color else titleColor.disabledColor,
             )
@@ -74,7 +92,7 @@ fun ProComponent(
         if (summary != null) {
             Text(
                 text = summary,
-                fontSize = MiuixTheme.textStyles.body2.fontSize,
+                fontSize = SkinTheme.textStyles.body2.fontSize,
                 color = if (enabled) summaryColor.color else summaryColor.disabledColor,
             )
         }

@@ -1,13 +1,8 @@
 package com.juren233.hyperlyricsenhanced.ui.component
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -20,9 +15,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.juren233.hyperlyricsenhanced.R
-import top.yukonga.miuix.kmp.basic.ButtonDefaults
-import top.yukonga.miuix.kmp.basic.TextButton
-import top.yukonga.miuix.kmp.basic.TextField
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinDialog
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinTextField
 
 @Composable
 fun NumberInputDialog(
@@ -41,33 +35,25 @@ fun NumberInputDialog(
         if (show) inputValue = initialValue.toString()
     }
 
-    AppWindowDialog(title = title, show = show, onDismissRequest = onDismiss) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            TextField(
-                value = inputValue,
-                onValueChange = { newValue -> if (newValue.all { it.isDigit() }) inputValue = newValue },
-                label = label,
-                useLabelAsPlaceholder = useLabelAsPlaceholder,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
-                maxLines = 1
-            )
-            Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                TextButton(text = stringResource(id = R.string.cancel), onClick = onDismiss, modifier = Modifier.weight(1f))
-                Spacer(Modifier.width(20.dp))
-                TextButton(
-                    text = stringResource(id = R.string.confirm),
-                    onClick = {
-                        inputValue.toIntOrNull()?.let {
-                            onConfirm(it.coerceIn(min, max))
-                            onDismiss()
-                        }
-                    },
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.textButtonColorsPrimary()
-                )
+    SkinDialog(
+        show = show,
+        title = title,
+        onDismissRequest = onDismiss,
+        onConfirm = {
+            inputValue.toIntOrNull()?.let {
+                onConfirm(it.coerceIn(min, max))
+                onDismiss()
             }
-        }
+        },
+    ) {
+        SkinTextField(
+            value = inputValue,
+            onValueChange = { newValue -> if (newValue.all { it.isDigit() }) inputValue = newValue },
+            label = label,
+            useLabelAsPlaceholder = useLabelAsPlaceholder,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }
 
@@ -93,58 +79,36 @@ fun NumberRangeInputDialog(
         }
     }
 
-    AppWindowDialog(title = title, show = show, onDismissRequest = onDismiss) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            TextField(
-                value = minInputValue,
-                onValueChange = { newValue ->
-                    if (newValue.all(Char::isDigit)) minInputValue = newValue
-                },
-                label = minLabel,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                modifier = Modifier.fillMaxWidth(),
-                maxLines = 1,
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            TextField(
-                value = maxInputValue,
-                onValueChange = { newValue ->
-                    if (newValue.all(Char::isDigit)) maxInputValue = newValue
-                },
-                label = maxLabel,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                modifier = Modifier.fillMaxWidth(),
-                maxLines = 1,
-            )
-            Spacer(modifier = Modifier.height(24.dp))
-            Row(
-                horizontalArrangement = Arrangement.SpaceBetween,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                TextButton(
-                    text = stringResource(id = R.string.cancel),
-                    onClick = onDismiss,
-                    modifier = Modifier.weight(1f),
-                )
-                Spacer(Modifier.width(20.dp))
-                TextButton(
-                    text = stringResource(id = R.string.confirm),
-                    onClick = {
-                        val enteredMin = minInputValue.toIntOrNull() ?: return@TextButton
-                        val enteredMax = maxInputValue.toIntOrNull() ?: return@TextButton
-                        val clampedMin = enteredMin.coerceIn(allowedMin, allowedMax)
-                        val clampedMax = enteredMax.coerceIn(allowedMin, allowedMax)
-                        onConfirm(
-                            minOf(clampedMin, clampedMax),
-                            maxOf(clampedMin, clampedMax),
-                        )
-                        onDismiss()
-                    },
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.textButtonColorsPrimary(),
-                )
+    SkinDialog(
+        show = show,
+        title = title,
+        onDismissRequest = onDismiss,
+        onConfirm = {
+            val enteredMin = minInputValue.toIntOrNull()
+            val enteredMax = maxInputValue.toIntOrNull()
+            if (enteredMin != null && enteredMax != null) {
+                val clampedMin = enteredMin.coerceIn(allowedMin, allowedMax)
+                val clampedMax = enteredMax.coerceIn(allowedMin, allowedMax)
+                onConfirm(minOf(clampedMin, clampedMax), maxOf(clampedMin, clampedMax))
+                onDismiss()
             }
-        }
+        },
+    ) {
+        SkinTextField(
+            value = minInputValue,
+            onValueChange = { newValue -> if (newValue.all(Char::isDigit)) minInputValue = newValue },
+            label = minLabel,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+        SkinTextField(
+            value = maxInputValue,
+            onValueChange = { newValue -> if (newValue.all(Char::isDigit)) maxInputValue = newValue },
+            label = maxLabel,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }
 
@@ -173,54 +137,36 @@ fun FloatRangeInputDialog(
         value.count { it == '.' } <= 1 && value.all { it.isDigit() || it == '.' }
     }
 
-    AppWindowDialog(title = title, show = show, onDismissRequest = onDismiss) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            TextField(
-                value = minInputValue,
-                onValueChange = { if (acceptsDecimal(it)) minInputValue = it },
-                label = minLabel,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                modifier = Modifier.fillMaxWidth(),
-                maxLines = 1,
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            TextField(
-                value = maxInputValue,
-                onValueChange = { if (acceptsDecimal(it)) maxInputValue = it },
-                label = maxLabel,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                modifier = Modifier.fillMaxWidth(),
-                maxLines = 1,
-            )
-            Spacer(modifier = Modifier.height(24.dp))
-            Row(
-                horizontalArrangement = Arrangement.SpaceBetween,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                TextButton(
-                    text = stringResource(id = R.string.cancel),
-                    onClick = onDismiss,
-                    modifier = Modifier.weight(1f),
-                )
-                Spacer(Modifier.width(20.dp))
-                TextButton(
-                    text = stringResource(id = R.string.confirm),
-                    onClick = {
-                        val enteredMin = minInputValue.toFloatOrNull() ?: return@TextButton
-                        val enteredMax = maxInputValue.toFloatOrNull() ?: return@TextButton
-                        val clampedMin = enteredMin.coerceIn(allowedMin, allowedMax)
-                        val clampedMax = enteredMax.coerceIn(allowedMin, allowedMax)
-                        onConfirm(
-                            minOf(clampedMin, clampedMax),
-                            maxOf(clampedMin, clampedMax),
-                        )
-                        onDismiss()
-                    },
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.textButtonColorsPrimary(),
-                )
+    SkinDialog(
+        show = show,
+        title = title,
+        onDismissRequest = onDismiss,
+        onConfirm = {
+            val enteredMin = minInputValue.toFloatOrNull()
+            val enteredMax = maxInputValue.toFloatOrNull()
+            if (enteredMin != null && enteredMax != null) {
+                val clampedMin = enteredMin.coerceIn(allowedMin, allowedMax)
+                val clampedMax = enteredMax.coerceIn(allowedMin, allowedMax)
+                onConfirm(minOf(clampedMin, clampedMax), maxOf(clampedMin, clampedMax))
+                onDismiss()
             }
-        }
+        },
+    ) {
+        SkinTextField(
+            value = minInputValue,
+            onValueChange = { if (acceptsDecimal(it)) minInputValue = it },
+            label = minLabel,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+        SkinTextField(
+            value = maxInputValue,
+            onValueChange = { if (acceptsDecimal(it)) maxInputValue = it },
+            label = maxLabel,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }
 
@@ -240,27 +186,21 @@ fun TextInputDialog(
         if (show) inputValue = initialValue
     }
 
-    AppWindowDialog(title = title, show = show, onDismissRequest = onDismiss) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            TextField(
-                value = inputValue,
-                onValueChange = { inputValue = it },
-                label = label,
-                keyboardOptions = keyboardOptions,
-                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
-                maxLines = 15
-            )
-            Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                TextButton(text = stringResource(id = R.string.cancel), onClick = onDismiss, modifier = Modifier.weight(1f))
-                Spacer(Modifier.width(20.dp))
-                TextButton(
-                    text = confirmText,
-                    onClick = { onConfirm(inputValue); onDismiss() },
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.textButtonColorsPrimary()
-                )
-            }
-        }
+    SkinDialog(
+        show = show,
+        title = title,
+        onDismissRequest = onDismiss,
+        confirmText = confirmText,
+        onConfirm = { onConfirm(inputValue); onDismiss() },
+    ) {
+        SkinTextField(
+            value = inputValue,
+            onValueChange = { inputValue = it },
+            label = label,
+            keyboardOptions = keyboardOptions,
+            modifier = Modifier.fillMaxWidth(),
+            maxLines = 15,
+        )
     }
 }
 
@@ -274,26 +214,18 @@ fun SimpleDialog(
     onDismiss: () -> Unit,
     onConfirm: () -> Unit
 ) {
-    AppWindowDialog(
+    SkinDialog(
+        show = show,
         title = title,
         summary = summary,
-        show = show,
-        onDismissRequest = onDismiss
-    ) {
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            TextButton(text = cancelText, onClick = onDismiss, modifier = Modifier.weight(1f))
-            Spacer(modifier = Modifier.width(20.dp))
-            TextButton(
-                text = confirmText,
-                colors = ButtonDefaults.textButtonColorsPrimary(),
-                modifier = Modifier.weight(1f),
-                onClick = {
-                    onConfirm()
-                    onDismiss()
-                }
-            )
-        }
-    }
+        onDismissRequest = onDismiss,
+        confirmText = confirmText,
+        cancelText = cancelText,
+        onConfirm = {
+            onConfirm()
+            onDismiss()
+        },
+    )
 }
 
 @Composable
@@ -312,32 +244,24 @@ fun FloatInputDialog(
         if (show) inputValue = initialValue.toString()
     }
 
-    AppWindowDialog(title = title, show = show, onDismissRequest = onDismiss) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            TextField(
-                value = inputValue,
-                onValueChange = { newValue -> if (newValue.all { it.isDigit() || it == '.' }) inputValue = newValue },
-                label = label,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
-                maxLines = 1
-            )
-            Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                TextButton(text = stringResource(id = R.string.cancel), onClick = onDismiss, modifier = Modifier.weight(1f))
-                Spacer(Modifier.width(20.dp))
-                TextButton(
-                    text = stringResource(id = R.string.confirm),
-                    onClick = {
-                        inputValue.toFloatOrNull()?.let {
-                            onConfirm(it.coerceIn(min, max))
-                            onDismiss()
-                        }
-                    },
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.textButtonColorsPrimary()
-                )
+    SkinDialog(
+        show = show,
+        title = title,
+        onDismissRequest = onDismiss,
+        onConfirm = {
+            inputValue.toFloatOrNull()?.let {
+                onConfirm(it.coerceIn(min, max))
+                onDismiss()
             }
-        }
+        },
+    ) {
+        SkinTextField(
+            value = inputValue,
+            onValueChange = { newValue -> if (newValue.all { it.isDigit() || it == '.' }) inputValue = newValue },
+            label = label,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }
 
@@ -358,48 +282,36 @@ fun PaddingInputDialog(
             rightValue = initialRight.toString()
         }
     }
+    val filter = { text: String ->
+        if (text == "-" || text.isEmpty()) true
+        else text.toIntOrNull() != null
+    }
 
-    AppWindowDialog(title = title, show = show, onDismissRequest = onDismiss) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            val filter = { text: String ->
-                if (text == "-" || text.isEmpty()) true
-                else text.toIntOrNull() != null
-            }
-            TextField(
-                value = leftValue,
-                onValueChange = { if (filter(it)) leftValue = it },
-                label = stringResource(id = R.string.label_left_padding_range),
-                useLabelAsPlaceholder = false,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                modifier = Modifier.fillMaxWidth(),
-                maxLines = 1
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            TextField(
-                value = rightValue,
-                onValueChange = { if (filter(it)) rightValue = it },
-                label = stringResource(id = R.string.label_right_padding_range),
-                useLabelAsPlaceholder = false,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                modifier = Modifier.fillMaxWidth(),
-                maxLines = 1
-            )
-            Spacer(modifier = Modifier.height(24.dp))
-            Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                TextButton(text = stringResource(id = R.string.cancel), onClick = onDismiss, modifier = Modifier.weight(1f))
-                Spacer(Modifier.width(20.dp))
-                TextButton(
-                    text = stringResource(id = R.string.confirm),
-                    onClick = {
-                        val l = leftValue.toIntOrNull() ?: 0
-                        val r = rightValue.toIntOrNull() ?: 0
-                        onConfirm(l.coerceIn(-50, 100), r.coerceIn(-50, 100))
-                        onDismiss()
-                    },
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.textButtonColorsPrimary()
-                )
-            }
-        }
+    SkinDialog(
+        show = show,
+        title = title,
+        onDismissRequest = onDismiss,
+        onConfirm = {
+            val l = leftValue.toIntOrNull() ?: 0
+            val r = rightValue.toIntOrNull() ?: 0
+            onConfirm(l.coerceIn(-50, 100), r.coerceIn(-50, 100))
+            onDismiss()
+        },
+    ) {
+        SkinTextField(
+            value = leftValue,
+            onValueChange = { if (filter(it)) leftValue = it },
+            label = stringResource(id = R.string.label_left_padding_range),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+        SkinTextField(
+            value = rightValue,
+            onValueChange = { if (filter(it)) rightValue = it },
+            label = stringResource(id = R.string.label_right_padding_range),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }

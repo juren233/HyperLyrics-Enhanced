@@ -14,6 +14,8 @@ object UIConstants {
     const val KEY_SETUP_FLOW_VERSION = "key_setup_flow_version"
     const val KEY_THEME_MODE = "key_theme_mode"
     const val KEY_APP_LANGUAGE = "key_app_language"
+    /** 界面风格：0 = Miuix（默认），1 = Glasmio。与颜色主题 [KEY_THEME_MODE] 相互独立。 */
+    const val KEY_UI_STYLE = "key_ui_style"
     const val KEY_MONET_COLOR = "key_monet_color"
     const val KEY_PREDICTIVE_BACK_GESTURE = "key_predictive_back_gesture"
     const val KEY_SWIPE_BACK_GESTURE = "key_swipe_back_gesture"
@@ -45,6 +47,7 @@ object UIConstants {
     const val DEFAULT_SETUP_COMPLETED = false
     const val DEFAULT_THEME_MODE = 0
     const val DEFAULT_APP_LANGUAGE = 0
+    const val DEFAULT_UI_STYLE = 0
     const val DEFAULT_MONET_COLOR = 0
     const val DEFAULT_PREDICTIVE_BACK_GESTURE = false
     const val DEFAULT_SWIPE_BACK_GESTURE = true

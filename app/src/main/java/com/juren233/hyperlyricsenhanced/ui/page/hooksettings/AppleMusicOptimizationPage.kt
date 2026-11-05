@@ -1,5 +1,15 @@
 package com.juren233.hyperlyricsenhanced.ui.page.hooksettings
 
+import com.juren233.hyperlyricsenhanced.ui.skin.ArrowPreference
+import com.juren233.hyperlyricsenhanced.ui.skin.Card
+import com.juren233.hyperlyricsenhanced.ui.skin.Icon
+import com.juren233.hyperlyricsenhanced.ui.skin.IconButton
+import com.juren233.hyperlyricsenhanced.ui.skin.OverlayDropdownPreference
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinIcons
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinTheme
+import com.juren233.hyperlyricsenhanced.ui.skin.SmallTitle
+import com.juren233.hyperlyricsenhanced.ui.skin.SwitchPreference
+import com.juren233.hyperlyricsenhanced.ui.skin.Text
 import android.content.SharedPreferences
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -43,18 +53,6 @@ import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.common.remem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.IconButton
-import top.yukonga.miuix.kmp.basic.SmallTitle
-import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.ChevronForward
-import top.yukonga.miuix.kmp.icon.extended.Refresh
-import top.yukonga.miuix.kmp.preference.ArrowPreference
-import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
-import top.yukonga.miuix.kmp.preference.SwitchPreference
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 private enum class AppleMusicPluginGate { Loading, Missing, Disabled, Ready }
 
@@ -439,7 +437,7 @@ fun AppleMusicOptimizationPage(
             {
                 IconButton(onClick = onRefreshClick) {
                     Icon(
-                        imageVector = MiuixIcons.Refresh,
+                        icon = SkinIcons.Refresh,
                         contentDescription = stringResource(R.string.title_one_tap_refresh),
                         modifier = Modifier.size(26.dp),
                     )
@@ -824,13 +822,13 @@ private fun AppleMusicOptimizationNotice(
                 text = text,
                 fontSize = 13.sp,
                 lineHeight = 18.sp,
-                color = MiuixTheme.colorScheme.onSurface,
+                color = SkinTheme.colors.onSurface,
                 modifier = Modifier.weight(1f),
             )
             Icon(
-                imageVector = MiuixIcons.ChevronForward,
+                icon = SkinIcons.ChevronForward,
                 contentDescription = null,
-                tint = MiuixTheme.colorScheme.onSurfaceVariantActions,
+                tint = SkinTheme.colors.onSurfaceVariantActions,
                 modifier = Modifier
                     .padding(start = 8.dp)
                     .size(18.dp),
@@ -847,8 +845,8 @@ private fun AppleLyricsBlurRangeValue(
 ) {
     Text(
         text = "${minRadius.displayValue()}–${maxRadius.displayValue()} $unit",
-        fontSize = MiuixTheme.textStyles.body2.fontSize,
-        color = MiuixTheme.colorScheme.onSurfaceVariantActions,
+        fontSize = SkinTheme.textStyles.body2.fontSize,
+        color = SkinTheme.colors.onSurfaceVariantActions,
     )
 }
 

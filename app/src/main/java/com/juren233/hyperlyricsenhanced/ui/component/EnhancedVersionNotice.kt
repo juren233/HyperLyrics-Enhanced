@@ -1,5 +1,8 @@
 package com.juren233.hyperlyricsenhanced.ui.component
 
+import com.juren233.hyperlyricsenhanced.ui.skin.Card
+import com.juren233.hyperlyricsenhanced.ui.skin.SkinTheme
+import com.juren233.hyperlyricsenhanced.ui.skin.Text
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -8,9 +11,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.R
-import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
 fun EnhancedVersionNotice(
@@ -32,7 +32,7 @@ fun EnhancedVersionNotice(
             },
             fontSize = 13.sp,
             lineHeight = 18.sp,
-            color = MiuixTheme.colorScheme.onSurface,
+            color = SkinTheme.colors.onSurface,
             modifier = Modifier.padding(16.dp)
         )
     }
