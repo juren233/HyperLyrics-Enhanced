@@ -761,6 +761,10 @@
     <string name="export_header">========== HyperLyrics Enhanced Debug Logs ==========</string>
     <string name="format_export_time">Export Time: %1$s</string>
     <string name="export_environment_title">Environment</string>
+    <string name="format_export_module_version">Module Version: %1$s</string>
+    <string name="export_enabled_plugins_title">Enabled Plugins</string>
+    <string name="format_export_enabled_plugin">  - %1$s (%2$s): %3$s</string>
+    <string name="export_none">None</string>
     <string name="format_export_device_model">Device Model: %1$s</string>
     <string name="format_export_system_version">System Version: %1$s</string>
     <string name="format_export_android_version">Android Version: %1$s</string>

@@ -13,7 +13,9 @@ import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
 import android.os.Build
 import androidx.core.content.pm.PackageInfoCompat
+import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.lyric.DynamicLyricData
+import com.juren233.hyperlyricsenhanced.provider.OfficialProviderRepository
 import com.juren233.hyperlyricsenhanced.service.LiveLyricService
 import java.io.BufferedReader
 import java.io.InputStreamReader
@@ -27,7 +29,18 @@ internal data class LogExportMusicApp(
     val installSourceLabel: String?,
 )
 
+/** 已启用的官方插件及其当前已安装（或内置基线）版本。 */
+internal data class LogExportPlugin(
+    val id: String,
+    val displayName: String,
+    val versionName: String?,
+    val versionCode: Int,
+)
+
 internal data class LogExportEnvironment(
+    val moduleVersionName: String,
+    val moduleVersionCode: Int,
+    val enabledPlugins: List<LogExportPlugin>,
     val deviceModel: String,
     val systemVersion: String,
     val androidVersion: String,
@@ -35,10 +48,25 @@ internal data class LogExportEnvironment(
 )
 
 internal object LogExportEnvironmentCollector {
-    fun collect(context: Context): LogExportEnvironment {
+    suspend fun collect(context: Context): LogExportEnvironment {
         val appContext = context.applicationContext ?: context
         val packageName = resolveCurrentMusicPackage(appContext)
+        val enabledPlugins = runCatching {
+            OfficialProviderRepository.loadInstalledItems(appContext)
+                .filter { it.enabled }
+                .map {
+                    LogExportPlugin(
+                        id = it.catalog.id,
+                        displayName = it.catalog.displayName,
+                        versionName = it.installedVersionName,
+                        versionCode = it.installedVersionCode,
+                    )
+                }
+        }.getOrDefault(emptyList())
         return LogExportEnvironment(
+            moduleVersionName = BuildConfig.VERSION_NAME,
+            moduleVersionCode = BuildConfig.VERSION_CODE,
+            enabledPlugins = enabledPlugins,
             deviceModel = readSystemProperty("ro.product.marketname") ?: Build.MODEL,
             systemVersion = readSystemProperty("ro.build.version.incremental") ?: Build.DISPLAY,
             androidVersion = "${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT})",
@@ -120,3 +148,9 @@ internal fun selectInstallSourcePackage(
     initiatingPackageName,
     originatingPackageName,
 ).mapNotNull { it?.trim()?.takeIf(String::isNotEmpty) }.firstOrNull()
+
+/** 插件版本显示为「版本名 (版本号)」；缺版本名时只显示版本号。 */
+internal fun formatPluginVersion(versionName: String?, versionCode: Int): String {
+    val name = versionName?.trim().orEmpty()
+    return if (name.isEmpty()) versionCode.toString() else "$name ($versionCode)"
+}

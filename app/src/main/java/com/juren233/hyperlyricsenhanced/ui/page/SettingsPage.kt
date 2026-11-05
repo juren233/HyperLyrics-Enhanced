@@ -57,6 +57,7 @@ import com.juren233.hyperlyricsenhanced.ui.utils.rememberIsWideScreen
 import com.juren233.hyperlyricsenhanced.utils.LOG_EXPORT_LEVEL_DEBUG
 import com.juren233.hyperlyricsenhanced.utils.LogExportEnvironmentCollector
 import com.juren233.hyperlyricsenhanced.utils.LogManager
+import com.juren233.hyperlyricsenhanced.utils.formatPluginVersion
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -101,6 +102,10 @@ fun SettingsPage(scrollToFeatureSwitches: Boolean = false) {
     val backupRestoreHelper = com.juren233.hyperlyricsenhanced.utils.rememberBackupRestoreHelper(snackbarHostState)
     val exportHeader = stringResource(R.string.export_header)
     val exportEnvironmentTitle = stringResource(R.string.export_environment_title)
+    val exportModuleVersionFormat = stringResource(R.string.format_export_module_version)
+    val exportEnabledPluginsTitle = stringResource(R.string.export_enabled_plugins_title)
+    val exportEnabledPluginFormat = stringResource(R.string.format_export_enabled_plugin)
+    val exportNone = stringResource(R.string.export_none)
     val exportDeviceModelFormat = stringResource(R.string.format_export_device_model)
     val exportSystemVersionFormat = stringResource(R.string.format_export_system_version)
     val exportAndroidVersionFormat = stringResource(R.string.format_export_android_version)
@@ -156,6 +161,27 @@ fun SettingsPage(scrollToFeatureSwitches: Boolean = false) {
                         }
 
                         writer.appendLine("========== $exportEnvironmentTitle ==========")
+                        writer.appendLine(
+                            String.format(
+                                exportModuleVersionFormat,
+                                formatPluginVersion(environment.moduleVersionName, environment.moduleVersionCode),
+                            )
+                        )
+                        if (environment.enabledPlugins.isEmpty()) {
+                            writer.appendLine("$exportEnabledPluginsTitle: $exportNone")
+                        } else {
+                            writer.appendLine("$exportEnabledPluginsTitle:")
+                            environment.enabledPlugins.forEach { plugin ->
+                                writer.appendLine(
+                                    String.format(
+                                        exportEnabledPluginFormat,
+                                        plugin.displayName,
+                                        plugin.id,
+                                        formatPluginVersion(plugin.versionName, plugin.versionCode),
+                                    )
+                                )
+                            }
+                        }
                         writer.appendLine(String.format(exportDeviceModelFormat, environment.deviceModel))
                         writer.appendLine(String.format(exportSystemVersionFormat, environment.systemVersion))
                         writer.appendLine(String.format(exportAndroidVersionFormat, environment.androidVersion))

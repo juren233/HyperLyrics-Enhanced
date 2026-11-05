@@ -34,4 +34,11 @@ class LogExportEnvironmentTest {
         )
         assertEquals(null, selectInstallSourcePackage(null, null, null))
     }
+
+    @Test
+    fun `plugin version shows name with code and falls back to code`() {
+        assertEquals("1.0.14 (15)", formatPluginVersion("1.0.14", 15))
+        assertEquals("15", formatPluginVersion(null, 15))
+        assertEquals("15", formatPluginVersion("  ", 15))
+    }
 }

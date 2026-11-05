@@ -764,6 +764,10 @@
     <string name="export_header">========== HyperLyrics Enhanced 调试日志 ==========</string>
     <string name="format_export_time">导出时间: %1$s</string>
     <string name="export_environment_title">环境信息</string>
+    <string name="format_export_module_version">模块版本: %1$s</string>
+    <string name="export_enabled_plugins_title">已启用插件</string>
+    <string name="format_export_enabled_plugin">  - %1$s (%2$s): %3$s</string>
+    <string name="export_none">无</string>
     <string name="format_export_device_model">手机型号: %1$s</string>
     <string name="format_export_system_version">系统版本号: %1$s</string>
     <string name="format_export_android_version">Android 版本号: %1$s</string>
