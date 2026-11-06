@@ -68,6 +68,10 @@ internal object IslandGradientCoverLayout {
     private const val EMBEDDED_TRANSITION_BLUR_INSET_DP = 8f
     private const val EMBEDDED_TRANSITION_BLUR_EDGE_ALPHA = 1f
     private const val EMBEDDED_TRANSITION_BLUR_FULL_AFTER_EDGE_DP = 0f
+    // 窄岛（系统短岛）里封面右侧只剩二十来 px，过渡纹理被整体压扁成一道突兀的竖边：
+    // 可见延伸不足封面宽的 75% 时整体向岛底色渐隐，渐隐从封面右缘向内 45% 封面宽处开始。
+    private const val EMBEDDED_NARROW_REFERENCE_EXTENSION_COVER_FRACTION = 0.75f
+    private const val EMBEDDED_NARROW_DIM_COVER_FRACTION = 0.45f
 
     fun resolve(
         moduleWidth: Int,
@@ -158,6 +162,24 @@ internal object IslandGradientCoverLayout {
     ): Float {
         return (maxOf(transitionInset, blurInset) - transitionInset).coerceAtLeast(0f)
     }
+
+    /**
+     * 窄岛（系统短岛）的渐隐强度 0..1：封面右侧可见延伸不足 [EMBEDDED_NARROW_REFERENCE_EXTENSION_COVER_FRACTION]
+     * 个封面宽时，延伸越短强度越大；长岛延伸足够，返回 0，外观不变。岛宽动画中随延伸量连续变化。
+     */
+    fun embeddedNarrowDimStrength(coverWidth: Float, visibleExtension: Float): Float {
+        if (coverWidth <= 0f || visibleExtension <= 0f) return 0f
+        val reference = coverWidth * EMBEDDED_NARROW_REFERENCE_EXTENSION_COVER_FRACTION
+        return (1f - visibleExtension / reference).coerceIn(0f, 1f)
+    }
+
+    /** 渐隐从封面右缘向内这么宽的位置开始，封面左侧保持清晰。 */
+    fun embeddedNarrowDimWidth(coverWidth: Float): Float {
+        return coverWidth * EMBEDDED_NARROW_DIM_COVER_FRACTION
+    }
+
+    /** 渐隐区间内的透明度曲线：0 在起点，1 在岛右缘，平滑过渡。 */
+    fun embeddedNarrowDimAlpha(progress: Float): Float = smootherStep(progress)
 
     fun embeddedTransitionBlurEdgeAlpha(): Float {
         return EMBEDDED_TRANSITION_BLUR_EDGE_ALPHA

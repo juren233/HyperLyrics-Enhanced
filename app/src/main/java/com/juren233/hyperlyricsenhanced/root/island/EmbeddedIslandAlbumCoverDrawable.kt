@@ -36,6 +36,8 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
+private const val NARROW_DIM_STOPS = 9
+
 /**
  * Big-island artwork background. It does not add a child to the horizontal big container.
  *
@@ -68,6 +70,21 @@ internal class EmbeddedIslandAlbumCoverDrawable(
     private val transitionBlurTarget = RectF()
     private val transitionRawSource = Rect()
     private val transitionFullSource = Rect()
+    private val narrowDimPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        blendMode = BlendMode.DST_OUT
+        // 单位渐变 0..1（透明→不透明），每次绘制用矩阵缩放平移到实际区间，避免重复创建 Shader。
+        shader = android.graphics.LinearGradient(
+            0f, 0f, 1f, 0f,
+            IntArray(NARROW_DIM_STOPS) { index ->
+                val alpha = IslandGradientCoverLayout.embeddedNarrowDimAlpha(index / (NARROW_DIM_STOPS - 1f))
+                Color.argb((255f * alpha).roundToInt().coerceIn(0, 255), 0, 0, 0)
+            },
+            FloatArray(NARROW_DIM_STOPS) { index -> index / (NARROW_DIM_STOPS - 1f) },
+            Shader.TileMode.CLAMP,
+        )
+    }
+    private val narrowDimMatrix = android.graphics.Matrix()
+    private val narrowDimLayerRect = RectF()
     private val nativeBlurEffect = RenderEffect.createBlurEffect(
         IslandGradientCoverLayout.embeddedTransitionBlurRadiusX(density),
         IslandGradientCoverLayout.embeddedTransitionBlurRadiusY(density),
@@ -189,6 +206,15 @@ internal class EmbeddedIslandAlbumCoverDrawable(
         // 侵入封面的重叠区，封面保持 100% 清晰，渐变仅从封面右缘向外可见；过渡层原有的
         // 封面内重叠保留在封面之下，避免封面与延伸之间出现黑缝。播放态保持原顺序
         // （封面在下、过渡层渐变覆盖封面右缘），视觉与既有行为完全一致。
+        // 窄岛（系统短岛）：封面右侧可见延伸太短，整体向岛底色渐隐，而不是把过渡纹理压扁成一道竖边。
+        val dimStrength = IslandGradientCoverLayout.embeddedNarrowDimStrength(coverWidth, extensionWidth)
+        val dimWidth = IslandGradientCoverLayout.embeddedNarrowDimWidth(coverWidth)
+        val dimLayer = if (dimStrength > 0f) {
+            narrowDimLayerRect.set(canvasLeft, canvasTop, boundsRight, canvasTop + height)
+            canvas.saveLayer(narrowDimLayerRect, null)
+        } else {
+            -1
+        }
         val coverOnTop = IslandGradientCoverLayout.embeddedCoverOnTopForPlaybackState(
             EmbeddedIslandAlbumCoverController.isPlaybackActive(),
         )
@@ -289,6 +315,15 @@ internal class EmbeddedIslandAlbumCoverDrawable(
         if (coverOnTop) {
             canvas.drawBitmap(source, coverSource, coverTarget, bitmapPaint)
         }
+        if (dimLayer >= 0) {
+            val dimLeft = max(canvasLeft, coverRight - dimWidth)
+            narrowDimMatrix.setScale(boundsRight - dimLeft, 1f)
+            narrowDimMatrix.postTranslate(dimLeft, 0f)
+            narrowDimPaint.shader.setLocalMatrix(narrowDimMatrix)
+            narrowDimPaint.alpha = (255f * dimStrength).roundToInt().coerceIn(0, 255)
+            canvas.drawRect(dimLeft, canvasTop, boundsRight, canvasTop + height, narrowDimPaint)
+            canvas.restoreToCount(dimLayer)
+        }
         logBigDrawDiagnostic(
             width = width,
             height = height,
@@ -303,6 +338,7 @@ internal class EmbeddedIslandAlbumCoverDrawable(
             nativeBlurEnabled = nativeBlurEnabled,
             nativeBlurAvailable = nativeBlurAvailable,
             blurSuppressed = blurSuppressed,
+            dimStrength = dimStrength,
         )
 
         canvas.restore()
@@ -678,6 +714,7 @@ internal class EmbeddedIslandAlbumCoverDrawable(
         nativeBlurEnabled: Boolean,
         nativeBlurAvailable: Boolean,
         blurSuppressed: Boolean,
+        dimStrength: Float,
     ) {
         if (!BuildConfig.DEBUG) return
         val totalWidth = (cacheWidth - 1).coerceAtLeast(1).toFloat()
@@ -709,7 +746,7 @@ internal class EmbeddedIslandAlbumCoverDrawable(
             "${(blurAtTargetStart * 100f).roundToInt()}|" +
             "${(blurAtCoverEdge * 100f).roundToInt()}|" +
             "${uncoveredBackgroundTail.roundToInt()}|$transitionPrepared|$nativeBlurEnabled|" +
-            "$nativeBlurAvailable|$blurSuppressed"
+            "$nativeBlurAvailable|$blurSuppressed|${(dimStrength * 100f).roundToInt()}"
         if (signature == lastDrawDiagnostic) return
         lastDrawDiagnostic = signature
         HookLogger.i(
@@ -728,7 +765,7 @@ internal class EmbeddedIslandAlbumCoverDrawable(
                 "prepared=$transitionPrepared, algorithm=edge_smear_native_blur, " +
                 "nativeBlurEnabled=$nativeBlurEnabled, nativeBlurAvailable=$nativeBlurAvailable, " +
                 "cpuFallback=${transitionCpuBlurredTextureBitmap != null}, " +
-                "blurSuppressed=$blurSuppressed",
+                "blurSuppressed=$blurSuppressed, narrowDim=${(dimStrength * 100f).roundToInt()}",
         )
     }
 

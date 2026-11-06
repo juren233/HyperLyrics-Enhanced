@@ -647,10 +647,11 @@ internal object IslandMusicWaveColorHooker {
     }
 
     private fun isEnabled(sharedPrefs: SharedPreferences): Boolean {
-        return SystemUiEnhancementGate.isEnabled() && sharedPrefs.getBoolean(
+        // 纯音乐期间选择“系统短岛”时，原生律动图标由系统显示，音频律动开关关闭也要上色。
+        return SystemUiEnhancementGate.isEnabled() && (sharedPrefs.getBoolean(
             RootConstants.KEY_HOOK_ISLAND_RIGHT_ICON,
             RootConstants.DEFAULT_HOOK_ISLAND_RIGHT_ICON
-        ) && IslandMusicWaveColorMode.isEnabled(
+        ) || IslandPureMusicGate.isActive(sharedPrefs)) && IslandMusicWaveColorMode.isEnabled(
             IslandRuntimePreferenceReader.getMusicWaveColorMode(sharedPrefs)
         )
     }

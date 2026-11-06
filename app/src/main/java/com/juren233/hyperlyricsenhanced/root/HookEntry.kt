@@ -19,6 +19,7 @@ import com.juren233.hyperlyricsenhanced.root.island.FakeIslandTransitionHooker
 import com.juren233.hyperlyricsenhanced.root.island.IslandAlbumCoverStyleHooker
 import com.juren233.hyperlyricsenhanced.root.island.IslandViewRegistry
 import com.juren233.hyperlyricsenhanced.root.island.IslandMusicWaveColorHooker
+import com.juren233.hyperlyricsenhanced.root.island.IslandPureMusicGate
 import com.juren233.hyperlyricsenhanced.root.island.IslandProgressGlowController
 import com.juren233.hyperlyricsenhanced.root.island.IslandRuntimePreferenceOverrides
 import com.juren233.hyperlyricsenhanced.root.island.IslandRuntimePreferenceReader
@@ -196,6 +197,14 @@ class HookEntry : XposedModule() {
     private var playbackAnchor: SystemMediaPlaybackAnchor? = null
     private var localTimelineDriver: LocalTimelineDriver? = null
     private var mediaSessionOnlineFallback: MediaSessionOnlineFallbackCoordinator? = null
+
+    // 「所有来源都没有歌词」汇总用：第三方在线兜底此刻是否还有在途请求。
+    private val mediaSessionFallbackProbe: () -> Boolean =
+        { mediaSessionOnlineFallback?.lookupPending() == true }
+    private val saltFallbackProbe: () -> Boolean =
+        { lyriconSource.thirdPartyFallbackRequest.snapshot().pending }
+    private val appleFallbackProbe: () -> Boolean =
+        { lyriconSource.appleFallbackRequest.snapshot().pending }
     private var lyricsOnlyAfterHotReload = false
     private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
     private var pendingSystemMediaProviderRefresh: Runnable? = null
@@ -591,6 +600,9 @@ class HookEntry : XposedModule() {
                     ) BaseIslandRenderer.refreshActiveIsland()
                 }
             }
+            optionalRuntime("pure_music_gate", { IslandPureMusicGate.stop() }) {
+                IslandPureMusicGate.start { prefs }
+            }
             MediaMetadataHelper.setArtworkResolvedListener(BaseIslandRenderer::refreshActiveIsland)
             MediaMetadataHelper.setMediaInfoChangedListener { packageName ->
                 if (packageName == LyriconDataBridge.currentLyricPackageName) {
@@ -638,6 +650,7 @@ class HookEntry : XposedModule() {
             )
             localTimelineDriver = driver
             driver.start()
+            val lyricsFetcher = MediaSessionLyricsFetcher(app)
             mediaSessionOnlineFallback = MediaSessionOnlineFallbackCoordinator(
                 tracks = object : MediaSessionOnlineFallbackCoordinator.Tracks {
                     private var listener: SystemMediaPlaybackAnchor.Listener? = null
@@ -666,19 +679,28 @@ class HookEntry : XposedModule() {
                             val named = IslandRuntimePreferenceOverrides.getStringSet(
                                 MediaSessionOnlineFallbackPreferences.PACKAGES, stored.packages,
                             ).orEmpty()
-                            // Spotify 的开关是「启用App」里既有的那一个，不另存名单。
-                            val spotifyKey = OnlineTranslationSourcePreferences.appPreferenceKey(CatalogPlatform.SPOTIFY_PACKAGE)
-                            val spotifyOn = spotifyKey != null && IslandRuntimePreferenceOverrides.getBoolean(
-                                spotifyKey,
-                                OnlineTranslationSourcePreferences.isAppEnabled(prefs, CatalogPlatform.SPOTIFY_PACKAGE),
-                            )
-                            if (spotifyOn) named + CatalogPlatform.SPOTIFY_PACKAGE else named
+                            // Spotify、汽水的开关是「启用App」里既有的那一个，不另存名单。
+                            val accountSwitchPackages = listOf(
+                                CatalogPlatform.SPOTIFY_PACKAGE,
+                                OnlineTranslationSourcePreferences.QISHUI_PACKAGE,
+                            ).filter { packageName ->
+                                val key = OnlineTranslationSourcePreferences.appPreferenceKey(packageName)
+                                key != null && IslandRuntimePreferenceOverrides.getBoolean(
+                                    key,
+                                    OnlineTranslationSourcePreferences.isAppEnabled(prefs, packageName),
+                                )
+                            }
+                            named + accountSwitchPackages
                         } else emptySet(),
                     )
                 },
-                fetchSong = MediaSessionLyricsFetcher(app)::fetch,
+                fetchSong = lyricsFetcher::fetch,
+                fetchSongRace = lyricsFetcher::fetchRacing,
             )
             mediaSessionOnlineFallback?.start()
+            LyricsAvailability.addThirdPartyProbe(mediaSessionFallbackProbe)
+            LyricsAvailability.addThirdPartyProbe(saltFallbackProbe)
+            LyricsAvailability.addThirdPartyProbe(appleFallbackProbe)
             LyricRuntimeDiagnostics.record("runtime_timeline_started")
 
             optionalRuntime("ai_cache") { AITranslator.init(app) }
@@ -885,6 +907,14 @@ class HookEntry : XposedModule() {
                             IslandMusicWaveColorHooker.refresh()
                         }
                     }
+                    RootConstants.KEY_HOOK_ISLAND_PURE_MUSIC_MODE,
+                    RootConstants.KEY_HOOK_ISLAND_PURE_MUSIC_KEYWORDS -> {
+                        postRuntimeUpdate {
+                            IslandPureMusicGate.onPreferenceChanged()
+                            IslandMusicWaveColorHooker.refresh()
+                            BaseIslandRenderer.refreshActiveIsland()
+                        }
+                    }
                     RootConstants.KEY_HOOK_ISLAND_RIGHT_ICON -> {
                         postRuntimeUpdate {
                             IslandAlbumCoverStyleHooker.refresh()
@@ -1076,6 +1106,7 @@ class HookEntry : XposedModule() {
         val cleanup = RuntimeResourceCleanup()
         cleanup.attempt("font_weight") { IslandSystemFontWeight.stop() }
         cleanup.attempt("bridge_traffic") { LyriconBridgeTrafficObserver.stop() }
+        cleanup.attempt("pure_music_gate") { IslandPureMusicGate.stop() }
         cleanup.attempt("performance") { RuntimePerfDiagnostics.stopForReload() }
         cleanup.attempt("artwork") { MediaMetadataHelper.clearArtworkResolution() }
         cleanup.attempt("system_media_providers") { OfficialProviderSystemMediaRuntime.releaseAll() }
@@ -1096,6 +1127,11 @@ class HookEntry : XposedModule() {
             if (receiver != null) runtimeApp?.unregisterReceiver(receiver)
         }
         cleanup.attempt("preference_overrides") { IslandRuntimePreferenceOverrides.clear() }
+        cleanup.attempt("lyrics_availability_probes") {
+            LyricsAvailability.removeThirdPartyProbe(mediaSessionFallbackProbe)
+            LyricsAvailability.removeThirdPartyProbe(saltFallbackProbe)
+            LyricsAvailability.removeThirdPartyProbe(appleFallbackProbe)
+        }
         cleanup.attempt("media_session_online_fallback") { mediaSessionOnlineFallback?.stop() }
         mediaSessionOnlineFallback = null
         cleanup.attempt("source_manager") { sourceManager?.stop() }
@@ -1188,6 +1224,12 @@ class HookEntry : XposedModule() {
                     key == RootConstants.KEY_HOOK_ISLAND_MUSIC_WAVE_GRADIENT ||
                     key == RootConstants.KEY_HOOK_ISLAND_MUSIC_WAVE_COLOR_MODE
                 ) {
+                    IslandMusicWaveColorHooker.refresh()
+                }
+                if (key == RootConstants.KEY_HOOK_ISLAND_PURE_MUSIC_MODE ||
+                    key == RootConstants.KEY_HOOK_ISLAND_PURE_MUSIC_KEYWORDS
+                ) {
+                    IslandPureMusicGate.onPreferenceChanged()
                     IslandMusicWaveColorHooker.refresh()
                 }
                 if (key == RootConstants.KEY_HOOK_ISLAND_DYNAMIC_WIDTH ||

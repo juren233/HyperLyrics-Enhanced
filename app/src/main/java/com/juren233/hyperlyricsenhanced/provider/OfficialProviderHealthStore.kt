@@ -204,6 +204,24 @@ object ProviderApplyState {
 
     enum class Badge { NONE, RESTART_PENDING, ROLLED_BACK, DISABLED }
 
+    /**
+     * 已对 [installedVersionCode] 执行过「立即生效」且它不是坏版本时，把已加载版本视为已安装版本；
+     * 其余情况原样返回读回值。目标进程之后加载失败并回退时，坏版本记录会让这里失效。
+     */
+    fun loadedAfterApply(
+        loadedVersionCode: Int,
+        installedVersionCode: Int,
+        appliedVersionCode: Int,
+        badVersionCodes: Set<Int>,
+    ): Int = if (
+        installedVersionCode > 0 && appliedVersionCode == installedVersionCode &&
+        installedVersionCode !in badVersionCodes && loadedVersionCode < installedVersionCode
+    ) {
+        installedVersionCode
+    } else {
+        loadedVersionCode
+    }
+
     fun badge(
         installedVersionCode: Int,
         loadedVersionCode: Int,

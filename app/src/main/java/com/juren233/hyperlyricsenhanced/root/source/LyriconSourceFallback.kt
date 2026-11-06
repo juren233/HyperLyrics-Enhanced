@@ -6,6 +6,7 @@
 
 package com.juren233.hyperlyricsenhanced.root.source
 
+import com.juren233.hyperlyricsenhanced.root.LyricsAvailability
 import android.app.Application
 import android.content.Context
 import android.content.Intent
@@ -60,6 +61,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -196,6 +198,11 @@ internal fun LyriconSource.scheduleFallback(
                         preferredSourceOverride = preferredSourceOverride,
                         strictSource = strictSource,
                         fallbackEnabled = fallbackEnabled,
+                        onEarly = { early ->
+                            mainHandler.post {
+                                applyFallbackIslandPreview(generation, baseSong, early)
+                            }
+                        },
                     )
                     sourceSwitchCoreStage(
                         request = sourceSwitchRequest,
@@ -254,6 +261,7 @@ internal fun LyriconSource.scheduleFallback(
                     details = "generation=$generation,error=${e.javaClass.simpleName}",
                 )
                 debugError("Apple Music 在线兜底失败: title=${baseSong.name}", e)
+                LyricsAvailability.onThirdPartySettled()
             }
         }
         appleFallbackRequest.attachJob(worker)
@@ -271,6 +279,11 @@ internal fun LyriconSource.scheduleFallback(
     mainHandler.postDelayed(delayedSearch, delayMs)
 }
 
+/**
+ * @param onEarly 「自动」来源下 ttml 与搜索源同时开始时，先到的结果通过它交给超级岛先显示；
+ *   最终结果仍作为返回值，按 ttml 优先（AMLL 高于 LB）、其次搜索源裁决，Apple Music 应用内只用最终结果。
+ */
+@OptIn(ExperimentalCoroutinesApi::class)
 internal suspend fun LyriconSource.fetchAppleLyricsOutcome(
     application: Application,
     baseSong: LocalSong,
@@ -278,6 +291,7 @@ internal suspend fun LyriconSource.fetchAppleLyricsOutcome(
     preferredSourceOverride: Source?,
     strictSource: Boolean,
     fallbackEnabled: Boolean,
+    onEarly: (suspend (OnlineLyricTargeter.FetchOutcome) -> Unit)? = null,
 ): OnlineLyricTargeter.FetchOutcome {
     val ttmlOnlyRequest = preferredSourceOverride?.isTtmlCatalog == true
     val manualTtmlSwitch = ttmlOnlyRequest &&
@@ -312,20 +326,6 @@ internal suspend fun LyriconSource.fetchAppleLyricsOutcome(
         }
         return null
     }
-    when {
-        ttmlOnlyRequest -> {
-            // 手动切换只查被点选的源；自动逐行转逐字依次尝试已启用的 TTML 源。
-            val siblings = if (manualTtmlSwitch) emptyList() else configuredSources.filter(Source::isTtmlCatalog)
-            val requested = listOfNotNull(preferredSourceOverride) +
-                siblings.filterNot { it == preferredSourceOverride }
-            lookupTtml(requested)?.let { return it }
-            if (strictSource || !isFillMissingLyricsEnabled()) {
-                return OnlineLyricTargeter.FetchOutcome(sourceStatuses = ttmlStatuses.toList())
-            }
-        }
-        automaticTtmlAllowed -> lookupTtml(leadingTtmlSources)?.let { return it }
-    }
-
     val onlinePreferredSource = preferredSourceOverride?.takeUnless(Source::isTtmlCatalog)
     val fillMissingLyricsEnabled = isFillMissingLyricsEnabled()
     val album = MediaMetadataHelper
@@ -361,7 +361,11 @@ internal suspend fun LyriconSource.fetchAppleLyricsOutcome(
         allowArtistIdentityNearMiss = allowArtistIdentityNearMiss,
     )
     val untimedNative = preferredSourceOverride == null && hasUntimedAppleNativeLyrics(baseSong)
-    val onlineOutcome = if (untimedNative && !fallbackEnabled) {
+    val raceEligible = onEarly != null && preferredSourceOverride == null && !strictSource &&
+        !untimedNative && leadingTtmlSources.isNotEmpty() && searchSources.isNotEmpty() &&
+        OnlineTranslationSourcePreferences.isAutoSelectBestSourceEnabled(prefs)
+    var prefetchedOnline: OnlineLyricTargeter.FetchOutcome? = null
+    suspend fun computeOnlineOutcome(): OnlineLyricTargeter.FetchOutcome = if (untimedNative && !fallbackEnabled) {
         // 「启用App」关闭时不做纯文本在线补充；也不得落到无歌词补充通道，
         // 否则 untimed 歌曲仍会经 supplement 发布改投在线词。
         diagnostic(
@@ -449,6 +453,83 @@ internal suspend fun LyriconSource.fetchAppleLyricsOutcome(
             includeOtherStatuses = true,
         )
     }
+    data class RaceResult(
+        val ttml: OnlineLyricTargeter.FetchOutcome?,
+        val search: OnlineLyricTargeter.FetchOutcome?,
+    )
+
+    // 「自动」来源：ttml 与搜索源同时开始，先到的先交给岛显示（onEarly），
+    // 最终按 ttml 优先裁决，无论 ttml 多晚到；搜索源本身的内部执行方式不变。
+    suspend fun raceTtmlAgainstSearch(): RaceResult = coroutineScope {
+        val ttmlJobs = leadingTtmlSources.mapNotNull { source ->
+            val catalog = TtmlCatalogSources.of(source) ?: return@mapNotNull null
+            source to async {
+                runCatching {
+                    catalog.findWordTimed(
+                        context = application,
+                        platform = CatalogPlatform.APPLE_MUSIC,
+                        songId = baseSong.id.orEmpty(),
+                    )
+                }
+            }
+        }
+        val searchJob = async { runCatching { computeOnlineOutcome() } }
+
+        fun recordTtmlLookups(upTo: Int) {
+            for (index in 0..upTo) {
+                val (source, job) = ttmlJobs[index]
+                val lookup = job.getCompleted().getOrThrow()
+                ttmlStatuses += lookup.toSourceStatus(source)
+                debug(
+                    "目录源查询: id=${baseSong.id}, source=$source, 已查=${lookup.searched}, " +
+                        "命中=${lookup.match != null}, 行数=${lookup.match?.parsed?.wordLines?.size ?: 0}"
+                )
+            }
+        }
+
+        when (val final = LyricsRace.run(
+            ttml = ttmlJobs.map { it.second },
+            search = searchJob,
+            ttmlHit = { it.match != null },
+            searchHit = { !it.lines.isNullOrEmpty() },
+            onEarlyTtml = { index, lookup ->
+                val source = ttmlJobs[index].first
+                onEarly?.invoke(lookup.match!!.toFetchOutcome(listOf(lookup.toSourceStatus(source))))
+            },
+            onEarlySearch = { outcome -> onEarly?.invoke(outcome) },
+        )) {
+            is LyricsRace.Final.Ttml -> {
+                recordTtmlLookups(final.index)
+                RaceResult(final.value.match!!.toFetchOutcome(ttmlStatuses.toList()), null)
+            }
+            is LyricsRace.Final.Search -> {
+                recordTtmlLookups(ttmlJobs.lastIndex)
+                RaceResult(null, final.value)
+            }
+        }
+    }
+
+    when {
+        ttmlOnlyRequest -> {
+            // 手动切换只查被点选的源；自动逐行转逐字依次尝试已启用的 TTML 源。
+            val siblings = if (manualTtmlSwitch) emptyList() else configuredSources.filter(Source::isTtmlCatalog)
+            val requested = listOfNotNull(preferredSourceOverride) +
+                siblings.filterNot { it == preferredSourceOverride }
+            lookupTtml(requested)?.let { return it }
+            if (strictSource || !isFillMissingLyricsEnabled()) {
+                return OnlineLyricTargeter.FetchOutcome(sourceStatuses = ttmlStatuses.toList())
+            }
+        }
+        automaticTtmlAllowed -> if (raceEligible) {
+            val raced = raceTtmlAgainstSearch()
+            raced.ttml?.let { return it }
+            prefetchedOnline = raced.search
+        } else {
+            lookupTtml(leadingTtmlSources)?.let { return it }
+        }
+    }
+
+    val onlineOutcome = prefetchedOnline ?: computeOnlineOutcome()
     if (automaticTtmlAllowed && onlineOutcome.lines.isNullOrEmpty() && trailingTtmlSources.isNotEmpty()) {
         lookupTtml(trailingTtmlSources)?.let { return it }
     }
@@ -658,6 +739,7 @@ internal fun LyriconSource.applyFallbackResult(
         if (outcome.lines == null) {
             diagnostic("Apple Music 在线兜底未命中: title=${baseSong.name}")
             requestOriginalMetadata(baseSong, "lyrics_fallback_miss")
+            LyricsAvailability.onThirdPartySettled()
         }
         return
     }
@@ -668,6 +750,7 @@ internal fun LyriconSource.applyFallbackResult(
     if (fallbackSong == null && supplementSong == null) {
         diagnostic("Apple Music 在线兜底未命中: title=${baseSong.name}")
         requestOriginalMetadata(baseSong, "lyrics_fallback_miss")
+        LyricsAvailability.onThirdPartySettled()
         return
     }
     publication.selectAppleFallback()
@@ -685,28 +768,56 @@ internal fun LyriconSource.applyFallbackResult(
             }}"
     )
     val fallbackHasTranslation = hasTranslation(displayFallbackSong)
-    publishAppleSong(
-        displayFallbackSong,
-        restorePosition = true,
-        onlineTranslationMatched = fallbackHasTranslation
-    )
-    if (!fallbackHasTranslation) {
-        val onlineTranslationRunning =
-            onlineTranslationRunning || onlineTranslationResultReady || onlineMatchedTranslationActive
-        val onlineTranslationScheduled = supplementSong != null &&
-            !untimedNativeFallback &&
-            isAppleTranslationEnrichmentEnabled() &&
+    val commitIsland = {
+        publishAppleSong(
+            displayFallbackSong,
+            restorePosition = true,
+            onlineTranslationMatched = fallbackHasTranslation
+        )
+        if (!fallbackHasTranslation) {
+            val onlineTranslationRunning =
+                onlineTranslationRunning || onlineTranslationResultReady || onlineMatchedTranslationActive
+            val onlineTranslationScheduled = supplementSong != null &&
+                !untimedNativeFallback &&
+                isAppleTranslationEnrichmentEnabled() &&
+                scheduleOnlineTranslation(supplementSong)
+            if (!onlineTranslationRunning && !onlineTranslationScheduled) {
+                sink?.onOnlineTranslationUnavailable(displayFallbackSong)
+            }
+        } else if (supplementSong != null && !untimedNativeFallback &&
+            isAppleTranslationEnrichmentEnabled()
+        ) {
+            // 来源切换后的新正文可能复用了旧翻译，但行结构仍需要重新匹配；只要
+            // 还有缺口，scheduleOnlineTranslation 会基于新载荷补齐，不会因为已有
+            // 一部分翻译就跳过本次独立翻译请求。
             scheduleOnlineTranslation(supplementSong)
-        if (!onlineTranslationRunning && !onlineTranslationScheduled) {
-            sink?.onOnlineTranslationUnavailable(displayFallbackSong)
         }
-    } else if (supplementSong != null && !untimedNativeFallback &&
-        isAppleTranslationEnrichmentEnabled()
-    ) {
-        // 来源切换后的新正文可能复用了旧翻译，但行结构仍需要重新匹配；只要
-        // 还有缺口，scheduleOnlineTranslation 会基于新载荷补齐，不会因为已有
-        // 一部分翻译就跳过本次独立翻译请求。
-        scheduleOnlineTranslation(supplementSong)
+        fallbackIslandSwitch.clear()
+    }
+    // 岛上已经先显示了别的来源时，更高优先级的结果等到下一句歌词的起点再切过去，避免当前句跳变。
+    val islandPreview = fallbackIslandSwitch.previewFor(generation)
+    val switchTarget = islandPreview
+        ?.takeIf { it.source != outcome.selectedSource }
+        ?.let {
+            OnlineTranslationBoundaryPolicy.nextCommitPosition(
+                lines = it.song.lyrics.orEmpty(),
+                currentPosition = LyriconDataBridge.currentPosition,
+            )
+        }
+        ?.takeIf { it > LyriconDataBridge.currentPosition }
+    if (switchTarget != null) {
+        diagnostic(
+            "Apple Music 岛端歌词来源下一句切换: id=${baseSong.id}, " +
+                "from=${islandPreview?.source}, to=${outcome.selectedSource}, " +
+                "target=$switchTarget, position=${LyriconDataBridge.currentPosition}"
+        )
+        fallbackIslandSwitch.defer(AppleFallbackIslandSwitch.Pending(generation, switchTarget) {
+            mainHandler.post {
+                if (appleFallbackRequest.isCurrent(generation)) commitIsland()
+            }
+        })
+    } else {
+        commitIsland()
     }
     startMediaPositionPolling()
 }
@@ -737,7 +848,64 @@ internal fun LyriconSource.preservePreviousTranslations(
 internal fun LyriconSource.normalizeLyricText(text: String?): String =
     text.orEmpty().replace(Regex("\\s+"), " ").trim()
 
+/**
+ * 自动来源竞速中先到的结果：只给超级岛先显示，不写入 Apple Music 应用内的歌词页，
+ * 也不启动翻译衔接；应用内与翻译仍只在最终结果裁决后处理。
+ */
+internal fun LyriconSource.applyFallbackIslandPreview(
+    generation: Int,
+    baseSong: LocalSong,
+    rawOutcome: OnlineLyricTargeter.FetchOutcome,
+) {
+    if (!appleFallbackRequest.isCurrent(generation)) return
+    val nativeSong = currentAppleSong ?: return
+    val accepted = acceptsAppleOnlineLyricResult(
+        generation = generation,
+        currentGeneration = appleFallbackRequest.generation(),
+        sameTrack = isSameTrack(nativeSong, baseSong),
+        currentNativeLyrics = currentAppleHasNativeLyrics,
+        currentSongHasNativeLyrics = hasAppleNativeLyrics(nativeSong),
+        manualSourceSwitch = false,
+        automaticTtmlOverride = false,
+        untimedNativeFallback = false,
+    )
+    if (!accepted) return
+    val outcome = rawOutcome.stripFullyChineseTranslations()
+    val previewSong = if (isFillMissingLyricsEnabled() || outcome.selectedSource?.isTtmlCatalog == true) {
+        AppleMissingLyricsSongMapper.map(
+            baseSong = baseSong,
+            wordLines = outcome.wordLines,
+            lrcLines = outcome.lines?.let { preservePreviousTranslations(nativeSong, it) } ?: outcome.lines,
+            sourceInfo = AppleMissingLyricsSourceInfo(
+                selectedSource = outcome.selectedSource?.name,
+                statuses = outcome.sourceStatuses,
+            ),
+            rawAppleTtml = outcome.rawAppleTtml,
+            sourceLyricId = outcome.sourceLyricId,
+            sourceLyricSha256 = outcome.sourceLyricSha256,
+        )
+    } else {
+        outcome.lines?.let { OnlineFallbackSongMapper.map(baseSong, preservePreviousTranslations(nativeSong, it)) }
+    } ?: return
+    if (previewSong.lyrics.isNullOrEmpty()) return
+    diagnostic(
+        "Apple Music 岛端先显示先到的歌词: id=${baseSong.id}, source=${outcome.selectedSource}, " +
+            "lines=${previewSong.lyrics.orEmpty().size}"
+    )
+    publication.selectAppleFallback()
+    fallbackIslandSwitch.showPreview(
+        AppleFallbackIslandSwitch.Preview(generation, previewSong, outcome.selectedSource),
+    )
+    publishAppleSong(
+        previewSong,
+        restorePosition = true,
+        onlineTranslationMatched = hasTranslation(previewSong),
+    )
+    startMediaPositionPolling()
+}
+
 internal fun LyriconSource.cancelFallback(clearAppleSong: Boolean, reason: String) {
+    fallbackIslandSwitch.clear()
     if (appleFallbackRequest.snapshot().pending || fallbackSongActive) {
         diagnostic(
             "Apple Music 在线兜底取消: reason=$reason, " +
@@ -818,6 +986,7 @@ internal fun LyriconSource.scheduleThirdPartyFallback(baseSong: LocalSong, delay
         },
         failed = { error ->
             debugError("椒盐音乐在线兜底失败: title=${baseSong.name}", error)
+            LyricsAvailability.onThirdPartySettled()
         },
     )
     diagnostic(
@@ -848,6 +1017,8 @@ private fun LyriconSource.applyThirdPartyFallbackResult(
     if (fallbackSong == null) {
         publication.cancelThirdPartyFallback()
         diagnostic("椒盐音乐在线兜底未命中: title=${baseSong.name}")
+        // 本次在线兜底已结束且无结果：让「所有来源都没有歌词」的汇总重新判定。
+        LyricsAvailability.onThirdPartySettled()
         return
     }
     publication.selectThirdPartyFallback()

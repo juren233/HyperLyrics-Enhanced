@@ -423,7 +423,7 @@ private val ENABLED_APPS = listOf(
     ),
     TranslationApp(
         OnlineTranslationSourcePreferences.QISHUI_PACKAGE,
-        R.string.summary_online_translation_app_translation,
+        R.string.summary_online_translation_app_lyrics_translation,
     ),
     TranslationApp(
         OnlineTranslationSourcePreferences.SPOTIFY_PACKAGE,

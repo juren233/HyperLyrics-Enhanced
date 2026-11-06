@@ -294,6 +294,30 @@ fun LyricProviderPage() {
             val stopped = runCatching { ShellUtils.killAppProcesses(targets) }
                 .getOrDefault(false)
             if (stopped) {
+                // 没有进程再运行旧版本：记下已对当前版本执行过，并立即撤掉「重启后生效」提示。
+                val installedVersionCode = PrefsBridge.getInt(
+                    OfficialProviderCatalog.installedVersionKey(item.catalog.id),
+                    0,
+                )
+                PrefsBridge.putInt(
+                    OfficialProviderCatalog.appliedVersionKey(item.catalog.id),
+                    installedVersionCode,
+                )
+                officialUiStateFlow.update { state ->
+                    state.copy(
+                        items = state.items.map {
+                            if (it.catalog.id == item.catalog.id) {
+                                it.copy(
+                                    restartPending = false,
+                                    loadedVersionCode = it.installedVersionCode,
+                                    displayVersionName = it.installedVersionName,
+                                )
+                            } else {
+                                it
+                            }
+                        },
+                    )
+                }
                 // 强停发生在目标进程「健康宽限期」内时会被算作一次崩溃计数，
                 // 趁手上有 root 把标记清掉，避免两次强停被误判成连续崩溃回退。
                 OfficialProviderHealthStore.clearLoadMarkers(item.catalog.id, targets)

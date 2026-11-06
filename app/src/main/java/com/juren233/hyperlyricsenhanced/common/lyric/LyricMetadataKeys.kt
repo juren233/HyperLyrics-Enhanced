@@ -49,6 +49,11 @@ object LyricMetadataKeys {
     const val OVERLAPPING_SECONDARY_BACKING = "overlappingSecondaryBacking"
     const val OVERLAPPING_SECONDARY_BACKING_TRANSLATION =
         "overlappingSecondaryBackingTranslation"
+    /**
+     * Provider 自己的取词（含它自带的重试）彻底结束、确认没有歌词时，写在占位歌曲上的标记。
+     * 值为 "true"。没有这个标记的占位歌曲只表示「还在加载」，不能当作无歌词。
+     */
+    const val LYRICS_UNAVAILABLE = "hleLyricsUnavailable"
     const val INSTRUMENTAL = "instrumental"
     const val INSTRUMENTAL_TYPE = "instrumentalType"
 }

@@ -25,6 +25,7 @@ import com.juren233.hyperlyricsenhanced.common.lyric.AppleMissingLyricsSourceSta
 import com.juren233.hyperlyricsenhanced.common.lyric.ApplePronunciationVisibilityPolicy
 import com.juren233.hyperlyricsenhanced.common.lyric.ChineseLyricsPolicy
 import com.juren233.hyperlyricsenhanced.common.lyric.LyricMetadataKeys
+import com.juren233.hyperlyricsenhanced.root.LyricsAvailability
 import com.juren233.hyperlyricsenhanced.common.lyric.OnlineTranslationContentPolicy
 import com.juren233.hyperlyricsenhanced.common.lyric.TraditionalLyricsSimplifier
 import com.juren233.hyperlyricsenhanced.common.media.MediaMetadataHelper
@@ -154,6 +155,11 @@ internal fun LyriconSource.handleAppleSong(incomingSong: LocalSong?) {
     if (repeatedEmptySong) {
         refreshRetainedAppleMetadata(song)
         publication.acceptAppleInput(song, false)
+        // 在线兜底在途时，Provider 发来的「歌词确认缺失」占位也走到这里被当作重复占位丢弃，
+        // 时间轴因此收不到第一方缺失上报，兜底未命中后也永远不会汇总成最终无歌词。
+        if (song.metadata?.getBoolean(LyricMetadataKeys.LYRICS_UNAVAILABLE) == true) {
+            LyricsAvailability.onFirstPartyReported()
+        }
         debug("忽略同一首歌的重复空歌词占位: title=${song.name}")
         return
     }

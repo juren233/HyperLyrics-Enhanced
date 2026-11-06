@@ -345,4 +345,49 @@ class TimelineContentPolicyTest {
         val other = anchor.copy(mediaId = "other", title = "Other")
         assertFalse(TimelineContentPolicy.keepsWordTimedFallback("lyricon", other, displayed, primary(lineSong())))
     }
+
+    @Test
+    fun `a shown fallback may be replaced by a higher priority fallback even when word timed`() {
+        // 竞速里 LB 先到并已逐字显示，更高优先级的 AMLL 晚到仍要能取代它。
+        val displayed = fallback(wordSong())
+        assertFalse(
+            TimelineContentPolicy.admitsOnlineFallback("lyricon", anchor, fallback(wordSong()), displayed, settings, true)
+        )
+        assertTrue(
+            TimelineContentPolicy.admitsFallbackSwitch("lyricon", anchor, fallback(wordSong()), displayed, settings, true)
+        )
+        assertTrue(
+            TimelineContentPolicy.admitsFallbackSwitch("lyricon", anchor, fallback(lineSong()), fallback(lineSong()), settings, true)
+        )
+    }
+
+    @Test
+    fun `fallback switch needs a displayed fallback of the same track and no primary`() {
+        // 当前没有显示补充：不属于切换。
+        assertFalse(
+            TimelineContentPolicy.admitsFallbackSwitch("lyricon", anchor, fallback(wordSong()), null, settings, true)
+        )
+        // 显示的是主源：主源存在就不切。
+        assertFalse(
+            TimelineContentPolicy.admitsFallbackSwitch("lyricon", anchor, fallback(wordSong()), primary(lineSong()), settings, true)
+        )
+        // 显示的补充属于别的曲目：不切。
+        val other = anchor.copy(mediaId = "other", title = "Other")
+        val otherFallback = TimelineContent(
+            sourceId = MediaSessionOnlineFallbackPolicy.SOURCE_ID, track = other, song = wordSong(), strictIdentity = true,
+        )
+        assertFalse(
+            TimelineContentPolicy.admitsFallbackSwitch("lyricon", anchor, fallback(wordSong()), otherFallback, settings, true)
+        )
+    }
+
+    @Test
+    fun `fallback switch still requires strict identity authorization and usable lyrics`() {
+        val displayed = fallback(lineSong())
+        val loose = fallback(wordSong()).copy(strictIdentity = false)
+        assertFalse(TimelineContentPolicy.admitsFallbackSwitch("lyricon", anchor, loose, displayed, settings, true))
+        assertFalse(TimelineContentPolicy.admitsFallbackSwitch("lyricon", anchor, fallback(wordSong()), displayed, settings, false))
+        assertFalse(TimelineContentPolicy.admitsFallbackSwitch("lyricon", anchor, fallback(Song()), displayed, settings, true))
+        assertFalse(TimelineContentPolicy.admitsFallbackSwitch(null, anchor, fallback(wordSong()), displayed, settings, true))
+    }
 }

@@ -543,7 +543,6 @@
     <string name="title_online_translation_sources">3rd-Party Online Sources</string>
     <string name="title_online_translation_platform_sources">Platform Sources</string>
     <string name="title_online_translation_enabled_apps">Enabled Apps</string>
-    <string name="summary_online_translation_app_translation">Translation</string>
     <string name="summary_online_translation_app_lyrics_translation">Lyrics &amp; Translation</string>
     <string name="title_online_translation_no_enabled_apps">No Apps Available</string>
     <string name="title_online_translation_salt_special_settings">Special Settings</string>
@@ -628,6 +627,18 @@
     <string name="title_island_short_lyric_song_info">Show song info for short lyrics</string>
     <string name="summary_island_short_lyric_song_info">Long lyrics return to full-island scrolling</string>
     <string name="title_audio_rhythm_cover_color">Audio Rhythm Cover Color</string>
+    <string name="title_island_pure_music_state">Island state during instrumental tracks</string>
+    <string name="summary_island_pure_music_state">With System Default, songs that have lyrics but none could be fetched also shrink to the compact island</string>
+    <string name="option_island_pure_music_keep">Keep as is</string>
+    <string name="option_island_pure_music_system_compact">System Default</string>
+    <string name="title_island_pure_music_keywords">Instrumental detection keywords</string>
+    <string name="summary_island_pure_music_keywords">A song is treated as instrumental when it has at most 5 lyric lines and any line contains one of these keywords (case and punctuation ignored)</string>
+    <string name="action_island_pure_music_keyword_add">Add keyword</string>
+    <string name="action_island_pure_music_keywords_reset">Reset to defaults</string>
+    <string name="action_island_pure_music_keyword_edit">Edit keyword</string>
+    <string name="action_island_pure_music_keyword_delete">Delete keyword</string>
+    <string name="summary_island_pure_music_keyword_delete">“%1$s” will be deleted. This cannot be undone.</string>
+    <string name="summary_island_pure_music_keywords_reset">Keywords will be reset to the defaults. Anything you added, edited or deleted will be lost. This cannot be undone.</string>
     <string name="option_music_wave_color_mode_off">Off</string>
     <string name="option_music_wave_color_mode_cover">Cover color</string>
     <string name="option_music_wave_color_mode_cover_gradient">Cover gradient</string>

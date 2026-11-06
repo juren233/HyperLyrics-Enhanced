@@ -85,6 +85,27 @@ object TimelineContentPolicy {
             else -> true
         }
 
+    /**
+     * 竞速里更高优先级的结果晚到：当前显示的正是同曲目的补充内容（可能已经是逐字），
+     * 允许它被同一来源的补充内容取代；主源一旦存在就不再切换。
+     */
+    internal fun admitsFallbackSwitch(
+        activeSourceId: String?,
+        currentTrack: TrackIdentity?,
+        content: TimelineContent,
+        displayed: TimelineContent?,
+        settings: Settings,
+        sessionUsable: Boolean,
+        appliedTrackKey: String? = displayed?.track?.normalizedKey(),
+    ): Boolean = activeSourceId != null &&
+        content.sourceId == MediaSessionOnlineFallbackPolicy.SOURCE_ID &&
+        content.strictIdentity && content.track != null && currentTrack != null &&
+        MediaSessionOnlineFallbackPolicy.sameLookupTrack(content.track, currentTrack) &&
+        hasUsableLyrics(content.song) &&
+        MediaSessionOnlineFallbackPolicy.eligible(settings, currentTrack, sessionUsable) &&
+        isFallbackFor(displayed, currentTrack) &&
+        !hasPrimary(activeSourceId, currentTrack, displayed, appliedTrackKey)
+
     enum class Decision {
         APPLY,
         HOLD_FOR_TRACK,

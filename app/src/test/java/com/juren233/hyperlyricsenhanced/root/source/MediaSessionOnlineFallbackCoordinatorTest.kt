@@ -43,6 +43,8 @@ class MediaSessionOnlineFallbackCoordinatorTest {
         var closed = false
         var calls = 0
         val submissions = mutableListOf<TimelineContent>()
+        val nextLineSubmissions = mutableListOf<TimelineContent>()
+        var fetchRace: suspend (TrackIdentity, List<Source>, suspend (Song) -> Unit) -> Song? = { _, _, _ -> song }
         var fetch: suspend (TrackIdentity, List<Source>) -> Song? = { _, _ -> song }
         val coordinator = MediaSessionOnlineFallbackCoordinator(
             tracks = tracks,
@@ -54,11 +56,13 @@ class MediaSessionOnlineFallbackCoordinatorTest {
                 } == true
                 override fun authorize(settings: Settings, sessionUsable: Boolean) = Unit
                 override fun submit(content: TimelineContent) { submissions += content }
+                override fun submitAtNextLine(content: TimelineContent) { nextLineSubmissions += content }
                 override fun listen(onPrimaryChanged: () -> Unit) { primaryListener = onPrimaryChanged }
                 override fun close() { closed = true; primaryListener = null }
             },
             settings = { settings },
             fetchSong = { track, sources -> calls++; fetch(track, sources) },
+            fetchSongRace = { track, sources, early -> calls++; fetchRace(track, sources, early) },
             dispatcher = StandardTestDispatcher(scope.testScheduler),
             ioDispatcher = StandardTestDispatcher(scope.testScheduler),
             nowMs = { scope.testScheduler.currentTime },
@@ -406,6 +410,50 @@ class MediaSessionOnlineFallbackCoordinatorTest {
         f.coordinator.start()
         advanceUntilIdle()
         assertEquals(listOf(Source.AMLL, Source.NE, Source.QM), asked)
+        f.coordinator.stop()
+    }
+
+    private val early = Song(name = "A", lyrics = listOf(RichLyricLine(begin = 0, end = 180_000, duration = 180_000, text = "search")))
+    private val final = Song(name = "A", lyrics = listOf(RichLyricLine(begin = 0, end = 180_000, duration = 180_000, text = "ttml")))
+
+    @Test fun `auto source shows the early result at once and switches to a different final at the next line`() = runTest {
+        val ne = a.copy(packageName = "com.netease.cloudmusic", mediaId = "401250892")
+        val f = Fixture(this)
+        f.tracks.current = ne
+        f.settings = Settings(listOf(Source.AMLL, Source.NE), setOf(ne.packageName), autoSelect = true)
+        f.fetchRace = { _, _, onEarly -> onEarly(early); final }
+        f.coordinator.start()
+        advanceUntilIdle()
+        assertEquals(listOf(early), f.submissions.map { it.song })
+        assertEquals(listOf(final), f.nextLineSubmissions.map { it.song })
+        assertEquals(0, f.calls - 1)
+        f.coordinator.stop()
+    }
+
+    @Test fun `auto source does not switch when the final is the result already shown`() = runTest {
+        val ne = a.copy(packageName = "com.netease.cloudmusic", mediaId = "401250892")
+        val f = Fixture(this)
+        f.tracks.current = ne
+        f.settings = Settings(listOf(Source.AMLL, Source.NE), setOf(ne.packageName), autoSelect = true)
+        f.fetchRace = { _, _, onEarly -> onEarly(early); early }
+        f.coordinator.start()
+        advanceUntilIdle()
+        assertEquals(listOf(early), f.submissions.map { it.song })
+        assertTrue(f.nextLineSubmissions.isEmpty())
+        f.coordinator.stop()
+    }
+
+    @Test fun `manual order keeps the sequential fetch`() = runTest {
+        val ne = a.copy(packageName = "com.netease.cloudmusic", mediaId = "401250892")
+        val f = Fixture(this)
+        f.tracks.current = ne
+        f.settings = Settings(listOf(Source.AMLL, Source.NE), setOf(ne.packageName), autoSelect = false)
+        var raced = false
+        f.fetchRace = { _, _, _ -> raced = true; final }
+        f.coordinator.start()
+        advanceUntilIdle()
+        assertFalse(raced)
+        assertEquals(listOf(song), f.submissions.map { it.song })
         f.coordinator.stop()
     }
 }

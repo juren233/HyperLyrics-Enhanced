@@ -38,6 +38,15 @@ internal object IslandRuntimePreferenceReader {
         prefs.getBoolean(key, default),
     )
 
+    fun getString(
+        prefs: SharedPreferences,
+        key: String,
+        default: String? = null,
+    ): String? = IslandRuntimePreferenceOverrides.getString(
+        key,
+        prefs.getString(key, default),
+    )
+
     fun getStringSet(
         prefs: SharedPreferences,
         key: String,

@@ -78,6 +78,7 @@ internal fun XposedLyricSettingPage(
     collapsedTitle: String? = null,
     leadingContent: (@Composable () -> Unit)? = null,
     trailingContent: (@Composable () -> Unit)? = null,
+    floatingActionButton: (@Composable () -> Unit)? = null,
     listState: LazyListState = rememberLazyListState(),
     content: LazyListScope.() -> Unit
 ) {
@@ -108,6 +109,7 @@ internal fun XposedLyricSettingPage(
     }
 
     Scaffold(
+        floatingActionButton = { floatingActionButton?.invoke() },
         topBar = {
             BlurredBar(backdrop, blurActive) {
                 // 顶栏左右都有按钮时，收起标题用略小字号。

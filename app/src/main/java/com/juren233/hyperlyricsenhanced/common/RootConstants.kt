@@ -144,6 +144,11 @@ object RootConstants {
         "key_hook_island_album_cover_style_app_whitelist"
     const val KEY_HOOK_ISLAND_INTERLUDE_MINIMAL_DISPLAY =
         "key_hook_island_interlude_minimal_display"
+    const val KEY_HOOK_ISLAND_PURE_MUSIC_MODE = "key_hook_island_pure_music_mode"
+    const val KEY_HOOK_ISLAND_PURE_MUSIC_KEYWORDS = "key_hook_island_pure_music_keywords"
+    /** 保存关键词时当时的预设列表；用来只并入之后新增的预设，不把用户删掉的加回来。 */
+    const val KEY_HOOK_ISLAND_PURE_MUSIC_KEYWORDS_SEEN_DEFAULTS =
+        "key_hook_island_pure_music_keywords_seen_defaults"
     const val KEY_HOOK_ISLAND_CONTENT_LEFT = "key_hook_island_content_left"
     const val KEY_HOOK_ISLAND_CONTENT_RIGHT = "key_hook_island_content_right"
     const val KEY_HOOK_ISLAND_LEFT_PADDING_LEFT = "key_hook_island_left_padding_left"
@@ -451,6 +456,9 @@ object RootConstants {
     const val ISLAND_ALBUM_COVER_STYLE_GRADIENT = 4
     const val DEFAULT_HOOK_ISLAND_ALBUM_COVER_STYLE = ISLAND_ALBUM_COVER_STYLE_DEFAULT
     const val DEFAULT_HOOK_ISLAND_INTERLUDE_MINIMAL_DISPLAY = false
+    const val ISLAND_PURE_MUSIC_MODE_KEEP = 0
+    const val ISLAND_PURE_MUSIC_MODE_SYSTEM_COMPACT = 1
+    const val DEFAULT_HOOK_ISLAND_PURE_MUSIC_MODE = ISLAND_PURE_MUSIC_MODE_KEEP
     const val DEFAULT_HOOK_MAX_LEFT_WIDTH = 100
     const val DEFAULT_HOOK_REMOVE_FOCUS_WHITELIST = false
     const val DEFAULT_HOOK_REMOVE_ISLAND_WHITELIST = false
