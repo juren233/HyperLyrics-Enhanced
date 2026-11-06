@@ -31,6 +31,8 @@ object AppleMusicPreferenceKeys {
         "key_hook_apple_music_notification_open_full_player"
     const val KEY_HOOK_APPLE_MUSIC_FORCE_CELLULAR_DATA_ENTRY =
         "key_hook_apple_music_force_cellular_data_entry"
+    const val KEY_HOOK_APPLE_MUSIC_LYRICS_IMAGE_EXPORT =
+        "key_hook_apple_music_lyrics_image_export"
     const val KEY_HOOK_APPLE_MUSIC_VOLUME_BALANCE =
         "key_hook_apple_music_volume_balance"
     const val KEY_HOOK_APPLE_MUSIC_PREVENT_NETWORK_AUTO_SKIP =
@@ -75,6 +77,7 @@ object AppleMusicPreferenceKeys {
     const val DEFAULT_HOOK_APPLE_MUSIC_RESTORE_CJK_ORIGINAL_METADATA = false
     const val DEFAULT_HOOK_APPLE_MUSIC_NOTIFICATION_OPEN_FULL_PLAYER = false
     const val DEFAULT_HOOK_APPLE_MUSIC_FORCE_CELLULAR_DATA_ENTRY = false
+    const val DEFAULT_HOOK_APPLE_MUSIC_LYRICS_IMAGE_EXPORT = true
     const val DEFAULT_HOOK_APPLE_MUSIC_VOLUME_BALANCE = false
     const val DEFAULT_HOOK_APPLE_MUSIC_PREVENT_NETWORK_AUTO_SKIP = false
     const val DEFAULT_HOOK_APPLE_MUSIC_SIMPLIFY_TRADITIONAL_CONTENT = false

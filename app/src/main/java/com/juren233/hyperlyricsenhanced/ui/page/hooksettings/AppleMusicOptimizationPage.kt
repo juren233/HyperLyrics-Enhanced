@@ -188,6 +188,14 @@ fun AppleMusicOptimizationPage(
             )
         )
     }
+    var lyricsImageExport by remember {
+        mutableStateOf(
+            prefs.getBoolean(
+                RootConstants.KEY_HOOK_APPLE_MUSIC_LYRICS_IMAGE_EXPORT,
+                RootConstants.DEFAULT_HOOK_APPLE_MUSIC_LYRICS_IMAGE_EXPORT,
+            )
+        )
+    }
     var volumeBalance by remember {
         mutableStateOf(
             prefs.getBoolean(
@@ -621,6 +629,19 @@ fun AppleMusicOptimizationPage(
                         hideMandarinPinyin = enabled
                         saveConfig(
                             RootConstants.KEY_HOOK_APPLE_MUSIC_HIDE_MANDARIN_PINYIN,
+                            enabled,
+                        )
+                    },
+                )
+                SwitchPreference(
+                    enabled = featuresEnabled,
+                    title = stringResource(R.string.title_apple_music_lyrics_image_export),
+                    summary = stringResource(R.string.summary_apple_music_lyrics_image_export),
+                    checked = lyricsImageExport,
+                    onCheckedChange = { enabled ->
+                        lyricsImageExport = enabled
+                        saveConfig(
+                            RootConstants.KEY_HOOK_APPLE_MUSIC_LYRICS_IMAGE_EXPORT,
                             enabled,
                         )
                     },

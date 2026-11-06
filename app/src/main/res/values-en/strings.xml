@@ -71,6 +71,8 @@
     <string name="summary_apple_music_localized_metadata_cache">Uses little storage to improve performance. When disabled, song info is refetched after a cold start. Recommended.</string>
     <string name="title_apple_music_app_features">App Features</string>
     <string name="title_apple_music_app_display">App Display</string>
+    <string name="title_apple_music_lyrics_image_export">Export Lyrics as Image</string>
+    <string name="summary_apple_music_lyrics_image_export">Adds “Save Image” and “Share Image” to Share Lyrics, creating a lyric poster with a song QR code. Sharing does not write to Photos</string>
     <string name="title_apple_music_volume_balance">Dynamic Dolby Atmos Speaker Boost</string>
     <string name="summary_apple_music_volume_balance">Enable “Sound Check” in Apple Music for better results. System spatial audio is not recommended.</string>
     <string name="title_apple_music_prevent_network_auto_skip">Don\'t auto-skip on network playback failures</string>
