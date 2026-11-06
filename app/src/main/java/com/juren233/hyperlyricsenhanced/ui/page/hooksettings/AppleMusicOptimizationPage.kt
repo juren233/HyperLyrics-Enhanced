@@ -1,5 +1,6 @@
 package com.juren233.hyperlyricsenhanced.ui.page.hooksettings
 
+import com.juren233.hyperlyricsenhanced.common.FloatPreferences
 import android.content.SharedPreferences
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -263,14 +264,14 @@ fun AppleMusicOptimizationPage(
         )
     }
     val initialNativeLyricsBlurRadiusRange = remember(prefs) {
-        val configuredMin = prefs.getFloat(
+        val configuredMin = FloatPreferences.read(prefs, 
             RootConstants.KEY_HOOK_APPLE_MUSIC_NATIVE_LYRICS_BLUR_MIN_RADIUS_DP,
             RootConstants.DEFAULT_HOOK_APPLE_MUSIC_NATIVE_LYRICS_BLUR_MIN_RADIUS_DP,
         ).coerceIn(
             RootConstants.MIN_HOOK_APPLE_MUSIC_NATIVE_LYRICS_BLUR_RADIUS_DP,
             RootConstants.MAX_HOOK_APPLE_MUSIC_NATIVE_LYRICS_BLUR_RADIUS_DP,
         )
-        val configuredMax = prefs.getFloat(
+        val configuredMax = FloatPreferences.read(prefs, 
             RootConstants.KEY_HOOK_APPLE_MUSIC_NATIVE_LYRICS_BLUR_MAX_RADIUS_DP,
             RootConstants.DEFAULT_HOOK_APPLE_MUSIC_NATIVE_LYRICS_BLUR_MAX_RADIUS_DP,
         ).coerceIn(

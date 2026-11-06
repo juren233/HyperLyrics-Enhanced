@@ -67,6 +67,22 @@ object StorageKeyMigrator {
             edits.remove(legacyKey)
             dirty = true
         }
+        // 旧版恢复备份把集合型偏好写成了字符串，SystemUI 读取时会抛类型转换异常。
+        StringSetPreferences.KEYS.forEach { key ->
+            val raw = prefs.all[key] as? String ?: return@forEach
+            edits.putStringSet(key, StringSetPreferences.parse(raw))
+            LogManager.i(TAG, "migrated string-typed set key=$key")
+            dirty = true
+        }
+        // 旧版恢复备份把整数值的浮点偏好（如 1.0）写成了 Int，SystemUI 的 getFloat 会抛类型转换异常。
+        FloatPreferences.KEYS.forEach { key ->
+            val raw = prefs.all[key]
+            if (raw == null || raw is Float) return@forEach
+            val fixed = (raw as? Number)?.toFloat() ?: (raw as? String)?.toFloatOrNull()
+            if (fixed != null) edits.putFloat(key, fixed) else edits.remove(key)
+            LogManager.i(TAG, "migrated non-float key=$key type=${raw.javaClass.simpleName}")
+            dirty = true
+        }
         if (dirty) edits.apply()
     }
 }

@@ -1,5 +1,6 @@
 ﻿package com.juren233.hyperlyricsenhanced.ui.page.hooksettings
 
+import com.juren233.hyperlyricsenhanced.common.FloatPreferences
 import android.content.Context
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
@@ -149,7 +150,7 @@ private fun LazyListScope.animationRateSection(enabled: Boolean) {
             )
         }
         var customRate by remember {
-            mutableFloatStateOf(prefs.getFloat(RootConstants.KEY_HOOK_SWITCH_ANIM_CUSTOM_RATE, RootConstants.DEFAULT_HOOK_SWITCH_ANIM_CUSTOM_RATE))
+            mutableFloatStateOf(FloatPreferences.read(prefs, RootConstants.KEY_HOOK_SWITCH_ANIM_CUSTOM_RATE, RootConstants.DEFAULT_HOOK_SWITCH_ANIM_CUSTOM_RATE))
         }
         var showDurationDialog by remember { mutableStateOf(false) }
 

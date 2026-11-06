@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.core.content.edit
 import com.juren233.hyperlyricsenhanced.common.PrefsBridge
 import com.juren233.hyperlyricsenhanced.common.ServiceConstants
+import com.juren233.hyperlyricsenhanced.common.StringSetPreferences
 import com.juren233.hyperlyricsenhanced.common.UIConstants
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -15,7 +16,7 @@ object ConfigRepository {
 
     fun initWhitelist(context: Context) {
         val prefs = context.getSharedPreferences(UIConstants.PREF_NAME, Context.MODE_PRIVATE)
-        val savedSet = prefs.getStringSet(ServiceConstants.KEY_NOTIFICATION_WHITELIST, emptySet())?.toSet() ?: emptySet()
+        val savedSet = StringSetPreferences.read(prefs, ServiceConstants.KEY_NOTIFICATION_WHITELIST, emptySet()).orEmpty()
         _whitelistState.value = savedSet
     }
 

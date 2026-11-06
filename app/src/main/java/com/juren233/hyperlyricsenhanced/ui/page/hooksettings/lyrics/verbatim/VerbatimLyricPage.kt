@@ -1,5 +1,6 @@
 package com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.verbatim
 
+import com.juren233.hyperlyricsenhanced.common.FloatPreferences
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -23,10 +24,10 @@ fun VerbatimLyricPage() {
     var syllableRelative by remember { mutableStateOf(prefs.getBoolean(RootConstants.KEY_HOOK_SYLLABLE_RELATIVE, RootConstants.DEFAULT_HOOK_SYLLABLE_RELATIVE)) }
     var syllableHighlight by remember { mutableStateOf(prefs.getBoolean(RootConstants.KEY_HOOK_SYLLABLE_HIGHLIGHT, RootConstants.DEFAULT_HOOK_SYLLABLE_HIGHLIGHT)) }
     var wordMotionEnabled by remember { mutableStateOf(prefs.getBoolean(RootConstants.KEY_HOOK_WORD_MOTION_ENABLED, RootConstants.DEFAULT_HOOK_WORD_MOTION_ENABLED)) }
-    var wordMotionCjkLift by remember { mutableFloatStateOf(prefs.getFloat(RootConstants.KEY_HOOK_WORD_MOTION_CJK_LIFT, RootConstants.DEFAULT_HOOK_WORD_MOTION_CJK_LIFT)) }
-    var wordMotionCjkWave by remember { mutableFloatStateOf(prefs.getFloat(RootConstants.KEY_HOOK_WORD_MOTION_CJK_WAVE, RootConstants.DEFAULT_HOOK_WORD_MOTION_CJK_WAVE)) }
-    var wordMotionLatinLift by remember { mutableFloatStateOf(prefs.getFloat(RootConstants.KEY_HOOK_WORD_MOTION_LATIN_LIFT, RootConstants.DEFAULT_HOOK_WORD_MOTION_LATIN_LIFT)) }
-    var wordMotionLatinWave by remember { mutableFloatStateOf(prefs.getFloat(RootConstants.KEY_HOOK_WORD_MOTION_LATIN_WAVE, RootConstants.DEFAULT_HOOK_WORD_MOTION_LATIN_WAVE)) }
+    var wordMotionCjkLift by remember { mutableFloatStateOf(FloatPreferences.read(prefs, RootConstants.KEY_HOOK_WORD_MOTION_CJK_LIFT, RootConstants.DEFAULT_HOOK_WORD_MOTION_CJK_LIFT)) }
+    var wordMotionCjkWave by remember { mutableFloatStateOf(FloatPreferences.read(prefs, RootConstants.KEY_HOOK_WORD_MOTION_CJK_WAVE, RootConstants.DEFAULT_HOOK_WORD_MOTION_CJK_WAVE)) }
+    var wordMotionLatinLift by remember { mutableFloatStateOf(FloatPreferences.read(prefs, RootConstants.KEY_HOOK_WORD_MOTION_LATIN_LIFT, RootConstants.DEFAULT_HOOK_WORD_MOTION_LATIN_LIFT)) }
+    var wordMotionLatinWave by remember { mutableFloatStateOf(FloatPreferences.read(prefs, RootConstants.KEY_HOOK_WORD_MOTION_LATIN_WAVE, RootConstants.DEFAULT_HOOK_WORD_MOTION_LATIN_WAVE)) }
 
     var showWordMotionCjkLiftDialog by remember { mutableStateOf(false) }
     var showWordMotionCjkWaveDialog by remember { mutableStateOf(false) }

@@ -11,6 +11,7 @@ import com.juren233.hyperlyricsenhanced.common.IslandMusicWaveColorMode
 import com.juren233.hyperlyricsenhanced.common.IslandFontWeightMode
 import com.juren233.hyperlyricsenhanced.common.IslandProgressColorMode
 import com.juren233.hyperlyricsenhanced.common.RootConstants
+import com.juren233.hyperlyricsenhanced.common.StringSetPreferences
 
 /** Reads the latest broadcast override before falling back to RemotePreferences storage. */
 internal object IslandRuntimePreferenceReader {
@@ -43,7 +44,7 @@ internal object IslandRuntimePreferenceReader {
         default: Set<String>? = null,
     ): Set<String>? = IslandRuntimePreferenceOverrides.getStringSet(
         key,
-        prefs.getStringSet(key, default),
+        StringSetPreferences.read(prefs, key, default),
     )
 
     fun getProgressColorMode(prefs: SharedPreferences): Int = IslandProgressColorMode.resolve(

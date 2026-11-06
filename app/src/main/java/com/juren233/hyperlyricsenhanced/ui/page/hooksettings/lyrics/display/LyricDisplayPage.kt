@@ -1,5 +1,6 @@
 package com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.display
 
+import com.juren233.hyperlyricsenhanced.common.FloatPreferences
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -47,7 +48,7 @@ fun LyricDisplayPage() {
     val saveConfig = rememberHookConfigSaver(prefs)
 
     var textSize by remember { mutableIntStateOf(prefs.getInt(RootConstants.KEY_HOOK_TEXT_SIZE, RootConstants.DEFAULT_HOOK_TEXT_SIZE)) }
-    var textSizeRatio by remember { mutableFloatStateOf(prefs.getFloat(RootConstants.KEY_HOOK_TEXT_SIZE_RATIO, RootConstants.DEFAULT_HOOK_TEXT_SIZE_RATIO)) }
+    var textSizeRatio by remember { mutableFloatStateOf(FloatPreferences.read(prefs, RootConstants.KEY_HOOK_TEXT_SIZE_RATIO, RootConstants.DEFAULT_HOOK_TEXT_SIZE_RATIO)) }
     var fadingEdge by remember { mutableIntStateOf(prefs.getInt(RootConstants.KEY_HOOK_FADING_EDGE_LENGTH, RootConstants.DEFAULT_HOOK_FADING_EDGE_LENGTH)) }
     var customFontColorEnabled by remember {
         mutableStateOf(

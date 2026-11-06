@@ -19,8 +19,9 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import com.juren233.hyperlyricsenhanced.common.FloatPreferences
 import com.juren233.hyperlyricsenhanced.common.RootConstants
-import com.juren233.hyperlyricsenhanced.common.ServiceConstants
+import com.juren233.hyperlyricsenhanced.common.StringSetPreferences
 import com.juren233.hyperlyricsenhanced.common.UIConstants
 
 object BackupRestoreManager {
@@ -61,12 +62,12 @@ object BackupRestoreManager {
                     val value = config.get(key)
                     if (key == "key_send_normal_notification" || key == "key_send_focus_notification" || key == "key_persistent_foreground"
                         || key == RootConstants.KEY_HOOK_AI_TRANS_API_KEY) continue
-                    if (key == ServiceConstants.KEY_NOTIFICATION_WHITELIST ||
-                        key == RootConstants.KEY_HOOK_ISLAND_ALBUM_COVER_STYLE_APP_WHITELIST
-                    ) {
-                        val raw = value.toString()
-                        val set = if (raw.isBlank()) emptySet() else raw.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
-                        putStringSet(key, set)
+                    if (key in StringSetPreferences.KEYS) {
+                        putStringSet(key, StringSetPreferences.parse(value.toString()))
+                        continue
+                    }
+                    if (key in FloatPreferences.KEYS && value is Number) {
+                        putFloat(key, value.toFloat())
                         continue
                     }
                     when (value) {

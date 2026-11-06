@@ -1,5 +1,6 @@
 package com.juren233.hyperlyricsenhanced.root.island
 
+import com.juren233.hyperlyricsenhanced.common.FloatPreferences
 import android.content.SharedPreferences
 import android.view.View
 import com.juren233.hyperlyricsenhanced.common.RootConstants
@@ -490,7 +491,7 @@ internal data class IslandSlotRuntimeConfig(
                     RootConstants.ISLAND_NEXT_SONG_PREVIEW_WEIGHT_BOTTOM
                 ),
                 textSizeSp = prefs.getInt(RootConstants.KEY_HOOK_TEXT_SIZE, RootConstants.DEFAULT_HOOK_TEXT_SIZE),
-                textSizeRatio = prefs.getFloat(RootConstants.KEY_HOOK_TEXT_SIZE_RATIO, RootConstants.DEFAULT_HOOK_TEXT_SIZE_RATIO),
+                textSizeRatio = FloatPreferences.read(prefs, RootConstants.KEY_HOOK_TEXT_SIZE_RATIO, RootConstants.DEFAULT_HOOK_TEXT_SIZE_RATIO),
                 fontWeight = runtimeInt(prefs, RootConstants.KEY_HOOK_FONT_WEIGHT, RootConstants.DEFAULT_HOOK_FONT_WEIGHT),
                 fontWeightMode = IslandRuntimePreferenceReader.getFontWeightMode(prefs),
                 systemFontWeight = IslandSystemFontWeight.state.takeIf {
@@ -515,7 +516,7 @@ internal data class IslandSlotRuntimeConfig(
                 lyricAnimationEnabled = prefs.getBoolean(RootConstants.KEY_HOOK_ANIM_ENABLE, RootConstants.DEFAULT_HOOK_ANIM_ENABLE),
                 lyricAnimationId = prefs.getString(RootConstants.KEY_HOOK_ANIM_ID, RootConstants.DEFAULT_HOOK_ANIM_ID) ?: RootConstants.DEFAULT_HOOK_ANIM_ID,
                 switchAnimRate = prefs.getString(RootConstants.KEY_HOOK_SWITCH_ANIM_RATE, RootConstants.DEFAULT_HOOK_SWITCH_ANIM_RATE) ?: RootConstants.DEFAULT_HOOK_SWITCH_ANIM_RATE,
-                switchAnimCustomRate = prefs.getFloat(RootConstants.KEY_HOOK_SWITCH_ANIM_CUSTOM_RATE, RootConstants.DEFAULT_HOOK_SWITCH_ANIM_CUSTOM_RATE),
+                switchAnimCustomRate = FloatPreferences.read(prefs, RootConstants.KEY_HOOK_SWITCH_ANIM_CUSTOM_RATE, RootConstants.DEFAULT_HOOK_SWITCH_ANIM_CUSTOM_RATE),
                 lyricMarqueeEnabled = prefs.getBoolean(RootConstants.KEY_HOOK_MARQUEE_MODE, RootConstants.DEFAULT_HOOK_MARQUEE_MODE),
                 lyricMarqueeSpeed = prefs.getInt(RootConstants.KEY_HOOK_MARQUEE_SPEED, RootConstants.DEFAULT_HOOK_MARQUEE_SPEED),
                 lyricMarqueeDelay = prefs.getInt(RootConstants.KEY_HOOK_MARQUEE_DELAY, RootConstants.DEFAULT_HOOK_MARQUEE_DELAY),
@@ -579,10 +580,10 @@ internal data class IslandSlotRuntimeConfig(
                     RootConstants.DEFAULT_HOOK_NARROW_LATIN_FONT
                 ),
                 wordMotionEnabled = prefs.getBoolean(RootConstants.KEY_HOOK_WORD_MOTION_ENABLED, RootConstants.DEFAULT_HOOK_WORD_MOTION_ENABLED),
-                wordMotionCjkLift = prefs.getFloat(RootConstants.KEY_HOOK_WORD_MOTION_CJK_LIFT, RootConstants.DEFAULT_HOOK_WORD_MOTION_CJK_LIFT),
-                wordMotionCjkWave = prefs.getFloat(RootConstants.KEY_HOOK_WORD_MOTION_CJK_WAVE, RootConstants.DEFAULT_HOOK_WORD_MOTION_CJK_WAVE),
-                wordMotionLatinLift = prefs.getFloat(RootConstants.KEY_HOOK_WORD_MOTION_LATIN_LIFT, RootConstants.DEFAULT_HOOK_WORD_MOTION_LATIN_LIFT),
-                wordMotionLatinWave = prefs.getFloat(RootConstants.KEY_HOOK_WORD_MOTION_LATIN_WAVE, RootConstants.DEFAULT_HOOK_WORD_MOTION_LATIN_WAVE)
+                wordMotionCjkLift = FloatPreferences.read(prefs, RootConstants.KEY_HOOK_WORD_MOTION_CJK_LIFT, RootConstants.DEFAULT_HOOK_WORD_MOTION_CJK_LIFT),
+                wordMotionCjkWave = FloatPreferences.read(prefs, RootConstants.KEY_HOOK_WORD_MOTION_CJK_WAVE, RootConstants.DEFAULT_HOOK_WORD_MOTION_CJK_WAVE),
+                wordMotionLatinLift = FloatPreferences.read(prefs, RootConstants.KEY_HOOK_WORD_MOTION_LATIN_LIFT, RootConstants.DEFAULT_HOOK_WORD_MOTION_LATIN_LIFT),
+                wordMotionLatinWave = FloatPreferences.read(prefs, RootConstants.KEY_HOOK_WORD_MOTION_LATIN_WAVE, RootConstants.DEFAULT_HOOK_WORD_MOTION_LATIN_WAVE)
             )
         }
 

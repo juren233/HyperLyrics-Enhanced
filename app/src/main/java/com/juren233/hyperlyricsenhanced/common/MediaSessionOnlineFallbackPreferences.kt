@@ -16,7 +16,7 @@ internal object MediaSessionOnlineFallbackPreferences {
 
     fun read(prefs: SharedPreferences): Settings = Settings(
         sources = OnlineTranslationSourcePreferences.orderedSources(prefs),
-        packages = prefs.getStringSet(PACKAGES, emptySet()).orEmpty().toSet(),
+        packages = StringSetPreferences.read(prefs, PACKAGES, emptySet()).orEmpty(),
     )
 
     fun isPreference(key: String?): Boolean = key == PACKAGES

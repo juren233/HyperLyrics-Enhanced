@@ -1,5 +1,6 @@
 package com.juren233.hyperlyricsenhanced.root.utils
 
+import com.juren233.hyperlyricsenhanced.common.FloatPreferences
 import android.content.SharedPreferences
 import android.content.res.Resources
 import android.graphics.Bitmap
@@ -111,7 +112,7 @@ object LyricStyleHelper {
         val baseTf = FontHelper.loadBaseTypeface(prefs)
         val narrowTf = FontHelper.loadNarrowTypeface(prefs)
 
-        val textSizeRatio = prefs.getFloat(RootConstants.KEY_HOOK_TEXT_SIZE_RATIO, RootConstants.DEFAULT_HOOK_TEXT_SIZE_RATIO)
+        val textSizeRatio = FloatPreferences.read(prefs, RootConstants.KEY_HOOK_TEXT_SIZE_RATIO, RootConstants.DEFAULT_HOOK_TEXT_SIZE_RATIO)
         val primarySizePx = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, fontSize.toFloat(), res.displayMetrics)
 
         val isMetadataDualLine = (mode == 5 || mode == 6)
@@ -306,10 +307,10 @@ object LyricStyleHelper {
             fadingEdge = prefs.getInt(RootConstants.KEY_HOOK_FADING_EDGE_LENGTH, RootConstants.DEFAULT_HOOK_FADING_EDGE_LENGTH),
             wordMotion = WordMotion(
                 enabled = prefs.getBoolean(RootConstants.KEY_HOOK_WORD_MOTION_ENABLED, RootConstants.DEFAULT_HOOK_WORD_MOTION_ENABLED),
-                cjkLiftFactor = prefs.getFloat(RootConstants.KEY_HOOK_WORD_MOTION_CJK_LIFT, RootConstants.DEFAULT_HOOK_WORD_MOTION_CJK_LIFT),
-                cjkWaveFactor = prefs.getFloat(RootConstants.KEY_HOOK_WORD_MOTION_CJK_WAVE, RootConstants.DEFAULT_HOOK_WORD_MOTION_CJK_WAVE),
-                latinLiftFactor = prefs.getFloat(RootConstants.KEY_HOOK_WORD_MOTION_LATIN_LIFT, RootConstants.DEFAULT_HOOK_WORD_MOTION_LATIN_LIFT),
-                latinWaveFactor = prefs.getFloat(RootConstants.KEY_HOOK_WORD_MOTION_LATIN_WAVE, RootConstants.DEFAULT_HOOK_WORD_MOTION_LATIN_WAVE),
+                cjkLiftFactor = FloatPreferences.read(prefs, RootConstants.KEY_HOOK_WORD_MOTION_CJK_LIFT, RootConstants.DEFAULT_HOOK_WORD_MOTION_CJK_LIFT),
+                cjkWaveFactor = FloatPreferences.read(prefs, RootConstants.KEY_HOOK_WORD_MOTION_CJK_WAVE, RootConstants.DEFAULT_HOOK_WORD_MOTION_CJK_WAVE),
+                latinLiftFactor = FloatPreferences.read(prefs, RootConstants.KEY_HOOK_WORD_MOTION_LATIN_LIFT, RootConstants.DEFAULT_HOOK_WORD_MOTION_LATIN_LIFT),
+                latinWaveFactor = FloatPreferences.read(prefs, RootConstants.KEY_HOOK_WORD_MOTION_LATIN_WAVE, RootConstants.DEFAULT_HOOK_WORD_MOTION_LATIN_WAVE),
             ),
             placeholder = TitleSlot.NONE,
             centerIfPossible = false,

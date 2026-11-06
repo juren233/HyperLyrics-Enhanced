@@ -51,6 +51,7 @@ import com.juren233.hyperlyricsenhanced.common.IslandAlbumCoverWhitelist
 import com.juren233.hyperlyricsenhanced.common.IslandMusicAppCatalog
 import com.juren233.hyperlyricsenhanced.common.PrefsBridge
 import com.juren233.hyperlyricsenhanced.common.RootConstants
+import com.juren233.hyperlyricsenhanced.common.StringSetPreferences
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.common.XposedLyricSettingPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.common.rememberHookPrefs
 import com.juren233.hyperlyricsenhanced.ui.utils.LocaleUtils
@@ -78,7 +79,7 @@ fun HyperIslandAlbumCoverWhitelistPage() {
     }
     fun updateAppEnabled(packageName: String, enabled: Boolean) {
         val updated = IslandAlbumCoverWhitelist.updateEnabledPackages(
-            current = prefs.getStringSet(RootConstants.KEY_HOOK_ISLAND_ALBUM_COVER_STYLE_APP_WHITELIST, null),
+            current = StringSetPreferences.read(prefs, RootConstants.KEY_HOOK_ISLAND_ALBUM_COVER_STYLE_APP_WHITELIST, null),
             packageName = packageName,
             enabled = enabled,
         )
