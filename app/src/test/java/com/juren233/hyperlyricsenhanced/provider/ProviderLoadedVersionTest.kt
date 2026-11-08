@@ -18,8 +18,9 @@ class ProviderLoadedVersionTest {
         baselineCode: Int = 20,
         baselineName: String? = "1.0.19",
         releases: Map<Int, String> = mapOf(19 to "1.0.18"),
+        loadedName: String? = null,
     ) = ProviderLoadedVersion.displayName(
-        loaded, installed, installedName, baselineCode, baselineName, releases,
+        loaded, loadedName, installed, installedName, baselineCode, baselineName, releases,
     )
 
     @Test
@@ -45,6 +46,16 @@ class ProviderLoadedVersionTest {
     @Test
     fun unknownReleaseShowsVersionCode() {
         assertEquals("17", name(loaded = 17))
+    }
+
+    @Test
+    fun loadedVersionOutsideInstalledBaselineAndCatalogUsesTheRecordedName() {
+        // 旧测试包内置的 1.0.29（30）仍在运行：既非已装 28、也非现在的基线 28，发布目录里也没有。
+        assertEquals(
+            "1.0.29",
+            name(loaded = 30, installed = 28, installedName = "1.0.27", baselineCode = 28, baselineName = "1.0.27",
+                releases = mapOf(28 to "1.0.27"), loadedName = "1.0.29"),
+        )
     }
 
     @Test

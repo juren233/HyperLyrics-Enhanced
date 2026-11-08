@@ -35,7 +35,6 @@ import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.provider.OfficialProviderCatalog
 import com.juren233.hyperlyricsenhanced.provider.OfficialProviderRepository
 import com.juren233.hyperlyricsenhanced.ui.component.AppSettingsIconButton
-import com.juren233.hyperlyricsenhanced.ui.component.CustomFontColorPickerDialog
 import com.juren233.hyperlyricsenhanced.ui.component.CustomFontColorPreview
 import com.juren233.hyperlyricsenhanced.ui.component.FloatRangeInputDialog
 import com.juren233.hyperlyricsenhanced.ui.component.NumberRangeInputDialog
@@ -223,7 +222,19 @@ fun AppleMusicOptimizationPage(
             )
         )
     }
-    var showLyricsImageColorPicker by remember { mutableStateOf(false) }
+    // Edited on its own page; keeps the swatch here current when coming back.
+    DisposableEffect(prefs) {
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == RootConstants.KEY_HOOK_APPLE_MUSIC_LYRICS_IMAGE_BACKGROUND_COLOR) {
+                lyricsImageBackgroundColor = prefs.getInt(
+                    RootConstants.KEY_HOOK_APPLE_MUSIC_LYRICS_IMAGE_BACKGROUND_COLOR,
+                    RootConstants.DEFAULT_HOOK_APPLE_MUSIC_LYRICS_IMAGE_BACKGROUND_COLOR,
+                )
+            }
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
     var volumeBalance by remember {
         mutableStateOf(
             prefs.getBoolean(
@@ -460,15 +471,6 @@ fun AppleMusicOptimizationPage(
         stringResource(R.string.option_apple_music_lyrics_image_background_cover_color),
         stringResource(R.string.option_apple_music_lyrics_image_background_custom_color),
         stringResource(R.string.option_apple_music_lyrics_image_background_custom_image),
-    )
-    CustomFontColorPickerDialog(
-        show = showLyricsImageColorPicker,
-        initialColor = lyricsImageBackgroundColor,
-        onDismiss = { showLyricsImageColorPicker = false },
-        onConfirm = { color ->
-            lyricsImageBackgroundColor = color
-            saveConfig(RootConstants.KEY_HOOK_APPLE_MUSIC_LYRICS_IMAGE_BACKGROUND_COLOR, color)
-        },
     )
 
     XposedLyricSettingPage(
@@ -782,7 +784,9 @@ fun AppleMusicOptimizationPage(
                                 endActions = {
                                     CustomFontColorPreview(color = lyricsImageBackgroundColor)
                                 },
-                                onClick = { showLyricsImageColorPicker = true },
+                                onClick = {
+                                    navigator.navigate(Route.AppleLyricsImageBackgroundColor)
+                                },
                             )
                         }
                         AnimatedVisibility(

@@ -322,14 +322,17 @@ object OfficialProviderRepository {
                 OfficialProviderCatalog.appliedVersionKey(definition.id),
                 0,
             )
+            val recordedLoadedVersionCode = targetState.loadedVersionByPlugin[definition.id] ?: 0
             val loadedVersionCode = ProviderApplyState.loadedAfterApply(
-                loadedVersionCode = targetState.loadedVersionByPlugin[definition.id] ?: 0,
+                loadedVersionCode = recordedLoadedVersionCode,
                 installedVersionCode = installedVersionCode,
+                effectiveVersionCode = effectiveVersionCode,
                 appliedVersionCode = appliedVersionCode,
                 badVersionCodes = badVersionCodes,
             )
             val applyBadge = ProviderApplyState.badge(
                 installedVersionCode = installedVersionCode,
+                effectiveVersionCode = effectiveVersionCode,
                 loadedVersionCode = loadedVersionCode,
                 badVersionCodes = badVersionCodes,
             )
@@ -340,6 +343,9 @@ object OfficialProviderRepository {
                 loadedVersionCode = loadedVersionCode,
                 displayVersionName = ProviderLoadedVersion.displayName(
                     loadedVersionCode = loadedVersionCode,
+                    // 「立即生效」后 loadedVersionCode 已换成下次会加载的版本，记录里的名字不再属于它。
+                    loadedVersionName = targetState.loadedVersionNameByPlugin[definition.id]
+                        ?.takeIf { loadedVersionCode == recordedLoadedVersionCode },
                     installedVersionCode = effectiveVersionCode,
                     installedVersionName = effectiveVersionName,
                     baselineVersionCode = baselineManifest?.versionCode ?: 0,

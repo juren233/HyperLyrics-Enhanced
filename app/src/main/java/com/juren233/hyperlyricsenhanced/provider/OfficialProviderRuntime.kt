@@ -435,7 +435,7 @@ object OfficialProviderRuntime {
         val installNs = System.nanoTime() - installStartNs
         host.logInstalled(definition.id)
         loadedPackages += packageName
-        store?.writeLoadedVersion(definition.id, expectedVersion)
+        store?.writeLoadedVersion(definition.id, expectedVersion, verified.manifest.versionName)
         if (BuildConfig.DEBUG) {
             module.persistentLog(
                 Log.INFO,

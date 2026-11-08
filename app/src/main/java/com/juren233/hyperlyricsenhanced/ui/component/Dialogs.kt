@@ -232,6 +232,8 @@ fun TextInputDialog(
     label: String = title,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
     confirmText: String = stringResource(id = R.string.confirm),
+    /** Confirm stays disabled while this returns false. */
+    isValid: (String) -> Boolean = { true },
     onDismiss: () -> Unit,
     onConfirm: (String) -> Unit
 ) {
@@ -256,6 +258,7 @@ fun TextInputDialog(
                 TextButton(
                     text = confirmText,
                     onClick = { onConfirm(inputValue); onDismiss() },
+                    enabled = isValid(inputValue),
                     modifier = Modifier.weight(1f),
                     colors = ButtonDefaults.textButtonColorsPrimary()
                 )

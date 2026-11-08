@@ -45,11 +45,17 @@ class ProviderTargetStateStore(private val dir: File) {
         writeFile(badVersionsFile(pluginId), merged.sorted().joinToString("\n"))
     }
 
+    /** 第一行是 versionCode；之前的版本只写这一行。 */
     fun readLoadedVersion(pluginId: String): Int =
-        readFile(loadedVersionFile(pluginId))?.trim()?.toIntOrNull() ?: 0
+        readFile(loadedVersionFile(pluginId))?.lineSequence()?.firstOrNull()?.trim()?.toIntOrNull() ?: 0
 
-    fun writeLoadedVersion(pluginId: String, versionCode: Int) {
-        writeFile(loadedVersionFile(pluginId), versionCode.toString())
+    /**
+     * 第二行写 Pack 清单里的 versionName：App 侧凭它显示实际加载的版本名，
+     * 即使该版本既不是已装版本、也不在发布目录里（例如更早的内置基线包）。
+     */
+    fun writeLoadedVersion(pluginId: String, versionCode: Int, versionName: String?) {
+        val name = versionName?.lineSequence()?.firstOrNull()?.trim()?.takeIf(String::isNotEmpty)
+        writeFile(loadedVersionFile(pluginId), listOfNotNull(versionCode.toString(), name).joinToString("\n"))
     }
 
     /** 本次启动没有加载任何版本（无可回退的上一版）时清掉过期的已加载记录。 */

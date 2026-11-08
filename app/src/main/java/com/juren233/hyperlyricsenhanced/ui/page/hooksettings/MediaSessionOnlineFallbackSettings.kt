@@ -6,6 +6,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.core.content.edit
 import com.juren233.hyperlyricsenhanced.R
@@ -34,7 +35,7 @@ internal fun MediaSessionOnlineFallbackEntry() {
     ArrowPreference(
         title = stringResource(R.string.media_session_fallback_more_apps),
         summary = (packages - ENABLED_APP_PACKAGES).takeIf { it.isNotEmpty() }?.let {
-            stringResource(R.string.media_session_fallback_players_count, it.size)
+            pluralStringResource(R.plurals.media_session_fallback_players_count, it.size, it.size)
         },
         onClick = { navigator.navigate(Route.MediaSessionOnlineFallbackPlayers) },
     )

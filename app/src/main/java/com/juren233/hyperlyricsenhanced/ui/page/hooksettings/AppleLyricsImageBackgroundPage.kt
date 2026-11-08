@@ -11,9 +11,7 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
@@ -25,8 +23,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -76,43 +72,52 @@ fun AppleLyricsImageBackgroundPage() {
             RootConstants.DEFAULT_HOOK_APPLE_MUSIC_LYRICS_IMAGE_QR_CODE,
         )
     }
-    // Downscaled source for the live preview; bumped after a new image is imported.
-    var sourceRevision by remember { mutableIntStateOf(0) }
-    var previewSource by remember { mutableStateOf<Bitmap?>(null) }
-    var preview by remember { mutableStateOf<Bitmap?>(null) }
-
-    // Apple Music's own render: the lyric card, and the story background used when no image is set.
-    var sampleCard by remember { mutableStateOf<Bitmap?>(null) }
-    var sampleBackground by remember { mutableStateOf<Bitmap?>(null) }
-    LaunchedEffect(Unit) {
-        val (card, background) = withContext(Dispatchers.IO) {
-            AppleLyricsImageBackgroundStore.loadSample(context, R.drawable.apple_lyrics_share_sample_card) to
-                AppleLyricsImageBackgroundStore.loadSample(context, R.drawable.apple_lyrics_share_sample_background)
-        }
-        sampleCard = card
-        sampleBackground = background
+    // What a poster was drawn from; the last one is reused when the page is opened again.
+    fun previewKey(sourceStamp: Long, blurLevel: Int, brightnessLevel: Int): Any =
+        listOf(sourceStamp, blurLevel, brightnessLevel, withQr)
+    val initialKey = remember { previewKey(AppleLyricsImageBackgroundStore.sourceStamp(context), blur, brightness) }
+    var preview by remember {
+        mutableStateOf(AppleLyricsImagePreviewCache.preview(AppleLyricsImagePreviewCache.PAGE_IMAGE, initialKey))
     }
+    var drawnKey by remember { mutableStateOf<Any?>(initialKey.takeIf { preview != null }) }
+
+    // Downscaled source for the live preview; null until read. Bumped after a new image is imported.
+    var sourceRevision by remember { mutableIntStateOf(0) }
+    var previewSource by remember { mutableStateOf<PreviewSource?>(null) }
+    // The story background stands in when no image is set.
+    val samples = rememberAppleLyricsSamples()
     LaunchedEffect(sourceRevision) {
         val loaded = withContext(Dispatchers.IO) {
-            AppleLyricsImageBackgroundStore.loadSource(context, AppleLyricsImageBackgroundStore.PREVIEW_EDGE)
+            PreviewSource(
+                stamp = AppleLyricsImageBackgroundStore.sourceStamp(context),
+                bitmap = AppleLyricsImageBackgroundStore.loadSource(
+                    context,
+                    AppleLyricsImageBackgroundStore.PREVIEW_EDGE,
+                ),
+            )
         }
         // Not recycled by hand: a cancelled render may still be reading the previous one.
         previewSource = loaded
     }
-    // collectLatest-like: a newer slider value cancels the pending render.
-    LaunchedEffect(previewSource, sampleCard, sampleBackground, blur, brightness) {
-        val card = sampleCard ?: return@LaunchedEffect
-        val source = previewSource
+    // collectLatest-like: a newer slider value cancels the pending render. Waits for the source,
+    // so the story background never flashes in before a picked image.
+    LaunchedEffect(previewSource, samples, blur, brightness) {
+        val source = previewSource ?: return@LaunchedEffect
+        val card = samples?.card ?: return@LaunchedEffect
+        val key = previewKey(source.stamp, blur, brightness)
+        if (key == drawnKey) return@LaunchedEffect
         val composed = withContext(Dispatchers.Default) {
-            val rendered = source?.let { AppleLyricsImageBackgroundStore.render(it, blur, brightness) }
-            val background = rendered ?: sampleBackground ?: return@withContext null
+            val rendered = source.bitmap?.let { AppleLyricsImageBackgroundStore.render(it, blur, brightness) }
+            val background = rendered ?: samples.background ?: return@withContext null
             try {
-                AppleLyricsImageBackgroundStore.composePreview(background, card, withQr)
+                AppleLyricsImageBackgroundStore.composePreview(background, card, samples.wordmark, withQr)
             } finally {
                 rendered?.recycle()
             }
-        }
-        if (composed != null) preview = composed
+        } ?: return@LaunchedEffect
+        preview = composed
+        drawnKey = key
+        AppleLyricsImagePreviewCache.putPreview(AppleLyricsImagePreviewCache.PAGE_IMAGE, key, composed)
     }
 
     val saveFailed = stringResource(R.string.toast_apple_music_lyrics_image_background_save_failed)
@@ -148,23 +153,7 @@ fun AppleLyricsImageBackgroundPage() {
         title = stringResource(R.string.title_apple_music_lyrics_image_background_image),
     ) {
         item(key = "apple_lyrics_image_background_preview") {
-            Card(
-                modifier = Modifier
-                    .padding(horizontal = 12.dp)
-                    .padding(bottom = 12.dp)
-                    .fillMaxWidth()
-            ) {
-                preview?.let { bitmap ->
-                    Image(
-                        bitmap = bitmap.asImageBitmap(),
-                        contentDescription = null,
-                        contentScale = ContentScale.Fit,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .aspectRatio(bitmap.width.toFloat() / bitmap.height),
-                    )
-                }
-            }
+            AppleLyricsImagePreviewCard(preview, withQr)
         }
         item(key = "apple_lyrics_image_background_controls") {
             Card(
@@ -209,6 +198,9 @@ fun AppleLyricsImageBackgroundPage() {
         }
     }
 }
+
+/** The picked image as read for the preview; [bitmap] is null when none is set. */
+private class PreviewSource(val stamp: Long, val bitmap: Bitmap?)
 
 @Composable
 private fun BackgroundSlider(

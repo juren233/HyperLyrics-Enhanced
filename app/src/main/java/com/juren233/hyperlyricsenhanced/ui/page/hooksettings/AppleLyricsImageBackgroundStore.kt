@@ -25,6 +25,7 @@ import android.graphics.RenderEffect
 import android.graphics.RenderNode
 import android.graphics.Shader
 import android.graphics.Typeface
+import android.graphics.drawable.Drawable
 import android.hardware.HardwareBuffer
 import android.media.ImageReader
 import android.net.Uri
@@ -33,6 +34,7 @@ import android.text.TextPaint
 import android.text.TextUtils
 import com.juren233.hyperlyricsenhanced.contract.AppleLyricsSharePoster
 import com.juren233.hyperlyricsenhanced.contract.AppleMusicPreferenceKeys
+import com.juren233.hyperlyricsenhanced.provider.OfficialProviderCatalog
 import com.juren233.hyperlyricsenhanced.root.RootApplication
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -63,6 +65,11 @@ internal object AppleLyricsImageBackgroundStore {
     private fun sourceFile(context: Context) = File(context.filesDir, SOURCE_FILE)
 
     fun hasSource(context: Context): Boolean = sourceFile(context).isFile
+
+    /** Identifies the kept source (0 when none); changes whenever a new image is imported. */
+    fun sourceStamp(context: Context): Long = sourceFile(context).let { file ->
+        if (file.isFile) file.lastModified() * 31 + file.length() else 0L
+    }
 
     /** Decodes the picked image, downscaled to [MAX_SOURCE_EDGE], and keeps it as the new source. */
     fun importSource(context: Context, uri: Uri): Boolean = runCatching {
@@ -221,20 +228,53 @@ internal object AppleLyricsImageBackgroundStore {
      * behind Apple's real lyric [card], plus the QR footer when [withQr]. Geometry and colours
      * come from [AppleLyricsSharePoster], the same source the Provider uses.
      */
-    fun composePreview(background: Bitmap, card: Bitmap, withQr: Boolean): Bitmap {
-        val cardWidth = (card.width * PREVIEW_SCALE).roundToInt()
-        val cardHeight = (card.height * PREVIEW_SCALE).roundToInt()
+    fun composePreview(background: Bitmap, card: Bitmap, wordmark: Drawable?, withQr: Boolean): Bitmap =
+        composePreview(card, wordmark, withQr) { canvas, width, height ->
+            canvas.drawColor(OPAQUE)
+            val crop = AppleLyricsSharePoster.coverCrop(background.width, background.height, width, height)
+            canvas.drawBitmap(
+                background,
+                Rect(crop.left, crop.top, crop.right, crop.bottom),
+                RectF(0f, 0f, width.toFloat(), height.toFloat()),
+                Paint(Paint.FILTER_BITMAP_FLAG),
+            )
+        }
+
+    /** Same poster over a flat [color]; drawn opaque, as the Provider paints its flat background. */
+    fun composePreview(color: Int, card: Bitmap, wordmark: Drawable?, withQr: Boolean): Bitmap =
+        composePreview(card, wordmark, withQr) { canvas, _, _ -> canvas.drawColor(color or OPAQUE) }
+
+    /**
+     * Apple Music's wordmark from the installed app, for the footer subtitle; null when Apple Music
+     * is not installed or has no such drawable, and the subtitle then reads "Apple Music" as text.
+     */
+    fun loadWordmark(context: Context): Drawable? = runCatching {
+        val packageName = OfficialProviderCatalog.APPLE_MUSIC_PACKAGE_NAME
+        val resources = context.packageManager.getResourcesForApplication(packageName)
+        @Suppress("DiscouragedApi") // Another app's resource: only reachable by name.
+        val id = resources.getIdentifier(AppleLyricsSharePoster.WORDMARK_DRAWABLE, "drawable", packageName)
+        if (id == 0) null else resources.getDrawable(id, null)
+    }.getOrNull()
+
+    /** Width / height of the preview poster for a sample card of [cardWidth] x [cardHeight]. */
+    fun previewAspectRatio(cardWidth: Int, cardHeight: Int, withQr: Boolean): Float =
+        AppleLyricsSharePoster.layout(previewEdge(cardWidth), previewEdge(cardHeight), withQr)
+            .let { it.width.toFloat() / it.height }
+
+    private fun previewEdge(cardEdge: Int) = (cardEdge * PREVIEW_SCALE).roundToInt()
+
+    private fun composePreview(
+        card: Bitmap,
+        wordmark: Drawable?,
+        withQr: Boolean,
+        drawBackground: (Canvas, Int, Int) -> Unit,
+    ): Bitmap {
+        val cardWidth = previewEdge(card.width)
+        val cardHeight = previewEdge(card.height)
         val spec = AppleLyricsSharePoster.layout(cardWidth, cardHeight, withQr)
         val poster = Bitmap.createBitmap(spec.width, spec.height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(poster)
-        canvas.drawColor(OPAQUE)
-        val crop = AppleLyricsSharePoster.coverCrop(background.width, background.height, spec.width, spec.height)
-        canvas.drawBitmap(
-            background,
-            Rect(crop.left, crop.top, crop.right, crop.bottom),
-            RectF(0f, 0f, spec.width.toFloat(), spec.height.toFloat()),
-            Paint(Paint.FILTER_BITMAP_FLAG),
-        )
+        drawBackground(canvas, spec.width, spec.height)
         // Sampled from the bare background, before the card and its shadow, as the export does.
         val footerForeground = AppleLyricsSharePoster.footerTextSampleArea(spec).let { area ->
             AppleLyricsSharePoster.foregroundFor(
@@ -257,12 +297,17 @@ internal object AppleLyricsImageBackgroundStore {
             },
         )
         canvas.drawBitmap(card, null, cardRect, Paint(Paint.FILTER_BITMAP_FLAG))
-        if (withQr) drawFooter(canvas, spec, footerForeground)
+        if (withQr) drawFooter(canvas, spec, footerForeground, wordmark)
         return poster
     }
 
     /** Footer with a placeholder QR tile and the same title/subtitle the export uses. */
-    private fun drawFooter(canvas: Canvas, spec: AppleLyricsSharePoster.Layout, foreground: Int) {
+    private fun drawFooter(
+        canvas: Canvas,
+        spec: AppleLyricsSharePoster.Layout,
+        foreground: Int,
+        wordmark: Drawable?,
+    ) {
         val tile = RectF(
             spec.qrLeft.toFloat(),
             spec.qrTop.toFloat(),
@@ -287,18 +332,54 @@ internal object AppleLyricsImageBackgroundStore {
             textSize = spec.subtitleSize
         }
         val title = TextUtils.ellipsize(AppleLyricsSharePoster.qrTitle(chinese), titlePaint, available, TextUtils.TruncateAt.END)
-        val subtitle = TextUtils.ellipsize(AppleLyricsSharePoster.qrSubtitle(chinese), subtitlePaint, available, TextUtils.TruncateAt.END)
         val gap = spec.subtitleSize * 0.55f
         val titleHeight = titlePaint.fontMetrics.let { it.descent - it.ascent }
         val subtitleHeight = subtitlePaint.fontMetrics.let { it.descent - it.ascent }
         val blockTop = tile.centerY() - (titleHeight + gap + subtitleHeight) / 2f
         canvas.drawText(title, 0, title.length, spec.textLeft.toFloat(), blockTop - titlePaint.fontMetrics.ascent, titlePaint)
-        canvas.drawText(
-            subtitle, 0, subtitle.length,
-            spec.textLeft.toFloat(),
-            blockTop + titleHeight + gap - subtitlePaint.fontMetrics.ascent,
-            subtitlePaint,
+        drawSubtitle(
+            canvas = canvas,
+            paint = subtitlePaint,
+            left = spec.textLeft.toFloat(),
+            baseline = blockTop + titleHeight + gap - subtitlePaint.fontMetrics.ascent,
+            available = available,
+            chinese = chinese,
+            wordmark = wordmark,
         )
+    }
+
+    /** Same drawing as the Provider's export footer: text, Apple's wordmark, text. */
+    private fun drawSubtitle(
+        canvas: Canvas,
+        paint: TextPaint,
+        left: Float,
+        baseline: Float,
+        available: Float,
+        chinese: Boolean,
+        wordmark: Drawable?,
+    ) {
+        // A fresh copy per render: previews may render concurrently while a slider moves.
+        val mark = wordmark?.constantState?.newDrawable()?.mutate()
+            ?.takeIf { it.intrinsicWidth > 0 && it.intrinsicHeight > 0 }
+        if (mark == null) {
+            val text = TextUtils.ellipsize(AppleLyricsSharePoster.qrSubtitle(chinese), paint, available, TextUtils.TruncateAt.END)
+            canvas.drawText(text, 0, text.length, left, baseline, paint)
+            return
+        }
+        val (before, after) = AppleLyricsSharePoster.qrSubtitleAroundWordmark(chinese)
+        val capHeight = Rect().also { paint.getTextBounds("H", 0, 1, it) }.height().toFloat()
+        val height = AppleLyricsSharePoster.wordmarkHeight(capHeight)
+        val width = height * mark.intrinsicWidth / mark.intrinsicHeight
+        val top = AppleLyricsSharePoster.wordmarkTop(baseline, height)
+        var x = left
+        canvas.drawText(before, x, baseline, paint)
+        x += paint.measureText(before)
+        mark.setBounds(x.roundToInt(), top.roundToInt(), (x + width).roundToInt(), (top + height).roundToInt())
+        // Same colour and alpha as the subtitle text.
+        mark.setTint(paint.color)
+        mark.draw(canvas)
+        x += width
+        canvas.drawText(after, x, baseline, paint)
     }
 
     /** Three finder squares and a sparse module pattern; only stands in for the real code. */

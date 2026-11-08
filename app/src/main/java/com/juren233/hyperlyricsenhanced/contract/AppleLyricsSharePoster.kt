@@ -113,8 +113,33 @@ object AppleLyricsSharePoster {
     /** Footer title next to the QR code. */
     fun qrTitle(chinese: Boolean): String = if (chinese) "扫码收听完整歌曲" else "Scan to listen"
 
-    /** Footer subtitle next to the QR code. */
-    fun qrSubtitle(chinese: Boolean): String = if (chinese) "在 Apple Music 中打开" else "Open in Apple Music"
+    /** Footer subtitle next to the QR code, as plain text (when Apple's wordmark is unavailable). */
+    fun qrSubtitle(chinese: Boolean): String = qrSubtitleAroundWordmark(chinese).let { (before, after) ->
+        before + "Apple Music" + after
+    }
+
+    /** The subtitle's text before and after Apple Music's wordmark, which replaces "Apple Music". */
+    fun qrSubtitleAroundWordmark(chinese: Boolean): Pair<String, String> =
+        if (chinese) "在 " to " 中打开" else "Open in " to ""
+
+    /**
+     * Apple Music's `apple_music_wordmark` drawable (the apple glyph and a lowercase "music"), the
+     * one on its own lyric card. Read from the installed Apple Music; never bundled. The Provider
+     * registers it in its 1614 hook profile.
+     */
+    const val WORDMARK_DRAWABLE = "apple_music_wordmark"
+
+    /** Top of the apple glyph, as a share of the wordmark height (1614 vector: 0.5 / 80.9). */
+    private const val WORDMARK_TOP = 0.5f / 80.9f
+
+    /** Baseline of "music", as a share of the wordmark height (1614 vector: 79.1 / 80.9). */
+    private const val WORDMARK_BASELINE = 79.1f / 80.9f
+
+    /** Wordmark height whose apple glyph spans the text's cap height, so it sits like a word. */
+    fun wordmarkHeight(capHeight: Float): Float = capHeight / (WORDMARK_BASELINE - WORDMARK_TOP)
+
+    /** Wordmark top that puts the baseline of "music" on the text [baseline]. */
+    fun wordmarkTop(baseline: Float, wordmarkHeight: Float): Float = baseline - wordmarkHeight * WORDMARK_BASELINE
 
     /** Alpha of the footer subtitle relative to the title colour. */
     const val SUBTITLE_ALPHA = 170

@@ -99,6 +99,12 @@ import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.icon.extended.Download
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.basic.BasicComponentDefaults
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.constrainHeight
+import androidx.compose.ui.unit.constrainWidth
+import androidx.compose.ui.layout.layoutId
+import androidx.compose.ui.layout.Layout
 
 internal suspend fun loadLocalProviderState(
     context: android.content.Context,
@@ -528,6 +534,70 @@ internal fun LegacyProviderCard(
     }
 }
 
+/**
+ * The delay title with its summary beside it when both fit on one line; otherwise the summary goes
+ * below as a subtitle, styled like a [ProComponent] summary. Decided by the measured width, not by
+ * language, so it adapts to any translation and screen width.
+ */
+@Composable
+private fun DelayEditorHeading(title: String, summary: String, modifier: Modifier = Modifier) {
+    Layout(
+        modifier = modifier,
+        content = {
+            Text(
+                text = title,
+                color = MiuixTheme.colorScheme.onBackground,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.layoutId(HEADING_TITLE),
+            )
+            Text(
+                text = summary,
+                color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                fontSize = 12.sp,
+                maxLines = 1,
+                softWrap = false,
+                modifier = Modifier.layoutId(HEADING_SUMMARY_BESIDE),
+            )
+            Text(
+                text = summary,
+                color = BasicComponentDefaults.summaryColor().color,
+                fontSize = MiuixTheme.textStyles.body2.fontSize,
+                modifier = Modifier.layoutId(HEADING_SUMMARY_BELOW),
+            )
+        },
+    ) { measurables, constraints ->
+        val loose = constraints.copy(minWidth = 0, minHeight = 0)
+        val gap = 8.dp.roundToPx()
+        val titlePlaceable = measurables.first { it.layoutId == HEADING_TITLE }.measure(loose)
+        val beside = measurables.first { it.layoutId == HEADING_SUMMARY_BESIDE }
+        // Only one summary is placed; the other is never drawn. The reported size must honour the
+        // incoming minimums (the weighted Row passes minWidth == maxWidth): a smaller size would be
+        // centred by the parent, pushing the heading off the start edge.
+        if (titlePlaceable.width + gap + beside.maxIntrinsicWidth(Constraints.Infinity) <= constraints.maxWidth) {
+            val summaryPlaceable = beside.measure(loose)
+            val height = constraints.constrainHeight(maxOf(titlePlaceable.height, summaryPlaceable.height))
+            layout(constraints.constrainWidth(titlePlaceable.width + gap + summaryPlaceable.width), height) {
+                titlePlaceable.placeRelative(0, (height - titlePlaceable.height) / 2)
+                summaryPlaceable.placeRelative(titlePlaceable.width + gap, (height - summaryPlaceable.height) / 2)
+            }
+        } else {
+            val summaryPlaceable = measurables.first { it.layoutId == HEADING_SUMMARY_BELOW }.measure(loose)
+            val contentHeight = titlePlaceable.height + summaryPlaceable.height
+            val height = constraints.constrainHeight(contentHeight)
+            layout(constraints.constrainWidth(maxOf(titlePlaceable.width, summaryPlaceable.width)), height) {
+                val top = (height - contentHeight) / 2
+                titlePlaceable.placeRelative(0, top)
+                summaryPlaceable.placeRelative(0, top + titlePlaceable.height)
+            }
+        }
+    }
+}
+
+private const val HEADING_TITLE = "title"
+private const val HEADING_SUMMARY_BESIDE = "summary_beside"
+private const val HEADING_SUMMARY_BELOW = "summary_below"
+
 @Composable
 internal fun ProviderDelayEditor(
     delayKey: String,
@@ -564,24 +634,19 @@ internal fun ProviderDelayEditor(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = stringResource(R.string.title_lyric_delay),
-                        color = MiuixTheme.colorScheme.onBackground,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = stringResource(R.string.summary_lyric_delay),
-                        color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                        fontSize = 12.sp,
-                    )
-                }
+                // Takes only the width the value leaves, so the value is never squeezed.
+                DelayEditorHeading(
+                    title = stringResource(R.string.title_lyric_delay),
+                    summary = stringResource(R.string.summary_lyric_delay),
+                    modifier = Modifier.weight(1f),
+                )
+                Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = formatProviderDelay(editorState.currentDelay),
                     color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.5f),
                     fontSize = 14.sp,
+                    maxLines = 1,
+                    softWrap = false,
                 )
             }
             Spacer(modifier = Modifier.height(12.dp))

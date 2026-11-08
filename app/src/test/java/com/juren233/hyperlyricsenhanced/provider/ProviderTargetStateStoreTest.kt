@@ -52,8 +52,24 @@ class ProviderTargetStateStoreTest {
 
         assertEquals(0, store.readLoadedVersion("netease"))
 
-        store.writeLoadedVersion("netease", 29)
+        store.writeLoadedVersion("netease", 29, "1.0.28")
         assertEquals(29, store.readLoadedVersion("netease"))
+    }
+
+    @Test
+    fun loadedVersionKeepsTheNameOnItsOwnLineAndReadsLegacyFiles() {
+        val dir = temporaryFolder.newFolder("hle_provider")
+        val store = ProviderTargetStateStore(dir)
+
+        store.writeLoadedVersion("netease", 29, "1.0.28\nbroken")
+        assertEquals("29\n1.0.28", java.io.File(dir, "netease.loaded").readText())
+
+        store.writeLoadedVersion("netease", 30, null)
+        assertEquals("30", java.io.File(dir, "netease.loaded").readText())
+
+        // 之前的版本只写 versionCode 一行。
+        java.io.File(dir, "netease.loaded").writeText("27")
+        assertEquals(27, store.readLoadedVersion("netease"))
     }
 
     @Test
@@ -70,7 +86,7 @@ class ProviderTargetStateStoreTest {
     fun writesSurviveReopeningTheDirectory() {
         val dir = temporaryFolder.newFolder("hle_provider")
         val first = ProviderTargetStateStore(dir)
-        first.writeLoadedVersion("netease", 29)
+        first.writeLoadedVersion("netease", 29, "1.0.28")
         first.addBadVersion("netease", 28)
 
         val second = ProviderTargetStateStore(dir)
@@ -98,6 +114,37 @@ class ProviderTargetStateParserTest {
         assertEquals(setOf(28, 30), snapshot.badVersionsByPlugin["netease"])
         assertEquals(29, snapshot.loadedVersionByPlugin["netease"])
         assertEquals(14, snapshot.loadedVersionByPlugin["qqmusic"])
+    }
+
+    @Test
+    fun loadedVersionNameFollowsTheRecordWithTheHighestVersion() {
+        val snapshot = ProviderTargetStateParser.parse(
+            listOf(
+                "=== /data/user/0/com.apple.android.music/files/hle_provider/applemusic.loaded",
+                "28",
+                "1.0.27",
+                "=== /data_mirror/data_ce/null/0/com.apple.android.music/files/hle_provider/applemusic.loaded",
+                "30",
+                "1.0.29",
+                "=== /data/user/0/com.netease.cloudmusic/files/hle_provider/netease.loaded",
+                "31",
+                "1.0.30",
+                "=== /data/user/0/com.hihonor.cloudmusic/files/hle_provider/netease.loaded",
+                "29",
+                "1.0.28",
+                // 旧格式：只有 versionCode。
+                "=== /data/user/0/com.tencent.qqmusic/files/hle_provider/qqmusic.loaded",
+                "14",
+                "",
+            ),
+        )
+
+        assertEquals(30, snapshot.loadedVersionByPlugin["applemusic"])
+        assertEquals("1.0.29", snapshot.loadedVersionNameByPlugin["applemusic"])
+        assertEquals(31, snapshot.loadedVersionByPlugin["netease"])
+        assertEquals("1.0.30", snapshot.loadedVersionNameByPlugin["netease"])
+        assertEquals(14, snapshot.loadedVersionByPlugin["qqmusic"])
+        assertEquals(null, snapshot.loadedVersionNameByPlugin["qqmusic"])
     }
 
     @Test
@@ -207,32 +254,66 @@ class ProviderApplyStateTest {
     @Test
     fun appliedVersionIsTreatedAsLoadedUntilTargetRestartsOrFails() {
         // 立即生效后目标还没重启：.loaded 仍是旧值，按已加载新版处理，不再提示重启。
-        assertEquals(30, ProviderApplyState.loadedAfterApply(29, 30, 30, emptySet()))
+        assertEquals(30, afterApply(loaded = 29, installed = 30, applied = 30))
         assertEquals(
             ProviderApplyState.Badge.NONE,
-            ProviderApplyState.badge(30, ProviderApplyState.loadedAfterApply(29, 30, 30, emptySet()), emptySet()),
+            ProviderApplyState.badge(30, 30, afterApply(loaded = 29, installed = 30, applied = 30), emptySet()),
         )
         // 对旧版本执行过的记录对新装版本无效。
-        assertEquals(29, ProviderApplyState.loadedAfterApply(29, 31, 30, emptySet()))
+        assertEquals(29, afterApply(loaded = 29, installed = 31, applied = 30))
         // 没执行过。
-        assertEquals(29, ProviderApplyState.loadedAfterApply(29, 30, 0, emptySet()))
+        assertEquals(29, afterApply(loaded = 29, installed = 30, applied = 0))
         // 新版本被记为坏版本后，以读回值为准，仍走回退/禁用判定。
-        assertEquals(29, ProviderApplyState.loadedAfterApply(29, 30, 30, setOf(30)))
+        assertEquals(29, afterApply(loaded = 29, installed = 30, applied = 30, bad = setOf(30)))
+        // 正在运行更早内置的更新版本（30）：立即生效后下次加载的是已装 28。
+        assertEquals(28, afterApply(loaded = 30, installed = 28, applied = 28))
+        // 内置基线比已装新：立即生效后下次加载的是基线。
+        assertEquals(31, afterApply(loaded = 29, installed = 29, effective = 31, applied = 29))
+    }
+
+    private fun afterApply(
+        loaded: Int,
+        installed: Int,
+        effective: Int = installed,
+        applied: Int,
+        bad: Set<Int> = emptySet(),
+    ) = ProviderApplyState.loadedAfterApply(
+        loadedVersionCode = loaded,
+        installedVersionCode = installed,
+        effectiveVersionCode = effective,
+        appliedVersionCode = applied,
+        badVersionCodes = bad,
+    )
+
+    private fun badge(installed: Int, loaded: Int, bad: Set<Int> = emptySet(), effective: Int = installed) =
+        ProviderApplyState.badge(
+            installedVersionCode = installed,
+            effectiveVersionCode = effective,
+            loadedVersionCode = loaded,
+            badVersionCodes = bad,
+        )
+
+    @Test
+    fun restartPendingWhenLoadedNewerThanWhatTheNextStartLoads() {
+        // 旧测试包内置的基线 30 仍在运行，换装的核心只内置 28、已装也是 28。
+        assertEquals(ProviderApplyState.Badge.RESTART_PENDING, badge(installed = 28, loaded = 30))
+        // 内置基线 30 比已装 28 新：运行的就是下次会加载的版本。
+        assertEquals(ProviderApplyState.Badge.NONE, badge(installed = 28, loaded = 30, effective = 30))
     }
 
     @Test
     fun noBadgeWhenNotInstalledOrUpToDate() {
         assertEquals(
             ProviderApplyState.Badge.NONE,
-            ProviderApplyState.badge(0, 0, emptySet()),
+            badge(installed = 0, loaded = 0),
         )
         assertEquals(
             ProviderApplyState.Badge.NONE,
-            ProviderApplyState.badge(29, 29, emptySet()),
+            badge(installed = 29, loaded = 29),
         )
         assertEquals(
             ProviderApplyState.Badge.NONE,
-            ProviderApplyState.badge(29, 0, emptySet()),
+            badge(installed = 29, loaded = 0),
         )
     }
 
@@ -240,7 +321,7 @@ class ProviderApplyStateTest {
     fun restartPendingWhenLoadedOlderThanInstalled() {
         assertEquals(
             ProviderApplyState.Badge.RESTART_PENDING,
-            ProviderApplyState.badge(29, 28, emptySet()),
+            badge(installed = 29, loaded = 28),
         )
     }
 
@@ -250,7 +331,7 @@ class ProviderApplyStateTest {
         // 改变什么，应显示「已回退」而不是「重启后生效」。
         assertEquals(
             ProviderApplyState.Badge.ROLLED_BACK,
-            ProviderApplyState.badge(29, 28, setOf(29)),
+            badge(installed = 29, loaded = 28, bad = setOf(29)),
         )
     }
 }
@@ -262,11 +343,11 @@ class ProviderApplyStateDisabledTest {
         // 酷我：已装 15 在坏版本里，没有上一版，目标进程不加载任何版本，`.loaded` 残留 15。
         assertEquals(
             ProviderApplyState.Badge.DISABLED,
-            ProviderApplyState.badge(15, 15, setOf(15)),
+            ProviderApplyState.badge(15, 15, 15, setOf(15)),
         )
         assertEquals(
             ProviderApplyState.Badge.DISABLED,
-            ProviderApplyState.badge(15, 0, setOf(15)),
+            ProviderApplyState.badge(15, 15, 0, setOf(15)),
         )
     }
 
@@ -274,7 +355,7 @@ class ProviderApplyStateDisabledTest {
     fun badInstalledWithLowerLoadedVersionIsRolledBack() {
         assertEquals(
             ProviderApplyState.Badge.ROLLED_BACK,
-            ProviderApplyState.badge(15, 14, setOf(15)),
+            ProviderApplyState.badge(15, 15, 14, setOf(15)),
         )
     }
 }
@@ -286,6 +367,7 @@ class ProviderTargetStateSnapshotCodecTest {
         val snapshot = ProviderTargetStateSnapshot(
             badVersionsByPlugin = mapOf("netease" to setOf(28, 30), "qqmusic" to setOf(14)),
             loadedVersionByPlugin = mapOf("netease" to 29, "kugou" to 7),
+            loadedVersionNameByPlugin = mapOf("netease" to "1.0.28"),
         )
 
         val encoded = kotlinx.serialization.json.Json.encodeToString(

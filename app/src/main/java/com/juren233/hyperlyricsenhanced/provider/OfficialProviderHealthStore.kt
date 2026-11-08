@@ -189,6 +189,8 @@ object OfficialProviderHealthStore {
 data class ProviderTargetStateSnapshot(
     val badVersionsByPlugin: Map<String, Set<Int>> = emptyMap(),
     val loadedVersionByPlugin: Map<String, Int> = emptyMap(),
+    /** 与 [loadedVersionByPlugin] 同一条记录里的版本名；旧格式记录没有。 */
+    val loadedVersionNameByPlugin: Map<String, String> = emptyMap(),
 ) {
     companion object {
         val EMPTY = ProviderTargetStateSnapshot()
@@ -208,22 +210,28 @@ object ProviderApplyState {
      * 已对 [installedVersionCode] 执行过「立即生效」且它不是坏版本时，把已加载版本视为已安装版本；
      * 其余情况原样返回读回值。目标进程之后加载失败并回退时，坏版本记录会让这里失效。
      */
+    /**
+     * [effectiveVersionCode] 是目标进程下次启动会加载的版本（已装版本与内置基线取较新者，
+     * 见 [ProviderLoadedVersion.effectiveVersionCode]）。
+     */
     fun loadedAfterApply(
         loadedVersionCode: Int,
         installedVersionCode: Int,
+        effectiveVersionCode: Int,
         appliedVersionCode: Int,
         badVersionCodes: Set<Int>,
     ): Int = if (
         installedVersionCode > 0 && appliedVersionCode == installedVersionCode &&
-        installedVersionCode !in badVersionCodes && loadedVersionCode < installedVersionCode
+        installedVersionCode !in badVersionCodes && loadedVersionCode != effectiveVersionCode
     ) {
-        installedVersionCode
+        effectiveVersionCode
     } else {
         loadedVersionCode
     }
 
     fun badge(
         installedVersionCode: Int,
+        effectiveVersionCode: Int,
         loadedVersionCode: Int,
         badVersionCodes: Set<Int>,
     ): Badge = when {
@@ -232,7 +240,9 @@ object ProviderApplyState {
         // 不加载任何版本（rollback_without_previous），`.loaded` 里残留的是更早成功加载的记录。
         installedVersionCode in badVersionCodes ->
             if (loadedVersionCode in 1 until installedVersionCode) Badge.ROLLED_BACK else Badge.DISABLED
-        loadedVersionCode > 0 && loadedVersionCode < installedVersionCode -> Badge.RESTART_PENDING
+        // 正在运行的版本与下次启动会加载的版本不同，无论更高还是更低（例如更早的内置基线包
+        // 比现在的已装版本还新，重启后会换回已装版本）。
+        loadedVersionCode > 0 && loadedVersionCode != effectiveVersionCode -> Badge.RESTART_PENDING
         else -> Badge.NONE
     }
 }
@@ -262,8 +272,13 @@ object ProviderLoadedVersion {
             installedVersionName
         }
 
+    /**
+     * [loadedVersionName] 是目标进程随 [loadedVersionCode] 一起记下的版本名，只在两者属于同一条
+     * 记录时传入。旧格式记录没有版本名，且版本既非已装、基线也不在发布目录时，只能显示 versionCode。
+     */
     fun displayName(
         loadedVersionCode: Int,
+        loadedVersionName: String?,
         installedVersionCode: Int,
         installedVersionName: String?,
         baselineVersionCode: Int,
@@ -272,7 +287,9 @@ object ProviderLoadedVersion {
     ): String? = when {
         loadedVersionCode <= 0 || loadedVersionCode == installedVersionCode -> installedVersionName
         loadedVersionCode == baselineVersionCode -> baselineVersionName
-        else -> releaseVersionNames[loadedVersionCode] ?: loadedVersionCode.toString()
+        else -> loadedVersionName
+            ?: releaseVersionNames[loadedVersionCode]
+            ?: loadedVersionCode.toString()
     }
 }
 
@@ -284,14 +301,18 @@ object ProviderTargetStateParser {
     fun parse(lines: List<String>): ProviderTargetStateSnapshot {
         val badVersions = mutableMapOf<String, MutableSet<Int>>()
         val loadedVersions = mutableMapOf<String, Int>()
+        val loadedVersionNames = mutableMapOf<String, String>()
         var currentPluginId: String? = null
         var currentKind: String? = null
+        // 当前 .loaded 文件里读到的 versionCode；它之后的一行是版本名。
+        var currentLoadedVersion = 0
         for (line in lines) {
             if (line.startsWith("=== ")) {
                 val match = STATE_FILE_PATTERN.matchEntire(line.removePrefix("=== ").trim())
                 val pluginId = match?.groupValues?.get(1)
                 currentPluginId = pluginId?.takeIf { OfficialProviderCatalog.definitionForId(it) != null }
                 currentKind = match?.groupValues?.get(2)
+                currentLoadedVersion = 0
                 continue
             }
             val pluginId = currentPluginId ?: continue
@@ -299,8 +320,21 @@ object ProviderTargetStateParser {
                 "bad" -> line.toIntOrNull()?.let { version ->
                     badVersions.getOrPut(pluginId) { mutableSetOf() }.add(version)
                 }
-                "loaded" -> line.trim().toIntOrNull()?.let { version ->
-                    loadedVersions[pluginId] = maxOf(loadedVersions[pluginId] ?: 0, version)
+                "loaded" -> {
+                    val text = line.trim()
+                    if (currentLoadedVersion == 0) {
+                        val version = text.toIntOrNull() ?: continue
+                        currentLoadedVersion = version
+                        // 同一插件可能读到多条路径；取最高版本，名字跟着那一条走。
+                        if (version > (loadedVersions[pluginId] ?: 0)) {
+                            loadedVersions[pluginId] = version
+                            loadedVersionNames.remove(pluginId)
+                        }
+                    } else if (text.isNotEmpty() && currentLoadedVersion == loadedVersions[pluginId] &&
+                        pluginId !in loadedVersionNames
+                    ) {
+                        loadedVersionNames[pluginId] = text
+                    }
                 }
                 // marker 只在目标进程内部使用，App 侧不消费。
             }
@@ -308,6 +342,7 @@ object ProviderTargetStateParser {
         return ProviderTargetStateSnapshot(
             badVersionsByPlugin = badVersions,
             loadedVersionByPlugin = loadedVersions,
+            loadedVersionNameByPlugin = loadedVersionNames,
         )
     }
 }

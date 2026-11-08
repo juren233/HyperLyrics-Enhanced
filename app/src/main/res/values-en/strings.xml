@@ -53,34 +53,34 @@
     <string name="title_feature_entry_apple_music">Apple Music Optimization Entry</string>
     <string name="title_unsupported_device">Device May Be Unsupported</string>
     <string name="summary_unsupported_device">You can still enable entries in App Settings</string>
-    <string name="action_enter_app_settings">Enter App Settings</string>
+    <string name="action_enter_app_settings">Open App Settings</string>
     <string name="title_unlock_island_length">Remove HyperIsland Length Limit</string>
     <string name="title_remove_focus_whitelist">Remove Spotlight Whitelist</string>
     <string name="summary_remove_focus_whitelist">Do not use with similar features from other modules</string>
     <string name="title_remove_island_whitelist">Remove Mini Window Whitelist</string>
     <string name="title_apple_music_optimization_page">Apple Music Optimizations</string>
     <string name="summary_apple_music_optimization_page">May have bugs, performance issues, or version incompatibilities</string>
-    <string name="apple_music_optimization_notice_lyric_source">Select the Lyricon lyric source in Lyric settings and add the Apple Music plugin in Lyricon configuration to use optimization features. Tap here to switch</string>
-    <string name="apple_music_optimization_notice_add_provider">Add the Apple Music plugin in Lyricon configuration to use optimization features. Tap here to add</string>
+    <string name="apple_music_optimization_notice_lyric_source">Select the Lyricon lyric source in Lyrics Settings and add the Apple Music plugin in Lyricon Config to use optimization features. Tap here to switch</string>
+    <string name="apple_music_optimization_notice_add_provider">Add the Apple Music plugin in Lyricon Config to use optimization features. Tap here to add</string>
     <string name="apple_music_optimization_notice_enable_provider">The Apple Music plugin is added but disabled. Tap here to enable it</string>
     <string name="title_apple_music_app_content">App Content</string>
     <string name="title_apple_music_content_ui_language">Apple Music Content Language</string>
     <string name="summary_apple_music_content_ui_language">May slow loading. Changes only the content UI language; songs or services unavailable in your account region can be browsed but not played or used.</string>
     <string name="title_apple_music_override_account_language">Use Selected Language for Song Info</string>
     <string name="title_apple_music_localized_metadata_cache">Build Song Info Cache</string>
-    <string name="summary_apple_music_localized_metadata_cache">Uses little storage to improve performance. When disabled, song info is refetched after a cold start. Recommended.</string>
+    <string name="summary_apple_music_localized_metadata_cache">Uses a little storage for faster lookups. When off, song info is fetched again after each cold start. Recommended.</string>
     <string name="title_apple_music_app_features">App Features</string>
     <string name="title_apple_music_app_display">App Display</string>
-    <string name="title_apple_music_lyrics_image_export">Export Lyrics as Image</string>
-    <string name="summary_apple_music_lyrics_image_export">Adds “Save Image” and “Share Image” to Share Lyrics, creating a lyric poster. Sharing does not write to Photos</string>
-    <string name="title_apple_music_lyrics_image_background">Share Image Background</string>
+    <string name="title_apple_music_lyrics_image_export">Lyric Posters</string>
+    <string name="summary_apple_music_lyrics_image_export">Adds Save Image and Share Image to Share Lyrics. Shared images aren\'t saved to your gallery.</string>
+    <string name="title_apple_music_lyrics_image_background">Poster Background</string>
     <string name="option_apple_music_lyrics_image_background_cover_blur">Blurred Cover</string>
     <string name="option_apple_music_lyrics_image_background_cover_color">Cover Color</string>
     <string name="option_apple_music_lyrics_image_background_custom_color">Custom Color</string>
     <string name="option_apple_music_lyrics_image_background_custom_image">Custom Image</string>
     <string name="title_apple_music_lyrics_image_background_color">Background Color</string>
-    <string name="title_apple_music_lyrics_image_background_image">Set Background Image</string>
-    <string name="title_apple_music_lyrics_image_qr_code">Song QR Code</string>
+    <string name="title_apple_music_lyrics_image_background_image">Background Image</string>
+    <string name="title_apple_music_lyrics_image_qr_code">Show Song QR Code</string>
     <string name="action_apple_music_lyrics_image_pick_background">Choose Image</string>
     <string name="title_apple_music_lyrics_image_background_blur">Blur</string>
     <string name="title_apple_music_lyrics_image_background_brightness">Brightness</string>
@@ -88,8 +88,8 @@
     <string name="toast_apple_music_lyrics_image_background_save_failed">Couldn\'t save the background. Make sure the module is enabled in LSPosed</string>
     <string name="title_apple_music_volume_balance">Dynamic Dolby Atmos Speaker Boost</string>
     <string name="summary_apple_music_volume_balance">Enable “Sound Check” in Apple Music for better results. System spatial audio is not recommended.</string>
-    <string name="title_apple_music_prevent_network_auto_skip">Don\'t auto-skip on network playback failures</string>
-    <string name="summary_apple_music_prevent_network_auto_skip">Keep the current song and retry automatically until playback resumes</string>
+    <string name="title_apple_music_prevent_network_auto_skip">Don\'t Skip Songs on Poor Connection</string>
+    <string name="summary_apple_music_prevent_network_auto_skip">Stays on the current song and keeps retrying until you\'re back online.</string>
     <string name="title_apple_music_notification_open_full_player">Open Player from Media Notification</string>
     <string name="title_apple_music_simplify_traditional_content">Convert Traditional Chinese to Simplified</string>
     <string name="title_apple_music_native_online_translation">Fill Translation &amp; Pronunciation Gaps</string>
@@ -98,12 +98,12 @@
     <string name="summary_apple_music_fill_missing_lyrics">Configure sources under 3rd-Party Online Sources.</string>
     <string name="title_apple_music_hide_mandarin_pinyin">Hide Pinyin for Mandarin Songs</string>
     <string name="title_apple_music_line_to_word_lyrics">Make Supported Lyrics Word-Synced</string>
-    <string name="summary_apple_music_line_to_word_lyrics">Lyrics from the enabled AMLL and LunaBeat sources; experimental feature</string>
+    <string name="summary_apple_music_line_to_word_lyrics">Uses the enabled AMLL and LunaBeat sources. Experimental.</string>
     <string name="title_apple_music_lyrics_blur_effect">Lyrics Blur Effect</string>
     <string name="option_apple_music_lyrics_blur_effect_off">Off</string>
     <string name="option_apple_music_lyrics_blur_effect_native">Native blur</string>
     <string name="option_apple_music_lyrics_blur_effect_advanced_material">Advanced textures</string>
-    <string name="title_apple_music_lyrics_blur_custom_values">Custom Blur Values</string>
+    <string name="title_apple_music_lyrics_blur_custom_values">Blur Range</string>
     <string name="label_apple_music_lyrics_blur_min_value">Minimum (%1$s), default %2$s (range %3$s-%4$s)</string>
     <string name="label_apple_music_lyrics_blur_max_value">Maximum (%1$s), default %2$s (range %3$s-%4$s)</string>
     <string name="title_apple_music_lyrics_blur_animation">Lyrics Blur Animation</string>
@@ -150,7 +150,7 @@
     <string name="title_original_hyperlyric_contributors">Original HyperLyric Developers</string>
     <string name="title_licenses">Licenses</string>
     <string name="title_acknowledgments">Acknowledgments</string>
-    <string name="summary_acknowledgments">Thanks to @FrancOS, @于逸风, and other unlisted projects for their help</string>
+    <string name="summary_acknowledgments">Thanks to @FrancOS and @于逸风 for their help, and to other projects not listed here</string>
     <string name="summary_contributors">Thanks to the following contributors for helping develop HyperLyrics Enhanced</string>
 
     <!-- ———————————————————————— SettingsPage ———————————————————————— -->
@@ -216,12 +216,12 @@
     <string name="title_lyric_acquisition_sources">Sources</string>
     <string name="title_lyric_display_group">Display</string>
     <string name="title_early_next_line_preview">Preview Next Line Early</string>
-    <string name="early_next_line_preview_off">Disabled</string>
+    <string name="early_next_line_preview_off">Off</string>
     <string name="early_next_line_preview_immediate">Immediately After Line Ends</string>
-    <string name="early_next_line_preview_100">100ms early</string>
-    <string name="early_next_line_preview_200">200ms early</string>
-    <string name="early_next_line_preview_300">300ms early</string>
-    <string name="early_next_line_preview_400">400ms early</string>
+    <string name="early_next_line_preview_100">100 ms early</string>
+    <string name="early_next_line_preview_200">200 ms early</string>
+    <string name="early_next_line_preview_300">300 ms early</string>
+    <string name="early_next_line_preview_400">400 ms early</string>
     <string name="early_next_line_preview_custom">Custom</string>
     <string name="title_early_next_line_preview_time">Preview Lead Time</string>
     <string name="label_early_next_line_preview_ms">Lead time (ms)</string>
@@ -270,7 +270,7 @@
     <string name="title_lyric_provider">Lyricon Config</string>
     <string name="title_builtin_provider">Built-in Provider</string>
     <string name="title_official_provider_plugins">Added Plugins</string>
-    <string name="title_provider_downloads">Add Plugins</string>
+    <string name="title_provider_downloads">Available Plugins</string>
     <string name="title_legacy_provider_modules">Installed Standalone Provider Modules</string>
     <string name="title_legacy_provider_repository">Download Standalone Providers</string>
     <string name="summary_legacy_provider_repository">Standalone Providers work without a lyrics service, but plugins take priority and are easier to set up and maintain.</string>
@@ -280,13 +280,13 @@
     <string name="provider_status_processing">Processing…</string>
     <string name="provider_status_downloading">Downloading…</string>
     <string name="provider_status_update_available">Update available: v%1$s</string>
-    <string name="provider_status_installed_enabled">Version v%1$s</string>
-    <string name="provider_status_installed_disabled">Disabled · Version v%1$s</string>
+    <string name="provider_status_installed_enabled">v%1$s</string>
+    <string name="provider_status_installed_disabled">Disabled · v%1$s</string>
     <string name="provider_status_available">Available: v%1$s</string>
     <string name="provider_status_unavailable">Temporarily unavailable</string>
     <string name="provider_status_needs_repair">Needs repair · Missing or damaged file (v%1$s)</string>
     <string name="provider_salt_player_upgrade_hint">Recommended: upgrade Salt Player to 12.2.0 or later for plugin-free use. This plugin remains available for older Salt Player versions.</string>
-    <string name="provider_auto_update_title">Auto-update plugins</string>
+    <string name="provider_auto_update_title">Auto-Update Plugins</string>
     <string name="provider_auto_update_summary">Enabled plugins update automatically in the background; changes take effect the next time the music app starts</string>
     <string name="provider_auto_update_summary_off">Auto-update is off. Update plugins manually; changes take effect the next time the music app starts</string>
     <string name="provider_auto_update_interval_off">Off</string>
@@ -352,7 +352,7 @@
     <string name="dialog_add_whitelist_title">Enter App Package Name</string>
     <string name="dialog_add_whitelist_hint">e.g. com.spotify.music</string>
     <string name="save">Save</string>
-    <string name="toast_app_exists">This app already exists</string>
+    <string name="toast_app_exists">This app is already in the list</string>
     <string name="toast_pkg_empty">Package name cannot be empty</string>
     <string name="dialog_delete_whitelist_title">Are you sure you want to remove this app from the list?</string>
     <string name="option_notification_live">Live Update Notification</string>
@@ -360,7 +360,7 @@
     <string name="title_notification_type">Notification Type</string>
     <string name="title_island_settings">Dynamic Island Settings</string>
     <string name="title_island_left_icon">Left Icon</string>
-    <string name="title_disable_lyric_split">Disable Lyric Splitting</string>
+    <string name="title_disable_lyric_split">Disable Lyrics Splitting</string>
     <string name="option_icon_style_note">Music Note</string>
     <string name="option_icon_style_rounded">Album Cover</string>
     <string name="option_icon_style_circular">Circular Album Cover</string>
@@ -379,7 +379,7 @@
     <string name="title_show_progress">Show Progress Bar</string>
     <string name="summary_show_progress">Keep this enabled on other systems; tested only on HyperOS 3</string>
     <string name="title_progress_color">Progress Bar Accent Color</string>
-    <string name="title_lyric_highlight_color">Lyric Highlight Color</string>
+    <string name="title_lyric_highlight_color">Lyrics Highlight Color</string>
     <string name="title_song_info_highlight_color">Song Info Highlight Color</string>
     <string name="summary_progress_color">Takes effect after track change</string>
     <string name="title_show_album_art">Show Album Art</string>
@@ -467,13 +467,13 @@
     <string name="label_marquee_delay_range">Range: 0–10000 ms</string>
     <string name="title_marquee_loop">Loop Interval</string>
     <string name="label_marquee_loop_range">Range: 0–10000 ms</string>
-    <string name="title_text_size_ratio">Text Size Ratio in Multi-line Mode</string>
+    <string name="title_text_size_ratio">Text Size Ratio in Multi-Line Mode</string>
     <string name="label_text_size_ratio_range">Range: 10–100</string>
     <string name="title_bold">Bold</string>
     <string name="title_italic">Italic</string>
     <string name="title_narrow_latin_font">Narrow Latin &amp; Digits</string>
     <string name="title_gradient_progress">Gradient Progress Style</string>
-    <string name="title_lyric_marquee">Lyric Marquee</string>
+    <string name="title_lyric_marquee">Lyrics Marquee</string>
     <string name="summary_lyric_marquee">Marquee scrolling for lyrics without timestamps</string>
     <string name="title_infinite_loop">Infinite Loop</string>
     <string name="title_stop_at_end">Stop at End</string>
@@ -498,7 +498,7 @@
     <string name="island_next_line_right">Right Side</string>
     <string name="summary_next_lyric_line">The next lyric line is hidden while a translation is shown or minimal display is enabled</string>
     <string name="title_aod_main_text_size">Main Lyric Size</string>
-    <string name="title_aod_backing_text_size">Backing-Vocal Text Size</string>
+    <string name="title_aod_backing_text_size">Backing Vocal Size</string>
     <string name="title_aod_translation_text_size">Translation Size</string>
     <string name="title_aod_next_lyric_style">Next Lyric Line Style</string>
     <string name="summary_aod_show_next_lyric">The next lyric line is hidden while a translation is shown</string>
@@ -519,7 +519,7 @@
     <string name="dialog_aod_focus_missing_post_notification">• Notifications: allow this app to post notifications</string>
     <string name="dialog_aod_focus_missing_notification_listener">• Notification access: allow this app to read playback status and song information</string>
     <string name="dialog_aod_focus_whitelist_reminder">Reminder: enable "Remove Spotlight Whitelist" or this feature may not work.</string>
-    <string name="action_go_to_authorize">Authorize</string>
+    <string name="action_go_to_authorize">Grant Access</string>
     <string name="toast_aod_focus_check_whitelist">Reminder: enable "Remove Spotlight Whitelist" or this feature may not work. Ignore this if already enabled.</string>
     <string name="option_aod_song_info_position_left">Left</string>
     <string name="option_aod_song_info_position_center">Center</string>
@@ -586,7 +586,7 @@
     <string name="label_ai_trans_target_lang">Target Language</string>
     <string name="label_ai_trans_prompt">Custom Translation Prompt</string>
     <string name="summary_ai_trans_prompt_hint">Leave empty for default prompt</string>
-    <string name="title_verbatim_lyric">Verbatim Lyrics</string>
+    <string name="title_verbatim_lyric">Word-Synced Lyrics</string>
 
     <!-- ———————————————————————— LyricProviderPage ———————————————————————— -->
     <string name="refresh_pull_down">Pull down to refresh</string>
@@ -598,7 +598,7 @@
     <string name="category_others">Other</string>
     <string name="unknown_author">Unknown Author</string>
     <string name="format_version_author">%1$s · by %2$s</string>
-    <string name="module_tag_syllable">Verbatim Lyrics</string>
+    <string name="module_tag_syllable">Word-Synced Lyrics</string>
     <string name="module_tag_translation">Translation</string>
     <string name="module_tag_bluetooth">In-Car Bluetooth Lyrics</string>
 
@@ -623,7 +623,7 @@
     <string name="title_audio_cover">Audio Cover</string>
     <string name="title_audio_cover_style">Audio Cover Style</string>
     <string name="title_island_album_cover_app_whitelist">App Whitelist</string>
-    <string name="title_island_interlude_minimal_display">Minimal display during intro &amp; interlude</string>
+    <string name="title_island_interlude_minimal_display">Minimal Display During Intro &amp; Interlude</string>
     <string name="summary_island_interlude_minimal_display">Keep only the left cover and the right indicator</string>
     <string name="title_hide_audio_cover_source">Hide Cover Source Badge</string>
     <string name="title_hide_media_device_switch">Hide Device Switch Button</string>
@@ -639,14 +639,14 @@
     <string name="title_island_album_cover_whitelist_loading">Loading Apps</string>
     <string name="option_audio_cover_style_hidden">Hide cover</string>
     <string name="title_audio_rhythm">Audio Rhythm</string>
-    <string name="title_island_short_lyric_song_info">Show song info for short lyrics</string>
+    <string name="title_island_short_lyric_song_info">Show Song Info for Short Lyrics</string>
     <string name="summary_island_short_lyric_song_info">Long lyrics return to full-island scrolling</string>
     <string name="title_audio_rhythm_cover_color">Audio Rhythm Cover Color</string>
-    <string name="title_island_pure_music_state">Island state during instrumental tracks</string>
+    <string name="title_island_pure_music_state">Island State During Instrumental Tracks</string>
     <string name="summary_island_pure_music_state">With System Default, songs that have lyrics but none could be fetched also shrink to the compact island</string>
     <string name="option_island_pure_music_keep">Keep as is</string>
     <string name="option_island_pure_music_system_compact">System Default</string>
-    <string name="title_island_pure_music_keywords">Instrumental detection keywords</string>
+    <string name="title_island_pure_music_keywords">Instrumental Detection Keywords</string>
     <string name="summary_island_pure_music_keywords">A song is treated as instrumental when it has at most 5 lyric lines and any line contains one of these keywords (case and punctuation ignored)</string>
     <string name="action_island_pure_music_keyword_add">Add keyword</string>
     <string name="action_island_pure_music_keywords_reset">Reset to defaults</string>
@@ -690,7 +690,7 @@
     <string name="summary_force_next_song_at_end">May cover lyrics within the configured range for some songs</string>
     <string name="format_padding_pair">%1$d,%2$d</string>
     <string name="title_behavior_after_pause">Behavior After Pause</string>
-    <string name="option_after_pause_default">Restore default</string>
+    <string name="option_after_pause_default">Restore Default</string>
     <string name="option_after_pause_keep">Keep Current State</string>
     <string name="title_glow_cover_color">Edge Glow Cover Color</string>
     <string name="title_island_progress_glow">Edge-Glow Progress Bar</string>
@@ -782,7 +782,10 @@
     <string name="tag_logger">Logger</string>
     <string name="lsposed_not_found">LSPosed log directory not found. Make sure LSPosed is installed correctly.</string>
     <string name="format_log_files_not_found">Log directory exists (%1$s), but no .log files were found</string>
-    <string name="format_logs_scanned_no_match">Scanned %1$d log files, no HyperLyrics Enhanced records found.\nLog directory: %2$s</string>
+    <plurals name="format_logs_scanned_no_match">
+        <item quantity="one">Scanned %1$d log file, no HyperLyrics Enhanced records found.\nLog directory: %2$s</item>
+        <item quantity="other">Scanned %1$d log files, no HyperLyrics Enhanced records found.\nLog directory: %2$s</item>
+    </plurals>
     <string name="format_log_read_failed">Failed to read LSPosed logs: %1$s</string>
     <string name="export_header">========== HyperLyrics Enhanced Debug Logs ==========</string>
     <string name="format_export_time">Export Time: %1$s</string>
@@ -835,17 +838,17 @@
     <string name="setup_intro_skip_hint">Tap again to speed up the animation</string>
     <string name="title_disclaimer">Disclaimer</string>
     <string name="title_disclaimer_notice">Notice</string>
-    <string name="summary_disclaimer">Hook mode relies on a system-level injection framework.\n\nEnabling it modifies SystemUI\'s core layout parameters and may cause unexpected issues in extreme cases.\n\nThe developer is not responsible, directly or indirectly, for any data loss or system failures caused by this module.</string>
+    <string name="summary_disclaimer">Hook mode relies on a system-level injection framework.\n\nEnabling it modifies SystemUI\'s core layout parameters and may cause unexpected issues in extreme cases.\n\nThe developer is not responsible, directly or indirectly, for any data loss or system failures caused by this module. Use at your own risk.</string>
     <string name="setup_completion_dynamic_island">Grant Notification Access and notification permission to continue</string>
 
     <string name="setup_select_lyric_source">Select Lyrics Source</string>
     <string name="setup_apple_music_ready">Exclusive Plugins</string>
-    <string name="setup_apple_music_ready_summary">HyperLyrics Enhanced bundles the Lyricon service and mainstream Providers as plugins, so no extra module is needed.\n\nAdd your music app plugins below. Add each app to the LSPosed scope (except Qishui Music), then restart SystemUI and the app.\n\nIf an app is not listed, use its standalone Provider without Lyricon Central.</string>
-    <string name="setup_available_provider_plugins">Available plugins</string>
+    <string name="setup_apple_music_ready_summary">HyperLyrics Enhanced bundles the Lyricon service and mainstream Providers as plugins, so no extra module is needed.\n\nAdd your music app plugins below. Add each app to the LSPosed scope (except Qishui Music), then restart SystemUI and the app.\n\nIf an app is not listed, you can still use its standalone Provider; no separate Lyricon Central module is needed.</string>
+    <string name="setup_available_provider_plugins">Available Plugins</string>
     <string name="setup_apple_music_plugin_summary">Preinstalled; no need to add it again</string>
     <string name="setup_provider_added">Added</string>
     <string name="setup_provider_retry">Retry</string>
-    <string name="setup_other_players">Other music apps (untested)</string>
+    <string name="setup_other_players">Other Music Apps (Untested)</string>
     <string name="setup_other_players_summary">Install the matching LyricProvider, then restart SystemUI and the music app. Lyricon Central is built in.</string>
     <string name="setup_download_provider">Other Apps: Download LyricProvider</string>
     <string name="setup_download_provider_summary">Install the matching LyricProvider for other apps</string>
@@ -862,39 +865,39 @@
     <string name="title_apple_music_force_cellular_data_entry">Always Show Cellular Data on Tablets</string>
 
     <!-- HyperIsland touch controls -->
-    <string name="title_island_touch_config">HyperIsland touch controls</string>
-    <string name="island_touch_enable">Enable custom touch controls</string>
+    <string name="title_island_touch_config">HyperIsland Touch Controls</string>
+    <string name="island_touch_enable">Enable Custom Touch Controls</string>
     <string name="island_touch_description">For the music island only</string>
     <string name="island_touch_double_disabled">Disabled</string>
-    <string name="island_touch_haptic">Haptic feedback</string>
+    <string name="island_touch_haptic">Haptic Feedback</string>
     <string name="island_touch_haptic_description">Vibrate lightly after a gesture is recognized</string>
-    <string name="island_touch_double_interval">Double-tap interval</string>
+    <string name="island_touch_double_interval">Double-Tap Interval</string>
     <string name="island_touch_milliseconds_value">%1$d ms</string>
     <string name="island_touch_double_interval_range">150–500 ms</string>
-    <string name="island_touch_long_press_time">Long-press time</string>
+    <string name="island_touch_long_press_time">Long-Press Time</string>
     <string name="island_touch_long_press_range">200–1500 ms</string>
-    <string name="island_touch_unified_sides">Use the same settings on both sides</string>
+    <string name="island_touch_unified_sides">Use the Same Settings on Both Sides</string>
     <string name="island_touch_unified_sides_description">Use the same gestures across the whole island</string>
-    <string name="island_touch_help">How it works</string>
+    <string name="island_touch_help">How It Works</string>
     <string name="island_touch_help_expand">Expand</string>
     <string name="island_touch_help_collapse">Collapse</string>
-    <string name="island_touch_help_area_title">Touch areas</string>
-    <string name="island_touch_help_area_body">HyperIsland touch controls apply only to the music island and do not affect other HyperIsland content. The camera splits the HyperIsland into a left area and a right area, each with its own actions; with “Use the same settings on both sides” on, both areas share one set. An expanded HyperIsland keeps system controls.</string>
+    <string name="island_touch_help_area_title">Touch Areas</string>
+    <string name="island_touch_help_area_body">HyperIsland touch controls apply only to the music island and do not affect other HyperIsland content. The camera splits the HyperIsland into a left area and a right area, each with its own actions; with “Use the Same Settings on Both Sides” on, both areas share one set. An expanded HyperIsland keeps system controls.</string>
     <string name="island_touch_help_swipe_title">Swipes</string>
     <string name="island_touch_help_swipe_body">Directions without an action stay with the system; once assigned, a swipe in that direction runs only the chosen action, however far it goes.</string>
     <string name="island_touch_help_tap_title">Taps</string>
     <string name="island_touch_help_tap_body">With double tap on, a single tap waits one double-tap interval before it runs; with it off, rapid taps all count as single taps.</string>
-    <string name="island_touch_help_actions_title">Action notes</string>
+    <string name="island_touch_help_actions_title">Action Notes</string>
     <string name="island_touch_help_actions_body">Seeking needs player support, continuous volume works only with left and right swipes, and mute affects local media audio only.</string>
-    <string name="island_touch_left">Left area</string>
-    <string name="island_touch_right">Right area</string>
-    <string name="island_touch_tap">Single tap</string>
-    <string name="island_touch_double_tap">Double tap</string>
-    <string name="island_touch_long_press">Long press</string>
-    <string name="island_touch_swipe_left">Swipe left</string>
-    <string name="island_touch_swipe_right">Swipe right</string>
-    <string name="island_touch_swipe_up">Swipe up</string>
-    <string name="island_touch_swipe_down">Swipe down</string>
+    <string name="island_touch_left">Left Area</string>
+    <string name="island_touch_right">Right Area</string>
+    <string name="island_touch_tap">Single Tap</string>
+    <string name="island_touch_double_tap">Double Tap</string>
+    <string name="island_touch_long_press">Long Press</string>
+    <string name="island_touch_swipe_left">Swipe Left</string>
+    <string name="island_touch_swipe_right">Swipe Right</string>
+    <string name="island_touch_swipe_up">Swipe Up</string>
+    <string name="island_touch_swipe_down">Swipe Down</string>
     <string name="island_touch_none">System default</string>
     <string name="island_touch_play_pause">Play / pause</string>
     <string name="island_touch_previous">Previous track</string>
@@ -914,7 +917,7 @@
     <!-- User-confirmed feature name; retain it until an official English name is verified. -->
     <string name="island_touch_media_output">音乐流转</string>
     <string name="island_touch_copy_current_lyric">Copy current lyrics</string>
-    <string name="island_touch_seek_seconds">Seek interval</string>
+    <string name="island_touch_seek_seconds">Seek Interval</string>
     <string name="island_touch_seek_edit_hint">Tap here to change the duration</string>
     <string name="island_touch_forward_value">Seek forward %1$d s</string>
     <string name="island_touch_backward_value">Seek backward %1$d s</string>
@@ -927,7 +930,10 @@
     <string name="provider_update_notification_text">Restart the app to load the new plugin. Tap here to restart</string>
     <string name="provider_update_notification_name_separator">" &amp; "</string>
     <string name="title_misc">Miscellaneous</string>
-    <string name="title_review_setup">Revisit the basic setup flow</string>
+    <string name="title_review_setup">Revisit the Basic Setup Flow</string>
     <string name="media_session_fallback_more_apps">More Apps</string>
-    <string name="media_session_fallback_players_count">%1$d apps added</string>
+    <plurals name="media_session_fallback_players_count">
+        <item quantity="one">%1$d app added</item>
+        <item quantity="other">%1$d apps added</item>
+    </plurals>
 </resources>

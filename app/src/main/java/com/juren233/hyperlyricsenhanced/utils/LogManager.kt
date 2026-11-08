@@ -380,7 +380,7 @@ object LogManager : HyperLogger {
             process.waitFor()
 
             if (matchedEntryCount == 0) {
-                val msg = context.getString(R.string.format_logs_scanned_no_match, logFiles.size, dirsArg)
+                val msg = context.resources.getQuantityString(R.plurals.format_logs_scanned_no_match, logFiles.size, logFiles.size, dirsArg)
                 entries.add(LogEntry("NOW", "I", context.getString(R.string.tag_logger), msg, rawLog = msg))
             }
         } catch (e: LogSourceException) {

@@ -72,10 +72,10 @@
     <string name="summary_apple_music_localized_metadata_cache">极少量空间占用换取高效率性能，当关闭时冷启动后需重新抓取歌曲信息，推荐开启</string>
     <string name="title_apple_music_app_features">App功能</string>
     <string name="title_apple_music_app_display">App显示</string>
-    <string name="title_apple_music_lyrics_image_export">歌词分享导出图片</string>
-    <string name="summary_apple_music_lyrics_image_export">在「分享歌词」中新增「保存图片」和「分享图片」，生成歌词海报；分享不会写入相册</string>
+    <string name="title_apple_music_lyrics_image_export">歌词卡片海报</string>
+    <string name="summary_apple_music_lyrics_image_export">在「分享歌词」中新增「保存图片」和「分享图片」，生成歌词海报；分享操作不存入相册</string>
     <string name="title_apple_music_lyrics_image_background">分享图背景</string>
-    <string name="option_apple_music_lyrics_image_background_cover_blur">封面高斯模糊</string>
+    <string name="option_apple_music_lyrics_image_background_cover_blur">高斯模糊封面</string>
     <string name="option_apple_music_lyrics_image_background_cover_color">封面色</string>
     <string name="option_apple_music_lyrics_image_background_custom_color">自定义颜色</string>
     <string name="option_apple_music_lyrics_image_background_custom_image">自定义图片</string>
@@ -785,7 +785,9 @@
     <string name="tag_logger">Logger</string>
     <string name="lsposed_not_found">未找到 LSPosed 日志目录，请确认 LSPosed 已正确安装</string>
     <string name="format_log_files_not_found">日志目录存在 (%1$s) 但未找到 .log 文件</string>
-    <string name="format_logs_scanned_no_match">已扫描 %1$d 个日志文件，未发现包含 HyperLyrics Enhanced 的记录。\n日志目录: %2$s</string>
+    <plurals name="format_logs_scanned_no_match">
+        <item quantity="other">已扫描 %1$d 个日志文件，未发现包含 HyperLyrics Enhanced 的记录。\n日志目录: %2$s</item>
+    </plurals>
     <string name="format_log_read_failed">读取 LSPosed 日志失败: %1$s</string>
     <string name="export_header">========== HyperLyrics Enhanced 调试日志 ==========</string>
     <string name="format_export_time">导出时间: %1$s</string>
@@ -931,5 +933,7 @@
     <string name="title_misc">杂项</string>
     <string name="title_review_setup">回顾基础设置流程页</string>
     <string name="media_session_fallback_more_apps">更多App</string>
-    <string name="media_session_fallback_players_count">已添加 %1$d 个应用</string>
+    <plurals name="media_session_fallback_players_count">
+        <item quantity="other">已添加 %1$d 个应用</item>
+    </plurals>
 </resources>
