@@ -26,6 +26,8 @@ sealed interface Route : NavKey {
     @Serializable
     data object AppleMusicOptimization : Route
     @Serializable
+    data object AppleLyricsImageBackground : Route
+    @Serializable
     data object DynamicIslandNotification : Route
     @Serializable
     data object Log : Route

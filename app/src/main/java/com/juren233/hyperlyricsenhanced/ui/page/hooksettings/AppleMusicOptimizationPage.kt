@@ -7,6 +7,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -34,6 +35,8 @@ import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.provider.OfficialProviderCatalog
 import com.juren233.hyperlyricsenhanced.provider.OfficialProviderRepository
 import com.juren233.hyperlyricsenhanced.ui.component.AppSettingsIconButton
+import com.juren233.hyperlyricsenhanced.ui.component.CustomFontColorPickerDialog
+import com.juren233.hyperlyricsenhanced.ui.component.CustomFontColorPreview
 import com.juren233.hyperlyricsenhanced.ui.component.FloatRangeInputDialog
 import com.juren233.hyperlyricsenhanced.ui.component.NumberRangeInputDialog
 import com.juren233.hyperlyricsenhanced.ui.navigation.LocalNavigator
@@ -188,6 +191,39 @@ fun AppleMusicOptimizationPage(
             )
         )
     }
+    var lyricsImageExport by remember {
+        mutableStateOf(
+            prefs.getBoolean(
+                RootConstants.KEY_HOOK_APPLE_MUSIC_LYRICS_IMAGE_EXPORT,
+                RootConstants.DEFAULT_HOOK_APPLE_MUSIC_LYRICS_IMAGE_EXPORT,
+            )
+        )
+    }
+    var lyricsImageBackground by remember {
+        mutableIntStateOf(
+            prefs.getInt(
+                RootConstants.KEY_HOOK_APPLE_MUSIC_LYRICS_IMAGE_BACKGROUND,
+                RootConstants.DEFAULT_HOOK_APPLE_MUSIC_LYRICS_IMAGE_BACKGROUND,
+            )
+        )
+    }
+    var lyricsImageBackgroundColor by remember {
+        mutableIntStateOf(
+            prefs.getInt(
+                RootConstants.KEY_HOOK_APPLE_MUSIC_LYRICS_IMAGE_BACKGROUND_COLOR,
+                RootConstants.DEFAULT_HOOK_APPLE_MUSIC_LYRICS_IMAGE_BACKGROUND_COLOR,
+            )
+        )
+    }
+    var lyricsImageQrCode by remember {
+        mutableStateOf(
+            prefs.getBoolean(
+                RootConstants.KEY_HOOK_APPLE_MUSIC_LYRICS_IMAGE_QR_CODE,
+                RootConstants.DEFAULT_HOOK_APPLE_MUSIC_LYRICS_IMAGE_QR_CODE,
+            )
+        )
+    }
+    var showLyricsImageColorPicker by remember { mutableStateOf(false) }
     var volumeBalance by remember {
         mutableStateOf(
             prefs.getBoolean(
@@ -416,6 +452,22 @@ fun AppleMusicOptimizationPage(
                 RootConstants.KEY_HOOK_APPLE_MUSIC_ADVANCED_LYRICS_BLUR_MAX_RADIUS_PX,
                 maxRadiusPx,
             )
+        },
+    )
+
+    val lyricsImageBackgroundOptions = listOf(
+        stringResource(R.string.option_apple_music_lyrics_image_background_cover_blur),
+        stringResource(R.string.option_apple_music_lyrics_image_background_cover_color),
+        stringResource(R.string.option_apple_music_lyrics_image_background_custom_color),
+        stringResource(R.string.option_apple_music_lyrics_image_background_custom_image),
+    )
+    CustomFontColorPickerDialog(
+        show = showLyricsImageColorPicker,
+        initialColor = lyricsImageBackgroundColor,
+        onDismiss = { showLyricsImageColorPicker = false },
+        onConfirm = { color ->
+            lyricsImageBackgroundColor = color
+            saveConfig(RootConstants.KEY_HOOK_APPLE_MUSIC_LYRICS_IMAGE_BACKGROUND_COLOR, color)
         },
     )
 
@@ -671,6 +723,98 @@ fun AppleMusicOptimizationPage(
                         )
                     },
                 )
+            }
+        }
+        item(key = "apple_music_lyrics_image_export") {
+            Card(
+                modifier = Modifier
+                    .padding(horizontal = 12.dp)
+                    .padding(top = 12.dp)
+                    .fillMaxWidth()
+            ) {
+                SwitchPreference(
+                    enabled = featuresEnabled,
+                    title = stringResource(R.string.title_apple_music_lyrics_image_export),
+                    summary = stringResource(R.string.summary_apple_music_lyrics_image_export),
+                    checked = lyricsImageExport,
+                    onCheckedChange = { enabled ->
+                        lyricsImageExport = enabled
+                        saveConfig(
+                            RootConstants.KEY_HOOK_APPLE_MUSIC_LYRICS_IMAGE_EXPORT,
+                            enabled,
+                        )
+                    },
+                )
+                AnimatedVisibility(
+                    visible = lyricsImageExport,
+                    enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
+                    exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
+                ) {
+                    Column {
+                        OverlayDropdownPreference(
+                            enabled = featuresEnabled,
+                            title = stringResource(R.string.title_apple_music_lyrics_image_background),
+                            items = lyricsImageBackgroundOptions,
+                            selectedIndex = lyricsImageBackground,
+                            onSelectedIndexChange = { selected ->
+                                val value = selected.coerceIn(
+                                    RootConstants.APPLE_MUSIC_LYRICS_IMAGE_BACKGROUND_COVER_BLUR,
+                                    RootConstants.APPLE_MUSIC_LYRICS_IMAGE_BACKGROUND_CUSTOM_IMAGE,
+                                )
+                                lyricsImageBackground = value
+                                saveConfig(
+                                    RootConstants.KEY_HOOK_APPLE_MUSIC_LYRICS_IMAGE_BACKGROUND,
+                                    value,
+                                )
+                            },
+                        )
+                        AnimatedVisibility(
+                            visible = lyricsImageBackground ==
+                                RootConstants.APPLE_MUSIC_LYRICS_IMAGE_BACKGROUND_CUSTOM_COLOR,
+                            enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
+                            exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
+                        ) {
+                            ArrowPreference(
+                                enabled = featuresEnabled,
+                                title = stringResource(
+                                    R.string.title_apple_music_lyrics_image_background_color
+                                ),
+                                endActions = {
+                                    CustomFontColorPreview(color = lyricsImageBackgroundColor)
+                                },
+                                onClick = { showLyricsImageColorPicker = true },
+                            )
+                        }
+                        AnimatedVisibility(
+                            visible = lyricsImageBackground ==
+                                RootConstants.APPLE_MUSIC_LYRICS_IMAGE_BACKGROUND_CUSTOM_IMAGE,
+                            enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
+                            exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
+                        ) {
+                            ArrowPreference(
+                                enabled = featuresEnabled,
+                                title = stringResource(
+                                    R.string.title_apple_music_lyrics_image_background_image
+                                ),
+                                onClick = {
+                                    navigator.navigate(Route.AppleLyricsImageBackground)
+                                },
+                            )
+                        }
+                        SwitchPreference(
+                            enabled = featuresEnabled,
+                            title = stringResource(R.string.title_apple_music_lyrics_image_qr_code),
+                            checked = lyricsImageQrCode,
+                            onCheckedChange = { enabled ->
+                                lyricsImageQrCode = enabled
+                                saveConfig(
+                                    RootConstants.KEY_HOOK_APPLE_MUSIC_LYRICS_IMAGE_QR_CODE,
+                                    enabled,
+                                )
+                            },
+                        )
+                    }
+                }
             }
         }
         item(key = "app_display_title") {

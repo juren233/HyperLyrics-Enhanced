@@ -10,6 +10,7 @@ import android.app.Application
 import android.content.SharedPreferences
 import android.media.MediaMetadata
 import android.media.session.PlaybackState
+import android.os.ParcelFileDescriptor
 import org.luckypray.dexkit.DexKitBridge
 import java.lang.reflect.Executable
 import java.nio.charset.StandardCharsets
@@ -180,6 +181,13 @@ interface OfficialProviderHost {
 
     /** 读取主模块远端偏好；旧主程序或读取失败时返回 null。 */
     fun getRemotePreferences(group: String): SharedPreferences? = null
+
+    /**
+     * 只读打开主模块发布的 Xposed Remote File（例如用户在主模块里准备的图片）。
+     *
+     * 文件不存在、旧主程序或读取失败时返回 null；调用方负责关闭返回的描述符。
+     */
+    fun openRemoteFile(name: String): ParcelFileDescriptor? = null
 
     /**
      * 打开目标 App DEX 的 DexKit 桥接，Host 负责加载 libdexkit.so。

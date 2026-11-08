@@ -14,6 +14,7 @@ import android.content.SharedPreferences
 import android.media.MediaMetadata
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
+import android.os.ParcelFileDescriptor
 import android.os.SystemClock
 import android.util.Log
 import com.juren233.hyperlyricsenhanced.BuildConfig
@@ -208,6 +209,10 @@ internal class OfficialProviderHookHost(
 
     override fun getRemotePreferences(group: String): SharedPreferences? =
         runCatching { module.getRemotePreferences(group) }.getOrNull()
+
+    override fun openRemoteFile(name: String): ParcelFileDescriptor? = runCatching {
+        if (name in module.listRemoteFiles()) module.openRemoteFile(name) else null
+    }.getOrNull()
 
     override fun openDexKit(application: Application): DexKitBridge? = runCatching {
         ensureDexKitLoaded(module)
