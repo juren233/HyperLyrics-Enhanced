@@ -78,6 +78,16 @@ object OfficialProviderRuntime {
                 OfficialProviderCatalog.activeFileKey(packageName),
                 null,
             )?.takeIf(String::isNotBlank)
+            if (BuildConfig.DEBUG) {
+                module.persistentLog(
+                    Log.INFO,
+                    TAG,
+                    "远程偏好读取: id=${definition.id} package=$packageName process=$processName " +
+                        "installed=$installedVersion activeFile=$remoteName " +
+                        "previous=${preferences.getInt(OfficialProviderCatalog.previousVersionKey(definition.id), 0)} " +
+                        "remoteFiles=${runCatching { module.listRemoteFiles().filter { it.contains(definition.id) } }.getOrNull()}",
+                )
+            }
 
             // 模块升级后内置基线包可能比之前下载的远程包更新，此时优先加载基线包；
             // 只读基线包清单比较版本，不读取 DEX。
@@ -426,6 +436,14 @@ object OfficialProviderRuntime {
         host.logInstalled(definition.id)
         loadedPackages += packageName
         store?.writeLoadedVersion(definition.id, expectedVersion)
+        if (BuildConfig.DEBUG) {
+            module.persistentLog(
+                Log.INFO,
+                TAG,
+                "写入已加载版本: id=${definition.id} package=$packageName version=$expectedVersion " +
+                    "storeAvailable=${store != null} source=$source",
+            )
+        }
         if (BuildConfig.DEBUG) {
             module.persistentLog(
                 Log.INFO,

@@ -638,4 +638,19 @@ class IslandGradientCoverLayoutTest {
         )
     }
 
+
+    @Test
+    fun narrowIslandDimsTowardBackgroundButLongIslandDoesNot() {
+        // 实测：封面 104px；长岛延伸 163px，短岛终态延伸 21px。
+        assertEquals(0f, IslandGradientCoverLayout.embeddedNarrowDimStrength(104f, 163f), 0.001f)
+        assertEquals(0.73f, IslandGradientCoverLayout.embeddedNarrowDimStrength(104f, 21f), 0.01f)
+        // 岛宽动画中强度随延伸量连续变化。
+        val a = IslandGradientCoverLayout.embeddedNarrowDimStrength(104f, 40f)
+        val b = IslandGradientCoverLayout.embeddedNarrowDimStrength(104f, 39f)
+        assertTrue(b > a && b - a < 0.02f)
+        assertEquals(0f, IslandGradientCoverLayout.embeddedNarrowDimStrength(104f, 0f), 0.001f)
+        assertEquals(46.8f, IslandGradientCoverLayout.embeddedNarrowDimWidth(104f), 0.01f)
+        assertEquals(0f, IslandGradientCoverLayout.embeddedNarrowDimAlpha(0f), 0.001f)
+        assertEquals(1f, IslandGradientCoverLayout.embeddedNarrowDimAlpha(1f), 0.001f)
+    }
 }

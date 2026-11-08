@@ -27,6 +27,9 @@ internal object IslandRuntimePreferenceOverrides {
     fun getBoolean(key: String, fallback: Boolean): Boolean =
         values[key] as? Boolean ?: fallback
 
+    fun getString(key: String, fallback: String?): String? =
+        values[key] as? String ?: fallback
+
     fun getStringSet(key: String, fallback: Set<String>?): Set<String>? =
         (values[key] as? Set<*>)?.filterIsInstance<String>()?.toSet() ?: fallback
 

@@ -205,6 +205,22 @@ class ProviderHealthStoreScriptTest {
 class ProviderApplyStateTest {
 
     @Test
+    fun appliedVersionIsTreatedAsLoadedUntilTargetRestartsOrFails() {
+        // 立即生效后目标还没重启：.loaded 仍是旧值，按已加载新版处理，不再提示重启。
+        assertEquals(30, ProviderApplyState.loadedAfterApply(29, 30, 30, emptySet()))
+        assertEquals(
+            ProviderApplyState.Badge.NONE,
+            ProviderApplyState.badge(30, ProviderApplyState.loadedAfterApply(29, 30, 30, emptySet()), emptySet()),
+        )
+        // 对旧版本执行过的记录对新装版本无效。
+        assertEquals(29, ProviderApplyState.loadedAfterApply(29, 31, 30, emptySet()))
+        // 没执行过。
+        assertEquals(29, ProviderApplyState.loadedAfterApply(29, 30, 0, emptySet()))
+        // 新版本被记为坏版本后，以读回值为准，仍走回退/禁用判定。
+        assertEquals(29, ProviderApplyState.loadedAfterApply(29, 30, 30, setOf(30)))
+    }
+
+    @Test
     fun noBadgeWhenNotInstalledOrUpToDate() {
         assertEquals(
             ProviderApplyState.Badge.NONE,

@@ -559,7 +559,6 @@
     <string name="title_online_translation_sources">三方在线源配置</string>
     <string name="title_online_translation_platform_sources">平台来源</string>
     <string name="title_online_translation_enabled_apps">启用App</string>
-    <string name="summary_online_translation_app_translation">翻译</string>
     <string name="summary_online_translation_app_lyrics_translation">歌词、翻译</string>
     <string name="title_online_translation_no_enabled_apps">暂无可启用的App</string>
     <string name="title_online_translation_salt_special_settings">特殊设置</string>
@@ -645,6 +644,18 @@
     <string name="title_island_short_lyric_song_info">短歌词显示歌曲信息</string>
     <string name="summary_island_short_lyric_song_info">长歌词恢复全岛滚动</string>
     <string name="title_audio_rhythm_cover_color">音频律动封面色</string>
+    <string name="title_island_pure_music_state">纯音乐期间音乐岛状态</string>
+    <string name="summary_island_pure_music_state">选择系统短岛后会出现未获取到歌词的有词歌曲同样变短</string>
+    <string name="option_island_pure_music_keep">保持现状</string>
+    <string name="option_island_pure_music_system_compact">系统短岛</string>
+    <string name="title_island_pure_music_keywords">纯音乐判定关键词</string>
+    <string name="summary_island_pure_music_keywords">整首歌可显示歌词不超过 5 行，且其中任一行包含以下任一关键词（忽略大小写与标点）时，判定为纯音乐</string>
+    <string name="action_island_pure_music_keyword_add">添加关键词</string>
+    <string name="action_island_pure_music_keywords_reset">恢复预设</string>
+    <string name="action_island_pure_music_keyword_edit">编辑关键词</string>
+    <string name="action_island_pure_music_keyword_delete">删除关键词</string>
+    <string name="summary_island_pure_music_keyword_delete">将删除“%1$s”，此操作不可撤销。</string>
+    <string name="summary_island_pure_music_keywords_reset">将恢复为预设关键词，你添加、修改和删除过的内容都会丢失，此操作不可撤销。</string>
     <string name="option_music_wave_color_mode_off">不开启</string>
     <string name="option_music_wave_color_mode_cover">封面色</string>
     <string name="option_music_wave_color_mode_cover_gradient">封面渐变色</string>

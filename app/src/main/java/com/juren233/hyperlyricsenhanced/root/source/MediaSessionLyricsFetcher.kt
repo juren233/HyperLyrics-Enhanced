@@ -7,6 +7,7 @@
 package com.juren233.hyperlyricsenhanced.root.source
 
 import android.content.Context
+import kotlinx.coroutines.async
 import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.common.lyric.AppleMissingLyricsSourceInfo
 import com.juren233.hyperlyricsenhanced.lyric.model.Song
@@ -45,6 +46,43 @@ internal class MediaSessionLyricsFetcher(private val context: Context) {
         catalogSong(track, plan.leadingCatalogs)?.let { return it }
         searchSong(track, plan.searchSources)?.let { return it }
         return catalogSong(track, plan.trailingCatalogs)
+    }
+
+    /**
+     * 「自动」来源：ttml 与搜索源同时开始，先到的通过 [onEarly] 先交出去，ttml 无论多晚到都优先。
+     * 播放器没有可寻址的歌曲 ID、或 ttml / 搜索源有一类为空时，竞速没有意义，退回依次查。
+     * 排在搜索源后面的 ttml 仍然是搜索源没有结果之后才查。
+     */
+    suspend fun fetchRacing(
+        track: TrackIdentity,
+        sources: List<Source>,
+        onEarly: suspend (Song) -> Unit,
+    ): Song? {
+        val plan = MediaSessionLyricsPlan.of(sources)
+        val platform = CatalogPlatform.ofPlayerPackage(track.packageName)
+        val addressable = platform != null && CatalogPlatform.songIdOf(platform, track.mediaId) != null
+        if (plan.leadingCatalogs.isEmpty() || plan.searchSources.isEmpty() || !addressable) {
+            return fetch(track, sources)
+        }
+        debug("开始竞速取词: pkg=${track.packageName}, mediaId=${track.mediaId}, plan=$plan")
+        val final = kotlinx.coroutines.coroutineScope {
+            val ttmlJobs = plan.leadingCatalogs.map { source ->
+                async { runCatching { catalogSong(track, listOf(source)) } }
+            }
+            val searchJob = async { runCatching { searchSong(track, plan.searchSources) } }
+            LyricsRace.run(
+                ttml = ttmlJobs,
+                search = searchJob,
+                ttmlHit = { it != null },
+                searchHit = { it != null },
+                onEarlyTtml = { _, song -> song?.let { onEarly(it) } },
+                onEarlySearch = { song -> song?.let { onEarly(it) } },
+            )
+        }
+        return when (final) {
+            is LyricsRace.Final.Ttml -> final.value
+            is LyricsRace.Final.Search -> final.value ?: catalogSong(track, plan.trailingCatalogs)
+        }
     }
 
     private suspend fun catalogSong(track: TrackIdentity, sources: List<Source>): Song? {

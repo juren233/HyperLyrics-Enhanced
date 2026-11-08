@@ -456,6 +456,8 @@ internal fun LyriconSource.actualSourceFirst(sourceName: String?, fallbackOrder:
 }
 
 internal fun LyriconSource.maybeCommitPendingOnlineTranslation(position: Long) {
+    // 岛端歌词来源的「下一句切换」与在线翻译的挂起提交共用同一个位置回调入口。
+    fallbackIslandSwitch.takeDue(position) { appleFallbackRequest.isCurrent(it) }?.commit?.invoke()
     val pending = onlineTranslationRequest.takePending { position >= it.targetPosition } ?: return
     pronunciationDiagnostic(
         "stage=race_commit_boundary_reached, generation=${pending.generation}, " +

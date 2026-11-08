@@ -1,6 +1,7 @@
 package com.juren233.hyperlyricsenhanced.root
 
 import android.os.SystemClock
+import com.juren233.hyperlyricsenhanced.common.IslandPureMusicPolicy
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.common.lyric.LyricMetadataKeys
 import com.juren233.hyperlyricsenhanced.lyric.model.RichLyricLine
@@ -142,6 +143,7 @@ object LyriconDataBridge : StateResetter {
             details = "incomingId=${MediaCardDiagnosticLogger.sanitize(song?.id)},incomingTitle=${MediaCardDiagnosticLogger.sanitize(song?.name)},incomingLines=${song?.lyrics.orEmpty().size}",
         )
         HookLogger.d("LyriconDataBridge", "歌曲变更: ${song?.name}")
+        LyricsAvailability.reset()
         isTextMode = false
         currentSong = song
         currentSongName = song?.name
@@ -160,6 +162,7 @@ object LyriconDataBridge : StateResetter {
         if (song != null) {
             prepareSong(song)
         } else {
+            pureMusicCandidateTexts = null
             timingNavigator = TimingNavigator(emptyArray())
             unmergedTimingNavigator = TimingNavigator(emptyArray())
             interludeTracker = InterludeTracker()
@@ -189,6 +192,7 @@ object LyriconDataBridge : StateResetter {
         if (!isSameSong(previousSong, song)) return false
 
         HookLogger.d("LyriconDataBridge", "同曲内容更新: ${song.name}")
+        LyricsAvailability.reset()
         isTextMode = false
         currentSong = song
         currentSongName = song.name
@@ -207,7 +211,29 @@ object LyriconDataBridge : StateResetter {
         prepareSong(translatedSong)
     }
 
+    /** 去掉占位标题行后的歌词行文本；null 表示当前没有歌曲，不参与纯音乐判定。 */
+    @Volatile
+    private var pureMusicCandidateTexts: List<String?>? = null
+
+    /** 当前歌曲是否为纯音乐；没有歌曲、纯文本模式一律返回 false。 */
+    fun isPureMusic(normalizedKeywords: Set<String>): Boolean {
+        if (isTextMode) return false
+        val texts = pureMusicCandidateTexts ?: return false
+        return IslandPureMusicPolicy.isPureMusic(texts, normalizedKeywords)
+    }
+
+    /** 仅 debug 诊断：当前纯音乐候选文本的摘要。 */
+    fun pureMusicDiagnostic(): String {
+        val texts = pureMusicCandidateTexts ?: return "texts=null,textMode=$isTextMode"
+        val visible = texts.filter { !IslandPureMusicPolicy.normalize(it).isEmpty() }
+        return "textMode=$isTextMode,lines=${texts.size},visible=${visible.size}," +
+            "first=${visible.take(3).map { (it ?: "").take(20) }}"
+    }
+
     private fun prepareSong(song: Song) {
+        pureMusicCandidateTexts = song.lyrics.orEmpty()
+            .filter { it.metadata?.getBoolean(SongPreprocessor.KEY_TITLE_LINE) != true }
+            .map { it.text }
         val mergeOverlappingLyrics =
             currentLyricPackageName == OfficialProviderCatalog.APPLE_MUSIC_PACKAGE_NAME
         val lines = SongPreprocessor(
@@ -462,7 +488,9 @@ object LyriconDataBridge : StateResetter {
             event = "clear_begin",
             details = "oldSongId=${MediaCardDiagnosticLogger.sanitize(currentSong?.id)},oldPosition=$currentPosition,oldPlaying=$currentPlaybackState",
         )
+        LyricsAvailability.reset()
         currentSong = null
+        pureMusicCandidateTexts = null
         currentSongName = null
         currentLyric = null
         currentLyricLine = null

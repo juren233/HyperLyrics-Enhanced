@@ -62,6 +62,8 @@ sealed interface Route : NavKey {
     @SerialName("com.juren233.hyperlyricsenhanced.ui.navigation.Route.SuperIslandAlbumCoverWhitelist")
     data object HyperIslandAlbumCoverWhitelist : Route
     @Serializable
+    data object HyperIslandPureMusicKeywords : Route
+    @Serializable
     data object MediaSessionOnlineFallbackPlayers : Route
     @Serializable
     data object MediaCardSettings : Route

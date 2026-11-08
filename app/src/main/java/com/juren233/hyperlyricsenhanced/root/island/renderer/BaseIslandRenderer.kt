@@ -17,6 +17,7 @@ import com.juren233.hyperlyricsenhanced.root.island.IslandAlbumCoverStyleHooker
 import com.juren233.hyperlyricsenhanced.root.island.IslandContentUpdateCoordinator
 import com.juren233.hyperlyricsenhanced.root.island.IslandHostFacade
 import com.juren233.hyperlyricsenhanced.root.island.IslandHostRetirementPolicy
+import com.juren233.hyperlyricsenhanced.root.island.IslandPureMusicGate
 import com.juren233.hyperlyricsenhanced.root.island.IslandLyricTextInjector
 import com.juren233.hyperlyricsenhanced.root.island.IslandMediaReinstater
 import com.juren233.hyperlyricsenhanced.root.island.IslandMusicWaveColorHooker
@@ -101,7 +102,40 @@ object BaseIslandRenderer : IslandRenderer {
             RootConstants.KEY_HOOK_ISLAND_BEHAVIOR_AFTER_PAUSE,
             RootConstants.DEFAULT_HOOK_ISLAND_BEHAVIOR_AFTER_PAUSE
         )
-        return playbackActive || behavior != 0 || pauseTransitionGuard.nativeRestorePending
+        if (!(playbackActive || behavior != 0 || pauseTransitionGuard.nativeRestorePending)) return false
+        return !IslandPureMusicGate.isActive(prefs)
+    }
+
+    /**
+     * 纯音乐且选了“系统短岛”：不注入歌词，原生岛照常显示；
+     * 边缘光效与律动取色仍要继续处理，所以与暂停回退原生区分开。
+     */
+    fun isPureMusicNativeActive(): Boolean {
+        val prefs = HookEntry.instance?.prefs ?: return false
+        if (!prefs.getBoolean(RootConstants.KEY_HOOK_ENABLE_HYPER_ISLAND, RootConstants.DEFAULT_HOOK_ENABLE_HYPER_ISLAND)) {
+            return false
+        }
+        val behavior = prefs.getInt(
+            RootConstants.KEY_HOOK_ISLAND_BEHAVIOR_AFTER_PAUSE,
+            RootConstants.DEFAULT_HOOK_ISLAND_BEHAVIOR_AFTER_PAUSE
+        )
+        if (!(playbackActive || behavior != 0 || pauseTransitionGuard.nativeRestorePending)) return false
+        return IslandPureMusicGate.isActive(prefs)
+    }
+
+    private fun refreshPureMusicNative(prefs: android.content.SharedPreferences) {
+        val lyricPkg = LyriconDataBridge.currentLyricPackageName?.takeIf { it.isNotEmpty() } ?: return
+        IslandViewRegistry.snapshotAttached(lyricPkg).forEach { (cv, _) ->
+            cv.post {
+                if (retiredForReload || IslandContentUpdateCoordinator.deferContent(cv)) return@post
+                // 只在还留有注入内容时清理：clearInjectedViews 会连带清掉进度光效，重复清理会让光效闪烁。
+                if (IslandLyricTextInjector.hasInjectedLyricView(cv)) IslandHostFacade.clearAndRefresh(cv)
+                val mediaInfo = MediaMetadataHelper.getMediaInfo(cv.context, lyricPkg, HookLogger)
+                IslandMusicWaveColorHooker.onMediaArtworkUpdated(mediaInfo)
+                IslandHostFacade.updateHostGlow(cv, mediaInfo.albumArt, prefs)
+                IslandHostFacade.updateProgressGlow(cv, lyricPkg, mediaInfo, prefs)
+            }
+        }
     }
 
     fun currentPlaybackActive(): Boolean = playbackActive
@@ -178,6 +212,11 @@ object BaseIslandRenderer : IslandRenderer {
             return
         }
         if (!shouldRenderInjectedIsland()) {
+            if (isPureMusicNativeActive()) {
+                refreshPureMusicNative(prefs)
+                DisplayDiagnosticLogger.log("ISLAND", "hidden", "pure_music_system_compact")
+                return
+            }
             clearActiveViewsForPause()
             DisplayDiagnosticLogger.log("ISLAND", "hidden", "pause_policy")
             return
@@ -391,7 +430,15 @@ object BaseIslandRenderer : IslandRenderer {
         if (!SystemUiScreenStateMonitor.isInteractive()) return
         val prefs = HookEntry.instance?.prefs ?: return
         if (!prefs.getBoolean(RootConstants.KEY_HOOK_ENABLE_HYPER_ISLAND, RootConstants.DEFAULT_HOOK_ENABLE_HYPER_ISLAND)) return
-        if (!shouldRenderInjectedIsland()) return
+        if (!shouldRenderInjectedIsland()) {
+            if (isPureMusicNativeActive()) {
+                val pkg = LyriconDataBridge.currentLyricPackageName ?: return
+                IslandViewRegistry.snapshotAttached(pkg).forEach { (cv, _) ->
+                    cv.post { if (!retiredForReload) IslandHostFacade.updateProgressGlow(cv, pkg, prefs) }
+                }
+            }
+            return
+        }
         val lyricPkg = LyriconDataBridge.currentLyricPackageName ?: return
 
         IslandViewRegistry.snapshotAttachedInjectedViews(lyricPkg)

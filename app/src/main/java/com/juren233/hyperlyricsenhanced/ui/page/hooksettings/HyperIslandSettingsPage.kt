@@ -103,6 +103,17 @@ fun HyperIslandSettingsPage() {
         )
     }
     var audioRhythm by remember { mutableStateOf(prefs.getBoolean(RootConstants.KEY_HOOK_ISLAND_RIGHT_ICON, RootConstants.DEFAULT_HOOK_ISLAND_RIGHT_ICON)) }
+    var pureMusicMode by remember {
+        mutableIntStateOf(
+            prefs.getInt(
+                RootConstants.KEY_HOOK_ISLAND_PURE_MUSIC_MODE,
+                RootConstants.DEFAULT_HOOK_ISLAND_PURE_MUSIC_MODE,
+            ).coerceIn(
+                RootConstants.ISLAND_PURE_MUSIC_MODE_KEEP,
+                RootConstants.ISLAND_PURE_MUSIC_MODE_SYSTEM_COMPACT,
+            )
+        )
+    }
     var interludeMinimalDisplay by remember {
         mutableStateOf(prefs.getBoolean(
             RootConstants.KEY_HOOK_ISLAND_INTERLUDE_MINIMAL_DISPLAY,
@@ -341,6 +352,27 @@ fun HyperIslandSettingsPage() {
             R.string.option_music_wave_color_mode_cover_gradient
         )
     }.map { stringResource(id = it) }
+    val pureMusicModeOptions = remember {
+        listOf(
+            R.string.option_island_pure_music_keep,
+            R.string.option_island_pure_music_system_compact,
+        )
+    }.map { stringResource(id = it) }
+    // 音频律动与“纯音乐期间系统短岛”共用同一份律动封面色设置，只在此处定义一次。
+    val musicWaveColorModePreference: @Composable () -> Unit = {
+        OverlayDropdownPreference(
+            title = stringResource(id = R.string.title_audio_rhythm_cover_color),
+            items = musicWaveColorModeOptions,
+            selectedIndex = musicWaveColorModeValues.indexOf(musicWaveColorMode).coerceAtLeast(0),
+            onSelectedIndexChange = { index ->
+                val mode = musicWaveColorModeValues[index]
+                musicWaveColorMode = mode
+                saveConfig(RootConstants.KEY_HOOK_ISLAND_MUSIC_WAVE_COLOR_MODE, mode)
+                saveConfig(RootConstants.KEY_HOOK_ISLAND_MUSIC_WAVE_COLOR, IslandMusicWaveColorMode.isEnabled(mode))
+                saveConfig(RootConstants.KEY_HOOK_ISLAND_MUSIC_WAVE_GRADIENT, IslandMusicWaveColorMode.usesCoverGradient(mode))
+            }
+        )
+    }
     val progressStyleOptions = remember {
         listOf(
             R.string.option_island_progress_top_clockwise,
@@ -557,18 +589,41 @@ fun HyperIslandSettingsPage() {
                             SwitchPreference(title = stringResource(id = R.string.title_audio_rhythm), checked = audioRhythm, onCheckedChange = { audioRhythm = it; saveConfig(RootConstants.KEY_HOOK_ISLAND_RIGHT_ICON, it) })
                             AnimatedVisibility(visible = audioRhythm) {
                                 Column {
-                                    OverlayDropdownPreference(
-                                        title = stringResource(id = R.string.title_audio_rhythm_cover_color),
-                                        items = musicWaveColorModeOptions,
-                                        selectedIndex = musicWaveColorModeValues.indexOf(musicWaveColorMode).coerceAtLeast(0),
-                                        onSelectedIndexChange = { index ->
-                                            val mode = musicWaveColorModeValues[index]
-                                            musicWaveColorMode = mode
-                                            saveConfig(RootConstants.KEY_HOOK_ISLAND_MUSIC_WAVE_COLOR_MODE, mode)
-                                            saveConfig(RootConstants.KEY_HOOK_ISLAND_MUSIC_WAVE_COLOR, IslandMusicWaveColorMode.isEnabled(mode))
-                                            saveConfig(RootConstants.KEY_HOOK_ISLAND_MUSIC_WAVE_GRADIENT, IslandMusicWaveColorMode.usesCoverGradient(mode))
-                                        }
-                                    )
+                                    musicWaveColorModePreference()
+                                }
+                            }
+                        }
+                    }
+                }
+                item(key = "pure_music_state") {
+                    Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
+                        OverlayDropdownPreference(
+                            title = stringResource(id = R.string.title_island_pure_music_state),
+                            summary = stringResource(id = R.string.summary_island_pure_music_state),
+                            items = pureMusicModeOptions,
+                            selectedIndex = pureMusicMode,
+                            onSelectedIndexChange = {
+                                pureMusicMode = it
+                                saveConfig(RootConstants.KEY_HOOK_ISLAND_PURE_MUSIC_MODE, it)
+                            }
+                        )
+                        AnimatedVisibility(
+                            visible = pureMusicMode == RootConstants.ISLAND_PURE_MUSIC_MODE_SYSTEM_COMPACT,
+                            enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
+                            exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
+                        ) {
+                            Column {
+                                ArrowPreference(
+                                    title = stringResource(id = R.string.title_island_pure_music_keywords),
+                                    onClick = { navigator.navigate(Route.HyperIslandPureMusicKeywords) },
+                                )
+                                // 音频律动已开启时，封面色在上方卡片里设置，这里不重复显示。
+                                AnimatedVisibility(
+                                    visible = !audioRhythm,
+                                    enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
+                                    exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
+                                ) {
+                                    Column { musicWaveColorModePreference() }
                                 }
                             }
                         }

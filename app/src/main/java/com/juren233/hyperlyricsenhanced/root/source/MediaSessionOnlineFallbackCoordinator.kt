@@ -4,6 +4,7 @@ import com.juren233.hyperlyricsenhanced.common.MediaSessionOnlineFallbackPrefere
 import com.juren233.hyperlyricsenhanced.lyric.model.Song
 import com.juren233.hyperlyricsenhanced.lyric.source.TimelineContent
 import com.juren233.hyperlyricsenhanced.online.model.Source
+import com.juren233.hyperlyricsenhanced.root.LyricsAvailability
 import com.juren233.hyperlyricsenhanced.online.source.ttml.CatalogPlatform
 import com.juren233.hyperlyricsenhanced.timeline.model.TrackIdentity
 import kotlinx.coroutines.CancellationException
@@ -28,6 +29,8 @@ internal class MediaSessionOnlineFallbackCoordinator(
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val nowMs: () -> Long = { System.nanoTime() / 1_000_000L },
     private val graceMs: Long = 1_500L,
+    /** 「自动」来源的竞速取词：先到的结果通过回调先交出，返回按优先级裁决后的最终结果。 */
+    private val fetchSongRace: (suspend (TrackIdentity, List<Source>, suspend (Song) -> Unit) -> Song?)? = null,
 ) {
     interface Tracks {
         val current: TrackIdentity?
@@ -44,6 +47,8 @@ internal class MediaSessionOnlineFallbackCoordinator(
         fun hasFallback(track: TrackIdentity): Boolean
         fun authorize(settings: Settings, sessionUsable: Boolean)
         fun submit(content: TimelineContent)
+        /** 已有补充内容在显示时，更高优先级的结果等到下一句歌词再切换；默认直接提交。 */
+        fun submitAtNextLine(content: TimelineContent) = submit(content)
         fun listen(onPrimaryChanged: () -> Unit)
         fun close()
     }
@@ -58,6 +63,9 @@ internal class MediaSessionOnlineFallbackCoordinator(
     private var generation = 0L
     private var started = false
     private var stopped = false
+
+    /** 此刻是否还有在途的取词请求（含取词前的等待）。 */
+    fun lookupPending(): Boolean = request?.isActive == true
 
     fun start() {
         check(!stopped) { "A stopped fallback coordinator cannot be restarted" }
@@ -123,16 +131,45 @@ internal class MediaSessionOnlineFallbackCoordinator(
         currentKey = key
         requestTrack = track
         val token = generation
+        // 取到歌词时由时间轴的内容更新重置汇总判定；只有「没取到」才需要在请求结束后重新判定，
+        // 否则提交尚在排队时就会先判成最终无歌词，岛会闪一下短岛。
+        val delivered = java.util.concurrent.atomic.AtomicBoolean(false)
         request = scope.launch {
             delay(graceMs)
             if (!canPublish(token, track, config, upgradeOnly)) return@launch
             val cached = cache[key]?.takeIf {
                 it.expiresAt > nowMs() && MediaSessionOnlineFallbackPolicy.sameLookupTrack(it.track, track)
             }
+            fun contentOf(song: Song) = TimelineContent(
+                sourceId = MediaSessionOnlineFallbackPolicy.SOURCE_ID,
+                track = track,
+                song = song,
+                onlineTranslationMatched = true,
+                strictIdentity = true,
+                revision = token,
+            )
+            // 竞速时先到的结果：先显示，最终结果与它不同再等下一句切入。
+            var earlySong: Song? = null
+            val racing = config.autoSelect && !upgradeOnly && fetchSongRace != null
             val song = if (cached != null) cached.song else {
                 val fetched = try {
                     withContext(ioDispatcher) {
-                        withTimeoutOrNull(30_000L) { fetchSong(track, sources) }
+                        withTimeoutOrNull(20_000L) {
+                            if (racing) {
+                                fetchSongRace!!(track, sources) { early ->
+                                    val usable = early.takeIf { !it.lyrics.isNullOrEmpty() }
+                                    if (usable != null && earlySong == null &&
+                                        canPublish(token, track, config, upgradeOnly)
+                                    ) {
+                                        earlySong = usable
+                                        delivered.set(true)
+                                        timeline.submit(contentOf(usable))
+                                    }
+                                }
+                            } else {
+                                fetchSong(track, sources)
+                            }
+                        }
                     }
                 } catch (cancelled: CancellationException) {
                     throw cancelled
@@ -146,17 +183,17 @@ internal class MediaSessionOnlineFallbackCoordinator(
                 usableSong
             }
             // 无结果不提交空内容，保留时间轴原有的空态/标题回退。
-            if (song != null && canPublish(token, track, config, upgradeOnly)) {
-                timeline.submit(TimelineContent(
-                    sourceId = MediaSessionOnlineFallbackPolicy.SOURCE_ID,
-                    track = track,
-                    song = song,
-                    onlineTranslationMatched = true,
-                    strictIdentity = true,
-                    revision = token,
-                ))
+            if (song != null && canPublish(token, track, config, upgradeOnly, allowOwnWordTimed = earlySong != null)) {
+                delivered.set(true)
+                val shown = earlySong
+                when {
+                    shown == null -> timeline.submit(contentOf(song))
+                    shown !== song -> timeline.submitAtNextLine(contentOf(song))
+                }
             }
         }
+        // 请求结束（含失败、超时、被取消）后，让「所有来源都没有歌词」的汇总重新判定。
+        request?.invokeOnCompletion { if (!delivered.get()) LyricsAvailability.onThirdPartySettled() }
     }
 
     private fun canPublish(
@@ -164,13 +201,14 @@ internal class MediaSessionOnlineFallbackCoordinator(
         track: TrackIdentity,
         captured: Settings,
         upgradeOnly: Boolean,
+        allowOwnWordTimed: Boolean = false,
     ): Boolean {
         val current = tracks.current ?: return false
         val config = settings()
         return !stopped && generation == token && config.sources == captured.sources &&
             MediaSessionOnlineFallbackPolicy.sameLookupTrack(track, current) &&
             MediaSessionOnlineFallbackPolicy.eligible(config, current, tracks.usable) &&
-            !timeline.hasWordTimedContent(current) &&
+            (allowOwnWordTimed || !timeline.hasWordTimedContent(current)) &&
             (upgradeOnly || !timeline.hasPrimary(current))
     }
 

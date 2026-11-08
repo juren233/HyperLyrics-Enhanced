@@ -5,6 +5,7 @@ import android.view.ViewGroup
 import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.root.HookEntry
+import com.juren233.hyperlyricsenhanced.root.island.renderer.BaseIslandRenderer
 import com.juren233.hyperlyricsenhanced.root.island.IslandTextHookerSupport.TAG
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import io.github.libxposed.api.XposedInterface.Chain
@@ -89,6 +90,10 @@ internal object RealIslandHooker {
                 IslandViewRegistry.register(contentView, info.packageName)
                 if (!IslandTextHookerSupport.shouldRenderInjectedIsland()) {
                     IslandTextHookerSupport.clearInjectedIsland(contentView)
+                    // 纯音乐的系统短岛状态不注入歌词，边缘光效仍照常生效。
+                    if (BaseIslandRenderer.isPureMusicNativeActive()) {
+                        IslandHostFacade.injectHostGlow(contentView, data, prefs)
+                    }
                     return@runCatching
                 }
 

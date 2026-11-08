@@ -207,6 +207,13 @@ object OfficialProviderCatalog {
     fun loadedVersionKey(pluginId: String) =
         "key_official_provider_loaded_version_$pluginId"
 
+    /**
+     * 用户对该版本执行过「立即生效」（强行停止目标 App）时记录的已安装版本号。
+     * 停止后没有任何进程还在运行旧版本，下次启动必然加载该版本，因此不再提示「重启后生效」。
+     */
+    fun appliedVersionKey(pluginId: String) =
+        "key_official_provider_applied_version_$pluginId"
+
     /** 验签缓存：键为包文件名，值为整包摘要与清单，仅由主程序写入远端偏好。 */
     const val VERIFIED_PACK_CACHE_KEY = "key_official_provider_verified_packs"
 

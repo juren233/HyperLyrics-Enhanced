@@ -18,6 +18,8 @@ import com.juren233.hyperlyricsenhanced.lyric.source.LyricSink
 import com.juren233.hyperlyricsenhanced.lyric.source.SourceSelectionAwareSink
 import com.juren233.hyperlyricsenhanced.lyric.source.TimelineContent
 import com.juren233.hyperlyricsenhanced.lyric.view.line.PositionUpdateDemand
+import com.juren233.hyperlyricsenhanced.common.lyric.LyricMetadataKeys
+import com.juren233.hyperlyricsenhanced.root.LyricsAvailability
 import com.juren233.hyperlyricsenhanced.root.LyriconDataBridge
 import com.juren233.hyperlyricsenhanced.root.SystemUiEnhancementGate
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
@@ -129,6 +131,26 @@ class LocalTimelineDriver(
                         appliedTrackKey,
                     )
                 ) applyContent(content)
+            }
+
+            override fun submitAtNextLine(content: TimelineContent) = runOnMain {
+                if (!current() || !TimelineContentPolicy.admitsFallbackSwitch(
+                        activeSourceId, anchor.currentTrack, content, displayedContent, settings, sessionUsable,
+                        appliedTrackKey,
+                    )
+                ) return@runOnMain
+                val position = timelinePosition()
+                when (val plan = FallbackSwitchPolicy.plan(displayedContent?.song?.lyrics.orEmpty(), position)) {
+                    FallbackSwitchPolicy.Plan.ApplyNow -> applyContent(content)
+                    is FallbackSwitchPolicy.Plan.Defer -> {
+                        // 当前句继续用已显示的来源，到下一句的起点再切过去，避免当前句割裂跳变。
+                        pendingFallbackSwitch = PendingFallbackSwitch(content, plan.targetPosition)
+                        diagnostic(
+                            "补充歌词来源下一句切换: target=${plan.targetPosition}, position=$position, " +
+                                "lines=${content.song?.lyrics?.size ?: 0}"
+                        )
+                    }
+                }
             }
 
             override fun listen(onPrimaryChanged: () -> Unit) {
@@ -679,7 +701,31 @@ class LocalTimelineDriver(
         }
     }
 
+    private class PendingFallbackSwitch(val content: TimelineContent, val targetPosition: Long)
+
+    /** 更高优先级的补充歌词已到，等位置走到下一句起点再应用；换曲、清空、应用其他内容时作废。 */
+    private var pendingFallbackSwitch: PendingFallbackSwitch? = null
+
+    private fun commitPendingFallbackSwitch(position: Long?) {
+        val pending = pendingFallbackSwitch ?: return
+        when (
+            FallbackSwitchPolicy.due(
+                position = position,
+                targetPosition = pending.targetPosition,
+                displayedIsFallback = displayedContent?.sourceId == MediaSessionOnlineFallbackPolicy.SOURCE_ID,
+            )
+        ) {
+            FallbackSwitchPolicy.Due.WAIT -> Unit
+            FallbackSwitchPolicy.Due.DROP -> pendingFallbackSwitch = null
+            FallbackSwitchPolicy.Due.APPLY -> {
+                pendingFallbackSwitch = null
+                applyContent(pending.content)
+            }
+        }
+    }
+
     private fun applyContent(content: TimelineContent) {
+        pendingFallbackSwitch = null
         if (!SystemUiEnhancementGate.isLyricRuntimeEnabled()) {
             recordContentDecision(content, "FEATURE_DISABLED")
             return
@@ -695,6 +741,10 @@ class LocalTimelineDriver(
         val song = content.song
         if (song?.lyrics.isNullOrEmpty()) {
             applyTitleFallback(track, content.fallbackTitle)
+            // 必须在回退处理之后上报：回退会清空桥状态并重置汇总判定。
+            if (song?.metadata?.getBoolean(LyricMetadataKeys.LYRICS_UNAVAILABLE) == true) {
+                LyricsAvailability.onFirstPartyReported()
+            }
             return
         }
         if (!content.streaming) clearStreamingContent()
@@ -773,6 +823,7 @@ class LocalTimelineDriver(
     }
 
     private fun clearTimeline(showTrackFallback: Boolean) {
+        pendingFallbackSwitch = null
         displayedContent = null
         stopPositionLoop()
         appliedTrackKey = null
@@ -812,6 +863,7 @@ class LocalTimelineDriver(
     }
 
     private fun prepareTrackTransition(track: TrackIdentity) {
+        pendingFallbackSwitch = null
         displayedContent = null
         stopPositionLoop()
         // A same-player track change must keep its position clock even while
@@ -884,6 +936,7 @@ class LocalTimelineDriver(
                     if (!isActive || renderedPlaying != true) break
                 }
                 val position = timelinePosition()
+                commitPendingFallbackSwitch(position)
                 val lineBeforeChange = LyriconDataBridge.currentLyricLine
                 position?.let(renderSink::onPositionChanged)
                 if (position != null && LyriconDataBridge.currentLyricLine !== lineBeforeChange) {

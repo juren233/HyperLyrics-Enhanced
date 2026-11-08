@@ -243,7 +243,8 @@ object OfficialProviderRepository {
         // 目标进程状态需要 root 读回：界面流程（includeTargetState=true）读回并
         // 刷新本地缓存；后台自动更新只读缓存，避免未授予 root 时反复弹授权。
         val targetState = if (includeTargetState) {
-            OfficialProviderHealthStore.readFresh()
+            // 界面刷新必须真实读回：目标 App 刚被「立即生效」重启时，30 秒内的缓存还是重启前的已加载版本。
+            OfficialProviderHealthStore.readFresh(force = true)
         } else {
             OfficialProviderHealthStore.persisted()
         }
@@ -315,12 +316,23 @@ object OfficialProviderRepository {
                     coreVersionCode = BuildConfig.VERSION_CODE,
                     badVersionCodes = badVersionCodes,
                 )
-            val applyBadge = ProviderApplyState.badge(
-                installedVersionCode = installedVersionCode,
+            // 「立即生效」已强行停止目标 App：没有进程还在跑旧版本，下次启动必然加载已安装版本，
+            // 目标进程尚未重新启动时 .loaded 仍是旧值，不能据此再提示「重启后生效」。
+            val appliedVersionCode = PrefsBridge.getInt(
+                OfficialProviderCatalog.appliedVersionKey(definition.id),
+                0,
+            )
+            val loadedVersionCode = ProviderApplyState.loadedAfterApply(
                 loadedVersionCode = targetState.loadedVersionByPlugin[definition.id] ?: 0,
+                installedVersionCode = installedVersionCode,
+                appliedVersionCode = appliedVersionCode,
                 badVersionCodes = badVersionCodes,
             )
-            val loadedVersionCode = targetState.loadedVersionByPlugin[definition.id] ?: 0
+            val applyBadge = ProviderApplyState.badge(
+                installedVersionCode = installedVersionCode,
+                loadedVersionCode = loadedVersionCode,
+                badVersionCodes = badVersionCodes,
+            )
             OfficialProviderItem(
                 catalog = entry,
                 installedVersionCode = effectiveVersionCode,

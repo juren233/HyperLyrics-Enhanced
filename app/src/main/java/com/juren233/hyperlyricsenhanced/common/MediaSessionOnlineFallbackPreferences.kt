@@ -12,11 +12,14 @@ internal object MediaSessionOnlineFallbackPreferences {
     data class Settings(
         val sources: List<Source> = emptyList(),
         val packages: Set<String> = emptySet(),
+        /** 「自动」来源：取词时 ttml 与搜索源同时开始；关闭时按用户编排的顺序依次查。 */
+        val autoSelect: Boolean = false,
     )
 
     fun read(prefs: SharedPreferences): Settings = Settings(
         sources = OnlineTranslationSourcePreferences.orderedSources(prefs),
         packages = StringSetPreferences.read(prefs, PACKAGES, emptySet()).orEmpty(),
+        autoSelect = OnlineTranslationSourcePreferences.isAutoSelectBestSourceEnabled(prefs),
     )
 
     fun isPreference(key: String?): Boolean = key == PACKAGES

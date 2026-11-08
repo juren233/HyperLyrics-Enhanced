@@ -135,6 +135,7 @@ class LyriconSource : LyricSource {
     internal val onlineMatchedTranslationActive get() = publication.onlineMatchedTranslationActive
     internal val confirmedLyricsSourceSelection get() = publication.confirmedLyricsSourceSelection
     internal val onlineTranslationRequest = OnlineTranslationRequest<PendingOnlineTranslationCommit>()
+    internal val fallbackIslandSwitch = AppleFallbackIslandSwitch()
     internal val onlineTranslationPreparation = OnlineTranslationPreparationQueue()
     internal val onlineTranslationGeneration get() = onlineTranslationRequest.snapshot().generation
     internal val onlineTranslationAttemptKey get() = onlineTranslationRequest.snapshot().attempt
