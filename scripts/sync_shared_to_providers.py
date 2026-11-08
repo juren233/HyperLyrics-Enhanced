@@ -37,6 +37,11 @@ API_TARGET = "src/main/kotlin/com/juren233/hyperlyricsenhanced/provider/Official
 SHARED_FILES = {
     "app/src/main/java/com/juren233/hyperlyricsenhanced/contract/AppleMusicPreferenceKeys.kt":
         "src/main/kotlin/com/juren233/hyperlyricsenhanced/contract/AppleMusicPreferenceKeys.kt",
+    # Cover colour extraction shared with the core's island/media-card cover colours.
+    "app/src/main/java/com/juren233/hyperlyricsenhanced/common/color/ColorExtractor.kt":
+        "src/main/kotlin/com/juren233/hyperlyricsenhanced/common/color/ColorExtractor.kt",
+    "app/src/main/java/com/juren233/hyperlyricsenhanced/contract/AppleLyricsSharePoster.kt":
+        "src/main/kotlin/com/juren233/hyperlyricsenhanced/contract/AppleLyricsSharePoster.kt",
     "app/src/main/java/com/juren233/hyperlyricsenhanced/contract/AppleDirectBridgeContract.kt":
         "src/main/kotlin/com/juren233/hyperlyricsenhanced/contract/AppleDirectBridgeContract.kt",
     "app/src/main/java/com/juren233/hyperlyricsenhanced/contract/AppleSourceSwitchPerformanceDiagnostics.kt":

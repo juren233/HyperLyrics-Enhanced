@@ -33,6 +33,12 @@ object AppleMusicPreferenceKeys {
         "key_hook_apple_music_force_cellular_data_entry"
     const val KEY_HOOK_APPLE_MUSIC_LYRICS_IMAGE_EXPORT =
         "key_hook_apple_music_lyrics_image_export"
+    const val KEY_HOOK_APPLE_MUSIC_LYRICS_IMAGE_BACKGROUND =
+        "key_hook_apple_music_lyrics_image_background"
+    const val KEY_HOOK_APPLE_MUSIC_LYRICS_IMAGE_BACKGROUND_COLOR =
+        "key_hook_apple_music_lyrics_image_background_color"
+    const val KEY_HOOK_APPLE_MUSIC_LYRICS_IMAGE_QR_CODE =
+        "key_hook_apple_music_lyrics_image_qr_code"
     const val KEY_HOOK_APPLE_MUSIC_VOLUME_BALANCE =
         "key_hook_apple_music_volume_balance"
     const val KEY_HOOK_APPLE_MUSIC_PREVENT_NETWORK_AUTO_SKIP =
@@ -78,6 +84,22 @@ object AppleMusicPreferenceKeys {
     const val DEFAULT_HOOK_APPLE_MUSIC_NOTIFICATION_OPEN_FULL_PLAYER = false
     const val DEFAULT_HOOK_APPLE_MUSIC_FORCE_CELLULAR_DATA_ENTRY = false
     const val DEFAULT_HOOK_APPLE_MUSIC_LYRICS_IMAGE_EXPORT = true
+    /** Apple's own story background (blurred artwork) behind the card. */
+    const val APPLE_MUSIC_LYRICS_IMAGE_BACKGROUND_COVER_BLUR = 0
+    /** Flat colour: the card's average colour darkened. */
+    const val APPLE_MUSIC_LYRICS_IMAGE_BACKGROUND_COVER_COLOR = 1
+    const val APPLE_MUSIC_LYRICS_IMAGE_BACKGROUND_CUSTOM_COLOR = 2
+    /** Image prepared by the core and published as [APPLE_MUSIC_LYRICS_IMAGE_BACKGROUND_FILE]. */
+    const val APPLE_MUSIC_LYRICS_IMAGE_BACKGROUND_CUSTOM_IMAGE = 3
+    const val DEFAULT_HOOK_APPLE_MUSIC_LYRICS_IMAGE_BACKGROUND =
+        APPLE_MUSIC_LYRICS_IMAGE_BACKGROUND_COVER_BLUR
+    const val DEFAULT_HOOK_APPLE_MUSIC_LYRICS_IMAGE_BACKGROUND_COLOR = 0xFF2C2C2E.toInt()
+    const val DEFAULT_HOOK_APPLE_MUSIC_LYRICS_IMAGE_QR_CODE = true
+    /**
+     * Xposed Remote File holding the finished custom background (blur and brightness already
+     * applied by the core); the Provider only crops it to the poster.
+     */
+    const val APPLE_MUSIC_LYRICS_IMAGE_BACKGROUND_FILE = "hle-asset-applemusic-lyrics-image-background.jpg"
     const val DEFAULT_HOOK_APPLE_MUSIC_VOLUME_BALANCE = false
     const val DEFAULT_HOOK_APPLE_MUSIC_PREVENT_NETWORK_AUTO_SKIP = false
     const val DEFAULT_HOOK_APPLE_MUSIC_SIMPLIFY_TRADITIONAL_CONTENT = false
