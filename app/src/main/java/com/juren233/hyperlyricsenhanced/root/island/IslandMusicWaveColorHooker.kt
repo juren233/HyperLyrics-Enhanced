@@ -202,15 +202,21 @@ internal object IslandMusicWaveColorHooker {
         }
     }
 
-    fun refresh() {
+    fun refresh(fromWatchdog: Boolean = false) {
         runOnMain {
-            armModeWatchdog()
+            // 看门狗自身触发的对账不续期窗口：否则窗口内任何取值恒真的对账条件都会
+            // 经由 refresh 布防无限续期，把窗口化看门狗退化成常驻 1Hz 空转。
+            if (!fromWatchdog) armModeWatchdog()
             val sharedPrefs = prefs
             if (sharedPrefs == null || !isEnabled(sharedPrefs)) {
                 trace { "refresh: 功能未启用，恢复原生色" }
                 restoreNativeColors()
                 return@runOnMain
             }
+            // 执行即对账：对账动作已按当前偏好执行，无论取色成败都记录本次模式。
+            // 没歌时取色链必然失败且无从成功，若只在成功时记账，看门狗会每秒发现
+            // 「设置 ≠ 已应用」并反复补活，原 15s 窗口被 refresh 无限续期。
+            lastAppliedMode = IslandRuntimePreferenceReader.getMusicWaveColorMode(sharedPrefs)
             if (refreshColorsFromMediaSession("preference_refresh", allowDeferredRetry = false)) {
                 return@runOnMain
             }
@@ -268,7 +274,9 @@ internal object IslandMusicWaveColorHooker {
      * 模式对账看门狗（窗口化）：同一首歌内颜色只来自封面，封面不变颜色就不该变，
      * 常驻 1Hz 对账是纯空转。仅在事件（初始化/切歌/设置修改/取色应用）后布防一个
      * [IslandWaveColorWatchdogPolicy.WINDOW_MS] 窗口；功能关闭且原生色已还原时不再
-     * 布防。窗口内发现「设置的模式 ≠ 已应用的模式」立即补一次重取/还原。
+     * 布防。窗口内发现「设置的模式 ≠ 已应用的模式」立即补一次重取/还原；对账按
+     * 「执行即对账」记账（见 [refresh]），取色失败（如未播放）不触发反复补活，
+     * 看门狗自身触发的补活也不续期窗口。
      */
     private val modeWatchdog = object : Runnable {
         override fun run() {
@@ -279,11 +287,11 @@ internal object IslandMusicWaveColorHooker {
                     val mode = IslandRuntimePreferenceReader.getMusicWaveColorMode(sharedPrefs)
                     if (mode != lastAppliedMode) {
                         HookLogger.i(TAG, "模式对账触发重取色: applied=$lastAppliedMode, current=$mode")
-                        refresh()
+                        refresh(fromWatchdog = true)
                     }
                 } else if (sharedPrefs != null && overrideApplied) {
                     HookLogger.i(TAG, "模式对账触发恢复原生色")
-                    refresh()
+                    refresh(fromWatchdog = true)
                 }
             }.onFailure { e ->
                 HookLogger.e(TAG, "模式对账看门狗异常", e)
