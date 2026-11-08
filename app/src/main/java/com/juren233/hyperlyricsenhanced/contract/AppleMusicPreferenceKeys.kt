@@ -83,7 +83,7 @@ object AppleMusicPreferenceKeys {
     const val DEFAULT_HOOK_APPLE_MUSIC_RESTORE_CJK_ORIGINAL_METADATA = false
     const val DEFAULT_HOOK_APPLE_MUSIC_NOTIFICATION_OPEN_FULL_PLAYER = false
     const val DEFAULT_HOOK_APPLE_MUSIC_FORCE_CELLULAR_DATA_ENTRY = false
-    const val DEFAULT_HOOK_APPLE_MUSIC_LYRICS_IMAGE_EXPORT = true
+    const val DEFAULT_HOOK_APPLE_MUSIC_LYRICS_IMAGE_EXPORT = false
     /** Apple's own story background (blurred artwork) behind the card. */
     const val APPLE_MUSIC_LYRICS_IMAGE_BACKGROUND_COVER_BLUR = 0
     /** Flat colour: the card's average colour darkened. */
