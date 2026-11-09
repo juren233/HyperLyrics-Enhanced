@@ -11,12 +11,19 @@ import kotlinx.coroutines.async
 import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.common.lyric.AppleMissingLyricsSourceInfo
 import com.juren233.hyperlyricsenhanced.lyric.model.Song
+import com.juren233.hyperlyricsenhanced.online.LyricApiProvider
 import com.juren233.hyperlyricsenhanced.online.OnlineLyricTargeter
+import com.juren233.hyperlyricsenhanced.online.cleanString
+import com.juren233.hyperlyricsenhanced.online.hasCommonArtist
+import com.juren233.hyperlyricsenhanced.online.isStrongTitleMatch
+import com.juren233.hyperlyricsenhanced.online.splitArtists
 import com.juren233.hyperlyricsenhanced.online.model.Source
 import com.juren233.hyperlyricsenhanced.online.source.ttml.CatalogPlatform
 import com.juren233.hyperlyricsenhanced.online.source.ttml.TtmlCatalogSources
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import com.juren233.hyperlyricsenhanced.timeline.model.TrackIdentity
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * 媒体会话补充歌词的取词顺序。TTML 目录源按平台歌曲 ID 直取，排在搜索类来源之前的先查，
@@ -40,6 +47,24 @@ internal data class MediaSessionLyricsPlan(
 }
 
 internal class MediaSessionLyricsFetcher(private val context: Context) {
+    private val qqCatalogSongId = QqMusicCatalogSongId(
+        details = { ids -> withContext(Dispatchers.IO) { LyricApiProvider.qmSongCatalog.details(ids) } },
+        match = { title, artist, durationMs ->
+            withContext(Dispatchers.IO) {
+                LyricApiProvider.qmSongCatalog.matchByMetadata(title, artist, durationMs)
+            }
+        },
+        sameSong = { track, detail ->
+            with(OnlineLyricTargeter) {
+                isStrongTitleMatch(cleanString(context, track.title), cleanString(context, detail.name)) &&
+                    hasCommonArtist(
+                        splitArtists(track.artist).map { cleanString(context, it) },
+                        detail.singers.map { cleanString(context, it) },
+                    )
+            }
+        },
+    )
+
     suspend fun fetch(track: TrackIdentity, sources: List<Source>): Song? {
         val plan = MediaSessionLyricsPlan.of(sources)
         debug("开始取词: pkg=${track.packageName}, mediaId=${track.mediaId}, plan=$plan")
@@ -88,7 +113,17 @@ internal class MediaSessionLyricsFetcher(private val context: Context) {
     private suspend fun catalogSong(track: TrackIdentity, sources: List<Source>): Song? {
         if (sources.isEmpty()) return null
         val platform = CatalogPlatform.ofPlayerPackage(track.packageName) ?: return null
-        val songId = CatalogPlatform.songIdOf(platform, track.mediaId) ?: return null
+        val sessionId = CatalogPlatform.songIdOf(platform, track.mediaId) ?: return null
+        // QQ 音乐本地歌的会话 ID 是本地库编号（issue #62），核对后才能当平台 ID 用。
+        val songId = if (platform == CatalogPlatform.QQ_MUSIC) {
+            qqCatalogSongId.resolve(sessionId, track) ?: run {
+                debug("目录源跳过: QQ 会话 ID 未能核对, id=$sessionId, title=${track.title}")
+                return null
+            }
+        } else {
+            sessionId
+        }
+        if (songId != sessionId) debug("目录源改用核对后的 QQ 歌曲 ID: $sessionId -> $songId")
         for (source in sources) {
             val catalog = TtmlCatalogSources.of(source)?.takeIf { it.supports(platform) } ?: continue
             val match = catalog.findWordTimed(context, platform, songId).match

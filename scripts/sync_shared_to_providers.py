@@ -86,6 +86,16 @@ POLICY_FILES = (
     "RomanizationPolicy.kt",
 )
 
+# Shared sources compiled into individual (non-Apple Music) Packs. At runtime the Pack resolves these
+# classes through the core class loader first (the core keeps them in proguard-rules.pro); the Pack's
+# own copy is only used on cores that predate the class.
+PLUGIN_SHARED_FILES = {
+    "qqmusic": {
+        "app/src/main/java/com/juren233/hyperlyricsenhanced/common/lyric/SongMetadataQueryPolicy.kt":
+            "src/main/kotlin/com/juren233/hyperlyricsenhanced/common/lyric/SongMetadataQueryPolicy.kt",
+    },
+}
+
 
 def providers_root(explicit: str | None) -> pathlib.Path:
     if explicit:
@@ -145,6 +155,8 @@ def sync_tree(
 def source_entries() -> list[str]:
     """核心仓库中参与同步的路径；以 / 结尾的是整个目录，其余是单个文件。"""
     entries = [SHARED_API, *SHARED_FILES]
+    for files in PLUGIN_SHARED_FILES.values():
+        entries.extend(source for source in files if source not in entries)
     for source_relative in SHARED_TREES:
         if source_relative.endswith("/common/lyric"):
             entries.extend(f"{source_relative}/{name}" for name in POLICY_FILES)
@@ -158,6 +170,8 @@ def target_entries() -> list[str]:
     entries = [f"providers/{plugin_id}/{API_TARGET}" for plugin_id in PLUGIN_IDS]
     entries.extend(f"providers/applemusic/{target}" for target in SHARED_FILES.values())
     entries.extend(f"providers/applemusic/{target}/" for target in SHARED_TREES.values())
+    for plugin_id, files in PLUGIN_SHARED_FILES.items():
+        entries.extend(f"providers/{plugin_id}/{target}" for target in files.values())
     return entries
 
 
@@ -205,6 +219,16 @@ def main() -> int:
             args.check,
             problems,
         )
+
+    for plugin_id, files in PLUGIN_SHARED_FILES.items():
+        module = providers / "providers" / plugin_id
+        for source_relative, target_relative in files.items():
+            copy_file(
+                CORE_ROOT / source_relative,
+                module / target_relative,
+                args.check,
+                problems,
+            )
 
     apple_music = providers / "providers" / "applemusic"
     for source_relative, target_relative in SHARED_FILES.items():

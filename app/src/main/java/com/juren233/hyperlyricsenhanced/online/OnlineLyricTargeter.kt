@@ -514,6 +514,7 @@ object OnlineLyricTargeter {
             context = context,
             source = source,
             keyword = sourceKeyword,
+            leadingResults = { metadataCandidates(source, title, artist, durationMs) },
             durationMs = durationMs,
             requireTranslation = requireTranslation,
             metadataLabel = metadataLabel,
@@ -584,10 +585,34 @@ object OnlineLyricTargeter {
         return SourceEvaluation(attempt = attempt, statuses = statuses)
     }
 
+    /**
+     * 来源按拆开的歌名/歌手直接匹配到的候选（目前只有 QQ 源支持，见 [SearchSource.searchByMetadata]）。
+     * 失败或超时只记日志，不影响关键词搜索。
+     */
+    private suspend fun metadataCandidates(
+        source: SearchSource,
+        title: String,
+        artist: String,
+        durationMs: Long,
+    ): List<SongSearchResult> = withTimeoutOrNull(TIMEOUT_MS) {
+        try {
+            source.searchByMetadata(title, artist, durationMs, "/")
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            LogManager.w(
+                "OnlineTargeter",
+                "按歌名匹配异常: 源=${source.javaClass.simpleName}, ${e.message}",
+            )
+            emptyList()
+        }
+    }.orEmpty()
+
     private suspend fun scoreSource(
         context: Context,
         source: SearchSource,
         keyword: String,
+        leadingResults: suspend () -> List<SongSearchResult> = { emptyList() },
         durationMs: Long,
         requireTranslation: Boolean,
         metadataLabel: String,
@@ -597,20 +622,30 @@ object OnlineLyricTargeter {
         cleanLocalAlbum: String,
         requireExactVersion: Boolean,
     ): SourceAttempt {
-        val results = withTimeoutOrNull(TIMEOUT_MS) {
-            try {
-                source.search(keyword, 1, "/", 20, durationMs)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                LogManager.w(
-                    "OnlineTargeter",
-                    "搜索异常: 源=${source.javaClass.simpleName}, ${e.message}",
-                )
-                null
+        // 直接匹配与关键词搜索并行；直接匹配到的候选排在前面（同分时优先），
+        // 与关键词结果按条目去重后走同一套打分。
+        val (leading, searched) = coroutineScope {
+            val leadingJob = async { leadingResults() }
+            val searchJob = async {
+                withTimeoutOrNull(TIMEOUT_MS) {
+                    try {
+                        source.search(keyword, 1, "/", 20, durationMs)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        LogManager.w(
+                            "OnlineTargeter",
+                            "搜索异常: 源=${source.javaClass.simpleName}, ${e.message}",
+                        )
+                        null
+                    }
+                }
             }
+            leadingJob.await() to searchJob.await()
         }
-        if (results.isNullOrEmpty()) {
+        val results = (leading + searched.orEmpty())
+            .distinctBy { it.source to it.id }
+        if (results.isEmpty()) {
             LogManager.d(
                 "OnlineTargeter",
                 "搜索结果为空: 源=${source.javaClass.simpleName}, 关键词=\"$keyword\"",

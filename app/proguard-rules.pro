@@ -102,6 +102,8 @@
 -keep class com.juren233.hyperlyricsenhanced.lyric.model.** { *; }
 -keep class com.juren233.hyperlyricsenhanced.common.lyric.AppleOriginalMetadataPolicy { *; }
 -keep class com.juren233.hyperlyricsenhanced.common.lyric.RomanizationPolicy { *; }
+# QQ 音乐插件（Pack）与核心共用的按歌名查曲库文本规则，插件字节码经核心类加载器解析。
+-keep class com.juren233.hyperlyricsenhanced.common.lyric.SongMetadataQueryPolicy { *; }
 -keep class com.juren233.hyperlyricsenhanced.common.lyric.AppleSystemFontWeightPolicy { *; }
 -keep class com.juren233.hyperlyricsenhanced.common.lyric.AppleSystemFontWeightPolicy$* { *; }
 -keep class com.juren233.hyperlyricsenhanced.common.lyric.ApplePronunciationVisibilityPolicy { *; }

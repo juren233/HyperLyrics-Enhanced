@@ -4,6 +4,7 @@
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 import retrofit2.Call
 import retrofit2.http.Body
 import retrofit2.http.POST
@@ -76,4 +77,8 @@ interface QmApi {
 
     @POST("cgi-bin/musicu.fcg")
     fun getLyrics(@Body body: QmRequestBody): Call<QmBaseWrapper<QmLyricsData>>
+
+    /** 多模块合并请求（模块键由调用方决定），用于 [QmSongCatalog]。 */
+    @POST("cgi-bin/musicu.fcg")
+    fun request(@Body body: JsonObject): Call<JsonObject>
 }

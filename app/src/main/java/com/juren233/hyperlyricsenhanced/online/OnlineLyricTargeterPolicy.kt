@@ -9,6 +9,7 @@ package com.juren233.hyperlyricsenhanced.online
 import android.content.Context
 import com.juren233.hyperlyricsenhanced.common.lyric.AppleMissingLyricsSourceStatus
 import com.juren233.hyperlyricsenhanced.common.lyric.RomanizationPolicy
+import com.juren233.hyperlyricsenhanced.common.lyric.SongMetadataQueryPolicy
 import com.juren233.hyperlyricsenhanced.common.lyric.OnlineTranslationContentPolicy
 import com.juren233.hyperlyricsenhanced.lyric.LrcLine
 import com.juren233.hyperlyricsenhanced.online.model.LyricsLine
@@ -467,7 +468,7 @@ internal fun OnlineLyricTargeter.durationScore(localDurationMs: Long, remoteDura
 internal fun OnlineLyricTargeter.compactWhitespace(value: String): String = value.replace(Regex("\\s+"), "")
 
 internal fun OnlineLyricTargeter.splitArtists(value: String): List<String> =
-    value.split("&", ",", "，", "、", "/", "／")
+    SongMetadataQueryPolicy.splitArtists(value)
 
 internal data class SearchMetadata(
     val title: String,
@@ -499,36 +500,7 @@ internal fun OnlineLyricTargeter.artistSearchVariants(artist: String): List<Stri
     return variants.distinct()
 }
 
-/**
- * 剥掉半角/全角圆、方、花括号及其包裹内容。不使用正则：剥括号正则
- * `\\(.*?\\)|（.*?）|\\[.*?]|\\{.*?}` 在 Android 的 ICU regex 上编译失败
- * （PatternSyntaxException，真机 210126 实证）而 JVM 单测通过，属于两个
- * regex 实现的方言差异；`\\s+` 等已真机验证过的简单模式不受影响。
- */
-internal fun stripBracketedAnnotations(value: String): String {
-    val closeToOpen = mapOf(
-        ')' to '(',
-        ']' to '[',
-        '}' to '{',
-        '）' to '（',
-        '］' to '［',
-        '｝' to '｛',
-    )
-    val openers = closeToOpen.values.toSet()
-    val builder = StringBuilder(value.length)
-    val openStack = ArrayDeque<Char>()
-    for (ch in value) {
-        when {
-            ch in openers -> {
-                // 括号段以空格占位，避免「MILGRAM（注记）コトコ」粘连成单 token
-                if (builder.isEmpty() || builder.last() != ' ') builder.append(' ')
-                openStack.addLast(ch)
-            }
-            !openStack.isEmpty() && closeToOpen[ch] == openStack.last() -> openStack.removeLast()
-            openStack.isEmpty() -> builder.append(ch)
-            // 括号内的其余字符（含嵌套开括号后的正文）一律丢弃
-        }
-    }
-    return builder.toString().replace(Regex("\\s+"), " ").trim()
-}
+/** 剥掉括号注记，规则见 [SongMetadataQueryPolicy.stripBracketedAnnotations]。 */
+internal fun stripBracketedAnnotations(value: String): String =
+    SongMetadataQueryPolicy.stripBracketedAnnotations(value)
 

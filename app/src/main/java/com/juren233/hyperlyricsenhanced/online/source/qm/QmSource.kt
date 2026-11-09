@@ -2,6 +2,7 @@ package com.juren233.hyperlyricsenhanced.online.source.qm
 
 
 import android.util.Base64
+import com.juren233.hyperlyricsenhanced.common.lyric.SongMetadataQueryPolicy
 import com.juren233.hyperlyricsenhanced.online.model.LyricsResult
 import com.juren233.hyperlyricsenhanced.online.model.LyricsData
 import com.juren233.hyperlyricsenhanced.online.model.SearchSource
@@ -21,14 +22,46 @@ class QmSource(
 ) : SearchSource {
     override val sourceType: Source = Source.QM
 
-    private val comm = mapOf(
-        "ct" to "11",
-        "cv" to "1003006",
-        "v" to "1003006",
-        "os_ver" to "15",
-        "phonetype" to "24122RKC7C",
-        "tmeAppID" to "qqmusiclight",
-        "nettype" to "NETWORK_WIFI"
+    private val comm = QmClientIdentity.comm
+    private val catalog = QmSongCatalog(api)
+
+    /**
+     * 搜索服务被限流（2001）时仍能取到候选：用按歌名匹配接口直接找在线条目，按
+     * [SongMetadataQueryPolicy.metadataQueries] 的组合（原歌名/去括号歌名 × 整串歌手/单个歌手）逐个尝试，
+     * 取第一组有结果的。返回的只是候选，接纳与否仍由 OnlineLyricTargeter 的打分和严格版本匹配
+     * 决定。
+     */
+    override suspend fun searchByMetadata(
+        title: String,
+        artist: String,
+        durationMs: Long,
+        separator: String,
+    ): List<SongSearchResult> = withContext(Dispatchers.IO) {
+        if (artist.isBlank()) return@withContext emptyList()
+        for ((candidateTitle, candidateArtist) in SongMetadataQueryPolicy.metadataQueries(title, artist)) {
+            val match = catalog.matchByMetadata(candidateTitle, candidateArtist, durationMs) ?: continue
+            val ids = match.orderedIds
+            val details = catalog.details(ids)
+            val results = ids.mapNotNull { id -> details[id]?.toSearchResult(separator) }
+            if (results.isNotEmpty()) return@withContext results
+        }
+        emptyList()
+    }
+
+    private fun QmTrackDetail.toSearchResult(separator: String) = SongSearchResult(
+        id = id.toString(),
+        title = name,
+        artist = singers.joinToString(separator),
+        album = album,
+        duration = durationMs,
+        source = Source.QM,
+        date = timePublic,
+        trackerNumber = albumIndex.toString(),
+        picUrl = if (album.isNotEmpty() && albumMid.isNotEmpty()) {
+            "https://y.gtimg.cn/music/photo_new/T002R800x800M000$albumMid.jpg"
+        } else {
+            ""
+        },
     )
 
     override suspend fun search(

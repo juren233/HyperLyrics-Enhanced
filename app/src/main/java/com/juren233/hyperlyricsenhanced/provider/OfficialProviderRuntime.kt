@@ -91,7 +91,9 @@ object OfficialProviderRuntime {
 
             // 模块升级后内置基线包可能比之前下载的远程包更新，此时优先加载基线包；
             // 只读基线包清单比较版本，不读取 DEX。
-            if (isAppleMusic && installedVersion > 0 &&
+            // Debug 核心对所有插件开放：本地调试插件放进 app/src/debug/assets/providers/<id>.hlp
+            // 随调试包安装（Release 只有 Apple Music 有基线包）。
+            if ((isAppleMusic || BuildConfig.DEBUG) && installedVersion > 0 &&
                 (ProviderBaselinePack.manifest(module, definition.id)?.versionCode ?: 0) >
                 installedVersion
             ) {
