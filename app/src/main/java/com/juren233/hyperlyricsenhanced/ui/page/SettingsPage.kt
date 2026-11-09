@@ -1,8 +1,7 @@
 package com.juren233.hyperlyricsenhanced.ui.page
 
 import android.content.Context
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
+import android.content.SharedPreferences
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -17,12 +16,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
@@ -32,17 +31,18 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.edit
-import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.R
 import com.juren233.hyperlyricsenhanced.common.FeatureEntryApplier
 import com.juren233.hyperlyricsenhanced.common.FeatureEntryConfig
-import com.juren233.hyperlyricsenhanced.common.LogLevelPolicy
+import com.juren233.hyperlyricsenhanced.common.LogLevelPreference
 import com.juren233.hyperlyricsenhanced.common.PrefsBridge
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.common.TopBarProgressiveBlurPreference
 import com.juren233.hyperlyricsenhanced.common.UIConstants
 import com.juren233.hyperlyricsenhanced.root.settings.SettingsEntryProfile
+import com.juren233.hyperlyricsenhanced.ui.component.LogExportGuideDialog
 import com.juren233.hyperlyricsenhanced.ui.component.LyricHookPermissionSheet
+import com.juren233.hyperlyricsenhanced.ui.component.rememberLogExportGuideState
 import com.juren233.hyperlyricsenhanced.ui.component.LyricHookSwitchController
 import com.juren233.hyperlyricsenhanced.ui.component.rememberLyricHookSwitchController
 import com.juren233.hyperlyricsenhanced.ui.navigation.LocalNavigator
@@ -54,13 +54,8 @@ import com.juren233.hyperlyricsenhanced.ui.utils.LocaleUtils
 import com.juren233.hyperlyricsenhanced.ui.utils.pageScrollModifiers
 import com.juren233.hyperlyricsenhanced.ui.utils.rememberBlurBackdrop
 import com.juren233.hyperlyricsenhanced.ui.utils.rememberIsWideScreen
-import com.juren233.hyperlyricsenhanced.utils.LOG_EXPORT_LEVEL_DEBUG
-import com.juren233.hyperlyricsenhanced.utils.LogExportEnvironmentCollector
-import com.juren233.hyperlyricsenhanced.utils.LogManager
-import com.juren233.hyperlyricsenhanced.utils.formatPluginVersion
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import com.juren233.hyperlyricsenhanced.utils.LogExportSource
+import com.juren233.hyperlyricsenhanced.utils.rememberExportAllLogs
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
@@ -77,9 +72,6 @@ import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.WindowDropdownPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
-import java.io.IOException
-import java.time.LocalDateTime
-import java.time.format.DateTimeFormatter
 
 private fun setExcludeFromRecents(context: Context, exclude: Boolean) {
     try {
@@ -92,7 +84,6 @@ private fun setExcludeFromRecents(context: Context, exclude: Boolean) {
 fun SettingsPage(scrollToFeatureSwitches: Boolean = false) {
     val navigator = LocalNavigator.current
     val context = LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
 
     val backdrop = rememberBlurBackdrop()
     val blurActive = backdrop != null
@@ -100,132 +91,8 @@ fun SettingsPage(scrollToFeatureSwitches: Boolean = false) {
     val topAppBarScrollBehavior = MiuixScrollBehavior()
     val snackbarHostState = remember { SnackbarHostState() }
     val backupRestoreHelper = com.juren233.hyperlyricsenhanced.utils.rememberBackupRestoreHelper(snackbarHostState)
-    val exportHeader = stringResource(R.string.export_header)
-    val exportEnvironmentTitle = stringResource(R.string.export_environment_title)
-    val exportModuleVersionFormat = stringResource(R.string.format_export_module_version)
-    val exportEnabledPluginsTitle = stringResource(R.string.export_enabled_plugins_title)
-    val exportEnabledPluginFormat = stringResource(R.string.format_export_enabled_plugin)
-    val exportNone = stringResource(R.string.export_none)
-    val exportDeviceModelFormat = stringResource(R.string.format_export_device_model)
-    val exportSystemVersionFormat = stringResource(R.string.format_export_system_version)
-    val exportAndroidVersionFormat = stringResource(R.string.format_export_android_version)
-    val exportCurrentMusicAppFormat = stringResource(R.string.format_export_current_music_app)
-    val exportMusicAppVersionFormat = stringResource(R.string.format_export_music_app_version)
-    val exportMusicAppInstallSourceFormat = stringResource(R.string.format_export_music_app_install_source)
-    val exportNotDetected = stringResource(R.string.export_not_detected)
-    val exportUnknown = stringResource(R.string.export_unknown)
-    val exportTimeFormat = stringResource(R.string.format_export_time)
-    val appLogsTitle = stringResource(R.string.title_app_logs)
-    val moduleLogsTitle = stringResource(R.string.title_module_logs)
-    val noLogsFoundMsg = stringResource(R.string.no_logs_found)
-    val exportSuccessMsg = stringResource(R.string.export_success)
-    val exportFailedMsg = stringResource(R.string.format_export_failed)
-    val exportAllLogsLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.CreateDocument("text/plain"),
-        onResult = { uri ->
-            if (uri == null) return@rememberLauncherForActivityResult
-            coroutineScope.launch(Dispatchers.IO) {
-                try {
-                    val output = context.contentResolver.openOutputStream(uri, "wt")
-                        ?: throw IOException("Unable to open the selected file")
-                    output.bufferedWriter(Charsets.UTF_8).use { writer ->
-                        writer.appendLine(exportHeader)
-                        writer.appendLine(
-                            String.format(
-                                exportTimeFormat,
-                                LocalDateTime.now().format(
-                                    DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
-                                )
-                            )
-                        )
-                        writer.appendLine()
-
-                        val environment = LogExportEnvironmentCollector.collect(context)
-                        val musicApp = environment.musicApp
-                        val musicAppIdentity = musicApp?.let { "${it.label} (${it.packageName})" }
-                            ?: exportNotDetected
-                        val musicAppVersion = musicApp?.let { app ->
-                            val versionName = app.versionName.ifBlank { exportUnknown }
-                            app.versionCode?.let { "$versionName ($it)" } ?: versionName
-                        } ?: exportNotDetected
-                        val installSource = when {
-                            musicApp == null -> exportNotDetected
-                            musicApp.installSourcePackageName == null -> exportUnknown
-                            else -> {
-                                val packageName = musicApp.installSourcePackageName
-                                val label = musicApp.installSourceLabel
-                                    ?.ifBlank { packageName }
-                                    ?: packageName
-                                "$label ($packageName)"
-                            }
-                        }
-
-                        writer.appendLine("========== $exportEnvironmentTitle ==========")
-                        writer.appendLine(
-                            String.format(
-                                exportModuleVersionFormat,
-                                formatPluginVersion(environment.moduleVersionName, environment.moduleVersionCode),
-                            )
-                        )
-                        if (environment.enabledPlugins.isEmpty()) {
-                            writer.appendLine("$exportEnabledPluginsTitle: $exportNone")
-                        } else {
-                            writer.appendLine("$exportEnabledPluginsTitle:")
-                            environment.enabledPlugins.forEach { plugin ->
-                                writer.appendLine(
-                                    String.format(
-                                        exportEnabledPluginFormat,
-                                        plugin.displayName,
-                                        plugin.id,
-                                        formatPluginVersion(plugin.versionName, plugin.versionCode),
-                                    )
-                                )
-                            }
-                        }
-                        writer.appendLine(String.format(exportDeviceModelFormat, environment.deviceModel))
-                        writer.appendLine(String.format(exportSystemVersionFormat, environment.systemVersion))
-                        writer.appendLine(String.format(exportAndroidVersionFormat, environment.androidVersion))
-                        writer.appendLine(String.format(exportCurrentMusicAppFormat, musicAppIdentity))
-                        writer.appendLine(String.format(exportMusicAppVersionFormat, musicAppVersion))
-                        writer.appendLine(String.format(exportMusicAppInstallSourceFormat, installSource))
-                        writer.appendLine()
-
-                        writer.appendLine("========== $appLogsTitle ==========")
-                        val appEntries = LogManager.exportLogs(
-                            context = context,
-                            isAppLog = true,
-                            selectedLevel = LOG_EXPORT_LEVEL_DEBUG,
-                            writer = writer,
-                        )
-                        if (appEntries == 0) writer.appendLine(noLogsFoundMsg)
-                        writer.appendLine()
-
-                        writer.appendLine("========== $moduleLogsTitle ==========")
-                        val moduleEntries = LogManager.exportLogs(
-                            context = context,
-                            isAppLog = false,
-                            selectedLevel = LOG_EXPORT_LEVEL_DEBUG,
-                            writer = writer,
-                        )
-                        if (moduleEntries == 0) writer.appendLine(noLogsFoundMsg)
-                    }
-                    withContext(Dispatchers.Main) {
-                        snackbarHostState.showSnackbar(
-                            message = exportSuccessMsg,
-                            duration = top.yukonga.miuix.kmp.basic.SnackbarDuration.Custom(2000L),
-                        )
-                    }
-                } catch (e: Exception) {
-                    withContext(Dispatchers.Main) {
-                        snackbarHostState.showSnackbar(
-                            message = String.format(exportFailedMsg, e.message),
-                            duration = top.yukonga.miuix.kmp.basic.SnackbarDuration.Custom(2000L),
-                        )
-                    }
-                }
-            }
-        }
-    )
+    val exportAllLogs = rememberExportAllLogs(snackbarHostState)
+    val logExportGuide = rememberLogExportGuideState()
 
     val prefs = remember(context) {
         context.getSharedPreferences(UIConstants.PREF_NAME, Context.MODE_PRIVATE)
@@ -327,12 +194,7 @@ fun SettingsPage(scrollToFeatureSwitches: Boolean = false) {
                 settingsSections(
                     backupRestoreHelper = backupRestoreHelper,
                     onExportAllLogs = {
-                        val dateTime = LocalDateTime.now().format(
-                            DateTimeFormatter.ofPattern("yyyyMMdd_HHmm")
-                        )
-                        exportAllLogsLauncher.launch(
-                            "hyperlyricsenhanced_all_logs_$dateTime.txt"
-                        )
+                        logExportGuide.request(context, LogExportSource.EXPORT_ALL, exportAllLogs)
                     },
                     lyricHookSwitches = lyricHookSwitches,
                     showMigratedHomeSections = !homePageVisible,
@@ -378,6 +240,7 @@ fun SettingsPage(scrollToFeatureSwitches: Boolean = false) {
     }
 
     LyricHookPermissionSheet(controller = lyricHookSwitches)
+    LogExportGuideDialog(state = logExportGuide)
 }
 
 private fun LazyListScope.settingsSections(
@@ -605,13 +468,14 @@ private fun LazyListScope.settingsSections(
         val navigator = LocalNavigator.current
         val context = LocalContext.current
         val prefs = remember { context.getSharedPreferences(UIConstants.PREF_NAME, Context.MODE_PRIVATE) }
-        var logLevel by remember {
-            mutableIntStateOf(
-                prefs.getInt(
-                    UIConstants.KEY_LOG_LEVEL,
-                    LogLevelPolicy.defaultLevel(BuildConfig.DEBUG),
-                )
-            )
+        var logLevel by remember { mutableIntStateOf(LogLevelPreference.read(prefs)) }
+        // 导出引导弹窗里的「设为调试日志」也会改这个值，随偏好变化刷新显示。
+        DisposableEffect(prefs) {
+            val listener = SharedPreferences.OnSharedPreferenceChangeListener { changed, key ->
+                if (key == UIConstants.KEY_LOG_LEVEL) logLevel = LogLevelPreference.read(changed)
+            }
+            prefs.registerOnSharedPreferenceChangeListener(listener)
+            onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
         }
         val logLevelOptions = listOf(stringResource(R.string.log_level_normal), stringResource(R.string.log_level_verbose))
         Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
@@ -620,11 +484,10 @@ private fun LazyListScope.settingsSections(
                     title = stringResource(R.string.title_log_level), 
                     items = logLevelOptions, 
                     selectedIndex = logLevel, 
-                    onSelectedIndexChange = { 
-                        logLevel = it; 
-                        prefs.edit { putInt(UIConstants.KEY_LOG_LEVEL, it) }; 
-                        PrefsBridge.putInt(UIConstants.KEY_LOG_LEVEL, it) 
-                        }
+                    onSelectedIndexChange = {
+                        logLevel = it
+                        LogLevelPreference.write(it)
+                    }
                 )
                 ArrowPreference(
                     title = stringResource(R.string.title_view_logs), 

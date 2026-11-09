@@ -6,6 +6,7 @@ import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.R
 import com.juren233.hyperlyricsenhanced.common.HyperLogger
 import com.juren233.hyperlyricsenhanced.common.LogLevelPolicy
+import com.juren233.hyperlyricsenhanced.common.LogLevelPreference
 import com.juren233.hyperlyricsenhanced.ui.page.log.LogEntry
 import com.juren233.hyperlyricsenhanced.common.UIConstants
 import kotlinx.coroutines.Dispatchers
@@ -121,14 +122,7 @@ object LogManager : HyperLogger {
             UIConstants.PREF_NAME,
             Context.MODE_PRIVATE,
         ) ?: return true
-        val storedLevel = prefs.takeIf { it.contains(UIConstants.KEY_LOG_LEVEL) }
-            ?.getInt(UIConstants.KEY_LOG_LEVEL, UIConstants.DEFAULT_LOG_LEVEL)
-        val storedBuildKind = prefs.getString(UIConstants.KEY_LOG_LEVEL_BUILD_KIND, null)
-        val logLevel = LogLevelPolicy.effectiveLevel(
-            storedLevel = storedLevel,
-            storedBuildKind = storedBuildKind,
-            debugBuild = BuildConfig.DEBUG,
-        )
+        val logLevel = LogLevelPreference.read(prefs)
         if (logLevel == LogLevelPolicy.LEVEL_DEBUG) return true
         return level == "I" || level == "W" || level == "E" || level == "C"
     }

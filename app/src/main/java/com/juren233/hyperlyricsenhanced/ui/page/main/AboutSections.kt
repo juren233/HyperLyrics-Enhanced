@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.net.toUri
 import com.juren233.hyperlyricsenhanced.R
+import com.juren233.hyperlyricsenhanced.common.ProjectLinks
 import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardColors
@@ -137,7 +138,7 @@ fun LazyListScope.aboutPageSections(
             ArrowPreference(
                 title = stringResource(R.string.title_project),
                 onClick = {
-                    val uri = "https://github.com/juren233/HyperLyrics-Enhanced".toUri()
+                    val uri = ProjectLinks.REPOSITORY.toUri()
                     val intent = Intent(Intent.ACTION_VIEW, uri)
                     context.startActivity(intent)
                 }

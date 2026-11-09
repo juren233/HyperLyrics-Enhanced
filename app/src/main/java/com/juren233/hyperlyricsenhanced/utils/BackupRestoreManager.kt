@@ -20,7 +20,7 @@ import org.json.JSONObject
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import com.juren233.hyperlyricsenhanced.common.FloatPreferences
-import com.juren233.hyperlyricsenhanced.common.RootConstants
+import com.juren233.hyperlyricsenhanced.common.SensitivePreferences
 import com.juren233.hyperlyricsenhanced.common.StringSetPreferences
 import com.juren233.hyperlyricsenhanced.common.UIConstants
 
@@ -29,7 +29,7 @@ object BackupRestoreManager {
         val prefs = context.getSharedPreferences(UIConstants.PREF_NAME, Context.MODE_PRIVATE)
         val config = JSONObject()
         prefs.all.forEach { (key, value) ->
-            if (key == RootConstants.KEY_HOOK_AI_TRANS_API_KEY) return@forEach
+            if (key in SensitivePreferences.SECRET_KEYS) return@forEach
             when (value) {
                 is Boolean -> config.put(key, value)
                 is Int -> config.put(key, value)
@@ -61,7 +61,7 @@ object BackupRestoreManager {
                     val key = keys.next()
                     val value = config.get(key)
                     if (key == "key_send_normal_notification" || key == "key_send_focus_notification" || key == "key_persistent_foreground"
-                        || key == RootConstants.KEY_HOOK_AI_TRANS_API_KEY) continue
+                        || key in SensitivePreferences.SECRET_KEYS) continue
                     if (key in StringSetPreferences.KEYS) {
                         putStringSet(key, StringSetPreferences.parse(value.toString()))
                         continue

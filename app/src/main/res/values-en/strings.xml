@@ -800,8 +800,24 @@
     <string name="format_export_current_music_app">Current Music App: %1$s</string>
     <string name="format_export_music_app_version">Music App Version: %1$s</string>
     <string name="format_export_music_app_install_source">Install Source: %1$s</string>
+    <string name="export_settings_title">Module Settings</string>
+    <string name="export_settings_note">Settings not listed use their default values</string>
+    <string name="export_setting_secret_set">Set (hidden)</string>
+    <string name="export_setting_secret_empty">Empty</string>
+    <string name="export_setting_default">Default</string>
+    <string name="format_export_setting_host_only">%1$s (host only)</string>
+    <string name="format_export_setting_custom_length">Custom (%1$d chars, hidden)</string>
+    <string name="export_setting_custom">Custom (hidden)</string>
     <string name="export_not_detected">Not detected</string>
     <string name="export_unknown">Unknown</string>
+    <string name="log_export_guide_release_title">This is a release build</string>
+    <string name="log_export_guide_release_summary">If you ran into a problem with the module and want to export logs for feedback, download and install the debug build from the repository\'s Releases page, reproduce the problem, then export logs again.</string>
+    <string name="log_export_guide_release_download">OK, take me to download</string>
+    <string name="log_export_guide_feedback_title">Reporting a problem?</string>
+    <string name="log_export_guide_enable_debug_summary">If you are exporting logs to report a problem, first set Log Level to Debug, reproduce the problem again, then choose \"Export All Logs\". Logs exported this way are far more helpful!</string>
+    <string name="log_export_guide_enable_debug_action">Set to Debug</string>
+    <string name="log_export_guide_use_export_all_summary">If you are exporting logs to report a problem, choose \"Export All Logs\". Logs exported this way are far more helpful!</string>
+    <string name="log_export_guide_continue">I\'m not reporting a problem</string>
 
     <string name="channel_name_live">Live Update Notification Lyrics</string>
     <string name="channel_name_focus">Xiaomi Notification Spotlight Lyrics</string>

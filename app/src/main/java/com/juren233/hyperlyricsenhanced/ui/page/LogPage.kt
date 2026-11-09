@@ -28,8 +28,12 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.juren233.hyperlyricsenhanced.R
+import com.juren233.hyperlyricsenhanced.ui.component.LogExportGuideDialog
 import com.juren233.hyperlyricsenhanced.ui.component.SimpleDialog
+import com.juren233.hyperlyricsenhanced.ui.component.rememberLogExportGuideState
+import com.juren233.hyperlyricsenhanced.utils.LogExportSource
 import com.juren233.hyperlyricsenhanced.utils.LogManager
+import com.juren233.hyperlyricsenhanced.utils.rememberExportAllLogs
 import com.juren233.hyperlyricsenhanced.ui.navigation.LocalNavigator
 import com.juren233.hyperlyricsenhanced.ui.page.log.LogEntry
 import com.juren233.hyperlyricsenhanced.ui.page.log.LogTabContent
@@ -97,6 +101,9 @@ fun LogPage() {
     var showMorePopup by remember { mutableStateOf(false) }
     var showClearDialog by remember { mutableStateOf(false) }
     var pendingExportRequest by remember { mutableStateOf<LogExportRequest?>(null) }
+
+    val exportAllLogs = rememberExportAllLogs(snackbarHostState)
+    val logExportGuide = rememberLogExportGuideState()
 
     val copiedMsg = stringResource(R.string.copied)
     val exportHeader = stringResource(R.string.export_header)
@@ -238,13 +245,15 @@ fun LogPage() {
                     DropdownItem(
                         text = exportLabel,
                         onClick = {
-                            pendingExportRequest = LogExportRequest(
-                                isAppLog = isAppTab,
-                                level = currentSelectedLevel
-                            )
-                            val dateTime = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmm"))
-                            val prefix = if (isAppTab) "hyperlyricsenhanced_app" else "hyperlyricsenhanced_module"
-                            exportLauncher.launch("${prefix}_logs_$dateTime.txt")
+                            logExportGuide.request(context, LogExportSource.LOG_PAGE) {
+                                pendingExportRequest = LogExportRequest(
+                                    isAppLog = isAppTab,
+                                    level = currentSelectedLevel
+                                )
+                                val dateTime = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmm"))
+                                val prefix = if (isAppTab) "hyperlyricsenhanced_app" else "hyperlyricsenhanced_module"
+                                exportLauncher.launch("${prefix}_logs_$dateTime.txt")
+                            }
                         }
                     ),
                     DropdownItem(
@@ -333,6 +342,8 @@ fun LogPage() {
             }
         }
     }
+
+    LogExportGuideDialog(state = logExportGuide, onExportAll = exportAllLogs)
 
     SimpleDialog(
         show = showClearDialog,
