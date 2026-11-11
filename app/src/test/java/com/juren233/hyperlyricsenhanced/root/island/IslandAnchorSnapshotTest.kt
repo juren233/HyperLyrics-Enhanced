@@ -42,4 +42,22 @@ class IslandAnchorSnapshotTest {
         assertEquals(rotated, snapshot.fallbackFor(2000))
         assertNull(snapshot.fallbackFor(1000))
     }
+
+    @Test fun `save and restore keep the clock mark`() {
+        val marked = listOf(Span(83, 266, text = true, clock = true), Span(536, 599, text = true))
+        val snapshot = IslandAnchorSnapshot()
+        snapshot.update(marked, observedScreenWidth = 1200)
+        val restored = IslandAnchorSnapshot().also { it.restore(snapshot.save()) }
+        assertEquals(marked, restored.fallbackFor(1200))
+    }
+
+    @Test fun `old format flags 0 and 1 restore with clock false`() {
+        val restored = IslandAnchorSnapshot().also {
+            it.restore(intArrayOf(1200, 83, 266, 1, 800, 980, 0))
+        }
+        assertEquals(
+            listOf(Span(83, 266, text = true), Span(800, 980)),
+            restored.fallbackFor(1200),
+        )
+    }
 }

@@ -165,4 +165,42 @@ class IslandDynamicLimitPolicyTest {
             "getBigIslandXHasSmallIsland"), IslandDynamicLimitProfile.RESULT_GETTERS)
         assertFalse(IslandDynamicLimitProfile.STATUS_BAR_CLASS.startsWith("p000"))
     }
+
+    // 2026-11-11 真机日志：网速文本右缘 599 落到中线 600 左侧，被几何选法当成时钟。
+    private fun ballObstacles(clockMarked: Boolean) = listOf(
+        Span(83, 266, text = true, clock = clockMarked), Span(536, 599, text = true),
+        Span(538, 597, text = true), Span(566, 634), Span(599, 667), Span(667, 722),
+        Span(722, 773), Span(729, 749), Span(742, 807), Span(807, 869), Span(869, 902),
+        Span(880, 945), Span(945, 1010), Span(945, 965), Span(986, 1010, text = true),
+        Span(1101, 1127), Span(1137, 1158),
+    )
+    private val ballOriginal = Geometry(752, 336, 336, 224)
+
+    @Test fun `marked clock anchors phone limit instead of overflowed network speed text`() {
+        val result = IslandDynamicLimitPolicy.limit(
+            ballOriginal, 1200, ballObstacles(clockMarked = true), gap = 16, minWidth = 110)
+        assertEquals(636, result.width)
+    }
+
+    @Test fun `without clock marks the geometric fallback is unchanged`() {
+        val result = IslandDynamicLimitPolicy.limit(
+            ballOriginal, 1200, ballObstacles(clockMarked = false), gap = 16, minWidth = 110)
+        assertEquals(110, result.width)
+    }
+
+    @Test fun `relevant observation returns the clock span not network speed text`() {
+        assertEquals(
+            listOf(Span(83, 266, text = true, clock = true)),
+            IslandDynamicLimitPolicy.relevantObservation(ballObstacles(clockMarked = true), 1200),
+        )
+    }
+
+    @Test fun `observations with different clock marks are not equivalent`() {
+        assertFalse(IslandDynamicLimitPolicy.observationsEquivalent(
+            listOf(Span(83, 266, text = true, clock = true)),
+            listOf(Span(83, 266, text = true)),
+            coordinateTolerancePx = 8,
+            ignoreRightDrift = true,
+        ))
+    }
 }

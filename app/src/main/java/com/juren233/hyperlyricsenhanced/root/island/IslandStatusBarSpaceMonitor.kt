@@ -188,7 +188,9 @@ internal object IslandStatusBarSpaceMonitor {
         val stable = snapshot.fallbackFor(screenWidth)
         if (live != null) {
             val structuralChange = if (phone) {
-                stable == null || stable.size != live.size
+                // 时钟 span 数量变化：热重载恢复出的旧格式快照没有时钟标记，需被带标记的实时观测替换。
+                stable == null || stable.size != live.size ||
+                    stable.count { it.clock } != live.count { it.clock }
             } else {
                 stable == null || !IslandDynamicLimitPolicy.observationsEquivalent(live, stable, 0)
             }
@@ -239,7 +241,11 @@ internal object IslandStatusBarSpaceMonitor {
             if (view !== root && draws && view.width < root.width / 2) {
                 view.getLocationOnScreen(position)
                 if (position[1] < rootPosition[1] + root.height && position[1] + view.height > rootPosition[1]) {
-                    spans += IslandDynamicLimitPolicy.Span(position[0], position[0] + view.width, text = view is TextView)
+                    spans += IslandDynamicLimitPolicy.Span(
+                        position[0], position[0] + view.width,
+                        text = view is TextView,
+                        clock = view.javaClass.name == IslandDynamicLimitProfile.STATUS_BAR_CLOCK_CLASS,
+                    )
                     if (BuildConfig.DEBUG && pad) identities.add(describe(view, position[0]))
                 }
                 return

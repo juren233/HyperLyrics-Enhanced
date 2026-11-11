@@ -87,7 +87,7 @@
     <string name="toast_apple_music_lyrics_image_background_read_failed">Couldn\'t read the image</string>
     <string name="toast_apple_music_lyrics_image_background_save_failed">Couldn\'t save the background. Make sure the module is enabled in LSPosed</string>
     <string name="title_apple_music_volume_balance">Dynamic Dolby Atmos Speaker Boost</string>
-    <string name="summary_apple_music_volume_balance">Enable “Sound Check” in Apple Music for better results. System spatial audio is not recommended.</string>
+    <string name="summary_apple_music_volume_balance">Enable “Sound Check” in Apple Music for better results. System Immersive sound is not recommended.</string>
     <string name="title_apple_music_prevent_network_auto_skip">Don\'t Skip Songs on Poor Connection</string>
     <string name="summary_apple_music_prevent_network_auto_skip">Stays on the current song and keeps retrying until you\'re back online.</string>
     <string name="title_apple_music_notification_open_full_player">Open Player from Media Notification</string>

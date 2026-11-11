@@ -14,19 +14,30 @@ package com.juren233.hyperlyricsenhanced.root.island
  */
 internal class IslandAnchorSnapshot {
 
+    private companion object {
+        // 每个 span 的第三个 int 是位标志；旧格式只会是 0/1（即仅 text 位）。
+        const val TEXT_BIT = 1
+        const val CLOCK_BIT = 2
+    }
+
     private var spans: List<IslandDynamicLimitPolicy.Span>? = null
     private var screenWidth: Int = 0
 
     /** Boot-classloader-only state; preserve frozen anchors across module generations. */
     fun save(): IntArray = intArrayOf(screenWidth) + spans.orEmpty().flatMap {
-        listOf(it.left, it.right, if (it.text) 1 else 0)
+        listOf(it.left, it.right, (if (it.text) TEXT_BIT else 0) or (if (it.clock) CLOCK_BIT else 0))
     }.toIntArray()
 
     fun restore(values: IntArray) {
         if (values.isEmpty() || (values.size - 1) % 3 != 0) return
         screenWidth = values[0]
         spans = (1 until values.size step 3).map {
-            IslandDynamicLimitPolicy.Span(values[it], values[it + 1], values[it + 2] != 0)
+            val flags = values[it + 2]
+            IslandDynamicLimitPolicy.Span(
+                values[it], values[it + 1],
+                text = flags and TEXT_BIT != 0,
+                clock = flags and CLOCK_BIT != 0,
+            )
         }
     }
 

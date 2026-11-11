@@ -28,6 +28,15 @@ internal object IslandDynamicLimitProfile {
      */
     const val NOTIFICATION_ICON_CONTAINER_CLASS =
         "com.android.systemui.statusbar.phone.NotificationIconContainer"
+
+    /**
+     * 手机端状态栏时钟视图的运行时类名，动态上限的锚点按此身份确定，不再用几何猜测。
+     * 依据：OS4.0.0.8 MiuiSystemUI.apk classes3.dex 中
+     * `Lcom/android/systemui/statusbar/views/MiuiClock;` 的 superclass 是 `Landroid/widget/TextView;`；
+     * 2026-11-11 真机视图层级导出确认 Span(83,266) 即该类。
+     * 其他系统版本是否存在该类：未验证。
+     */
+    const val STATUS_BAR_CLOCK_CLASS = "com.android.systemui.statusbar.views.MiuiClock"
     const val ATTACH_METHOD = "onAttachedToWindow"
     const val DATE_POSITION_GETTER = "getStatusBarDatePosX"
     const val SCREEN_WIDTH_GETTER = "getScreenWidth"
