@@ -1,4 +1,5 @@
 const INVALID_LABEL = '无效 / invalid';
+const NEEDS_INFO_LABEL = '待补充 / Needs Info';
 const BUG_LABEL = 'bug';
 const LOG_HEADING = 'LSPosed 日志或 HyperLyrics Enhanced 日志';
 const NO_RESPONSE = '_No response_';
@@ -28,6 +29,11 @@ const CLOSE_MESSAGE =
     '当前 issue 被标记「无效」已满 3 天，仍未补充日志，将被锁定并关闭。如需继续反馈，请按上方指引准备好日志后开新的 issue。\n\n' +
     'This issue has been labeled "invalid" for 3 days without logs being added, so it will now be locked and closed. If you still need help, please open a new issue with logs prepared as described above.';
 const CLOSE_MARKER = '<!-- issue-log-check:closed -->';
+
+const NEEDS_INFO_CLOSE_MESSAGE =
+    '当前 issue 被标记「待补充」已满 3 天，仍未补充所需信息，已改标为「无效」并锁定关闭。如需继续反馈，请准备好所需信息后开新的 issue。\n\n' +
+    'This issue has been labeled "Needs Info" for 3 days without the requested information being added, so it has been relabeled "invalid", locked and closed. If you still need help, please open a new issue with the requested information.';
+const NEEDS_INFO_CLOSE_MARKER = '<!-- issue-log-check:needs-info-closed -->';
 
 const IMAGE_OR_VIDEO_EXT = /\.(png|jpe?g|gif|webp|bmp|heic|svg|mp4|mov|webm|mkv|avi)(?:[?#].*)?$/i;
 const URL_PATTERN = /https?:\/\/[^\s)>\]"'<]+/g;
@@ -195,8 +201,8 @@ async function checkSupplement({ github, context, core }) {
     core.notice(`Issue #${issue.number}：已补充日志，撤销无效标签。`);
 }
 
-/** 无效标签最近一次被打上的时间；取不到返回 null。 */
-async function invalidLabeledAt(github, owner, repo, number) {
+/** 指定标签最近一次被打上的时间；取不到返回 null。 */
+async function labeledAt(github, owner, repo, number, labelName) {
     const events = await github.paginate(github.rest.issues.listEvents, {
         owner,
         repo,
@@ -204,19 +210,25 @@ async function invalidLabeledAt(github, owner, repo, number) {
         per_page: 100,
     });
     const times = events
-        .filter((event) => event.event === 'labeled' && event.label?.name === INVALID_LABEL)
+        .filter((event) => event.event === 'labeled' && event.label?.name === labelName)
         .map((event) => Date.parse(event.created_at))
         .filter(Number.isFinite);
     return times.length > 0 ? Math.max(...times) : null;
 }
 
+function parseTimeoutDays(name) {
+    const raw = process.env[name] ?? '3';
+    const days = Number.parseInt(raw, 10);
+    if (!Number.isSafeInteger(days) || days <= 0) {
+        throw new Error(`${name} 必须是正整数，当前值为：${raw}`);
+    }
+    return days;
+}
+
 /** 定时：带「无效」标签满 N 天的 Issue 留言、锁定并关闭。 */
 async function closeInvalid({ github, context, core }) {
     const { owner, repo } = context.repo;
-    const days = Number.parseInt(process.env.INVALID_TIMEOUT_DAYS ?? '3', 10);
-    if (!Number.isSafeInteger(days) || days <= 0) {
-        throw new Error(`INVALID_TIMEOUT_DAYS 必须是正整数，当前值为：${process.env.INVALID_TIMEOUT_DAYS}`);
-    }
+    const days = parseTimeoutDays('INVALID_TIMEOUT_DAYS');
     const nowMs = Date.now();
     const failures = [];
 
@@ -234,12 +246,12 @@ async function closeInvalid({ github, context, core }) {
         }
         const label = `Issue #${item.number}`;
         try {
-            const labeledAt = await invalidLabeledAt(github, owner, repo, item.number);
-            if (labeledAt === null) {
+            const labeledTime = await labeledAt(github, owner, repo, item.number, INVALID_LABEL);
+            if (labeledTime === null) {
                 core.warning(`${label}：找不到打标签的事件，跳过。`);
                 continue;
             }
-            const dueAt = labeledAt + days * 24 * 60 * 60 * 1000;
+            const dueAt = labeledTime + days * 24 * 60 * 60 * 1000;
             if (nowMs < dueAt) {
                 core.info(`${label}：未满 ${days} 天，最早处理时间=${new Date(dueAt).toISOString()}。`);
                 continue;
@@ -268,6 +280,108 @@ async function closeInvalid({ github, context, core }) {
                 state_reason: 'not_planned',
             });
             core.notice(`${label}：已留言、锁定并关闭。`);
+        } catch (error) {
+            const message = error instanceof Error ? error.stack ?? error.message : String(error);
+            failures.push(`${label}: ${message}`);
+            core.error(`${label}：处理失败：${message}`);
+        }
+    }
+
+    if (failures.length > 0) {
+        core.setFailed(`有 ${failures.length} 个项目处理失败，请查看日志。`);
+    }
+}
+
+/** 「待补充」满 N 天后：把「待补充」换成「无效」。 */
+async function swapNeedsInfoToInvalid(github, owner, repo, number) {
+    await github.rest.issues.addLabels({
+        owner,
+        repo,
+        issue_number: number,
+        labels: [INVALID_LABEL],
+    });
+    try {
+        await github.rest.issues.removeLabel({
+            owner,
+            repo,
+            issue_number: number,
+            name: NEEDS_INFO_LABEL,
+        });
+    } catch (error) {
+        if (error.status !== 404) {
+            throw error;
+        }
+    }
+}
+
+/**
+ * 定时：带「待补充」标签满 N 天的 Issue 留言、锁定、关闭，再把「待补充」换成「无效」。
+ * 只看标签是否还在，不检测回复；信息补齐后由维护者手动摘掉「待补充」。
+ * 换标签放在关闭之后，若换标签失败，下次任务会对已带关闭留言的已关闭 Issue 补做。
+ */
+async function closeNeedsInfo({ github, context, core }) {
+    const { owner, repo } = context.repo;
+    const days = parseTimeoutDays('NEEDS_INFO_TIMEOUT_DAYS');
+    const nowMs = Date.now();
+    const failures = [];
+
+    const items = await github.paginate(github.rest.issues.listForRepo, {
+        owner,
+        repo,
+        state: 'all',
+        labels: NEEDS_INFO_LABEL,
+        per_page: 100,
+    });
+
+    for (const item of items) {
+        if (item.pull_request) {
+            continue;
+        }
+        const label = `Issue #${item.number}`;
+        try {
+            if (item.state !== 'open') {
+                // 已关闭的只处理本任务关闭后换标签失败的残留，人工关闭的不动。
+                const comments = await listComments(github, owner, repo, item.number);
+                if (comments.some((entry) => entry.body?.includes(NEEDS_INFO_CLOSE_MARKER))) {
+                    await swapNeedsInfoToInvalid(github, owner, repo, item.number);
+                    core.notice(`${label}：补做标签替换（待补充 → 无效）。`);
+                }
+                continue;
+            }
+            const labeledTime = await labeledAt(github, owner, repo, item.number, NEEDS_INFO_LABEL);
+            if (labeledTime === null) {
+                core.warning(`${label}：找不到打标签的事件，跳过。`);
+                continue;
+            }
+            const dueAt = labeledTime + days * 24 * 60 * 60 * 1000;
+            if (nowMs < dueAt) {
+                core.info(`${label}：未满 ${days} 天，最早处理时间=${new Date(dueAt).toISOString()}。`);
+                continue;
+            }
+            const comments = await listComments(github, owner, repo, item.number);
+            if (!comments.some((entry) => entry.body?.includes(NEEDS_INFO_CLOSE_MARKER))) {
+                await github.rest.issues.createComment({
+                    owner,
+                    repo,
+                    issue_number: item.number,
+                    body: `${NEEDS_INFO_CLOSE_MESSAGE}\n\n${NEEDS_INFO_CLOSE_MARKER}`,
+                });
+            }
+            await github.rest.issues.lock({
+                owner,
+                repo,
+                issue_number: item.number,
+                lock_reason: 'resolved',
+            });
+            await github.rest.issues.update({
+                owner,
+                repo,
+                issue_number: item.number,
+                state: 'closed',
+                state_reason: 'not_planned',
+            });
+            await swapNeedsInfoToInvalid(github, owner, repo, item.number);
+            core.notice(`${label}：已留言、锁定、关闭，并改标为无效。`);
         } catch (error) {
             const message = error instanceof Error ? error.stack ?? error.message : String(error);
             failures.push(`${label}: ${message}`);
@@ -366,7 +480,7 @@ async function backfillMissingLogs({ github, context, core }) {
     }
 }
 
-module.exports = { checkOpened, checkSupplement, closeInvalid, backfillMissingLogs };
+module.exports = { checkOpened, checkSupplement, closeInvalid, closeNeedsInfo, backfillMissingLogs };
 module.exports.testables = {
     GUIDE_MESSAGE,
     bugReportHasLogs,

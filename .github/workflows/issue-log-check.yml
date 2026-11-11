@@ -1,4 +1,4 @@
-name: Issue 日志检查与无效 Issue 清理
+name: Issue 日志检查与无效 / 待补充 Issue 清理
 
 on:
   issues:
@@ -64,6 +64,16 @@ jobs:
           script: |
             const { closeInvalid } = require('./.github/scripts/issue-log-check.js');
             await closeInvalid({ github, context, core });
+
+      - name: 关闭超时未补充的 Issue Close Needs-Info Issues
+        if: ${{ !cancelled() }}
+        uses: actions/github-script@v9
+        env:
+          NEEDS_INFO_TIMEOUT_DAYS: '3'
+        with:
+          script: |
+            const { closeNeedsInfo } = require('./.github/scripts/issue-log-check.js');
+            await closeNeedsInfo({ github, context, core });
 
   backfill:
     if: github.event_name == 'workflow_dispatch' && startsWith(inputs.mode, 'backfill')
