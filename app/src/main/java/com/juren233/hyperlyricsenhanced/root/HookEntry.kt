@@ -799,6 +799,8 @@ class HookEntry : XposedModule() {
                     key == RootConstants.KEY_HOOK_APPLE_MUSIC_NATIVE_ONLINE_TRANSLATION ||
                     key == RootConstants.KEY_HOOK_APPLE_MUSIC_FILL_MISSING_LYRICS ||
                     key == RootConstants.KEY_HOOK_APPLE_MUSIC_HIDE_MANDARIN_PINYIN ||
+                    key == RootConstants.KEY_HOOK_APPLE_MUSIC_ALWAYS_SHOW_SOURCE_SWITCH ||
+                    key == RootConstants.KEY_HOOK_APPLE_MUSIC_SOURCE_SEARCH_TIMING ||
                     key == RootConstants.KEY_HOOK_APPLE_MUSIC_LINE_TO_WORD_LYRICS
                 ) {
                     lyriconSource.onPreferenceChanged(key)

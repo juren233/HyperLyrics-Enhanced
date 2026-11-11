@@ -126,6 +126,46 @@ class AppleManualSourceRequestStateTest {
     }
 
     @Test
+    fun `selecting native clears the pending request and the temporary source`() {
+        val state = AppleManualSourceRequestState()
+        state.acceptTranslationRequest(request(contentType = "translation"), Source.QM)
+
+        state.selectNativeTranslation()
+
+        assertNull(state.requestedTranslationSource())
+        assertTrue(state.isTranslationNativeOnly())
+        assertTrue(state.onlineRequestsToComplete(null, null).isEmpty())
+        // The pronunciation slot is independent of the translation pick.
+        assertFalse(state.isPronunciationNativeOnly())
+    }
+
+    @Test
+    fun `a new translation request clears the native-only pick`() {
+        val state = AppleManualSourceRequestState()
+        state.selectNativeTranslation()
+        assertTrue(state.isTranslationNativeOnly())
+
+        state.acceptTranslationRequest(request(contentType = "translation"), Source.NE)
+
+        assertFalse(state.isTranslationNativeOnly())
+        assertEquals(Source.NE, state.requestedTranslationSource())
+    }
+
+    @Test
+    fun `source status interest is scoped to the song and cleared on track change`() {
+        val state = AppleManualSourceRequestState()
+        assertFalse(state.hasSourceControlInterest("a"))
+
+        state.noteSourceStatusRequest("a")
+
+        assertTrue(state.hasSourceControlInterest("a"))
+        assertFalse(state.hasSourceControlInterest("b"))
+
+        state.clearForTrackChange()
+        assertFalse(state.hasSourceControlInterest("a"))
+    }
+
+    @Test
     fun `track change clears all five slots`() {
         val state = AppleManualSourceRequestState()
         state.acceptLyricsRequest(request(contentType = "lyrics"))
@@ -140,6 +180,9 @@ class AppleManualSourceRequestStateTest {
         assertNull(state.lyricsRequestToComplete(null))
         assertTrue(state.pendingRequests().isEmpty())
         assertFalse(state.hasTemporarySource)
+        assertFalse(state.isTranslationNativeOnly())
+        assertFalse(state.isPronunciationNativeOnly())
+        assertFalse(state.hasSourceControlInterest(null))
     }
 
     @Test
@@ -162,5 +205,35 @@ class AppleManualSourceRequestStateTest {
         assertTrue(state.onlineRequestsToComplete(Source.QM, Source.KUGOU).isEmpty())
         // Confirmed/requested temp sources are retained, like the original code.
         assertEquals(Source.QM, state.requestedTranslationSource())
+    }
+    @Test
+    fun `selection snapshot round trips the manual choices and the pending online requests`() {
+        val source = AppleManualSourceRequestState()
+        source.acceptTranslationRequest(request(contentType = "translation", source = Source.QM), Source.QM)
+        source.selectNativePronunciation()
+        source.noteSourceStatusRequest("a")
+        val selection = source.selection()
+
+        val target = AppleManualSourceRequestState()
+        target.restoreSelection(selection)
+
+        assertEquals(Source.QM, target.requestedTranslationSource())
+        assertTrue(target.isPronunciationNativeOnly())
+        assertTrue(target.hasSourceControlInterest("a"))
+        assertEquals(1, target.pendingRequests().size)
+        assertTrue(target.hasPendingOnlineRequest("a"))
+        assertEquals(selection, target.selection())
+    }
+
+    @Test
+    fun `empty selection is recognised and a track change returns to it`() {
+        val state = AppleManualSourceRequestState()
+        assertTrue(state.selection().isEmpty)
+
+        state.selectNativeTranslation()
+        assertFalse(state.selection().isEmpty)
+
+        state.clearForTrackChange()
+        assertTrue(state.selection().isEmpty)
     }
 }

@@ -43,6 +43,49 @@ internal fun LyriconSource.onPreferenceChanged(key: String?) {
     if (key == RootConstants.KEY_HOOK_APPLE_MUSIC_LINE_TO_WORD_LYRICS) {
         mainHandler.post { applyLineToWordLyricsPreferenceChange() }
     }
+    if (key == RootConstants.KEY_HOOK_APPLE_MUSIC_ALWAYS_SHOW_SOURCE_SWITCH ||
+        key == RootConstants.KEY_HOOK_APPLE_MUSIC_SOURCE_SEARCH_TIMING
+    ) {
+        mainHandler.post { applySourceControlPreferenceChange() }
+    }
+}
+
+/**
+ * 「始终显示切换源按钮」或检索时机变化：关闭时撤销本曲的手动选择并回到自动开关决定的内容；
+ * 开启或改为「开始播放时」则按需为当前歌曲检索。
+ */
+private fun LyriconSource.applySourceControlPreferenceChange() {
+    // 应用内歌曲的手动选择同样随开关关闭而撤销。
+    if (!isAlwaysShowSourceSwitchEnabled()) inAppApple.clearManualSelection()
+    val nativeSong = currentAppleSong ?: return
+    if (!isAlwaysShowSourceSwitchEnabled()) {
+        if (!manualSourceRequests.hasSourceControlInterest(nativeSong.id)) return
+        manualSourceRequests.clearForTrackChange()
+        cancelOnlineTranslation(
+            clearAttempt = true,
+            clearMatched = true,
+            reason = "source_control_disabled",
+        )
+        if (currentPublishedAppleSong != nativeSong && !fallbackSongActive) {
+            publishAppleSong(nativeSong, restorePosition = true)
+        }
+        if (
+            isAppleTranslationEnrichmentEnabled() &&
+            !hasUntimedAppleNativeLyrics(nativeSong) &&
+            !nativeSong.lyrics.isNullOrEmpty() &&
+            needsOnlineEnrichment(nativeSong)
+        ) {
+            scheduleOnlineTranslation(nativeSong)
+        }
+        return
+    }
+    if (
+        wantsSourceControlSearch(nativeSong) &&
+        !hasUntimedAppleNativeLyrics(nativeSong) &&
+        !nativeSong.lyrics.isNullOrEmpty()
+    ) {
+        scheduleOnlineTranslation(nativeSong)
+    }
 }
 
 private fun LyriconSource.applyLineToWordLyricsPreferenceChange() {
@@ -111,7 +154,7 @@ private fun LyriconSource.applyNativeOnlineTranslationPreferenceChange() {
     if (
         nativeSong != null &&
         !nativeSong.lyrics.isNullOrEmpty() &&
-        needsOnlineEnrichment(nativeSong)
+        (needsOnlineEnrichment(nativeSong) || wantsSourceControlSearch(nativeSong))
     ) {
         scheduleOnlineTranslation(nativeSong)
     }
@@ -141,10 +184,12 @@ private fun LyriconSource.applyMandarinPinyinPreferenceChange() {
     }
     publishAppleSong(displaySong, restorePosition = true)
     if (
-        isAppleTranslationEnrichmentEnabled() &&
         !hasUntimedAppleNativeLyrics(nativeSong) &&
         !nativeSong.lyrics.isNullOrEmpty() &&
-        needsOnlineEnrichment(nativeSong)
+        (
+            (isAppleTranslationEnrichmentEnabled() && needsOnlineEnrichment(nativeSong)) ||
+                wantsSourceControlSearch(nativeSong)
+            )
     ) {
         scheduleOnlineTranslation(nativeSong)
     }
@@ -175,8 +220,10 @@ private fun LyriconSource.applyOriginalMetadataPreferenceChange() {
     } else if (
         !originalMetadataPlan.waitForResult &&
         !nativeSong.lyrics.isNullOrEmpty() &&
-        needsOnlineEnrichment(nativeSong) &&
-        isAppleTranslationEnrichmentEnabled()
+        (
+            (needsOnlineEnrichment(nativeSong) && isAppleTranslationEnrichmentEnabled()) ||
+                wantsSourceControlSearch(nativeSong)
+            )
     ) {
         scheduleOnlineTranslation(nativeSong)
     }
@@ -234,7 +281,7 @@ private fun LyriconSource.applyOnlineTranslationPreferenceChange(key: String) {
         return
     }
 
-    if (!needsOnlineEnrichment(nativeSong)) return
+    if (!needsOnlineEnrichment(nativeSong) && !wantsSourceControlSearch(nativeSong)) return
 
     if (!overlayEnabled) {
         val shouldRestoreNative = fallbackSongActive || onlineMatchedTranslationActive

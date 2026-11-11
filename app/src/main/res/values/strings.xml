@@ -98,6 +98,10 @@
     <string name="title_apple_music_fill_missing_lyrics">为无歌词的歌曲补充歌词</string>
     <string name="summary_apple_music_fill_missing_lyrics">来源请在三方在线源配置中设置</string>
     <string name="title_apple_music_hide_mandarin_pinyin">不显示国语歌拼音</string>
+    <string name="title_apple_music_always_show_source_switch">始终显示切换源按钮</string>
+    <string name="title_apple_music_source_search_timing">三方源检索时机</string>
+    <string name="option_apple_music_source_search_timing_on_dialog_open">打开弹窗后</string>
+    <string name="option_apple_music_source_search_timing_on_playback_start">开始播放时</string>
     <string name="title_apple_music_line_to_word_lyrics">使用开源歌词库将部分逐行歌词转换为逐字歌词</string>
     <string name="summary_apple_music_line_to_word_lyrics">由已启用的 AMLL、LunaBeat 提供歌词，实验性功能</string>
     <string name="title_apple_music_lyrics_blur_effect">歌词模糊效果</string>

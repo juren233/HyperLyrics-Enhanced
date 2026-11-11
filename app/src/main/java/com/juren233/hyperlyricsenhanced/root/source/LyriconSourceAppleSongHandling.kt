@@ -71,6 +71,7 @@ internal fun LyriconSource.handleAppleSong(incomingSong: LocalSong?) {
     if (incomingSong != null && !isMissingLyricsSupplement(incomingSong)) {
         publication.rememberNative(incomingSong)
     }
+    var claimedInApp: AppleInAppSong.Claim? = null
     val sameTrack = previousSong != null && incomingSong != null &&
         isSameTrack(previousSong, incomingSong)
     // The Pack withdrew the catalog supplement for this song: the catalog selection no longer
@@ -94,6 +95,7 @@ internal fun LyriconSource.handleAppleSong(incomingSong: LocalSong?) {
         incomingSong = incomingSong,
         sameTrack = sameTrack,
         authoritativeSource = authoritativeLyricsSource,
+        manualSourceReplacesNative = isAlwaysShowSourceSwitchEnabled(),
     )
     // 正文与来源按合并结果保留;标题/歌手仍跟随最新回调,避免保留正文时丢失晚到的显示元数据。
     val song = mergeRetainedSongDisplayMetadata(
@@ -170,7 +172,9 @@ internal fun LyriconSource.handleAppleSong(incomingSong: LocalSong?) {
         sameTrack = sameTrack,
         authoritativeNativeTransition = authoritativeNativeTransition,
         hasLyrics = !song?.lyrics.isNullOrEmpty(),
-        needsEnrichment = !untimedNativeLyrics && needsOnlineEnrichment(song),
+        // 来源弹窗的手动选择与自动补全一样，不能被同曲的重复回调打断后清空重来。
+        needsEnrichment = !untimedNativeLyrics &&
+            (needsOnlineEnrichment(song) || wantsSourceControlSearch(song)),
         originalMetadataChanged = originalMetadataChanged,
         enrichmentRunning =
             onlineTranslationRunning || onlineTranslationResultReady || onlineMatchedTranslationActive,
@@ -188,7 +192,7 @@ internal fun LyriconSource.handleAppleSong(incomingSong: LocalSong?) {
         clearAttempt = shouldClearAppleOnlineTranslationAttempt(
             sameTrack = sameTrack,
             authoritativeNativeTransition = authoritativeNativeTransition,
-            needsEnrichment = incomingNeedsEnrichment,
+            needsEnrichment = incomingNeedsEnrichment || wantsSourceControlSearch(song),
             originalMetadataChanged = originalMetadataChanged,
         ),
         clearMatched = true,
@@ -199,6 +203,9 @@ internal fun LyriconSource.handleAppleSong(incomingSong: LocalSong?) {
         applePositionState.beginSongGeneration()
         originalMetadataRequest.clear()
         manualSourceRequests.clearForTrackChange()
+        // Apple Music 此前不是活动播放者时，应用内槽位里同一首歌的手动选择在此转正，其他歌曲作废。
+        claimedInApp = inAppApple.claimFor(incomingSong, ::isMissingLyricsSupplement)
+        claimedInApp?.selection?.let { manualSourceRequests.restoreSelection(it) }
         publication.beginAppleTrack(incomingSong?.takeUnless(::isMissingLyricsSupplement))
         refreshAppleMediaPositionReference()
     }
@@ -264,13 +271,8 @@ internal fun LyriconSource.handleAppleSong(incomingSong: LocalSong?) {
     if (
         song != null &&
         !originalMetadataPlan.waitForResult &&
-        hasAppleLyricsForOnlineEnrichment(
-            song = song,
-            confirmedNativeLyrics = hasAppleNativeLyrics(song),
-        ) &&
-        incomingNeedsEnrichment &&
-        !untimedNativeLyrics &&
-        isAppleTranslationEnrichmentEnabled()
+        // 来源弹窗：检索时机为「开始播放时」，或本曲已有手动选择/状态请求（规则见该函数）。
+        wantsOnlineSearchAfterSongUpdate(song)
     ) {
         HookLogger.i(
             LyriconSource.TAG,
@@ -288,5 +290,79 @@ internal fun LyriconSource.handleAppleSong(incomingSong: LocalSong?) {
         }
         scheduleOnlineTranslation(song)
     }
+    claimedInApp?.let(::restoreClaimedInAppLyricsSource)
 }
 
+/**
+ * 直连歌曲被活动播放者规则拒收（别的 App 才是活动播放者）：不发布到岛端、不改动活动播放者状态，
+ * 只存入应用内槽位，让 Apple Music 歌词页的来源弹窗仍能对它检索与手动切换来源。
+ */
+internal fun LyriconSource.acceptInAppAppleSong(song: LocalSong?) {
+    val accepted = inAppApple.accept(song, ::hasAppleNativeLyrics, ::isMissingLyricsSupplement)
+    diagnostic(
+        "stage=in_app_apple_song_accepted, update=${accepted.update}, id=${song?.id}, " +
+            "title=${song?.name}, lyrics=${song?.lyrics.orEmpty().size}"
+    )
+    val inAppSong = inAppApple.song()
+    if (accepted.update != AppleInAppSong.Update.SAME_TRACK || inAppSong == null) return
+    // 歌词晚到、原名到达等同曲更新：与正式路径同一条规则决定是否重新检索；
+    // 同一 attempt（含原名元数据）已在进行或已完成时不重复触发。
+    if (
+        wantsOnlineSearchAfterSongUpdate(inAppSong, inAppApple.target) &&
+        translationIdentity(inAppSong) != inAppApple.target.request.snapshot().attempt
+    ) {
+        scheduleOnlineTranslation(inAppSong, inAppApple.target)
+    }
+}
+
+/**
+ * 活动播放者离开 Apple Music：当前 Apple 歌曲、它的本曲手动选择和已确认的歌词来源转入应用内槽位。
+ * 岛端显示归属相关的状态（发布、位置、检索任务）仍由调用处照旧清理。
+ * 待完成的切换请求都得到确定的结局：翻译/发音请求随歌曲转入槽位并重新检索完成，歌词来源请求
+ * （歌词检索任务不随歌曲移交）以失败回传。
+ */
+internal fun LyriconSource.retireAppleSongToInApp(reason: String) {
+    val song = currentAppleSong ?: return
+    val lyricsPending = manualSourceRequests.lyricsRequestToComplete(null)
+    inAppApple.adopt(
+        song = song,
+        nativeSong = currentAppleNativeSong,
+        hasNativeLyrics = currentAppleHasNativeLyrics,
+        lyricsSelection = confirmedLyricsSourceSelection,
+        selection = manualSourceRequests.selection(),
+    )
+    manualSourceRequests.clearForTrackChange()
+    diagnostic("stage=apple_song_retired_to_in_app, reason=$reason, id=${song.id}, title=${song.name}")
+    lyricsPending?.let { publishOnlineSourceSwitchResult(it, actualSource = null) }
+    val target = inAppApple.target
+    if (target.manual.hasPendingOnlineRequest(song.id)) {
+        val scheduled = !hasUntimedAppleNativeLyrics(song) && scheduleOnlineTranslation(song, target)
+        if (!scheduled) failPendingOnlineSourceSwitchRequests(target)
+    }
+}
+
+/**
+ * Apple Music 成为活动播放者后，应用内槽位里同一首歌已确认的歌词来源转正：
+ * 补充歌曲成为正式的 Apple 输入并正常上岛，翻译/发音按新基准重新检索。
+ */
+internal fun LyriconSource.restoreClaimedInAppLyricsSource(claim: AppleInAppSong.Claim) {
+    val supplement = claim.supplementSong ?: return
+    val selection = claim.lyricsSelection ?: return
+    val application = app ?: return
+    publication.confirmLyricsSource(selection)
+    publication.acceptAppleInput(supplement, false)
+    selectAppleFallbackAtMediaPosition(application)
+    cancelOnlineTranslation(
+        clearAttempt = true,
+        clearMatched = false,
+        reason = "in_app_lyrics_source_claimed",
+    )
+    publishAppleSong(
+        supplement,
+        restorePosition = true,
+        onlineTranslationMatched = hasTranslation(supplement),
+    )
+    if (wantsOnlineSearchAfterSongUpdate(supplement)) scheduleOnlineTranslation(supplement)
+    // 在线歌词显示状态下直连位置回调不采用，进度改由 MediaSession 轮询提供（与检索结果落地一致）。
+    startMediaPositionPolling()
+}

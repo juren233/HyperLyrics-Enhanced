@@ -97,6 +97,10 @@
     <string name="title_apple_music_fill_missing_lyrics">Add Lyrics for Songs Without Them</string>
     <string name="summary_apple_music_fill_missing_lyrics">Configure sources under 3rd-Party Online Sources.</string>
     <string name="title_apple_music_hide_mandarin_pinyin">Hide Pinyin for Mandarin Songs</string>
+    <string name="title_apple_music_always_show_source_switch">Always Show Source Switch Buttons</string>
+    <string name="title_apple_music_source_search_timing">When to Search 3rd-Party Sources</string>
+    <string name="option_apple_music_source_search_timing_on_dialog_open">After Opening the Dialog</string>
+    <string name="option_apple_music_source_search_timing_on_playback_start">When Playback Starts</string>
     <string name="title_apple_music_line_to_word_lyrics">Make Supported Lyrics Word-Synced</string>
     <string name="summary_apple_music_line_to_word_lyrics">Uses the enabled AMLL and LunaBeat sources. Experimental.</string>
     <string name="title_apple_music_lyrics_blur_effect">Lyrics Blur Effect</string>

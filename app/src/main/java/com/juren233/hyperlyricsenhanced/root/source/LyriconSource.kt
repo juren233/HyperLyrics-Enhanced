@@ -156,6 +156,16 @@ class LyriconSource : LyricSource {
     internal val manualSourceRequests = AppleManualSourceRequestState()
     internal val onlineTranslationFetchCache =
         OnlineTranslationFetchCache(clockMs = android.os.SystemClock::elapsedRealtime)
+    /** 活动播放者是 Apple Music 时的检索对象（正式的手动选择状态与检索任务槽位）。 */
+    internal val activeOnlineTranslationTarget = OnlineTranslationTarget(
+        inAppOnly = false,
+        manual = manualSourceRequests,
+        request = onlineTranslationRequest,
+        fallback = appleFallbackRequest,
+        fetchCache = onlineTranslationFetchCache,
+    )
+    /** Apple Music 歌词页显示的歌曲但 Apple Music 不是活动播放者时，仅供应用内来源弹窗使用。 */
+    internal val inAppApple = AppleInAppSong(clockMs = android.os.SystemClock::elapsedRealtime)
     @Volatile
     internal var latestSourceSwitchTraceRequest: OnlineSourceSwitchRequest? = null
     internal val applePositionState = ApplePlaybackPositionState()
@@ -182,6 +192,8 @@ class LyriconSource : LyricSource {
         RACE_FIRST,
         RACE_FINAL,
         RACE_FINAL_COMMIT,
+        /** 来源弹窗的渐进版：只发布已答来源的菜单状态，内容与切换请求仍由最终版处理。 */
+        SOURCE_STATUS_PROGRESS,
     }
 
     internal data class PendingOnlineTranslationCommit(
@@ -265,6 +277,7 @@ class LyriconSource : LyricSource {
         cleanup.attempt("Apple media monitor") { stopAppleMediaMonitor() }
         cleanup.attempt("local media-session tracker") { unregisterLocalMediaSessionTracker() }
         cleanup.attempt("Apple fallback") { cancelFallback(clearAppleSong = true, reason = "source_stopped") }
+        cleanup.attempt("in-app Apple song") { inAppApple.clear() }
         cleanup.attempt("third-party fallback") { cancelThirdPartyFallback(reason = "source_stopped") }
         cleanup.attempt("online translation") {
             cancelOnlineTranslation(clearAttempt = true, clearMatched = true, reason = "source_stopped")
@@ -563,6 +576,53 @@ class LyriconSource : LyricSource {
         RootConstants.DEFAULT_HOOK_APPLE_MUSIC_FILL_MISSING_LYRICS
     ) ?: RootConstants.DEFAULT_HOOK_APPLE_MUSIC_FILL_MISSING_LYRICS
 
+    /** 「始终显示切换源按钮」：来源弹窗对每首歌都可用，手动选择不受各自动开关限制。 */
+    internal fun isAlwaysShowSourceSwitchEnabled(): Boolean = prefs?.getBoolean(
+        RootConstants.KEY_HOOK_APPLE_MUSIC_ALWAYS_SHOW_SOURCE_SWITCH,
+        RootConstants.DEFAULT_HOOK_APPLE_MUSIC_ALWAYS_SHOW_SOURCE_SWITCH,
+    ) ?: RootConstants.DEFAULT_HOOK_APPLE_MUSIC_ALWAYS_SHOW_SOURCE_SWITCH
+
+    internal fun isSourceSearchOnPlaybackStartEnabled(): Boolean =
+        isAlwaysShowSourceSwitchEnabled() && prefs?.getInt(
+            RootConstants.KEY_HOOK_APPLE_MUSIC_SOURCE_SEARCH_TIMING,
+            RootConstants.DEFAULT_HOOK_APPLE_MUSIC_SOURCE_SEARCH_TIMING,
+        ) == RootConstants.APPLE_MUSIC_SOURCE_SEARCH_TIMING_ON_PLAYBACK_START
+
+    /**
+     * 来源弹窗是否需要这首歌的三方检索结果：检索时机设为「开始播放时」，或本曲已经
+     * 打开过弹窗、做过手动选择。与「补全翻译与发音」开关以及原生内容是否齐全无关。
+     */
+    internal fun wantsSourceControlSearch(
+        song: LocalSong?,
+        target: OnlineTranslationTarget = activeOnlineTranslationTarget,
+    ): Boolean {
+        song ?: return false
+        if (!isAlwaysShowSourceSwitchEnabled()) return false
+        // 应用内歌曲只在来源弹窗明确请求（状态请求或手动选择）后检索；
+        // 「开始播放时」的提前检索只属于正在播放的歌曲。
+        if (target.inAppOnly) return target.manual.hasSourceControlInterest(song.id)
+        return isSourceSearchOnPlaybackStartEnabled() ||
+            target.manual.hasSourceControlInterest(song.id)
+    }
+
+    /**
+     * Apple 歌曲更新（歌词到达、重发）后，是否应（重新）调度翻译/发音检索。正式路径与应用内路径
+     * 共用这一处定义：有可用歌词基准、不是纯文本无时间轴歌词，且自动补全需要或来源弹窗关注。
+     * 应用内模式没有自动补全。
+     */
+    internal fun wantsOnlineSearchAfterSongUpdate(
+        song: LocalSong,
+        target: OnlineTranslationTarget = activeOnlineTranslationTarget,
+    ): Boolean = hasAppleLyricsForOnlineEnrichment(
+        song = song,
+        confirmedNativeLyrics = hasAppleNativeLyrics(song),
+    ) &&
+        !hasUntimedAppleNativeLyrics(song) &&
+        (
+            (!target.inAppOnly && needsOnlineEnrichment(song) && isAppleTranslationEnrichmentEnabled()) ||
+                wantsSourceControlSearch(song, target)
+            )
+
     internal fun isLineToWordLyricsEnabled(): Boolean = prefs?.getBoolean(
         RootConstants.KEY_HOOK_APPLE_MUSIC_LINE_TO_WORD_LYRICS,
         RootConstants.DEFAULT_HOOK_APPLE_MUSIC_LINE_TO_WORD_LYRICS,
@@ -768,6 +828,12 @@ private fun createActivePlayerListener(generation: Long): ActivePlayerListener =
             playerPackageName == LyriconSource.APPLE_MUSIC_PACKAGE &&
                 providerInfo.providerPackageName == BUILT_IN_PROVIDER_PACKAGE &&
                 currentAppleSong != null
+        // 活动播放者换成别的 App：Apple 歌曲不再属于岛端，但歌词页仍在显示它，转入应用内槽位。
+        if (!preserveDirectAppleSong && playerPackageName != null &&
+            playerPackageName != LyriconSource.APPLE_MUSIC_PACKAGE
+        ) {
+            retireAppleSongToInApp(reason = "central_provider_changed")
+        }
         cancelFallback(
             clearAppleSong = !preserveDirectAppleSong,
             reason = "central_provider_changed",
@@ -854,6 +920,7 @@ private fun createActivePlayerListener(generation: Long): ActivePlayerListener =
                 )
                 return@dispatchCentralCallback
             }
+            retireAppleSongToInApp(reason = "central_non_apple_song")
             cancelFallback(clearAppleSong = true, reason = "central_non_apple_song")
             cancelOnlineTranslation(
                 clearAttempt = true,

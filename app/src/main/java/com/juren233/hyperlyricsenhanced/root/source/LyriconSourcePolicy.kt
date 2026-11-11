@@ -191,14 +191,22 @@ internal fun mergeMissingLyricsSupplementMetadata(
     incomingSong: LocalSong?,
     sameTrack: Boolean,
     authoritativeSource: String? = null,
+    /**
+     * 「始终显示切换源按钮」开启时，用户手动确认的任何三方歌词源都替换 Apple 原生歌词，
+     * 与目录源一样不被同曲的原生歌词重发顶掉。
+     */
+    manualSourceReplacesNative: Boolean = false,
 ): LocalSong? {
     if (!sameTrack || previousSong == null || incomingSong == null) return incomingSong
     val previousMetadata = previousSong.metadata ?: return incomingSong
     val previousSource = previousMetadata
         .getString(LyricMetadataKeys.APPLE_MISSING_LYRICS_SOURCE)
     if (hasConfirmedAppleNativeLyrics(incomingSong)) {
+        val replacesNative = Source.isTtmlCatalogName(authoritativeSource) ||
+            (manualSourceReplacesNative && !authoritativeSource.isNullOrBlank() &&
+                authoritativeSource != LyriconSource.APPLE_NATIVE_LYRICS_SOURCE)
         return if (
-            Source.isTtmlCatalogName(authoritativeSource) &&
+            replacesNative &&
             previousSource == authoritativeSource &&
             previousMetadata
                 .getString(LyricMetadataKeys.APPLE_MISSING_LYRICS_SUPPLEMENT)

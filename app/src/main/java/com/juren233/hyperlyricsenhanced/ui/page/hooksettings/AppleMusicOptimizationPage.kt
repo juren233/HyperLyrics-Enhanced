@@ -283,6 +283,25 @@ fun AppleMusicOptimizationPage(
             )
         )
     }
+    var alwaysShowSourceSwitch by remember {
+        mutableStateOf(
+            prefs.getBoolean(
+                RootConstants.KEY_HOOK_APPLE_MUSIC_ALWAYS_SHOW_SOURCE_SWITCH,
+                RootConstants.DEFAULT_HOOK_APPLE_MUSIC_ALWAYS_SHOW_SOURCE_SWITCH,
+            )
+        )
+    }
+    var sourceSearchTiming by remember {
+        mutableIntStateOf(
+            prefs.getInt(
+                RootConstants.KEY_HOOK_APPLE_MUSIC_SOURCE_SEARCH_TIMING,
+                RootConstants.DEFAULT_HOOK_APPLE_MUSIC_SOURCE_SEARCH_TIMING,
+            ).coerceIn(
+                RootConstants.APPLE_MUSIC_SOURCE_SEARCH_TIMING_ON_DIALOG_OPEN,
+                RootConstants.APPLE_MUSIC_SOURCE_SEARCH_TIMING_ON_PLAYBACK_START,
+            )
+        )
+    }
     var lineToWordLyrics by remember {
         mutableStateOf(
             prefs.getBoolean(
@@ -386,6 +405,10 @@ fun AppleMusicOptimizationPage(
         contentUiLanguage != RootConstants.APPLE_MUSIC_CONTENT_UI_LANGUAGE_NONE &&
             overrideAccountLanguage
     val metadataLookupEnabled = regionReplacementEnabled || restoreCjkOriginalMetadata
+    val sourceSearchTimingOptions = listOf(
+        stringResource(R.string.option_apple_music_source_search_timing_on_dialog_open),
+        stringResource(R.string.option_apple_music_source_search_timing_on_playback_start),
+    )
     val lyricsBlurEffectOptions = listOf(
         stringResource(R.string.option_apple_music_lyrics_blur_effect_off),
         stringResource(R.string.option_apple_music_lyrics_blur_effect_native),
@@ -679,6 +702,43 @@ fun AppleMusicOptimizationPage(
                         )
                     },
                 )
+                SwitchPreference(
+                    enabled = featuresEnabled,
+                    title = stringResource(
+                        R.string.title_apple_music_always_show_source_switch
+                    ),
+                    checked = alwaysShowSourceSwitch,
+                    onCheckedChange = { enabled ->
+                        alwaysShowSourceSwitch = enabled
+                        saveConfig(
+                            RootConstants.KEY_HOOK_APPLE_MUSIC_ALWAYS_SHOW_SOURCE_SWITCH,
+                            enabled,
+                        )
+                    },
+                )
+                AnimatedVisibility(
+                    visible = alwaysShowSourceSwitch,
+                    enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
+                    exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
+                ) {
+                    OverlayDropdownPreference(
+                        enabled = featuresEnabled,
+                        title = stringResource(R.string.title_apple_music_source_search_timing),
+                        items = sourceSearchTimingOptions,
+                        selectedIndex = sourceSearchTiming,
+                        onSelectedIndexChange = { selected ->
+                            val value = selected.coerceIn(
+                                RootConstants.APPLE_MUSIC_SOURCE_SEARCH_TIMING_ON_DIALOG_OPEN,
+                                RootConstants.APPLE_MUSIC_SOURCE_SEARCH_TIMING_ON_PLAYBACK_START,
+                            )
+                            sourceSearchTiming = value
+                            saveConfig(
+                                RootConstants.KEY_HOOK_APPLE_MUSIC_SOURCE_SEARCH_TIMING,
+                                value,
+                            )
+                        },
+                    )
+                }
                 SwitchPreference(
                     enabled = featuresEnabled,
                     title = stringResource(

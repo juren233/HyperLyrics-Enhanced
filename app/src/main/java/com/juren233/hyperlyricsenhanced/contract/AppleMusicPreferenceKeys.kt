@@ -51,6 +51,10 @@ object AppleMusicPreferenceKeys {
         "key_hook_apple_music_fill_missing_lyrics"
     const val KEY_HOOK_APPLE_MUSIC_HIDE_MANDARIN_PINYIN =
         "key_hook_apple_music_hide_mandarin_pinyin"
+    const val KEY_HOOK_APPLE_MUSIC_ALWAYS_SHOW_SOURCE_SWITCH =
+        "key_hook_apple_music_always_show_source_switch"
+    const val KEY_HOOK_APPLE_MUSIC_SOURCE_SEARCH_TIMING =
+        "key_hook_apple_music_source_search_timing"
     const val KEY_HOOK_APPLE_MUSIC_LINE_TO_WORD_LYRICS =
         "key_hook_apple_music_upgrade_line_to_word_lyrics"
     const val KEY_HOOK_APPLE_MUSIC_LYRICS_BLUR_EFFECT =
@@ -106,6 +110,13 @@ object AppleMusicPreferenceKeys {
     const val DEFAULT_HOOK_APPLE_MUSIC_NATIVE_ONLINE_TRANSLATION = false
     const val DEFAULT_HOOK_APPLE_MUSIC_FILL_MISSING_LYRICS = false
     const val DEFAULT_HOOK_APPLE_MUSIC_HIDE_MANDARIN_PINYIN = false
+    const val DEFAULT_HOOK_APPLE_MUSIC_ALWAYS_SHOW_SOURCE_SWITCH = false
+    /** Third-party sources are searched when a source dialog is opened. */
+    const val APPLE_MUSIC_SOURCE_SEARCH_TIMING_ON_DIALOG_OPEN = 0
+    /** Third-party sources are searched as soon as a track starts playing. */
+    const val APPLE_MUSIC_SOURCE_SEARCH_TIMING_ON_PLAYBACK_START = 1
+    const val DEFAULT_HOOK_APPLE_MUSIC_SOURCE_SEARCH_TIMING =
+        APPLE_MUSIC_SOURCE_SEARCH_TIMING_ON_DIALOG_OPEN
     const val DEFAULT_HOOK_APPLE_MUSIC_LINE_TO_WORD_LYRICS = false
     const val APPLE_MUSIC_LYRICS_BLUR_EFFECT_OFF = 0
     const val DEFAULT_HOOK_APPLE_MUSIC_LYRICS_BLUR_EFFECT =

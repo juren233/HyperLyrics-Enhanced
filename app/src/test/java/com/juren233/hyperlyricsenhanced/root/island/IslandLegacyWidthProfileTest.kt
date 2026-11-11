@@ -136,4 +136,62 @@ class IslandLegacyWidthProfileTest {
             ),
         )
     }
+
+    @Test
+    fun `recognizes exact legacy background commit members`() {
+        val content = IslandLegacyWidthProfile.CONTENT_VIEW_CLASS
+        assertTrue(
+            IslandLegacyWidthProfile.matches(
+                IslandLegacyWidthProfile.BIG_ISLAND_CHANGED_ANIMATION_METHOD,
+                declaringClassName = IslandLegacyWidthProfile.ANIMATION_DELEGATE_CLASS,
+                name = "bigIslandChangedAnimation",
+                returnTypeName = Void.TYPE.name,
+                parameterTypeNames = listOf(content),
+            ),
+        )
+        assertTrue(
+            IslandLegacyWidthProfile.matches(
+                IslandLegacyWidthProfile.IS_TEMP_HIDDEN_METHOD,
+                declaringClassName = IslandLegacyWidthProfile.EVENT_COORDINATOR_CLASS,
+                name = "isTempHidden",
+                returnTypeName = java.lang.Boolean.TYPE.name,
+                parameterTypeNames = listOf(content),
+            ),
+        )
+        assertTrue(
+            IslandLegacyWidthProfile.matches(
+                IslandLegacyWidthProfile.GET_STATE_METHOD,
+                declaringClassName = IslandLegacyWidthProfile.BASE_CONTENT_VIEW_CLASS,
+                name = "getState",
+                returnTypeName = IslandLegacyWidthProfile.STATE_CLASS,
+                parameterTypeNames = emptyList(),
+            ),
+        )
+    }
+
+    @Test
+    fun `rejects wrong parameter static or declaring class for background commit members`() {
+        val spec = IslandLegacyWidthProfile.BIG_ISLAND_CHANGED_ANIMATION_METHOD
+        val content = IslandLegacyWidthProfile.CONTENT_VIEW_CLASS
+        assertFalse(
+            IslandLegacyWidthProfile.matches(
+                spec, spec.declaringClass, spec.name, Void.TYPE.name, listOf("android.view.View"),
+            ),
+        )
+        assertFalse(
+            IslandLegacyWidthProfile.matches(
+                spec, spec.declaringClass, spec.name, Void.TYPE.name, listOf(content), isStatic = true,
+            ),
+        )
+        assertFalse(
+            IslandLegacyWidthProfile.matches(
+                spec, content, spec.name, Void.TYPE.name, listOf(content),
+            ),
+        )
+        assertFalse(
+            IslandLegacyWidthProfile.matches(
+                spec, spec.declaringClass, spec.name, Void.TYPE.name, emptyList(),
+            ),
+        )
+    }
 }

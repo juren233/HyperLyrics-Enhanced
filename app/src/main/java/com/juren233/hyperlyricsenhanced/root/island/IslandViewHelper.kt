@@ -374,6 +374,12 @@ object IslandViewHelper {
                         "超级岛布局刷新入口: ${resolved.diagnosticSummary}",
                     )
                 }
+                // 旧版入口只更新内容区，背景几何要靠原生「大岛变化」提交才会跟上（Issue #65）。
+                val legacyBefore = if (resolved.entry == IslandRelayoutEntry.CALCULATE_BIG_ISLAND_WIDTH) {
+                    IslandLegacyBackgroundCommit.capture(islandView)
+                } else {
+                    null
+                }
                 premeasureScope.run(islandView, prepared) {
                     if (resolved.entry == IslandRelayoutEntry.UPDATE_BIG_ISLAND_VIEW_WIDTH && protectLyricLottie) {
                         IslandWidthEventRebindGuard.aroundLyricWidthRelayout(islandView) {
@@ -382,6 +388,11 @@ object IslandViewHelper {
                     } else {
                         resolved.method.invoke(islandView)
                     }
+                }
+                // 放在预测量作用域之外（提交不进入 calculateBigIslandWidth，不消费预测量），
+                // 但仍在 isRelayouting 范围内，提交期间触发的刷新请求会被重入保护挡掉。
+                if (legacyBefore != null) {
+                    IslandLegacyBackgroundCommit.commitIfNeeded(islandView, legacyBefore)
                 }
             }.onFailure { e ->
                 HookLogger.e("IslandViewHelper", "超级岛布局刷新失败", e)

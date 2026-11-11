@@ -30,6 +30,17 @@ object LyricMetadataKeys {
     const val ONLINE_SOURCE_CONTENT_STATES = "onlineSourceContentStates"
     const val ONLINE_PRONUNCIATION_SOURCE = "onlinePronunciationSource"
     const val ONLINE_PRONUNCIATION_MATCH_STATS = "onlinePronunciationMatchStats"
+    /**
+     * "true" when the user picked the translation/pronunciation source by hand and its lines
+     * replace Apple's own content instead of only filling the lines Apple left empty.
+     */
+    const val ONLINE_TRANSLATION_OVERRIDES_NATIVE = "onlineTranslationOverridesNative"
+    const val ONLINE_PRONUNCIATION_OVERRIDES_NATIVE = "onlinePronunciationOverridesNative"
+    /**
+     * Per-source lyric search outcome for a track that already has Apple lyrics, encoded like
+     * [APPLE_MISSING_LYRICS_SOURCE_STATUSES]; feeds the lyrics source dialog.
+     */
+    const val ONLINE_LYRICS_SOURCE_STATUSES = "onlineLyricsSourceStatuses"
     const val APPLE_MISSING_LYRICS_SUPPLEMENT = "appleMissingLyricsSupplement"
     const val APPLE_MISSING_LYRICS_SOURCE = "appleMissingLyricsSource"
     const val APPLE_MISSING_LYRICS_SOURCE_STATUSES = "appleMissingLyricsSourceStatuses"

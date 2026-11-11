@@ -13,7 +13,10 @@ import com.juren233.hyperlyricsenhanced.online.model.Source
  * Per-song memory of what each online source returned, so switching the translation or
  * pronunciation source re-matches locally instead of searching every source again.
  *
- * Only the most recent song is kept. A [Entry.Miss] is remembered too, so a switch does not
+ * Only the most recent song is kept per instance; every [OnlineTranslationTarget] owns its own
+ * instance, so the song shown in Apple Music's own page and the active player's song never evict
+ * each other and the number of remembered songs follows the number of live search targets.
+ * A [Entry.Miss] is remembered too, so a switch does not
  * wait on sources that already failed; the explicitly requested source bypasses it and retries.
  *
  * An entry is only valid for the query it was searched with. When the search inputs change
@@ -47,6 +50,14 @@ internal class OnlineTranslationFetchCache(
             return null
         }
         return stamped.entry
+    }
+
+    /** True while [songId] has at least one entry that has not expired (whatever query it was stored for). */
+    @Synchronized
+    fun hasLiveEntries(songId: String): Boolean {
+        if (this.songId != songId) return false
+        val now = clockMs()
+        return entries.values.any { now - it.storedAtMs <= ttlMs }
     }
 
     @Synchronized

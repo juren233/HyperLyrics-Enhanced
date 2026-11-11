@@ -35,6 +35,57 @@ internal object IslandLegacyWidthProfile {
     const val FLIP_UTILS_CLASS = "miui.systemui.util.FlipUtils"
     const val FLIP_TINY_METHOD = "isFlipTiny"
 
+    // 旧版岛背景提交（Issue #65）：原生「大岛变化」提交所需的类与方法，来自 plugin3.dex 原件。
+    const val ANIMATION_DELEGATE_CLASS =
+        "miui.systemui.dynamicisland.anim.DynamicIslandAnimationDelegate"
+    const val EVENT_COORDINATOR_CLASS =
+        "miui.systemui.dynamicisland.event.DynamicIslandEventCoordinator"
+    const val STATE_CLASS = "miui.systemui.dynamicisland.event.DynamicIslandState"
+    const val BIG_ISLAND_STATE_CLASS = "miui.systemui.dynamicisland.event.DynamicIslandState\$BigIsland"
+
+    val GET_STATE_METHOD = LegacyMethodSpec(BASE_CONTENT_VIEW_CLASS, "getState", STATE_CLASS)
+    val GET_ANIMATOR_DELEGATE_METHOD =
+        LegacyMethodSpec(BASE_CONTENT_VIEW_CLASS, "getAnimatorDelegate", ANIMATION_DELEGATE_CLASS)
+    val GET_EVENT_COORDINATOR_METHOD = LegacyMethodSpec(
+        BASE_CONTENT_VIEW_CLASS,
+        "getDynamicIslandEventCoordinator",
+        EVENT_COORDINATOR_CLASS,
+    )
+    val IS_TEMP_HIDDEN_METHOD = LegacyMethodSpec(
+        EVENT_COORDINATOR_CLASS,
+        "isTempHidden",
+        java.lang.Boolean.TYPE.name,
+        listOf(CONTENT_VIEW_CLASS),
+    )
+    val BIG_ISLAND_CHANGED_ANIMATION_METHOD = LegacyMethodSpec(
+        ANIMATION_DELEGATE_CLASS,
+        "bigIslandChangedAnimation",
+        Void.TYPE.name,
+        listOf(CONTENT_VIEW_CLASS),
+    )
+
+    fun matches(spec: LegacyMethodSpec, method: Method): Boolean = matches(
+        spec = spec,
+        declaringClassName = method.declaringClass.name,
+        name = method.name,
+        returnTypeName = method.returnType.name,
+        parameterTypeNames = method.parameterTypes.map { it.name },
+        isStatic = Modifier.isStatic(method.modifiers),
+    )
+
+    internal fun matches(
+        spec: LegacyMethodSpec,
+        declaringClassName: String,
+        name: String,
+        returnTypeName: String,
+        parameterTypeNames: List<String>,
+        isStatic: Boolean = false,
+    ): Boolean = declaringClassName == spec.declaringClass &&
+        name == spec.name &&
+        returnTypeName == spec.returnType &&
+        parameterTypeNames == spec.parameterTypes &&
+        !isStatic
+
     private val requiredIntFields = setOf(
         VIEW_WIDTH_FIELD,
         LEFT_WIDTH_FIELD,
@@ -133,6 +184,14 @@ internal object IslandLegacyWidthProfile {
         )
     }
 }
+
+/** 旧版二进制中一个实例方法的精确描述（声明类、方法名、返回类型、参数类型）。 */
+internal data class LegacyMethodSpec(
+    val declaringClass: String,
+    val name: String,
+    val returnType: String,
+    val parameterTypes: List<String> = emptyList(),
+)
 
 internal data class IslandLegacyUnlockedGeometry(
     val viewWidth: Int,

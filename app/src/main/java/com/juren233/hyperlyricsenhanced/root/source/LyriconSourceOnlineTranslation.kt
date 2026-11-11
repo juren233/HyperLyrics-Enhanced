@@ -67,9 +67,24 @@ import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.abs
 
-internal fun LyriconSource.scheduleOnlineTranslation(baseSong: LocalSong): Boolean {
+/**
+ * [target] 决定检索作用于哪份状态：默认是活动播放者（Apple Music 或三方）的正式状态；
+ * 应用内 Apple 歌曲用 [AppleInAppSong.target]，检索任务槽位、手动选择都独立，且结果不进岛端。
+ */
+internal fun LyriconSource.scheduleOnlineTranslation(
+    baseSong: LocalSong,
+    target: OnlineTranslationTarget = activeOnlineTranslationTarget,
+    /** 刚改选了「Apple Music 原生」：不产生待完成请求，但同样是切换而不是首次检索。 */
+    selectionChanged: Boolean = false,
+): Boolean {
     val sourceSwitchRequest = activeSourceSwitchTraceRequest(baseSong.id)
-    val effectivePlayerPackage = activeCentralPlayerPackageName ?: LyriconSource.APPLE_MUSIC_PACKAGE
+    // 应用内歌曲一定属于 Apple Music，与当前活动播放者是谁无关。
+    fun playerPackageNow(): String = if (target.inAppOnly) {
+        LyriconSource.APPLE_MUSIC_PACKAGE
+    } else {
+        activeCentralPlayerPackageName ?: LyriconSource.APPLE_MUSIC_PACKAGE
+    }
+    val effectivePlayerPackage = playerPackageNow()
     val matchingEnabled = if (effectivePlayerPackage == LyriconSource.APPLE_MUSIC_PACKAGE) {
         isAppleTranslationEnrichmentEnabled()
     } else {
@@ -78,14 +93,19 @@ internal fun LyriconSource.scheduleOnlineTranslation(baseSong: LocalSong): Boole
     val nativeLineCount = baseSong.lyrics.orEmpty().size
     val enrichmentNeeded = needsOnlineEnrichment(baseSong)
     val titlePresent = !baseSong.name.isNullOrBlank()
+    // 来源弹窗（始终显示切换源按钮）需要的检索不看自动开关，也不看原生内容是否齐全。
+    val sourceControlSearch = effectivePlayerPackage == LyriconSource.APPLE_MUSIC_PACKAGE &&
+        wantsSourceControlSearch(baseSong, target)
+    // 应用内检索只服务来源弹窗，不做自动补全（自动补全的结果要上岛，应用内模式不上岛）。
+    val automaticFill = !target.inAppOnly && matchingEnabled && enrichmentNeeded
     sourceSwitchCoreStage(
         request = sourceSwitchRequest,
         stage = "translation_schedule_evaluated",
         details = "matchingEnabled=$matchingEnabled,nativeLines=$nativeLineCount," +
             "enrichmentNeeded=$enrichmentNeeded,titlePresent=$titlePresent," +
-            "generation=$onlineTranslationGeneration",
+            "sourceControl=$sourceControlSearch,generation=${target.request.snapshot().generation}",
     )
-    if (!matchingEnabled || nativeLineCount == 0 || !enrichmentNeeded || !titlePresent) {
+    if (nativeLineCount == 0 || !titlePresent || (!automaticFill && !sourceControlSearch)) {
         sourceSwitchCoreStage(
             request = sourceSwitchRequest,
             stage = "translation_schedule_skipped",
@@ -95,17 +115,30 @@ internal fun LyriconSource.scheduleOnlineTranslation(baseSong: LocalSong): Boole
             "stage=request_schedule_skipped, reason=precondition_failed, " +
                 "id=${baseSong.id}, prefsPresent=${prefs != null}, " +
                 "matchingEnabled=$matchingEnabled, nativeLines=$nativeLineCount, " +
-                "needsEnrichment=$enrichmentNeeded, titlePresent=$titlePresent"
+                "needsEnrichment=$enrichmentNeeded, titlePresent=$titlePresent, " +
+                "sourceControl=$sourceControlSearch"
         )
         return false
     }
+    fun sourceControl(): OnlineSourceControl? = if (sourceControlSearch) {
+        OnlineSourceControl(
+            automaticFill = automaticFill,
+            translationNativeOnly = target.manual.isTranslationNativeOnly(),
+            pronunciationNativeOnly = target.manual.isPronunciationNativeOnly(),
+        )
+    } else {
+        null
+    }
+    val lyricsSourceStatuses = ConcurrentHashMap<Source, AppleMissingLyricsSourceStatus>()
     val attemptKey = translationIdentity(baseSong)
-    val requestSnapshot = onlineTranslationRequest.snapshot()
+    // 切换来源的一轮不渐进发布，只在最后给弹窗一次完整结果（首次检索仍渐进，见 isSourceSwitchRound）。
+    val sourceSwitchRound = target.isSourceSwitchRound(baseSong.id, selectionChanged)
+    val requestSnapshot = target.request.snapshot()
     if (isAppleOnlineTranslationAttemptAlive(
-            attemptMatches = onlineTranslationAttemptKey == attemptKey,
+            attemptMatches = requestSnapshot.attempt == attemptKey,
             requestRunning = requestSnapshot.running,
             resultReady = requestSnapshot.resultReady,
-            matchedActive = onlineMatchedTranslationActive,
+            matchedActive = !target.inAppOnly && onlineMatchedTranslationActive,
         )
     ) {
         sourceSwitchCoreStage(
@@ -120,8 +153,8 @@ internal fun LyriconSource.scheduleOnlineTranslation(baseSong: LocalSong): Boole
         return false
     }
 
-    val previousJobActive = onlineTranslationRunning
-    val generation = onlineTranslationRequest.begin(attemptKey, allowRestart = true) ?: return false
+    val previousJobActive = requestSnapshot.running
+    val generation = target.request.begin(attemptKey, allowRestart = true) ?: return false
     pronunciationDiagnostic(
         "stage=request_scheduled, generation=$generation, id=${baseSong.id}, " +
             "attempt=$attemptKey, nativeLines=${baseSong.lyrics.orEmpty().size}"
@@ -144,7 +177,7 @@ internal fun LyriconSource.scheduleOnlineTranslation(baseSong: LocalSong): Boole
             details = "generation=$generation,publicationStage=$publicationStage," +
                 "reason=$reason,resultPresent=${selection != null}",
         )
-        onlineTranslationRequest.markResultReady(generation)
+        target.request.markResultReady(generation)
         mainHandler.post {
             val applyStartedAtNanos = SystemClock.elapsedRealtimeNanos()
             sourceSwitchCoreStage(
@@ -160,6 +193,7 @@ internal fun LyriconSource.scheduleOnlineTranslation(baseSong: LocalSong): Boole
                     baseSong = baseSong,
                     selection = selection,
                     publicationStage = publicationStage,
+                    target = target,
                 )
             } finally {
                 sourceSwitchCoreStage(
@@ -174,7 +208,7 @@ internal fun LyriconSource.scheduleOnlineTranslation(baseSong: LocalSong): Boole
         }
     }
 
-    onlineTranslationRequest.launch(fallbackScope, generation) {
+    target.request.launch(fallbackScope, generation) {
         val mutexWaitStartedAtNanos = SystemClock.elapsedRealtimeNanos()
         sourceSwitchCoreStage(
             request = sourceSwitchRequest,
@@ -190,17 +224,17 @@ internal fun LyriconSource.scheduleOnlineTranslation(baseSong: LocalSong): Boole
                         ((SystemClock.elapsedRealtimeNanos() - mutexWaitStartedAtNanos) /
                             1_000_000.0),
                 )
-                if (generation != onlineTranslationGeneration) {
+                if (generation != target.request.snapshot().generation) {
                     sourceSwitchCoreStage(
                         request = sourceSwitchRequest,
                         stage = "translation_search_abandoned",
                         details = "generation=$generation," +
-                            "currentGeneration=$onlineTranslationGeneration",
+                            "currentGeneration=${target.request.snapshot().generation}",
                     )
                     pronunciationDiagnostic(
                         "stage=request_abandoned, generation=$generation, id=${baseSong.id}, " +
                             "reason=generation_changed_before_start, " +
-                            "currentGeneration=$onlineTranslationGeneration"
+                            "currentGeneration=${target.request.snapshot().generation}"
                     )
                     return@withLock
                 }
@@ -211,9 +245,7 @@ internal fun LyriconSource.scheduleOnlineTranslation(baseSong: LocalSong): Boole
                     )
                     return@withLock
                 }
-                val configuredSources = configuredTranslationSources(
-                    activeCentralPlayerPackageName ?: LyriconSource.APPLE_MUSIC_PACKAGE
-                )
+                val configuredSources = configuredTranslationSources(playerPackageNow())
                 if (configuredSources.isEmpty()) {
                     postTranslationApply(
                         selection = null,
@@ -226,16 +258,16 @@ internal fun LyriconSource.scheduleOnlineTranslation(baseSong: LocalSong): Boole
                     OnlineTranslationSourcePreferences.isAutoSelectBestSourceEnabled(prefs)
                 val preferredSource = configuredSources.first()
                 val alternativeSource = configuredSources.drop(1).firstOrNull()
-                val requestedFirstSource = manualSourceRequests.requestedOnlineSource()
-                val raceEnabled = automaticSelection && requestedFirstSource == null &&
-                    !manualSourceRequests.hasTemporarySource
+                val requestedFirstSource = target.manual.requestedOnlineSource()
+                val raceEnabled = automaticFill && automaticSelection &&
+                    requestedFirstSource == null && !target.manual.hasTemporarySource
                 val firstSource = requestedFirstSource
                     ?.takeIf(configuredSources::contains)
                     ?: preferredSource
                 val remainingSources = listOf(firstSource) + configuredSources.filterNot {
                     it == firstSource
                 }
-                val playerPackage = activeCentralPlayerPackageName ?: LyriconSource.APPLE_MUSIC_PACKAGE
+                val playerPackage = playerPackageNow()
                 val completeOnlinePronunciation = playerPackage == LyriconSource.APPLE_MUSIC_PACKAGE &&
                     ApplePronunciationVisibilityPolicy.allowsOnlineSupplementation(
                         song = baseSong,
@@ -312,6 +344,9 @@ internal fun LyriconSource.scheduleOnlineTranslation(baseSong: LocalSong): Boole
                                 totalLineCount = totalLineCount,
                                 generation = generation,
                                 searchDurationMs = searchDuration.durationMs,
+                                sourceControlSearch = sourceControlSearch,
+                                onLyricsSourceStatus = { lyricsSourceStatuses[source] = it },
+                                target = target,
                             )
                         },
                         onCompletion = { completion ->
@@ -331,9 +366,10 @@ internal fun LyriconSource.scheduleOnlineTranslation(baseSong: LocalSong): Boole
                             answeredSources += source
                             candidate?.let { answeredCandidates[source] = it }
                             var publishedFirstNow = false
+                            var publishedProgressNow = false
                             if (candidate != null) {
                                 if (raceEnabled &&
-                                    onlineRaceFirstPublishedGeneration != generation &&
+                                    target.request.snapshot().firstPublished != generation &&
                                     candidate.matchedContentCount > 0
                                 ) {
                                     val firstSelection = OnlineTranslationSelection(
@@ -353,8 +389,10 @@ internal fun LyriconSource.scheduleOnlineTranslation(baseSong: LocalSong): Boole
                                         },
                                         sourceOrder = listOf(source),
                                         pronunciationRequested = completeOnlinePronunciation,
+                                        control = sourceControl(),
+                                        lyricsSourceStatuses = lyricsSourceStatuses.values.toList(),
                                     )
-                                    onlineTranslationRequest.markFirstPublished(generation)
+                                    target.request.markFirstPublished(generation)
                                     publishedFirstNow = true
                                     pronunciationDiagnostic(
                                         "stage=race_first_ready, generation=$generation, " +
@@ -375,7 +413,7 @@ internal fun LyriconSource.scheduleOnlineTranslation(baseSong: LocalSong): Boole
                                 // only at a line boundary (see race_final_deferred), while the
                                 // per-source menu state is published at once.
                                 if (!publishedFirstNow &&
-                                    onlineRaceFirstPublishedGeneration == generation
+                                    target.request.snapshot().firstPublished == generation
                                 ) {
                                     val partial = composeOnlineTranslationSelection(
                                         baseSong = baseSong,
@@ -387,6 +425,9 @@ internal fun LyriconSource.scheduleOnlineTranslation(baseSong: LocalSong): Boole
                                         totalLineCount = totalLineCount,
                                         automaticSelection = automaticSelection,
                                         completeOnlinePronunciation = completeOnlinePronunciation,
+                                        control = sourceControl(),
+                                        lyricsSourceStatuses = lyricsSourceStatuses.values.toList(),
+                                        target = target,
                                     )
                                     postTranslationApply(
                                         selection = partial.selection,
@@ -394,7 +435,36 @@ internal fun LyriconSource.scheduleOnlineTranslation(baseSong: LocalSong): Boole
                                             LyriconSource.OnlineTranslationPublicationStage.RACE_FINAL,
                                         reason = "race_progress",
                                     )
+                                    publishedProgressNow = true
                                 }
+                            }
+                            if (sourceControlSearch && !sourceSwitchRound &&
+                                answeredSources.size < remainingSources.size &&
+                                !publishedFirstNow && !publishedProgressNow
+                            ) {
+                                // 来源弹窗不等最慢的来源：已答来源的菜单状态先发一版。赛马在本次
+                                // 回调里已发布过的版本自带这些状态，不重复发；最后一个来源交给
+                                // 检索结束后的完整合成。
+                                val partial = composeOnlineTranslationSelection(
+                                    baseSong = baseSong,
+                                    candidates = answeredCandidates,
+                                    requestedSources = remainingSources.filter(answeredSources::contains),
+                                    configuredSources = configuredSources,
+                                    preferredSource = preferredSource,
+                                    alternativeSource = alternativeSource,
+                                    totalLineCount = totalLineCount,
+                                    automaticSelection = automaticSelection,
+                                    completeOnlinePronunciation = completeOnlinePronunciation,
+                                    control = sourceControl(),
+                                    lyricsSourceStatuses = lyricsSourceStatuses.values.toList(),
+                                    target = target,
+                                )
+                                postTranslationApply(
+                                    selection = partial.selection,
+                                    publicationStage = LyriconSource
+                                        .OnlineTranslationPublicationStage.SOURCE_STATUS_PROGRESS,
+                                    reason = "source_control_progress",
+                                )
                             }
                         },
                     )
@@ -402,9 +472,10 @@ internal fun LyriconSource.scheduleOnlineTranslation(baseSong: LocalSong): Boole
                     remainingSources.forEachIndexed { index, source ->
                         val previous = fetchedCandidates.values.lastOrNull()
                         val explicitlyRequested =
-                            manualSourceRequests.requestedTranslationSource() == source ||
-                                manualSourceRequests.requestedPronunciationSource() == source
+                            target.manual.requestedTranslationSource() == source ||
+                                target.manual.requestedPronunciationSource() == source
                         if (index > 0 && !automaticSelection && !explicitlyRequested &&
+                            !sourceControlSearch &&
                             !OnlineTranslationSelector.shouldTryAlternative(previous, totalLineCount)
                         ) {
                             return@forEachIndexed
@@ -422,6 +493,9 @@ internal fun LyriconSource.scheduleOnlineTranslation(baseSong: LocalSong): Boole
                             totalLineCount = totalLineCount,
                             generation = generation,
                             searchDurationMs = searchDuration.durationMs,
+                            sourceControlSearch = sourceControlSearch,
+                            onLyricsSourceStatus = { lyricsSourceStatuses[source] = it },
+                            target = target,
                         )?.let { fetchedCandidates[source] = it }
                     }
                 }
@@ -435,13 +509,18 @@ internal fun LyriconSource.scheduleOnlineTranslation(baseSong: LocalSong): Boole
                     totalLineCount = totalLineCount,
                     automaticSelection = automaticSelection,
                     completeOnlinePronunciation = completeOnlinePronunciation,
+                    control = sourceControl(),
+                    lyricsSourceStatuses = lyricsSourceStatuses.values.toList(),
+                    target = target,
                 )
                 val candidates = fetchedCandidates
                 val rankedCandidates = composed.rankedCandidates
                 val selected = composed.selected
                 val supplementalCandidates = rankedCandidates.drop(1)
                 val selection = composed.selection
-                val currentPublishedSong = (if (playerPackage == LyriconSource.APPLE_MUSIC_PACKAGE) {
+                val currentPublishedSong = (if (target.inAppOnly) {
+                    inAppApple.publishedSong()
+                } else if (playerPackage == LyriconSource.APPLE_MUSIC_PACKAGE) {
                     currentPublishedAppleSong
                 } else {
                     currentPublishedThirdPartySong
@@ -525,11 +604,11 @@ internal fun LyriconSource.scheduleOnlineTranslation(baseSong: LocalSong): Boole
                 request = sourceSwitchRequest,
                 stage = "translation_job_cancelled",
                 details = "generation=$generation," +
-                    "currentGeneration=$onlineTranslationGeneration",
+                    "currentGeneration=${target.request.snapshot().generation}",
             )
             pronunciationDiagnostic(
                 "stage=request_cancelled, generation=$generation, id=${baseSong.id}, " +
-                    "currentGeneration=$onlineTranslationGeneration"
+                    "currentGeneration=${target.request.snapshot().generation}"
             )
             throw e
         } catch (e: Exception) {
@@ -582,6 +661,7 @@ private suspend fun LyriconSource.fetchCatalogTranslationOutcome(
     )
     return OnlineLyricTargeter.FetchOutcome(
         lines = lines?.takeIf { it.isNotEmpty() },
+        wordLines = lookup.match?.parsed?.wordLines,
         selectedSource = source.takeIf { lines != null },
     )
 }
@@ -593,6 +673,9 @@ internal suspend fun LyriconSource.fetchOnlineTranslationCandidate(
     totalLineCount: Int,
     generation: Int,
     searchDurationMs: Long,
+    sourceControlSearch: Boolean = false,
+    onLyricsSourceStatus: ((AppleMissingLyricsSourceStatus) -> Unit)? = null,
+    target: OnlineTranslationTarget = activeOnlineTranslationTarget,
 ): OnlineTranslationSelector.Candidate? {
     val sourceSwitchRequest = activeSourceSwitchTraceRequest(baseSong.id)
     val fetchStartedAtNanos = SystemClock.elapsedRealtimeNanos()
@@ -610,8 +693,8 @@ internal suspend fun LyriconSource.fetchOnlineTranslationCandidate(
         ?.takeIf(String::isNotBlank)
     val albumForSearch = originalAlbum ?: mediaInfo.album
     val cacheSongId = baseSong.id?.takeIf(String::isNotBlank)
-    val explicitlyRequested = manualSourceRequests.requestedTranslationSource() == source ||
-        manualSourceRequests.requestedPronunciationSource() == source
+    // 只有点选这个来源的那一轮才强制重查未命中；之后重开弹窗等检索不再重复联网。
+    val explicitlyRequested = target.manual.isRetryRequested(source)
     val queryKey = listOf(
         baseSong.name,
         baseSong.artist,
@@ -622,7 +705,7 @@ internal suspend fun LyriconSource.fetchOnlineTranslationCandidate(
         shouldPreferAppleOriginalMetadata().toString(),
         searchDurationMs.toString(),
     ).joinToString("\u0000") { it.orEmpty() }
-    val cached = cacheSongId?.let { onlineTranslationFetchCache.get(it, source, queryKey) }
+    val cached = cacheSongId?.let { target.fetchCache.get(it, source, queryKey) }
     val fetchOutcome = when {
         cached is OnlineTranslationFetchCache.Entry.Hit -> cached.outcome
         cached is OnlineTranslationFetchCache.Entry.Miss && !explicitlyRequested ->
@@ -656,7 +739,7 @@ internal suspend fun LyriconSource.fetchOnlineTranslationCandidate(
             }
             ).also { outcome ->
             if (cacheSongId != null) {
-                onlineTranslationFetchCache.put(
+                target.fetchCache.put(
                     cacheSongId,
                     source,
                     queryKey,
@@ -669,6 +752,18 @@ internal suspend fun LyriconSource.fetchOnlineTranslationCandidate(
             }
         }
     }
+    // 歌词来源弹窗用的是「手动切换歌词源」同一条取词结果：只有直接命中（非近失）才算可切换。
+    onLyricsSourceStatus?.invoke(
+        AppleMissingLyricsSourceStatus(
+            source = source.name,
+            searched = true,
+            found = !fetchOutcome.lines.isNullOrEmpty(),
+            wordTimed = !fetchOutcome.wordLines.isNullOrEmpty(),
+            lineCount = fetchOutcome.wordLines?.size?.takeIf { it > 0 }
+                ?: fetchOutcome.lines?.size
+                ?: 0,
+        )
+    )
     val onlineLines = fetchOutcome.lines ?: fetchOutcome.nearMiss?.lines
     if (onlineLines == null) {
         sourceSwitchCoreStage(
@@ -689,7 +784,8 @@ internal suspend fun LyriconSource.fetchOnlineTranslationCandidate(
         )
         return null
     }
-    val appleRequest = activeCentralPlayerPackageName == LyriconSource.APPLE_MUSIC_PACKAGE ||
+    val appleRequest = target.inAppOnly ||
+        activeCentralPlayerPackageName == LyriconSource.APPLE_MUSIC_PACKAGE ||
         currentThirdPartySong == null
     val filteredOnlineLines = ApplePronunciationVisibilityPolicy.filterOnlineLines(
         song = baseSong,
@@ -712,7 +808,29 @@ internal suspend fun LyriconSource.fetchOnlineTranslationCandidate(
             !enrichedLines.getOrNull(index)?.roma.isNullOrBlank()
     }
     if (fetchOutcome.nearMiss != null) {
-        val verification = AppleOnlineTranslationNearMissPolicy.VerificationInputs(
+        // 原生内容齐全的歌没有缺行可比对，近失候选的歌词重叠校验改用「原生内容留空」后的全量匹配。
+        val verificationResult = if (sourceControlSearch) {
+            OnlineTranslationMatcher.apply(
+                OnlineSourceOverride.strip(baseSong, translation = true, pronunciation = true),
+                filteredOnlineLines,
+            )
+        } else {
+            null
+        }
+        val verification = if (verificationResult != null) {
+            val sungLines = baseLines.count { !it.text.isNullOrBlank() }
+            AppleOnlineTranslationNearMissPolicy.VerificationInputs(
+                score = fetchOutcome.nearMiss.score,
+                missingTranslationCount = sungLines,
+                matchedTranslationCount =
+                    OnlineSourceOverride.translationCoverage(verificationResult.song).matchedLines,
+                missingPronunciationCount = sungLines,
+                matchedPronunciationCount =
+                    OnlineSourceOverride.pronunciationCoverage(verificationResult.song).matchedLines,
+                averageMatchScore = verificationResult.averageMatchScore,
+                durationVerified = fetchOutcome.nearMiss.durationVerified,
+            )
+        } else AppleOnlineTranslationNearMissPolicy.VerificationInputs(
             score = fetchOutcome.nearMiss.score,
             missingTranslationCount = baseLines.count {
                 !OnlineTranslationContentPolicy.isMeaningful(it.translation)
@@ -834,6 +952,9 @@ internal fun LyriconSource.composeOnlineTranslationSelection(
     totalLineCount: Int,
     automaticSelection: Boolean,
     completeOnlinePronunciation: Boolean,
+    control: OnlineSourceControl? = null,
+    lyricsSourceStatuses: List<AppleMissingLyricsSourceStatus> = emptyList(),
+    target: OnlineTranslationTarget = activeOnlineTranslationTarget,
 ): ComposedOnlineTranslation {
     val rankedCandidates = if (automaticSelection) {
                     OnlineTranslationSelector.rank(
@@ -872,14 +993,16 @@ internal fun LyriconSource.composeOnlineTranslationSelection(
                     requestedSources = requestedSources,
                     defaultTranslationSource = defaultTranslationCandidate?.source,
                     defaultPronunciationSource = defaultPronunciationCandidate?.source,
-                    forcedTranslationSource = manualSourceRequests.requestedTranslationSource(),
-                    forcedPronunciationSource = manualSourceRequests.requestedPronunciationSource(),
+                    forcedTranslationSource = target.manual.requestedTranslationSource(),
+                    forcedPronunciationSource = target.manual.requestedPronunciationSource(),
                     sourceOrder = if (automaticSelection) {
                         rankedCandidates.map { it.source }
                     } else {
                         configuredSources
                     },
                     pronunciationRequested = completeOnlinePronunciation,
+                    control = control,
+                    lyricsSourceStatuses = lyricsSourceStatuses,
                 )
     return ComposedOnlineTranslation(rankedCandidates, selected, selection)
 }
