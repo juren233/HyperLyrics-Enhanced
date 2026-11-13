@@ -1,10 +1,8 @@
 package com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.translation
 
+import com.juren233.hyperlyricsenhanced.ui.component.SectionEnter
+import com.juren233.hyperlyricsenhanced.ui.component.SectionExit
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -58,8 +56,8 @@ fun LazyListScope.translationSections(
                     )
                     AnimatedVisibility(
                         visible = translationDisplayMode != RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_OFF,
-                        enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
-                        exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
+                        enter = SectionEnter,
+                        exit = SectionExit,
                     ) {
                         SwitchPreference(
                             title = stringResource(R.string.title_translation_pronunciation_fallback),

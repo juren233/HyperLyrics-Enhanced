@@ -6,15 +6,13 @@
 
 package com.juren233.hyperlyricsenhanced.ui.page.hooksettings
 
+import com.juren233.hyperlyricsenhanced.ui.component.SectionEnter
+import com.juren233.hyperlyricsenhanced.ui.component.SectionExit
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.graphics.drawable.Drawable
 import android.widget.ImageView
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -275,8 +273,8 @@ private fun LazyListScope.specialSettingsSection(
     item(key = "special_settings") {
         AnimatedVisibility(
             visible = saltApplies,
-            enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
-            exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
+            enter = SectionEnter,
+            exit = SectionExit,
         ) {
             Column {
                 SmallTitle(

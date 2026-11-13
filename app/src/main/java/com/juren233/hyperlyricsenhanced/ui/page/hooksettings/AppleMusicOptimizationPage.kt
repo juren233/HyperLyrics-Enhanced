@@ -1,19 +1,19 @@
 package com.juren233.hyperlyricsenhanced.ui.page.hooksettings
 
+import com.juren233.hyperlyricsenhanced.ui.component.SectionEnter
+import com.juren233.hyperlyricsenhanced.ui.component.SectionExit
 import com.juren233.hyperlyricsenhanced.common.FloatPreferences
 import android.content.SharedPreferences
+import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -29,7 +29,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.juren233.hyperlyricsenhanced.R
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.provider.OfficialProviderCatalog
@@ -37,7 +36,13 @@ import com.juren233.hyperlyricsenhanced.provider.OfficialProviderRepository
 import com.juren233.hyperlyricsenhanced.ui.component.AppSettingsIconButton
 import com.juren233.hyperlyricsenhanced.ui.component.CustomFontColorPreview
 import com.juren233.hyperlyricsenhanced.ui.component.FloatRangeInputDialog
+import com.juren233.hyperlyricsenhanced.ui.component.HeroCard
+import com.juren233.hyperlyricsenhanced.ui.component.HeroTone
 import com.juren233.hyperlyricsenhanced.ui.component.NumberRangeInputDialog
+import com.juren233.hyperlyricsenhanced.ui.component.StatusGlyphs
+import com.juren233.hyperlyricsenhanced.ui.component.SwipeableSegmentedTabs
+import com.juren233.hyperlyricsenhanced.ui.component.settingsCard
+import com.juren233.hyperlyricsenhanced.ui.component.settingsHeroCard
 import com.juren233.hyperlyricsenhanced.ui.navigation.LocalNavigator
 import com.juren233.hyperlyricsenhanced.ui.navigation.Route
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.common.XposedLyricSettingPage
@@ -52,14 +57,22 @@ import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.ChevronForward
 import top.yukonga.miuix.kmp.icon.extended.Refresh
+import top.yukonga.miuix.kmp.icon.extended.Music
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 private enum class AppleMusicPluginGate { Loading, Missing, Disabled, Ready }
+
+/** 本页设置的分类标签，顺序即标签与分页的顺序。 */
+private enum class AppleMusicSettingsTab(@param:StringRes val label: Int) {
+    Lyrics(R.string.tab_apple_music_lyrics),
+    Language(R.string.tab_apple_music_language),
+    Playback(R.string.tab_apple_music_playback),
+    Features(R.string.tab_apple_music_features),
+}
 
 @Composable
 fun AppleMusicOptimizationPage(
@@ -85,6 +98,9 @@ fun AppleMusicOptimizationPage(
         )
     }
     var pluginGate by remember { mutableStateOf(AppleMusicPluginGate.Loading) }
+    var pluginVersionName by remember { mutableStateOf<String?>(null) }
+    // 插件目录里比已装版本新的兼容版本名，与 Lyricon 配置页的更新按钮同一判断（OfficialProviderItem.updateAvailable）。
+    var pluginUpdateVersionName by remember { mutableStateOf<String?>(null) }
     val refreshPluginGate: () -> Unit = {
         coroutineScope.launch {
             val item = withContext(Dispatchers.IO) {
@@ -93,11 +109,26 @@ fun AppleMusicOptimizationPage(
                         it.catalog.id == OfficialProviderCatalog.APPLE_MUSIC_PLUGIN_ID
                     }
             }
+            pluginVersionName = item?.displayVersionName
             pluginGate = when {
                 item == null -> AppleMusicPluginGate.Missing
                 !item.enabled -> AppleMusicPluginGate.Disabled
                 else -> AppleMusicPluginGate.Ready
             }
+            if (item == null) {
+                pluginUpdateVersionName = null
+                return@launch
+            }
+            // 读插件目录（联网，失败时回退本地缓存）；不读目标进程状态，避免触发 root 授权。
+            val catalogItem = withContext(Dispatchers.IO) {
+                runCatching {
+                    OfficialProviderRepository.loadItems(context, includeTargetState = false)
+                        .firstOrNull { it.catalog.id == OfficialProviderCatalog.APPLE_MUSIC_PLUGIN_ID }
+                }.getOrNull()
+            }
+            pluginUpdateVersionName = catalogItem
+                ?.takeIf { it.updateAvailable }
+                ?.let { it.updateVersionName ?: context.getString(R.string.unknown) }
         }
     }
     LaunchedEffect(Unit) { refreshPluginGate() }
@@ -496,6 +527,8 @@ fun AppleMusicOptimizationPage(
         stringResource(R.string.option_apple_music_lyrics_image_background_custom_image),
     )
 
+    val tabPagerState = rememberPagerState { AppleMusicSettingsTab.entries.size }
+
     XposedLyricSettingPage(
         title = stringResource(R.string.title_apple_music_optimization_page),
         subtitle = stringResource(R.string.summary_apple_music_optimization_page),
@@ -527,523 +560,501 @@ fun AppleMusicOptimizationPage(
             null
         },
     ) {
-        if (requirementNotice != null) {
-            item(key = "provider_requirement_notice") {
-                AppleMusicOptimizationNotice(
-                    text = stringResource(requirementNotice),
-                    onClick = {
-                        navigator.navigate(
-                            if (lyricSourceReady) Route.LyricProvider else Route.LyricSettings
-                        )
-                    },
-                    modifier = Modifier
-                        .padding(horizontal = 12.dp)
-                        .padding(bottom = 12.dp)
-                        .fillMaxWidth(),
-                )
-            }
-        }
-        item(key = "app_content_title") {
-            SmallTitle(text = stringResource(R.string.title_apple_music_app_content))
-        }
-        item(key = "apple_music_content_ui_language") {
-            Card(
-                modifier = Modifier
-                    .padding(horizontal = 12.dp)
-                    .fillMaxWidth()
-            ) {
-                OverlayDropdownPreference(
-                    enabled = featuresEnabled,
-                    title = stringResource(R.string.title_apple_music_content_ui_language),
-                    summary = stringResource(R.string.summary_apple_music_content_ui_language),
-                    items = languageOptions,
-                    selectedIndex = contentUiLanguage,
-                    onSelectedIndexChange = { selected ->
-                        val value = selected.coerceIn(
-                            RootConstants.APPLE_MUSIC_CONTENT_UI_LANGUAGE_NONE,
-                            RootConstants.APPLE_MUSIC_CONTENT_UI_LANGUAGE_JA_JP,
-                        )
-                        contentUiLanguage = value
-                        saveConfig(RootConstants.KEY_HOOK_APPLE_MUSIC_CONTENT_UI_LANGUAGE, value)
-                    },
-                )
-                if (contentUiLanguage != RootConstants.APPLE_MUSIC_CONTENT_UI_LANGUAGE_NONE) {
-                    SwitchPreference(
-                        enabled = featuresEnabled,
-                        title = stringResource(
-                            R.string.title_apple_music_override_account_language
-                        ),
-                        checked = overrideAccountLanguage,
-                        onCheckedChange = { enabled ->
-                            overrideAccountLanguage = enabled
-                            saveConfig(
-                                RootConstants.KEY_HOOK_APPLE_MUSIC_OVERRIDE_ACCOUNT_LANGUAGE,
-                                enabled,
-                            )
-                        },
+        item(key = "apple_music_hero") {
+            val ready = requirementNotice == null
+            val updateVersion = pluginUpdateVersionName?.takeIf { ready }
+            HeroCard(
+                overline = "Apple Music",
+                title = stringResource(
+                    when {
+                        !ready -> R.string.apple_music_hero_unavailable
+                        updateVersion != null -> R.string.apple_music_hero_update_available
+                        else -> R.string.apple_music_hero_ready
+                    }
+                ),
+                subtitle = requirementNotice?.let { stringResource(it) }
+                    ?: updateVersion?.let { stringResource(R.string.apple_music_hero_new_version, it) },
+                // 插件版本放在头卡左下角。
+                notes = listOfNotNull(
+                    pluginVersionName?.let { stringResource(R.string.apple_music_hero_plugin_version, it) },
+                ),
+                // 就绪为绿色音符；插件未添加为红色错误；未选 Lyricon 歌词源或插件未开启为琥珀色警告。
+                tone = when {
+                    ready -> HeroTone.Success
+                    lyricSourceReady && pluginGate == AppleMusicPluginGate.Missing -> HeroTone.Error
+                    else -> HeroTone.Warning
+                },
+                decorationIcon = when {
+                    ready -> MiuixIcons.Music
+                    lyricSourceReady && pluginGate == AppleMusicPluginGate.Missing -> StatusGlyphs.Error
+                    else -> StatusGlyphs.Warning
+                },
+                onClick = {
+                    navigator.navigate(
+                        if (lyricSourceReady) Route.LyricProvider else Route.LyricSettings
                     )
-                }
-                SwitchPreference(
-                    enabled = featuresEnabled,
-                    title = stringResource(
-                        R.string.title_apple_music_restore_cjk_original_metadata
-                    ),
-                    checked = restoreCjkOriginalMetadata,
-                    onCheckedChange = { enabled ->
-                        restoreCjkOriginalMetadata = enabled
-                        saveConfig(
-                            RootConstants.KEY_HOOK_APPLE_MUSIC_RESTORE_CJK_ORIGINAL_METADATA,
-                            enabled,
-                        )
-                    },
-                )
-                if (metadataLookupEnabled) {
-                    SwitchPreference(
-                        enabled = featuresEnabled,
-                        title = stringResource(
-                            R.string.title_apple_music_localized_metadata_cache
-                        ),
-                        summary = stringResource(
-                            R.string.summary_apple_music_localized_metadata_cache
-                        ),
-                        checked = localizedMetadataCache,
-                        onCheckedChange = { enabled ->
-                            localizedMetadataCache = enabled
-                            saveConfig(
-                                RootConstants.KEY_HOOK_APPLE_MUSIC_LOCALIZED_METADATA_CACHE,
-                                enabled,
-                            )
-                        },
-                    )
-                }
-            }
+                },
+                modifier = Modifier.settingsHeroCard(),
+            )
         }
-        item(key = "app_features_title") {
-            SmallTitle(text = stringResource(R.string.title_apple_music_app_features))
+        item(key = "apple_music_tabs") {
+            // 分类标签的滑块跟随下方分页实时移动，也可直接拖动或点按切换分类。
+            SwipeableSegmentedTabs(
+                labels = AppleMusicSettingsTab.entries.map { stringResource(it.label) },
+                pagerState = tabPagerState,
+                modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp),
+            )
         }
-        item(key = "apple_music_notification_open_full_player") {
-            Card(
-                modifier = Modifier
-                    .padding(horizontal = 12.dp)
-                    .fillMaxWidth()
-            ) {
-                SwitchPreference(
-                    enabled = featuresEnabled,
-                    title = stringResource(R.string.title_apple_music_volume_balance),
-                    summary = stringResource(R.string.summary_apple_music_volume_balance),
-                    checked = volumeBalance,
-                    onCheckedChange = { enabled ->
-                        volumeBalance = enabled
-                        saveConfig(
-                            RootConstants.KEY_HOOK_APPLE_MUSIC_VOLUME_BALANCE,
-                            enabled,
-                        )
-                    },
-                )
-                SwitchPreference(
-                    enabled = featuresEnabled,
-                    title = stringResource(
-                        R.string.title_apple_music_notification_open_full_player
-                    ),
-                    checked = notificationOpenFullPlayer,
-                    onCheckedChange = { enabled ->
-                        notificationOpenFullPlayer = enabled
-                        saveConfig(
-                            RootConstants.KEY_HOOK_APPLE_MUSIC_NOTIFICATION_OPEN_FULL_PLAYER,
-                            enabled,
-                        )
-                    },
-                )
-                SwitchPreference(
-                    enabled = featuresEnabled,
-                    title = stringResource(
-                        R.string.title_apple_music_fill_missing_lyrics
-                    ),
-                    summary = stringResource(
-                        R.string.summary_apple_music_fill_missing_lyrics
-                    ),
-                    checked = fillMissingLyrics,
-                    onCheckedChange = { enabled ->
-                        fillMissingLyrics = enabled
-                        saveConfig(
-                            RootConstants.KEY_HOOK_APPLE_MUSIC_FILL_MISSING_LYRICS,
-                            enabled,
-                        )
-                    },
-                )
-                SwitchPreference(
-                    enabled = featuresEnabled,
-                    title = stringResource(
-                        R.string.title_apple_music_native_online_translation
-                    ),
-                    summary = stringResource(
-                        R.string.summary_apple_music_native_online_translation
-                    ),
-                    checked = nativeOnlineTranslation,
-                    onCheckedChange = { enabled ->
-                        nativeOnlineTranslation = enabled
-                        saveConfig(
-                            RootConstants.KEY_HOOK_APPLE_MUSIC_NATIVE_ONLINE_TRANSLATION,
-                            enabled,
-                        )
-                    },
-                )
-                SwitchPreference(
-                    enabled = featuresEnabled,
-                    title = stringResource(
-                        R.string.title_apple_music_hide_mandarin_pinyin
-                    ),
-                    checked = hideMandarinPinyin,
-                    onCheckedChange = { enabled ->
-                        hideMandarinPinyin = enabled
-                        saveConfig(
-                            RootConstants.KEY_HOOK_APPLE_MUSIC_HIDE_MANDARIN_PINYIN,
-                            enabled,
-                        )
-                    },
-                )
-                SwitchPreference(
-                    enabled = featuresEnabled,
-                    title = stringResource(
-                        R.string.title_apple_music_always_show_source_switch
-                    ),
-                    checked = alwaysShowSourceSwitch,
-                    onCheckedChange = { enabled ->
-                        alwaysShowSourceSwitch = enabled
-                        saveConfig(
-                            RootConstants.KEY_HOOK_APPLE_MUSIC_ALWAYS_SHOW_SOURCE_SWITCH,
-                            enabled,
-                        )
-                    },
-                )
-                AnimatedVisibility(
-                    visible = alwaysShowSourceSwitch,
-                    enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
-                    exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
-                ) {
-                    OverlayDropdownPreference(
-                        enabled = featuresEnabled,
-                        title = stringResource(R.string.title_apple_music_source_search_timing),
-                        items = sourceSearchTimingOptions,
-                        selectedIndex = sourceSearchTiming,
-                        onSelectedIndexChange = { selected ->
-                            val value = selected.coerceIn(
-                                RootConstants.APPLE_MUSIC_SOURCE_SEARCH_TIMING_ON_DIALOG_OPEN,
-                                RootConstants.APPLE_MUSIC_SOURCE_SEARCH_TIMING_ON_PLAYBACK_START,
-                            )
-                            sourceSearchTiming = value
-                            saveConfig(
-                                RootConstants.KEY_HOOK_APPLE_MUSIC_SOURCE_SEARCH_TIMING,
-                                value,
-                            )
-                        },
-                    )
-                }
-                SwitchPreference(
-                    enabled = featuresEnabled,
-                    title = stringResource(
-                        R.string.title_apple_music_line_to_word_lyrics
-                    ),
-                    summary = stringResource(
-                        R.string.summary_apple_music_line_to_word_lyrics
-                    ),
-                    checked = lineToWordLyrics,
-                    onCheckedChange = { enabled ->
-                        lineToWordLyrics = enabled
-                        saveConfig(
-                            RootConstants.KEY_HOOK_APPLE_MUSIC_LINE_TO_WORD_LYRICS,
-                            enabled,
-                        )
-                    },
-                )
-                SwitchPreference(
-                    enabled = featuresEnabled,
-                    title = stringResource(R.string.title_apple_music_force_cellular_data_entry),
-                    checked = forceCellularDataEntry,
-                    onCheckedChange = { enabled ->
-                        forceCellularDataEntry = enabled
-                        saveConfig(
-                            RootConstants.KEY_HOOK_APPLE_MUSIC_FORCE_CELLULAR_DATA_ENTRY,
-                            enabled,
-                        )
-                    },
-                )
-                SwitchPreference(
-                    enabled = featuresEnabled,
-                    title = stringResource(
-                        R.string.title_apple_music_prevent_network_auto_skip
-                    ),
-                    summary = stringResource(
-                        R.string.summary_apple_music_prevent_network_auto_skip
-                    ),
-                    checked = preventNetworkAutoSkip,
-                    onCheckedChange = { enabled ->
-                        preventNetworkAutoSkip = enabled
-                        saveConfig(
-                            RootConstants.KEY_HOOK_APPLE_MUSIC_PREVENT_NETWORK_AUTO_SKIP,
-                            enabled,
-                        )
-                    },
-                )
-            }
-        }
-        item(key = "apple_music_lyrics_image_export") {
-            Card(
-                modifier = Modifier
-                    .padding(horizontal = 12.dp)
-                    .padding(top = 12.dp)
-                    .fillMaxWidth()
-            ) {
-                SwitchPreference(
-                    enabled = featuresEnabled,
-                    title = stringResource(R.string.title_apple_music_lyrics_image_export),
-                    summary = stringResource(R.string.summary_apple_music_lyrics_image_export),
-                    checked = lyricsImageExport,
-                    onCheckedChange = { enabled ->
-                        lyricsImageExport = enabled
-                        saveConfig(
-                            RootConstants.KEY_HOOK_APPLE_MUSIC_LYRICS_IMAGE_EXPORT,
-                            enabled,
-                        )
-                    },
-                )
-                AnimatedVisibility(
-                    visible = lyricsImageExport,
-                    enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
-                    exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
-                ) {
-                    Column {
-                        OverlayDropdownPreference(
-                            enabled = featuresEnabled,
-                            title = stringResource(R.string.title_apple_music_lyrics_image_background),
-                            items = lyricsImageBackgroundOptions,
-                            selectedIndex = lyricsImageBackground,
-                            onSelectedIndexChange = { selected ->
-                                val value = selected.coerceIn(
-                                    RootConstants.APPLE_MUSIC_LYRICS_IMAGE_BACKGROUND_COVER_BLUR,
-                                    RootConstants.APPLE_MUSIC_LYRICS_IMAGE_BACKGROUND_CUSTOM_IMAGE,
+        item(key = "apple_music_tab_pages") {
+            HorizontalPager(
+                state = tabPagerState,
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.Top,
+                beyondViewportPageCount = 1,
+            ) { page ->
+                when (AppleMusicSettingsTab.entries[page]) {
+                    AppleMusicSettingsTab.Lyrics -> Column {
+                            SmallTitle(text = stringResource(R.string.title_apple_music_group_lyrics_content))
+                            Card(modifier = Modifier.settingsCard()) {
+                                SwitchPreference(
+                                    enabled = featuresEnabled,
+                                    title = stringResource(R.string.title_apple_music_fill_missing_lyrics),
+                                    summary = stringResource(R.string.summary_apple_music_fill_missing_lyrics),
+                                    checked = fillMissingLyrics,
+                                    onCheckedChange = { enabled ->
+                                        fillMissingLyrics = enabled
+                                        saveConfig(RootConstants.KEY_HOOK_APPLE_MUSIC_FILL_MISSING_LYRICS, enabled)
+                                    },
                                 )
-                                lyricsImageBackground = value
-                                saveConfig(
-                                    RootConstants.KEY_HOOK_APPLE_MUSIC_LYRICS_IMAGE_BACKGROUND,
-                                    value,
+                                SwitchPreference(
+                                    enabled = featuresEnabled,
+                                    title = stringResource(R.string.title_apple_music_native_online_translation),
+                                    summary = stringResource(R.string.summary_apple_music_native_online_translation),
+                                    checked = nativeOnlineTranslation,
+                                    onCheckedChange = { enabled ->
+                                        nativeOnlineTranslation = enabled
+                                        saveConfig(RootConstants.KEY_HOOK_APPLE_MUSIC_NATIVE_ONLINE_TRANSLATION, enabled)
+                                    },
                                 )
-                            },
-                        )
-                        AnimatedVisibility(
-                            visible = lyricsImageBackground ==
-                                RootConstants.APPLE_MUSIC_LYRICS_IMAGE_BACKGROUND_CUSTOM_COLOR,
-                            enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
-                            exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
-                        ) {
-                            ArrowPreference(
-                                enabled = featuresEnabled,
-                                title = stringResource(
-                                    R.string.title_apple_music_lyrics_image_background_color
-                                ),
-                                endActions = {
-                                    CustomFontColorPreview(color = lyricsImageBackgroundColor)
-                                },
-                                onClick = {
-                                    navigator.navigate(Route.AppleLyricsImageBackgroundColor)
-                                },
-                            )
-                        }
-                        AnimatedVisibility(
-                            visible = lyricsImageBackground ==
-                                RootConstants.APPLE_MUSIC_LYRICS_IMAGE_BACKGROUND_CUSTOM_IMAGE,
-                            enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
-                            exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
-                        ) {
-                            ArrowPreference(
-                                enabled = featuresEnabled,
-                                title = stringResource(
-                                    R.string.title_apple_music_lyrics_image_background_image
-                                ),
-                                onClick = {
-                                    navigator.navigate(Route.AppleLyricsImageBackground)
-                                },
-                            )
-                        }
-                        SwitchPreference(
-                            enabled = featuresEnabled,
-                            title = stringResource(R.string.title_apple_music_lyrics_image_qr_code),
-                            checked = lyricsImageQrCode,
-                            onCheckedChange = { enabled ->
-                                lyricsImageQrCode = enabled
-                                saveConfig(
-                                    RootConstants.KEY_HOOK_APPLE_MUSIC_LYRICS_IMAGE_QR_CODE,
-                                    enabled,
+                                SwitchPreference(
+                                    enabled = featuresEnabled,
+                                    title = stringResource(
+                                        R.string.title_apple_music_hide_mandarin_pinyin
+                                    ),
+                                    checked = hideMandarinPinyin,
+                                    onCheckedChange = { enabled ->
+                                        hideMandarinPinyin = enabled
+                                        saveConfig(
+                                            RootConstants.KEY_HOOK_APPLE_MUSIC_HIDE_MANDARIN_PINYIN,
+                                            enabled,
+                                        )
+                                    },
                                 )
-                            },
-                        )
+                                SwitchPreference(
+                                    enabled = featuresEnabled,
+                                    title = stringResource(
+                                        R.string.title_apple_music_line_to_word_lyrics
+                                    ),
+                                    summary = stringResource(
+                                        R.string.summary_apple_music_line_to_word_lyrics
+                                    ),
+                                    checked = lineToWordLyrics,
+                                    onCheckedChange = { enabled ->
+                                        lineToWordLyrics = enabled
+                                        saveConfig(
+                                            RootConstants.KEY_HOOK_APPLE_MUSIC_LINE_TO_WORD_LYRICS,
+                                            enabled,
+                                        )
+                                    },
+                                )
+                                SwitchPreference(
+                                    enabled = featuresEnabled,
+                                    title = stringResource(
+                                        R.string.title_apple_music_always_show_source_switch
+                                    ),
+                                    checked = alwaysShowSourceSwitch,
+                                    onCheckedChange = { enabled ->
+                                        alwaysShowSourceSwitch = enabled
+                                        saveConfig(
+                                            RootConstants.KEY_HOOK_APPLE_MUSIC_ALWAYS_SHOW_SOURCE_SWITCH,
+                                            enabled,
+                                        )
+                                    },
+                                )
+                                AnimatedVisibility(
+                                    visible = alwaysShowSourceSwitch,
+                                    enter = SectionEnter,
+                                    exit = SectionExit,
+                                ) {
+                                    OverlayDropdownPreference(
+                                        enabled = featuresEnabled,
+                                        title = stringResource(R.string.title_apple_music_source_search_timing),
+                                        items = sourceSearchTimingOptions,
+                                        selectedIndex = sourceSearchTiming,
+                                        onSelectedIndexChange = { selected ->
+                                            val value = selected.coerceIn(
+                                                RootConstants.APPLE_MUSIC_SOURCE_SEARCH_TIMING_ON_DIALOG_OPEN,
+                                                RootConstants.APPLE_MUSIC_SOURCE_SEARCH_TIMING_ON_PLAYBACK_START,
+                                            )
+                                            sourceSearchTiming = value
+                                            saveConfig(
+                                                RootConstants.KEY_HOOK_APPLE_MUSIC_SOURCE_SEARCH_TIMING,
+                                                value,
+                                            )
+                                        },
+                                    )
+                                }
+                            }
+                            SmallTitle(text = stringResource(R.string.title_apple_music_group_lyrics_display))
+                            Card(modifier = Modifier.settingsCard()) {
+                                OverlayDropdownPreference(
+                                    enabled = featuresEnabled,
+                                    title = stringResource(R.string.title_apple_music_lyrics_blur_effect),
+                                    items = lyricsBlurEffectOptions,
+                                    selectedIndex = lyricsBlurEffect,
+                                    onSelectedIndexChange = { selected ->
+                                        val value = selected.coerceIn(
+                                            RootConstants.APPLE_MUSIC_LYRICS_BLUR_EFFECT_OFF,
+                                            RootConstants.APPLE_MUSIC_LYRICS_BLUR_EFFECT_ADVANCED_MATERIAL,
+                                        )
+                                        lyricsBlurEffect = value
+                                        saveConfig(
+                                            RootConstants.KEY_HOOK_APPLE_MUSIC_LYRICS_BLUR_EFFECT,
+                                            value,
+                                        )
+                                    },
+                                )
+                                AnimatedVisibility(
+                                    visible = lyricsBlurEffect !=
+                                        RootConstants.APPLE_MUSIC_LYRICS_BLUR_EFFECT_OFF,
+                                    enter = SectionEnter,
+                                    exit = SectionExit,
+                                ) {
+                                    ArrowPreference(
+                                        enabled = featuresEnabled,
+                                        title = stringResource(
+                                            R.string.title_apple_music_lyrics_blur_custom_values
+                                        ),
+                                        endActions = {
+                                            if (
+                                                lyricsBlurEffect ==
+                                                RootConstants.APPLE_MUSIC_LYRICS_BLUR_EFFECT_NATIVE
+                                            ) {
+                                                AppleLyricsBlurRangeValue(
+                                                    minRadius = nativeLyricsBlurMinRadiusDp,
+                                                    maxRadius = nativeLyricsBlurMaxRadiusDp,
+                                                    unit = "dp",
+                                                )
+                                            } else {
+                                                AppleLyricsBlurRangeValue(
+                                                    minRadius = advancedLyricsBlurMinRadiusPx.toFloat(),
+                                                    maxRadius = advancedLyricsBlurMaxRadiusPx.toFloat(),
+                                                    unit = "px",
+                                                )
+                                            }
+                                        },
+                                        onClick = { showLyricsBlurValuesDialog = true },
+                                    )
+                                }
+                                AnimatedVisibility(
+                                    visible = lyricsBlurEffect !=
+                                        RootConstants.APPLE_MUSIC_LYRICS_BLUR_EFFECT_OFF,
+                                    enter = SectionEnter,
+                                    exit = SectionExit,
+                                ) {
+                                    SwitchPreference(
+                                        enabled = featuresEnabled,
+                                        title = stringResource(
+                                            R.string.title_apple_music_lyrics_blur_animation
+                                        ),
+                                        summary = stringResource(
+                                            R.string.summary_apple_music_lyrics_blur_animation
+                                        ),
+                                        checked = lyricsBlurAnimation,
+                                        onCheckedChange = { enabled ->
+                                            lyricsBlurAnimation = enabled
+                                            saveConfig(
+                                                RootConstants.KEY_HOOK_APPLE_MUSIC_LYRICS_BLUR_ANIMATION,
+                                                enabled,
+                                            )
+                                        },
+                                    )
+                                }
+                                SwitchPreference(
+                                    enabled = featuresEnabled,
+                                    title = stringResource(
+                                        R.string.title_apple_music_follow_system_font
+                                    ),
+                                    summary = stringResource(
+                                        R.string.summary_apple_music_follow_system_font
+                                    ),
+                                    checked = followSystemFont,
+                                    onCheckedChange = { enabled ->
+                                        followSystemFont = enabled
+                                        saveConfig(
+                                            RootConstants.KEY_HOOK_APPLE_MUSIC_FOLLOW_SYSTEM_FONT,
+                                            enabled,
+                                        )
+                                    },
+                                )
+                                AnimatedVisibility(
+                                    visible = !followSystemFont,
+                                    enter = SectionEnter,
+                                    exit = SectionExit,
+                                ) {
+                                    SwitchPreference(
+                                        enabled = featuresEnabled,
+                                        title = stringResource(
+                                            R.string.title_apple_music_follow_system_font_weight
+                                        ),
+                                        summary = stringResource(
+                                            R.string.summary_apple_music_follow_system_font_weight
+                                        ),
+                                        checked = followSystemFontWeight,
+                                        onCheckedChange = { enabled ->
+                                            followSystemFontWeight = enabled
+                                            saveConfig(
+                                                RootConstants.KEY_HOOK_APPLE_MUSIC_FOLLOW_SYSTEM_FONT_WEIGHT,
+                                                enabled,
+                                            )
+                                        },
+                                    )
+                                }
+                            }
+                    }
+                    AppleMusicSettingsTab.Language -> Column {
+                            Card(modifier = Modifier.settingsCard()) {
+                                OverlayDropdownPreference(
+                                    enabled = featuresEnabled,
+                                    title = stringResource(R.string.title_apple_music_content_ui_language),
+                                    summary = stringResource(R.string.summary_apple_music_content_ui_language),
+                                    items = languageOptions,
+                                    selectedIndex = contentUiLanguage,
+                                    onSelectedIndexChange = { selected ->
+                                        val value = selected.coerceIn(
+                                            RootConstants.APPLE_MUSIC_CONTENT_UI_LANGUAGE_NONE,
+                                            RootConstants.APPLE_MUSIC_CONTENT_UI_LANGUAGE_JA_JP,
+                                        )
+                                        contentUiLanguage = value
+                                        saveConfig(RootConstants.KEY_HOOK_APPLE_MUSIC_CONTENT_UI_LANGUAGE, value)
+                                    },
+                                )
+                                AnimatedVisibility(
+                                    visible = contentUiLanguage != RootConstants.APPLE_MUSIC_CONTENT_UI_LANGUAGE_NONE,
+                                    enter = SectionEnter,
+                                    exit = SectionExit,
+                                ) {
+                                    SwitchPreference(
+                                        enabled = featuresEnabled,
+                                        title = stringResource(
+                                            R.string.title_apple_music_override_account_language
+                                        ),
+                                        checked = overrideAccountLanguage,
+                                        onCheckedChange = { enabled ->
+                                            overrideAccountLanguage = enabled
+                                            saveConfig(
+                                                RootConstants.KEY_HOOK_APPLE_MUSIC_OVERRIDE_ACCOUNT_LANGUAGE,
+                                                enabled,
+                                            )
+                                        },
+                                    )
+                                }
+                                SwitchPreference(
+                                    enabled = featuresEnabled,
+                                    title = stringResource(
+                                        R.string.title_apple_music_restore_cjk_original_metadata
+                                    ),
+                                    checked = restoreCjkOriginalMetadata,
+                                    onCheckedChange = { enabled ->
+                                        restoreCjkOriginalMetadata = enabled
+                                        saveConfig(
+                                            RootConstants.KEY_HOOK_APPLE_MUSIC_RESTORE_CJK_ORIGINAL_METADATA,
+                                            enabled,
+                                        )
+                                    },
+                                )
+                                AnimatedVisibility(
+                                    visible = metadataLookupEnabled,
+                                    enter = SectionEnter,
+                                    exit = SectionExit,
+                                ) {
+                                    SwitchPreference(
+                                        enabled = featuresEnabled,
+                                        title = stringResource(
+                                            R.string.title_apple_music_localized_metadata_cache
+                                        ),
+                                        summary = stringResource(
+                                            R.string.summary_apple_music_localized_metadata_cache
+                                        ),
+                                        checked = localizedMetadataCache,
+                                        onCheckedChange = { enabled ->
+                                            localizedMetadataCache = enabled
+                                            saveConfig(
+                                                RootConstants.KEY_HOOK_APPLE_MUSIC_LOCALIZED_METADATA_CACHE,
+                                                enabled,
+                                            )
+                                        },
+                                    )
+                                }
+                            }
+                            Card(modifier = Modifier.settingsCard()) {
+                                SwitchPreference(
+                                    enabled = featuresEnabled,
+                                    title = stringResource(R.string.title_apple_music_simplify_traditional_content),
+                                    checked = simplifyTraditionalLyrics,
+                                    onCheckedChange = { enabled ->
+                                        simplifyTraditionalLyrics = enabled
+                                        saveConfig(RootConstants.KEY_HOOK_APPLE_MUSIC_SIMPLIFY_TRADITIONAL_CONTENT, enabled)
+                                    },
+                                )
+                            }
+                    }
+                    AppleMusicSettingsTab.Playback -> Column {
+                            Card(modifier = Modifier.settingsCard()) {
+                                SwitchPreference(
+                                    enabled = featuresEnabled,
+                                    title = stringResource(R.string.title_apple_music_prevent_network_auto_skip),
+                                    summary = stringResource(R.string.summary_apple_music_prevent_network_auto_skip),
+                                    checked = preventNetworkAutoSkip,
+                                    onCheckedChange = { enabled ->
+                                        preventNetworkAutoSkip = enabled
+                                        saveConfig(RootConstants.KEY_HOOK_APPLE_MUSIC_PREVENT_NETWORK_AUTO_SKIP, enabled)
+                                    },
+                                )
+                                SwitchPreference(
+                                    enabled = featuresEnabled,
+                                    title = stringResource(R.string.title_apple_music_volume_balance),
+                                    summary = stringResource(R.string.summary_apple_music_volume_balance),
+                                    checked = volumeBalance,
+                                    onCheckedChange = { enabled ->
+                                        volumeBalance = enabled
+                                        saveConfig(
+                                            RootConstants.KEY_HOOK_APPLE_MUSIC_VOLUME_BALANCE,
+                                            enabled,
+                                        )
+                                    },
+                                )
+                            }
+                    }
+                    AppleMusicSettingsTab.Features -> Column {
+                            Card(modifier = Modifier.settingsCard()) {
+                                SwitchPreference(
+                                    enabled = featuresEnabled,
+                                    title = stringResource(
+                                        R.string.title_apple_music_notification_open_full_player
+                                    ),
+                                    checked = notificationOpenFullPlayer,
+                                    onCheckedChange = { enabled ->
+                                        notificationOpenFullPlayer = enabled
+                                        saveConfig(
+                                            RootConstants.KEY_HOOK_APPLE_MUSIC_NOTIFICATION_OPEN_FULL_PLAYER,
+                                            enabled,
+                                        )
+                                    },
+                                )
+                                SwitchPreference(
+                                    enabled = featuresEnabled,
+                                    title = stringResource(R.string.title_apple_music_force_cellular_data_entry),
+                                    checked = forceCellularDataEntry,
+                                    onCheckedChange = { enabled ->
+                                        forceCellularDataEntry = enabled
+                                        saveConfig(
+                                            RootConstants.KEY_HOOK_APPLE_MUSIC_FORCE_CELLULAR_DATA_ENTRY,
+                                            enabled,
+                                        )
+                                    },
+                                )
+                            }
+                            Card(modifier = Modifier.settingsCard()) {
+                                SwitchPreference(
+                                    enabled = featuresEnabled,
+                                    title = stringResource(R.string.title_apple_music_lyrics_image_export),
+                                    summary = stringResource(R.string.summary_apple_music_lyrics_image_export),
+                                    checked = lyricsImageExport,
+                                    onCheckedChange = { enabled ->
+                                        lyricsImageExport = enabled
+                                        saveConfig(
+                                            RootConstants.KEY_HOOK_APPLE_MUSIC_LYRICS_IMAGE_EXPORT,
+                                            enabled,
+                                        )
+                                    },
+                                )
+                                AnimatedVisibility(
+                                    visible = lyricsImageExport,
+                                    enter = SectionEnter,
+                                    exit = SectionExit,
+                                ) {
+                                    Column {
+                                        OverlayDropdownPreference(
+                                            enabled = featuresEnabled,
+                                            title = stringResource(R.string.title_apple_music_lyrics_image_background),
+                                            items = lyricsImageBackgroundOptions,
+                                            selectedIndex = lyricsImageBackground,
+                                            onSelectedIndexChange = { selected ->
+                                                val value = selected.coerceIn(
+                                                    RootConstants.APPLE_MUSIC_LYRICS_IMAGE_BACKGROUND_COVER_BLUR,
+                                                    RootConstants.APPLE_MUSIC_LYRICS_IMAGE_BACKGROUND_CUSTOM_IMAGE,
+                                                )
+                                                lyricsImageBackground = value
+                                                saveConfig(
+                                                    RootConstants.KEY_HOOK_APPLE_MUSIC_LYRICS_IMAGE_BACKGROUND,
+                                                    value,
+                                                )
+                                            },
+                                        )
+                                        AnimatedVisibility(
+                                            visible = lyricsImageBackground ==
+                                                RootConstants.APPLE_MUSIC_LYRICS_IMAGE_BACKGROUND_CUSTOM_COLOR,
+                                            enter = SectionEnter,
+                                            exit = SectionExit,
+                                        ) {
+                                            ArrowPreference(
+                                                enabled = featuresEnabled,
+                                                title = stringResource(
+                                                    R.string.title_apple_music_lyrics_image_background_color
+                                                ),
+                                                endActions = {
+                                                    CustomFontColorPreview(color = lyricsImageBackgroundColor)
+                                                },
+                                                onClick = {
+                                                    navigator.navigate(Route.AppleLyricsImageBackgroundColor)
+                                                },
+                                            )
+                                        }
+                                        AnimatedVisibility(
+                                            visible = lyricsImageBackground ==
+                                                RootConstants.APPLE_MUSIC_LYRICS_IMAGE_BACKGROUND_CUSTOM_IMAGE,
+                                            enter = SectionEnter,
+                                            exit = SectionExit,
+                                        ) {
+                                            ArrowPreference(
+                                                enabled = featuresEnabled,
+                                                title = stringResource(
+                                                    R.string.title_apple_music_lyrics_image_background_image
+                                                ),
+                                                onClick = {
+                                                    navigator.navigate(Route.AppleLyricsImageBackground)
+                                                },
+                                            )
+                                        }
+                                        SwitchPreference(
+                                            enabled = featuresEnabled,
+                                            title = stringResource(R.string.title_apple_music_lyrics_image_qr_code),
+                                            checked = lyricsImageQrCode,
+                                            onCheckedChange = { enabled ->
+                                                lyricsImageQrCode = enabled
+                                                saveConfig(
+                                                    RootConstants.KEY_HOOK_APPLE_MUSIC_LYRICS_IMAGE_QR_CODE,
+                                                    enabled,
+                                                )
+                                            },
+                                        )
+                                    }
+                                }
+                            }
                     }
                 }
             }
-        }
-        item(key = "app_display_title") {
-            SmallTitle(text = stringResource(R.string.title_apple_music_app_display))
-        }
-        item(key = "apple_music_app_display") {
-            Card(
-                modifier = Modifier
-                    .padding(horizontal = 12.dp)
-                    .fillMaxWidth()
-            ) {
-                SwitchPreference(
-                    enabled = featuresEnabled,
-                    title = stringResource(
-                        R.string.title_apple_music_simplify_traditional_content
-                    ),
-                    checked = simplifyTraditionalLyrics,
-                    onCheckedChange = { enabled ->
-                        simplifyTraditionalLyrics = enabled
-                        saveConfig(
-                            RootConstants.KEY_HOOK_APPLE_MUSIC_SIMPLIFY_TRADITIONAL_CONTENT,
-                            enabled,
-                        )
-                    },
-                )
-                OverlayDropdownPreference(
-                    enabled = featuresEnabled,
-                    title = stringResource(R.string.title_apple_music_lyrics_blur_effect),
-                    items = lyricsBlurEffectOptions,
-                    selectedIndex = lyricsBlurEffect,
-                    onSelectedIndexChange = { selected ->
-                        val value = selected.coerceIn(
-                            RootConstants.APPLE_MUSIC_LYRICS_BLUR_EFFECT_OFF,
-                            RootConstants.APPLE_MUSIC_LYRICS_BLUR_EFFECT_ADVANCED_MATERIAL,
-                        )
-                        lyricsBlurEffect = value
-                        saveConfig(
-                            RootConstants.KEY_HOOK_APPLE_MUSIC_LYRICS_BLUR_EFFECT,
-                            value,
-                        )
-                    },
-                )
-                AnimatedVisibility(
-                    visible = lyricsBlurEffect !=
-                        RootConstants.APPLE_MUSIC_LYRICS_BLUR_EFFECT_OFF
-                ) {
-                    ArrowPreference(
-                        enabled = featuresEnabled,
-                        title = stringResource(
-                            R.string.title_apple_music_lyrics_blur_custom_values
-                        ),
-                        endActions = {
-                            if (
-                                lyricsBlurEffect ==
-                                RootConstants.APPLE_MUSIC_LYRICS_BLUR_EFFECT_NATIVE
-                            ) {
-                                AppleLyricsBlurRangeValue(
-                                    minRadius = nativeLyricsBlurMinRadiusDp,
-                                    maxRadius = nativeLyricsBlurMaxRadiusDp,
-                                    unit = "dp",
-                                )
-                            } else {
-                                AppleLyricsBlurRangeValue(
-                                    minRadius = advancedLyricsBlurMinRadiusPx.toFloat(),
-                                    maxRadius = advancedLyricsBlurMaxRadiusPx.toFloat(),
-                                    unit = "px",
-                                )
-                            }
-                        },
-                        onClick = { showLyricsBlurValuesDialog = true },
-                    )
-                }
-                AnimatedVisibility(
-                    visible = lyricsBlurEffect !=
-                        RootConstants.APPLE_MUSIC_LYRICS_BLUR_EFFECT_OFF
-                ) {
-                    SwitchPreference(
-                        enabled = featuresEnabled,
-                        title = stringResource(
-                            R.string.title_apple_music_lyrics_blur_animation
-                        ),
-                        summary = stringResource(
-                            R.string.summary_apple_music_lyrics_blur_animation
-                        ),
-                        checked = lyricsBlurAnimation,
-                        onCheckedChange = { enabled ->
-                            lyricsBlurAnimation = enabled
-                            saveConfig(
-                                RootConstants.KEY_HOOK_APPLE_MUSIC_LYRICS_BLUR_ANIMATION,
-                                enabled,
-                            )
-                        },
-                    )
-                }
-                SwitchPreference(
-                    enabled = featuresEnabled,
-                    title = stringResource(
-                        R.string.title_apple_music_follow_system_font
-                    ),
-                    summary = stringResource(
-                        R.string.summary_apple_music_follow_system_font
-                    ),
-                    checked = followSystemFont,
-                    onCheckedChange = { enabled ->
-                        followSystemFont = enabled
-                        saveConfig(
-                            RootConstants.KEY_HOOK_APPLE_MUSIC_FOLLOW_SYSTEM_FONT,
-                            enabled,
-                        )
-                    },
-                )
-                AnimatedVisibility(
-                    visible = !followSystemFont,
-                    enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
-                    exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
-                ) {
-                    SwitchPreference(
-                        enabled = featuresEnabled,
-                        title = stringResource(
-                            R.string.title_apple_music_follow_system_font_weight
-                        ),
-                        summary = stringResource(
-                            R.string.summary_apple_music_follow_system_font_weight
-                        ),
-                        checked = followSystemFontWeight,
-                        onCheckedChange = { enabled ->
-                            followSystemFontWeight = enabled
-                            saveConfig(
-                                RootConstants.KEY_HOOK_APPLE_MUSIC_FOLLOW_SYSTEM_FONT_WEIGHT,
-                                enabled,
-                            )
-                        },
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun AppleMusicOptimizationNotice(
-    text: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Card(onClick = onClick, modifier = modifier) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = text,
-                fontSize = 13.sp,
-                lineHeight = 18.sp,
-                color = MiuixTheme.colorScheme.onSurface,
-                modifier = Modifier.weight(1f),
-            )
-            Icon(
-                imageVector = MiuixIcons.ChevronForward,
-                contentDescription = null,
-                tint = MiuixTheme.colorScheme.onSurfaceVariantActions,
-                modifier = Modifier
-                    .padding(start = 8.dp)
-                    .size(18.dp),
-            )
         }
     }
 }

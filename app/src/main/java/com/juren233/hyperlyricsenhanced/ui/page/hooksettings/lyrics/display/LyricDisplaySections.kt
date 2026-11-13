@@ -1,10 +1,8 @@
 package com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.display
 
+import com.juren233.hyperlyricsenhanced.ui.component.SectionEnter
+import com.juren233.hyperlyricsenhanced.ui.component.SectionExit
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -101,8 +99,8 @@ fun LazyListScope.lyricDisplaySections(
                     )
                     AnimatedVisibility(
                         visible = showSideLyricPositions,
-                        enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
-                        exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
+                        enter = SectionEnter,
+                        exit = SectionExit,
                     ) {
                         Column {
                             val positionSummary = if (sideLyricPositionsNonScrollingOnly) {
@@ -124,7 +122,7 @@ fun LazyListScope.lyricDisplaySections(
                             )
                         }
                     }
-                    AnimatedVisibility(visible = showCenterGroupVocals) {
+                    AnimatedVisibility(visible = showCenterGroupVocals, enter = SectionEnter, exit = SectionExit) {
                         SwitchPreference(
                             title = stringResource(id = R.string.title_center_group_vocals),
                             checked = centerGroupVocals,
@@ -151,8 +149,8 @@ fun LazyListScope.lyricDisplaySections(
                     )
                     AnimatedVisibility(
                         visible = fontColorMode == FONT_COLOR_MODE_CUSTOM,
-                        enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
-                        exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
+                        enter = SectionEnter,
+                        exit = SectionExit,
                     ) {
                         BasicComponent(
                             title = stringResource(R.string.title_custom_font_color),
@@ -193,8 +191,8 @@ fun LazyListScope.lyricDisplaySections(
                     )
                     AnimatedVisibility(
                         visible = fontWeightMode == IslandFontWeightMode.CUSTOM,
-                        enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
-                        exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
+                        enter = SectionEnter,
+                        exit = SectionExit,
                     ) {
                         ArrowPreference(
                             title = stringResource(R.string.title_custom_font_weight),

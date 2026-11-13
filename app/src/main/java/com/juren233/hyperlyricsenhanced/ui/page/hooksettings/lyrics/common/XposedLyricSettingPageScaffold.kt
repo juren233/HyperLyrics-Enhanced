@@ -148,16 +148,15 @@ internal fun XposedLyricSettingPage(
     ) { padding ->
         val topPadding = padding.calculateTopPadding()
         val bottomPadding = padding.calculateBottomPadding()
-        val outerTopPadding = outerPadding.calculateTopPadding()
+        // 外层（主界面）只取底部：顶部的状态栏已由本页顶栏计入，再加外层顶部会重复留出一段空白，与主页的 pageContentPadding 一致。
         val outerBottomPadding = outerPadding.calculateBottomPadding()
         val contentPadding = remember(
             topPadding,
             bottomPadding,
-            outerTopPadding,
             outerBottomPadding,
         ) {
             PaddingValues(
-                top = topPadding + outerTopPadding,
+                top = topPadding,
                 start = 0.dp,
                 end = 0.dp,
                 bottom = bottomPadding + outerBottomPadding + 16.dp,

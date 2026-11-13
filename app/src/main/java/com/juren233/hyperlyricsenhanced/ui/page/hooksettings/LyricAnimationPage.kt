@@ -1,12 +1,10 @@
 ﻿package com.juren233.hyperlyricsenhanced.ui.page.hooksettings
 
+import com.juren233.hyperlyricsenhanced.ui.component.SectionEnter
+import com.juren233.hyperlyricsenhanced.ui.component.SectionExit
 import com.juren233.hyperlyricsenhanced.common.FloatPreferences
 import android.content.Context
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -201,8 +199,8 @@ private fun LazyListScope.animationRateSection(enabled: Boolean) {
                 )
                 AnimatedVisibility(
                     visible = rate == RootConstants.SWITCH_ANIM_RATE_CUSTOM,
-                    enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
-                    exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top)
+                    enter = SectionEnter,
+                    exit = SectionExit
                 ) {
                     Column {
                         ArrowPreference(

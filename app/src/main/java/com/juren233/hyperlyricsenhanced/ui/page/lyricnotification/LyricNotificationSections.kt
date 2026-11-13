@@ -1,5 +1,7 @@
 package com.juren233.hyperlyricsenhanced.ui.page.lyricnotification
 
+import com.juren233.hyperlyricsenhanced.ui.component.SectionEnter
+import com.juren233.hyperlyricsenhanced.ui.component.SectionExit
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -131,7 +133,7 @@ fun LazyListScope.configSections(
                     onSelectedIndexChange = onIslandLeftIconStyleChange
                 )
 
-                AnimatedVisibility(visible = notificationType == 1 && islandLeftIconStyle in 0..2) {
+                AnimatedVisibility(visible = notificationType == 1 && islandLeftIconStyle in 0..2, enter = SectionEnter, exit = SectionExit) {
                     SwitchPreference(
                         title = stringResource(R.string.title_disable_lyric_split),
                         checked = disableLyricSplitEnabled,
@@ -139,7 +141,7 @@ fun LazyListScope.configSections(
                     )
                 }
 
-                AnimatedVisibility(visible = notificationType == 1) {
+                AnimatedVisibility(visible = notificationType == 1, enter = SectionEnter, exit = SectionExit) {
                     SwitchPreference(
                         title = stringResource(R.string.title_lyric_highlight_color),
                         checked = highlightColorEnabled,
@@ -154,7 +156,7 @@ fun LazyListScope.configSections(
                     onCheckedChange = onLimitWidthToggle
                 )
 
-                AnimatedVisibility(visible = limitWidthEnabled) {
+                AnimatedVisibility(visible = limitWidthEnabled, enter = SectionEnter, exit = SectionExit) {
                     var sliderDragValue by remember(maxWidth) { mutableIntStateOf(maxWidth) }
                     BasicComponent(
                         title = stringResource(R.string.title_limit_width_desc),
@@ -194,7 +196,7 @@ fun LazyListScope.configSections(
             modifier = Modifier.padding(horizontal = 12.dp)
                 .padding(bottom = 12.dp).fillMaxWidth()
         ) {
-            AnimatedVisibility(visible = notificationType == 1) {
+            AnimatedVisibility(visible = notificationType == 1, enter = SectionEnter, exit = SectionExit) {
                 Column {
                     SwitchPreference(
                         title = stringResource(R.string.title_focus_show_notification),
@@ -221,7 +223,7 @@ fun LazyListScope.configSections(
                 onCheckedChange = onShowProgressToggle
             )
 
-            AnimatedVisibility(visible = showProgressEnabled) {
+            AnimatedVisibility(visible = showProgressEnabled, enter = SectionEnter, exit = SectionExit) {
                 SwitchPreference(
                     title = stringResource(R.string.title_progress_color),
                     summary = stringResource(R.string.summary_progress_color),
@@ -237,7 +239,7 @@ fun LazyListScope.configSections(
             )
 
             val focusStyleOptions = remember { listOf("OS2", "OS3") }
-            AnimatedVisibility(visible = notificationType == 1) {
+            AnimatedVisibility(visible = notificationType == 1, enter = SectionEnter, exit = SectionExit) {
                 WindowDropdownPreference(
                     title = stringResource(R.string.title_focus_style),
                     items = focusStyleOptions,
@@ -258,7 +260,7 @@ fun LazyListScope.configSections(
                 onSelectedIndexChange = onNormalNotificationTitleStyleChange
             )
 
-            AnimatedVisibility(visible = notificationType == 1) {
+            AnimatedVisibility(visible = notificationType == 1, enter = SectionEnter, exit = SectionExit) {
                 SwitchPreference(
                     title = stringResource(R.string.title_song_info_highlight_color),
                     checked = songInfoHighlightColorEnabled,
@@ -287,7 +289,7 @@ fun LazyListScope.configSections(
                     title = stringResource(R.string.title_battery_optimization),
                     onClick = onBatteryOptimizationClick
                 )
-                AnimatedVisibility(visible = notificationType == 1) {
+                AnimatedVisibility(visible = notificationType == 1, enter = SectionEnter, exit = SectionExit) {
                     SwitchPreference(
                         title = stringResource(R.string.title_bypass_focus_limit),
                         summary = stringResource(R.string.summary_bypass_focus_limit),

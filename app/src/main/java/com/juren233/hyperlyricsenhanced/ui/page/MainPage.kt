@@ -2,6 +2,8 @@
 
 package com.juren233.hyperlyricsenhanced.ui.page
 
+import com.juren233.hyperlyricsenhanced.ui.component.SectionEnter
+import com.juren233.hyperlyricsenhanced.ui.component.SectionExit
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
@@ -13,10 +15,6 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.animation.core.Animatable
@@ -66,6 +64,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.edit
 import androidx.core.content.pm.PackageInfoCompat
+import com.juren233.hyperlyricsenhanced.utils.formatAppVersion
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.common.ClassicAodSongInfoConfig
 import com.juren233.hyperlyricsenhanced.common.FeatureEntryConfig
@@ -410,7 +409,7 @@ fun MainPage(outroStage: Int = MAIN_PAGE_OUTRO_STAGES) {
         try {
             val pInfo = context.packageManager.getPackageInfo(context.packageName, 0)
             val versionName = pInfo.versionName ?: return@remember null
-            "$versionName-${PackageInfoCompat.getLongVersionCode(pInfo)}"
+            formatAppVersion(versionName, PackageInfoCompat.getLongVersionCode(pInfo))
         } catch (_: Exception) {
             null
         }
@@ -537,8 +536,8 @@ fun MainPage(outroStage: Int = MAIN_PAGE_OUTRO_STAGES) {
             if (stage >= MAIN_STAGE_BARS) {
                 AnimatedVisibility(
                     visible = showMainNavigation && !floatingNavBarEnabled && !parallelWindowUi,
-                    enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
-                    exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
+                    enter = SectionEnter,
+                    exit = SectionExit,
                 ) {
                     BlurredBottomBar(outerBackdrop, outerBlurActive) {
                         Box(
@@ -560,8 +559,8 @@ fun MainPage(outroStage: Int = MAIN_PAGE_OUTRO_STAGES) {
                 }
                 AnimatedVisibility(
                     visible = showMainNavigation && floatingNavBarEnabled && !parallelWindowUi,
-                    enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
-                    exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
+                    enter = SectionEnter,
+                    exit = SectionExit,
                 ) {
                     val floatingBarColor = if (outerBlurActive) Color.Transparent else MiuixTheme.colorScheme.surfaceContainer
                     val floatingBarShape = RoundedCornerShape(FloatingToolbarDefaults.CornerRadius)

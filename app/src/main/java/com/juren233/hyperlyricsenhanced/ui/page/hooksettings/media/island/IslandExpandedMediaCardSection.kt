@@ -1,5 +1,7 @@
 package com.juren233.hyperlyricsenhanced.ui.page.hooksettings.media.island
 
+import com.juren233.hyperlyricsenhanced.ui.component.SectionEnter
+import com.juren233.hyperlyricsenhanced.ui.component.SectionExit
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -115,7 +117,7 @@ fun LazyListScope.islandExpandedMediaCardSection(
             )
             val customBackground = backgroundStyle !=
                 RootConstants.ISLAND_EXPANDED_MEDIA_BACKGROUND_STYLE_DEFAULT
-            AnimatedVisibility(visible = !customBackground) {
+            AnimatedVisibility(visible = !customBackground, enter = SectionEnter, exit = SectionExit) {
                 Column {
                     val themeValues = listOf(
                         RootConstants.MEDIA_CARD_THEME_FOLLOW_SYSTEM,
@@ -155,11 +157,13 @@ fun LazyListScope.islandExpandedMediaCardSection(
                     )
                 }
             }
-            AnimatedVisibility(visible = customBackground) {
+            AnimatedVisibility(visible = customBackground, enter = SectionEnter, exit = SectionExit) {
                 Column {
                     AnimatedVisibility(
                         visible = backgroundStyle ==
-                            RootConstants.ISLAND_EXPANDED_MEDIA_BACKGROUND_STYLE_SOFT_COVER
+                            RootConstants.ISLAND_EXPANDED_MEDIA_BACKGROUND_STYLE_SOFT_COVER,
+                        enter = SectionEnter,
+                        exit = SectionExit,
                     ) {
                         Column {
                             val toneValues = listOf(
@@ -188,7 +192,9 @@ fun LazyListScope.islandExpandedMediaCardSection(
                     )
                     AnimatedVisibility(
                         visible = backgroundStyle ==
-                            RootConstants.ISLAND_EXPANDED_MEDIA_BACKGROUND_STYLE_BLURRED_COVER
+                            RootConstants.ISLAND_EXPANDED_MEDIA_BACKGROUND_STYLE_BLURRED_COVER,
+                        enter = SectionEnter,
+                        exit = SectionExit,
                     ) {
                         Column {
                             var sliderValue by remember(backgroundBlur) {
@@ -223,7 +229,9 @@ fun LazyListScope.islandExpandedMediaCardSection(
                     }
                     AnimatedVisibility(
                         visible = backgroundStyle ==
-                            RootConstants.ISLAND_EXPANDED_MEDIA_BACKGROUND_STYLE_LINEAR_GRADIENT
+                            RootConstants.ISLAND_EXPANDED_MEDIA_BACKGROUND_STYLE_LINEAR_GRADIENT,
+                        enter = SectionEnter,
+                        exit = SectionExit,
                     ) {
                         Column {
                             SwitchPreference(

@@ -58,6 +58,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Text
 import com.juren233.hyperlyricsenhanced.ui.utils.LocalAppThemeController
+import com.juren233.hyperlyricsenhanced.ui.utils.isMonet
 import top.yukonga.miuix.kmp.theme.ColorSchemeMode
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.ThemeController
@@ -78,12 +79,6 @@ internal class IslandLogoPalette(
     val outline: Color,
 )
 
-private val MONET_SCHEME_MODES = setOf(
-    ColorSchemeMode.MonetSystem,
-    ColorSchemeMode.MonetLight,
-    ColorSchemeMode.MonetDark,
-)
-
 /**
  * 首启动画与完成转场里图标 / 超级岛的配色，跟随应用自己的配色设置：
  * 莫奈取色时取当前莫奈配色（含所选主题色）的深色方案，与界面一致；否则用应用图标的品牌配色。
@@ -91,7 +86,7 @@ private val MONET_SCHEME_MODES = setOf(
 @Composable
 internal fun rememberIslandLogoPalette(): IslandLogoPalette {
     val theme = LocalAppThemeController.current
-    val monet = theme?.colorSchemeMode in MONET_SCHEME_MODES
+    val monet = theme.isMonet
     val body: Color
     val detail: Color
     val accentStart: Color

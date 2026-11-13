@@ -1,11 +1,9 @@
 package com.juren233.hyperlyricsenhanced.ui.page.hooksettings
 
+import com.juren233.hyperlyricsenhanced.ui.component.SectionEnter
+import com.juren233.hyperlyricsenhanced.ui.component.SectionExit
 import android.content.Context
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import com.juren233.hyperlyricsenhanced.ui.component.NumberInputDialog
 import com.juren233.hyperlyricsenhanced.ui.component.PaddingInputDialog
 import androidx.compose.foundation.layout.Box
@@ -384,8 +382,8 @@ fun HyperIslandSettingsPage() {
             )
             AnimatedVisibility(
                 visible = realRhythmMode == IslandRealRhythmConfig.MODE_CUSTOM,
-                enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
-                exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
+                enter = SectionEnter,
+                exit = SectionExit,
             ) {
                 ArrowPreference(
                     title = stringResource(id = R.string.title_real_rhythm_custom),
@@ -513,8 +511,8 @@ fun HyperIslandSettingsPage() {
                             )
                             AnimatedVisibility(
                                 visible = dynamicWidth,
-                                enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
-                                exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
+                                enter = SectionEnter,
+                                exit = SectionExit,
                             ) {
                                 SwitchPreference(
                                     title = stringResource(id = R.string.title_island_duet_fixed_length),
@@ -541,8 +539,8 @@ fun HyperIslandSettingsPage() {
                             )
                             AnimatedVisibility(
                                 visible = !dynamicLimit,
-                                enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
-                                exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
+                                enter = SectionEnter,
+                                exit = SectionExit,
                             ) {
                                 Column {
                                     ArrowPreference(
@@ -577,7 +575,7 @@ fun HyperIslandSettingsPage() {
                     Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
                         Column {
                             SwitchPreference(title = stringResource(id = R.string.title_audio_cover), checked = audioCover, onCheckedChange = { audioCover = it; saveConfig(RootConstants.KEY_HOOK_ISLAND_LEFT_ALBUM, it) })
-                            AnimatedVisibility(visible = audioCover) {
+                            AnimatedVisibility(visible = audioCover, enter = SectionEnter, exit = SectionExit) {
                                 Column {
                                     OverlayDropdownPreference(
                                         title = stringResource(id = R.string.title_audio_cover_style),
@@ -591,8 +589,8 @@ fun HyperIslandSettingsPage() {
                                     )
                                     AnimatedVisibility(
                                         visible = audioCoverStyle != RootConstants.ISLAND_ALBUM_COVER_STYLE_DEFAULT,
-                                        enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
-                                        exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
+                                        enter = SectionEnter,
+                                        exit = SectionExit,
                                     ) {
                                         ArrowPreference(
                                             title = stringResource(R.string.title_island_album_cover_app_whitelist),
@@ -628,7 +626,7 @@ fun HyperIslandSettingsPage() {
                 item(key = "audio_rhythm") {
                     Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
                         SwitchPreference(title = stringResource(id = R.string.title_audio_rhythm), checked = audioRhythm, onCheckedChange = { audioRhythm = it; saveConfig(RootConstants.KEY_HOOK_ISLAND_RIGHT_ICON, it) })
-                        AnimatedVisibility(visible = audioRhythm) {
+                        AnimatedVisibility(visible = audioRhythm, enter = SectionEnter, exit = SectionExit) {
                             Column {
                                 realRhythmPreference()
                                 musicWaveColorModePreference()
@@ -650,8 +648,8 @@ fun HyperIslandSettingsPage() {
                         )
                         AnimatedVisibility(
                             visible = pureMusicMode == RootConstants.ISLAND_PURE_MUSIC_MODE_SYSTEM_COMPACT,
-                            enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
-                            exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
+                            enter = SectionEnter,
+                            exit = SectionExit,
                         ) {
                             Column {
                                 ArrowPreference(
@@ -661,8 +659,8 @@ fun HyperIslandSettingsPage() {
                                 // 音频律动已开启时，真实律动与封面色在专属的音频律动卡片里设置，这里不重复显示。
                                 AnimatedVisibility(
                                     visible = !audioRhythm,
-                                    enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
-                                    exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
+                                    enter = SectionEnter,
+                                    exit = SectionExit,
                                 ) {
                                     Column {
                                         realRhythmPreference()
@@ -737,8 +735,8 @@ fun HyperIslandSettingsPage() {
                             )
                             AnimatedVisibility(
                                 visible = IslandProgressColorMode.isEnabled(progressColorMode),
-                                enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
-                                exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
+                                enter = SectionEnter,
+                                exit = SectionExit,
                             ) {
                                 Column {
                                     OverlayDropdownPreference(
@@ -755,8 +753,8 @@ fun HyperIslandSettingsPage() {
                                     )
                                     AnimatedVisibility(
                                         visible = progressColorMode == RootConstants.ISLAND_PROGRESS_COLOR_MODE_CUSTOM,
-                                        enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
-                                        exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
+                                        enter = SectionEnter,
+                                        exit = SectionExit,
                                     ) {
                                         BasicComponent(
                                             title = stringResource(R.string.title_custom_font_color),
@@ -830,7 +828,9 @@ fun HyperIslandSettingsPage() {
                             )
                             AnimatedVisibility(
                                 visible = nextSongPreviewStyle ==
-                                    RootConstants.ISLAND_NEXT_SONG_PREVIEW_STYLE_HALF
+                                    RootConstants.ISLAND_NEXT_SONG_PREVIEW_STYLE_HALF,
+                                enter = SectionEnter,
+                                exit = SectionExit,
                             ) {
                                 Column {
                                     OverlayDropdownPreference(
@@ -870,7 +870,9 @@ fun HyperIslandSettingsPage() {
                             }
                             AnimatedVisibility(
                                 visible = nextSongPreviewStyle ==
-                                    RootConstants.ISLAND_NEXT_SONG_PREVIEW_STYLE_FULL
+                                    RootConstants.ISLAND_NEXT_SONG_PREVIEW_STYLE_FULL,
+                                enter = SectionEnter,
+                                exit = SectionExit,
                             ) {
                                 Column {
                                     OverlayDropdownPreference(

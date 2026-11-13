@@ -6,6 +6,8 @@
 
 package com.juren233.hyperlyricsenhanced.ui.page.hooksettings
 
+import com.juren233.hyperlyricsenhanced.ui.component.SectionEnter
+import com.juren233.hyperlyricsenhanced.ui.component.SectionExit
 import android.content.Context
 import android.content.Intent
 import androidx.compose.animation.AnimatedVisibility
@@ -369,7 +371,7 @@ internal fun LazyListScope.providerSections(
                         onClick = { expandedStates[packageName] = !isExpanded },
                         enabled = !busy,
                     )
-                    AnimatedVisibility(visible = isExpanded) {
+                    AnimatedVisibility(visible = isExpanded, enter = SectionEnter, exit = SectionExit) {
                         ProviderDelayEditor(
                             delayKey = RootConstants.KEY_HOOK_LYRICON_PROVIDER_DELAY_PREFIX + delayPackageName,
                             onUpdate = if (item.updateAvailable && !busy) {
@@ -521,7 +523,7 @@ internal fun LegacyProviderCard(
                 },
                 showIndication = false,
             )
-            AnimatedVisibility(visible = isExpanded) {
+            AnimatedVisibility(visible = isExpanded, enter = SectionEnter, exit = SectionExit) {
                 ProviderDelayEditor(
                     delayKey = delayKey,
                     state = delayState,

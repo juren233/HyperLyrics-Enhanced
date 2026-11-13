@@ -7,7 +7,15 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
+import android.content.SharedPreferences
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import com.juren233.hyperlyricsenhanced.common.RootConstants
+import com.juren233.hyperlyricsenhanced.ui.component.LyricSourceOptions
+import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.common.rememberHookPrefs
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -59,6 +67,20 @@ fun HomePage(
     val barColor = if (blurActive) Color.Transparent else MiuixTheme.colorScheme.surface
     val topAppBarScrollBehavior = MiuixScrollBehavior()
     val lazyListState = rememberLazyListState()
+    val prefs = rememberHookPrefs()
+    var lyricSource by remember {
+        mutableStateOf(prefs.getString(RootConstants.KEY_HOOK_LYRIC_SOURCE, RootConstants.DEFAULT_HOOK_LYRIC_SOURCE))
+    }
+    DisposableEffect(prefs) {
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == RootConstants.KEY_HOOK_LYRIC_SOURCE) {
+                lyricSource = prefs.getString(RootConstants.KEY_HOOK_LYRIC_SOURCE, RootConstants.DEFAULT_HOOK_LYRIC_SOURCE)
+            }
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
+    val lyricSourceLabel = stringResource(LyricSourceOptions.labelOf(lyricSource))
 
     Scaffold(
         topBar = {
@@ -106,6 +128,7 @@ fun HomePage(
             ) {
                 homePageSections(
                     availableUpdateVersion = availableUpdateVersion,
+                    lyricSourceLabel = lyricSourceLabel,
                     showHyperIslandEntry = showHyperIslandEntry,
                     showAodLyricsEntry = showAodLyricsEntry,
                     showDynamicIslandEntry = showDynamicIslandEntry,

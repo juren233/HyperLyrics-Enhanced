@@ -1,5 +1,7 @@
 package com.juren233.hyperlyricsenhanced.ui.page.hooksettings.aod
 
+import com.juren233.hyperlyricsenhanced.ui.component.SectionEnter
+import com.juren233.hyperlyricsenhanced.ui.component.SectionExit
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -8,10 +10,6 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -547,7 +545,7 @@ private fun AodSettingsPage(spec: AodSettingsSpec) {
                             saveConfig(spec.showNextLyricKey, it)
                         },
                     )
-                    AnimatedVisibility(visible = showNextLyric) {
+                    AnimatedVisibility(visible = showNextLyric, enter = SectionEnter, exit = SectionExit) {
                         OverlayDropdownPreference(
                             title = stringResource(R.string.title_aod_next_lyric_style),
                             items = listOf(
@@ -602,7 +600,9 @@ private fun AodSettingsPage(spec: AodSettingsSpec) {
                         )
                         AnimatedVisibility(
                             visible = songInfoDisplayStyle !=
-                                RootConstants.AOD_SONG_INFO_DISPLAY_STYLE_NONE
+                                RootConstants.AOD_SONG_INFO_DISPLAY_STYLE_NONE,
+                            enter = SectionEnter,
+                            exit = SectionExit,
                         ) {
                             spec.songInfoFormatKey?.let { songInfoFormatKey ->
                                 OverlayDropdownPreference(
@@ -624,7 +624,9 @@ private fun AodSettingsPage(spec: AodSettingsSpec) {
                         }
                         AnimatedVisibility(
                             visible = songInfoDisplayStyle ==
-                                RootConstants.AOD_SONG_INFO_DISPLAY_STYLE_TEXT_EMBEDDED
+                                RootConstants.AOD_SONG_INFO_DISPLAY_STYLE_TEXT_EMBEDDED,
+                            enter = SectionEnter,
+                            exit = SectionExit,
                         ) {
                             Column {
                                 spec.songInfoTextSizeKey?.let {
@@ -712,8 +714,8 @@ private fun AodSettingsPage(spec: AodSettingsSpec) {
                     )
                     AnimatedVisibility(
                         visible = translationDisplayMode != RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_OFF,
-                        enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
-                        exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
+                        enter = SectionEnter,
+                        exit = SectionExit,
                     ) {
                         SwitchPreference(
                             title = stringResource(R.string.title_translation_pronunciation_fallback),
@@ -742,7 +744,7 @@ private fun AodSettingsPage(spec: AodSettingsSpec) {
                             saveConfig(spec.duetLyricsKey, it)
                         },
                     )
-                    AnimatedVisibility(visible = duetLyrics) {
+                    AnimatedVisibility(visible = duetLyrics, enter = SectionEnter, exit = SectionExit) {
                         Column {
                             SwitchPreference(
                                 title = stringResource(
@@ -773,7 +775,7 @@ private fun AodSettingsPage(spec: AodSettingsSpec) {
                             saveConfig(spec.nextSongPreviewKey, it)
                         },
                     )
-                    AnimatedVisibility(visible = nextSongPreview) {
+                    AnimatedVisibility(visible = nextSongPreview, enter = SectionEnter, exit = SectionExit) {
                         OverlayDropdownPreference(
                             title = stringResource(
                                 R.string.title_aod_next_song_preview_position

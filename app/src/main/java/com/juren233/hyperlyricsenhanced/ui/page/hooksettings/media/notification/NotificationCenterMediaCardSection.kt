@@ -1,5 +1,7 @@
 package com.juren233.hyperlyricsenhanced.ui.page.hooksettings.media.notification
 
+import com.juren233.hyperlyricsenhanced.ui.component.SectionEnter
+import com.juren233.hyperlyricsenhanced.ui.component.SectionExit
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -119,7 +121,9 @@ fun LazyListScope.notificationCenterMediaCardSection(
                 backgroundStyle != RootConstants.NOTIFICATION_MEDIA_BACKGROUND_STYLE_DEFAULT
             Column {
                 AnimatedVisibility(
-                    visible = !customBackground
+                    visible = !customBackground,
+                    enter = SectionEnter,
+                    exit = SectionExit,
                 ) {
                     Column {
                         val themeValues = listOf(
@@ -161,7 +165,7 @@ fun LazyListScope.notificationCenterMediaCardSection(
                         val flowPauseToggleVisible =
                             ambientFlowMode == RootConstants.NOTIFICATION_MEDIA_AMBIENT_FLOW_MODE_DYNAMIC ||
                                 ambientFlowMode == RootConstants.NOTIFICATION_MEDIA_AMBIENT_FLOW_MODE_COVER_COLOR
-                        AnimatedVisibility(visible = flowPauseToggleVisible) {
+                        AnimatedVisibility(visible = flowPauseToggleVisible, enter = SectionEnter, exit = SectionExit) {
                             Column {
                                 SwitchPreference(
                                     title = stringResource(
@@ -178,12 +182,16 @@ fun LazyListScope.notificationCenterMediaCardSection(
                     }
                 }
                 AnimatedVisibility(
-                    visible = customBackground
+                    visible = customBackground,
+                    enter = SectionEnter,
+                    exit = SectionExit,
                 ) {
                     Column {
                         AnimatedVisibility(
                             visible = backgroundStyle ==
-                                RootConstants.NOTIFICATION_MEDIA_BACKGROUND_STYLE_SOFT_COVER
+                                RootConstants.NOTIFICATION_MEDIA_BACKGROUND_STYLE_SOFT_COVER,
+                            enter = SectionEnter,
+                            exit = SectionExit,
                         ) {
                             Column {
                                 val toneValues = listOf(
@@ -212,7 +220,9 @@ fun LazyListScope.notificationCenterMediaCardSection(
                         )
                         AnimatedVisibility(
                             visible = backgroundStyle ==
-                                RootConstants.NOTIFICATION_MEDIA_BACKGROUND_STYLE_BLURRED_COVER
+                                RootConstants.NOTIFICATION_MEDIA_BACKGROUND_STYLE_BLURRED_COVER,
+                            enter = SectionEnter,
+                            exit = SectionExit,
                         ) {
                             Column {
                                 var sliderValue by remember(backgroundBlur) {
@@ -247,7 +257,9 @@ fun LazyListScope.notificationCenterMediaCardSection(
                         }
                         AnimatedVisibility(
                             visible = backgroundStyle ==
-                                RootConstants.NOTIFICATION_MEDIA_BACKGROUND_STYLE_LINEAR_GRADIENT
+                                RootConstants.NOTIFICATION_MEDIA_BACKGROUND_STYLE_LINEAR_GRADIENT,
+                            enter = SectionEnter,
+                            exit = SectionExit,
                         ) {
                             Column {
                                 SwitchPreference(

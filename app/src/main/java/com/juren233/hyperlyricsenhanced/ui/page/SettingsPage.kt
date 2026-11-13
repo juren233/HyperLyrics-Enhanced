@@ -1,12 +1,10 @@
 package com.juren233.hyperlyricsenhanced.ui.page
 
+import com.juren233.hyperlyricsenhanced.ui.component.SectionEnter
+import com.juren233.hyperlyricsenhanced.ui.component.SectionExit
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -32,6 +30,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.edit
 import com.juren233.hyperlyricsenhanced.R
+import com.juren233.hyperlyricsenhanced.ui.component.SpecialFeaturesContent
 import com.juren233.hyperlyricsenhanced.common.FeatureEntryApplier
 import com.juren233.hyperlyricsenhanced.common.FeatureEntryConfig
 import com.juren233.hyperlyricsenhanced.common.LogLevelPreference
@@ -283,7 +282,7 @@ private fun LazyListScope.settingsSections(
                         checked = lyricHookSwitches.enableDynamicIsland,
                         onCheckedChange = lyricHookSwitches::onDynamicIslandToggle,
                     )
-                    AnimatedVisibility(visible = lyricHookSwitches.enableDynamicIsland) {
+                    AnimatedVisibility(visible = lyricHookSwitches.enableDynamicIsland, enter = SectionEnter, exit = SectionExit) {
                         ArrowPreference(
                             title = stringResource(R.string.title_dynamic_island_config),
                             onClick = { navigator.navigate(Route.DynamicIslandNotification) },
@@ -296,26 +295,7 @@ private fun LazyListScope.settingsSections(
             SmallTitle(text = stringResource(R.string.title_special_features))
         }
         item(key = "special_features_content") {
-            Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
-                Column {
-                    SwitchPreference(
-                        title = stringResource(R.string.title_unlock_island_length),
-                        checked = lyricHookSwitches.unlockIslandLength,
-                        onCheckedChange = lyricHookSwitches::onUnlockIslandLengthToggle,
-                    )
-                    SwitchPreference(
-                        title = stringResource(R.string.title_remove_focus_whitelist),
-                        summary = stringResource(R.string.summary_remove_focus_whitelist),
-                        checked = lyricHookSwitches.removeFocusWhitelist,
-                        onCheckedChange = lyricHookSwitches::onRemoveFocusWhitelistToggle,
-                    )
-                    SwitchPreference(
-                        title = stringResource(R.string.title_remove_island_whitelist),
-                        checked = lyricHookSwitches.removeIslandWhitelist,
-                        onCheckedChange = lyricHookSwitches::onRemoveIslandWhitelistToggle,
-                    )
-                }
-            }
+            SpecialFeaturesContent(lyricHookSwitches)
         }
     }
 
@@ -387,8 +367,8 @@ private fun LazyListScope.settingsSections(
                 SwitchPreference(title = stringResource(R.string.title_hide_app_icon), checked = hideAppIcon, onCheckedChange = { hideAppIcon = it; PrefsBridge.putBoolean(UIConstants.KEY_HIDE_APP_ICON, it); AppUtils.applyLauncherIconVisibility(context, it) })
                 AnimatedVisibility(
                     visible = hideAppIcon,
-                    enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
-                    exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
+                    enter = SectionEnter,
+                    exit = SectionExit,
                 ) {
                     var settingsEntryPosition by remember {
                         mutableStateOf(

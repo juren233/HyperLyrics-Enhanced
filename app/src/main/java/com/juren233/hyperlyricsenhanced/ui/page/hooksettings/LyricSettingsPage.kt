@@ -1,10 +1,9 @@
 package com.juren233.hyperlyricsenhanced.ui.page.hooksettings
 
+import com.juren233.hyperlyricsenhanced.ui.component.SectionEnter
+import com.juren233.hyperlyricsenhanced.ui.component.SectionExit
+import com.juren233.hyperlyricsenhanced.ui.component.LyricSourceOptions
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -215,12 +214,8 @@ fun LyricSettingsPage() {
         },
     )
 
-    val sourceOptions = listOf(
-        stringResource(R.string.lyric_source_lyricon),
-        stringResource(R.string.lyric_source_superlyric),
-        stringResource(R.string.lyric_source_lyricinfo),
-    )
-    val sourceIds = listOf("lyricon", "superlyric", "lyricinfo")
+    val sourceOptions = LyricSourceOptions.labels.map { stringResource(it) }
+    val sourceIds = LyricSourceOptions.ids
 
     XposedLyricSettingPage(title = stringResource(R.string.title_lyric_settings)) {
         item(key = "source_title") {
@@ -243,7 +238,7 @@ fun LyricSettingsPage() {
                         saveConfig(RootConstants.KEY_HOOK_LYRIC_SOURCE, lyricSource)
                     },
                 )
-                AnimatedVisibility(visible = lyricSource == "lyricon") {
+                AnimatedVisibility(visible = lyricSource == "lyricon", enter = SectionEnter, exit = SectionExit) {
                     ArrowPreference(
                         title = stringResource(R.string.title_lyric_provider),
                         onClick = { navigator.navigate(Route.LyricProvider) },
@@ -314,8 +309,8 @@ fun LyricSettingsPage() {
                 )
                 AnimatedVisibility(
                     visible = earlyNextLinePreview == RootConstants.EARLY_NEXT_LINE_PREVIEW_CUSTOM,
-                    enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
-                    exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
+                    enter = SectionEnter,
+                    exit = SectionExit,
                 ) {
                     ArrowPreference(
                         title = stringResource(R.string.title_early_next_line_preview_time),
@@ -351,7 +346,7 @@ fun LyricSettingsPage() {
                             saveConfig(RootConstants.KEY_HOOK_AI_TRANS_ENABLE, it)
                         },
                     )
-                    AnimatedVisibility(visible = aiTransEnabled) {
+                    AnimatedVisibility(visible = aiTransEnabled, enter = SectionEnter, exit = SectionExit) {
                         Column {
                             SwitchPreference(
                                 title = stringResource(

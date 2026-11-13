@@ -1,5 +1,7 @@
 package com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.verbatim
 
+import com.juren233.hyperlyricsenhanced.ui.component.SectionEnter
+import com.juren233.hyperlyricsenhanced.ui.component.SectionExit
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -64,7 +66,7 @@ fun LazyListScope.verbatimLyricSections(
                         checked = wordMotionEnabled,
                         onCheckedChange = onWordMotionEnabledChange
                     )
-                    AnimatedVisibility(visible = wordMotionEnabled) {
+                    AnimatedVisibility(visible = wordMotionEnabled, enter = SectionEnter, exit = SectionExit) {
                         Column {
                             ArrowPreference(
                                 title = stringResource(id = R.string.title_word_motion_cjk_lift),

@@ -1,5 +1,9 @@
 package com.juren233.hyperlyricsenhanced.ui.page
 
+import com.juren233.hyperlyricsenhanced.ui.component.SectionEnter
+import com.juren233.hyperlyricsenhanced.ui.component.SectionExit
+import com.juren233.hyperlyricsenhanced.ui.component.CardPressFeedback
+import com.juren233.hyperlyricsenhanced.ui.component.LyricSourceOptions
 import android.Manifest
 import android.content.Context
 import android.content.Intent
@@ -10,10 +14,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
@@ -139,7 +139,6 @@ import top.yukonga.miuix.kmp.icon.extended.Music
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
-import top.yukonga.miuix.kmp.utils.PressFeedbackType
 import kotlin.time.Duration.Companion.milliseconds
 
 /** 工作模式：米系超级岛歌词（Hook 系统界面）。 */
@@ -653,7 +652,7 @@ private fun SetupModeCard(
     Card(
         modifier = modifier.fillMaxWidth(),
         onClick = onClick,
-        pressFeedbackType = PressFeedbackType.Tilt,
+        pressFeedbackType = CardPressFeedback,
         colors = CardDefaults.defaultColors(color = containerColor)
     ) {
         Row(
@@ -938,12 +937,8 @@ private fun LyricSourceSelectionPage(
     val providerState = providerStateFlow.collectAsState()
     val providerErrorTexts = rememberProviderErrorTexts()
     val unknownErrorText = stringResource(R.string.unknown)
-    val sourceOptions = listOf(
-        stringResource(R.string.lyric_source_lyricon),
-        stringResource(R.string.lyric_source_superlyric),
-        stringResource(R.string.lyric_source_lyricinfo),
-    )
-    val sourceIds = listOf("lyricon", "superlyric", "lyricinfo")
+    val sourceOptions = LyricSourceOptions.labels.map { stringResource(it) }
+    val sourceIds = LyricSourceOptions.ids
     val addSuccessFormat = stringResource(R.string.provider_add_success)
     val addFailedFormat = stringResource(R.string.provider_add_failed)
     val unknownText = stringResource(R.string.unknown)
@@ -1022,8 +1017,8 @@ private fun LyricSourceSelectionPage(
                 // Lyricon 源使用内置插件：在这里就能设好插件的自动更新间隔。
                 AnimatedVisibility(
                     visible = selectedSource == "lyricon",
-                    enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
-                    exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
+                    enter = SectionEnter,
+                    exit = SectionExit,
                 ) {
                     val autoUpdate = rememberProviderAutoUpdateChoice()
                     OverlayDropdownPreference(
@@ -1266,9 +1261,12 @@ private suspend fun refreshSetupProviders(
 private fun DisclaimerPage() {
     SetupPageColumn(title = stringResource(R.string.title_disclaimer)) {
         item(key = "setup_enhanced_notice") {
-            EnhancedVersionNotice(modifier = Modifier
-                .fillMaxWidth()
-                .setupStagger(1))
+            EnhancedVersionNotice(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .setupStagger(1),
+                emphasized = true,
+            )
         }
         item(key = "setup_disclaimer") {
             Card(modifier = Modifier

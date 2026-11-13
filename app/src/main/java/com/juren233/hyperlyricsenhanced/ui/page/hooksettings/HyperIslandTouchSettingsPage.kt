@@ -1,11 +1,9 @@
 /* Copyright 2026 juren233 */
 package com.juren233.hyperlyricsenhanced.ui.page.hooksettings
 
+import com.juren233.hyperlyricsenhanced.ui.component.SectionEnter
+import com.juren233.hyperlyricsenhanced.ui.component.SectionExit
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Row
@@ -129,8 +127,8 @@ fun HyperIslandTouchSettingsPage() {
                     )
                     AnimatedVisibility(
                         visible = config.enabled,
-                        enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
-                        exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
+                        enter = SectionEnter,
+                        exit = SectionExit,
                     ) {
                         Column {
                             SwitchPreference(
@@ -156,8 +154,8 @@ fun HyperIslandTouchSettingsPage() {
                     }
                     AnimatedVisibility(
                         visible = config.enabled,
-                        enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
-                        exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
+                        enter = SectionEnter,
+                        exit = SectionExit,
                     ) {
                         ArrowPreference(
                             title = stringResource(R.string.island_touch_double_interval),
@@ -170,8 +168,8 @@ fun HyperIslandTouchSettingsPage() {
                     }
                     AnimatedVisibility(
                         visible = config.enabled,
-                        enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
-                        exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
+                        enter = SectionEnter,
+                        exit = SectionExit,
                     ) {
                         ArrowPreference(
                             title = stringResource(R.string.island_touch_long_press_time),
@@ -188,14 +186,14 @@ fun HyperIslandTouchSettingsPage() {
         item(key = "touch_gestures") {
             AnimatedVisibility(
                 visible = config.enabled,
-                enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
-                exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
+                enter = SectionEnter,
+                exit = SectionExit,
             ) {
                 Column(modifier = Modifier.padding(top = 12.dp)) {
                     AnimatedVisibility(
                         visible = !config.unifiedSides,
-                        enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
-                        exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
+                        enter = SectionEnter,
+                        exit = SectionExit,
                     ) {
                         // The thumb follows the pager and can itself be dragged; tapping a segment also switches sides.
                         SwipeableSegmentedTabs(

@@ -177,13 +177,24 @@ fun BlurredBar(
     }
 }
 
-/** 栏模糊的叠色：顶栏与底栏共用。 */
+/** 栏模糊叠色的 surface 不透明度：莫奈配色沿用 0.8；系统主题色（非莫奈）下黑白遮罩偏重，按用户反馈减轻（2026-11-13）。 */
+private const val BAR_BLUR_SURFACE_ALPHA_MONET = 0.8f
+private const val BAR_BLUR_SURFACE_ALPHA_SYSTEM = 0.6f
+
+/** 栏模糊的叠色：顶栏与底栏、渐进模糊与整栏模糊共用。 */
 @Composable
-private fun barBlurColors(): BlurColors = BlurColors(
-    blendColors = listOf(
-        BlendColorEntry(color = MiuixTheme.colorScheme.surface.copy(0.8f)),
-    ),
-)
+private fun barBlurColors(): BlurColors {
+    val alpha = if (LocalAppThemeController.current.isMonet) {
+        BAR_BLUR_SURFACE_ALPHA_MONET
+    } else {
+        BAR_BLUR_SURFACE_ALPHA_SYSTEM
+    }
+    return BlurColors(
+        blendColors = listOf(
+            BlendColorEntry(color = MiuixTheme.colorScheme.surface.copy(alpha)),
+        ),
+    )
+}
 
 /**
  * 底栏模糊：与 [BlurredBar] 对应，开启渐进模糊时从栏底向上渐隐，否则整栏均匀模糊；主页面导航栏与基础设置底栏共用。

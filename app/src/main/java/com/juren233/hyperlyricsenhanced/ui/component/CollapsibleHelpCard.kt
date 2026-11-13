@@ -6,10 +6,6 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.calculateStartPadding
@@ -69,8 +65,8 @@ fun CollapsibleHelpCard(
             )
             AnimatedVisibility(
                 visible = expanded,
-                enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
-                exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
+                enter = SectionEnter,
+                exit = SectionExit,
             ) {
                 // Same horizontal inset as the card's own title row.
                 val inset = BasicComponentDefaults.InsideMargin.calculateStartPadding(LocalLayoutDirection.current)

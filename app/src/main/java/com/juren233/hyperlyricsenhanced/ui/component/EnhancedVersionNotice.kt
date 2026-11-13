@@ -1,39 +1,34 @@
 package com.juren233.hyperlyricsenhanced.ui.component
 
-import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.R
-import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.extended.Info
+import top.yukonga.miuix.kmp.icon.extended.Update
 
 @Composable
 fun EnhancedVersionNotice(
     updateAvailable: Boolean = false,
     modifier: Modifier = Modifier,
+    emphasized: Boolean = false,
 ) {
-    Card(modifier = modifier) {
-        Text(
-            text = stringResource(
-                if (updateAvailable) {
-                    R.string.module_update_available_notice
-                } else {
-                    R.string.enhanced_version_notice
-                }
-            ) + if (BuildConfig.DEBUG) {
-                stringResource(R.string.debug_build_notice)
+    NoticeCard(
+        text = stringResource(
+            if (updateAvailable) {
+                R.string.module_update_available_notice
             } else {
-                ""
-            },
-            fontSize = 13.sp,
-            lineHeight = 18.sp,
-            color = MiuixTheme.colorScheme.onSurface,
-            modifier = Modifier.padding(16.dp)
-        )
-    }
+                R.string.enhanced_version_notice
+            }
+        ) + if (BuildConfig.DEBUG) {
+            "\n" + stringResource(R.string.debug_build_notice)
+        } else {
+            ""
+        },
+        icon = if (updateAvailable) MiuixIcons.Update else MiuixIcons.Info,
+        modifier = modifier,
+        emphasized = emphasized,
+    )
 }

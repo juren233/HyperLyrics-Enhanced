@@ -11,11 +11,14 @@ import kotlinx.serialization.json.Json
 import java.net.HttpURLConnection
 import java.net.URL
 
+/** 版本显示格式「版本名-构建号」，如 8.4.0-canary-240114；关于页、主页头卡与新版本提示共用。 */
+fun formatAppVersion(versionName: String, versionCode: Long): String = "$versionName-$versionCode"
+
 data class AvailableUpdate(
     val versionName: String,
     val versionCode: Long,
 ) {
-    val displayVersion: String = "v$versionName-$versionCode"
+    val displayVersion: String = formatAppVersion(versionName, versionCode)
 }
 
 @Serializable

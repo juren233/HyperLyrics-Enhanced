@@ -24,6 +24,15 @@ import top.yukonga.miuix.kmp.theme.ThemeController
 /** 应用当前的主题设置（配色模式与莫奈主题色），供需要按同一设置自行配色的界面读取。 */
 val LocalAppThemeController = staticCompositionLocalOf<ThemeController?> { null }
 
+private val MONET_SCHEME_MODES = setOf(
+    ColorSchemeMode.MonetSystem,
+    ColorSchemeMode.MonetLight,
+    ColorSchemeMode.MonetDark,
+)
+
+/** 是否为莫奈取色配色；不在 [ThemeUtils.MiuixThemeWrapper] 内（控制器为 null）时按非莫奈处理。 */
+val ThemeController?.isMonet: Boolean get() = this?.colorSchemeMode in MONET_SCHEME_MODES
+
 object ThemeUtils {
 
     @Composable
