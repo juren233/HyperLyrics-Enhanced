@@ -66,6 +66,8 @@ sealed interface Route : NavKey {
     @Serializable
     data object HyperIslandPureMusicKeywords : Route
     @Serializable
+    data object HyperIslandRealRhythmCustom : Route
+    @Serializable
     data object MediaSessionOnlineFallbackPlayers : Route
     @Serializable
     data object MediaCardSettings : Route

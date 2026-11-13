@@ -16,6 +16,15 @@ internal object IslandMusicWaveMethodProfile {
     const val OS4_COLOR_METHOD = "getLottieColor"
     const val OS4_COLOR_RETURN_TYPE = "H0.f"
 
+    /** 原生律动 Lottie 资源名（`LottieResUtils.getLottieRes`：musicWave → R.raw.music_wave）。 */
+    const val MUSIC_WAVE_PIC = "musicWave"
+    const val MUSIC_PAUSE_PIC = "musicPause"
+
+    /** 插件内 `com.airbnb.lottie.LottieAnimationView` 未混淆的公开方法（18.3.2.67.0 原包核对）。 */
+    const val LOTTIE_PAUSE_METHOD = "pauseAnimation"
+    const val LOTTIE_RESUME_METHOD = "resumeAnimation"
+    const val LOTTIE_IS_ANIMATING_METHOD = "isAnimating"
+
     fun isLegacyColorMethod(method: Method): Boolean {
         return method.name == LEGACY_COLOR_METHOD &&
             !Modifier.isStatic(method.modifiers) &&

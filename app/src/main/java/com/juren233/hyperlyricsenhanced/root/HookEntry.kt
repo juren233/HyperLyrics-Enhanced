@@ -70,6 +70,7 @@ import com.juren233.hyperlyricsenhanced.root.utils.TargetCrashRecorder
 import com.juren233.hyperlyricsenhanced.common.PreferenceDiagnostics
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.common.IslandFontWeightMode
+import com.juren233.hyperlyricsenhanced.common.IslandRealRhythmConfig
 import com.juren233.hyperlyricsenhanced.common.UIConstants
 import com.juren233.hyperlyricsenhanced.common.media.NextTrackMetadataCache
 import com.juren233.hyperlyricsenhanced.common.media.MediaMetadataHelper
@@ -909,6 +910,11 @@ class HookEntry : XposedModule() {
                             IslandMusicWaveColorHooker.refresh()
                         }
                     }
+                    in IslandRealRhythmConfig.preferenceKeys -> {
+                        postRuntimeUpdate {
+                            com.juren233.hyperlyricsenhanced.root.island.IslandRealRhythm.refresh(prefs)
+                        }
+                    }
                     RootConstants.KEY_HOOK_ISLAND_PURE_MUSIC_MODE,
                     RootConstants.KEY_HOOK_ISLAND_PURE_MUSIC_KEYWORDS -> {
                         postRuntimeUpdate {
@@ -1227,6 +1233,9 @@ class HookEntry : XposedModule() {
                     key == RootConstants.KEY_HOOK_ISLAND_MUSIC_WAVE_COLOR_MODE
                 ) {
                     IslandMusicWaveColorHooker.refresh()
+                }
+                if (key in IslandRealRhythmConfig.preferenceKeys) {
+                    com.juren233.hyperlyricsenhanced.root.island.IslandRealRhythm.refresh(prefs)
                 }
                 if (key == RootConstants.KEY_HOOK_ISLAND_PURE_MUSIC_MODE ||
                     key == RootConstants.KEY_HOOK_ISLAND_PURE_MUSIC_KEYWORDS

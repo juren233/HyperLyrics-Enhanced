@@ -52,6 +52,9 @@ internal object SystemUiHotReload {
             "NotificationMediaCoverStyleHooker.releaseAll" to { NotificationMediaCoverStyleHooker.releaseAll() },
             "NotificationMediaAmbientFlowHooker.releaseAll" to { NotificationMediaAmbientFlowHooker.releaseAll() },
             "NotificationMediaAodLyricHooker.releaseAll" to { NotificationMediaAodLyricHooker.releaseAll() },
+            "IslandRealRhythm.releaseForReload" to {
+                com.juren233.hyperlyricsenhanced.root.island.IslandRealRhythm.releaseForReload()
+            },
             "IslandMusicWaveColorHooker.releaseForReload" to { IslandMusicWaveColorHooker.releaseForReload() },
             "IslandProgressGlowController.clearAll" to { IslandProgressGlowController.clearAll() },
             "MediaBackgroundRendererPool.releaseAll" to { MediaBackgroundRendererPool.releaseAll() },

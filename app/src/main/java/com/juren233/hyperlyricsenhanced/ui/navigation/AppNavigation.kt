@@ -51,6 +51,7 @@ import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.HyperIslandSettings
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.HyperIslandTouchSettingsPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.HyperIslandAlbumCoverWhitelistPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.HyperIslandPureMusicKeywordsPage
+import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.HyperIslandRealRhythmCustomPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.MediaSessionOnlineFallbackPlayersPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.media.MediaCardSettingsPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.aod.ClassicAodSettingsPage
@@ -171,6 +172,7 @@ fun AppNavigation(startRoute: Route) {
             appEntry<Route.HyperIslandSettings>(swipeDismiss = swipeDismiss) { HyperIslandSettingsPage() }
             appEntry<Route.HyperIslandAlbumCoverWhitelist>(swipeDismiss = swipeDismiss) { HyperIslandAlbumCoverWhitelistPage() }
             appEntry<Route.HyperIslandPureMusicKeywords>(swipeDismiss = swipeDismiss) { HyperIslandPureMusicKeywordsPage() }
+            appEntry<Route.HyperIslandRealRhythmCustom>(swipeDismiss = swipeDismiss) { HyperIslandRealRhythmCustomPage() }
             appEntry<Route.MediaSessionOnlineFallbackPlayers>(swipeDismiss = swipeDismiss) { MediaSessionOnlineFallbackPlayersPage() }
             appEntry<Route.MediaCardSettings>(swipeDismiss = swipeDismiss) { MediaCardSettingsPage() }
             appEntry<Route.LockScreenAodSettings>(swipeDismiss = swipeDismiss) { LockScreenAodSettingsPage() }

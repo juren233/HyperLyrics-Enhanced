@@ -2,9 +2,6 @@
 package com.juren233.hyperlyricsenhanced.ui.page.hooksettings
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -12,12 +9,8 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.ui.platform.LocalLayoutDirection
-import androidx.compose.ui.text.font.FontWeight
-import top.yukonga.miuix.kmp.basic.BasicComponentDefaults
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
@@ -26,29 +19,25 @@ import top.yukonga.miuix.kmp.basic.DropdownArrowEndAction
 import top.yukonga.miuix.kmp.basic.DropdownDefaults
 import top.yukonga.miuix.kmp.popup.OverlayDropdownPopup
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.juren233.hyperlyricsenhanced.R
 import com.juren233.hyperlyricsenhanced.common.IslandTouchAction
 import com.juren233.hyperlyricsenhanced.common.IslandTouchBinding
 import com.juren233.hyperlyricsenhanced.common.IslandTouchConfig
 import com.juren233.hyperlyricsenhanced.common.IslandTouchGesture
 import com.juren233.hyperlyricsenhanced.common.IslandTouchSide
+import com.juren233.hyperlyricsenhanced.ui.component.CollapsibleHelpCard
 import com.juren233.hyperlyricsenhanced.ui.component.NumberInputDialog
 import com.juren233.hyperlyricsenhanced.ui.component.SwipeableSegmentedTabs
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.common.XposedLyricSettingPage
@@ -58,10 +47,7 @@ import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.DropdownEntry
 import top.yukonga.miuix.kmp.basic.DropdownItem
-import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.ChevronBackward
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
@@ -77,7 +63,6 @@ fun HyperIslandTouchSettingsPage() {
     var editingLongPress by remember { mutableStateOf(false) }
     // Unified mode has a single shared card, so there is nothing to swipe between.
     val pagerState = rememberPagerState { if (config.unifiedSides) 1 else IslandTouchSide.entries.size }
-    var showHelp by rememberSaveable { mutableStateOf(false) }
     val actions = IslandTouchAction.entries
 
     fun update(side: IslandTouchSide, gesture: IslandTouchGesture, binding: IslandTouchBinding) {
@@ -230,53 +215,16 @@ fun HyperIslandTouchSettingsPage() {
             }
         }
         item(key = "touch_help") {
-            val helpState = stringResource(if (showHelp)
-                R.string.island_touch_help_collapse else R.string.island_touch_help_expand)
-            Card(modifier = Modifier.padding(horizontal = 12.dp).padding(top = 12.dp).fillMaxWidth()) {
-                Column {
-                    BasicComponent(
-                        title = stringResource(R.string.island_touch_help),
-                        modifier = Modifier.semantics { stateDescription = helpState },
-                        onClick = { showHelp = !showHelp },
-                        endActions = {
-                            val helpIconRotation by animateFloatAsState(
-                                targetValue = if (showHelp) 90f else -90f,
-                                animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
-                                label = "helpIconRotation",
-                            )
-                            Icon(MiuixIcons.ChevronBackward, contentDescription = null,
-                                modifier = Modifier.rotate(helpIconRotation))
-                        },
-                    )
-                    AnimatedVisibility(
-                        visible = showHelp,
-                        enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
-                        exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
-                    ) {
-                        // Same horizontal inset as the card's own title row.
-                        val helpInset = BasicComponentDefaults.InsideMargin
-                            .calculateStartPadding(LocalLayoutDirection.current)
-                        Column(
-                            modifier = Modifier.padding(horizontal = helpInset).padding(bottom = 16.dp),
-                            verticalArrangement = Arrangement.spacedBy(14.dp),
-                        ) {
-                            for ((title, body) in listOf(
-                                R.string.island_touch_help_area_title to R.string.island_touch_help_area_body,
-                                R.string.island_touch_help_swipe_title to R.string.island_touch_help_swipe_body,
-                                R.string.island_touch_help_tap_title to R.string.island_touch_help_tap_body,
-                                R.string.island_touch_help_actions_title to R.string.island_touch_help_actions_body,
-                            )) {
-                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    Text(stringResource(title), fontSize = 15.sp, fontWeight = FontWeight.Medium,
-                                        color = MiuixTheme.colorScheme.onSurface)
-                                    Text(stringResource(body), fontSize = 14.sp, lineHeight = 21.sp,
-                                        color = MiuixTheme.colorScheme.onSurfaceVariantActions)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            CollapsibleHelpCard(
+                title = R.string.island_touch_help,
+                sections = listOf(
+                    R.string.island_touch_help_area_title to R.string.island_touch_help_area_body,
+                    R.string.island_touch_help_swipe_title to R.string.island_touch_help_swipe_body,
+                    R.string.island_touch_help_tap_title to R.string.island_touch_help_tap_body,
+                    R.string.island_touch_help_actions_title to R.string.island_touch_help_actions_body,
+                ),
+                modifier = Modifier.padding(horizontal = 12.dp).padding(top = 12.dp),
+            )
         }
     }
     val selected = editingSeconds

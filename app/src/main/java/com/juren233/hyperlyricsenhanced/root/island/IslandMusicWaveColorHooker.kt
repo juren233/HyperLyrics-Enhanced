@@ -444,6 +444,11 @@ internal object IslandMusicWaveColorHooker {
         )
     }
 
+    /** 原生律动当前使用的渐变色（顶部, 底部），供真实律动按同一份颜色绘制。 */
+    internal fun currentWaveColors(): Pair<Int, Int>? = runCatching {
+        colorAccessor?.read()?.let { it.top to it.bottom }
+    }.getOrNull()
+
     internal fun snapshotForReload(): Array<Any> =
         synchronized(trackedHolders) { trackedHolders.keys.toTypedArray() }
 
@@ -842,9 +847,14 @@ internal object IslandMusicWaveColorHooker {
                 synchronized(trackedHolders) {
                     trackedHolders[holder] = true
                 }
-                if (!isMusicWave(picInfoField.get(holder))) return@runCatching
-
-                val lottieView = lottieViewField.get(holder) as? View ?: return@runCatching
+                val pic = picName(picInfoField.get(holder))
+                val lottieView = lottieViewField.get(holder) as? View
+                // 真实律动需要知道该 View 当前是否仍是 musicWave，非律动 pic 也要上报以便还原原生。
+                lottieView?.let { IslandRealRhythm.onLottieBound(it, pic, prefs) }
+                if (pic != IslandMusicWaveMethodProfile.MUSIC_WAVE_PIC &&
+                    pic != IslandMusicWaveMethodProfile.MUSIC_PAUSE_PIC
+                ) return@runCatching
+                if (lottieView == null) return@runCatching
                 synchronized(trackedLottieViews) {
                     trackedLottieViews[lottieView] = true
                 }
@@ -876,11 +886,10 @@ internal object IslandMusicWaveColorHooker {
             return result
         }
 
-        private fun isMusicWave(picInfo: Any?): Boolean {
-            val pic = picInfo?.javaClass?.methods
+        private fun picName(picInfo: Any?): String? {
+            return picInfo?.javaClass?.methods
                 ?.firstOrNull { it.name == "getPic" && it.parameterTypes.isEmpty() }
                 ?.invoke(picInfo) as? String
-            return pic == "musicWave" || pic == "musicPause"
         }
     }
 

@@ -30,6 +30,7 @@ import androidx.core.content.edit
 import com.juren233.hyperlyricsenhanced.common.IslandMusicWaveColorMode
 import com.juren233.hyperlyricsenhanced.common.IslandNextLineMode
 import com.juren233.hyperlyricsenhanced.common.IslandProgressColorMode
+import com.juren233.hyperlyricsenhanced.common.IslandRealRhythmConfig
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.common.UIConstants
 import com.juren233.hyperlyricsenhanced.common.PrefsBridge
@@ -103,6 +104,9 @@ fun HyperIslandSettingsPage() {
         )
     }
     var audioRhythm by remember { mutableStateOf(prefs.getBoolean(RootConstants.KEY_HOOK_ISLAND_RIGHT_ICON, RootConstants.DEFAULT_HOOK_ISLAND_RIGHT_ICON)) }
+    var realRhythmMode by remember {
+        mutableIntStateOf(IslandRealRhythmConfig.resolveMode(prefs.getInt(IslandRealRhythmConfig.KEY_MODE, IslandRealRhythmConfig.DEFAULT_MODE)))
+    }
     var pureMusicMode by remember {
         mutableIntStateOf(
             prefs.getInt(
@@ -358,6 +362,38 @@ fun HyperIslandSettingsPage() {
             R.string.option_island_pure_music_system_compact,
         )
     }.map { stringResource(id = it) }
+    val realRhythmModeValues = remember {
+        listOf(IslandRealRhythmConfig.MODE_OFF, IslandRealRhythmConfig.MODE_ON, IslandRealRhythmConfig.MODE_CUSTOM)
+    }
+    val realRhythmModeOptions = remember {
+        listOf(R.string.option_real_rhythm_off, R.string.option_real_rhythm_on, R.string.option_real_rhythm_custom)
+    }.map { stringResource(id = it) }
+    // 音频律动与“纯音乐期间系统短岛”共用同一份真实律动设置，只在此处定义一次。
+    val realRhythmPreference: @Composable () -> Unit = {
+        Column {
+            OverlayDropdownPreference(
+                title = stringResource(id = R.string.title_audio_rhythm_real_rhythm),
+                summary = stringResource(id = R.string.summary_audio_rhythm_real_rhythm),
+                items = realRhythmModeOptions,
+                selectedIndex = realRhythmModeValues.indexOf(realRhythmMode).coerceAtLeast(0),
+                onSelectedIndexChange = { index ->
+                    val mode = realRhythmModeValues[index]
+                    realRhythmMode = mode
+                    saveConfig(IslandRealRhythmConfig.KEY_MODE, mode)
+                },
+            )
+            AnimatedVisibility(
+                visible = realRhythmMode == IslandRealRhythmConfig.MODE_CUSTOM,
+                enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
+                exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
+            ) {
+                ArrowPreference(
+                    title = stringResource(id = R.string.title_real_rhythm_custom),
+                    onClick = { navigator.navigate(Route.HyperIslandRealRhythmCustom) },
+                )
+            }
+        }
+    }
     // 音频律动与“纯音乐期间系统短岛”共用同一份律动封面色设置，只在此处定义一次。
     val musicWaveColorModePreference: @Composable () -> Unit = {
         OverlayDropdownPreference(
@@ -586,11 +622,16 @@ fun HyperIslandSettingsPage() {
                                     },
                                 )
                             }
-                            SwitchPreference(title = stringResource(id = R.string.title_audio_rhythm), checked = audioRhythm, onCheckedChange = { audioRhythm = it; saveConfig(RootConstants.KEY_HOOK_ISLAND_RIGHT_ICON, it) })
-                            AnimatedVisibility(visible = audioRhythm) {
-                                Column {
-                                    musicWaveColorModePreference()
-                                }
+                        }
+                    }
+                }
+                item(key = "audio_rhythm") {
+                    Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
+                        SwitchPreference(title = stringResource(id = R.string.title_audio_rhythm), checked = audioRhythm, onCheckedChange = { audioRhythm = it; saveConfig(RootConstants.KEY_HOOK_ISLAND_RIGHT_ICON, it) })
+                        AnimatedVisibility(visible = audioRhythm) {
+                            Column {
+                                realRhythmPreference()
+                                musicWaveColorModePreference()
                             }
                         }
                     }
@@ -617,13 +658,16 @@ fun HyperIslandSettingsPage() {
                                     title = stringResource(id = R.string.title_island_pure_music_keywords),
                                     onClick = { navigator.navigate(Route.HyperIslandPureMusicKeywords) },
                                 )
-                                // 音频律动已开启时，封面色在上方卡片里设置，这里不重复显示。
+                                // 音频律动已开启时，真实律动与封面色在专属的音频律动卡片里设置，这里不重复显示。
                                 AnimatedVisibility(
                                     visible = !audioRhythm,
                                     enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
                                     exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
                                 ) {
-                                    Column { musicWaveColorModePreference() }
+                                    Column {
+                                        realRhythmPreference()
+                                        musicWaveColorModePreference()
+                                    }
                                 }
                             }
                         }

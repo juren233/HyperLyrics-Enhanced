@@ -7,6 +7,7 @@
 package com.juren233.hyperlyricsenhanced.root
 
 import com.juren233.hyperlyricsenhanced.common.RootConstants
+import com.juren233.hyperlyricsenhanced.common.IslandRealRhythmConfig
 import com.juren233.hyperlyricsenhanced.common.IslandTouchConfig
 import com.juren233.hyperlyricsenhanced.common.MediaSessionOnlineFallbackPreferences
 
@@ -48,5 +49,6 @@ internal object LivePreferenceRefreshPolicy {
     )
 
     fun contains(key: String): Boolean = key in keys || key in IslandTouchConfig.preferenceKeys ||
+        key in IslandRealRhythmConfig.preferenceKeys ||
         MediaSessionOnlineFallbackPreferences.isPreference(key)
 }
