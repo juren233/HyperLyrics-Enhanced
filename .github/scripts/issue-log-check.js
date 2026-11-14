@@ -1,4 +1,5 @@
 const INVALID_LABEL = '无效 / invalid';
+const romCheck = require('./rom-check');
 const NEEDS_INFO_LABEL = '待补充 / Needs Info';
 const BUG_LABEL = 'bug';
 const LOG_HEADING = 'LSPosed 日志或 HyperLyrics Enhanced 日志';
@@ -29,6 +30,13 @@ const CLOSE_MESSAGE =
     '当前 issue 被标记「无效」已满 3 天，仍未补充日志，将被锁定并关闭。如需继续反馈，请按上方指引准备好日志后开新的 issue。\n\n' +
     'This issue has been labeled "invalid" for 3 days without logs being added, so it will now be locked and closed. If you still need help, please open a new issue with logs prepared as described above.';
 const CLOSE_MARKER = '<!-- issue-log-check:closed -->';
+
+/** 官包检测判定非官包的 issue 超时关闭文案(3 天内未补充申辩材料)。 */
+const ROM_CLOSE_MESSAGE =
+    '当前 issue 已被官包检测判定为疑似非官包，满 3 天未收到补充材料，将被锁定并关闭。' +
+    '如确认使用的是官包，请携带系统版本号以及系统界面 APK（com.android.systemui）、系统界面组件 APK（miui.systemui.plugin）开新的 issue。\n\n' +
+    'This issue was flagged by the official-ROM check as running a non-official ROM and no supplementary materials were received within 3 days, so it will be locked and closed. ' +
+    'If you are sure you are on an official ROM, please open a new issue with your exact system version and the com.android.systemui / miui.systemui.plugin APK files.';
 
 const NEEDS_INFO_CLOSE_MESSAGE =
     '当前 issue 被标记「待补充」已满 3 天，仍未补充所需信息，已改标为「无效」并锁定关闭。如需继续反馈，请准备好所需信息后开新的 issue。\n\n' +
@@ -128,15 +136,20 @@ async function removeInvalidLabel(github, owner, repo, number) {
 async function checkOpened({ github, context, core }) {
     const { owner, repo } = context.repo;
     const issue = context.payload.issue;
-    if (!hasLabel(issue, BUG_LABEL)) {
-        core.info('不含 bug 标签，跳过。');
-        return;
-    }
     if (issue.user?.login?.toLowerCase() === owner.toLowerCase()) {
         core.info('由维护者本人发起，跳过。');
         return;
     }
-    const hasLogs = bugReportHasLogs(issue.body);
+    const logSection = extractLogSection(issue.body);
+    // 官包检测不要求 bug 标签:日志栏有可解析内容就检测(幂等,判过即跳过)。
+    if (logSection !== null) {
+        await romCheck.checkRomOnOpened({ github, context, core, logSection });
+    }
+    if (!hasLabel(issue, BUG_LABEL)) {
+        core.info('不含 bug 标签，跳过。');
+        return;
+    }
+    const hasLogs = logSection === null ? null : hasLogEvidence(logSection);
     if (hasLogs === null) {
         core.info('Issue 正文没有日志栏目，无法判断，跳过。');
         return;
@@ -163,12 +176,26 @@ async function checkOpened({ github, context, core }) {
 /**
  * issues.edited / issue_comment.created：发起人补充了日志，且标签是本检查打上的，
  * 则撤销「无效」标签。人工打的无效标签不会被自动撤销。
+ * 官包检测的申辩不在此处理:疑似非官包的判定留言与标签由维护者手动撤销。
  */
 async function checkSupplement({ github, context, core }) {
     const { owner, repo } = context.repo;
     const issue = context.payload.issue;
     const comment = context.payload.comment;
-    if (issue.pull_request || issue.state !== 'open' || !hasLabel(issue, INVALID_LABEL)) {
+    if (issue.pull_request || issue.state !== 'open') {
+        return;
+    }
+    // issues.edited / 发起人评论:补充日志后补做官包检测(opened 时无日志、或日志在评论里补的情况,幂等)。
+    // 先于日志补充分支执行:判 ported 的留言会拦住自动摘标签,转人工。
+    const authorLogin = issue.user?.login?.toLowerCase();
+    const isAuthorAction = !comment || comment.user?.login?.toLowerCase() === authorLogin;
+    if (isAuthorAction && authorLogin && authorLogin !== owner.toLowerCase()) {
+        const logSection = comment ? comment.body : extractLogSection(issue.body);
+        if (logSection) {
+            await romCheck.checkRomOnOpened({ github, context, core, logSection });
+        }
+    }
+    if (!hasLabel(issue, INVALID_LABEL)) {
         return;
     }
     if (comment && comment.user?.login !== issue.user?.login) {
@@ -179,6 +206,11 @@ async function checkSupplement({ github, context, core }) {
     const comments = await listComments(github, owner, repo, issue.number);
     if (!comments.some((entry) => entry.body?.includes(MARKER))) {
         core.info('无效标签不是由日志检查打上的，跳过。');
+        return;
+    }
+    // 官包检测也打过无效的(非官包判定):摘标签与后续处理交维护者手动,避免误摘判定。
+    if (comments.some((entry) => entry.body?.includes(romCheck.testables.ROM_MARKER))) {
+        core.info('该 issue 存在官包检测的非官包判定留言，标签撤销转人工。');
         return;
     }
 
@@ -258,11 +290,14 @@ async function closeInvalid({ github, context, core }) {
             }
             const comments = await listComments(github, owner, repo, item.number);
             if (!comments.some((entry) => entry.body?.includes(CLOSE_MARKER))) {
+                // 官包检测判过非官包的 issue 用专属关闭文案(申辩材料 = APK/版本号,非日志)。
+                const romFlagged = comments.some((entry) =>
+                    entry.body?.includes(romCheck.testables.ROM_MARKER));
                 await github.rest.issues.createComment({
                     owner,
                     repo,
                     issue_number: item.number,
-                    body: `${CLOSE_MESSAGE}\n\n${CLOSE_MARKER}`,
+                    body: `${romFlagged ? ROM_CLOSE_MESSAGE : CLOSE_MESSAGE}\n\n${CLOSE_MARKER}`,
                 });
             }
             // 先锁定再关闭，锁定失败时下次任务仍会重试。

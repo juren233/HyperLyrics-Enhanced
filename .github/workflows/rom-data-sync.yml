@@ -1,0 +1,35 @@
+name: 官包检测数据同步
+
+on:
+  schedule:
+    - cron: '23 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: rom-data-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: 拉取代码 Checkout
+        uses: actions/checkout@v6
+
+      - name: 生成快照 Build Snapshot
+        run: node .github/scripts/rom-data-sync.js
+
+      # 快照推到孤立的数据分支 rom-data(force push 恒为单提交),不污染主分支提交历史。
+      - name: 推送快照到数据分支 Push Snapshot Branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch --orphan rom-data
+          git add -f .github/data/rom-codes.json
+          git commit -m "chore: 官包检测快照 $(date -u +%Y-%m-%d)"
+          git push -f origin rom-data

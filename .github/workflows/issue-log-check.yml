@@ -17,6 +17,15 @@ on:
           - backfill-dry-run
           - backfill
           - close-invalid
+          - rom-dry-run
+      device_model:
+        description: rom-dry-run 用:手机型号(如 Xiaomi 15)
+        type: string
+        default: ''
+      system_version:
+        description: rom-dry-run 用:系统版本号(如 OS4.0.3.0.XOCCNXM)
+        type: string
+        default: ''
 
 concurrency:
   group: issue-log-check-${{ github.event.issue.number || 'schedule' }}
@@ -92,3 +101,41 @@ jobs:
           script: |
             const { backfillMissingLogs } = require('./.github/scripts/issue-log-check.js');
             await backfillMissingLogs({ github, context, core });
+
+  rom-dry-run:
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'rom-dry-run'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: 拉取代码 Checkout
+        uses: actions/checkout@v6
+
+      - name: 官包判定试运行 ROM Check Dry Run
+        uses: actions/github-script@v9
+        env:
+          DEVICE_MODEL: ${{ inputs.device_model }}
+          SYSTEM_VERSION: ${{ inputs.system_version }}
+        with:
+          script: |
+            const romCheck = require('./.github/scripts/rom-check.js');
+            const { testables } = romCheck;
+            const model = process.env.DEVICE_MODEL;
+            const version = process.env.SYSTEM_VERSION;
+            if (!model || !version) {
+              core.setFailed('请填写 device_model 与 system_version 两个输入。');
+              return;
+            }
+            const snapshot = await romCheck.loadSnapshot(github, context, core);
+            if (!snapshot) {
+              core.setFailed('快照不可用:rom-data 分支与工作区均无数据,请先运行官包检测数据同步。');
+              return;
+            }
+            const env = testables.extractEnvironment(`手机型号: ${model}\n系统版本号: ${version}`);
+            const judgment = testables.judgeDeviceRom(env.deviceModel, env.systemVersion, snapshot);
+            console.log(`输入: ${model} / ${version}`);
+            console.log(`判定: ${judgment.verdict}`);
+            console.log(`依据: ${judgment.reason}`);
+            if (judgment.verdict === 'ported') {
+              console.log('留言预览:\n' + testables.portedComment(judgment));
+            }

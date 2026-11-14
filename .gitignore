@@ -43,3 +43,6 @@ scripts/*
 # Local Apple Music baseline pack (production-key signed); release builds fetch the
 # published pack instead of committing this binary.
 app/src/main/assets/providers/applemusic.hlp
+
+# 官包检测快照(每日同步到 rom-data 数据分支,不入主线)
+.github/data/
