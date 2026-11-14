@@ -27,13 +27,15 @@ internal object IslandNativeSlotPlacement {
         val album = preserveNativeIconAnchor(
             root = root,
             moduleName = IslandProbeUtils.LEFT_PARENT_NAME,
-            enabled = config.dynamicWidthEnabled && config.shouldInjectLeft && config.showAlbum,
+            enabled = config.dynamicWidthEnabled && config.shouldInjectLeft &&
+                IslandSlotContentAssembler.isAlbumPlaced(config),
             diagnosticName = "album",
         )
         val rhythm = preserveNativeIconAnchor(
             root = root,
             moduleName = IslandProbeUtils.RIGHT_PARENT_NAME,
-            enabled = config.dynamicWidthEnabled && config.shouldInjectRight && config.showRhythm,
+            enabled = config.dynamicWidthEnabled && config.shouldInjectRight &&
+                IslandSlotContentAssembler.isRhythmVisible(config),
             diagnosticName = "rhythm",
         )
         val left = applySide(root, IslandProbeUtils.LEFT_PARENT_NAME,

@@ -40,6 +40,7 @@ import com.juren233.hyperlyricsenhanced.ui.component.HeroCard
 import com.juren233.hyperlyricsenhanced.ui.component.HeroTone
 import com.juren233.hyperlyricsenhanced.ui.component.NumberRangeInputDialog
 import com.juren233.hyperlyricsenhanced.ui.component.StatusGlyphs
+import com.juren233.hyperlyricsenhanced.ui.component.SuperSwitchPreference
 import com.juren233.hyperlyricsenhanced.ui.component.SwipeableSegmentedTabs
 import com.juren233.hyperlyricsenhanced.ui.component.settingsCard
 import com.juren233.hyperlyricsenhanced.ui.component.settingsHeroCard
@@ -100,7 +101,8 @@ fun AppleMusicOptimizationPage(
     var pluginGate by remember { mutableStateOf(AppleMusicPluginGate.Loading) }
     var pluginVersionName by remember { mutableStateOf<String?>(null) }
     // 插件目录里比已装版本新的兼容版本名，与 Lyricon 配置页的更新按钮同一判断（OfficialProviderItem.updateAvailable）。
-    var pluginUpdateVersionName by remember { mutableStateOf<String?>(null) }
+    // 有可用更新时非空；目录未给版本名时 versionName 为空，显示时再取「未知」，随配置变化正确解析。
+    var pluginUpdate by remember { mutableStateOf<AppleMusicPluginUpdate?>(null) }
     val refreshPluginGate: () -> Unit = {
         coroutineScope.launch {
             val item = withContext(Dispatchers.IO) {
@@ -116,7 +118,7 @@ fun AppleMusicOptimizationPage(
                 else -> AppleMusicPluginGate.Ready
             }
             if (item == null) {
-                pluginUpdateVersionName = null
+                pluginUpdate = null
                 return@launch
             }
             // 读插件目录（联网，失败时回退本地缓存）；不读目标进程状态，避免触发 root 授权。
@@ -126,9 +128,9 @@ fun AppleMusicOptimizationPage(
                         .firstOrNull { it.catalog.id == OfficialProviderCatalog.APPLE_MUSIC_PLUGIN_ID }
                 }.getOrNull()
             }
-            pluginUpdateVersionName = catalogItem
+            pluginUpdate = catalogItem
                 ?.takeIf { it.updateAvailable }
-                ?.let { it.updateVersionName ?: context.getString(R.string.unknown) }
+                ?.let { AppleMusicPluginUpdate(versionName = it.updateVersionName) }
         }
     }
     LaunchedEffect(Unit) { refreshPluginGate() }
@@ -333,11 +335,14 @@ fun AppleMusicOptimizationPage(
             )
         )
     }
-    var lineToWordLyrics by remember {
-        mutableStateOf(
-            prefs.getBoolean(
-                RootConstants.KEY_HOOK_APPLE_MUSIC_LINE_TO_WORD_LYRICS,
-                RootConstants.DEFAULT_HOOK_APPLE_MUSIC_LINE_TO_WORD_LYRICS,
+    var lineToWordSourceMode by remember {
+        mutableIntStateOf(
+            prefs.getInt(
+                RootConstants.KEY_HOOK_APPLE_MUSIC_LINE_TO_WORD_SOURCE_MODE,
+                RootConstants.DEFAULT_HOOK_APPLE_MUSIC_LINE_TO_WORD_SOURCE_MODE,
+            ).coerceIn(
+                RootConstants.APPLE_MUSIC_LINE_TO_WORD_SOURCE_MODE_OFF,
+                RootConstants.APPLE_MUSIC_LINE_TO_WORD_SOURCE_MODE_ALL,
             )
         )
     }
@@ -439,6 +444,11 @@ fun AppleMusicOptimizationPage(
     val sourceSearchTimingOptions = listOf(
         stringResource(R.string.option_apple_music_source_search_timing_on_dialog_open),
         stringResource(R.string.option_apple_music_source_search_timing_on_playback_start),
+    )
+    val lineToWordSourceModeOptions = listOf(
+        stringResource(R.string.option_apple_music_line_to_word_source_mode_off),
+        stringResource(R.string.option_apple_music_line_to_word_source_mode_ttml_only),
+        stringResource(R.string.option_apple_music_line_to_word_source_mode_all),
     )
     val lyricsBlurEffectOptions = listOf(
         stringResource(R.string.option_apple_music_lyrics_blur_effect_off),
@@ -562,7 +572,9 @@ fun AppleMusicOptimizationPage(
     ) {
         item(key = "apple_music_hero") {
             val ready = requirementNotice == null
-            val updateVersion = pluginUpdateVersionName?.takeIf { ready }
+            val updateVersion = pluginUpdate?.takeIf { ready }?.let {
+                it.versionName ?: stringResource(R.string.unknown)
+            }
             HeroCard(
                 overline = "Apple Music",
                 title = stringResource(
@@ -616,7 +628,8 @@ fun AppleMusicOptimizationPage(
                     AppleMusicSettingsTab.Lyrics -> Column {
                             SmallTitle(text = stringResource(R.string.title_apple_music_group_lyrics_content))
                             Card(modifier = Modifier.settingsCard()) {
-                                SwitchPreference(
+                                // 开关只在开关处切换；点按该项其余位置进入「三方在线源配置」设置来源。
+                                SuperSwitchPreference(
                                     enabled = featuresEnabled,
                                     title = stringResource(R.string.title_apple_music_fill_missing_lyrics),
                                     summary = stringResource(R.string.summary_apple_music_fill_missing_lyrics),
@@ -625,6 +638,7 @@ fun AppleMusicOptimizationPage(
                                         fillMissingLyrics = enabled
                                         saveConfig(RootConstants.KEY_HOOK_APPLE_MUSIC_FILL_MISSING_LYRICS, enabled)
                                     },
+                                    onClick = { navigator.navigate(Route.OnlineTranslationSources) },
                                 )
                                 SwitchPreference(
                                     enabled = featuresEnabled,
@@ -650,20 +664,20 @@ fun AppleMusicOptimizationPage(
                                         )
                                     },
                                 )
-                                SwitchPreference(
+                                OverlayDropdownPreference(
                                     enabled = featuresEnabled,
-                                    title = stringResource(
-                                        R.string.title_apple_music_line_to_word_lyrics
-                                    ),
-                                    summary = stringResource(
-                                        R.string.summary_apple_music_line_to_word_lyrics
-                                    ),
-                                    checked = lineToWordLyrics,
-                                    onCheckedChange = { enabled ->
-                                        lineToWordLyrics = enabled
+                                    title = stringResource(R.string.title_apple_music_line_to_word_lyrics),
+                                    items = lineToWordSourceModeOptions,
+                                    selectedIndex = lineToWordSourceMode,
+                                    onSelectedIndexChange = { selected ->
+                                        val value = selected.coerceIn(
+                                            RootConstants.APPLE_MUSIC_LINE_TO_WORD_SOURCE_MODE_OFF,
+                                            RootConstants.APPLE_MUSIC_LINE_TO_WORD_SOURCE_MODE_ALL,
+                                        )
+                                        lineToWordSourceMode = value
                                         saveConfig(
-                                            RootConstants.KEY_HOOK_APPLE_MUSIC_LINE_TO_WORD_LYRICS,
-                                            enabled,
+                                            RootConstants.KEY_HOOK_APPLE_MUSIC_LINE_TO_WORD_SOURCE_MODE,
+                                            value,
                                         )
                                     },
                                 )
@@ -1074,3 +1088,6 @@ private fun AppleLyricsBlurRangeValue(
 
 private fun Float.displayValue(): String =
     if (this % 1f == 0f) toInt().toString() else toString()
+
+/** Apple Music 插件有可用更新；[versionName] 为目录给出的新版本名，可能为空。 */
+private data class AppleMusicPluginUpdate(val versionName: String?)

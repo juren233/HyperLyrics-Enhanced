@@ -31,6 +31,8 @@ internal object IslandLyricTextInjector {
         if (IslandContentUpdateCoordinator.deferContent(rootView)) return false
         val prefs = HookEntry.instance?.prefs ?: return false
         val config = IslandSlotRuntimeConfig.from(prefs)
+        // 封面占位、边距、锚点与文字配色随后按目标摆放：先接上极简显示的封面进出场。
+        IslandHostFacade.syncMinimalCoverTransition(rootView, config)
 
         var changed = false
         if (config.shouldInjectLeft) {
@@ -122,6 +124,7 @@ internal object IslandLyricTextInjector {
     fun restoreExistingSlotsLightweight(rootView: ViewGroup): Boolean {
         val prefs = HookEntry.instance?.prefs ?: return false
         val config = IslandSlotRuntimeConfig.from(prefs)
+        IslandHostFacade.syncMinimalCoverTransition(rootView, config)
 
         var changed = false
         if (config.shouldInjectLeft) {
@@ -144,6 +147,7 @@ internal object IslandLyricTextInjector {
     fun restoreExistingModuleSlotLightweight(rootView: ViewGroup, moduleType: String?): Boolean {
         val prefs = HookEntry.instance?.prefs ?: return false
         val config = IslandSlotRuntimeConfig.from(prefs)
+        IslandHostFacade.syncMinimalCoverTransition(rootView, config)
 
         var changed = false
         if (config.shouldInjectLeft && (moduleType == null || moduleType.endsWith("_1"))) {
@@ -239,6 +243,7 @@ internal object IslandLyricTextInjector {
         if (IslandContentUpdateCoordinator.deferContent(rootView)) return false
         val prefs = HookEntry.instance?.prefs ?: return false
         val config = IslandSlotRuntimeConfig.from(prefs)
+        IslandHostFacade.syncMinimalCoverTransition(rootView, config)
         val packageName = LyriconDataBridge.currentLyricPackageName.orEmpty()
         val mediaInfo = traceIslandPerformance("HLE.content.mediaInfo") {
             MediaMetadataHelper.getMediaInfo(rootView.context, packageName, HookLogger)
@@ -544,7 +549,11 @@ internal object IslandLyricTextInjector {
     private fun updateWrapper(wrapper: MaxWidthFrameLayout, widthPx: Int, config: IslandSlotRuntimeConfig, parentName: String): Boolean {
         var changed = false
         val paddingLeft = config.paddingLeftPx(wrapper, parentName)
-        val paddingRight = config.paddingRightPx(wrapper, parentName)
+        val paddingRight = config.paddingRightPx(
+            wrapper,
+            parentName,
+            rhythmVisible = IslandSlotContentAssembler.isRhythmVisible(config),
+        )
         if (wrapper.paddingLeft != paddingLeft || wrapper.paddingRight != paddingRight) {
             wrapper.setPadding(paddingLeft, wrapper.paddingTop, paddingRight, wrapper.paddingBottom)
             changed = true

@@ -293,16 +293,42 @@ internal fun NotificationMediaAodLyricHooker.createAodPluginOverlay(
         )
         return null
     }
-    val anchor = api.getNotificationIcons(aodView) ?: run {
-        DisplayDiagnosticLogger.log(
-            channel = "AOD_CLASSIC",
-            result = "skipped",
-            reason = "notification_icons_null",
-            extra = "rootClass=${aodRoot.javaClass.name}",
-            dedupeKey = "$diagnosticKey/anchor_presence",
-        )
-        return null
-    }
+    // 官方 AODView（4.0.4 与 4.0.20 反编译同构）只在 StyleInfo 通知开关开启时才给
+    // mNotificationIcons 字段赋值并更新图标，开关关闭时该字段恒为 null（issue #70
+    // 官包活体复现，reason=notification_icons_null）。但时钟内容布局（aod_content*
+    // 系列）在 XML 里无条件 include aod_icons*，id/icons 容器始终在视图树里：
+    // 先按资源名把同一个 View 找回来当锚点（几何与通知位开启时一致），
+    // 仍找不到才退到 makeNormalPanel 无条件赋值的 mTableModeContainer。
+    val notificationIcons = api.getNotificationIcons(aodView)
+        ?: api.findIconsContainerView(aodRoot)?.also {
+            DisplayDiagnosticLogger.log(
+                channel = "AOD_CLASSIC",
+                result = "fallback",
+                reason = "anchor_resolved_from_layout_include",
+                extra = "rootClass=${aodRoot.javaClass.name}",
+                dedupeKey = "$diagnosticKey/anchor_include",
+            )
+        }
+    val anchor = notificationIcons
+        ?: api.getTableModeContainer(aodView)?.also {
+            DisplayDiagnosticLogger.log(
+                channel = "AOD_CLASSIC",
+                result = "fallback",
+                reason = "anchor_fallback_table_mode",
+                extra = "rootClass=${aodRoot.javaClass.name}",
+                dedupeKey = "$diagnosticKey/anchor_fallback",
+            )
+        }
+        ?: run {
+            DisplayDiagnosticLogger.log(
+                channel = "AOD_CLASSIC",
+                result = "skipped",
+                reason = "anchor_unavailable",
+                extra = "rootClass=${aodRoot.javaClass.name}",
+                dedupeKey = "$diagnosticKey/anchor_presence",
+            )
+            return null
+        }
     if (!anchor.isAttachedToWindow) {
         DisplayDiagnosticLogger.log(
             channel = "AOD_CLASSIC",
@@ -323,9 +349,15 @@ internal fun NotificationMediaAodLyricHooker.createAodPluginOverlay(
             dedupeKey = "$diagnosticKey/anchor_size",
         )
     }
+    // 兜底锚点即 table-mode 容器自身，歌词层直接挂 aodRoot（全屏坐标定位），
+    // 防止"锚点下方"落在父容器边界外被裁剪；正常路径仍挂随防烧屏移动的容器。
     val parentCandidate = api.getTableModeContainer(aodView)
-    val movingContainer = parentCandidate as? FrameLayout
-    if (movingContainer == null) {
+    val movingContainer = if (notificationIcons == null) {
+        null
+    } else {
+        parentCandidate as? FrameLayout
+    }
+    if (notificationIcons != null && movingContainer == null) {
         DisplayDiagnosticLogger.log(
             channel = "AOD_CLASSIC",
             result = "pending",
@@ -619,6 +651,7 @@ internal fun NotificationMediaAodLyricHooker.createAodPluginOverlay(
         parent = parent,
         aodRoot = aodRoot,
         anchor = anchor,
+        anchorIsFallback = notificationIcons == null,
         drawWakeLock = drawWakeLock
     )
     main.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
@@ -634,7 +667,7 @@ internal fun NotificationMediaAodLyricHooker.createAodPluginOverlay(
     HookLogger.i(
         TAG,
         "通知图标式息屏歌词已挂载: parent=${parent.javaClass.name}, " +
-            "anchor=${anchor.javaClass.name}"
+            "anchor=${anchor.javaClass.name}, anchorFallback=${notificationIcons == null}"
     )
     return overlay
 }
@@ -710,9 +743,7 @@ internal fun NotificationMediaAodLyricHooker.positionAodPluginOverlay(overlay: A
         rootLeft,
         (rootRight - width).coerceAtLeast(rootLeft)
     )
-    val topOnScreen = anchorLocation[1] + overlay.anchor.height + gap
     val bottomLimit = rootLocation[1] + overlay.aodRoot.height - bottomSafe
-    val availableHeight = (bottomLimit - topOnScreen).coerceAtLeast(1)
     val widthSpec = View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY)
     val heightSpec = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
     updateClassicSongInfoMaxWidth(overlay, width)
@@ -720,10 +751,27 @@ internal fun NotificationMediaAodLyricHooker.positionAodPluginOverlay(overlay: A
     updateClassicLineSpacing(overlay)
     overlay.root.measure(widthSpec, heightSpec)
     val contentHeight = overlay.root.measuredHeight
-    val height = AodMediaLyricPolicy.classicOverlayHeight(
-        contentHeight = contentHeight,
-        availableHeight = availableHeight
-    )
+    val topOnScreen: Int
+    val height: Int
+    if (overlay.anchorIsFallback) {
+        // 兜底锚点（table-mode 容器）：垂直优先"锚点下缘 + 间距"，与时钟的防烧屏
+        // 漂移同步；锚点容器高度不受控，越界时钳制到刚好贴底安全区放下，
+        // 不会把可用高度挤成 1px。
+        height = AodMediaLyricPolicy.classicOverlayHeight(
+            contentHeight = contentHeight,
+            availableHeight = (bottomLimit - rootLocation[1]).coerceAtLeast(1),
+        )
+        val anchoredTop = anchorLocation[1] + overlay.anchor.height + gap
+        topOnScreen = anchoredTop.coerceAtMost(
+            (bottomLimit - height).coerceAtLeast(rootLocation[1])
+        )
+    } else {
+        topOnScreen = anchorLocation[1] + overlay.anchor.height + gap
+        height = AodMediaLyricPolicy.classicOverlayHeight(
+            contentHeight = contentHeight,
+            availableHeight = (bottomLimit - topOnScreen).coerceAtLeast(1),
+        )
+    }
 
     val params = overlay.root.layoutParams as FrameLayout.LayoutParams
     val leftMargin = leftOnScreen - parentLocation[0]
@@ -745,8 +793,8 @@ internal fun NotificationMediaAodLyricHooker.positionAodPluginOverlay(overlay: A
         HookLogger.i(
             TAG,
             "经典 AOD 歌词覆盖层已按内容实测高度调整: " +
-                "contentHeight=$contentHeight, availableHeight=$availableHeight, " +
-                "targetHeight=$height"
+                "contentHeight=$contentHeight, bottomLimit=$bottomLimit, " +
+                "anchorFallback=${overlay.anchorIsFallback}, targetHeight=$height"
         )
     }
 }

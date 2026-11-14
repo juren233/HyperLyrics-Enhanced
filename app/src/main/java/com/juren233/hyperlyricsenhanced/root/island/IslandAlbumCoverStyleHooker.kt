@@ -361,6 +361,7 @@ internal object IslandAlbumCoverStyleHooker {
             artworkIdentityByView.clear()
         }
         EmbeddedIslandAlbumCoverController.cleanup()
+        runOnMain { IslandMinimalCoverTransition.cancel() }
     }
 
     private fun applyStyle(
@@ -483,11 +484,8 @@ internal object IslandAlbumCoverStyleHooker {
             return RootConstants.ISLAND_ALBUM_COVER_STYLE_DEFAULT
         }
         val sharedPrefs = prefs ?: return RootConstants.DEFAULT_HOOK_ISLAND_ALBUM_COVER_STYLE
-        if (!sharedPrefs.getBoolean(
-                RootConstants.KEY_HOOK_ISLAND_LEFT_ALBUM,
-                RootConstants.DEFAULT_HOOK_ISLAND_LEFT_ALBUM
-            )
-        ) {
+        // 封面不可见时不套样式；「音频封面」关闭时极简显示期间封面也显示，样式与白名单照常生效。
+        if (!IslandSlotContentAssembler.isAlbumStyled(IslandSlotRuntimeConfig.from(sharedPrefs))) {
             return RootConstants.ISLAND_ALBUM_COVER_STYLE_DEFAULT
         }
         val configuredStyle = sharedPrefs.getInt(

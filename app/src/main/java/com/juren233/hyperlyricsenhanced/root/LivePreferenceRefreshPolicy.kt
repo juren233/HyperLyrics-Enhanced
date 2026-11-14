@@ -24,6 +24,7 @@ internal object LivePreferenceRefreshPolicy {
         RootConstants.KEY_HOOK_ISLAND_NEXT_LINE_MODE,
         RootConstants.KEY_HOOK_ISLAND_SHORT_LYRIC_SONG_INFO,
         RootConstants.KEY_HOOK_ISLAND_INTERLUDE_MINIMAL_DISPLAY,
+        RootConstants.KEY_HOOK_ISLAND_INTERLUDE_MINIMAL_RIGHT,
         RootConstants.KEY_HOOK_ISLAND_PURE_MUSIC_MODE,
         RootConstants.KEY_HOOK_ISLAND_PURE_MUSIC_KEYWORDS,
         RootConstants.KEY_HOOK_ISLAND_PURE_MUSIC_KEYWORDS_SEEN_DEFAULTS,

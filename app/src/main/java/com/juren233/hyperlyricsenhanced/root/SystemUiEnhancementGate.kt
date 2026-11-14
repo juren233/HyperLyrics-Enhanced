@@ -40,10 +40,10 @@ internal object SystemUiEnhancementGate {
                     RootConstants.KEY_HOOK_APPLE_MUSIC_FILL_MISSING_LYRICS,
                     RootConstants.DEFAULT_HOOK_APPLE_MUSIC_FILL_MISSING_LYRICS,
                 ),
-                lineToWordLyrics = entry.prefs.getBoolean(
-                    RootConstants.KEY_HOOK_APPLE_MUSIC_LINE_TO_WORD_LYRICS,
-                    RootConstants.DEFAULT_HOOK_APPLE_MUSIC_LINE_TO_WORD_LYRICS,
-                ),
+                lineToWordLyrics = entry.prefs.getInt(
+                    RootConstants.KEY_HOOK_APPLE_MUSIC_LINE_TO_WORD_SOURCE_MODE,
+                    RootConstants.DEFAULT_HOOK_APPLE_MUSIC_LINE_TO_WORD_SOURCE_MODE,
+                ) != RootConstants.APPLE_MUSIC_LINE_TO_WORD_SOURCE_MODE_OFF,
             )
         }.onSuccess { mode ->
             LyricRuntimeDiagnostics.record("runtime_mode_resolved") {

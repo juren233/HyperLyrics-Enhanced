@@ -87,7 +87,9 @@ internal data class OnlineTranslationSelection(
                 currentPublishedSong = currentPublishedSong,
             )
         }
-        val control = control ?: return composed?.withOnlineContentMatchStats(
+        // 歌词来自某个三方来源时，该来源自带的翻译/发音与当前歌词天然同行同时间轴，默认用它。
+        val composedWithLyricsSource = withLyricsSourceDefault(latestNativeSong, composed)
+        val control = control ?: return composedWithLyricsSource?.withOnlineContentMatchStats(
             baseSong = latestNativeSong,
             candidates = rebasedCandidates,
         )
@@ -102,7 +104,7 @@ internal data class OnlineTranslationSelection(
             OnlineTranslationMatcher.apply(strippedNativeSong, onlineLines)
         }
         return (
-            composed ?: OnlineTranslationMatcher.Result(
+            composedWithLyricsSource ?: OnlineTranslationMatcher.Result(
                 song = latestNativeSong,
                 matchedCount = 0,
                 averageMatchScore = 0.0,
@@ -110,6 +112,55 @@ internal data class OnlineTranslationSelection(
             )
             .withSourceControl(latestNativeSong, fullCandidates, control)
             .withSourceControlStats(latestNativeSong, fullCandidates)
+    }
+
+    /**
+     * 当前歌词（三方补充歌词）来自来源 S，且 S 也是在线翻译/发音的候选时，默认采用 S 的翻译与发音，
+     * 而不是按来源顺序挑别家的。S 的内容按「当前歌词」清空翻译/发音后重新匹配，匹配对象始终是当前歌词，
+     * 不是 Apple Music 原生歌词；用户手动指定的来源、选了「Apple Music 原生」的内容类型、自动补全关闭时不动。
+     */
+    private fun withLyricsSourceDefault(
+        currentSong: Song,
+        composed: OnlineTranslationMatcher.Result?,
+    ): OnlineTranslationMatcher.Result? {
+        if (control?.automaticFill == false) return composed
+        val metadata = currentSong.metadata ?: return composed
+        if (!metadata.getString(LyricMetadataKeys.APPLE_MISSING_LYRICS_SUPPLEMENT).toBoolean()) {
+            return composed
+        }
+        val lyricsSource = metadata.getString(LyricMetadataKeys.APPLE_MISSING_LYRICS_SOURCE)
+            ?.let { name -> Source.entries.firstOrNull { it.name == name } }
+            ?: return composed
+        val onlineLines = onlineLinesBySource[lyricsSource] ?: return composed
+        val useTranslation = forcedTranslationSource == null && control?.translationNativeOnly != true
+        val usePronunciation = forcedPronunciationSource == null && control?.pronunciationNativeOnly != true
+        if (!useTranslation && !usePronunciation) return composed
+        val matched = OnlineTranslationMatcher.apply(
+            OnlineSourceOverride.strip(currentSong, translation = true, pronunciation = true),
+            onlineLines,
+        ).song
+        val translationDefault = useTranslation &&
+            OnlineSourceOverride.translationCoverage(matched).matchedLines > 0
+        val pronunciationDefault = usePronunciation &&
+            OnlineSourceOverride.pronunciationCoverage(matched).matchedLines > 0
+        if (!translationDefault && !pronunciationDefault) return composed
+        val base = composed ?: OnlineTranslationMatcher.Result(
+            song = currentSong,
+            matchedCount = 0,
+            averageMatchScore = 0.0,
+        )
+        var song = base.song
+        with(OnlineSourceOverride) {
+            if (translationDefault) {
+                song = overlayTranslation(song, matched)
+                    .withMetadataValue(LyricMetadataKeys.ONLINE_TRANSLATION_SOURCE, lyricsSource.name)
+            }
+            if (pronunciationDefault) {
+                song = overlayPronunciation(song, matched)
+                    .withMetadataValue(LyricMetadataKeys.ONLINE_PRONUNCIATION_SOURCE, lyricsSource.name)
+            }
+        }
+        return base.copy(song = song)
     }
 
     private fun OnlineTranslationMatcher.Result.withSourceControl(

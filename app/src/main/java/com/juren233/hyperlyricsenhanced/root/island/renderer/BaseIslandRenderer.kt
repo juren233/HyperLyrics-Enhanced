@@ -453,7 +453,6 @@ object BaseIslandRenderer : IslandRenderer {
                         return@post
                     }
                     val config = IslandSlotRuntimeConfig.from(prefs)
-                    val interludeMinimal = IslandSlotContentAssembler.isInterludeMinimalDisplayActive(config)
                     if (indexedViews.isEmpty()) {
                         updateViewPosition(
                             cv.findViewWithTag(IslandProbeUtils.LEFT_TEST_VIEW_TAG),
@@ -469,11 +468,8 @@ object BaseIslandRenderer : IslandRenderer {
                     } else {
                         indexedViews.forEach { view -> updateViewPosition(view, position, isSeek) }
                     }
-                    if (interludeMinimal) {
-                        IslandProgressGlowController.clear(cv)
-                    } else {
-                        IslandHostFacade.updateProgressGlow(cv, lyricPkg, prefs)
-                    }
+                    // 极简显示期间进度条照常显示（用户 2026-11-15 要求）。
+                    IslandHostFacade.updateProgressGlow(cv, lyricPkg, prefs)
                     val previewChanged = updateEndOfSongPreview(
                         cv,
                         lyricPkg,
@@ -719,15 +715,32 @@ object BaseIslandRenderer : IslandRenderer {
         // 律动取色与歌词/光效同源：内容刷新即喂入最新媒体信息，切歌后颜色实时跟随
         IslandMusicWaveColorHooker.onMediaArtworkUpdated(mediaInfo)
         IslandHostFacade.updateHostGlow(cv, mediaInfo.albumArt, prefs)
-        if (IslandSlotContentAssembler.isInterludeMinimalDisplayActive(config)) {
-            IslandProgressGlowController.clear(cv)
-        } else {
-            IslandHostFacade.updateProgressGlow(cv, packageName, mediaInfo, prefs)
-        }
+        IslandHostFacade.updateProgressGlow(cv, packageName, mediaInfo, prefs)
+        val iconVisibilityChanged = syncIconVisibility(cv, config)
         val leftChanged = updateSlot(cv, IslandProbeUtils.LEFT_TEST_VIEW_TAG, config.leftMode, prefs, config, mediaInfo)
         val rightChanged = updateSlot(cv, IslandProbeUtils.RIGHT_TEST_VIEW_TAG, config.rightMode, prefs, config, mediaInfo)
         val previewChanged = updateEndOfSongPreview(cv, packageName, prefs, config, LyriconDataBridge.currentPosition)
-        return leftChanged || rightChanged || previewChanged
+        return leftChanged || rightChanged || previewChanged || iconVisibilityChanged
+    }
+
+    /**
+     * 极简显示开始或结束时，封面可能临时显示或隐藏（「音频封面」关闭时），音频律动可能按「右侧显示」临时隐藏
+     * 或恢复：重新应用宿主设置、内边距与图标锚点，布局与开关封面/律动开关时一致；封面显隐变化时还要重走
+     * 封面样式（与「音频封面」开关变更时同一刷新）。返回是否重新应用过。
+     *
+     * 「音频封面」关闭时封面只随极简显示进出，进出场见 [IslandHostFacade.syncMinimalCoverTransition]。
+     */
+    private fun syncIconVisibility(cv: ViewGroup, config: IslandSlotRuntimeConfig): Boolean {
+        val change = IslandHostFacade.iconVisibilityChange(cv, config)
+        if (!change.any) return false
+        IslandHostFacade.syncMinimalCoverTransition(cv, config)
+        IslandLyricTextInjector.restoreExistingSlotsLightweight(cv)
+        // 样式刷新会重走 setFixIcon，投递到本次内容更新之后，避免在更新途中重入。「音频封面」开关本身
+        // 变化时直接重走；极简显示的进出场由转场回调重走（进场放出占位后套上，淡出结束后撤回）。
+        if (change.album && config.showAlbum) {
+            cv.post { IslandAlbumCoverStyleHooker.refresh() }
+        }
+        return true
     }
 
     private fun updateLyricContentForView(
@@ -739,12 +752,13 @@ object BaseIslandRenderer : IslandRenderer {
         if (updateEndOfSongPreview(cv, packageName, prefs, config, LyriconDataBridge.currentPosition)) {
             return true
         }
-        if (IslandSlotContentAssembler.isInterludeMinimalDisplayActive(config)) {
+        val iconVisibilityChanged = syncIconVisibility(cv, config)
+        if (IslandSlotContentAssembler.isInterludeMinimalDisplayActive(config) || iconVisibilityChanged) {
             // 换句路径也要处理非歌词槽，否则单侧模式下残留的歌曲信息不会被隐藏。
             val mediaInfo = MediaMetadataHelper.getMediaInfo(cv.context, packageName, HookLogger)
             val leftChanged = updateSlot(cv, IslandProbeUtils.LEFT_TEST_VIEW_TAG, config.leftMode, prefs, config, mediaInfo)
             val rightChanged = updateSlot(cv, IslandProbeUtils.RIGHT_TEST_VIEW_TAG, config.rightMode, prefs, config, mediaInfo)
-            return leftChanged || rightChanged
+            return leftChanged || rightChanged || iconVisibilityChanged
         }
         if (config.adjacentBackgroundTranslation && config.supportsAdjacentBackgroundTranslation) {
             val mediaInfo = MediaMetadataHelper.getMediaInfo(cv.context, packageName, HookLogger)

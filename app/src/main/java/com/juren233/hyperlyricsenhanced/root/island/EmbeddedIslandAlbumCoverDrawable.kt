@@ -108,6 +108,14 @@ internal class EmbeddedIslandAlbumCoverDrawable(
     private var appliedAlpha: Int = 255
     private var appliedColorFilter: ColorFilter? = null
     private var drawCount = 0L
+
+    /** 挂上或重新套用时的极简显示封面代际，见 [IslandMinimalCoverTransition.presenceFor]。 */
+    private var shownGeneration = IslandMinimalCoverTransition.coverGeneration()
+
+    /** 样式重新套用（封面应当显示）：不再等待撤回。 */
+    fun markShown() {
+        shownGeneration = IslandMinimalCoverTransition.coverGeneration()
+    }
     private var lastDrawUptimeMs = 0L
     private var recycledBitmapLogged = false
 
@@ -171,6 +179,21 @@ internal class EmbeddedIslandAlbumCoverDrawable(
             targetWidth = coverWidth,
             targetHeight = height.toFloat(),
         ) ?: return
+
+        // 极简显示封面进出场：整层（封面与延伸渐变）按同一进度淡入淡出，与封面容器一致。
+        val presence = IslandMinimalCoverTransition.presenceFor(shownGeneration)
+        if (presence <= 0f) return
+        val presenceLayer = if (presence < 1f) {
+            canvas.saveLayerAlpha(
+                canvasLeft,
+                canvasTop,
+                bounds.right.toFloat(),
+                canvasTop + height,
+                (255f * presence).roundToInt().coerceIn(0, 255),
+            )
+        } else {
+            -1
+        }
 
         canvas.save()
         val boundsRight = bounds.right.toFloat()
@@ -342,6 +365,7 @@ internal class EmbeddedIslandAlbumCoverDrawable(
         )
 
         canvas.restore()
+        if (presenceLayer >= 0) canvas.restoreToCount(presenceLayer)
     }
 
     private fun ensureTransitionBitmaps(

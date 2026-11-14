@@ -635,7 +635,15 @@ class SpaceGateRichLyricLineView(
         secondary.playListener = listener
     }
 
+    /** 布局转场途中外层宽度变化时立即按新宽度布局，见 [LayoutTransitionWidthRelease]。 */
+    private val layoutTransitionWidthRelease = LayoutTransitionWidthRelease(this)
+
     override fun onMeasure(wSpec: Int, hSpec: Int) {
+        measureLines(wSpec, hSpec)
+        layoutTransitionWidthRelease.onMeasured()
+    }
+
+    private fun measureLines(wSpec: Int, hSpec: Int) {
         promotionFlightWidth?.let { frozen ->
             prepareHugMeasurePass(frozen)
             super.onMeasure(MeasureSpec.makeMeasureSpec(frozen, MeasureSpec.EXACTLY), hSpec)
@@ -768,6 +776,7 @@ class SpaceGateRichLyricLineView(
 
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
+        layoutTransitionWidthRelease.clear()
         reset()
     }
 
@@ -1085,10 +1094,6 @@ class SpaceGateRichLyricLineView(
             nextLineWatchdog = null
             if (generation != nextLineTransitionGeneration) return@Runnable
             if (!nextLineTransitionRunning) return@Runnable
-            main.animate().setListener(null)
-            secondary.animate().setListener(null)
-            main.animate().cancel()
-            secondary.animate().cancel()
             if (BuildConfig.DEBUG) {
                 HookLogger.d(
                     "SwitchTrace",
@@ -1109,10 +1114,6 @@ class SpaceGateRichLyricLineView(
     private fun cancelNextLinePromotion() {
         nextLineTransitionGeneration++
         clearNextLineWatchdog()
-        main.animate().setListener(null)
-        secondary.animate().setListener(null)
-        main.animate().cancel()
-        secondary.animate().cancel()
         nextLineTransitionRunning = false
         promotionFlightWidth = null
         promotionReserveWidth = null
@@ -1126,7 +1127,17 @@ class SpaceGateRichLyricLineView(
         clearNextLineTransitionState()
     }
 
+    /**
+     * 提升动画的唯一复位点（落地、取消、看门狗共用）。先停掉主行、副行的属性动画再写回静止值：
+     * 新行在提升途中抢先落地时，主行淡出动画仍在跑，若只写值不停动画，剩余帧会把
+     * alpha 0 / 上移的终点值写回，主行一直隐藏、岛上只剩翻译（ISLAND-MAIN-LINE-STUCK-HIDDEN）。
+     * 先清监听再取消，取消触发的结束回调不会再进入落地逻辑。
+     */
     private fun clearNextLineTransitionState() {
+        main.animate().setListener(null)
+        secondary.animate().setListener(null)
+        main.animate().cancel()
+        secondary.animate().cancel()
         fullIslandPromotionAnimator?.let {
             it.removeAllListeners()
             it.removeAllUpdateListeners()
@@ -1145,7 +1156,7 @@ class SpaceGateRichLyricLineView(
 
     private companion object {
         const val NEXT_LINE_PROMOTION_DURATION = 220L
-        const val INTERLUDE_PROMOTION_DURATION = 320L
+        const val INTERLUDE_PROMOTION_DURATION = InterludeMotion.TRANSITION_DURATION_MS
         const val NEXT_LINE_PREVIEW_FADE_DURATION = 140L
         const val PROMOTION_WATCHDOG_MARGIN_MS = 250L
     }

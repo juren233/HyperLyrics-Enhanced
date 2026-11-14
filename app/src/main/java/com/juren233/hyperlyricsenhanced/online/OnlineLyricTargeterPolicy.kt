@@ -112,22 +112,26 @@ internal data class SearchOutcome(
     val selectedSource: Source? = null,
 )
 
+/**
+ * 在线歌词是否按「逐字」显示：至少一行拆成两个以上的非空分词。来源弹窗的「逐字/逐行」标注只用这一处定义，
+ * 与 Apple Music Provider 的实际呈现规则一致（HLE-Providers `AppleMissingLyricsTtml.build`：
+ * 一行拥有两个以上真实分词才用 Word timing，Store 归一化时丢弃空白分词）。
+ * 逐行 LRC 每行也带一个整行分词，不能用「有分词」判断。
+ */
+internal fun isWordTimedOnlineLyrics(lines: List<LyricsLine>?): Boolean =
+    lines.orEmpty().any { line -> line.words.count { word -> word.text.isNotBlank() } >= 2 }
+
 internal fun OnlineLyricTargeter.statusFor(
     source: Source,
     result: LyricsResult,
     lines: List<LrcLine>,
-): AppleMissingLyricsSourceStatus {
-    val wordTimed = result.original.any { line ->
-        line.words.size > 1 && line.words.any { word -> word.end > word.start }
-    }
-    return AppleMissingLyricsSourceStatus(
-        source = source.name,
-        searched = true,
-        found = lines.isNotEmpty(),
-        wordTimed = wordTimed,
-        lineCount = lines.size,
-    )
-}
+): AppleMissingLyricsSourceStatus = AppleMissingLyricsSourceStatus(
+    source = source.name,
+    searched = true,
+    found = lines.isNotEmpty(),
+    wordTimed = isWordTimedOnlineLyrics(result.original),
+    lineCount = lines.size,
+)
 
 internal fun MutableMap<Source, AppleMissingLyricsSourceStatus>.mergeStatus(
     status: AppleMissingLyricsSourceStatus,

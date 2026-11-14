@@ -9,6 +9,7 @@ package com.juren233.hyperlyricsenhanced.root.source
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.common.lyric.ApplePronunciationVisibilityPolicy
 import com.juren233.hyperlyricsenhanced.common.lyric.LyricMetadataKeys
+import com.juren233.hyperlyricsenhanced.lyric.model.Song as LocalSong
 import com.juren233.hyperlyricsenhanced.online.OnlineTranslationSourcePreferences
 import com.juren233.hyperlyricsenhanced.online.model.Source
 
@@ -40,7 +41,7 @@ internal fun LyriconSource.onPreferenceChanged(key: String?) {
     if (key == RootConstants.KEY_HOOK_APPLE_MUSIC_HIDE_MANDARIN_PINYIN) {
         mainHandler.post { applyMandarinPinyinPreferenceChange() }
     }
-    if (key == RootConstants.KEY_HOOK_APPLE_MUSIC_LINE_TO_WORD_LYRICS) {
+    if (key == RootConstants.KEY_HOOK_APPLE_MUSIC_LINE_TO_WORD_SOURCE_MODE) {
         mainHandler.post { applyLineToWordLyricsPreferenceChange() }
     }
     if (key == RootConstants.KEY_HOOK_APPLE_MUSIC_ALWAYS_SHOW_SOURCE_SWITCH ||
@@ -93,7 +94,32 @@ private fun LyriconSource.applyLineToWordLyricsPreferenceChange() {
     val nativeSong = currentAppleNativeSong ?: currentAppleSong ?: return
     cancelFallback(clearAppleSong = false, reason = "line_to_word_preference_changed")
     val lineToWordSource = enabledTtmlCatalogSources().firstOrNull()
-    if (isLineToWordLyricsEnabled() && lineToWordSource != null) {
+    // 「所有来源」改成别的模式：原生歌词上由搜索源完成的逐字升级不再成立，先还原原生歌词。
+    val currentSupplementSource = currentAppleSong?.metadata
+        ?.getString(LyricMetadataKeys.APPLE_MISSING_LYRICS_SOURCE)
+    val staleSearchUpgrade = !isLineToWordAllSources() &&
+        isMissingLyricsSupplement(currentAppleSong) &&
+        !currentSupplementSource.isNullOrBlank() &&
+        Source.entries.any { it.name == currentSupplementSource && !it.isTtmlCatalog } &&
+        hasAppleNativeLyrics(nativeSong) &&
+        !isAlwaysShowSourceSwitchEnabled() &&
+        confirmedLyricsSourceSelection?.let { selection ->
+            selection.songId == nativeSong.id &&
+                selection.source == currentSupplementSource &&
+                selection.replacedUntimedNative == null
+        } == true
+    if (staleSearchUpgrade) {
+        publication.revokeLyricsSelection(nativeSong.id)
+        publication.acceptAppleInput(nativeSong, hasAppleNativeLyrics(nativeSong))
+        publication.cancelAppleFallback(clearSong = false)
+        stopMediaPositionPolling()
+        publishAppleSong(nativeSong, restorePosition = true)
+    }
+    if (
+        isLineToWordLyricsEnabled() &&
+        hasLineToWordCandidates(nativeSong) &&
+        !hasWordTimedAppleNativeLyrics(nativeSong)
+    ) {
         if (hasUntimedAppleNativeLyrics(nativeSong)) {
             scheduleFallback(baseSong = nativeSong, delayMs = 0L)
         } else {
@@ -102,6 +128,7 @@ private fun LyriconSource.applyLineToWordLyricsPreferenceChange() {
                 delayMs = 0L,
                 preferredSourceOverride = lineToWordSource,
                 strictSource = hasAppleNativeLyrics(nativeSong) || !isFillMissingLyricsEnabled(),
+                lineToWordUpgrade = true,
             )
         }
         return
@@ -164,10 +191,41 @@ private fun LyriconSource.applyMissingLyricsPreferenceChange() {
     val nativeSong = currentAppleSong
     if (!isFillMissingLyricsEnabled()) {
         directBridge?.clearMissingLyricsSupplement(nativeSong?.id)
+        restoreUntimedAppleNativeAfterReplacement(nativeSong)
         return
     }
     if (nativeSong == null || !needsMissingLyricsSourceRecovery(nativeSong)) return
     scheduleFallback(nativeSong, 0L)
+}
+
+/**
+ * 「无歌词/无时间轴歌曲使用三方歌词」关闭：替换无时间轴原生的补充歌词随之撤回，Apple 输入与岛端回到被替换的
+ * 原生歌曲；「启用App」开启时再按原生歌曲检索，在线歌词仍只上超级岛与 AOD。
+ */
+private fun LyriconSource.restoreUntimedAppleNativeAfterReplacement(currentSong: LocalSong?) {
+    val selection = confirmedLyricsSourceSelection ?: return
+    val replacedNative = selection.replacedUntimedNative ?: return
+    if (currentSong == null || selection.songId != currentSong.id) return
+    diagnostic("Apple Music 无时间轴原生歌词的补充替换已关闭，回到原生歌词: id=${selection.songId}")
+    publication.revokeLyricsSelection(selection.songId)
+    cancelFallback(clearAppleSong = false, reason = "untimed_native_replacement_disabled")
+    cancelOnlineTranslation(
+        clearAttempt = true,
+        clearMatched = true,
+        reason = "untimed_native_replacement_disabled",
+    )
+    publication.rememberNative(replacedNative)
+    publication.acceptAppleInput(replacedNative, hasAppleNativeLyrics(replacedNative))
+    publishAppleSong(replacedNative, restorePosition = true)
+    if (
+        allowsUntimedAppleOnlineFallback(
+            appOnlineEnabled = isOnlineTranslationEnabledFor(LyriconSource.APPLE_MUSIC_PACKAGE),
+            fillMissingLyricsEnabled = false,
+            untimedNative = hasUntimedAppleNativeLyrics(replacedNative),
+        )
+    ) {
+        scheduleFallback(replacedNative, 0L)
+    }
 }
 
 private fun LyriconSource.applyMandarinPinyinPreferenceChange() {

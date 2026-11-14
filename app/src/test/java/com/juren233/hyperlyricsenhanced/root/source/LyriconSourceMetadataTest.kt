@@ -181,6 +181,51 @@ class LyriconSourceMetadataTest {
         assertEquals(current, merged)
     }
 
+    @Test
+    fun `untimed native replacement keeps the supplement over same-track native callbacks`() {
+        val supplement = Song(
+            id = "1440833098",
+            metadata = lyricMetadataOf(
+                LyricMetadataKeys.APPLE_MISSING_LYRICS_SUPPLEMENT to "true",
+                LyricMetadataKeys.APPLE_MISSING_LYRICS_SOURCE to "QM",
+            ),
+            lyrics = listOf(RichLyricLine(begin = 1_000L, end = 3_000L, text = "第一句")),
+        )
+        val untimedNative = Song(
+            id = "1440833098",
+            metadata = lyricMetadataOf(
+                LyricMetadataKeys.APPLE_LYRICS_CACHE_SOURCE to "apple",
+                LyricMetadataKeys.APPLE_NATIVE_LYRICS_CONFIRMED to "true",
+                LyricMetadataKeys.APPLE_NATIVE_LYRICS_UNTIMED to "true",
+            ),
+            lyrics = listOf(RichLyricLine(begin = 0L, end = 0L, text = "第一句")),
+        )
+
+        assertEquals(supplement, mergeMissingLyricsSupplementMetadata(
+            previousSong = supplement,
+            incomingSong = untimedNative,
+            sameTrack = true,
+            authoritativeSource = "QM",
+            untimedNativeReplaced = true,
+        ))
+        // 补充开关关闭（或替换不成立）时原生歌词照常接管。
+        assertEquals(untimedNative, mergeMissingLyricsSupplementMetadata(
+            previousSong = supplement,
+            incomingSong = untimedNative,
+            sameTrack = true,
+            authoritativeSource = "QM",
+            untimedNativeReplaced = false,
+        ))
+        // 用户选回 Apple Music 原生后不再保留补充。
+        assertEquals(untimedNative, mergeMissingLyricsSupplementMetadata(
+            previousSong = supplement,
+            incomingSong = untimedNative,
+            sameTrack = true,
+            authoritativeSource = LyriconSource.APPLE_NATIVE_LYRICS_SOURCE,
+            untimedNativeReplaced = true,
+        ))
+    }
+
     private fun supplementSong(id: String, withLyrics: Boolean) = Song(
         id = id,
         metadata = lyricMetadataOf(

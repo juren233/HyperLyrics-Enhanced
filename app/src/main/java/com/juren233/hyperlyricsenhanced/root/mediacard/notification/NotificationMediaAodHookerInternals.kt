@@ -261,6 +261,9 @@ internal class AodPluginOverlay(
     val parent: FrameLayout,
     val aodRoot: FrameLayout,
     val anchor: View,
+    // true = 锚点为 mTableModeContainer 兜底（mNotificationIcons 缺失，issue #70）：
+    // 垂直优先"锚点下缘 + 间距"跟着时钟防烧屏漂移，越界时钳制贴底安全区。
+    val anchorIsFallback: Boolean = false,
     val drawWakeLock: PowerManager.WakeLock,
     var preDrawListener: ViewTreeObserver.OnPreDrawListener? = null,
     var appliedHeight: Int? = null,
@@ -299,11 +302,34 @@ internal class AodPluginApi private constructor(
     private val notificationIconsField: Field,
     private val isAodShownMethod: Method
 ) {
+    /** id/icons 的资源数字 id（getIdentifier 首次解析后缓存；主线程调用）。 */
+    private var iconsContainerId: Int = 0
+
     fun getTableModeContainer(aodView: Any): View? =
         tableModeContainerField.get(aodView) as? View
 
     fun getNotificationIcons(aodView: Any): View? =
         notificationIconsField.get(aodView) as? View
+
+    /**
+     * 通知位关闭时的锚点找回：官方 AODView 只是不给 mNotificationIcons 字段赋值，
+     * 但时钟内容布局（aod_content* 系列）在 XML 里无条件 include aod_icons*，
+     * id/icons 容器始终存在于视图树并参与布局。按资源名自查找回同一个 View，
+     * 几何与通知位开启时一致。
+     */
+    fun findIconsContainerView(aodRoot: View): View? {
+        if (iconsContainerId == 0) {
+            iconsContainerId = runCatching {
+                aodRoot.resources.getIdentifier(
+                    "icons",
+                    "id",
+                    aodRoot.javaClass.`package`?.name,
+                )
+            }.getOrDefault(0)
+        }
+        if (iconsContainerId == 0) return null
+        return aodRoot.findViewById<View>(iconsContainerId)
+    }
 
     fun isAodShown(aodView: Any): Boolean =
         isAodShownMethod.invoke(aodView) == true

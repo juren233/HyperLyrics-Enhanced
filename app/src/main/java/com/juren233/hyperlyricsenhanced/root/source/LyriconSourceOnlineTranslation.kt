@@ -35,6 +35,7 @@ import com.juren233.hyperlyricsenhanced.lyric.source.LyricSink
 import com.juren233.hyperlyricsenhanced.lyric.source.LyricSource
 import com.juren233.hyperlyricsenhanced.online.OnlineLyricTargeter
 import com.juren233.hyperlyricsenhanced.online.OnlineTranslationSourcePreferences
+import com.juren233.hyperlyricsenhanced.online.isWordTimedOnlineLyrics
 import com.juren233.hyperlyricsenhanced.online.model.Source
 import com.juren233.hyperlyricsenhanced.online.sanitizedForOnlineCandidate
 import com.juren233.hyperlyricsenhanced.online.source.ttml.CatalogPlatform
@@ -373,7 +374,11 @@ internal fun LyriconSource.scheduleOnlineTranslation(
                                     candidate.matchedContentCount > 0
                                 ) {
                                     val firstSelection = OnlineTranslationSelection(
-                                        onlineLinesBySource = mapOf(source to candidate.onlineLines),
+                                        // 已答来源的行一并带上：歌词来源（三方补充歌词）的翻译/发音是默认内容，
+                                        // 它先答却没有「补缺」内容时，首版也不能漏掉它而把别家标成当前来源。
+                                        onlineLinesBySource = answeredCandidates
+                                            .mapValues { (_, answered) -> answered.onlineLines } +
+                                            (source to candidate.onlineLines),
                                         requestedSources = listOf(source),
                                         defaultTranslationSource = source.takeIf {
                                             OnlineTranslationMatcher.contributesTranslation(
@@ -758,7 +763,7 @@ internal suspend fun LyriconSource.fetchOnlineTranslationCandidate(
             source = source.name,
             searched = true,
             found = !fetchOutcome.lines.isNullOrEmpty(),
-            wordTimed = !fetchOutcome.wordLines.isNullOrEmpty(),
+            wordTimed = isWordTimedOnlineLyrics(fetchOutcome.wordLines),
             lineCount = fetchOutcome.wordLines?.size?.takeIf { it > 0 }
                 ?: fetchOutcome.lines?.size
                 ?: 0,

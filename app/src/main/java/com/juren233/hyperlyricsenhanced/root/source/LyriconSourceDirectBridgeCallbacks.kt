@@ -232,7 +232,7 @@ internal fun LyriconSource.onDirectOnlineLyricContentSourceRequested(
         (contentType != "lyrics" &&
             requestedSource !in configuredTranslationSources(LyriconSource.APPLE_MUSIC_PACKAGE)) ||
         (contentType == "lyrics" && requestedSource !in configuredOnlineSources()) ||
-        // 搜索类来源的歌词只在「为无歌词的歌曲补充歌词」开启时自动使用；
+        // 搜索类来源的歌词只在「无歌词/无时间轴歌曲使用三方歌词」开启时自动使用；
         // 「始终显示切换源按钮」下的手动选择不受这个自动开关限制。
         (contentType == "lyrics" && !requestedSource.isTtmlCatalog &&
             !isFillMissingLyricsEnabled() && !sourceControl)

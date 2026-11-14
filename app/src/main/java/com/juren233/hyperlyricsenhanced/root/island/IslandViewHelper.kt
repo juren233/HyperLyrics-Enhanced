@@ -432,6 +432,38 @@ object IslandViewHelper {
         }
     }
 
+    /** 只还原 [clearTextContainerMargin] 清掉的起始边距（封面重新可见）；没有清过（无快照）时不动。 */
+    fun restoreTextContainerMarginStart(rootView: ViewGroup, parentName: String) {
+        restoreTextContainerMargin(rootView, parentName, restoreStart = true, restoreEnd = false)
+    }
+
+    /** 只还原 [clearTextContainerMargin] 清掉的末端边距（律动重新可见）；没有清过（无快照）时不动。 */
+    fun restoreTextContainerMarginEnd(rootView: ViewGroup, parentName: String) {
+        restoreTextContainerMargin(rootView, parentName, restoreStart = false, restoreEnd = true)
+    }
+
+    private fun restoreTextContainerMargin(
+        rootView: ViewGroup,
+        parentName: String,
+        restoreStart: Boolean,
+        restoreEnd: Boolean,
+    ) {
+        val parent = findViewByName(rootView, parentName) as? ViewGroup ?: return
+        val container = findViewByName(parent, "island_container_module_text") ?: return
+        val snapshot = originalMargins[container] ?: return
+        val lp = container.layoutParams as? ViewGroup.MarginLayoutParams ?: return
+        var changed = false
+        if (restoreStart && lp.marginStart != snapshot.marginStart) {
+            lp.marginStart = snapshot.marginStart
+            changed = true
+        }
+        if (restoreEnd && lp.marginEnd != snapshot.marginEnd) {
+            lp.marginEnd = snapshot.marginEnd
+            changed = true
+        }
+        if (changed) container.layoutParams = lp
+    }
+
     private fun restoreTextContainerMargins(rootView: ViewGroup, parentName: String) {
         val parent = findViewByName(rootView, parentName) as? ViewGroup ?: return
         val container = findViewByName(parent, "island_container_module_text") ?: return

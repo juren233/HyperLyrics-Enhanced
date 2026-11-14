@@ -10,6 +10,8 @@ import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.common.color.CoverGradientTextContrastOptimizer
 import com.juren233.hyperlyricsenhanced.common.color.CoverTextGradientPaletteOptimizer
 import com.juren233.hyperlyricsenhanced.root.island.IslandRuntimePreferenceReader
+import com.juren233.hyperlyricsenhanced.root.island.IslandSlotContentAssembler
+import com.juren233.hyperlyricsenhanced.root.island.IslandSlotRuntimeConfig
 import com.juren233.hyperlyricsenhanced.lyric.view.Highlight
 import com.juren233.hyperlyricsenhanced.lyric.view.LyricViewStyle
 import com.juren233.hyperlyricsenhanced.lyric.view.Marquee
@@ -184,11 +186,7 @@ object LyricStyleHelper {
             RootConstants.DEFAULT_HOOK_EXTRACT_COVER_TEXT_GRADIENT
         )
         val gradientCoverBackgroundActive =
-            IslandRuntimePreferenceReader.getBoolean(
-                prefs,
-                RootConstants.KEY_HOOK_ISLAND_LEFT_ALBUM,
-                RootConstants.DEFAULT_HOOK_ISLAND_LEFT_ALBUM,
-            ) &&
+            IslandSlotContentAssembler.isAlbumPlaced(IslandSlotRuntimeConfig.from(prefs)) &&
                 IslandRuntimePreferenceReader.getInt(
                     prefs,
                     RootConstants.KEY_HOOK_ISLAND_ALBUM_COVER_STYLE,

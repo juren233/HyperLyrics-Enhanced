@@ -48,7 +48,7 @@ android {
         applicationId = "com.juren233.hyperlyricsenhanced"
         minSdk = 33
         targetSdk = 37
-        versionCode = 240134
+        versionCode = 240155
         versionName = ciVersionName ?: "8.4.0-canary"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -137,6 +137,17 @@ android {
         aidl = true
     }
 
+    testOptions {
+        unitTests.all {
+            // Robolectric 在 JDK 17+ 上经 jdk.internal.access.SharedSecrets 读写 FileDescriptor 内部字段，
+            // JDK 21 不导出这些内部包时测试在初始化阶段就失败（IllegalAccessException）。
+            it.jvmArgs(
+                "--add-exports=java.base/jdk.internal.access=ALL-UNNAMED",
+                "--add-opens=java.base/java.io=ALL-UNNAMED",
+            )
+        }
+    }
+
 }
 
 dependencies {
@@ -168,6 +179,8 @@ dependencies {
     implementation(libs.lyricon.provider)
 
     testImplementation(libs.junit)
+    // 只进单元测试类路径，不打进 APK：用真实 Android 动画代码复现岛歌词视图的动画状态。
+    testImplementation(libs.robolectric)
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:${libs.versions.kotlinxCoroutines.get()}")
     testImplementation("org.json:json:20180813")
 

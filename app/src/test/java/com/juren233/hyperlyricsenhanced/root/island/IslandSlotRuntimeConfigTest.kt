@@ -93,7 +93,7 @@ class IslandSlotRuntimeConfigTest {
     }
 
     @Test
-    fun `interlude minimal display follows live overrides and needs a visible native element`() {
+    fun `interlude minimal display follows live overrides without needing cover or rhythm`() {
         val prefs = preferences(emptyMap())
         val before = IslandSlotRuntimeConfig.from(prefs)
         assertFalse(before.interludeMinimalDisplay)
@@ -109,12 +109,132 @@ class IslandSlotRuntimeConfigTest {
         assertFalse(enabled.usesInterludeMinimalDisplay(interludeActive = false))
 
         val withoutCoverOrRhythm = preferences(mapOf(
+            RootConstants.KEY_HOOK_ISLAND_INTERLUDE_MINIMAL_DISPLAY to true,
             RootConstants.KEY_HOOK_ISLAND_LEFT_ALBUM to false,
             RootConstants.KEY_HOOK_ISLAND_RIGHT_ICON to false,
         ))
-        assertFalse(
+        assertTrue(
             IslandSlotRuntimeConfig.from(withoutCoverOrRhythm)
                 .usesInterludeMinimalDisplay(interludeActive = true)
+        )
+    }
+
+    private fun minimalRightConfig(right: Int?) = IslandSlotRuntimeConfig.from(preferences(buildMap<String, Any> {
+        put(RootConstants.KEY_HOOK_ISLAND_INTERLUDE_MINIMAL_DISPLAY, true)
+        put(RootConstants.KEY_HOOK_ISLAND_LEFT_ALBUM, true)
+        put(RootConstants.KEY_HOOK_ISLAND_RIGHT_ICON, true)
+        right?.let { put(RootConstants.KEY_HOOK_ISLAND_INTERLUDE_MINIMAL_RIGHT, it) }
+    }))
+
+    @Test
+    fun `interlude minimal right side defaults to countdown dots and hides the rhythm only during interludes`() {
+        val config = minimalRightConfig(right = null)
+        assertEquals(RootConstants.ISLAND_INTERLUDE_MINIMAL_RIGHT_DOTS, config.interludeMinimalRight)
+        assertFalse(config.hidesInterludeDots(interludeActive = true))
+        assertFalse(config.rhythmVisible(interludeActive = true))
+        assertTrue(config.rhythmVisible(interludeActive = false))
+    }
+
+    @Test
+    fun `interlude minimal right side set to audio rhythm hides the countdown dots and keeps the rhythm`() {
+        val config = minimalRightConfig(RootConstants.ISLAND_INTERLUDE_MINIMAL_RIGHT_RHYTHM)
+        assertTrue(config.hidesInterludeDots(interludeActive = true))
+        assertFalse(config.hidesInterludeDots(interludeActive = false))
+        assertTrue(config.rhythmVisible(interludeActive = true))
+    }
+
+    @Test
+    fun `interlude minimal right side set to both keeps dots and rhythm`() {
+        val config = minimalRightConfig(RootConstants.ISLAND_INTERLUDE_MINIMAL_RIGHT_BOTH)
+        assertFalse(config.hidesInterludeDots(interludeActive = true))
+        assertTrue(config.rhythmVisible(interludeActive = true))
+    }
+
+    @Test
+    fun `right side choice has no effect while minimal display is off or the rhythm switch is off`() {
+        val minimalOff = IslandSlotRuntimeConfig.from(preferences(mapOf(
+            RootConstants.KEY_HOOK_ISLAND_INTERLUDE_MINIMAL_DISPLAY to false,
+            RootConstants.KEY_HOOK_ISLAND_RIGHT_ICON to true,
+            RootConstants.KEY_HOOK_ISLAND_INTERLUDE_MINIMAL_RIGHT to RootConstants.ISLAND_INTERLUDE_MINIMAL_RIGHT_RHYTHM,
+        )))
+        assertFalse(minimalOff.hidesInterludeDots(interludeActive = true))
+        assertTrue(minimalOff.rhythmVisible(interludeActive = true))
+
+        val rhythmOff = IslandSlotRuntimeConfig.from(preferences(mapOf(
+            RootConstants.KEY_HOOK_ISLAND_INTERLUDE_MINIMAL_DISPLAY to true,
+            RootConstants.KEY_HOOK_ISLAND_LEFT_ALBUM to true,
+            RootConstants.KEY_HOOK_ISLAND_RIGHT_ICON to false,
+        )))
+        assertFalse(rhythmOff.rhythmVisible(interludeActive = false))
+        assertFalse(rhythmOff.rhythmVisible(interludeActive = true))
+        assertFalse(rhythmOff.rhythmMayShow)
+    }
+
+    @Test
+    fun `right side audio rhythm shows the rhythm during interludes even when it is not always shown`() {
+        listOf(
+            RootConstants.ISLAND_INTERLUDE_MINIMAL_RIGHT_RHYTHM,
+            RootConstants.ISLAND_INTERLUDE_MINIMAL_RIGHT_BOTH,
+        ).forEach { right ->
+            val config = IslandSlotRuntimeConfig.from(preferences(mapOf(
+                RootConstants.KEY_HOOK_ISLAND_INTERLUDE_MINIMAL_DISPLAY to true,
+                RootConstants.KEY_HOOK_ISLAND_LEFT_ALBUM to false,
+                RootConstants.KEY_HOOK_ISLAND_RIGHT_ICON to false,
+                RootConstants.KEY_HOOK_ISLAND_INTERLUDE_MINIMAL_RIGHT to right,
+            )))
+            // 封面与常驻律动都关闭时，「右侧显示」带出的律动也足以启用极简显示。
+            assertTrue(config.usesInterludeMinimalDisplay(interludeActive = true))
+            assertTrue(config.rhythmVisible(interludeActive = true))
+            assertFalse(config.rhythmVisible(interludeActive = false))
+            assertTrue(config.rhythmMayShow)
+        }
+    }
+
+    @Test
+    fun `cover shows during minimal display even when the audio cover switch is off`() {
+        val coverOff = IslandSlotRuntimeConfig.from(preferences(mapOf(
+            RootConstants.KEY_HOOK_ISLAND_INTERLUDE_MINIMAL_DISPLAY to true,
+            RootConstants.KEY_HOOK_ISLAND_LEFT_ALBUM to false,
+        )))
+        assertTrue(coverOff.albumVisible(interludeActive = true))
+        assertFalse(coverOff.albumVisible(interludeActive = false))
+
+        val minimalOff = IslandSlotRuntimeConfig.from(preferences(mapOf(
+            RootConstants.KEY_HOOK_ISLAND_INTERLUDE_MINIMAL_DISPLAY to false,
+            RootConstants.KEY_HOOK_ISLAND_LEFT_ALBUM to false,
+        )))
+        assertFalse(minimalOff.albumVisible(interludeActive = true))
+
+        val coverOn = IslandSlotRuntimeConfig.from(preferences(mapOf(
+            RootConstants.KEY_HOOK_ISLAND_LEFT_ALBUM to true,
+        )))
+        assertTrue(coverOn.albumVisible(interludeActive = false))
+        assertTrue(coverOn.albumVisible(interludeActive = true))
+    }
+
+    @Test
+    fun `countdown dots with neither cover nor always-on rhythm still uses minimal display`() {
+        val config = IslandSlotRuntimeConfig.from(preferences(mapOf(
+            RootConstants.KEY_HOOK_ISLAND_INTERLUDE_MINIMAL_DISPLAY to true,
+            RootConstants.KEY_HOOK_ISLAND_LEFT_ALBUM to false,
+            RootConstants.KEY_HOOK_ISLAND_RIGHT_ICON to false,
+        )))
+        assertTrue(config.usesInterludeMinimalDisplay(interludeActive = true))
+        assertFalse(config.hidesInterludeDots(interludeActive = true))
+        assertFalse(config.rhythmVisible(interludeActive = true))
+    }
+
+    @Test
+    fun `right padding drops the rhythm gap while the rhythm is hidden for an interlude`() {
+        val config = minimalRightConfig(right = null)
+        val right = IslandProbeUtils.RIGHT_PARENT_NAME
+        assertEquals(
+            config.paddingRightDp(right, rhythmVisible = false) + IslandSlotRuntimeConfig.RHYTHM_TRAILING_GAP_DP,
+            config.paddingRightDp(right, rhythmVisible = true),
+        )
+        assertEquals(
+            config.paddingRightDp(right, rhythmVisible = config.rhythmVisible(interludeActive = true)),
+            config.paddingRightDp(right, rhythmVisible = false),
         )
     }
 

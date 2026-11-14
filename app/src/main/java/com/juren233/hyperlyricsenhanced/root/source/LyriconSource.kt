@@ -623,10 +623,37 @@ class LyriconSource : LyricSource {
                 wantsSourceControlSearch(song, target)
             )
 
-    internal fun isLineToWordLyricsEnabled(): Boolean = prefs?.getBoolean(
-        RootConstants.KEY_HOOK_APPLE_MUSIC_LINE_TO_WORD_LYRICS,
-        RootConstants.DEFAULT_HOOK_APPLE_MUSIC_LINE_TO_WORD_LYRICS,
-    ) ?: RootConstants.DEFAULT_HOOK_APPLE_MUSIC_LINE_TO_WORD_LYRICS
+    internal fun lineToWordSourceMode(): Int = prefs?.getInt(
+        RootConstants.KEY_HOOK_APPLE_MUSIC_LINE_TO_WORD_SOURCE_MODE,
+        RootConstants.DEFAULT_HOOK_APPLE_MUSIC_LINE_TO_WORD_SOURCE_MODE,
+    ) ?: RootConstants.DEFAULT_HOOK_APPLE_MUSIC_LINE_TO_WORD_SOURCE_MODE
+
+    internal fun isLineToWordLyricsEnabled(): Boolean =
+        lineToWordSourceMode() != RootConstants.APPLE_MUSIC_LINE_TO_WORD_SOURCE_MODE_OFF
+
+    /**
+     * 逐行转逐字能否为 [song] 选用 [source]：目录源始终可以；搜索源只在「所有来源」下、且本曲已有 Apple
+     * 原生歌词时可以（见 [allowsLineToWordSearchSources]）。
+     */
+    internal fun isLineToWordUpgradeSource(source: Source?, song: LocalSong?): Boolean =
+        source != null && isLineToWordLyricsEnabled() &&
+            (source.isTtmlCatalog || isLineToWordSearchAllowedFor(song))
+
+    /** 逐行转逐字对 [song] 有没有可用来源：已启用的目录源，或允许搜索源时任一已启用搜索源。 */
+    internal fun hasLineToWordCandidates(song: LocalSong?): Boolean =
+        enabledTtmlCatalogSources().isNotEmpty() ||
+            (isLineToWordSearchAllowedFor(song) && configuredOnlineSources().any { !it.isTtmlCatalog })
+
+    /** 逐行转逐字能否为 [song] 使用搜索源。 */
+    internal fun isLineToWordSearchAllowedFor(song: LocalSong?): Boolean =
+        allowsLineToWordSearchSources(
+            allSourcesMode = isLineToWordAllSources(),
+            hasNativeLyrics = hasAppleNativeLyrics(song),
+        )
+
+    /** 「所有来源」：除 TTML 目录源外，已启用的搜索源也可提供逐字歌词。 */
+    internal fun isLineToWordAllSources(): Boolean =
+        lineToWordSourceMode() == RootConstants.APPLE_MUSIC_LINE_TO_WORD_SOURCE_MODE_ALL
 
     internal fun isHideMandarinPinyinEnabled(): Boolean = prefs?.getBoolean(
         RootConstants.KEY_HOOK_APPLE_MUSIC_HIDE_MANDARIN_PINYIN,

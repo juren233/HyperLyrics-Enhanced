@@ -55,8 +55,9 @@ object AppleMusicPreferenceKeys {
         "key_hook_apple_music_always_show_source_switch"
     const val KEY_HOOK_APPLE_MUSIC_SOURCE_SEARCH_TIMING =
         "key_hook_apple_music_source_search_timing"
-    const val KEY_HOOK_APPLE_MUSIC_LINE_TO_WORD_LYRICS =
-        "key_hook_apple_music_upgrade_line_to_word_lyrics"
+    /** Which third-party lyrics may replace Apple Music's native line-synced lyrics with word-synced ones. */
+    const val KEY_HOOK_APPLE_MUSIC_LINE_TO_WORD_SOURCE_MODE =
+        "key_hook_apple_music_line_to_word_source_mode"
     const val KEY_HOOK_APPLE_MUSIC_LYRICS_BLUR_EFFECT =
         "key_hook_apple_music_lyrics_blur_effect"
     const val KEY_HOOK_APPLE_MUSIC_LYRICS_BLUR_ANIMATION =
@@ -117,7 +118,13 @@ object AppleMusicPreferenceKeys {
     const val APPLE_MUSIC_SOURCE_SEARCH_TIMING_ON_PLAYBACK_START = 1
     const val DEFAULT_HOOK_APPLE_MUSIC_SOURCE_SEARCH_TIMING =
         APPLE_MUSIC_SOURCE_SEARCH_TIMING_ON_DIALOG_OPEN
-    const val DEFAULT_HOOK_APPLE_MUSIC_LINE_TO_WORD_LYRICS = false
+    const val APPLE_MUSIC_LINE_TO_WORD_SOURCE_MODE_OFF = 0
+    /** Only the TTML catalog sources (AMLL, LunaBeat). */
+    const val APPLE_MUSIC_LINE_TO_WORD_SOURCE_MODE_TTML_ONLY = 1
+    /** The TTML catalog sources plus the enabled search sources (QM, NE, KUWO, KUGOU). */
+    const val APPLE_MUSIC_LINE_TO_WORD_SOURCE_MODE_ALL = 2
+    const val DEFAULT_HOOK_APPLE_MUSIC_LINE_TO_WORD_SOURCE_MODE =
+        APPLE_MUSIC_LINE_TO_WORD_SOURCE_MODE_OFF
     const val APPLE_MUSIC_LYRICS_BLUR_EFFECT_OFF = 0
     const val DEFAULT_HOOK_APPLE_MUSIC_LYRICS_BLUR_EFFECT =
         APPLE_MUSIC_LYRICS_BLUR_EFFECT_OFF

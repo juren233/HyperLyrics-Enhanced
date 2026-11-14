@@ -202,6 +202,10 @@ internal fun LyriconSource.startMediaPositionPolling() {
             )
             if (progress.position >= 0L) {
                 applePositionState.lastAdjustedPosition = progress.position
+                // 歌词已被在线来源替换时，中心与直连的位置回调都不再采用（见 onPositionChanged、
+                // onDirectPositionChanged），挂起的在线翻译提交与岛端「下一句切换」只能由这里按系统进度触发，
+                // 否则赛马首版之后的完整结果永远等不到提交点。
+                maybeCommitPendingOnlineTranslation(progress.position)
             }
             if (applePositionState.mediaPlaybackState() != progress.isPlaying) {
                 applePositionState.setMediaPlaybackState(progress.isPlaying)

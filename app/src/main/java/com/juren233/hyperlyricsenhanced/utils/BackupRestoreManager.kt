@@ -21,6 +21,7 @@ import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import com.juren233.hyperlyricsenhanced.common.FloatPreferences
 import com.juren233.hyperlyricsenhanced.common.SensitivePreferences
+import com.juren233.hyperlyricsenhanced.common.StorageKeyMigrator
 import com.juren233.hyperlyricsenhanced.common.StringSetPreferences
 import com.juren233.hyperlyricsenhanced.common.UIConstants
 
@@ -55,7 +56,10 @@ object BackupRestoreManager {
             val root = JSONObject(json)
             if (root.optInt("version", -1) < 1) return@withContext false
             val config = root.getJSONObject("config")
+            val restoredKeys = config.keys().asSequence().toSet()
             prefs.edit {
+                // 旧版备份里的旧键要按迁移规则生效，不能被设备上现有的新键挡掉。
+                StorageKeyMigrator.keysSupersededByRestoredLegacy(restoredKeys).forEach { remove(it) }
                 val keys = config.keys()
                 while (keys.hasNext()) {
                     val key = keys.next()
@@ -79,6 +83,8 @@ object BackupRestoreManager {
                     }
                 }
             }
+            // 旧版备份带的旧键立即换算成当前键（启动时的迁移要等进程重启），随后的全量同步推送的就是迁移后的值。
+            StorageKeyMigrator.migrateLegacyKeys(context)
             true
         } catch (_: Exception) { false }
     }

@@ -137,6 +137,13 @@ internal object EmbeddedIslandAlbumCoverController {
         }
     }
 
+    /** 极简显示封面转场每帧重绘大岛渐变封面背景（进度见 [IslandMinimalCoverTransition.presence]）。 */
+    fun invalidateBigCovers() {
+        synchronized(bigStates) {
+            bigStates.values.forEach { it.target.invalidate() }
+        }
+    }
+
     fun apply(host: ViewGroup, source: ImageView, smallIsland: Boolean): Boolean {
         val artwork = artworkFrom(source) ?: return false
         val applied = if (smallIsland) {
@@ -279,6 +286,7 @@ internal object EmbeddedIslandAlbumCoverController {
         }
         state.source = WeakReference(source)
         if (state.cover !== target.background) target.background = state.cover
+        if (!created) state.cover.markShown()
         monitorBackgroundOwnership(target, state.cover, source, host)
         if (!created && state.fingerprint != artwork.fingerprint) {
             state.cover.updateArtwork(artwork)

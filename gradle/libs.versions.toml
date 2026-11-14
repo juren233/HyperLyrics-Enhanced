@@ -25,6 +25,7 @@ superlyricapi = "3.6"
 lyricon-subscriber = "0.1.70"
 lyricon-provider = "0.1.70"
 junit = "4.13.2"
+robolectric = "4.17"
 markwon = "4.6.2"
 bouncycastle = "1.78.1"
 dexkit = "2.2.0"
@@ -83,6 +84,7 @@ superlyricapi = { group = "com.github.HChenX", name = "SuperLyricApi", version.r
 lyricon-subscriber = { group = "io.github.proify.lyricon", name = "subscriber", version.ref = "lyricon-subscriber" }
 lyricon-provider = { group = "io.github.proify.lyricon", name = "provider", version.ref = "lyricon-provider" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
+robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
 markwon-core = { group = "io.noties.markwon", name = "core", version.ref = "markwon" }
 bouncycastle-provider = { group = "org.bouncycastle", name = "bcprov-jdk18on", version.ref = "bouncycastle" }
 dexkit = { group = "org.luckypray", name = "dexkit", version.ref = "dexkit" }

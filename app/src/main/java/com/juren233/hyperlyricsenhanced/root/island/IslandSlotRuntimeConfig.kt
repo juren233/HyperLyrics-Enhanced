@@ -78,6 +78,7 @@ internal data class IslandSlotRuntimeConfig(
     val dynamicLimitEnabled: Boolean = false,
     val shortLyricSongInfo: Boolean = RootConstants.DEFAULT_HOOK_ISLAND_SHORT_LYRIC_SONG_INFO,
     val interludeMinimalDisplay: Boolean = RootConstants.DEFAULT_HOOK_ISLAND_INTERLUDE_MINIMAL_DISPLAY,
+    val interludeMinimalRight: Int = RootConstants.DEFAULT_HOOK_ISLAND_INTERLUDE_MINIMAL_RIGHT,
     val fullIslandNextLineMode: Int = IslandNextLineMode.resolve(IslandNextLineMode.UNSPECIFIED, nextLyricLine),
     val fontWeightMode: Int = IslandFontWeightMode.CUSTOM,
     val systemFontWeight: IslandSystemFontWeight.State? = null,
@@ -91,9 +92,39 @@ internal data class IslandSlotRuntimeConfig(
     val translationDisplay: Boolean
         get() = translationDisplayMode != RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_OFF
 
-    /** 极简显示依赖至少一个可见的原生元素；两者都关闭时保持常规内容，避免出现空岛。 */
+    /** 「右侧显示」选了音频律动或同时显示：极简显示期间显示律动，不论「音频律动常驻」是否开启。 */
+    private val interludeMinimalShowsRhythm: Boolean
+        get() = interludeMinimalRight != RootConstants.ISLAND_INTERLUDE_MINIMAL_RIGHT_DOTS
+
+    /**
+     * 极简显示只看开关与是否处于前奏/间奏，不要求封面或常驻律动开启（用户 2026-11-15 确认）：
+     * 歌词槽的倒计时圆点或「右侧显示」带出的律动保留，岛上不会只剩空白。
+     */
     fun usesInterludeMinimalDisplay(interludeActive: Boolean): Boolean =
-        interludeMinimalDisplay && (showAlbum || showRhythm) && interludeActive
+        interludeMinimalDisplay && interludeActive
+
+    /** 极简显示期间「右侧显示」选了音频律动：倒计时圆点在此期间隐藏。 */
+    fun hidesInterludeDots(interludeActive: Boolean): Boolean =
+        usesInterludeMinimalDisplay(interludeActive) &&
+            interludeMinimalRight == RootConstants.ISLAND_INTERLUDE_MINIMAL_RIGHT_RHYTHM
+
+    /**
+     * 音频律动此刻是否可见：极简显示期间只看「右侧显示」（倒计时圆点时隐藏，音频律动或同时显示时显示），
+     * 其余时间看「音频律动常驻」。
+     */
+    fun rhythmVisible(interludeActive: Boolean): Boolean =
+        if (usesInterludeMinimalDisplay(interludeActive)) interludeMinimalShowsRhythm else showRhythm
+
+    /**
+     * 左侧封面此刻是否可见：「音频封面」开启时始终显示；关闭时极简显示期间也显示（用户 2026-11-15 要求），
+     * 样式按「音频封面」关闭处理（默认样式）。
+     */
+    fun albumVisible(interludeActive: Boolean): Boolean =
+        showAlbum || usesInterludeMinimalDisplay(interludeActive)
+
+    /** 律动可能出现在岛上（常驻，或极简显示期间按「右侧显示」出现）：律动取色据此决定是否生效。 */
+    val rhythmMayShow: Boolean
+        get() = showRhythm || (interludeMinimalDisplay && interludeMinimalShowsRhythm)
 
     val isSingleSideMode: Boolean
         get() = activeMode == RootConstants.HOOK_LYRIC_MODE_SINGLE_SIDE
@@ -294,10 +325,11 @@ internal data class IslandSlotRuntimeConfig(
         return if (isLeftParent(parentName)) leftPaddingLeftDp else rightPaddingLeftDp
     }
 
-    fun paddingRightDp(parentName: String): Int {
+    /** 参数 rhythmVisible：音频律动此刻是否可见，极简显示期间可能临时隐藏（由 rhythmVisible(interludeActive) 得出）。 */
+    fun paddingRightDp(parentName: String, rhythmVisible: Boolean = showRhythm): Int {
         val base = if (isLeftParent(parentName)) leftPaddingRightDp else rightPaddingRightDp
         // 律动图标与注入内容在模块内各自布局，间隔只能由内容包装层的右内边距提供。
-        return if (!isLeftParent(parentName) && showRhythm) base + RHYTHM_TRAILING_GAP_DP else base
+        return if (!isLeftParent(parentName) && rhythmVisible) base + RHYTHM_TRAILING_GAP_DP else base
     }
 
     fun widthPx(rootView: View, parentName: String): Int? {
@@ -318,8 +350,8 @@ internal data class IslandSlotRuntimeConfig(
         return (paddingLeftDp(parentName) * rootView.resources.displayMetrics.density).toInt()
     }
 
-    fun paddingRightPx(rootView: View, parentName: String): Int {
-        return (paddingRightDp(parentName) * rootView.resources.displayMetrics.density).toInt()
+    fun paddingRightPx(rootView: View, parentName: String, rhythmVisible: Boolean = showRhythm): Int {
+        return (paddingRightDp(parentName, rhythmVisible) * rootView.resources.displayMetrics.density).toInt()
     }
 
     companion object {
@@ -439,6 +471,11 @@ internal data class IslandSlotRuntimeConfig(
                     prefs,
                     RootConstants.KEY_HOOK_ISLAND_INTERLUDE_MINIMAL_DISPLAY,
                     RootConstants.DEFAULT_HOOK_ISLAND_INTERLUDE_MINIMAL_DISPLAY,
+                ),
+                interludeMinimalRight = runtimeInt(
+                    prefs,
+                    RootConstants.KEY_HOOK_ISLAND_INTERLUDE_MINIMAL_RIGHT,
+                    RootConstants.DEFAULT_HOOK_ISLAND_INTERLUDE_MINIMAL_RIGHT,
                 ),
                 leftMode = if (activeMode == RootConstants.HOOK_LYRIC_MODE_SINGLE_SIDE) runtimeInt(
                     prefs,

@@ -324,6 +324,84 @@ class OnlineTranslationSelectionTest {
     }
 
     @Test
+    fun `lyrics source defaults to its own translation and pronunciation over source order`() {
+        val supplementSong = song(
+            line(1_000L, "First", translation = "旧歌词带来的翻译"),
+            line(2_000L, "Second"),
+        ).copy(
+            metadata = lyricMetadataOf(
+                LyricMetadataKeys.APPLE_MISSING_LYRICS_SUPPLEMENT to "true",
+                LyricMetadataKeys.APPLE_MISSING_LYRICS_SOURCE to Source.NE.name,
+            ),
+        )
+        val selection = OnlineTranslationSelection(
+            onlineLinesBySource = mapOf(
+                Source.AMLL to listOf(
+                    LrcLine(1_000L, "First", translation = "AMLL第一句", romanization = "amll one"),
+                    LrcLine(2_000L, "Second", translation = "AMLL第二句", romanization = "amll two"),
+                ),
+                Source.NE to listOf(
+                    LrcLine(1_000L, "First", translation = "网易第一句", romanization = "ne one"),
+                    LrcLine(2_000L, "Second", translation = "网易第二句", romanization = "ne two"),
+                ),
+            ),
+            sourceOrder = listOf(Source.AMLL, Source.NE),
+        )
+
+        val result = selection.compose(supplementSong, currentPublishedSong = null)
+
+        assertEquals("网易第一句", result?.song?.lyrics?.get(0)?.translation)
+        assertEquals("网易第二句", result?.song?.lyrics?.get(1)?.translation)
+        assertEquals("ne one", result?.song?.lyrics?.get(0)?.roma)
+        assertEquals("ne two", result?.song?.lyrics?.get(1)?.roma)
+        val metadata = result?.song?.metadata
+        assertEquals(Source.NE.name, metadata?.getString(LyricMetadataKeys.ONLINE_TRANSLATION_SOURCE))
+        assertEquals(Source.NE.name, metadata?.getString(LyricMetadataKeys.ONLINE_PRONUNCIATION_SOURCE))
+    }
+
+    @Test
+    fun `lyrics source default yields to a hand-picked source and to native only`() {
+        val supplementSong = song(
+            line(1_000L, "First"),
+            line(2_000L, "Second"),
+        ).copy(
+            metadata = lyricMetadataOf(
+                LyricMetadataKeys.APPLE_MISSING_LYRICS_SUPPLEMENT to "true",
+                LyricMetadataKeys.APPLE_MISSING_LYRICS_SOURCE to Source.NE.name,
+            ),
+        )
+        val onlineLines = mapOf(
+            Source.AMLL to listOf(
+                LrcLine(1_000L, "First", translation = "AMLL第一句"),
+                LrcLine(2_000L, "Second", translation = "AMLL第二句"),
+            ),
+            Source.NE to listOf(
+                LrcLine(1_000L, "First", translation = "网易第一句"),
+                LrcLine(2_000L, "Second", translation = "网易第二句"),
+            ),
+        )
+
+        val forced = OnlineTranslationSelection(
+            onlineLinesBySource = onlineLines,
+            sourceOrder = listOf(Source.AMLL, Source.NE),
+            forcedTranslationSource = Source.AMLL,
+        ).compose(supplementSong, currentPublishedSong = null)
+        assertEquals("AMLL第一句", forced?.song?.lyrics?.get(0)?.translation)
+        assertEquals(
+            Source.AMLL.name,
+            forced?.song?.metadata?.getString(LyricMetadataKeys.ONLINE_TRANSLATION_SOURCE),
+        )
+
+        val nativeOnly = OnlineTranslationSelection(
+            onlineLinesBySource = onlineLines,
+            sourceOrder = listOf(Source.AMLL, Source.NE),
+            control = OnlineSourceControl(translationNativeOnly = true),
+        ).compose(supplementSong, currentPublishedSong = null)
+        assertNull(nativeOnly?.song?.lyrics?.get(0)?.translation)
+        assertNull(nativeOnly?.song?.metadata?.getString(LyricMetadataKeys.ONLINE_TRANSLATION_SOURCE))
+    }
+
+    @Test
     fun `partial progress reports answered sources only`() {
         val nativeSong = song(
             line(1_000L, "First"),

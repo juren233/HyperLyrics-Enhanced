@@ -8,6 +8,7 @@ package com.juren233.hyperlyricsenhanced.online.source.ttml
 
 import android.content.Context
 import com.juren233.hyperlyricsenhanced.common.lyric.AppleMissingLyricsSourceStatus
+import com.juren233.hyperlyricsenhanced.online.isWordTimedOnlineLyrics
 import com.juren233.hyperlyricsenhanced.online.model.Source
 import com.juren233.hyperlyricsenhanced.online.source.amll.AmllTtmlRepository
 import com.juren233.hyperlyricsenhanced.online.source.lunabeat.LunaBeatTtmlRepository
@@ -38,7 +39,7 @@ internal fun TtmlLookupResult.toSourceStatus(source: Source): AppleMissingLyrics
         source = source.name,
         searched = searched,
         found = match != null,
-        wordTimed = match != null,
+        wordTimed = isWordTimedOnlineLyrics(match?.parsed?.wordLines),
         lineCount = match?.parsed?.wordLines?.size ?: 0,
     )
 

@@ -29,7 +29,47 @@ object StorageKeyMigrator {
      */
     private const val LEGACY_LUNABEAT_WORD_LYRICS = "key_hook_apple_music_lunabeat_word_lyrics"
 
-    /** 旧值要写入哪些新键：已存在的新键保持不动。 */
+    /**
+     * 旧「逐行转逐字」开关是布尔键，现已改为三选一的整数键（不开启 / 仅 TTML 源 / 所有来源）。
+     * 旧值为开启时对应「仅 TTML 源」，为关闭时沿用默认的「不开启」，因此不写入。
+     */
+    private const val LEGACY_LINE_TO_WORD_LYRICS = "key_hook_apple_music_upgrade_line_to_word_lyrics"
+
+    /** 旧键 → 由它迁移出的键；逐行转逐字旧布尔键既是 LunaBeat 旧键的目标，也是模式键的来源。 */
+    private val legacyKeyTargets: Map<String, List<String>> =
+        renamedBooleanKeys.associate { (legacyKey, currentKey) -> legacyKey to listOf(currentKey) } +
+            mapOf(
+                LEGACY_LUNABEAT_WORD_LYRICS to listOf(
+                    RootConstants.KEY_HOOK_ONLINE_SOURCE_LUNABEAT,
+                    LEGACY_LINE_TO_WORD_LYRICS,
+                ),
+                LEGACY_LINE_TO_WORD_LYRICS to listOf(
+                    RootConstants.KEY_HOOK_APPLE_MUSIC_LINE_TO_WORD_SOURCE_MODE,
+                ),
+            )
+
+    /**
+     * 恢复备份时要先清掉的设备现有键：备份里的旧键代表备份当时的设置，它迁移出的键若不在备份里，
+     * 设备上现有的值会让「已存在的键保持不动」丢弃备份的值。沿迁移链传递
+     * （LunaBeat 旧键 → 逐行转逐字旧布尔键 → 模式键）；备份里自带的键不清。
+     */
+    internal fun keysSupersededByRestoredLegacy(restoredKeys: Set<String>): Set<String> {
+        val superseded = mutableSetOf<String>()
+        val visited = mutableSetOf<String>()
+        val pending = ArrayDeque(restoredKeys.filter(legacyKeyTargets::containsKey))
+        while (pending.isNotEmpty()) {
+            val legacyKey = pending.removeFirst()
+            if (!visited.add(legacyKey)) continue
+            legacyKeyTargets[legacyKey].orEmpty().forEach { target ->
+                if (target in restoredKeys) return@forEach
+                superseded += target
+                if (target in legacyKeyTargets) pending += target
+            }
+        }
+        return superseded
+    }
+
+    /** 旧值要写入哪些键（逐行转逐字以旧布尔键为中间形态）：已存在的键保持不动。 */
     internal fun lunaBeatWordLyricsWrites(
         legacyValue: Boolean?,
         existingKeys: Set<String>,
@@ -37,27 +77,58 @@ object StorageKeyMigrator {
         legacyValue ?: return emptyMap()
         return listOf(
             RootConstants.KEY_HOOK_ONLINE_SOURCE_LUNABEAT,
-            RootConstants.KEY_HOOK_APPLE_MUSIC_LINE_TO_WORD_LYRICS,
+            LEGACY_LINE_TO_WORD_LYRICS,
         ).filterNot(existingKeys::contains).associateWith { legacyValue }
     }
 
-    private fun migrateLunaBeatWordLyrics(
+    /** 旧布尔值要写入的新模式；新键已存在则保持不动，旧值为关闭或缺失时无需写入。 */
+    internal fun lineToWordModeWrite(legacyValue: Boolean?, existingKeys: Set<String>): Int? {
+        if (legacyValue != true) return null
+        if (RootConstants.KEY_HOOK_APPLE_MUSIC_LINE_TO_WORD_SOURCE_MODE in existingKeys) return null
+        return RootConstants.APPLE_MUSIC_LINE_TO_WORD_SOURCE_MODE_TTML_ONLY
+    }
+
+    /**
+     * 先处理 LunaBeat 旧键（其拆分结果里的逐行转逐字值仍以旧布尔键为中间形态），再把旧布尔键换算成模式键。
+     */
+    private fun migrateLunaBeatAndLineToWord(
         prefs: android.content.SharedPreferences,
         edits: android.content.SharedPreferences.Editor,
     ): Boolean {
-        val legacyValue = prefs.all[LEGACY_LUNABEAT_WORD_LYRICS] as? Boolean ?: return false
-        lunaBeatWordLyricsWrites(legacyValue, prefs.all.keys).forEach { (currentKey, value) ->
-            edits.putBoolean(currentKey, value)
-            LogManager.i(TAG, "migrated key=$LEGACY_LUNABEAT_WORD_LYRICS -> $currentKey value=$value")
+        var dirty = false
+        var pendingLegacyLineToWord: Boolean? = prefs.all[LEGACY_LINE_TO_WORD_LYRICS] as? Boolean
+        val legacyLunaBeat = prefs.all[LEGACY_LUNABEAT_WORD_LYRICS] as? Boolean
+        if (legacyLunaBeat != null) {
+            lunaBeatWordLyricsWrites(legacyLunaBeat, prefs.all.keys).forEach { (currentKey, value) ->
+                if (currentKey == LEGACY_LINE_TO_WORD_LYRICS) {
+                    pendingLegacyLineToWord = value
+                } else {
+                    edits.putBoolean(currentKey, value)
+                }
+                LogManager.i(TAG, "migrated key=$LEGACY_LUNABEAT_WORD_LYRICS -> $currentKey value=$value")
+            }
+            edits.remove(LEGACY_LUNABEAT_WORD_LYRICS)
+            dirty = true
         }
-        edits.remove(LEGACY_LUNABEAT_WORD_LYRICS)
-        return true
+        if (prefs.all.containsKey(LEGACY_LINE_TO_WORD_LYRICS) || pendingLegacyLineToWord != null) {
+            lineToWordModeWrite(pendingLegacyLineToWord, prefs.all.keys)?.let { mode ->
+                edits.putInt(RootConstants.KEY_HOOK_APPLE_MUSIC_LINE_TO_WORD_SOURCE_MODE, mode)
+                LogManager.i(
+                    TAG,
+                    "migrated key=$LEGACY_LINE_TO_WORD_LYRICS -> " +
+                        "${RootConstants.KEY_HOOK_APPLE_MUSIC_LINE_TO_WORD_SOURCE_MODE} value=$mode"
+                )
+            }
+            edits.remove(LEGACY_LINE_TO_WORD_LYRICS)
+            dirty = true
+        }
+        return dirty
     }
 
     fun migrateLegacyKeys(context: Context) {
         val prefs = context.getSharedPreferences(PreferenceKeys.PREF_NAME, Context.MODE_PRIVATE)
         val edits = prefs.edit()
-        var dirty = migrateLunaBeatWordLyrics(prefs, edits)
+        var dirty = migrateLunaBeatAndLineToWord(prefs, edits)
         renamedBooleanKeys.forEach { (legacyKey, currentKey) ->
             val legacyValue = prefs.all[legacyKey] as? Boolean ?: return@forEach
             if (!prefs.contains(currentKey)) {

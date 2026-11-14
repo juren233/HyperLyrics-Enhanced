@@ -111,6 +111,7 @@ class HookEntry : XposedModule() {
         private val HYPER_ISLAND_RUNTIME_REFRESH_KEYS = setOf(
             RootConstants.KEY_HOOK_ISLAND_SHORT_LYRIC_SONG_INFO,
             RootConstants.KEY_HOOK_ISLAND_INTERLUDE_MINIMAL_DISPLAY,
+            RootConstants.KEY_HOOK_ISLAND_INTERLUDE_MINIMAL_RIGHT,
             RootConstants.KEY_HOOK_ISLAND_CONTENT_LEFT,
             RootConstants.KEY_HOOK_ISLAND_CONTENT_RIGHT,
             RootConstants.KEY_HOOK_ISLAND_LEFT_PADDING_LEFT,
@@ -802,7 +803,7 @@ class HookEntry : XposedModule() {
                     key == RootConstants.KEY_HOOK_APPLE_MUSIC_HIDE_MANDARIN_PINYIN ||
                     key == RootConstants.KEY_HOOK_APPLE_MUSIC_ALWAYS_SHOW_SOURCE_SWITCH ||
                     key == RootConstants.KEY_HOOK_APPLE_MUSIC_SOURCE_SEARCH_TIMING ||
-                    key == RootConstants.KEY_HOOK_APPLE_MUSIC_LINE_TO_WORD_LYRICS
+                    key == RootConstants.KEY_HOOK_APPLE_MUSIC_LINE_TO_WORD_SOURCE_MODE
                 ) {
                     lyriconSource.onPreferenceChanged(key)
                 }
@@ -838,7 +839,7 @@ class HookEntry : XposedModule() {
                     RootConstants.KEY_HOOK_ENABLE_DYNAMIC_ISLAND,
                     RootConstants.KEY_HOOK_APPLE_MUSIC_NATIVE_ONLINE_TRANSLATION,
                     RootConstants.KEY_HOOK_APPLE_MUSIC_FILL_MISSING_LYRICS,
-                    RootConstants.KEY_HOOK_APPLE_MUSIC_LINE_TO_WORD_LYRICS -> {
+                    RootConstants.KEY_HOOK_APPLE_MUSIC_LINE_TO_WORD_SOURCE_MODE -> {
                         postRuntimeUpdate {
                             ClassicAodFocusNotificationRecovery.ensureListenerCanRecover(app, prefs)
                             updateFeatureRuntime()
@@ -923,7 +924,10 @@ class HookEntry : XposedModule() {
                             BaseIslandRenderer.refreshActiveIsland()
                         }
                     }
-                    RootConstants.KEY_HOOK_ISLAND_RIGHT_ICON -> {
+                    // 极简显示的「右侧显示」可在常驻关闭时带出律动，律动取色是否生效随之变化。
+                    RootConstants.KEY_HOOK_ISLAND_RIGHT_ICON,
+                    RootConstants.KEY_HOOK_ISLAND_INTERLUDE_MINIMAL_DISPLAY,
+                    RootConstants.KEY_HOOK_ISLAND_INTERLUDE_MINIMAL_RIGHT -> {
                         postRuntimeUpdate {
                             IslandAlbumCoverStyleHooker.refresh()
                             IslandMusicWaveColorHooker.refresh()

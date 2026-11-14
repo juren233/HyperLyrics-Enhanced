@@ -41,4 +41,65 @@ class StorageKeyMigratorTest {
     fun `no legacy value means nothing to migrate`() {
         assertEquals(emptyMap<String, Boolean>(), StorageKeyMigrator.lunaBeatWordLyricsWrites(null, emptySet()))
     }
+
+    @Test
+    fun `legacy line to word switch maps to TTML only mode`() {
+        assertEquals(
+            RootConstants.APPLE_MUSIC_LINE_TO_WORD_SOURCE_MODE_TTML_ONLY,
+            StorageKeyMigrator.lineToWordModeWrite(true, emptySet()),
+        )
+    }
+
+    @Test
+    fun `disabled or missing legacy line to word switch keeps default mode`() {
+        assertEquals(null, StorageKeyMigrator.lineToWordModeWrite(false, emptySet()))
+        assertEquals(null, StorageKeyMigrator.lineToWordModeWrite(null, emptySet()))
+    }
+
+    @Test
+    fun `existing mode key is never overwritten by legacy line to word switch`() {
+        assertEquals(
+            null,
+            StorageKeyMigrator.lineToWordModeWrite(
+                true,
+                setOf(RootConstants.KEY_HOOK_APPLE_MUSIC_LINE_TO_WORD_SOURCE_MODE),
+            ),
+        )
+    }
+
+    @Test
+    fun `restored legacy line to word switch clears the device mode key`() {
+        assertEquals(
+            setOf(RootConstants.KEY_HOOK_APPLE_MUSIC_LINE_TO_WORD_SOURCE_MODE),
+            StorageKeyMigrator.keysSupersededByRestoredLegacy(setOf(upgradeKey, "key_other")),
+        )
+    }
+
+    @Test
+    fun `restored legacy LunaBeat switch clears every key along the migration chain`() {
+        assertEquals(
+            setOf(sourceKey, upgradeKey, RootConstants.KEY_HOOK_APPLE_MUSIC_LINE_TO_WORD_SOURCE_MODE),
+            StorageKeyMigrator.keysSupersededByRestoredLegacy(setOf("key_hook_apple_music_lunabeat_word_lyrics")),
+        )
+    }
+
+    @Test
+    fun `keys carried by the backup itself are never cleared`() {
+        assertEquals(
+            setOf(upgradeKey),
+            StorageKeyMigrator.keysSupersededByRestoredLegacy(
+                setOf(
+                    "key_hook_apple_music_lunabeat_word_lyrics",
+                    sourceKey,
+                    RootConstants.KEY_HOOK_APPLE_MUSIC_LINE_TO_WORD_SOURCE_MODE,
+                ),
+            ),
+        )
+        assertEquals(
+            emptySet<String>(),
+            StorageKeyMigrator.keysSupersededByRestoredLegacy(
+                setOf(RootConstants.KEY_HOOK_APPLE_MUSIC_LINE_TO_WORD_SOURCE_MODE, "key_other"),
+            ),
+        )
+    }
 }

@@ -428,12 +428,12 @@ internal object IslandSlotContentAssembler {
             isLeft = isLeft,
             independentSlots = independentSlots
         )
-        // 间奏极简只隐藏非指示器槽位（联播时为左槽歌曲信息），右槽间奏点保留。
-        // 极简窗口内不走成对形变，避免空白槽参与过渡。
+        // 间奏极简隐藏非指示器槽位（联播时为左槽歌曲信息）；右槽倒计时圆点按「右侧显示」保留，
+        // 选了只显示音频律动时一并清空。极简窗口内不走成对形变，避免空白槽参与过渡。
         if (isInterludeMinimalDisplayActive(config)) {
             IslandSeparatedLyricTransition.cancel(view)
             IslandShortLyricTransition.cancel(view)
-            if (effectiveMode != 7) {
+            if (effectiveMode != 7 || isInterludeDotsHidden(config)) {
                 return applyInterludeMinimalContent(
                     view, prefs, config, effectiveMode, playbackActive, mediaInfo, force
                 )
@@ -915,6 +915,35 @@ internal object IslandSlotContentAssembler {
     internal fun isInterludeMinimalDisplayActive(config: IslandSlotRuntimeConfig): Boolean =
         config.usesInterludeMinimalDisplay(LyriconDataBridge.currentInterludeType != null)
 
+    /** 音频律动此刻是否可见；岛端律动容器显隐、右侧内边距与图标锚点都以此为准。 */
+    internal fun isRhythmVisible(config: IslandSlotRuntimeConfig): Boolean =
+        config.rhythmVisible(LyriconDataBridge.currentInterludeType != null)
+
+    /** 左侧封面此刻按设置与极简显示是否应可见（目标状态）。 */
+    internal fun isAlbumVisible(config: IslandSlotRuntimeConfig): Boolean =
+        config.albumVisible(LyriconDataBridge.currentInterludeType != null)
+
+    /**
+     * 左侧封面此刻是否占位：目标可见，且不在等左槽歌词淡出落定（极简显示开始时，见
+     * [IslandMinimalCoverTransition.deferEntry]）。封面容器显隐、文字容器起始边距、封面图标锚点与
+     * 渐变背景文字配色都以此为准。
+     */
+    internal fun isAlbumPlaced(config: IslandSlotRuntimeConfig): Boolean =
+        isAlbumVisible(config) && !IslandMinimalCoverTransition.entryPending
+
+    /**
+     * 左侧封面样式此刻是否生效：目标可见（含等左槽歌词淡出、尚未放出占位的挂起期），或极简显示结束后
+     * 封面仍在淡出（见 [IslandMinimalCoverTransition]，淡出期间渐变背景按进度淡出，结束后才撤回样式）。
+     * 挂起期间也要套上：切歌时原生会在此间重绑封面，按默认样式套用后，放出占位时的样式刷新又可能被宿主
+     * 形变延后，封面先以默认样式淡入（2026-11-15 真机日志，240154）。挂起期间占位未放出、渐变背景进度为 0，
+     * 套上样式不可见。
+     */
+    internal fun isAlbumStyled(config: IslandSlotRuntimeConfig): Boolean =
+        isAlbumVisible(config) || IslandMinimalCoverTransition.hiding
+
+    private fun isInterludeDotsHidden(config: IslandSlotRuntimeConfig): Boolean =
+        config.hidesInterludeDots(LyriconDataBridge.currentInterludeType != null)
+
     private fun minimalInterludeLine(): IRichLyricLine =
         RichLyricLine(text = "", words = emptyList())
 
@@ -928,6 +957,7 @@ internal object IslandSlotContentAssembler {
         force: Boolean,
     ): Boolean {
         configureView(view, prefs, config, mode, mediaInfo, force)
+        // 清空走与其他槽换内容相同的切换动画（右槽换成倒计时圆点即如此），不硬切；内容不变时不会重复播放。
         return applyLyricContent(
             view = view,
             prefs = prefs,
@@ -935,7 +965,7 @@ internal object IslandSlotContentAssembler {
             lineOverride = minimalInterludeLine(),
             force = true,
             playbackActive = playbackActive,
-            suppressAnimation = true,
+            suppressAnimation = false,
         )
     }
 

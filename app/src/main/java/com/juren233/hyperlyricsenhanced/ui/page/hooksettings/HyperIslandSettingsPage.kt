@@ -122,6 +122,17 @@ fun HyperIslandSettingsPage() {
             RootConstants.DEFAULT_HOOK_ISLAND_INTERLUDE_MINIMAL_DISPLAY,
         ))
     }
+    var interludeMinimalRight by remember {
+        mutableIntStateOf(
+            prefs.getInt(
+                RootConstants.KEY_HOOK_ISLAND_INTERLUDE_MINIMAL_RIGHT,
+                RootConstants.DEFAULT_HOOK_ISLAND_INTERLUDE_MINIMAL_RIGHT,
+            ).coerceIn(
+                RootConstants.ISLAND_INTERLUDE_MINIMAL_RIGHT_DOTS,
+                RootConstants.ISLAND_INTERLUDE_MINIMAL_RIGHT_BOTH,
+            )
+        )
+    }
     var shortLyricSongInfo by remember {
         mutableStateOf(prefs.getBoolean(
             RootConstants.KEY_HOOK_ISLAND_SHORT_LYRIC_SONG_INFO,
@@ -354,6 +365,14 @@ fun HyperIslandSettingsPage() {
             R.string.option_music_wave_color_mode_cover_gradient
         )
     }.map { stringResource(id = it) }
+    // 下标即存储值（ISLAND_INTERLUDE_MINIMAL_RIGHT_DOTS / RHYTHM / BOTH）。
+    val interludeMinimalRightOptions = remember {
+        listOf(
+            R.string.option_island_interlude_minimal_right_dots,
+            R.string.title_audio_rhythm,
+            R.string.option_island_interlude_minimal_right_both,
+        )
+    }.map { stringResource(id = it) }
     val pureMusicModeOptions = remember {
         listOf(
             R.string.option_island_pure_music_keep,
@@ -366,6 +385,31 @@ fun HyperIslandSettingsPage() {
     val realRhythmModeOptions = remember {
         listOf(R.string.option_real_rhythm_off, R.string.option_real_rhythm_on, R.string.option_real_rhythm_custom)
     }.map { stringResource(id = it) }
+    // 「音频封面」开启时与「音频封面」关闭、极简显示开启时共用同一份封面样式及其应用白名单设置，只在此处定义一次。
+    val audioCoverStylePreference: @Composable () -> Unit = {
+        Column {
+            OverlayDropdownPreference(
+                title = stringResource(id = R.string.title_audio_cover_style),
+                items = audioCoverStyleOptions,
+                selectedIndex = audioCoverStyleValues.indexOf(audioCoverStyle).coerceAtLeast(0),
+                onSelectedIndexChange = { index ->
+                    val style = audioCoverStyleValues[index]
+                    audioCoverStyle = style
+                    saveConfig(RootConstants.KEY_HOOK_ISLAND_ALBUM_COVER_STYLE, style)
+                }
+            )
+            AnimatedVisibility(
+                visible = audioCoverStyle != RootConstants.ISLAND_ALBUM_COVER_STYLE_DEFAULT,
+                enter = SectionEnter,
+                exit = SectionExit,
+            ) {
+                ArrowPreference(
+                    title = stringResource(R.string.title_island_album_cover_app_whitelist),
+                    onClick = { navigator.navigate(Route.HyperIslandAlbumCoverWhitelist) },
+                )
+            }
+        }
+    }
     // 音频律动与“纯音乐期间系统短岛”共用同一份真实律动设置，只在此处定义一次。
     val realRhythmPreference: @Composable () -> Unit = {
         Column {
@@ -576,39 +620,8 @@ fun HyperIslandSettingsPage() {
                         Column {
                             SwitchPreference(title = stringResource(id = R.string.title_audio_cover), checked = audioCover, onCheckedChange = { audioCover = it; saveConfig(RootConstants.KEY_HOOK_ISLAND_LEFT_ALBUM, it) })
                             AnimatedVisibility(visible = audioCover, enter = SectionEnter, exit = SectionExit) {
-                                Column {
-                                    OverlayDropdownPreference(
-                                        title = stringResource(id = R.string.title_audio_cover_style),
-                                        items = audioCoverStyleOptions,
-                                        selectedIndex = audioCoverStyleValues.indexOf(audioCoverStyle).coerceAtLeast(0),
-                                        onSelectedIndexChange = { index ->
-                                            val style = audioCoverStyleValues[index]
-                                            audioCoverStyle = style
-                                            saveConfig(RootConstants.KEY_HOOK_ISLAND_ALBUM_COVER_STYLE, style)
-                                        }
-                                    )
-                                    AnimatedVisibility(
-                                        visible = audioCoverStyle != RootConstants.ISLAND_ALBUM_COVER_STYLE_DEFAULT,
-                                        enter = SectionEnter,
-                                        exit = SectionExit,
-                                    ) {
-                                        ArrowPreference(
-                                            title = stringResource(R.string.title_island_album_cover_app_whitelist),
-                                            onClick = { navigator.navigate(Route.HyperIslandAlbumCoverWhitelist) },
-                                        )
-                                    }
-                                }
+                                audioCoverStylePreference()
                             }
-                            SwitchPreference(
-                                title = stringResource(R.string.title_island_interlude_minimal_display),
-                                summary = stringResource(R.string.summary_island_interlude_minimal_display),
-                                checked = interludeMinimalDisplay,
-                                enabled = audioCover || audioRhythm,
-                                onCheckedChange = {
-                                    interludeMinimalDisplay = it
-                                    saveConfig(RootConstants.KEY_HOOK_ISLAND_INTERLUDE_MINIMAL_DISPLAY, it)
-                                },
-                            )
                             if (lyricMode == RootConstants.HOOK_LYRIC_MODE_FULL_ISLAND) {
                                 SwitchPreference(
                                     title = stringResource(R.string.title_island_short_lyric_song_info),
@@ -623,14 +636,49 @@ fun HyperIslandSettingsPage() {
                         }
                     }
                 }
+                item(key = "interlude_minimal_display") {
+                    Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
+                        Column {
+                            SwitchPreference(
+                                title = stringResource(R.string.title_island_interlude_minimal_display),
+                                summary = stringResource(R.string.summary_island_interlude_minimal_display),
+                                checked = interludeMinimalDisplay,
+                                onCheckedChange = {
+                                    interludeMinimalDisplay = it
+                                    saveConfig(RootConstants.KEY_HOOK_ISLAND_INTERLUDE_MINIMAL_DISPLAY, it)
+                                },
+                            )
+                            AnimatedVisibility(
+                                visible = interludeMinimalDisplay,
+                                enter = SectionEnter,
+                                exit = SectionExit,
+                            ) {
+                                Column {
+                                    // 「音频封面」关闭时极简显示期间仍显示封面，封面样式与白名单在这里设置。
+                                    AnimatedVisibility(visible = !audioCover, enter = SectionEnter, exit = SectionExit) {
+                                        audioCoverStylePreference()
+                                    }
+                                    OverlayDropdownPreference(
+                                        title = stringResource(R.string.title_island_interlude_minimal_right),
+                                        items = interludeMinimalRightOptions,
+                                        selectedIndex = interludeMinimalRight,
+                                        onSelectedIndexChange = {
+                                            interludeMinimalRight = it
+                                            saveConfig(RootConstants.KEY_HOOK_ISLAND_INTERLUDE_MINIMAL_RIGHT, it)
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
                 item(key = "audio_rhythm") {
                     Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
-                        SwitchPreference(title = stringResource(id = R.string.title_audio_rhythm), checked = audioRhythm, onCheckedChange = { audioRhythm = it; saveConfig(RootConstants.KEY_HOOK_ISLAND_RIGHT_ICON, it) })
-                        AnimatedVisibility(visible = audioRhythm, enter = SectionEnter, exit = SectionExit) {
-                            Column {
-                                realRhythmPreference()
-                                musicWaveColorModePreference()
-                            }
+                        // 律动除常驻外，还会在极简显示与纯音乐系统短岛期间出现，子设置因此始终显示。
+                        Column {
+                            SwitchPreference(title = stringResource(id = R.string.title_audio_rhythm_always), checked = audioRhythm, onCheckedChange = { audioRhythm = it; saveConfig(RootConstants.KEY_HOOK_ISLAND_RIGHT_ICON, it) })
+                            realRhythmPreference()
+                            musicWaveColorModePreference()
                         }
                     }
                 }
@@ -651,23 +699,10 @@ fun HyperIslandSettingsPage() {
                             enter = SectionEnter,
                             exit = SectionExit,
                         ) {
-                            Column {
-                                ArrowPreference(
-                                    title = stringResource(id = R.string.title_island_pure_music_keywords),
-                                    onClick = { navigator.navigate(Route.HyperIslandPureMusicKeywords) },
-                                )
-                                // 音频律动已开启时，真实律动与封面色在专属的音频律动卡片里设置，这里不重复显示。
-                                AnimatedVisibility(
-                                    visible = !audioRhythm,
-                                    enter = SectionEnter,
-                                    exit = SectionExit,
-                                ) {
-                                    Column {
-                                        realRhythmPreference()
-                                        musicWaveColorModePreference()
-                                    }
-                                }
-                            }
+                            ArrowPreference(
+                                title = stringResource(id = R.string.title_island_pure_music_keywords),
+                                onClick = { navigator.navigate(Route.HyperIslandPureMusicKeywords) },
+                            )
                         }
                     }
                 }

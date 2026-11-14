@@ -51,13 +51,24 @@ internal fun acceptsAppleOnlineLyricResult(
         untimedNativeFallback)
 
 /**
- * 纯文本无时间轴原生的在线补充与其它在线歌词增强同源，必须跟随
- * 「启用App」开关（该 App 允许使用三方在线源取词）。
+ * 纯文本无时间轴原生的在线补充：「启用App」开启时只替换超级岛与 AOD；
+ * 「无歌词/无时间轴歌曲使用三方歌词」开启时还要替换 Apple Music 歌词页，同样需要检索。
  */
 internal fun allowsUntimedAppleOnlineFallback(
     appOnlineEnabled: Boolean,
+    fillMissingLyricsEnabled: Boolean,
     untimedNative: Boolean,
-): Boolean = appOnlineEnabled && untimedNative
+): Boolean = (appOnlineEnabled || fillMissingLyricsEnabled) && untimedNative
+
+/**
+ * 纯文本无时间轴原生的在线结果是否回传 Apple Music、替换歌词页：只看「无歌词/无时间轴歌曲使用三方歌词」，
+ * 用户在来源弹窗里为本曲选回「Apple Music 原生」时不替换。为 false 时结果只上超级岛与 AOD。
+ */
+internal fun replacesUntimedAppleNativeInApp(
+    fillMissingLyricsEnabled: Boolean,
+    untimedNativeFallback: Boolean,
+    userChoseAppleNative: Boolean,
+): Boolean = fillMissingLyricsEnabled && untimedNativeFallback && !userChoseAppleNative
 
 /**
  * Native text remains available in Apple Music, but cannot drive timed SystemUI lyrics.
@@ -83,6 +94,29 @@ internal fun hasUntimedAppleNativeLyrics(song: LocalSong?): Boolean =
             line.end > line.begin ||
                 line.words.orEmpty().any { word -> word.end > word.begin }
         }
+
+/**
+ * Apple 原生歌词已经是逐字：逐行转逐字不适用。Apple Music 侧的接管规则
+ * （`shouldAllowTtmlCatalogTakeover`）同样不会自动覆盖逐字原生歌词，核心若仍把三方逐字歌词当成
+ * 当前歌词发布，会与 Apple 页面实际显示的歌词错开，在线翻译被对齐到 Apple 并未采用的那份歌词上。
+ * 判定与 Apple 侧一致：任一行带逐字时间轴即视为逐字。
+ */
+internal fun hasWordTimedAppleNativeLyrics(song: LocalSong?): Boolean =
+    song != null &&
+        !song.metadata
+            ?.getString(LyricMetadataKeys.APPLE_MISSING_LYRICS_SUPPLEMENT)
+            .toBoolean() &&
+        song.lyrics.orEmpty().any { line -> !line.words.isNullOrEmpty() }
+
+/**
+ * 「所有来源」下搜索源能否作为逐行转逐字的来源：只在 Apple 原生已有歌词时可以，因为那才是对原生的升级。
+ * 原生没有歌词时搜索源走普通补充链路（一次多源检索、逐行结果照常采用），不再逐个单源只收逐字后又整体重查一遍。
+ * 与 Provider `AppleMissingLyricsHooks.isLineToWordSource` 要求 `hasKnownNativeLyrics` 一致。
+ */
+internal fun allowsLineToWordSearchSources(
+    allSourcesMode: Boolean,
+    hasNativeLyrics: Boolean,
+): Boolean = allSourcesMode && hasNativeLyrics
 
 /** A source with every line at one timestamp cannot drive the island or AOD timeline. */
 internal fun hasUsableTimedOnlineLyricsForUntimedApple(
@@ -196,6 +230,16 @@ internal fun mergeMissingLyricsSupplementMetadata(
      * 与目录源一样不被同曲的原生歌词重发顶掉。
      */
     manualSourceReplacesNative: Boolean = false,
+    /**
+     * 本曲已确认的补充歌词替换了整首无时间轴的 Apple 原生歌词（「无歌词/无时间轴歌曲使用三方歌词」仍开启）：
+     * 同曲的原生歌词重发不得顶掉它。
+     */
+    untimedNativeReplaced: Boolean = false,
+    /**
+     * 「原生逐行歌词转用三方逐字歌词」的来源（含「所有来源」下的搜索源）已确认为本曲来源：
+     * 与目录源一样不被同曲的原生歌词重发顶掉。
+     */
+    lineToWordReplaced: Boolean = false,
 ): LocalSong? {
     if (!sameTrack || previousSong == null || incomingSong == null) return incomingSong
     val previousMetadata = previousSong.metadata ?: return incomingSong
@@ -203,7 +247,10 @@ internal fun mergeMissingLyricsSupplementMetadata(
         .getString(LyricMetadataKeys.APPLE_MISSING_LYRICS_SOURCE)
     if (hasConfirmedAppleNativeLyrics(incomingSong)) {
         val replacesNative = Source.isTtmlCatalogName(authoritativeSource) ||
-            (manualSourceReplacesNative && !authoritativeSource.isNullOrBlank() &&
+            (lineToWordReplaced && !authoritativeSource.isNullOrBlank() &&
+                authoritativeSource != LyriconSource.APPLE_NATIVE_LYRICS_SOURCE) ||
+            ((manualSourceReplacesNative || untimedNativeReplaced) &&
+                !authoritativeSource.isNullOrBlank() &&
                 authoritativeSource != LyriconSource.APPLE_NATIVE_LYRICS_SOURCE)
         return if (
             replacesNative &&
@@ -274,4 +321,10 @@ internal data class OnlineSourceSwitchRequest(
 internal data class ConfirmedLyricsSourceSelection(
     val songId: String,
     val source: String,
+    /**
+     * 该来源的补充歌词替换了整首无时间轴的 Apple 原生歌词时，记下被替换的原生歌曲。
+     * Provider 会把歌词页呈现回调解析出的歌词当作原生发布，补充模型呈现后 currentAppleNativeSong
+     * 就是补充正文；关闭补充开关时据此还原原生歌词。
+     */
+    val replacedUntimedNative: LocalSong? = null,
 )

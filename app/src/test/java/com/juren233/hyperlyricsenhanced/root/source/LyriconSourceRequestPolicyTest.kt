@@ -2,6 +2,7 @@ package com.juren233.hyperlyricsenhanced.root.source
 
 import com.juren233.hyperlyricsenhanced.common.lyric.LyricMetadataKeys
 import com.juren233.hyperlyricsenhanced.lyric.LrcLine
+import com.juren233.hyperlyricsenhanced.lyric.model.LyricWord
 import com.juren233.hyperlyricsenhanced.lyric.model.RichLyricLine
 import com.juren233.hyperlyricsenhanced.lyric.model.Song
 import com.juren233.hyperlyricsenhanced.lyric.model.lyricMetadataOf
@@ -11,11 +12,37 @@ import org.junit.Test
 
 class LyriconSourceRequestPolicyTest {
     @Test
-    fun `untimed online fallback requires the enabled-app toggle`() {
-        assertTrue(allowsUntimedAppleOnlineFallback(appOnlineEnabled = true, untimedNative = true))
-        assertFalse(allowsUntimedAppleOnlineFallback(appOnlineEnabled = false, untimedNative = true))
-        assertFalse(allowsUntimedAppleOnlineFallback(appOnlineEnabled = true, untimedNative = false))
-        assertFalse(allowsUntimedAppleOnlineFallback(appOnlineEnabled = false, untimedNative = false))
+    fun `untimed online fallback requires the enabled-app or fill-missing toggle`() {
+        assertTrue(allowsUntimedAppleOnlineFallback(
+            appOnlineEnabled = true, fillMissingLyricsEnabled = false, untimedNative = true,
+        ))
+        assertTrue(allowsUntimedAppleOnlineFallback(
+            appOnlineEnabled = false, fillMissingLyricsEnabled = true, untimedNative = true,
+        ))
+        assertFalse(allowsUntimedAppleOnlineFallback(
+            appOnlineEnabled = false, fillMissingLyricsEnabled = false, untimedNative = true,
+        ))
+        assertFalse(allowsUntimedAppleOnlineFallback(
+            appOnlineEnabled = true, fillMissingLyricsEnabled = true, untimedNative = false,
+        ))
+    }
+
+    @Test
+    fun `untimed native is replaced in Apple Music only while fill-missing is on`() {
+        assertTrue(replacesUntimedAppleNativeInApp(
+            fillMissingLyricsEnabled = true, untimedNativeFallback = true, userChoseAppleNative = false,
+        ))
+        // 只开「启用App」：在线歌词只上超级岛与 AOD。
+        assertFalse(replacesUntimedAppleNativeInApp(
+            fillMissingLyricsEnabled = false, untimedNativeFallback = true, userChoseAppleNative = false,
+        ))
+        assertFalse(replacesUntimedAppleNativeInApp(
+            fillMissingLyricsEnabled = true, untimedNativeFallback = false, userChoseAppleNative = false,
+        ))
+        // 用户在来源弹窗里选回 Apple Music 原生。
+        assertFalse(replacesUntimedAppleNativeInApp(
+            fillMissingLyricsEnabled = true, untimedNativeFallback = true, userChoseAppleNative = true,
+        ))
     }
 
     @Test
@@ -79,6 +106,30 @@ class LyriconSourceRequestPolicyTest {
             RichLyricLine(begin = 0, end = 2_000, text = "Timed line"),
         ))))
         assertFalse(hasUntimedAppleNativeLyrics(plainText.copy(
+            metadata = lyricMetadataOf(LyricMetadataKeys.APPLE_MISSING_LYRICS_SUPPLEMENT to "true"),
+        )))
+    }
+
+    @Test
+    fun `native word timed lyrics are not a line to word upgrade target`() {
+        // 2026-11-14 真机：Apple 原生已逐字时仍发起逐行转逐字，Apple 侧拒绝接管而核心已把三方歌词当成当前歌词，
+        // 在线翻译随后被对齐到 Apple 页面没采用的那份歌词上，翻译整体消失。
+        val wordTimed = Song(
+            id = "song",
+            lyrics = listOf(
+                RichLyricLine(
+                    begin = 0,
+                    end = 2_000,
+                    text = "Word timed",
+                    words = listOf(LyricWord(begin = 0, end = 1_000, text = "Word")),
+                ),
+            ),
+        )
+        assertTrue(hasWordTimedAppleNativeLyrics(wordTimed))
+        val lineOnly = wordTimed.copy(lyrics = listOf(RichLyricLine(begin = 0, end = 2_000, text = "Line only")))
+        assertFalse(hasWordTimedAppleNativeLyrics(lineOnly))
+        assertFalse(hasWordTimedAppleNativeLyrics(null))
+        assertFalse(hasWordTimedAppleNativeLyrics(wordTimed.copy(
             metadata = lyricMetadataOf(LyricMetadataKeys.APPLE_MISSING_LYRICS_SUPPLEMENT to "true"),
         )))
     }
@@ -283,5 +334,13 @@ class LyriconSourceRequestPolicyTest {
             meaningfulNativeLineCount = 0,
             match = overlapping,
         ))
+    }
+
+    @Test
+    fun `line to word uses search sources only in all-sources mode for songs with native lyrics`() {
+        assertTrue(allowsLineToWordSearchSources(allSourcesMode = true, hasNativeLyrics = true))
+        // 原生没有歌词：搜索源走普通补充检索，不按逐行转逐字逐个单源只收逐字。
+        assertFalse(allowsLineToWordSearchSources(allSourcesMode = true, hasNativeLyrics = false))
+        assertFalse(allowsLineToWordSearchSources(allSourcesMode = false, hasNativeLyrics = true))
     }
 }

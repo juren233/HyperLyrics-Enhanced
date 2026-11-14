@@ -83,19 +83,25 @@ internal fun LyriconSource.handleAppleSong(incomingSong: LocalSong?) {
         catalogRevokedSongId = incomingSong.id
         debug("Pack 已撤销目录源补充，回到原生歌词基准: id=${incomingSong.id}")
     }
-    val authoritativeLyricsSource = confirmedLyricsSourceSelection
+    val authoritativeLyricsSelection = confirmedLyricsSourceSelection
         ?.takeIf { selection ->
             sameTrack &&
                 selection.songId == previousSong.id &&
                 selection.songId == incomingSong.id
         }
-        ?.source
+    val authoritativeLyricsSource = authoritativeLyricsSelection?.source
     val mergedSong = mergeMissingLyricsSupplementMetadata(
         previousSong = previousSong,
         incomingSong = incomingSong,
         sameTrack = sameTrack,
         authoritativeSource = authoritativeLyricsSource,
         manualSourceReplacesNative = isAlwaysShowSourceSwitchEnabled(),
+        untimedNativeReplaced = isFillMissingLyricsEnabled() &&
+            authoritativeLyricsSelection?.replacedUntimedNative != null,
+        lineToWordReplaced = isLineToWordUpgradeSource(
+            Source.entries.firstOrNull { it.name == authoritativeLyricsSource },
+            incomingSong,
+        ),
     )
     // 正文与来源按合并结果保留;标题/歌手仍跟随最新回调,避免保留正文时丢失晚到的显示元数据。
     val song = mergeRetainedSongDisplayMetadata(
@@ -234,15 +240,17 @@ internal fun LyriconSource.handleAppleSong(incomingSong: LocalSong?) {
     val lineToWordSource = enabledTtmlCatalogSources().firstOrNull()
     debug(
         "逐行转逐字判定: id=${song?.id}, 补充歌词=${isMissingLyricsSupplement(song)}, " +
-            "开关=${isLineToWordLyricsEnabled()}, 首个目录源=$lineToWordSource, " +
-            "无时间轴原生=$untimedNativeLyrics, 原生歌词=${hasAppleNativeLyrics(song)}"
+            "模式=${lineToWordSourceMode()}, 首个目录源=$lineToWordSource, " +
+            "无时间轴原生=$untimedNativeLyrics, 原生歌词=${hasAppleNativeLyrics(song)}, " +
+            "原生逐字=${hasWordTimedAppleNativeLyrics(song)}"
     )
     if (
         song != null &&
         !isMissingLyricsSupplement(song) &&
         isLineToWordLyricsEnabled() &&
-        lineToWordSource != null &&
+        hasLineToWordCandidates(song) &&
         !untimedNativeLyrics &&
+        !hasWordTimedAppleNativeLyrics(song) &&
         song.id != catalogRevokedSongId
     ) {
         scheduleFallback(
@@ -250,6 +258,7 @@ internal fun LyriconSource.handleAppleSong(incomingSong: LocalSong?) {
             delayMs = 0L,
             preferredSourceOverride = lineToWordSource,
             strictSource = hasAppleNativeLyrics(song) || !isFillMissingLyricsEnabled(),
+            lineToWordUpgrade = true,
         )
     } else if (
         song != null &&
