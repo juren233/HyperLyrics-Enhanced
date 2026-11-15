@@ -639,67 +639,66 @@ class SpaceGateRichLyricLineView(
     private val layoutTransitionWidthRelease = LayoutTransitionWidthRelease(this)
 
     override fun onMeasure(wSpec: Int, hSpec: Int) {
-        measureLines(wSpec, hSpec)
-        layoutTransitionWidthRelease.onMeasured()
-    }
-
-    private fun measureLines(wSpec: Int, hSpec: Int) {
-        promotionFlightWidth?.let { frozen ->
-            prepareHugMeasurePass(frozen)
-            super.onMeasure(MeasureSpec.makeMeasureSpec(frozen, MeasureSpec.EXACTLY), hSpec)
-            promotionReserveWidth?.let { desired ->
-                val available = MeasureSpec.getSize(wSpec)
-                val reserved = if (MeasureSpec.getMode(wSpec) == MeasureSpec.UNSPECIFIED ||
-                    LyricHugMeasureWindow.reportIntrinsicWidth
-                ) desired else minOf(desired, maxOf(available, frozen))
-                if (reserved > frozen) setMeasuredDimension(reserved, measuredHeight)
+        // 测量逻辑须直接写在 onMeasure 内：Lint WrongCall 不允许在其他方法里调用 super.onMeasure。
+        run measure@{
+            promotionFlightWidth?.let { frozen ->
+                prepareHugMeasurePass(frozen)
+                super.onMeasure(MeasureSpec.makeMeasureSpec(frozen, MeasureSpec.EXACTLY), hSpec)
+                promotionReserveWidth?.let { desired ->
+                    val available = MeasureSpec.getSize(wSpec)
+                    val reserved = if (MeasureSpec.getMode(wSpec) == MeasureSpec.UNSPECIFIED ||
+                        LyricHugMeasureWindow.reportIntrinsicWidth
+                    ) desired else minOf(desired, maxOf(available, frozen))
+                    if (reserved > frozen) setMeasuredDimension(reserved, measuredHeight)
+                }
+                return@measure
             }
-            return
-        }
-        val pending = pendingHugWidth
-        if (pending != null && !nextLineTransitionRunning) {
-            // 预览提升动画期间：按预判的落定内容宽度参与岛宽测量，
-            // 受当前可用宽度约束，与 hug 实测的 spec 收敛行为一致
-            val target = pending.coerceAtMost(MeasureSpec.getSize(wSpec))
-            super.onMeasure(MeasureSpec.makeMeasureSpec(target, MeasureSpec.EXACTLY), hSpec)
-            return
-        }
-        contentSwitchFreezeWidth?.let { frozen ->
-            // 切换过渡窗口：锁定当前组宽，旧句的对唱位置不随测量变化；
-            // 新内容落地时（line 写入）清除冻结，宽度恢复随内容实测。
-            if (BuildConfig.DEBUG) {
-                HookLogger.d(
-                    "SwitchTrace",
-                    "frozen measure view=${System.identityHashCode(this).toString(16)} " +
-                        "frozen=$frozen spec=${MeasureSpec.getSize(wSpec)}"
-                )
+            val pending = pendingHugWidth
+            if (pending != null && !nextLineTransitionRunning) {
+                // 预览提升动画期间：按预判的落定内容宽度参与岛宽测量，
+                // 受当前可用宽度约束，与 hug 实测的 spec 收敛行为一致
+                val target = pending.coerceAtMost(MeasureSpec.getSize(wSpec))
+                super.onMeasure(MeasureSpec.makeMeasureSpec(target, MeasureSpec.EXACTLY), hSpec)
+                return@measure
             }
-            super.onMeasure(MeasureSpec.makeMeasureSpec(frozen, MeasureSpec.EXACTLY), hSpec)
-            return
-        }
-        if (renderScale != 1.0f && renderScale > 0) {
-            val origW = MeasureSpec.getSize(wSpec)
-            val mode = MeasureSpec.getMode(wSpec)
-            val compW = (origW / renderScale).toInt()
-            super.onMeasure(MeasureSpec.makeMeasureSpec(compW, mode), hSpec)
-            setMeasuredDimension(origW, measuredHeight)
-        } else if (main.hugContentWidth) {
-            // 一段前先清掉上一轮下限：组宽必须由当前内容固有宽度决定，
-            // 否则宽行留下的下限会棘轮式抬高后续窄行。
-            prepareHugMeasurePass(null)
-            // 一段：各行按自身文字 hug，得到组内最宽行。
-            super.onMeasure(wSpec, hSpec)
-            // 二段：以"组内最宽行 / 对唱全曲最长行"为下限重测主/次行，
-            // 短于下限的行保留“视图宽度 − 文字宽度”的方向偏移空间
-            //（对唱换边、第二行翻译/伴唱/下一句预览定位）。
-            val floor = resolveMeasureFloor(measuredWidth)
-            if (floor > 0) {
-                prepareHugMeasurePass(floor)
+            contentSwitchFreezeWidth?.let { frozen ->
+                // 切换过渡窗口：锁定当前组宽，旧句的对唱位置不随测量变化；
+                // 新内容落地时（line 写入）清除冻结，宽度恢复随内容实测。
+                if (BuildConfig.DEBUG) {
+                    HookLogger.d(
+                        "SwitchTrace",
+                        "frozen measure view=${System.identityHashCode(this).toString(16)} " +
+                            "frozen=$frozen spec=${MeasureSpec.getSize(wSpec)}"
+                    )
+                }
+                super.onMeasure(MeasureSpec.makeMeasureSpec(frozen, MeasureSpec.EXACTLY), hSpec)
+                return@measure
+            }
+            if (renderScale != 1.0f && renderScale > 0) {
+                val origW = MeasureSpec.getSize(wSpec)
+                val mode = MeasureSpec.getMode(wSpec)
+                val compW = (origW / renderScale).toInt()
+                super.onMeasure(MeasureSpec.makeMeasureSpec(compW, mode), hSpec)
+                setMeasuredDimension(origW, measuredHeight)
+            } else if (main.hugContentWidth) {
+                // 一段前先清掉上一轮下限：组宽必须由当前内容固有宽度决定，
+                // 否则宽行留下的下限会棘轮式抬高后续窄行。
+                prepareHugMeasurePass(null)
+                // 一段：各行按自身文字 hug，得到组内最宽行。
+                super.onMeasure(wSpec, hSpec)
+                // 二段：以"组内最宽行 / 对唱全曲最长行"为下限重测主/次行，
+                // 短于下限的行保留“视图宽度 − 文字宽度”的方向偏移空间
+                //（对唱换边、第二行翻译/伴唱/下一句预览定位）。
+                val floor = resolveMeasureFloor(measuredWidth)
+                if (floor > 0) {
+                    prepareHugMeasurePass(floor)
+                    super.onMeasure(wSpec, hSpec)
+                }
+            } else {
                 super.onMeasure(wSpec, hSpec)
             }
-        } else {
-            super.onMeasure(wSpec, hSpec)
         }
+        layoutTransitionWidthRelease.onMeasured()
     }
 
     /** Keep the second hug pass from reusing the first pass's cached child measurements. */
