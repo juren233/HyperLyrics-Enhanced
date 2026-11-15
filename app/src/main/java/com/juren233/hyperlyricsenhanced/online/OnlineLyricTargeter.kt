@@ -345,6 +345,8 @@ object OnlineLyricTargeter {
         val featureKeywords = listOf("live", "remastered", "翻唱", "cover")
         val localFeatures = if (requireExactVersion) versionFeatures(title) else
             featureKeywords.filter { title.lowercase().contains(it) }
+        // 用未清洗的歌名取版本标记：cleanString 会删掉括号，「Young (KOYU Remix)」清洗后与「Young」相同。
+        val localVersionFeatures = versionFeatures(title).toSet()
 
         val parallelEvaluations = if (collectSourceStatuses) {
             val candidateTypes = sources.mapTo(linkedSetOf()) { it.sourceType }
@@ -370,6 +372,7 @@ object OnlineLyricTargeter {
                             cleanLocalTitle = cleanLocalTitle,
                             localArtists = localArtists,
                             localFeatures = localFeatures,
+                            localVersionFeatures = localVersionFeatures,
                             cleanLocalAlbum = cleanLocalAlbum,
                             requireExactVersion = requireExactVersion,
                             multiCredit = multiCredit,
@@ -422,6 +425,7 @@ object OnlineLyricTargeter {
                     cleanLocalTitle = cleanLocalTitle,
                     localArtists = localArtists,
                     localFeatures = localFeatures,
+                    localVersionFeatures = localVersionFeatures,
                     cleanLocalAlbum = cleanLocalAlbum,
                     requireExactVersion = requireExactVersion,
                     multiCredit = multiCredit,
@@ -499,6 +503,7 @@ object OnlineLyricTargeter {
         cleanLocalTitle: String,
         localArtists: List<String>,
         localFeatures: List<String>,
+        localVersionFeatures: Set<String>,
         cleanLocalAlbum: String,
         requireExactVersion: Boolean,
         multiCredit: Boolean,
@@ -521,6 +526,7 @@ object OnlineLyricTargeter {
             cleanLocalTitle = cleanLocalTitle,
             localArtists = localArtists,
             localFeatures = localFeatures,
+            localVersionFeatures = localVersionFeatures,
             cleanLocalAlbum = cleanLocalAlbum,
             requireExactVersion = requireExactVersion,
         )
@@ -547,6 +553,7 @@ object OnlineLyricTargeter {
                     cleanLocalTitle = cleanLocalTitle,
                     localArtists = localArtists,
                     localFeatures = localFeatures,
+                    localVersionFeatures = localVersionFeatures,
                     cleanLocalAlbum = cleanLocalAlbum,
                     requireExactVersion = requireExactVersion,
                 )
@@ -576,6 +583,7 @@ object OnlineLyricTargeter {
                 cleanLocalTitle = cleanLocalTitle,
                 localArtists = localArtists,
                 localFeatures = localFeatures,
+                localVersionFeatures = localVersionFeatures,
                 cleanLocalAlbum = cleanLocalAlbum,
                 requireExactVersion = requireExactVersion,
             )
@@ -619,6 +627,7 @@ object OnlineLyricTargeter {
         cleanLocalTitle: String,
         localArtists: List<String>,
         localFeatures: List<String>,
+        localVersionFeatures: Set<String>,
         cleanLocalAlbum: String,
         requireExactVersion: Boolean,
     ): SourceAttempt {
@@ -681,6 +690,14 @@ object OnlineLyricTargeter {
                     remoteFeatures = versionFeatures(song.title),
                 )
             ) continue
+            if (hasExtraVersionFeatures(localVersionFeatures, song.title)) {
+                LogManager.d(
+                    "OnlineTargeter",
+                    "跳过版本不符的候选: \"${song.title}\" - \"${song.artist}\", " +
+                        "源=${song.source}, 本地版本标记=$localVersionFeatures",
+                )
+                continue
+            }
             val score = calculateScore(
                 context,
                 song,

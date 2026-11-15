@@ -199,6 +199,15 @@ internal fun OnlineLyricTargeter.versionFeatures(title: String): List<String> {
     } }.map { it.first }
 }
 
+/**
+ * 候选歌名带有本地歌名没有的版本标记（如 Remix、Live）时，它与本地曲目不是同一版本，时间轴对不上。
+ * 《Young》id=1207120543 曾因此选中网易「Young (KOYU Remix)」，歌词整体提前 2–7 秒。
+ */
+internal fun OnlineLyricTargeter.hasExtraVersionFeatures(
+    localVersionFeatures: Set<String>,
+    remoteTitle: String,
+): Boolean = versionFeatures(remoteTitle).any { it !in localVersionFeatures }
+
 internal fun OnlineLyricTargeter.isNearMissEligible(
     score: Int,
     titleMatched: Boolean,

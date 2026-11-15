@@ -54,6 +54,21 @@ class OnlineLyricTargeterTest {
     }
 
     @Test
+    fun `candidates with version labels the local title lacks are a different recording`() {
+        val studio = OnlineLyricTargeter.versionFeatures("Young").toSet()
+        assertEquals(true, OnlineLyricTargeter.hasExtraVersionFeatures(studio, "Young (KOYU Remix)"))
+        assertEquals(true, OnlineLyricTargeter.hasExtraVersionFeatures(studio, "Young (Live)"))
+        assertEquals(true, OnlineLyricTargeter.hasExtraVersionFeatures(studio, "Young（混音版）"))
+        assertEquals(false, OnlineLyricTargeter.hasExtraVersionFeatures(studio, "Young"))
+        assertEquals(false, OnlineLyricTargeter.hasExtraVersionFeatures(studio, "Young (Edit)"))
+        assertEquals(false, OnlineLyricTargeter.hasExtraVersionFeatures(studio, "Young Hearts"))
+
+        val remix = OnlineLyricTargeter.versionFeatures("Young (KOYU Remix)").toSet()
+        assertEquals(false, OnlineLyricTargeter.hasExtraVersionFeatures(remix, "Young (KOYU Remix)"))
+        assertEquals(false, OnlineLyricTargeter.hasExtraVersionFeatures(remix, "Young"))
+    }
+
+    @Test
     fun `netease preference searches netease first`() {
         assertEquals(
             listOf(Source.NE, Source.QM),
