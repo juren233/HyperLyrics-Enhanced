@@ -13,6 +13,7 @@ import com.juren233.hyperlyricsenhanced.common.PrefsBridge
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.common.StorageKeyMigrator
 import com.juren233.hyperlyricsenhanced.common.UIConstants
+import com.juren233.hyperlyricsenhanced.common.bridge.sendBroadcastSharingIdentity
 import com.juren233.hyperlyricsenhanced.provider.OfficialProviderScopeManager
 import com.juren233.hyperlyricsenhanced.root.utils.RuntimePerfDiagnostics
 import com.juren233.hyperlyricsenhanced.ui.utils.AppUtils
@@ -178,7 +179,8 @@ class RootApplication : Application() {
                     )
                 else -> return
             }
-            runCatching { appContext?.sendBroadcast(intent) }
+            // 共享身份：SystemUI 的接收器在 API 34+ 据此核对发送方是本应用。
+            runCatching { appContext?.sendBroadcastSharingIdentity(intent) }
                 .onFailure { error ->
                     LogManager.w("PrefsBridge", "preference_broadcast_failed key=$key", error)
                 }

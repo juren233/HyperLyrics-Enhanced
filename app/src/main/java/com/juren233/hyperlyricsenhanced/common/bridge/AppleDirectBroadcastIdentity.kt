@@ -19,6 +19,16 @@ internal fun Context.sendAppleDirectBroadcast(intent: Intent) {
                 "action=${intent.action} target=${intent.`package`}",
         )
     }
+    sendBroadcastSharingIdentity(intent)
+}
+
+/**
+ * Sends [intent] so its receivers can read the sender's UID and package
+ * ([BroadcastReceiver.getSentFromUid] / [BroadcastReceiver.getSentFromPackage]); without
+ * [BroadcastOptions.setShareIdentityEnabled] they read `INVALID_UID` / null. Both are API 34+; on
+ * API 33 the broadcast goes without it. Every broadcast whose receiver checks the sender goes through here.
+ */
+internal fun Context.sendBroadcastSharingIdentity(intent: Intent) {
     if (Build.VERSION.SDK_INT >= 34) {
         val options = BroadcastOptions.makeBasic().setShareIdentityEnabled(true).toBundle()
         sendBroadcast(intent, null, options)

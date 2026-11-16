@@ -9,12 +9,14 @@ package com.juren233.hyperlyricsenhanced.online.cache
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.ResultReceiver
 import android.os.SharedMemory
 import android.system.OsConstants
+import com.juren233.hyperlyricsenhanced.common.bridge.sendBroadcastSharingIdentity
 import com.juren233.hyperlyricsenhanced.online.source.ttml.CatalogPlatform
 import com.juren233.hyperlyricsenhanced.online.source.ttml.TtmlCatalogSources
 import com.juren233.hyperlyricsenhanced.utils.LogManager
@@ -210,7 +212,7 @@ object OnlineLyricCacheIpc {
             selection?.let {
                 intent.putExtra(EXTRA_SELECTION, json.encodeToString(OnlineLyricCacheSelection.serializer(), it))
             }
-            runCatching { context.sendBroadcast(intent) }.onFailure { error ->
+            runCatching { context.sendBroadcastSharingIdentity(intent) }.onFailure { error ->
                 LogManager.w(TAG, "缓存请求发送失败: $operation", error)
                 if (continuation.isActive) continuation.resume(null)
             }
@@ -219,7 +221,8 @@ object OnlineLyricCacheIpc {
 
     /**
      * SystemUI side. Registered with [PERMISSION] as the broadcast permission, so only the app can
-     * send it; the sender UID is checked again where the platform reports it.
+     * send it. On API 34+ the app shares its identity ([sendBroadcastSharingIdentity]) and the sender
+     * UID must also be the app's; on API 33 the platform does not report it and the permission alone decides.
      */
     fun createReceiver(): BroadcastReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -227,7 +230,7 @@ object OnlineLyricCacheIpc {
             val expectedUid = runCatching {
                 context.packageManager.getApplicationInfo(APP_PACKAGE, 0).uid
             }.getOrDefault(-1)
-            val senderUid = if (android.os.Build.VERSION.SDK_INT >= 34) sentFromUid else -1
+            val senderUid = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) sentFromUid else -1
             if (expectedUid >= 0 && senderUid >= 0 && senderUid != expectedUid) {
                 LogManager.w(TAG, "拒绝非 HyperLyrics 缓存请求: senderUid=$senderUid")
                 return
