@@ -126,6 +126,19 @@ internal suspend fun loadLocalProviderState(
     }
 }
 
+/**
+ * 把本机安装记录并进 [stateFlow]（不请求插件目录），见 [OfficialProviderInstallSync]。
+ * 插件页与添加插件页在 [OfficialProviderInstaller.revision] 变化时调用。
+ */
+internal suspend fun syncInstalledProviders(
+    context: Context,
+    stateFlow: MutableStateFlow<OfficialProviderUiState>,
+    merge: (shown: List<OfficialProviderItem>, local: List<OfficialProviderItem>) -> List<OfficialProviderItem>,
+) {
+    val local = OfficialProviderRepository.loadInstalledItems(context)
+    stateFlow.update { it.copy(items = merge(it.items, local)) }
+}
+
 internal suspend fun refreshInstalledProviderUpdates(
     context: Context,
     stateFlow: MutableStateFlow<OfficialProviderUiState>,

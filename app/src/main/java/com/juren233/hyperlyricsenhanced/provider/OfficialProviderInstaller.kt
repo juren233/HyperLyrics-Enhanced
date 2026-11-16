@@ -7,12 +7,16 @@
 package com.juren233.hyperlyricsenhanced.provider
 
 import android.content.Context
+import com.juren233.hyperlyricsenhanced.common.DataRevision
 import com.juren233.hyperlyricsenhanced.common.PrefsBridge
 import com.juren233.hyperlyricsenhanced.common.UIConstants
 import com.juren233.hyperlyricsenhanced.root.RootApplication
 import java.io.File
 
 object OfficialProviderInstaller {
+
+    /** 安装、移除、启停之后递增：插件页、添加插件页等据此重读已安装状态。 */
+    val revision = DataRevision()
 
     /**
      * @param requireRemoteFile 后台自动更新必须置 true：Xposed service 未绑定时
@@ -101,6 +105,7 @@ object OfficialProviderInstaller {
         OfficialProviderAcquisitionLog.info(
             "插件已写入并启用: id=${manifest.pluginId} remoteFile=$remoteName",
         )
+        revision.bump()
         return manifest
     }
 
@@ -222,6 +227,7 @@ object OfficialProviderInstaller {
         if (enabled) {
             OfficialProviderScopeManager.requestPluginScopes(pluginId)
         }
+        revision.bump()
     }
 
     fun delete(context: Context, pluginId: String) {
@@ -245,6 +251,7 @@ object OfficialProviderInstaller {
         definition.targetPackages.forEach { packageName ->
             PrefsBridge.putString(OfficialProviderCatalog.activeFileKey(packageName), null)
         }
+        revision.bump()
     }
 
     fun readInstalledManifest(

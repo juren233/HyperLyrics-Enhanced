@@ -51,6 +51,7 @@ import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.provider.OfficialProviderAcquisitionLog
 import com.juren233.hyperlyricsenhanced.provider.OfficialProviderCatalog
 import com.juren233.hyperlyricsenhanced.provider.OfficialProviderHealthStore
+import com.juren233.hyperlyricsenhanced.provider.OfficialProviderInstallSync
 import com.juren233.hyperlyricsenhanced.provider.OfficialProviderInstaller
 import com.juren233.hyperlyricsenhanced.provider.OfficialProviderItem
 import com.juren233.hyperlyricsenhanced.provider.OfficialProviderRepository
@@ -144,6 +145,11 @@ fun LyricProviderPage() {
 
     LaunchedEffect(Unit) {
         loadLocalProviderState(context, providerUiStateFlow, officialUiStateFlow)
+    }
+    // 添加插件页、后台自动更新改了安装状态：返回本页（或平行窗口另一栏）时列表已是新的。
+    val providerRevision by OfficialProviderInstaller.revision.value.collectAsState()
+    LaunchedEffect(providerRevision) {
+        syncInstalledProviders(context, officialUiStateFlow, OfficialProviderInstallSync::installedList)
     }
 
     val othersCategoryName = stringResource(id = R.string.category_others)
@@ -499,6 +505,11 @@ fun OfficialProviderDownloadPage() {
 
     LaunchedEffect(Unit) {
         refreshOfficialProviders(context, stateFlow)
+    }
+    // 平行窗口另一栏的插件页移除了插件：这里重新列为可添加。
+    val providerRevision by OfficialProviderInstaller.revision.value.collectAsState()
+    LaunchedEffect(providerRevision) {
+        syncInstalledProviders(context, stateFlow, OfficialProviderInstallSync::catalogList)
     }
 
     val installProvider: (OfficialProviderItem) -> Unit = { item ->
