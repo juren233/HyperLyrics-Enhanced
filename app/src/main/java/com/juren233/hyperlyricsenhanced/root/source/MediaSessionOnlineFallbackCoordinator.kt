@@ -31,6 +31,8 @@ internal class MediaSessionOnlineFallbackCoordinator(
     private val graceMs: Long = 1_500L,
     /** 「自动」来源的竞速取词：先到的结果通过回调先交出，返回按优先级裁决后的最终结果。 */
     private val fetchSongRace: (suspend (TrackIdentity, List<Source>, suspend (Song) -> Unit) -> Song?)? = null,
+    /** 主源只有整行歌词时的逐字升级：按顺序逐个查，只收逐字结果。 */
+    private val fetchWordTimedSong: suspend (TrackIdentity, List<Source>) -> Song? = fetchSong,
 ) {
     interface Tracks {
         val current: TrackIdentity?
@@ -102,12 +104,10 @@ internal class MediaSessionOnlineFallbackCoordinator(
             cancelRequest()
             return
         }
-        // 主源只有整行歌词时只做逐字升级：仅 TTML 目录源，且播放器必须有可寻址的平台 ID。
+        // 主源只有整行歌词时只做逐字升级（来源见 lineToWordSources）。
         val upgradeOnly = timeline.hasPrimary(track)
         val sources = if (upgradeOnly) {
-            config.sources.filter(Source::isTtmlCatalog).takeIf {
-                CatalogPlatform.ofPlayerPackage(track.packageName)?.let { CatalogPlatform.songIdOf(it, track.mediaId) } != null
-            }.orEmpty()
+            MediaSessionOnlineFallbackPolicy.lineToWordSources(config, track)
         } else {
             config.sources
         }
@@ -148,7 +148,7 @@ internal class MediaSessionOnlineFallbackCoordinator(
                 strictIdentity = true,
                 revision = token,
             )
-            // 竞速时先到的结果：先显示，最终结果与它不同再等下一句切入。
+            // 竞速时先到的结果：先显示；之后的升级与最终结果与已显示的不同时，等下一句切入。
             var earlySong: Song? = null
             val racing = config.autoSelect && !upgradeOnly && fetchSongRace != null
             val song = if (cached != null) cached.song else {
@@ -158,14 +158,22 @@ internal class MediaSessionOnlineFallbackCoordinator(
                             if (racing) {
                                 fetchSongRace!!(track, sources) { early ->
                                     val usable = early.takeIf { !it.lyrics.isNullOrEmpty() }
-                                    if (usable != null && earlySong == null &&
-                                        canPublish(token, track, config, upgradeOnly)
+                                    // 已显示的补充可能已是逐字（搜索源的逐字结果），更高优先级的结果仍可换掉它。
+                                    if (usable != null && usable !== earlySong &&
+                                        canPublish(token, track, config, upgradeOnly, allowOwnWordTimed = earlySong != null)
                                     ) {
+                                        val shown = earlySong
                                         earlySong = usable
                                         delivered.set(true)
-                                        timeline.submit(contentOf(usable))
+                                        if (shown == null) {
+                                            timeline.submit(contentOf(usable))
+                                        } else {
+                                            timeline.submitAtNextLine(contentOf(usable))
+                                        }
                                     }
                                 }
+                            } else if (upgradeOnly) {
+                                fetchWordTimedSong(track, sources)
                             } else {
                                 fetchSong(track, sources)
                             }

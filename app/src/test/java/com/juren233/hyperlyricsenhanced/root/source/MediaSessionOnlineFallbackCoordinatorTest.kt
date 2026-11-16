@@ -46,6 +46,7 @@ class MediaSessionOnlineFallbackCoordinatorTest {
         val nextLineSubmissions = mutableListOf<TimelineContent>()
         var fetchRace: suspend (TrackIdentity, List<Source>, suspend (Song) -> Unit) -> Song? = { _, _, _ -> song }
         var fetch: suspend (TrackIdentity, List<Source>) -> Song? = { _, _ -> song }
+        var fetchWordTimed: (suspend (TrackIdentity, List<Source>) -> Song?)? = null
         val coordinator = MediaSessionOnlineFallbackCoordinator(
             tracks = tracks,
             timeline = object : MediaSessionOnlineFallbackCoordinator.Timeline {
@@ -63,6 +64,7 @@ class MediaSessionOnlineFallbackCoordinatorTest {
             settings = { settings },
             fetchSong = { track, sources -> calls++; fetch(track, sources) },
             fetchSongRace = { track, sources, early -> calls++; fetchRace(track, sources, early) },
+            fetchWordTimedSong = { track, sources -> calls++; (fetchWordTimed ?: fetch)(track, sources) },
             dispatcher = StandardTestDispatcher(scope.testScheduler),
             ioDispatcher = StandardTestDispatcher(scope.testScheduler),
             nowMs = { scope.testScheduler.currentTime },
@@ -385,6 +387,35 @@ class MediaSessionOnlineFallbackCoordinatorTest {
         f.coordinator.start()
         advanceUntilIdle()
         assertEquals(0, f.calls)
+        f.coordinator.stop()
+    }
+
+    @Test fun `line to word on a catalog player upgrades through catalog and search sources in order`() = runTest {
+        val ne = a.copy(packageName = "com.netease.cloudmusic", mediaId = "401250892")
+        val f = Fixture(this)
+        f.tracks.current = ne
+        f.settings = Settings(listOf(Source.AMLL, Source.NE, Source.QM), setOf(ne.packageName), lineToWord = true)
+        f.primary = true
+        var asked: List<Source>? = null
+        f.fetch = { _, _ -> fail("an upgrade only takes word-timed results"); null }
+        f.fetchWordTimed = { _, sources -> asked = sources; song }
+        f.coordinator.start()
+        advanceUntilIdle()
+        assertEquals(listOf(Source.AMLL, Source.NE, Source.QM), asked)
+        assertEquals(1, f.submissions.size)
+        f.coordinator.stop()
+    }
+
+    @Test fun `line to word on a player without catalog id still asks search sources`() = runTest {
+        val f = Fixture(this)
+        f.settings = Settings(listOf(Source.AMLL, Source.NE), setOf(a.packageName), lineToWord = true)
+        f.primary = true
+        var asked: List<Source>? = null
+        f.fetchWordTimed = { _, sources -> asked = sources; null }
+        f.coordinator.start()
+        advanceUntilIdle()
+        assertEquals(listOf(Source.NE), asked)
+        assertTrue("no word-timed result leaves the player's own lyrics", f.submissions.isEmpty())
         f.coordinator.stop()
     }
 

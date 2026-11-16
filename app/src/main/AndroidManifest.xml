@@ -4,6 +4,11 @@
 
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- 歌词缓存管理页向 SystemUI 查询/清理在线歌词缓存的广播：签名级，只有本应用能发送。 -->
+    <permission
+        android:name="com.juren233.hyperlyricsenhanced.permission.MANAGE_ONLINE_LYRIC_CACHE"
+        android:protectionLevel="signature" />
+    <uses-permission android:name="com.juren233.hyperlyricsenhanced.permission.MANAGE_ONLINE_LYRIC_CACHE" />
 
     <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
 

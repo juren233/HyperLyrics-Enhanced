@@ -393,7 +393,7 @@ private fun SourcePriorityBadge(priority: Int) {
 
 
 @Composable
-private fun Source.displayName(): String = when (this) {
+internal fun Source.displayName(): String = when (this) {
     Source.NE -> stringResource(R.string.source_netease_music)
     Source.QM -> stringResource(R.string.source_qq_music)
     Source.KUWO -> stringResource(R.string.source_kuwo_music)

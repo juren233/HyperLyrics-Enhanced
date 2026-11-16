@@ -8,12 +8,14 @@ package com.juren233.hyperlyricsenhanced.online.source.amll
 
 import android.content.Context
 import com.juren233.hyperlyricsenhanced.BuildConfig
+import com.juren233.hyperlyricsenhanced.online.cache.OnlineLyricCachePolicy
 import com.juren233.hyperlyricsenhanced.online.model.Source
 import com.juren233.hyperlyricsenhanced.online.source.ttml.CatalogPlatform
 import com.juren233.hyperlyricsenhanced.online.source.ttml.TtmlCatalogSource
 import com.juren233.hyperlyricsenhanced.online.source.ttml.TtmlCatalogIo
 import com.juren233.hyperlyricsenhanced.online.source.ttml.TtmlCatalogIo.readLimited
 import com.juren233.hyperlyricsenhanced.online.source.ttml.TtmlLookupResult
+import com.juren233.hyperlyricsenhanced.online.source.ttml.directorySize
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancelChildren
@@ -45,8 +47,6 @@ internal object AmllTtmlRepository : TtmlCatalogSource {
         "https://raw.githubusercontent.com/amll-dev/amll-ttml-db/refs/heads/main/"
     private const val MIRROR_URL = "https://amll-ttml-db.stevexmh.net/"
     private const val CACHE_DIR_NAME = "amll_ttml_db"
-    private const val CACHE_TTL_MS = 7L * 24L * 60L * 60L * 1_000L
-    private const val MISS_TTL_MS = 6L * 60L * 60L * 1_000L
     private const val PRIMARY_BACKOFF_MS = 10L * 60L * 1_000L
     private const val MAX_REMEMBERED_MISSES = 512
 
@@ -86,21 +86,16 @@ internal object AmllTtmlRepository : TtmlCatalogSource {
         context: Context,
         platform: CatalogPlatform,
         songId: String,
-        forceRefresh: Boolean,
+        retryMiss: Boolean,
     ): TtmlLookupResult = withContext(Dispatchers.IO) {
-        // IDs become URL path segments and file names: plain alphanumerics only.
-        val rawId = songId.trim().takeIf { it.isNotEmpty() && it.length <= 64 && it.all(Char::isLetterOrDigit) }
-            ?: return@withContext TtmlLookupResult(null, searched = false)
+        val rawId = catalogId(songId) ?: return@withContext TtmlLookupResult(null, searched = false)
         val layout = layoutOf(platform)
         val id = "${layout.folder}/$rawId"
         val now = System.currentTimeMillis()
-        val cacheFile = File(cacheDir(context), "${layout.folder}_$rawId.ttml")
-        val cached = readCache(cacheFile)
-        val cacheFresh = cached != null && now - cacheFile.lastModified() < CACHE_TTL_MS
-        if (cached != null && cacheFresh && !forceRefresh) {
-            return@withContext lookupFrom(id, cached)
-        }
-        if (cached == null && !forceRefresh && isRecentMiss(id, now)) {
+        val cacheFile = cacheFile(context, layout, rawId)
+        // A file found once is kept until the user clears it (OnlineLyricCachePolicy).
+        readCache(cacheFile)?.let { cached -> return@withContext lookupFrom(id, cached) }
+        if (!retryMiss && isRecentMiss(id, now)) {
             return@withContext TtmlLookupResult(null, searched = true)
         }
         when (val fetched = fetch(layout, rawId)) {
@@ -110,16 +105,40 @@ internal object AmllTtmlRepository : TtmlCatalogSource {
                 lookupFrom(id, fetched.bytes)
             }
             Fetch.NotFound -> {
-                // The catalog has no file for this ID any more; a stale copy must not linger.
-                cacheFile.delete()
                 synchronized(misses) { misses[id] = now }
                 TtmlLookupResult(null, searched = true)
             }
-            // Network trouble: a stale copy still beats nothing, and nothing is remembered.
-            Fetch.Failed -> cached?.let { lookupFrom(id, it) }
-                ?: TtmlLookupResult(null, searched = false)
+            // Network trouble: nothing is remembered.
+            Fetch.Failed -> TtmlLookupResult(null, searched = false)
         }
     }
+
+    override suspend fun clear(context: Context, platform: CatalogPlatform, songId: String) =
+        withContext(Dispatchers.IO) {
+            val rawId = catalogId(songId) ?: return@withContext
+            val layout = layoutOf(platform)
+            cacheFile(context, layout, rawId).delete()
+            synchronized(misses) { misses.remove("${layout.folder}/$rawId") }
+            Unit
+        }
+
+    override suspend fun clearAll(context: Context) = withContext(Dispatchers.IO) {
+        cacheDir(context).listFiles()?.forEach { it.delete() }
+        clearMisses()
+    }
+
+    private fun clearMisses() {
+        synchronized(misses) { misses.clear() }
+    }
+
+    override fun cacheBytes(context: Context): Long = directorySize(cacheDir(context))
+
+    /** IDs become URL path segments and file names: plain alphanumerics only. */
+    private fun catalogId(songId: String): String? =
+        songId.trim().takeIf { it.isNotEmpty() && it.length <= 64 && it.all(Char::isLetterOrDigit) }
+
+    private fun cacheFile(context: Context, layout: Layout, rawId: String): File =
+        File(cacheDir(context), "${layout.folder}_$rawId.ttml")
 
     private fun lookupFrom(id: String, bytes: ByteArray): TtmlLookupResult {
         val match = TtmlCatalogIo.buildMatch(
@@ -133,7 +152,7 @@ internal object AmllTtmlRepository : TtmlCatalogSource {
 
     private fun isRecentMiss(id: String, now: Long): Boolean = synchronized(misses) {
         val at = misses[id] ?: return false
-        if (now - at < MISS_TTL_MS) true else { misses.remove(id); false }
+        if (now - at < OnlineLyricCachePolicy.MISS_TTL_MS) true else { misses.remove(id); false }
     }
 
     /**

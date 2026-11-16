@@ -8,6 +8,7 @@ package com.juren233.hyperlyricsenhanced.online.source.lunabeat
 
 import android.content.Context
 import com.juren233.hyperlyricsenhanced.BuildConfig
+import com.juren233.hyperlyricsenhanced.online.cache.OnlineLyricCachePolicy
 import com.juren233.hyperlyricsenhanced.online.model.Source
 import com.juren233.hyperlyricsenhanced.online.source.ttml.CatalogPlatform
 import com.juren233.hyperlyricsenhanced.online.source.ttml.TtmlCatalogSource
@@ -16,11 +17,13 @@ import com.juren233.hyperlyricsenhanced.online.source.ttml.TtmlCatalogIo.readLim
 import com.juren233.hyperlyricsenhanced.online.source.ttml.TtmlLookupResult
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import okhttp3.Call
@@ -64,6 +67,11 @@ internal object LunaBeatTtmlRepository : TtmlCatalogSource {
         .retryOnConnectionFailure(true)
         .build()
     private val mutex = Mutex()
+    private const val MAX_REMEMBERED_MISSES = 512
+    private val misses = object : LinkedHashMap<String, Long>(64, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Long>?): Boolean =
+            size > MAX_REMEMBERED_MISSES
+    }
 
     private data class CatalogIndexSnapshot(
         val index: CatalogIndex,
@@ -82,18 +90,54 @@ internal object LunaBeatTtmlRepository : TtmlCatalogSource {
         context: Context,
         platform: CatalogPlatform,
         songId: String,
-        forceRefresh: Boolean,
+        retryMiss: Boolean,
     ): TtmlLookupResult =
         if (supports(platform)) {
-            findWordTimedByAppleMusicId(context, songId, forceRefresh)
+            findWordTimedByAppleMusicId(context, songId, retryMiss)
         } else {
             TtmlLookupResult(null, searched = false)
         }
 
+    override suspend fun clear(context: Context, platform: CatalogPlatform, songId: String) {
+        if (!supports(platform)) return
+        val normalizedId = songId.trim().takeIf(String::isNotEmpty) ?: return
+        mutex.withLock {
+            withContext(Dispatchers.IO) {
+                val appContext = context.applicationContext
+                hitRecordFile(appContext, normalizedId)?.let { record ->
+                    readHitRecord(record)?.let { (entryId, _) -> ttmlFile(appContext, entryId).delete() }
+                    record.delete()
+                }
+                synchronized(misses) { misses.remove(normalizedId) }
+            }
+        }
+    }
+
+    /** Removes cached lyric files and hit records; the catalog index stays. */
+    override suspend fun clearAll(context: Context) {
+        mutex.withLock {
+            withContext(Dispatchers.IO) {
+                cacheDir(context.applicationContext).listFiles()
+                    ?.filter { it.name != INDEX_FILE_NAME }
+                    ?.forEach { it.delete() }
+                clearMisses()
+            }
+        }
+    }
+
+    private fun clearMisses() {
+        synchronized(misses) { misses.clear() }
+    }
+
+    override fun cacheBytes(context: Context): Long =
+        cacheDir(context.applicationContext).listFiles()
+            ?.filter { it.isFile && it.name != INDEX_FILE_NAME }
+            ?.sumOf(File::length) ?: 0L
+
     private suspend fun findWordTimedByAppleMusicId(
         context: Context,
         appleMusicId: String,
-        forceRefresh: Boolean,
+        retryMiss: Boolean,
     ): TtmlLookupResult = mutex.withLock {
         val normalizedId = appleMusicId.trim().takeIf(String::isNotEmpty)
             ?: return@withLock TtmlLookupResult(null, searched = false)
@@ -110,7 +154,7 @@ internal object LunaBeatTtmlRepository : TtmlCatalogSource {
                 }
             }
             try {
-                lookupLocked(appContext, normalizedId, forceRefresh)
+                lookupLocked(appContext, normalizedId, retryMiss)
             } finally {
                 watcher.cancel()
             }
@@ -120,8 +164,16 @@ internal object LunaBeatTtmlRepository : TtmlCatalogSource {
     private fun lookupLocked(
         appContext: Context,
         normalizedId: String,
-        forceRefresh: Boolean,
+        retryMiss: Boolean,
     ): TtmlLookupResult {
+        // A file found once is kept until the user clears it (OnlineLyricCachePolicy): it is
+        // served without consulting the index, so later catalog edits need a manual clear.
+        readHit(appContext, normalizedId)?.let { return it }
+        val now = System.currentTimeMillis()
+        if (!retryMiss && isRecentMiss(normalizedId, now)) {
+            return TtmlLookupResult(null, searched = true)
+        }
+        val forceRefresh = retryMiss
         val snapshot = ensureIndex(appContext, forceRefresh)
             ?: return TtmlLookupResult(null, searched = false)
         if (memoryIndex !== snapshot.index || appleMusicEntries.isEmpty()) {
@@ -141,10 +193,16 @@ internal object LunaBeatTtmlRepository : TtmlCatalogSource {
             appleMusicEntries[normalizedId]
         } ?: run {
             debug("catalog miss after current-query refresh: appleMusicId=$normalizedId")
+            synchronized(misses) { misses[normalizedId] = now }
             return TtmlLookupResult(null, searched = true)
         }
+        // A download failure is not a miss: nothing is remembered.
         val bytes = loadTtml(appContext, entry)
             ?: return TtmlLookupResult(null, searched = true)
+        synchronized(misses) { misses.remove(normalizedId) }
+        hitRecordFile(appContext, normalizedId)?.let { record ->
+            TtmlCatalogIo.writeAtomically(record, "${entry.id}\n${entry.sha256}".toByteArray())
+        }
         return TtmlLookupResult(
             match = TtmlCatalogIo.buildMatch(
                 source = source,
@@ -276,8 +334,51 @@ internal object LunaBeatTtmlRepository : TtmlCatalogSource {
         }
     }
 
+    private fun isRecentMiss(appleMusicId: String, now: Long): Boolean = synchronized(misses) {
+        val at = misses[appleMusicId] ?: return false
+        if (now - at < OnlineLyricCachePolicy.MISS_TTL_MS) true else { misses.remove(appleMusicId); false }
+    }
+
+    /** The lyric file this Apple Music ID resolved to before, if it is still intact on disk. */
+    private fun readHit(context: Context, appleMusicId: String): TtmlLookupResult? {
+        val record = hitRecordFile(context, appleMusicId) ?: return null
+        val (entryId, sha256) = readHitRecord(record) ?: return null
+        val file = ttmlFile(context, entryId)
+        val bytes = file.takeIf { it.isFile && it.length() in 1..TtmlCatalogIo.MAX_TTML_BYTES.toLong() }
+            ?.let { runCatching { it.readBytes() }.getOrNull() }
+        if (bytes == null || !TtmlCatalogIo.sha256(bytes).equals(sha256, ignoreCase = true)) {
+            record.delete()
+            return null
+        }
+        return TtmlLookupResult(
+            match = TtmlCatalogIo.buildMatch(
+                source = source,
+                sourceLyricId = entryId,
+                sha256 = sha256,
+                bytes = bytes,
+            ),
+            searched = true,
+        )
+    }
+
+    private fun readHitRecord(record: File): Pair<String, String>? {
+        if (!record.isFile) return null
+        val parts = runCatching { record.readText() }.getOrNull()?.lines() ?: return null
+        val entryId = parts.getOrNull(0)?.trim()?.takeIf(::isSafeFileName) ?: return null
+        val sha256 = parts.getOrNull(1)?.trim()?.takeIf { it.length == 64 } ?: return null
+        return entryId to sha256
+    }
+
+    private fun hitRecordFile(context: Context, appleMusicId: String): File? =
+        appleMusicId.takeIf(::isSafeFileName)?.let { File(cacheDir(context), "hit_am_$it") }
+
+    private fun ttmlFile(context: Context, entryId: String): File = File(cacheDir(context), "$entryId.ttml")
+
+    private fun isSafeFileName(value: String): Boolean =
+        value.isNotEmpty() && value.length <= 128 && value.all { it.isLetterOrDigit() || it == '-' || it == '_' }
+
     private fun loadTtml(context: Context, song: CatalogSong): ByteArray? {
-        val cacheFile = File(cacheDir(context), "${song.id}.ttml")
+        val cacheFile = ttmlFile(context, song.id)
         if (cacheFile.isFile && cacheFile.length() in 1..TtmlCatalogIo.MAX_TTML_BYTES.toLong()) {
             val cached = runCatching { cacheFile.readBytes() }.getOrNull()
             if (cached != null && TtmlCatalogIo.sha256(cached).equals(song.sha256, ignoreCase = true)) return cached

@@ -33,6 +33,9 @@ import com.juren233.hyperlyricsenhanced.lyric.model.Song as LocalSong
 import com.juren233.hyperlyricsenhanced.lyric.model.lyricMetadataOf
 import com.juren233.hyperlyricsenhanced.lyric.source.LyricSink
 import com.juren233.hyperlyricsenhanced.lyric.source.LyricSource
+import com.juren233.hyperlyricsenhanced.online.cache.OnlineLyricCachePolicy
+import com.juren233.hyperlyricsenhanced.online.cache.OnlineLyricCacheSong
+import com.juren233.hyperlyricsenhanced.online.source.ttml.lookup
 import com.juren233.hyperlyricsenhanced.online.OnlineLyricTargeter
 import com.juren233.hyperlyricsenhanced.online.OnlineTranslationSourcePreferences
 import com.juren233.hyperlyricsenhanced.online.isWordTimedOnlineLyrics
@@ -79,12 +82,7 @@ internal fun LyriconSource.scheduleOnlineTranslation(
     selectionChanged: Boolean = false,
 ): Boolean {
     val sourceSwitchRequest = activeSourceSwitchTraceRequest(baseSong.id)
-    // 应用内歌曲一定属于 Apple Music，与当前活动播放者是谁无关。
-    fun playerPackageNow(): String = if (target.inAppOnly) {
-        LyriconSource.APPLE_MUSIC_PACKAGE
-    } else {
-        activeCentralPlayerPackageName ?: LyriconSource.APPLE_MUSIC_PACKAGE
-    }
+    fun playerPackageNow(): String = onlineTranslationPlayerPackage(target)
     val effectivePlayerPackage = playerPackageNow()
     val matchingEnabled = if (effectivePlayerPackage == LyriconSource.APPLE_MUSIC_PACKAGE) {
         isAppleTranslationEnrichmentEnabled()
@@ -296,8 +294,7 @@ internal fun LyriconSource.scheduleOnlineTranslation(
                     )
                 } else {
                     AppleOnlineTranslationSearchDurationPolicy.Resolution(
-                        durationMs = baseSong.duration.takeIf { it > 0L }
-                            ?: mediaInfo.duration,
+                        durationMs = thirdPartySearchDurationMs(baseSong) { mediaInfo.duration },
                         mediaIdentityMatched = false,
                     )
                 }
@@ -649,14 +646,22 @@ private suspend fun LyriconSource.fetchCatalogTranslationOutcome(
     application: Application,
     baseSong: LocalSong,
     source: Source,
-    forceRefresh: Boolean,
+    retryMiss: Boolean,
 ): OnlineLyricTargeter.FetchOutcome {
     val catalog = TtmlCatalogSources.of(source) ?: return OnlineLyricTargeter.FetchOutcome()
-    val lookup = catalog.findWordTimed(
+    val lookup = catalog.lookup(
         context = application,
         platform = CatalogPlatform.APPLE_MUSIC,
         songId = baseSong.id.orEmpty(),
-        forceRefresh = forceRefresh,
+        retryMiss = retryMiss,
+        cacheSong = baseSong.id?.takeIf(String::isNotBlank)?.let {
+            OnlineLyricCacheSong.appleMusic(
+                it,
+                baseSong.name,
+                baseSong.artist,
+                MediaMetadataHelper.getMediaInfo(application, LyriconSource.APPLE_MUSIC_PACKAGE, HookLogger).album,
+            )
+        },
     )
     val lines = lookup.match?.parsed?.lrcLines?.sanitizedForOnlineCandidate()
     debug(
@@ -669,6 +674,59 @@ private suspend fun LyriconSource.fetchCatalogTranslationOutcome(
         wordLines = lookup.match?.parsed?.wordLines,
         selectedSource = source.takeIf { lines != null },
     )
+}
+
+/**
+ * 这轮检索服务的播放器：应用内歌曲一定属于 Apple Music，与当前活动播放者是谁无关；
+ * 其余为当前活动播放者（Apple Music 或经 Lyricon 接入的三方播放器）。
+ */
+internal fun LyriconSource.onlineTranslationPlayerPackage(target: OnlineTranslationTarget): String =
+    if (target.inAppOnly) {
+        LyriconSource.APPLE_MUSIC_PACKAGE
+    } else {
+        activeCentralPlayerPackageName ?: LyriconSource.APPLE_MUSIC_PACKAGE
+    }
+
+/** The duration a third-party song's title search uses (and its cache song is filed under): its own, else the session's. */
+internal fun thirdPartySearchDurationMs(song: LocalSong, mediaDurationMs: () -> Long): Long =
+    song.duration.takeIf { it > 0L } ?: mediaDurationMs()
+
+/**
+ * The cache song an online lookup for [song] played by [playerPackage] is filed under: an Apple
+ * Music song by its ID (the source dialog clears by it); any other player's ID belongs to its
+ * lyric provider, so it is filed by the title search (player, title, artist, duration). Null for
+ * an Apple Music song without an ID.
+ */
+internal fun onlineCacheSong(application: Application, song: LocalSong, playerPackage: String): OnlineLyricCacheSong? {
+    if (playerPackage == LyriconSource.APPLE_MUSIC_PACKAGE) {
+        val id = song.id?.takeIf(String::isNotBlank) ?: return null
+        val album = MediaMetadataHelper.getMediaInfo(application, playerPackage, HookLogger).album
+        return OnlineLyricCacheSong.appleMusic(id, song.name, song.artist, album)
+    }
+    val mediaInfo by lazy { MediaMetadataHelper.getMediaInfo(application, playerPackage, HookLogger) }
+    return OnlineLyricCacheSong.forQuery(
+        packageName = playerPackage,
+        title = song.name.orEmpty(),
+        artist = song.artist.orEmpty(),
+        durationMs = thirdPartySearchDurationMs(song) { mediaInfo.duration },
+        album = mediaInfo.album,
+    )
+}
+
+/** [onlineCacheSong]'s tag alone, without reading the album from the media session. */
+internal fun onlineCacheTag(application: Application, song: LocalSong, playerPackage: String): String? {
+    if (playerPackage == LyriconSource.APPLE_MUSIC_PACKAGE) {
+        return song.id?.takeIf(String::isNotBlank)?.let(OnlineLyricCachePolicy::appleMusicSongTag)
+    }
+    return OnlineLyricCacheSong.forQuery(
+        packageName = playerPackage,
+        title = song.name.orEmpty(),
+        artist = song.artist.orEmpty(),
+        durationMs = thirdPartySearchDurationMs(song) {
+            MediaMetadataHelper.getMediaInfo(application, playerPackage, HookLogger).duration
+        },
+        album = null,
+    ).tag
 }
 
 internal suspend fun LyriconSource.fetchOnlineTranslationCandidate(
@@ -692,7 +750,9 @@ internal suspend fun LyriconSource.fetchOnlineTranslationCandidate(
     pronunciationDiagnostic(
         "stage=candidate_fetch_started, generation=$generation, id=${baseSong.id}, source=$source"
     )
-    val mediaInfo = MediaMetadataHelper.getMediaInfo(application, LyriconSource.APPLE_MUSIC_PACKAGE, HookLogger)
+    // 三方播放器（如 Spotify）也走这条补全：专辑与缓存记录都按实际播放器，不能写死 Apple Music。
+    val playerPackage = onlineTranslationPlayerPackage(target)
+    val mediaInfo = MediaMetadataHelper.getMediaInfo(application, playerPackage, HookLogger)
     val originalAlbum = baseSong.metadata
         ?.getString(LyricMetadataKeys.APPLE_ORIGINAL_ALBUM)
         ?.takeIf(String::isNotBlank)
@@ -721,12 +781,13 @@ internal suspend fun LyriconSource.fetchOnlineTranslationCandidate(
                     application = application,
                     baseSong = baseSong,
                     source = source,
-                    forceRefresh = cached is OnlineTranslationFetchCache.Entry.Miss && explicitlyRequested,
+                    // 手动点选的来源这一轮跳过记住的未命中（内存与磁盘），重新联网查一次。
+                    retryMiss = explicitlyRequested,
                 )
             } else {
                 OnlineLyricTargeter.fetchBestLyricWithNearMiss(
                     context = application,
-                    pkgName = LyriconSource.APPLE_MUSIC_PACKAGE,
+                    pkgName = playerPackage,
                     title = baseSong.name.orEmpty(),
                     artist = baseSong.artist.orEmpty(),
                     durationMs = searchDurationMs,
@@ -740,6 +801,8 @@ internal suspend fun LyriconSource.fetchOnlineTranslationCandidate(
                     fallbackToOtherSources = false,
                     album = albumForSearch,
                     originalAlbum = originalAlbum,
+                    cacheSong = onlineCacheSong(application, baseSong, playerPackage),
+                    retryMissSources = if (explicitlyRequested) setOf(source) else emptySet(),
                 )
             }
             ).also { outcome ->

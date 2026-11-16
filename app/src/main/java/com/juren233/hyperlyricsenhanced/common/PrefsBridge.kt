@@ -2,6 +2,7 @@ package com.juren233.hyperlyricsenhanced.common
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.juren233.hyperlyricsenhanced.online.cache.OnlineLyricCacheLimit
 import com.juren233.hyperlyricsenhanced.root.RootApplication
 import com.juren233.hyperlyricsenhanced.utils.LogManager
 
@@ -11,6 +12,7 @@ object PrefsBridge {
 
     fun init(context: Context) {
         prefs = context.getSharedPreferences(PreferenceKeys.PREF_NAME, Context.MODE_PRIVATE)
+        OnlineLyricCacheLimit.bind(requirePrefs())
         PreferenceDiagnostics.logSnapshot("app_local_init", requirePrefs(), ::log)
     }
 

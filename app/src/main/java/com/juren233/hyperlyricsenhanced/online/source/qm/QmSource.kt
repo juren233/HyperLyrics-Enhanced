@@ -5,12 +5,14 @@ import android.util.Base64
 import com.juren233.hyperlyricsenhanced.common.lyric.SongMetadataQueryPolicy
 import com.juren233.hyperlyricsenhanced.online.model.LyricsResult
 import com.juren233.hyperlyricsenhanced.online.model.LyricsData
+import com.juren233.hyperlyricsenhanced.online.model.OnlineSourceRequestException
 import com.juren233.hyperlyricsenhanced.online.model.SearchSource
 import com.juren233.hyperlyricsenhanced.online.model.SongSearchResult
 import com.juren233.hyperlyricsenhanced.online.model.Source
 import com.juren233.hyperlyricsenhanced.online.utils.QmCryptoUtils
 import com.juren233.hyperlyricsenhanced.online.utils.QrcParser
 import com.juren233.hyperlyricsenhanced.utils.LogManager
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.buildJsonObject
@@ -97,10 +99,13 @@ class QmSource(
             val response = api.searchSong(reqBody).execute()
             if (!response.isSuccessful) {
                 LogManager.w("QmSource", "搜索 HTTP 失败: code=${response.code()}")
-                return@withContext emptyList()
+                throw OnlineSourceRequestException("QM search HTTP ${response.code()}")
             }
-            val resp = response.body() ?: return@withContext emptyList()
-            val songs = resp.req0.data?.body?.songs ?: emptyList()
+            val resp = response.body() ?: throw OnlineSourceRequestException("QM search empty body")
+            // 业务码非 0（如限流 2001）或缺少 data：服务没有给出答复，不是「没有结果」。
+            if (resp.req0.code != 0) throw OnlineSourceRequestException("QM search code ${resp.req0.code}")
+            val songs = resp.req0.data?.body?.songs
+                ?: throw OnlineSourceRequestException("QM search without data")
 
             songs.map { item ->
                 val singerList = item.singer.map { it.name }
@@ -121,9 +126,13 @@ class QmSource(
                     picUrl = picUrl
                 )
             }
+        } catch (e: OnlineSourceRequestException) {
+            throw e
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             LogManager.w("QmSource", "搜索异常", e)
-            emptyList()
+            throw OnlineSourceRequestException("QM search failed", e)
         }
     }
 
@@ -162,10 +171,11 @@ class QmSource(
             val response = api.getLyrics(reqBody).execute()
             if (!response.isSuccessful) {
                 LogManager.w("QmSource", "歌词 HTTP 失败: code=${response.code()}")
-                return@withContext null
+                throw OnlineSourceRequestException("QM lyrics HTTP ${response.code()}")
             }
-            val resp = response.body() ?: return@withContext null
-            val data = resp.req0.data ?: return@withContext null
+            val resp = response.body() ?: throw OnlineSourceRequestException("QM lyrics empty body")
+            if (resp.req0.code != 0) throw OnlineSourceRequestException("QM lyrics code ${resp.req0.code}")
+            val data = resp.req0.data ?: throw OnlineSourceRequestException("QM lyrics without data")
 
             val lyricsData = withContext(Dispatchers.Default) {
                 val qrcText = if (data.lyric.isNotEmpty()) QmCryptoUtils.decryptQrc(data.lyric) else ""
@@ -182,9 +192,13 @@ class QmSource(
 
             QrcParser.parse(lyricsData)
 
+        } catch (e: OnlineSourceRequestException) {
+            throw e
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             LogManager.w("QmSource", "歌词获取异常", e)
-            null
+            throw OnlineSourceRequestException("QM lyrics failed", e)
         }
     }
 }

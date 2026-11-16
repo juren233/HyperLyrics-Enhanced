@@ -42,6 +42,9 @@ import com.juren233.hyperlyricsenhanced.ui.page.HookSettingsPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.AppleLyricsImageBackgroundColorPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.AppleLyricsImageBackgroundPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.LyricProviderPage
+import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.OnlineLyricCachePage
+import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.CachedSongGrouping
+import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.OnlineLyricCacheSongDetailPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.OfficialProviderDownloadPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.LyricAnimationPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.LyricSettingsPage
@@ -164,6 +167,21 @@ fun AppNavigation(startRoute: Route) {
             appEntry<Route.LyricAnimation>(swipeDismiss = swipeDismiss) { LyricAnimationPage() }
             appEntry<Route.LyricSettings>(swipeDismiss = swipeDismiss) { LyricSettingsPage() }
             appEntry<Route.OnlineTranslationSources>(swipeDismiss = swipeDismiss) { OnlineTranslationSourcesPage() }
+            appEntry<Route.OnlineLyricCache>(swipeDismiss = swipeDismiss) { OnlineLyricCachePage() }
+            appEntry<Route.OnlineLyricCacheSource>(swipeDismiss = swipeDismiss) { route ->
+                OnlineLyricCachePage(sourceName = route.source)
+            }
+            appEntry<Route.OnlineLyricCacheGroup>(swipeDismiss = swipeDismiss) { route ->
+                OnlineLyricCachePage(
+                    sourceName = route.source,
+                    grouping = CachedSongGrouping.entries.firstOrNull { it.name == route.grouping } ?: CachedSongGrouping.All,
+                    groupName = route.name,
+                    initialPlayers = route.players,
+                )
+            }
+            appEntry<Route.OnlineLyricCacheSongDetail>(swipeDismiss = swipeDismiss) { route ->
+                OnlineLyricCacheSongDetailPage(tag = route.tag)
+            }
             appEntry<Route.LyricDisplay>(swipeDismiss = swipeDismiss) { LyricDisplayPage() }
             appEntry<Route.LyricScroll>(swipeDismiss = swipeDismiss) { LyricScrollPage() }
             appEntry<Route.VerbatimLyric>(swipeDismiss = swipeDismiss) { VerbatimLyricPage() }

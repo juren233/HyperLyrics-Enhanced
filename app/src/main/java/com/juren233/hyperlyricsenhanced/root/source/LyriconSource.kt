@@ -29,6 +29,7 @@ import com.juren233.hyperlyricsenhanced.lyric.source.LyricSource
 import com.juren233.hyperlyricsenhanced.lyric.source.TimelineContent
 import com.juren233.hyperlyricsenhanced.online.OnlineLyricTargeter
 import com.juren233.hyperlyricsenhanced.online.OnlineTranslationSourcePreferences
+import com.juren233.hyperlyricsenhanced.online.cache.OnlineLyricCacheUsage
 import com.juren233.hyperlyricsenhanced.online.model.Source
 import com.juren233.hyperlyricsenhanced.online.utils.ChineseUtils
 import com.juren233.hyperlyricsenhanced.root.LyriconDataBridge
@@ -485,11 +486,18 @@ class LyriconSource : LyricSource {
             return
         }
         val targetSink = sink
+        val track = timelineTrack(song)
         targetSink?.onTimelineContent(
             TimelineContent(
                 sourceId = id,
-                track = timelineTrack(song),
-                song = song,
+                track = track,
+                // 只给交给时间轴的这份标上缓存归档，时间轴应用时据此记下「上次使用」的来源；不进 Apple Music 桥。
+                song = OnlineLyricCacheUsage.filedUnder(
+                    song,
+                    tag = app?.takeIf {
+                        track.packageName.isNotBlank() && OnlineLyricCacheUsage.showsOnlineContent(song)
+                    }?.let { onlineCacheTag(it, song, track.packageName) },
+                ),
                 onlineTranslationMatched = onlineTranslationMatched,
             )
         )

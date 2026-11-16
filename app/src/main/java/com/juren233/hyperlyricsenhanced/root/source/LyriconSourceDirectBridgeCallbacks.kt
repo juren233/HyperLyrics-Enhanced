@@ -12,7 +12,13 @@ import com.juren233.hyperlyricsenhanced.root.utils.AppleMetadataFlowDiagnostics
 import com.juren233.hyperlyricsenhanced.common.lyric.LyricMetadataKeys
 import com.juren233.hyperlyricsenhanced.contract.AppleDirectBridgeContract
 import com.juren233.hyperlyricsenhanced.lyric.model.Song as LocalSong
+import com.juren233.hyperlyricsenhanced.online.cache.OnlineLyricCacheManager
+import com.juren233.hyperlyricsenhanced.online.cache.OnlineLyricCacheSelection
+import com.juren233.hyperlyricsenhanced.online.cache.OnlineLyricCachePolicy
 import com.juren233.hyperlyricsenhanced.online.model.Source
+import com.juren233.hyperlyricsenhanced.online.source.ttml.CatalogPlatform
+import com.juren233.hyperlyricsenhanced.online.source.ttml.TtmlCatalogSources
+import kotlinx.coroutines.launch
 import com.juren233.hyperlyricsenhanced.contract.AppleSourceSwitchPerformanceDiagnostics
 import io.github.proify.lyricon.lyric.model.Song as LyriconSong
 
@@ -182,6 +188,10 @@ internal fun LyriconSource.onDirectOnlineLyricContentSourceRequested(
     val sourceControl = isAlwaysShowSourceSwitchEnabled()
     if (contentType == AppleDirectBridgeContract.CONTENT_TYPE_SOURCE_STATUS) {
         requestAppleSourceStatuses(requestId, songId)
+        return
+    }
+    if (contentType == AppleDirectBridgeContract.CONTENT_TYPE_CLEAR_CACHE) {
+        clearAppleSongCache(requestId, songId, sourceName)
         return
     }
     // 歌词页显示的歌若不是活动播放者的 Apple 歌曲，而在应用内槽位里：按「仅应用内」处理，
@@ -411,6 +421,67 @@ private fun LyriconSource.requestAppleSourceStatuses(requestId: Long, songId: St
         "Apple Music 来源状态请求: requestId=$requestId, songId=$songId, " +
             "inAppOnly=${target.inAppOnly}, scheduled=$scheduled"
     )
+}
+
+/**
+ * 来源弹窗的「清除当前歌曲缓存歌词」：清掉这首歌的全部在线缓存（搜索结果与歌词、TTML 目录文件、
+ * 记住的未命中、本曲内存取词结果），清理完成后再重新检索，保证新的检索不会读到旧缓存。
+ * [lyricsSourceName] 是插件当前显示的三方歌词来源：清理后按同一 requestId 重新请求该来源；
+ * 为空且这首歌没有任何歌词时，重新发起自动补充检索。
+ */
+private fun LyriconSource.clearAppleSongCache(requestId: Long, songId: String?, lyricsSourceName: String?) {
+    val id = songId?.takeIf(String::isNotBlank) ?: return
+    val application = app ?: return
+    activeOnlineTranslationTarget.fetchCache.clear(id)
+    inAppApple.target.fetchCache.clear(id)
+    fallbackScope.launch {
+        OnlineLyricCacheManager.delete(
+            application,
+            OnlineLyricCacheSelection(tags = setOf(OnlineLyricCachePolicy.appleMusicSongTag(id))),
+        )
+        // 索引建立之前写下的目录文件不在缓存库里，按 ID 再清一次。
+        TtmlCatalogSources.all.forEach { catalog ->
+            runCatching { catalog.clear(application, CatalogPlatform.APPLE_MUSIC, id) }
+                .onFailure { debugError("TTML 目录缓存清理失败: source=${catalog.source}, id=$id", it) }
+        }
+        diagnostic("Apple Music 歌曲缓存已清除: requestId=$requestId, songId=$id")
+        mainHandler.post {
+            val lyricsSource = lyricsSourceName?.takeIf { name -> Source.entries.any { it.name == name } }
+            researchAfterCacheCleared(id, refetchMissingLyrics = lyricsSource == null)
+            if (lyricsSource != null) {
+                onDirectOnlineLyricContentSourceRequested(
+                    requestId = requestId,
+                    songId = id,
+                    contentType = AppleDirectBridgeContract.CONTENT_TYPE_LYRICS,
+                    sourceName = lyricsSource,
+                )
+            }
+        }
+    }
+}
+
+private fun LyriconSource.researchAfterCacheCleared(songId: String, refetchMissingLyrics: Boolean) {
+    val activeSong = currentAppleSong
+    val inAppSong = if (activeSong?.id != songId) inAppApple.songFor(songId) else null
+    val nativeSong = activeSong?.takeIf { it.id == songId } ?: inAppSong ?: return
+    val target = if (inAppSong != null) inAppApple.target else activeOnlineTranslationTarget
+    if (isAlwaysShowSourceSwitchEnabled()) target.manual.noteSourceStatusRequest(songId)
+    cancelOnlineTranslation(
+        clearAttempt = true,
+        clearMatched = false,
+        reason = "cache_cleared",
+        target = target,
+    )
+    if (!hasUntimedAppleNativeLyrics(nativeSong)) scheduleOnlineTranslation(nativeSong, target)
+    if (refetchMissingLyrics && nativeSong.lyrics.isNullOrEmpty() && !target.fallback.snapshot().pending) {
+        scheduleFallback(
+            baseSong = nativeSong,
+            delayMs = 0L,
+            preferredSourceOverride = null,
+            strictSource = false,
+            target = target,
+        )
+    }
 }
 
 /**

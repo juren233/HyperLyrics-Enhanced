@@ -111,6 +111,14 @@ fun OnlineTranslationSourcesPage() {
             )
         )
     }
+    var musicAppLineToWord by remember {
+        mutableStateOf(
+            prefs.getBoolean(
+                MediaSessionOnlineFallbackPreferences.LINE_TO_WORD,
+                MediaSessionOnlineFallbackPreferences.DEFAULT_LINE_TO_WORD,
+            )
+        )
+    }
     val listState = rememberLazyListState()
     val appEnabled = remember {
         mutableStateMapOf<String, Boolean>().apply {
@@ -230,6 +238,7 @@ fun OnlineTranslationSourcesPage() {
                 )
             }
         }
+        item(key = "online_lyric_cache") { OnlineLyricCacheEntry() }
         enabledAppsSection(
             installedApps = installedApps,
             appEnabled = appEnabled,
@@ -252,6 +261,11 @@ fun OnlineTranslationSourcesPage() {
         val saltApplies = installedApps?.any { it.app.packageName == saltPackageName } == true &&
             appEnabled[saltPackageName] == true
         specialSettingsSection(
+            musicAppLineToWord = musicAppLineToWord,
+            onMusicAppLineToWordChange = { checked ->
+                musicAppLineToWord = checked
+                saveConfig(MediaSessionOnlineFallbackPreferences.LINE_TO_WORD, checked)
+            },
             saltApplies = saltApplies,
             preferOnline = saltPreferOnline,
             onPreferOnlineChange = { checked ->
@@ -266,29 +280,36 @@ fun OnlineTranslationSourcesPage() {
 }
 
 private fun LazyListScope.specialSettingsSection(
+    musicAppLineToWord: Boolean,
+    onMusicAppLineToWordChange: (Boolean) -> Unit,
     saltApplies: Boolean,
     preferOnline: Boolean,
     onPreferOnlineChange: (Boolean) -> Unit,
 ) {
     item(key = "special_settings") {
-        AnimatedVisibility(
-            visible = saltApplies,
-            enter = SectionEnter,
-            exit = SectionExit,
-        ) {
-            Column {
-                SmallTitle(
-                    text = stringResource(
-                        R.string.title_online_translation_salt_special_settings
-                    )
+        Column {
+            SmallTitle(
+                text = stringResource(
+                    R.string.title_online_translation_salt_special_settings
                 )
-                Card(
-                    modifier = Modifier
-                        .padding(horizontal = 12.dp)
-                        .padding(bottom = 12.dp)
-                        .fillMaxWidth()
-                ) {
-                    Column {
+            )
+            Card(
+                modifier = Modifier
+                    .padding(horizontal = 12.dp)
+                    .padding(bottom = 12.dp)
+                    .fillMaxWidth()
+            ) {
+                Column {
+                    SwitchPreference(
+                        title = stringResource(R.string.title_music_app_line_to_word_lyrics),
+                        checked = musicAppLineToWord,
+                        onCheckedChange = onMusicAppLineToWordChange,
+                    )
+                    AnimatedVisibility(
+                        visible = saltApplies,
+                        enter = SectionEnter,
+                        exit = SectionExit,
+                    ) {
                         SwitchPreference(
                             title = stringResource(
                                 R.string.title_online_translation_salt_prefer_online

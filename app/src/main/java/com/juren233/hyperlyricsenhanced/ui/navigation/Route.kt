@@ -44,6 +44,25 @@ sealed interface Route : NavKey {
     @Serializable
     data object OnlineTranslationSources : Route
     @Serializable
+    data object OnlineLyricCache : Route
+    /** 歌词缓存管理里一个来源的页面；[source] 为 [com.juren233.hyperlyricsenhanced.online.model.Source] 的名字。 */
+    @Serializable
+    data class OnlineLyricCacheSource(val source: String) : Route
+    /**
+     * 歌词缓存管理里一位歌手或一张专辑的歌曲页：[grouping] 为 `CachedSongGrouping` 的名字，
+     * [name] 为歌手名或专辑名（空为未知）；[source]、[players] 是进入时所在的来源页与选中的播放器（空为全部）。
+     */
+    @Serializable
+    data class OnlineLyricCacheGroup(
+        val grouping: String,
+        val name: String,
+        val source: String? = null,
+        val players: List<String> = emptyList(),
+    ) : Route
+    /** 歌词缓存管理里的一首歌；[tag] 为歌曲标签（两份缓存里同一首歌的标签相同）。 */
+    @Serializable
+    data class OnlineLyricCacheSongDetail(val tag: String) : Route
+    @Serializable
     data object LyricDisplay : Route
     @Serializable
     data object LyricScroll : Route

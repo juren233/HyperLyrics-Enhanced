@@ -9,6 +9,7 @@ package com.juren233.hyperlyricsenhanced.online.source.kugou
 import com.juren233.hyperlyricsenhanced.online.model.LyricsLine
 import com.juren233.hyperlyricsenhanced.online.model.LyricsResult
 import com.juren233.hyperlyricsenhanced.online.model.LyricsWord
+import com.juren233.hyperlyricsenhanced.online.model.OnlineSourceRequestException
 import com.juren233.hyperlyricsenhanced.online.model.SearchSource
 import com.juren233.hyperlyricsenhanced.online.model.SongSearchResult
 import com.juren233.hyperlyricsenhanced.online.model.Source
@@ -90,7 +91,10 @@ private object KugouNetwork {
             "query_copyright" to "1",
         )
         val json = requestJson("$SEARCH_URL?${KugouApiProtocol.signedQuery(parameters)}")
-        val array = json.optJSONObject("data")?.optJSONArray("candidates") ?: return emptyList()
+        // 无结果时也是 errcode=200 且 data.candidates 为空数组（2026-11-16 实测）；其他情况视为请求失败。
+        requireSuccess(json, "search")
+        val array = json.optJSONObject("data")?.optJSONArray("candidates")
+            ?: throw OnlineSourceRequestException("Kugou search without data")
         return buildList {
             for (index in 0 until minOf(array.length(), pageSize.coerceIn(1, 30))) {
                 val item = array.optJSONObject(index) ?: continue
@@ -120,8 +124,15 @@ private object KugouNetwork {
             "download_id" to downloadId,
         )
         val json = requestJson("$DOWNLOAD_URL?${KugouApiProtocol.signedQuery(parameters)}")
+        requireSuccess(json, "download")
         val content = json.optJSONObject("data")?.optString("content").orEmpty()
         return Base64.getDecoder().decode(content)
+    }
+
+    private fun requireSuccess(json: JSONObject, operation: String) {
+        if (json.has("errcode") && json.optInt("errcode") != 200) {
+            throw OnlineSourceRequestException("Kugou $operation errcode ${json.optInt("errcode")}")
+        }
     }
 
     private fun requestJson(url: String): JSONObject {

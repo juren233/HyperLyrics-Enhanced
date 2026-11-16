@@ -5,11 +5,13 @@ import android.util.Base64
 import com.juren233.hyperlyricsenhanced.utils.LogManager
 import androidx.core.content.edit
 import com.juren233.hyperlyricsenhanced.online.model.LyricsResult
+import com.juren233.hyperlyricsenhanced.online.model.OnlineSourceRequestException
 import com.juren233.hyperlyricsenhanced.online.model.SearchSource
 import com.juren233.hyperlyricsenhanced.online.model.SongSearchResult
 import com.juren233.hyperlyricsenhanced.online.model.Source
 import com.juren233.hyperlyricsenhanced.online.utils.NeCryptoUtils
 import com.juren233.hyperlyricsenhanced.online.utils.YrcParser
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -317,7 +319,7 @@ class NeSource(
 
             val resp = json.decodeFromString<NeSearchResponse>(rawJson)
 
-            if (resp.code != 200) return@withContext emptyList()
+            if (resp.code != 200) throw OnlineSourceRequestException("NE search code ${resp.code}")
             LogManager.d("NeSource", "Search result: $resp")
             return@withContext resp.data?.resources?.map { res ->
                 val song = res.baseInfo.simpleSongData
@@ -334,9 +336,13 @@ class NeSource(
                 )
             } ?: emptyList()
 
+        } catch (e: OnlineSourceRequestException) {
+            throw e
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             LogManager.e("NeSource", "Search exception", e)
-            return@withContext emptyList()
+            throw OnlineSourceRequestException("NE search failed", e)
         }
     }
 
@@ -353,7 +359,10 @@ class NeSource(
         val rawJson = doRequest(path, params)
         val resp = try {
             json.decodeFromString<NeLyricResponse>(rawJson)
-        } catch (_: Exception) { return@withContext null }
+        } catch (e: Exception) {
+            throw OnlineSourceRequestException("NE lyrics response undecodable", e)
+        }
+        if (resp.code != 200) throw OnlineSourceRequestException("NE lyrics code ${resp.code}")
         LogManager.d("NeSource", "Lyric lrc result: ${resp.lrc}")
         LogManager.d("NeSource", "Lyric yrc result: ${resp.yrc}")
         LogManager.d("NeSource", "Lyric translation result: ${resp.tlyric}")

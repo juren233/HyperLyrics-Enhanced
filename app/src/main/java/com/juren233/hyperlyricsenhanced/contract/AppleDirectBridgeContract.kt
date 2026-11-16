@@ -32,6 +32,14 @@ object AppleDirectBridgeContract {
      * is unused. Cores that predate it reject the request, which the Provider ignores.
      */
     const val CONTENT_TYPE_SOURCE_STATUS = "source_status"
+    /**
+     * Asks the core to forget every cached online result of the track (search responses, lyrics,
+     * TTML catalog files and remembered misses) and search again. Sent from the source dialog.
+     * `source` names the third-party lyrics source currently shown, or is empty: when set, the core
+     * fetches that source again once the cache is gone and answers with a `lyrics` source switch
+     * result under the same request ID. Cores that predate it reject the request.
+     */
+    const val CONTENT_TYPE_CLEAR_CACHE = "clear_cache"
     /** Source name standing for Apple Music's own lyrics, translation or pronunciation. */
     const val SOURCE_APPLE_NATIVE = "APPLE"
 }

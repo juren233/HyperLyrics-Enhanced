@@ -10,6 +10,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import com.juren233.hyperlyricsenhanced.BuildConfig
+import com.juren233.hyperlyricsenhanced.online.cache.OnlineLyricCacheUsage
 import com.juren233.hyperlyricsenhanced.common.IslandMusicAppCatalog
 import com.juren233.hyperlyricsenhanced.common.media.MediaSessionMetadataAdapter
 import com.juren233.hyperlyricsenhanced.lyric.model.Song
@@ -749,6 +750,7 @@ class LocalTimelineDriver(
         }
         if (!content.streaming) clearStreamingContent()
         displayedContent = content
+        OnlineLyricCacheUsage.onShown(song)
 
         LyriconDataBridge.updateLyricPackage(track.packageName)
         val sameTrack = appliedTrackKey == track.normalizedKey()

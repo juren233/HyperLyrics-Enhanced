@@ -1,5 +1,7 @@
 package com.juren233.hyperlyricsenhanced.root
 
+import com.juren233.hyperlyricsenhanced.online.cache.OnlineLyricCacheIpc
+import com.juren233.hyperlyricsenhanced.online.cache.OnlineLyricCacheLimit
 import com.juren233.hyperlyricsenhanced.contract.AppleSourceSwitchPerformanceDiagnostics
 import com.juren233.hyperlyricsenhanced.root.reload.SystemUiHookLifetime
 import android.app.Application
@@ -52,6 +54,7 @@ import com.juren233.hyperlyricsenhanced.root.source.SuperLyricSource
 import com.juren233.hyperlyricsenhanced.root.timeline.LocalTimelineDriver
 import com.juren233.hyperlyricsenhanced.root.timeline.SystemMediaPlaybackAnchor
 import com.juren233.hyperlyricsenhanced.root.source.MediaSessionLyricsFetcher
+import com.juren233.hyperlyricsenhanced.online.cache.OnlineLyricCacheUsage
 import com.juren233.hyperlyricsenhanced.root.source.MediaSessionOnlineFallbackCoordinator
 import com.juren233.hyperlyricsenhanced.root.source.OnlineFallbackSongMapper
 import com.juren233.hyperlyricsenhanced.common.MediaSessionOnlineFallbackPreferences
@@ -189,6 +192,7 @@ class HookEntry : XposedModule() {
     private var _prefs: android.content.SharedPreferences? = null
     private var prefListener: android.content.SharedPreferences.OnSharedPreferenceChangeListener? = null
     private var preferenceBroadcastReceiver: BroadcastReceiver? = null
+    private var onlineLyricCacheReceiver: BroadcastReceiver? = null
     private var runtimeApp: Application? = null
     @Volatile private var runtimeReady = false
     @Volatile private var runtimeEpoch = 0L
@@ -612,6 +616,7 @@ class HookEntry : XposedModule() {
                 }
             }
             registerPreferenceBroadcastReceiver(app)
+            optionalRuntime("online_lyric_cache_receiver") { registerOnlineLyricCacheReceiver(app) }
 
             optionalRuntime("preference_diagnostics") {
                 PreferenceDiagnostics.logSnapshot("systemui_remote_init", prefs) { message ->
@@ -625,6 +630,7 @@ class HookEntry : XposedModule() {
             val sink = RootLyricSink(renderer, prefs)
 
             OfficialProviderPreferencePolicy.configure(prefs)
+            OnlineLyricCacheLimit.bind(prefs)
             val officialProviderPlayers = OfficialProviderCatalog.definitions
                 .flatMapTo(linkedSetOf()) { definition -> definition.targetPackages }
             NextTrackMetadataCache.clearPlayers(officialProviderPlayers)
@@ -652,6 +658,7 @@ class HookEntry : XposedModule() {
             )
             localTimelineDriver = driver
             driver.start()
+            OnlineLyricCacheUsage.install(app)
             val lyricsFetcher = MediaSessionLyricsFetcher(app)
             mediaSessionOnlineFallback = MediaSessionOnlineFallbackCoordinator(
                 tracks = object : MediaSessionOnlineFallbackCoordinator.Tracks {
@@ -694,10 +701,14 @@ class HookEntry : XposedModule() {
                             }
                             named + accountSwitchPackages
                         } else emptySet(),
+                        lineToWord = IslandRuntimePreferenceOverrides.getBoolean(
+                            MediaSessionOnlineFallbackPreferences.LINE_TO_WORD, stored.lineToWord,
+                        ),
                     )
                 },
                 fetchSong = lyricsFetcher::fetch,
                 fetchSongRace = lyricsFetcher::fetchRacing,
+                fetchWordTimedSong = lyricsFetcher::fetchWordTimed,
             )
             mediaSessionOnlineFallback?.start()
             LyricsAvailability.addThirdPartyProbe(mediaSessionFallbackProbe)
@@ -1138,6 +1149,11 @@ class HookEntry : XposedModule() {
         cleanup.attempt("preference_receiver") {
             if (receiver != null) runtimeApp?.unregisterReceiver(receiver)
         }
+        val cacheReceiver = onlineLyricCacheReceiver
+        onlineLyricCacheReceiver = null
+        cleanup.attempt("online_lyric_cache_receiver") {
+            if (cacheReceiver != null) runtimeApp?.unregisterReceiver(cacheReceiver)
+        }
         cleanup.attempt("preference_overrides") { IslandRuntimePreferenceOverrides.clear() }
         cleanup.attempt("lyrics_availability_probes") {
             LyricsAvailability.removeThirdPartyProbe(mediaSessionFallbackProbe)
@@ -1168,6 +1184,20 @@ class HookEntry : XposedModule() {
         playbackAnchor = null
         runtimeApp = null
         cleanup.throwIfFailed()
+    }
+
+    /** 歌词缓存管理页的查询/清理请求；广播权限为签名级，只有 HyperLyrics 本身能发送。 */
+    private fun registerOnlineLyricCacheReceiver(app: Application) {
+        onlineLyricCacheReceiver?.let { receiver -> runCatching { app.unregisterReceiver(receiver) } }
+        val receiver = OnlineLyricCacheIpc.createReceiver()
+        onlineLyricCacheReceiver = receiver
+        app.registerReceiver(
+            receiver,
+            IntentFilter(OnlineLyricCacheIpc.ACTION),
+            OnlineLyricCacheIpc.PERMISSION,
+            null,
+            Context.RECEIVER_EXPORTED,
+        )
     }
 
     private fun registerPreferenceBroadcastReceiver(app: Application) {

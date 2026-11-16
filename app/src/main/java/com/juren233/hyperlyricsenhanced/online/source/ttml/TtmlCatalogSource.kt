@@ -8,7 +8,13 @@ package com.juren233.hyperlyricsenhanced.online.source.ttml
 
 import android.content.Context
 import com.juren233.hyperlyricsenhanced.common.lyric.AppleMissingLyricsSourceStatus
+import com.juren233.hyperlyricsenhanced.online.cache.CachedSearchSource
+import com.juren233.hyperlyricsenhanced.online.cache.CatalogCacheRef
+import com.juren233.hyperlyricsenhanced.online.cache.OnlineLyricCacheKind
+import com.juren233.hyperlyricsenhanced.online.cache.OnlineLyricCacheSong
 import com.juren233.hyperlyricsenhanced.online.isWordTimedOnlineLyrics
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.juren233.hyperlyricsenhanced.online.model.Source
 import com.juren233.hyperlyricsenhanced.online.source.amll.AmllTtmlRepository
 import com.juren233.hyperlyricsenhanced.online.source.lunabeat.LunaBeatTtmlRepository
@@ -87,14 +93,67 @@ internal interface TtmlCatalogSource {
 
     fun supports(platform: CatalogPlatform): Boolean
 
-    /** [searched] is false when the platform is unsupported or the ID is unusable. */
+    /**
+     * [searched] is false when the platform is unsupported, the ID is unusable or the catalog could
+     * not be reached. A file found once is kept until [clear]; a miss is trusted for
+     * [com.juren233.hyperlyricsenhanced.online.cache.OnlineLyricCachePolicy.MISS_TTL_MS] unless
+     * [retryMiss] (the user picked this source by hand).
+     */
     suspend fun findWordTimed(
         context: Context,
         platform: CatalogPlatform,
         songId: String,
-        forceRefresh: Boolean = false,
+        retryMiss: Boolean = false,
     ): TtmlLookupResult
+
+    /** Forgets the cached file and remembered miss for one song ID. */
+    suspend fun clear(context: Context, platform: CatalogPlatform, songId: String)
+
+    /** Forgets every cached file and remembered miss of this catalog (catalog indexes are kept). */
+    suspend fun clearAll(context: Context)
+
+    /** Bytes of cached lyric files on disk. */
+    fun cacheBytes(context: Context): Long
 }
+
+/**
+ * [TtmlCatalogSource.findWordTimed] that also files the answer under [cacheSong] in the online
+ * lyric cache index, so the cache management page lists it and can clear it with the song.
+ * A lookup that could not run ([TtmlLookupResult.searched] false) is not filed.
+ */
+internal suspend fun TtmlCatalogSource.lookup(
+    context: Context,
+    platform: CatalogPlatform,
+    songId: String,
+    retryMiss: Boolean = false,
+    cacheSong: OnlineLyricCacheSong?,
+): TtmlLookupResult {
+    val result = findWordTimed(context, platform, songId, retryMiss)
+    if (cacheSong != null && result.searched) {
+        withContext(Dispatchers.IO) {
+            val found = result.match != null
+            val cache = CachedSearchSource.cacheFor(context)
+            cache.store(
+                song = cacheSong,
+                key = CatalogCacheRef(source, platform.name, songId).key,
+                payload = ByteArray(0),
+                permanent = found,
+                source = source,
+                kind = OnlineLyricCacheKind.CATALOG,
+                sizeBytes = result.match?.rawTtml?.toByteArray()?.size?.toLong() ?: 0L,
+            )
+            // Addressed by song ID: there is no match score to record, only the timing.
+            result.match?.let { match ->
+                cache.recordMatch(cacheSong, source, score = null, wordTimed = isWordTimedOnlineLyrics(match.parsed.wordLines))
+            }
+        }
+    }
+    return result
+}
+
+/** Bytes of the files directly inside [dir]. */
+internal fun directorySize(dir: File): Long =
+    dir.listFiles()?.filter(File::isFile)?.sumOf(File::length) ?: 0L
 
 /** The single registry of catalog sources; [Source.isTtmlCatalog] must stay in step with it. */
 internal object TtmlCatalogSources {
@@ -103,6 +162,8 @@ internal object TtmlCatalogSources {
     }
 
     fun of(source: Source): TtmlCatalogSource? = catalogs.firstOrNull { it.source == source }
+
+    val all: List<TtmlCatalogSource> get() = catalogs
 }
 
 /** Limits and I/O helpers shared by every TTML catalog client. */

@@ -7,6 +7,7 @@
 package com.juren233.hyperlyricsenhanced.root.source
 
 import com.juren233.hyperlyricsenhanced.online.OnlineLyricTargeter
+import com.juren233.hyperlyricsenhanced.online.cache.OnlineLyricCacheInvalidation
 import com.juren233.hyperlyricsenhanced.online.model.Source
 
 /**
@@ -36,9 +37,20 @@ internal class OnlineTranslationFetchCache(
 
     private var songId: String? = null
     private val entries = HashMap<Source, Stamped>()
+    /** Cleared data on disk ([OnlineLyricCacheInvalidation]) makes every memo of it stale. */
+    private var cacheGeneration = OnlineLyricCacheInvalidation.generation()
+
+    private fun dropIfInvalidated() {
+        val current = OnlineLyricCacheInvalidation.generation()
+        if (current != cacheGeneration) {
+            entries.clear()
+            cacheGeneration = current
+        }
+    }
 
     @Synchronized
     fun get(songId: String, source: Source, queryKey: String): Entry? {
+        dropIfInvalidated()
         if (this.songId != songId) return null
         val stamped = entries[source] ?: return null
         if (stamped.queryKey != queryKey) {
@@ -55,13 +67,23 @@ internal class OnlineTranslationFetchCache(
     /** True while [songId] has at least one entry that has not expired (whatever query it was stored for). */
     @Synchronized
     fun hasLiveEntries(songId: String): Boolean {
+        dropIfInvalidated()
         if (this.songId != songId) return false
         val now = clockMs()
         return entries.values.any { now - it.storedAtMs <= ttlMs }
     }
 
+    /** Forgets everything remembered for [songId] (the user cleared its cached lyrics). */
+    @Synchronized
+    fun clear(songId: String) {
+        if (this.songId != songId) return
+        entries.clear()
+        this.songId = null
+    }
+
     @Synchronized
     fun put(songId: String, source: Source, queryKey: String, entry: Entry) {
+        dropIfInvalidated()
         if (this.songId != songId) {
             entries.clear()
             this.songId = songId

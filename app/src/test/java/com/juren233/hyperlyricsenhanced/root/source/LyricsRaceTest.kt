@@ -22,6 +22,7 @@ class LyricsRaceTest {
         ttml: List<Deferred<Result<String?>>>,
         search: Deferred<Result<String?>>,
         events: MutableList<String>,
+        progress: LyricsRace.SearchProgress<String?>? = null,
     ) = LyricsRace.run(
         ttml = ttml,
         search = search,
@@ -29,7 +30,12 @@ class LyricsRaceTest {
         searchHit = { it != null },
         onEarlyTtml = { index, value -> events += "early-ttml$index:$value" },
         onEarlySearch = { value -> events += "early-search:$value" },
+        searchProgress = progress,
     )
+
+    private suspend fun awaitEvents(events: List<String>, count: Int) {
+        while (events.size < count) kotlinx.coroutines.yield()
+    }
 
     @Test
     fun `search first is shown early then late amll wins`() = runBlocking {
@@ -71,5 +77,39 @@ class LyricsRaceTest {
         amll.complete(Result.success("AMLL"))
         assertEquals(LyricsRace.Final.Ttml(0, "AMLL" as String?), final.await())
         assertEquals(listOf("early-ttml1:LB"), events)
+    }
+
+    @Test
+    fun `search line then word upgrade are both shown before late amll wins`() = runBlocking {
+        val amll = CompletableDeferred<Result<String?>>()
+        val search = CompletableDeferred<Result<String?>>()
+        val progress = LyricsRace.SearchProgress<String?>()
+        val events = mutableListOf<String>()
+        val final = async { run(listOf(amll, hit(null)), search, events, progress) }
+        kotlinx.coroutines.yield()
+        progress.report("KUWO-line")
+        awaitEvents(events, 1)
+        progress.report("QM-word")
+        awaitEvents(events, 2)
+        // 最终结果与最后一次升级相同，不再重复显示。
+        search.complete(Result.success("QM-word"))
+        kotlinx.coroutines.yield()
+        amll.complete(Result.success("AMLL"))
+        assertEquals(LyricsRace.Final.Ttml(0, "AMLL" as String?), final.await())
+        assertEquals(listOf("early-search:KUWO-line", "early-search:QM-word"), events)
+    }
+
+    @Test
+    fun `all ttml missed shows the line result early and settles on the word result`() = runBlocking {
+        val search = CompletableDeferred<Result<String?>>()
+        val progress = LyricsRace.SearchProgress<String?>()
+        val events = mutableListOf<String>()
+        val final = async { run(listOf(hit(null), hit(null)), search, events, progress) }
+        kotlinx.coroutines.yield()
+        progress.report("KUWO-line")
+        awaitEvents(events, 1)
+        search.complete(Result.success("QM-word"))
+        assertEquals(LyricsRace.Final.Search("QM-word" as String?), final.await())
+        assertEquals(listOf("early-search:KUWO-line"), events)
     }
 }

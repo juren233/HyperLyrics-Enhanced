@@ -8,6 +8,7 @@ package com.juren233.hyperlyricsenhanced.online.source.kuwo
 
 import com.juren233.hyperlyricsenhanced.online.model.LyricsLine
 import com.juren233.hyperlyricsenhanced.online.model.LyricsResult
+import com.juren233.hyperlyricsenhanced.online.model.OnlineSourceRequestException
 import com.juren233.hyperlyricsenhanced.online.model.LyricsWord
 import com.juren233.hyperlyricsenhanced.online.model.SearchSource
 import com.juren233.hyperlyricsenhanced.online.model.SongSearchResult
@@ -76,7 +77,10 @@ private object KuwoNetwork {
                     "rn=${pageSize.coerceIn(1, 30)}&httpsStatus=1"
             )
         )
-        val list = json.optJSONObject("data")?.optJSONArray("list") ?: return emptyList()
+        // 无结果时也是 code=200 且 data.list 为空数组（2026-11-16 实测）；缺少 data 或其他 code 视为请求失败。
+        if (json.optInt("code") != 200) throw OnlineSourceRequestException("Kuwo search code ${json.optInt("code")}")
+        val list = json.optJSONObject("data")?.optJSONArray("list")
+            ?: throw OnlineSourceRequestException("Kuwo search without data")
         return buildList {
             for (index in 0 until list.length()) {
                 val item = list.optJSONObject(index) ?: continue
@@ -100,6 +104,9 @@ private object KuwoNetwork {
             ?.takeIf { KuwoLyricsParser.hasLyrics(it) }
             ?.let { return it }
         val json = JSONObject(requestText("$OPEN_LYRIC_URL?musicId=$rid&httpsStatus=1"))
+        if (json.has("code") && json.optInt("code") != 200) {
+            throw OnlineSourceRequestException("Kuwo lyrics code ${json.optInt("code")}")
+        }
         val list = json.optJSONObject("data")?.optJSONArray("lrclist") ?: return ""
         return buildList {
             for (index in 0 until list.length()) {
