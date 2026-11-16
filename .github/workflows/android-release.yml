@@ -159,7 +159,9 @@ jobs:
           test -n "$DEBUG_IN"
 
           $ZA -f -v -p 4 "$DEBUG_IN" debug-aligned.apk
+          # minSdk 33：v1（JAR）签名只给 Android 7.0 以下用，apksigner 默认仍会附上（约 45 KB）。
           $AS sign \
+            --v1-signing-enabled false \
             --ks release.jks \
             --ks-pass env:STORE_PASS \
             --ks-key-alias "$KEY_ALIAS" \
@@ -172,6 +174,7 @@ jobs:
             test -n "$RELEASE_IN"
             $ZA -f -v -p 4 "$RELEASE_IN" release-aligned.apk
             $AS sign \
+              --v1-signing-enabled false \
               --ks release.jks \
               --ks-pass env:STORE_PASS \
               --ks-key-alias "$KEY_ALIAS" \
