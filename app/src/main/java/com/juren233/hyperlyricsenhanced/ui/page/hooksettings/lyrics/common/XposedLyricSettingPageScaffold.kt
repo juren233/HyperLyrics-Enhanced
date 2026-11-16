@@ -9,11 +9,14 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import com.juren233.hyperlyricsenhanced.ui.utils.LocalPageBlurBackdrop
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -22,6 +25,9 @@ import com.juren233.hyperlyricsenhanced.R
 import com.juren233.hyperlyricsenhanced.common.PrefsBridge
 import com.juren233.hyperlyricsenhanced.common.UIConstants
 import com.juren233.hyperlyricsenhanced.ui.component.CompactBarTitle
+import com.juren233.hyperlyricsenhanced.ui.component.PinnedHeaderBarLayout
+import com.juren233.hyperlyricsenhanced.ui.component.PinnedHeaderState
+import com.juren233.hyperlyricsenhanced.ui.component.pinnedHeaderProgress
 import com.juren233.hyperlyricsenhanced.ui.navigation.LocalNavigator
 import com.juren233.hyperlyricsenhanced.ui.utils.BlurredBar
 import com.juren233.hyperlyricsenhanced.ui.utils.pageScrollModifiers
@@ -80,6 +86,7 @@ internal fun XposedLyricSettingPage(
     trailingContent: (@Composable () -> Unit)? = null,
     floatingActionButton: (@Composable () -> Unit)? = null,
     listState: LazyListState = rememberLazyListState(),
+    pinnedHeader: PinnedHeaderState? = null,
     content: LazyListScope.() -> Unit
 ) {
     val navigator = LocalNavigator.current
@@ -94,6 +101,10 @@ internal fun XposedLyricSettingPage(
         }
     }
     val barSubtitle = if (collapsedTitle != null && collapsed) "" else subtitle
+    val pinnedHeaderHeight = with(LocalDensity.current) { (pinnedHeader?.heightPx ?: 0).toDp() }
+    val pinnedProgress by remember(listState, pinnedHeader) {
+        derivedStateOf { pinnedHeader?.let(listState::pinnedHeaderProgress) ?: 0f }
+    }
     val navigationIconContent: @Composable () -> Unit = {
         when {
             leadingContent != null -> leadingContent()
@@ -109,40 +120,61 @@ internal fun XposedLyricSettingPage(
     }
 
     Scaffold(
-        floatingActionButton = { floatingActionButton?.invoke() },
+        floatingActionButton = {
+            CompositionLocalProvider(LocalPageBlurBackdrop provides backdrop) { floatingActionButton?.invoke() }
+        },
         topBar = {
-            BlurredBar(backdrop, blurActive) {
-                // 顶栏左右都有按钮时，收起标题用略小字号。
-                val barContent: @Composable () -> Unit = {
-                    if (collapsedTitle != null) {
-                        // 收起后只显示 collapsedTitle，展开时仍是原来的大标题。
-                        TopAppBar(
-                            color = barColor,
-                            title = collapsedTitle,
-                            largeTitle = title,
-                            subtitle = barSubtitle,
-                            scrollBehavior = topAppBarScrollBehavior,
-                            navigationIcon = navigationIconContent,
-                            actions = { trailingContent?.invoke() },
-                        )
+            val bar: @Composable () -> Unit = {
+                BlurredBar(
+                    backdrop = backdrop,
+                    blurEnabled = blurActive,
+                    pinnedHeight = pinnedHeaderHeight,
+                    pinnedProgress = pinnedProgress,
+                ) {
+                    // 顶栏左右都有按钮时，收起标题用略小字号。
+                    val barContent: @Composable () -> Unit = {
+                        if (collapsedTitle != null) {
+                            // 收起后只显示 collapsedTitle，展开时仍是原来的大标题。
+                            TopAppBar(
+                                color = barColor,
+                                title = collapsedTitle,
+                                largeTitle = title,
+                                subtitle = barSubtitle,
+                                scrollBehavior = topAppBarScrollBehavior,
+                                navigationIcon = navigationIconContent,
+                                actions = { trailingContent?.invoke() },
+                            )
+                        } else {
+                            // 未指定折叠标题：完全沿用原有标题与副标题行为。
+                            TopAppBar(
+                                color = barColor,
+                                title = title,
+                                subtitle = subtitle,
+                                scrollBehavior = topAppBarScrollBehavior,
+                                navigationIcon = navigationIconContent,
+                                actions = { trailingContent?.invoke() },
+                            )
+                        }
+                    }
+                    val hasLeadingSlot = leadingContent != null || showNavigationIcon
+                    if (hasLeadingSlot && trailingContent != null) {
+                        CompactBarTitle { barContent() }
                     } else {
-                        // 未指定折叠标题：完全沿用原有标题与副标题行为。
-                        TopAppBar(
-                            color = barColor,
-                            title = title,
-                            subtitle = subtitle,
-                            scrollBehavior = topAppBarScrollBehavior,
-                            navigationIcon = navigationIconContent,
-                            actions = { trailingContent?.invoke() },
-                        )
+                        barContent()
                     }
                 }
-                val hasLeadingSlot = leadingContent != null || showNavigationIcon
-                if (hasLeadingSlot && trailingContent != null) {
-                    CompactBarTitle { barContent() }
-                } else {
-                    barContent()
-                }
+            }
+            if (pinnedHeader == null) {
+                bar()
+            } else {
+                // 分组头在顶栏这一层画在顶栏之上，见 PinnedHeader.kt。
+                PinnedHeaderBarLayout(
+                    state = pinnedHeader,
+                    listState = listState,
+                    // 没有模糊（设备不支持）时顶栏是实色，头也铺同一底色。
+                    background = if (blurActive) null else MiuixTheme.colorScheme.surface,
+                    bar = bar,
+                )
             }
         }
     ) { padding ->
@@ -165,11 +197,12 @@ internal fun XposedLyricSettingPage(
         Box(modifier = if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier) {
             LazyColumn(
                 state = listState,
-                modifier = Modifier.pageScrollModifiers(
-                    enableScrollEndHaptic = true,
-                    showTopAppBar = true,
-                    topAppBarScrollBehavior = topAppBarScrollBehavior
-                ),
+                modifier = Modifier
+                    .pageScrollModifiers(
+                        enableScrollEndHaptic = true,
+                        showTopAppBar = true,
+                        topAppBarScrollBehavior = topAppBarScrollBehavior
+                    ),
                 contentPadding = contentPadding,
                 content = content
             )

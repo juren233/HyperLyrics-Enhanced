@@ -9,6 +9,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -42,6 +43,9 @@ import com.juren233.hyperlyricsenhanced.ui.component.NumberRangeInputDialog
 import com.juren233.hyperlyricsenhanced.ui.component.StatusGlyphs
 import com.juren233.hyperlyricsenhanced.ui.component.SuperSwitchPreference
 import com.juren233.hyperlyricsenhanced.ui.component.SwipeableSegmentedTabs
+import com.juren233.hyperlyricsenhanced.ui.component.pinnedHeader
+import com.juren233.hyperlyricsenhanced.ui.component.rememberPinnedHeaderContentMinHeight
+import com.juren233.hyperlyricsenhanced.ui.component.rememberPinnedHeaderState
 import com.juren233.hyperlyricsenhanced.ui.component.settingsCard
 import com.juren233.hyperlyricsenhanced.ui.component.settingsHeroCard
 import com.juren233.hyperlyricsenhanced.ui.navigation.LocalNavigator
@@ -538,6 +542,9 @@ fun AppleMusicOptimizationPage(
     )
 
     val tabPagerState = rememberPagerState { AppleMusicSettingsTab.entries.size }
+    val tabsHeader = rememberPinnedHeaderState(key = "apple_music_tabs")
+    // 分页至少填满标签栏以下的区域：标签栏停住时切到较短的分类，列表不会被拉回、标签栏不会被顶开。
+    val tabPagesMinHeight = rememberPinnedHeaderContentMinHeight(tabsHeader, listState)
 
     XposedLyricSettingPage(
         title = stringResource(R.string.title_apple_music_optimization_page),
@@ -545,6 +552,7 @@ fun AppleMusicOptimizationPage(
         outerPadding = outerPadding,
         showNavigationIcon = showNavigationIcon,
         listState = listState,
+        pinnedHeader = tabsHeader,
         // 仅当本页作为主页面首页（主页被隐藏）时，标题收回顶栏后只显示应用名；
         // 主页仍在时保持原有的标题 + 副标题。
         collapsedTitle = if (collapseTitleToAppName) stringResource(R.string.app_name) else null,
@@ -609,7 +617,8 @@ fun AppleMusicOptimizationPage(
                 modifier = Modifier.settingsHeroCard(),
             )
         }
-        item(key = "apple_music_tabs") {
+        // 分类标签滚动时固定在顶栏下方。
+        pinnedHeader(tabsHeader, listState) {
             // 分类标签的滑块跟随下方分页实时移动，也可直接拖动或点按切换分类。
             SwipeableSegmentedTabs(
                 labels = AppleMusicSettingsTab.entries.map { stringResource(it.label) },
@@ -620,7 +629,7 @@ fun AppleMusicOptimizationPage(
         item(key = "apple_music_tab_pages") {
             HorizontalPager(
                 state = tabPagerState,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().heightIn(min = tabPagesMinHeight),
                 verticalAlignment = Alignment.Top,
                 beyondViewportPageCount = 1,
             ) { page ->

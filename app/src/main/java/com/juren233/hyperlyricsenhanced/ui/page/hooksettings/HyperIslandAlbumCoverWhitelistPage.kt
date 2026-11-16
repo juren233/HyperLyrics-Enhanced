@@ -13,7 +13,6 @@ import android.graphics.Bitmap
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,7 +23,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.runtime.Composable
@@ -45,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.focus.focusProperties
 import androidx.core.graphics.drawable.toBitmap
 import androidx.core.content.edit
+import com.juren233.hyperlyricsenhanced.ui.component.lazyCardRow
 import com.juren233.hyperlyricsenhanced.R
 import com.juren233.hyperlyricsenhanced.common.InstalledAppsPermission
 import com.juren233.hyperlyricsenhanced.common.IslandAlbumCoverWhitelist
@@ -181,9 +180,10 @@ internal fun InstalledAppSelectionPage(
 }
 
 @Composable
-private fun AppSearchField(
+internal fun AppSearchField(
     query: String,
     onQueryChange: (String) -> Unit,
+    label: String = stringResource(R.string.hint_island_album_cover_whitelist_search),
 ) {
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     var expanded by remember { mutableStateOf(false) }
@@ -201,7 +201,7 @@ private fun AppSearchField(
     InputField(
         query = query,
         onQueryChange = onQueryChange,
-        label = stringResource(R.string.hint_island_album_cover_whitelist_search),
+        label = label,
         leadingIcon = {
             Icon(
                 imageVector = MiuixIcons.Basic.Search,
@@ -292,28 +292,7 @@ private fun LazyListScope.appSection(
             },
             contentType = { _, _ -> "island_music_app" },
         ) { index, installedApp ->
-            val shape = when {
-                apps.size == 1 -> RoundedCornerShape(16.dp)
-                index == 0 -> RoundedCornerShape(
-                    topStart = 16.dp,
-                    topEnd = 16.dp,
-                )
-                index == apps.lastIndex -> RoundedCornerShape(
-                    bottomStart = 16.dp,
-                    bottomEnd = 16.dp,
-                )
-                else -> RoundedCornerShape(0.dp)
-            }
-            Box(
-                modifier = Modifier
-                    .padding(horizontal = 12.dp)
-                    .padding(bottom = if (index == apps.lastIndex) 12.dp else 0.dp)
-                    .fillMaxWidth()
-                    .background(
-                        color = MiuixTheme.colorScheme.surfaceContainer,
-                        shape = shape,
-                    ),
-            ) {
+            Box(modifier = Modifier.lazyCardRow(index, apps.size)) {
                 IslandMusicAppSwitchPreference(
                     app = installedApp.app,
                     icon = installedApp.icon,
