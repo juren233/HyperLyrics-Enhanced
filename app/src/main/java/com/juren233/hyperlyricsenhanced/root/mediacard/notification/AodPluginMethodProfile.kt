@@ -33,7 +33,7 @@ internal data class ResolvedAodPluginMethods(
 }
 
 /**
- * Reflection contract for the classic AOD plugin view.
+ * Reflection contract for the Custom AOD plugin view.
  *
  * The lifecycle methods remain strict. The content-layout callback is optional because it is
  * only an extra positioning signal, and Xiaomi has shipped both `(int, int, boolean)` and
@@ -58,7 +58,7 @@ internal object AodPluginMethodProfile {
         val lifecycle = requiredLifecycleMethods.map { name ->
             aodViewClass.getDeclaredMethod(name).also { method ->
                 require(isInstanceVoid(method) && method.parameterCount == 0) {
-                    "Invalid classic AOD lifecycle descriptor: ${descriptor(method)}"
+                    "Invalid Custom AOD lifecycle descriptor: ${descriptor(method)}"
                 }
                 method.isAccessible = true
             }
@@ -101,7 +101,7 @@ internal object AodPluginMethodProfile {
                 AodContentLayoutResolutionSource.UNIQUE_COMPATIBLE,
             )
             else -> throw IllegalArgumentException(
-                "Ambiguous classic AOD content-layout callbacks: ${
+                "Ambiguous Custom AOD content-layout callbacks: ${
                     candidates.joinToString("|") { descriptor(it) }
                 }",
             )

@@ -212,4 +212,32 @@ class OneTapRefreshSelectionPolicyTest {
             OneTapRefreshSelectionPolicy.defaultSelection(targets),
         )
     }
+
+    @Test
+    fun `legacy provider targets are listed when installed and system ui is never a music app`() {
+        val labels = mapOf(
+            "com.maxmpz.audioplayer" to "Poweramp",
+            "com.android.systemui" to "系统界面",
+            "android" to "Android 系统",
+        )
+        val apps = OneTapRefreshCatalog.installedMusicApps(
+            installedLabel = labels::get,
+            legacyProviderTargets = setOf(
+                "com.maxmpz.audioplayer",
+                "com.maxmpz.audioplayer.unlock",
+                "com.android.systemui",
+                "android",
+            ),
+        )
+        assertEquals(listOf(OneTapRefreshMusicApp("com.maxmpz.audioplayer", "Poweramp")), apps)
+    }
+
+    @Test
+    fun `legacy provider target already covered by a plugin is listed once`() {
+        val apps = OneTapRefreshCatalog.installedMusicApps(
+            installedLabel = installedLabels::get,
+            legacyProviderTargets = setOf("com.netease.cloudmusic"),
+        )
+        assertEquals(1, apps.count { it.packageName == "com.netease.cloudmusic" })
+    }
 }

@@ -138,8 +138,27 @@ internal object IslandMusicWaveColorHooker {
         if (colorExecutor.isShutdown) colorExecutor = newColorExecutor()
         if (!hookedClassLoaders.add(classLoader)) return
 
-        try {
-            val holderClass = classLoader.loadClass(ICON_HOLDER_CLASS)
+        val holderClass = try {
+            classLoader.loadClass(ICON_HOLDER_CLASS)
+        } catch (e: ClassNotFoundException) {
+            hookedClassLoaders.remove(classLoader)
+            HookLogger.w(TAG, "当前插件不支持音频律动: reason=${e.message}")
+            return
+        }
+        // 封面色与律动重绑回调分开安装：真实律动只依赖重绑回调，颜色字段缺失不能连带让它失效。
+        val colorInstalled = installColorHooks(xposedModule, classLoader, holderClass)
+        val callbackInstalled = installLottieCallbackHook(xposedModule, holderClass)
+        if (!colorInstalled && !callbackInstalled) hookedClassLoaders.remove(classLoader)
+        HookLogger.i(TAG, "音频律动 Hook 已初始化: color=$colorInstalled, lottieCallback=$callbackInstalled")
+    }
+
+    /** 封面色：颜色字段、原生取色入口与写入钳制。失败时 [colorAccessor] 保持 null，律动沿用原生色读取失败时的行为。 */
+    private fun installColorHooks(
+        xposedModule: XposedModule,
+        classLoader: ClassLoader,
+        holderClass: Class<*>,
+    ): Boolean {
+        return try {
             colorAccessor = ColorAccessor(
                 topField = holderClass.getDeclaredField("gradientTopColor").apply {
                     isAccessible = true
@@ -168,7 +187,21 @@ internal object IslandMusicWaveColorHooker {
             }
 
             installNativeColorWriteClamp(xposedModule, classLoader)
+            true
+        } catch (e: NoSuchFieldException) {
+            colorAccessor = null
+            HookLogger.w(TAG, "音频律动颜色字段不可用: reason=${e.message}")
+            false
+        } catch (e: Throwable) {
+            colorAccessor = null
+            HookLogger.e(TAG, "初始化音频律动封面色 Hook 失败", e)
+            false
+        }
+    }
 
+    /** 律动重绑回调：封面色重取与真实律动接管都从这里得到 View 和 pic。 */
+    private fun installLottieCallbackHook(xposedModule: XposedModule, holderClass: Class<*>): Boolean {
+        return try {
             val lottieViewField = holderClass.getDeclaredField("lottieView").apply {
                 isAccessible = true
             }
@@ -178,27 +211,23 @@ internal object IslandMusicWaveColorHooker {
             val registerCallbackMethod = holderClass.declaredMethods.firstOrNull {
                 it.name == "registerLottieCallback" && it.parameterTypes.isEmpty()
             }
-            if (registerCallbackMethod != null) {
-                registerCallbackMethod.isAccessible = true
-                registerLottieCallbackMethod = registerCallbackMethod
-                xposedModule.deoptimize(registerCallbackMethod)
-                xposedModule.hook(registerCallbackMethod).intercept(
-                    RegisterLottieCallbackHook(lottieViewField, picInfoField)
-                )
-            } else {
+            if (registerCallbackMethod == null) {
                 HookLogger.w(TAG, "音频律动刷新接口不可用: target=registerLottieCallback")
+                return false
             }
-
-            HookLogger.i(TAG, "音频律动封面色 Hook 已初始化")
-        } catch (e: ClassNotFoundException) {
-            hookedClassLoaders.remove(classLoader)
-            HookLogger.w(TAG, "当前插件不支持音频律动封面色: reason=${e.message}")
+            registerCallbackMethod.isAccessible = true
+            registerLottieCallbackMethod = registerCallbackMethod
+            xposedModule.deoptimize(registerCallbackMethod)
+            xposedModule.hook(registerCallbackMethod).intercept(
+                RegisterLottieCallbackHook(lottieViewField, picInfoField)
+            )
+            true
         } catch (e: NoSuchFieldException) {
-            hookedClassLoaders.remove(classLoader)
-            HookLogger.w(TAG, "音频律动颜色字段不可用: reason=${e.message}")
+            HookLogger.w(TAG, "音频律动 View 字段不可用: reason=${e.message}")
+            false
         } catch (e: Throwable) {
-            hookedClassLoaders.remove(classLoader)
-            HookLogger.e(TAG, "初始化音频律动封面色 Hook 失败", e)
+            HookLogger.e(TAG, "初始化音频律动重绑回调 Hook 失败", e)
+            false
         }
     }
 
@@ -660,11 +689,11 @@ internal object IslandMusicWaveColorHooker {
     }
 
     private fun isEnabled(sharedPrefs: SharedPreferences): Boolean {
-        // 纯音乐期间选择“系统短岛”时原生律动图标由系统显示；极简显示的「右侧显示」也可能带出律动。
+        // 无歌词音乐期间选择“系统短岛”时原生律动图标由系统显示；极简显示的「右侧显示」也可能带出律动。
         // 这两种情况下「音频律动常驻」关闭也要上色。
         return SystemUiEnhancementGate.isEnabled() && (
             IslandSlotRuntimeConfig.from(sharedPrefs).rhythmMayShow ||
-                IslandPureMusicGate.isActive(sharedPrefs)
+                IslandPureMusicGate.isSystemCompactActive(sharedPrefs)
             ) && IslandMusicWaveColorMode.isEnabled(
             IslandRuntimePreferenceReader.getMusicWaveColorMode(sharedPrefs)
         )

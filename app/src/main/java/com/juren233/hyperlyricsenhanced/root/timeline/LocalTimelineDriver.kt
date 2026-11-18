@@ -54,7 +54,7 @@ class LocalTimelineDriver(
     private val anchor: SystemMediaPlaybackAnchor,
     private val renderSink: LyricSink,
     private val mainHandler: Handler = Handler(Looper.getMainLooper()),
-    /** 确认某播放器正由歌词源提供内容（或为目录内音乐 App）时回调，用于经典AOD焦点通知。 */
+    /** 确认某播放器正由歌词源提供内容（或为目录内音乐 App）时回调，用于自定义AOD焦点通知。 */
     private val onLyricPlayerConfirmed: (String) -> Unit = {},
 ) : LyricSink, SourceSelectionAwareSink, SystemMediaPlaybackAnchor.Listener {
 

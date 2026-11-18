@@ -10,13 +10,14 @@ internal object TtmlVocalParser {
     private const val TTM_NAMESPACE = "http://www.w3.org/ns/ttml#metadata"
     private const val ROLE_TRANSLATION = "x-translation"
     private const val ROLE_ROMAN = "x-roman"
+    private const val XML_NAMESPACE = "http://www.w3.org/XML/1998/namespace"
 
     data class Vocals(
         val primary: List<LyricsWord>,
         val secondary: List<LyricsWord>,
         val hasWordTiming: Boolean,
-        /** Inline x-translation text carried by the paragraph itself (AMLL TTML DB style). */
-        val translation: String? = null,
+        /** Inline x-translation candidates carried by the paragraph itself (AMLL TTML DB style). */
+        val translations: List<TtmlTranslation> = emptyList(),
         /** Inline x-roman text carried by the paragraph itself (AMLL TTML DB style). */
         val romanization: String? = null,
     )
@@ -27,7 +28,7 @@ internal object TtmlVocalParser {
         val primary = mutableListOf<LyricsWord>()
         val secondary = mutableListOf<LyricsWord>()
         var timedWords = 0
-        val translations = mutableListOf<Pair<Boolean, String>>()
+        val translations = mutableListOf<TtmlTranslation>()
         val romanizations = mutableListOf<Pair<Boolean, String>>()
 
         fun append(text: String, background: Boolean, timing: Timing?) {
@@ -58,7 +59,9 @@ internal object TtmlVocalParser {
                     // Inline annotations are not sung words: keep them out of the word streams.
                     when (roleOf(element)) {
                         ROLE_TRANSLATION -> {
-                            collectAnnotation(translations, background, element)
+                            annotationText(element)?.let {
+                                translations += TtmlTranslation(it, languageOf(element), background)
+                            }
                             return
                         }
                         ROLE_ROMAN -> {
@@ -95,7 +98,7 @@ internal object TtmlVocalParser {
             primary = primary.ordered(),
             secondary = secondary.ordered(),
             hasWordTiming = timedWords >= 2,
-            translation = preferMainVoice(translations),
+            translations = translations,
             romanization = preferMainVoice(romanizations),
         )
     }
@@ -105,9 +108,21 @@ internal object TtmlVocalParser {
         background: Boolean,
         element: Element,
     ) {
-        val text = element.textContent.orEmpty().replace(Regex("\\s+"), " ").trim()
-        if (text.isNotEmpty()) target += background to text
+        annotationText(element)?.let { target += background to it }
     }
+
+    private fun annotationText(element: Element): String? =
+        element.textContent.orEmpty().replace(Regex("\\s+"), " ").trim().takeIf(String::isNotEmpty)
+
+    /**
+     * The annotation's own `xml:lang`. Not inherited: `<tt xml:lang>` names the lyric
+     * language, which an untagged translation is not in.
+     */
+    internal fun languageOf(element: Element): String? =
+        element.getAttributeNS(XML_NAMESPACE, "lang")
+            .ifBlank { element.getAttribute("xml:lang") }
+            .trim()
+            .takeIf(String::isNotEmpty)
 
     /** The main voice's annotation wins; a background-only annotation is the fallback. */
     private fun preferMainVoice(entries: List<Pair<Boolean, String>>): String? =

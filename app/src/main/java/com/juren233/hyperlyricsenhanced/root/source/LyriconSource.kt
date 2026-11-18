@@ -148,6 +148,9 @@ class LyriconSource : LyricSource {
     internal val mediaPositionScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     internal val appleFallbackRequest = AppleFallbackRequest()
     internal var mediaPositionJob: Job? = null
+    /** 椒盐在线兜底查询所用的歌曲数据；等待期间可被同一首歌的新上报替换，查询在后台线程读取。 */
+    @Volatile
+    internal var thirdPartyFallbackQuerySong: LocalSong? = null
     internal val thirdPartyFallbackRequest = DelayedFallbackRequest<LocalSong?>(
         scope = fallbackScope,
         post = { task, delayMs -> mainHandler.postDelayed(task, delayMs) },
@@ -371,6 +374,16 @@ class LyriconSource : LyricSource {
             )
         ) {
             publication.acceptThirdPartyInput(song)
+            if (song != null && ThirdPartySongUpdatePolicy.refreshPendingFallbackQuery(
+                    sameTrack = sameTrack,
+                    sameContent = sameContent,
+                    fallbackDelayed = request.delayed,
+                )
+            ) {
+                thirdPartyFallbackQuerySong = song
+                debug("更新等待中的椒盐在线兜底查询数据: title=${song.name}, duration=${song.duration}")
+                return
+            }
             debug("忽略同一首歌的三方回调（保留在线结果）: title=${song?.name}")
             return
         }
@@ -922,7 +935,7 @@ private fun createActivePlayerListener(generation: Long): ActivePlayerListener =
         )
         diagnostic(
             "stage=central_song_callback, id=${localSong?.id}, title=${localSong?.name}, " +
-                "lyrics=${localSong?.lyrics.orEmpty().size}, " +
+                "duration=${localSong?.duration}, lyrics=${localSong?.lyrics.orEmpty().size}, " +
                 "translated=${localSong?.lyrics.orEmpty().count { !it.translation.isNullOrBlank() }}, " +
                 "activePlayer=$activeCentralPlayerPackageName, " +
                 "centralAppleProviderActive=$centralAppleProviderActive",

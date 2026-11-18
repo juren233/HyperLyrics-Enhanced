@@ -219,8 +219,23 @@ object LyriconDataBridge : StateResetter {
     fun isPureMusic(normalizedKeywords: Set<String>): Boolean {
         if (isTextMode) return false
         val texts = pureMusicCandidateTexts ?: return false
-        return IslandPureMusicPolicy.isPureMusic(texts, normalizedKeywords)
+        // 「歌曲信息」状态由槽位配置在热路径上判定；文本列表随歌曲整体替换、关键词集合按原始串缓存，
+        // 两者引用都没变时结果不变。
+        pureMusicMemo?.takeIf { it.texts === texts && it.keywords === normalizedKeywords }
+            ?.let { return it.result }
+        return IslandPureMusicPolicy.isPureMusic(texts, normalizedKeywords).also {
+            pureMusicMemo = PureMusicMemo(texts, normalizedKeywords, it)
+        }
     }
+
+    private class PureMusicMemo(
+        val texts: List<String?>,
+        val keywords: Set<String>,
+        val result: Boolean,
+    )
+
+    @Volatile
+    private var pureMusicMemo: PureMusicMemo? = null
 
     /** 仅 debug 诊断：当前纯音乐候选文本的摘要。 */
     fun pureMusicDiagnostic(): String {

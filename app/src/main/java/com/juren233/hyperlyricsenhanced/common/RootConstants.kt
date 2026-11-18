@@ -60,6 +60,8 @@ object RootConstants {
         "key_hook_lock_screen_aod_next_song_preview"
     const val KEY_HOOK_LOCK_SCREEN_AOD_NEXT_SONG_PREVIEW_POSITION =
         "key_hook_lock_screen_aod_next_song_preview_position"
+    const val KEY_HOOK_LOCK_SCREEN_AOD_HIDE_PURE_MUSIC_PLACEHOLDER =
+        "key_hook_lock_screen_aod_hide_pure_music_placeholder"
     const val KEY_HOOK_CLASSIC_AOD_MAIN_TEXT_SIZE =
         "key_hook_classic_aod_main_text_size"
     const val KEY_HOOK_CLASSIC_AOD_BACKING_TEXT_SIZE =
@@ -98,6 +100,8 @@ object RootConstants {
         "key_hook_classic_aod_next_song_preview"
     const val KEY_HOOK_CLASSIC_AOD_NEXT_SONG_PREVIEW_POSITION =
         "key_hook_classic_aod_next_song_preview_position"
+    const val KEY_HOOK_CLASSIC_AOD_HIDE_PURE_MUSIC_PLACEHOLDER =
+        "key_hook_classic_aod_hide_pure_music_placeholder"
     const val KEY_HOOK_LYRIC_MODE = "key_hook_lyric_mode"
     const val KEY_HOOK_LYRIC_SOURCE = "key_hook_lyric_source"
     const val DEFAULT_HOOK_LYRIC_SOURCE = "lyricon"
@@ -152,6 +156,12 @@ object RootConstants {
     /** 保存关键词时当时的预设列表；用来只并入之后新增的预设，不把用户删掉的加回来。 */
     const val KEY_HOOK_ISLAND_PURE_MUSIC_KEYWORDS_SEEN_DEFAULTS =
         "key_hook_island_pure_music_keywords_seen_defaults"
+    /** 「歌曲信息」状态下右侧歌名与歌手的位置，取值为 ISLAND_LYRIC_POSITION_CENTER / ISLAND_LYRIC_POSITION_RIGHT。 */
+    const val KEY_HOOK_ISLAND_PURE_MUSIC_SONG_INFO_POSITION =
+        "key_hook_island_pure_music_song_info_position"
+    /** 「歌曲信息」状态下显示音频律动（「音频律动常驻」关闭时才在设置中出现）。 */
+    const val KEY_HOOK_ISLAND_PURE_MUSIC_SONG_INFO_RHYTHM =
+        "key_hook_island_pure_music_song_info_rhythm"
     const val KEY_HOOK_ISLAND_CONTENT_LEFT = "key_hook_island_content_left"
     const val KEY_HOOK_ISLAND_CONTENT_RIGHT = "key_hook_island_content_right"
     const val KEY_HOOK_ISLAND_LEFT_PADDING_LEFT = "key_hook_island_left_padding_left"
@@ -473,6 +483,8 @@ object RootConstants {
     const val DEFAULT_HOOK_AOD_TRANSLATION_FALLBACK = false
     const val DEFAULT_HOOK_AOD_SWAP_TRANSLATION = false
     const val DEFAULT_HOOK_AOD_NEXT_SONG_PREVIEW = true
+    /** 「纯音乐隐藏占位歌词」：判为纯音乐（见「纯音乐判定关键词」）时不显示「纯音乐，请欣赏」之类的占位歌词。 */
+    const val DEFAULT_HOOK_AOD_HIDE_PURE_MUSIC_PLACEHOLDER = true
     const val AOD_NEXT_SONG_PREVIEW_POSITION_LEFT = 0
     const val AOD_NEXT_SONG_PREVIEW_POSITION_CENTER = 1
     const val AOD_NEXT_SONG_PREVIEW_POSITION_RIGHT = 2
@@ -495,6 +507,8 @@ object RootConstants {
     const val DEFAULT_HOOK_ISLAND_INTERLUDE_MINIMAL_RIGHT = ISLAND_INTERLUDE_MINIMAL_RIGHT_DOTS
     const val ISLAND_PURE_MUSIC_MODE_KEEP = 0
     const val ISLAND_PURE_MUSIC_MODE_SYSTEM_COMPACT = 1
+    /** 左侧只留封面，右侧显示歌名与歌手两行（issue #63，用户 2026-11-18 确定）。 */
+    const val ISLAND_PURE_MUSIC_MODE_SONG_INFO = 2
     const val DEFAULT_HOOK_ISLAND_PURE_MUSIC_MODE = ISLAND_PURE_MUSIC_MODE_KEEP
     const val DEFAULT_HOOK_MAX_LEFT_WIDTH = 100
     const val DEFAULT_HOOK_REMOVE_FOCUS_WHITELIST = false
@@ -602,6 +616,9 @@ object RootConstants {
     const val ISLAND_LYRIC_POSITION_DEFAULT = 0
     const val ISLAND_LYRIC_POSITION_CENTER = 1
     const val ISLAND_LYRIC_POSITION_RIGHT = 2
+    /** 「歌曲信息」状态的歌名与歌手位置，默认靠右（用户 2026-11-18 指定）。 */
+    const val DEFAULT_HOOK_ISLAND_PURE_MUSIC_SONG_INFO_POSITION = ISLAND_LYRIC_POSITION_RIGHT
+    const val DEFAULT_HOOK_ISLAND_PURE_MUSIC_SONG_INFO_RHYTHM = false
     const val DEFAULT_HOOK_LYRIC_POSITION = ISLAND_LYRIC_POSITION_DEFAULT
     const val DEFAULT_HOOK_CENTER_LYRIC = false
     const val DEFAULT_HOOK_CENTER_GROUP_VOCALS = false

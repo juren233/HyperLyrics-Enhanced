@@ -17,4 +17,21 @@ class SourceTrackIdentityTest {
         assertFalse(ThirdPartySongUpdatePolicy.preserveOnline(true, false, false, false, true, true, false, true))
         assertTrue(ThirdPartySongUpdatePolicy.preserveOnline(true, true, true, false, false, false, false, true))
     }
+
+    @Test
+    fun `waiting salt fallback takes the latest report of the same track`() {
+        assertTrue(ThirdPartySongUpdatePolicy.refreshPendingFallbackQuery(
+            sameTrack = true, sameContent = false, fallbackDelayed = true,
+        ))
+        // 内容完全一样没有可更新的；查询已开始或换了歌都不替换。
+        assertFalse(ThirdPartySongUpdatePolicy.refreshPendingFallbackQuery(
+            sameTrack = true, sameContent = true, fallbackDelayed = true,
+        ))
+        assertFalse(ThirdPartySongUpdatePolicy.refreshPendingFallbackQuery(
+            sameTrack = true, sameContent = false, fallbackDelayed = false,
+        ))
+        assertFalse(ThirdPartySongUpdatePolicy.refreshPendingFallbackQuery(
+            sameTrack = false, sameContent = false, fallbackDelayed = true,
+        ))
+    }
 }

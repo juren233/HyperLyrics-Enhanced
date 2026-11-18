@@ -16,6 +16,7 @@ import android.graphics.RectF
 import android.graphics.Shader
 import android.graphics.drawable.Drawable
 import android.media.AudioManager
+import android.media.AudioPlaybackConfiguration
 import android.media.audiofx.Visualizer
 import android.os.Handler
 import android.os.HandlerThread
@@ -60,12 +61,22 @@ internal object IslandRealRhythm {
     private var framing = false
     private var lastFrameNanos = 0L
     private var firstTakeoverLogged = false
+    /** 上一次输出的状态与附加信息；只在变化时输出，见 [IslandRealRhythmState]。 */
+    private var reportedState: IslandRealRhythmState? = null
+    private var reportedDetail = ""
     private val targets = FloatArray(IslandRealRhythmGeometry.BAR_COUNT)
     private val smoother = IslandRealRhythmSmoother()
     /** 当前律动参数；主线程按设置更新，采集线程与帧回调读取。 */
     @Volatile
     private var tuning = IslandRealRhythmTuning.DEFAULT
     private var muted = false
+    /** 当前采集目标，见 [IslandRealRhythmCaptureTarget]；主线程读写。 */
+    private var captureSession = IslandRealRhythmCaptureTarget.OUTPUT_MIX_SESSION
+    private var playbackCallbackManager: AudioManager? = null
+    private val playbackCallback = object : AudioManager.AudioPlaybackCallback() {
+        override fun onPlaybackConfigChanged(configs: MutableList<AudioPlaybackConfiguration>) =
+            updateCaptureSession(configs)
+    }
     private var muteReceiverContext: Context? = null
     private val muteReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) = updateMuted(context)
@@ -82,6 +93,7 @@ internal object IslandRealRhythm {
             ensureMuteReceiver(image.context)
             evaluate(image)
             ensureSupervising()
+            reportState()
         }
     }
 
@@ -93,6 +105,7 @@ internal object IslandRealRhythm {
             startFailed = false
             candidates.keys.toList().forEach(::evaluate)
             ensureSupervising()
+            reportState()
         }
     }
 
@@ -103,7 +116,12 @@ internal object IslandRealRhythm {
             candidates.clear()
             muteReceiverContext?.let { context -> runCatching { context.unregisterReceiver(muteReceiver) } }
             muteReceiverContext = null
+            playbackCallbackManager?.let { audio -> runCatching { audio.unregisterAudioPlaybackCallback(playbackCallback) } }
+            playbackCallbackManager = null
+            captureSession = IslandRealRhythmCaptureTarget.OUTPUT_MIX_SESSION
             muted = false
+            reportedState = null
+            reportedDetail = ""
             stopEngine()
             mainHandler.removeCallbacks(supervisor)
             supervising = false
@@ -214,6 +232,33 @@ internal object IslandRealRhythm {
             muteReceiverContext = context
         }.onFailure { HookLogger.w(TAG, "静音监听注册失败: ${it.javaClass.simpleName}") }
         updateMuted(context)
+        ensurePlaybackCallback(context)
+    }
+
+    /** 跟踪播放器的空间化状态，决定采集目标；只在播放配置变化时回调，不轮询。 */
+    private fun ensurePlaybackCallback(context: Context) {
+        if (playbackCallbackManager != null) return
+        val audio = context.getSystemService(AudioManager::class.java) ?: return
+        runCatching {
+            audio.registerAudioPlaybackCallback(playbackCallback, mainHandler)
+            playbackCallbackManager = audio
+            updateCaptureSession(audio.activePlaybackConfigurations)
+        }.onFailure { HookLogger.w(TAG, "播放状态监听注册失败: ${it.javaClass.simpleName}") }
+    }
+
+    /** 采集目标变化时重建 Visualizer；在主线程调用。 */
+    private fun updateCaptureSession(configs: List<AudioPlaybackConfiguration>) {
+        val target = IslandRealRhythmCaptureTarget.resolve(IslandRealRhythmOutputInfo.captureCandidates(configs))
+        if (target == captureSession) return
+        captureSession = target
+        HookLogger.i(
+            TAG,
+            if (target == IslandRealRhythmCaptureTarget.OUTPUT_MIX_SESSION) "真实律动采集目标: 输出混音 session 0"
+            else "真实律动采集目标: 空间化播放器 session $target",
+        )
+        startFailed = false
+        if (engine != null) stopEngine()
+        supervise()
     }
 
     /** 静音状态翻转时，对所有已知律动重新判定：静音交还原生，有声再接管。 */
@@ -227,6 +272,7 @@ internal object IslandRealRhythm {
         if (BuildConfig.DEBUG) HookLogger.i(TAG, "媒体静音状态: muted=$now")
         candidates.keys.toList().forEach(::evaluate)
         ensureSupervising()
+        reportState()
     }
 
     private fun supervise() {
@@ -240,10 +286,57 @@ internal object IslandRealRhythm {
             !wanted && engine != null -> stopEngine()
         }
         if (anyVisible) startFrames()
+        reportState(anyVisible, interactive)
+    }
+
+    /** 判定当前状态，与上一次输出不同时输出一行运行日志（release 保留，低频）。 */
+    private fun reportState(
+        anyVisible: Boolean = bindings.keys.any { it.isAttachedToWindow && it.isShown },
+        interactive: Boolean = bindings.keys.firstOrNull()?.context
+            ?.getSystemService(PowerManager::class.java)?.isInteractive != false,
+    ) {
+        if (candidates.isEmpty()) return
+        val current = engine
+        val state = IslandRealRhythmState.resolve(
+            enabled = isEnabled(),
+            muted = muted,
+            anyMusicWave = candidates.values.any { it == IslandMusicWaveMethodProfile.MUSIC_WAVE_PIC },
+            startFailed = startFailed,
+            anyVisible = anyVisible,
+            interactive = interactive,
+            engineStartedAtMs = current?.startedAtMs?.takeIf { it >= 0L },
+            lastCallbackMs = current?.lastCallbackMs ?: -1L,
+            lastEnergyMs = current?.lastEnergyMs ?: -1L,
+            nowMs = SystemClock.elapsedRealtime(),
+        )
+        if (!state.logged) return
+        val detail = when (state) {
+            IslandRealRhythmState.NOT_MUSIC_WAVE ->
+                "pic=${candidates.values.distinct().joinToString("/") { it.ifEmpty { "null" } }}"
+            IslandRealRhythmState.OFF -> ""
+            else -> "views=${bindings.size}, session=$captureSession"
+        }
+        if (state == reportedState && detail == reportedDetail) return
+        reportedState = state
+        reportedDetail = detail
+        HookLogger.i(TAG, "真实律动状态: ${state.name} ${state.description}" + if (detail.isEmpty()) "" else ", $detail")
+        if (state == IslandRealRhythmState.NO_ENERGY || state == IslandRealRhythmState.NO_CALLBACK) {
+            (muteReceiverContext ?: candidates.keys.firstOrNull()?.context)?.let(::logOutputInfo)
+        }
+    }
+
+    /** 拿不到数据时附带一次输出信息；跨进程读取放到后台线程，不阻塞主线程。 */
+    private fun logOutputInfo(context: Context) {
+        Thread({
+            HookLogger.i(TAG, "真实律动输出信息: ${IslandRealRhythmOutputInfo.playback(context)}")
+            if (BuildConfig.DEBUG) {
+                HookLogger.i(TAG, "真实律动输出线程: ${IslandRealRhythmOutputInfo.audioFlingerThreads()}")
+            }
+        }, "HLE-RealRhythmOutput").start()
     }
 
     private fun startEngine() {
-        val created = Engine()
+        val created = Engine(captureSession)
         engine = created
         created.start { failure ->
             mainHandler.post {
@@ -251,9 +344,10 @@ internal object IslandRealRhythm {
                 engine = null
                 startFailed = true
                 HookLogger.e(TAG, "真实律动 Visualizer 启动失败", failure)
+                reportState()
             }
         }
-        if (BuildConfig.DEBUG) HookLogger.i(TAG, "Visualizer 启动: bindings=${bindings.size}")
+        if (BuildConfig.DEBUG) HookLogger.i(TAG, "Visualizer 启动: session=$captureSession, bindings=${bindings.size}")
     }
 
     private fun stopEngine() {
@@ -330,17 +424,21 @@ internal object IslandRealRhythm {
      * Visualizer 采集线程：创建、回调与释放都在该线程，主线程不等待。
      * FFT 回调里换算目标高度后交给主线程帧回调。
      */
-    private class Engine {
+    private class Engine(private val sessionId: Int) {
         private val thread = HandlerThread("HLE-RealRhythm").apply { start() }
         private val handler = Handler(thread.looper)
         private var visualizer: Visualizer? = null
         private val stats = DebugStats()
+        /** 以下三个时刻供 [reportState] 判断采集是否中断；采集线程写、主线程读。 */
+        @Volatile var startedAtMs = -1L
+        @Volatile var lastCallbackMs = -1L
+        @Volatile var lastEnergyMs = -1L
 
         fun start(onFailure: (Throwable) -> Unit) {
             handler.post {
                 var created: Visualizer? = null
                 try {
-                    created = Visualizer(0)
+                    created = Visualizer(sessionId)
                     val range = Visualizer.getCaptureSizeRange()
                     created.captureSize = CAPTURE_SIZE.coerceIn(range[0], range[1])
                     val analyzer = IslandRealRhythmAnalyzer()
@@ -349,8 +447,11 @@ internal object IslandRealRhythm {
                         object : Visualizer.OnDataCaptureListener {
                             override fun onWaveFormDataCapture(v: Visualizer?, waveform: ByteArray?, samplingRate: Int) = Unit
                             override fun onFftDataCapture(v: Visualizer?, fft: ByteArray?, samplingRate: Int) {
+                                val now = SystemClock.elapsedRealtime()
+                                lastCallbackMs = now
                                 if (fft == null) return
                                 analyzer.analyze(fft, samplingRate, levels, tuning)
+                                if (analyzer.lastDb.any { !it.isNaN() }) lastEnergyMs = now
                                 publishTargets(levels)
                                 if (BuildConfig.DEBUG) stats.add(analyzer.lastDb, levels)
                             }
@@ -362,6 +463,7 @@ internal object IslandRealRhythm {
                     val status = created.setEnabled(true)
                     check(status == Visualizer.SUCCESS) { "setEnabled 返回 $status" }
                     visualizer = created
+                    startedAtMs = SystemClock.elapsedRealtime()
                 } catch (t: Throwable) {
                     runCatching { created?.release() }
                     thread.quitSafely()

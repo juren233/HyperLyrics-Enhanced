@@ -34,8 +34,11 @@ import com.juren233.hyperlyricsenhanced.provider.OfficialProviderCatalog
 import com.juren233.hyperlyricsenhanced.root.utils.ShellUtils
 import com.juren233.hyperlyricsenhanced.ui.component.AppWindowDialog
 import com.juren233.hyperlyricsenhanced.ui.utils.LocaleUtils
+import com.juren233.hyperlyricsenhanced.utils.LyricProviderManager
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Checkbox
@@ -63,8 +66,14 @@ internal object OneTapRefreshCatalog {
         }
     }
 
-    fun installedMusicApps(packageManager: PackageManager): List<OneTapRefreshMusicApp> =
-        installedMusicApps { packageName ->
+    /** 不作为「音乐 App」列出的包：系统界面单独成项，`android` 不是可结束的进程。 */
+    private val excludedPackages = setOf(OneTapRefreshSelectionPolicy.SYSTEM_UI_PACKAGE, "android")
+
+    fun installedMusicApps(
+        packageManager: PackageManager,
+        legacyProviderTargets: Set<String> = emptySet(),
+    ): List<OneTapRefreshMusicApp> =
+        installedMusicApps(legacyProviderTargets = legacyProviderTargets, installedLabel = { packageName ->
             val info = runCatching {
                 packageManager.getApplicationInfo(
                     packageName,
@@ -72,11 +81,13 @@ internal object OneTapRefreshCatalog {
                 )
             }.getOrNull() ?: return@installedMusicApps null
             runCatching { info.loadLabel(packageManager).toString() }.getOrDefault(packageName)
-        }
+        })
 
+    /** 插件目标 App 加上独立 Provider 的目标 App（模块声明的作用域或自带 Provider 的 App，见 `LyricProviderManager.declaredTargetPackages`）。 */
     internal fun installedMusicApps(
         installedLabel: (String) -> String?,
-    ): List<OneTapRefreshMusicApp> = knownMusicPackages.mapNotNull { packageName ->
+        legacyProviderTargets: Set<String> = emptySet(),
+    ): List<OneTapRefreshMusicApp> = (knownMusicPackages + legacyProviderTargets - excludedPackages).mapNotNull { packageName ->
         val label = installedLabel(packageName) ?: return@mapNotNull null
         OneTapRefreshMusicApp(packageName, label.ifBlank { packageName })
     }
@@ -90,7 +101,9 @@ internal object OneTapRefreshCatalog {
     fun refreshTargets(
         packageManager: PackageManager,
         appleMusicOnly: Boolean,
-    ): OneTapRefreshTargets = refreshTargets(installedMusicApps(packageManager), appleMusicOnly)
+        legacyProviderTargets: Set<String> = emptySet(),
+    ): OneTapRefreshTargets =
+        refreshTargets(installedMusicApps(packageManager, legacyProviderTargets), appleMusicOnly)
 
     internal fun refreshTargets(
         installedMusicApps: List<OneTapRefreshMusicApp>,
@@ -292,6 +305,32 @@ internal class OneTapRefreshController(
 
     private var pendingPackages = emptyList<String>()
     private var rootCheckSequence = 0L
+    private var lastAppleMusicOnly = false
+
+    /** 独立 Provider 的目标 App；扫描已装包较慢，放到后台预取，打开面板时直接用。 */
+    private var legacyProviderTargets = emptySet<String>()
+
+    init {
+        reloadLegacyProviderTargets()
+    }
+
+    private fun reloadLegacyProviderTargets() {
+        scope.launch {
+            val loaded = withContext(Dispatchers.IO) { LyricProviderManager.declaredTargetPackages(context) }
+            if (loaded == legacyProviderTargets) return@launch
+            legacyProviderTargets = loaded
+            // 面板已打开时补上新列出的 App，已勾选的项保持不变。
+            if (showDialog) {
+                targets = buildTargets(lastAppleMusicOnly)
+            }
+        }
+    }
+
+    private fun buildTargets(appleMusicOnly: Boolean) = OneTapRefreshCatalog.refreshTargets(
+        packageManager = LocaleUtils.systemLanguageContext(context).packageManager,
+        appleMusicOnly = appleMusicOnly,
+        legacyProviderTargets = legacyProviderTargets,
+    )
 
     private val musicAppIds: Set<String>
         get() = targets.musicApps.mapTo(linkedSetOf(), OneTapRefreshMusicApp::packageName)
@@ -304,15 +343,15 @@ internal class OneTapRefreshController(
      * 列表里没有任何一个时退回默认勾选。
      */
     fun open(appleMusicOnly: Boolean = false, preselectedPackages: Collection<String>? = null) {
-        targets = OneTapRefreshCatalog.refreshTargets(
-            packageManager = LocaleUtils.systemLanguageContext(context).packageManager,
-            appleMusicOnly = appleMusicOnly,
-        )
+        lastAppleMusicOnly = appleMusicOnly
+        targets = buildTargets(appleMusicOnly)
         val preselected = preselectedPackages
             ?.filterTo(linkedSetOf()) { it in musicAppIds }
             .orEmpty()
         selectedIds = preselected.ifEmpty { OneTapRefreshSelectionPolicy.defaultSelection(targets) }
         showDialog = true
+        // 模块可能刚装或刚卸，每次打开都在后台重扫一次。
+        reloadLegacyProviderTargets()
         rootCheckSequence += 1L
         val checkSequence = rootCheckSequence
         scope.launch {

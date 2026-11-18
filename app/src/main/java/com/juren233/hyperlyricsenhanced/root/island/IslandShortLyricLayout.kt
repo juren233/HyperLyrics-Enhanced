@@ -36,6 +36,9 @@ internal object IslandShortLyricLayout {
     }
 
     fun usesSongInfo(view: View, prefs: SharedPreferences, config: IslandSlotRuntimeConfig): Boolean {
+        // 「歌曲信息」状态由 applySlotContent 的专用分支决定两槽内容；这里的测宽会把右槽重配为歌词样式，
+        // 与该分支的歌曲信息样式来回切换。
+        if (config.songInfoDisplay) return false
         if (!config.isFullIslandMode || !config.shortLyricSongInfo ||
             !config.shouldInjectLeft || !config.shouldInjectRight
         ) return false

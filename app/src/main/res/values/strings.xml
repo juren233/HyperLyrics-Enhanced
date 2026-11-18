@@ -40,7 +40,7 @@
     <string name="summary_dynamic_island_lyrics">利用通知实现灵动岛歌词效果，适用于无root设备</string>
     <string name="title_aod_lyrics">米系息屏歌词</string>
     <string name="title_lock_screen_aod">锁屏AOD</string>
-    <string name="title_classic_aod">经典AOD</string>
+    <string name="title_classic_aod">自定义AOD</string>
     <string name="title_dynamic_island_config">通知型灵动岛歌词自定义配置</string>
     <string name="title_special_features">特殊功能</string>
     <string name="title_global_features">全局功能</string>
@@ -721,7 +721,7 @@
     <string name="title_island_short_lyric_song_info">短歌词显示歌曲信息</string>
     <string name="summary_island_short_lyric_song_info">长歌词恢复全岛滚动</string>
     <string name="title_audio_rhythm_real_rhythm">跟随音乐真实律动</string>
-    <string name="summary_audio_rhythm_real_rhythm">静音时将回退系统原动画</string>
+    <string name="summary_audio_rhythm_real_rhythm">直通输出、USB 无损直出、AAudio 独占及低延迟播放的音频无法获取频谱时静止；静音时将回退系统原动画</string>
     <string name="option_real_rhythm_off">不开启</string>
     <string name="option_real_rhythm_on">开启</string>
     <string name="option_real_rhythm_custom">自定义</string>
@@ -746,11 +746,14 @@
     <string name="real_rhythm_help_speed_body">条每帧向目标长度靠近多少。越大越跟手，越小越柔和；上升和回落可以分开设置，例如上升快、回落慢。</string>
     <string name="real_rhythm_help_weak_band_body">开启时，某个频段偶尔没有声音，对应的条按很轻处理、慢慢变短；关闭时会立刻落到最短。所有频段都没有声音时，五根条都会落到最短。</string>
     <string name="title_audio_rhythm_cover_color">音频律动封面色</string>
-    <string name="title_island_pure_music_state">纯音乐期间音乐岛状态</string>
-    <string name="summary_island_pure_music_state">选择系统短岛后会出现未获取到歌词的有词歌曲同样变短</string>
+    <string name="title_island_pure_music_state">无歌词音乐期间音乐岛状态</string>
+    <string name="summary_island_pure_music_state">同时作用在无歌词与纯音乐</string>
     <string name="option_island_pure_music_keep">保持现状</string>
     <string name="option_island_pure_music_system_compact">系统短岛</string>
+    <string name="option_island_pure_music_song_info">歌曲信息</string>
+    <string name="title_island_pure_music_song_info_position">歌曲信息位置</string>
     <string name="title_island_pure_music_keywords">纯音乐判定关键词</string>
+    <string name="title_aod_hide_pure_music_placeholder">纯音乐隐藏占位歌词</string>
     <string name="summary_island_pure_music_keywords">整首歌可显示歌词不超过 5 行，且其中任一行包含以下任一关键词（忽略大小写与标点）时，判定为纯音乐</string>
     <string name="action_island_pure_music_keyword_add">添加关键词</string>
     <string name="action_island_pure_music_keywords_reset">恢复预设</string>

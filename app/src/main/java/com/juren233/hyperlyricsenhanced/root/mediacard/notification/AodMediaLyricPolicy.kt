@@ -105,6 +105,7 @@ internal data class AodTextStyleConfig(
     val swapTranslation: Boolean,
     val nextSongPreview: Boolean,
     val nextSongPreviewPosition: Int,
+    val hidePureMusicPlaceholder: Boolean = RootConstants.DEFAULT_HOOK_AOD_HIDE_PURE_MUSIC_PLACEHOLDER,
 ) {
     val translationDisplay: Boolean
         get() = translationDisplayMode != RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_OFF

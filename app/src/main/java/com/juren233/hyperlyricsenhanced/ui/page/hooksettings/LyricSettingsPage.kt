@@ -283,6 +283,21 @@ fun LyricSettingsPage() {
             }
         }
 
+        // 超级岛「无歌词音乐期间音乐岛状态」与两种 AOD 的「纯音乐隐藏占位歌词」共用这份关键词。
+        item(key = "pure_music_keywords") {
+            Card(
+                modifier = Modifier
+                    .padding(horizontal = 12.dp)
+                    .padding(bottom = 12.dp)
+                    .fillMaxWidth()
+            ) {
+                ArrowPreference(
+                    title = stringResource(R.string.title_island_pure_music_keywords),
+                    onClick = { navigator.navigate(Route.HyperIslandPureMusicKeywords) },
+                )
+            }
+        }
+
         item(key = "early_next_line_preview") {
             Card(
                 modifier = Modifier

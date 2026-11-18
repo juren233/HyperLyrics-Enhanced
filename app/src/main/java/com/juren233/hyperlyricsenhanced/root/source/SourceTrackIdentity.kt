@@ -46,4 +46,11 @@ internal object ThirdPartySongUpdatePolicy {
         incomingHasLyrics: Boolean,
     ): Boolean = (sameContent && (enrichmentRunningOrMatched || fallbackRunning || fallbackSelected)) ||
         (sameTrack && (fallbackPending || fallbackSelected) && (preferOnline || !incomingHasLyrics))
+
+    /**
+     * 椒盐在线兜底还在等待开始时，同一首歌的新上报（例如时长从上一首的值更正过来）要成为查询依据：
+     * 插件第一次上报可能带着上一首的时长，按它查询会被时长项扣分而未命中（SALT-LYRIC-MISSING-001）。
+     */
+    fun refreshPendingFallbackQuery(sameTrack: Boolean, sameContent: Boolean, fallbackDelayed: Boolean): Boolean =
+        sameTrack && !sameContent && fallbackDelayed
 }

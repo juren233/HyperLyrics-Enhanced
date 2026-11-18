@@ -82,7 +82,7 @@ internal object ClassicAodFocusNotificationRecovery {
     /**
      * 由 [com.juren233.hyperlyricsenhanced.root.timeline.LocalTimelineDriver] 在确认歌词来源播放器时调用：
      * 歌词源以自身包名提交并已应用的内容，或模块目录内音乐 App 的标题回退。
-     * 变化时同步给 App，经典AOD焦点通知只为该播放器发布，视频等媒体会话不会被当作歌曲。
+     * 变化时同步给 App，自定义AOD焦点通知只为该播放器发布，视频等媒体会话不会被当作歌曲。
      */
     fun onLyricPlayerConfirmed(packageName: String) {
         if (packageName.isBlank()) return
@@ -113,7 +113,7 @@ internal object ClassicAodFocusNotificationRecovery {
         if (FullScreenAodSetting.isActive(context)) {
             HookLogger.d(
                 TAG,
-                "锁屏全屏AOD启用，经典AOD焦点通知已隔离，跳过刷新请求: reason=$reason"
+                "锁屏全屏AOD启用，自定义AOD焦点通知已隔离，跳过刷新请求: reason=$reason"
             )
             return
         }
@@ -163,9 +163,9 @@ internal object ClassicAodFocusNotificationPolicy {
      * Binary evidence (OS4.0.0.6 MiuiSystemUI classes3.dex): the keyguard repository
      * Lcom/miui/keyguard/data/repository/KeyguardCommonSettingsRepository; reads the
      * Settings.Secure key "full_screen_aod_on" into fullscreenAodEnabled, the
-     * fullscreen (lockscreen) AOD master switch. The classic AOD focus renderer
+     * fullscreen (lockscreen) AOD master switch. The Custom AOD focus renderer
      * (com.miui.aod AODView/AodContainerView reading mFocusNotification) only covers
-     * the classic AOD surface, so the focus-notification song info must stay off
+     * the Custom AOD surface, so the focus-notification song info must stay off
      * while the fullscreen lockscreen AOD is the system's active AOD; otherwise the
      * contentView-less notification is listed as a blank row under the media card.
      */

@@ -41,6 +41,7 @@ import com.juren233.hyperlyricsenhanced.lyric.view.SongPreprocessor
 import com.juren233.hyperlyricsenhanced.root.ClassicAodFocusNotificationRecovery
 import com.juren233.hyperlyricsenhanced.root.HookEntry
 import com.juren233.hyperlyricsenhanced.root.LyriconDataBridge
+import com.juren233.hyperlyricsenhanced.root.PureMusicKeywords
 import com.juren233.hyperlyricsenhanced.root.utils.DisplayDiagnosticLogger
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import com.juren233.hyperlyricsenhanced.root.utils.MediaCardDiagnosticLogger
@@ -75,7 +76,7 @@ internal fun NotificationMediaAodLyricHooker.currentContent(style: AodTextStyleC
         AodMediaLyricPolicy.shouldSuppressNoLyricPlaceholder(
             isTextMode = LyriconDataBridge.isTextMode,
             hasActualLyrics = currentActualLyrics().isNotEmpty(),
-        )
+        ) || hidesPureMusicPlaceholder(style)
     val line = LyriconDataBridge.currentLyricLine.takeUnless {
         suppressNoLyricPlaceholder
     }
@@ -176,7 +177,8 @@ internal fun NotificationMediaAodLyricHooker.appendNextSongPreview(
             enabled = true,
             positionMs = position,
             durationMs = duration,
-            hasActualLyrics = actualLyrics.isNotEmpty(),
+            // 占位歌词已隐藏时按无歌词处理，只在结尾前预告，不从占位行开始一直显示。
+            hasActualLyrics = actualLyrics.isNotEmpty() && !hidesPureMusicPlaceholder(style),
             lastLyricStartMs = actualLyrics.maxOfOrNull { it.begin } ?: -1L,
         )
     ) {
@@ -201,6 +203,13 @@ internal fun NotificationMediaAodLyricHooker.appendNextSongPreview(
             ),
         )
     }
+}
+
+/** 开启「纯音乐隐藏占位歌词」且当前歌曲按「纯音乐判定关键词」判为纯音乐：占位歌词不显示。 */
+internal fun NotificationMediaAodLyricHooker.hidesPureMusicPlaceholder(style: AodTextStyleConfig): Boolean {
+    if (!style.hidePureMusicPlaceholder) return false
+    val currentPrefs = prefs ?: return false
+    return LyriconDataBridge.isPureMusic(PureMusicKeywords.of(currentPrefs))
 }
 
 internal fun NotificationMediaAodLyricHooker.currentActualLyrics() =
@@ -269,6 +278,10 @@ internal fun NotificationMediaAodLyricHooker.lockScreenAodTextStyle(): AodTextSt
     nextSongPreviewPosition = readAodNextSongPreviewPosition(
         RootConstants.KEY_HOOK_LOCK_SCREEN_AOD_NEXT_SONG_PREVIEW_POSITION
     ),
+    hidePureMusicPlaceholder = prefs?.getBoolean(
+        RootConstants.KEY_HOOK_LOCK_SCREEN_AOD_HIDE_PURE_MUSIC_PLACEHOLDER,
+        RootConstants.DEFAULT_HOOK_AOD_HIDE_PURE_MUSIC_PLACEHOLDER,
+    ) ?: RootConstants.DEFAULT_HOOK_AOD_HIDE_PURE_MUSIC_PLACEHOLDER,
 )
 
 internal fun NotificationMediaAodLyricHooker.classicAodTextStyle(): AodTextStyleConfig = AodTextStyleConfig(
@@ -332,6 +345,10 @@ internal fun NotificationMediaAodLyricHooker.classicAodTextStyle(): AodTextStyle
     nextSongPreviewPosition = readAodNextSongPreviewPosition(
         RootConstants.KEY_HOOK_CLASSIC_AOD_NEXT_SONG_PREVIEW_POSITION
     ),
+    hidePureMusicPlaceholder = prefs?.getBoolean(
+        RootConstants.KEY_HOOK_CLASSIC_AOD_HIDE_PURE_MUSIC_PLACEHOLDER,
+        RootConstants.DEFAULT_HOOK_AOD_HIDE_PURE_MUSIC_PLACEHOLDER,
+    ) ?: RootConstants.DEFAULT_HOOK_AOD_HIDE_PURE_MUSIC_PLACEHOLDER,
 )
 
 internal fun NotificationMediaAodLyricHooker.readAodTextSize(

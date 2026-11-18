@@ -60,6 +60,7 @@ private data class AodSettingsSpec(
     val swapTranslationKey: String,
     val nextSongPreviewKey: String,
     val nextSongPreviewPositionKey: String,
+    val hidePureMusicPlaceholderKey: String,
     val songInfoDisplayStyleKey: String? = null,
     val songInfoFormatKey: String? = null,
     val songInfoTextSizeKey: String? = null,
@@ -107,6 +108,8 @@ fun LockScreenAodSettingsPage() {
                 RootConstants.KEY_HOOK_LOCK_SCREEN_AOD_NEXT_SONG_PREVIEW,
             nextSongPreviewPositionKey =
                 RootConstants.KEY_HOOK_LOCK_SCREEN_AOD_NEXT_SONG_PREVIEW_POSITION,
+            hidePureMusicPlaceholderKey =
+                RootConstants.KEY_HOOK_LOCK_SCREEN_AOD_HIDE_PURE_MUSIC_PLACEHOLDER,
             defaultMainTextSize = RootConstants.DEFAULT_HOOK_LOCK_SCREEN_AOD_MAIN_TEXT_SIZE,
             defaultBackingTextSize =
                 RootConstants.DEFAULT_HOOK_LOCK_SCREEN_AOD_BACKING_TEXT_SIZE,
@@ -140,6 +143,8 @@ fun ClassicAodSettingsPage() {
             nextSongPreviewKey = RootConstants.KEY_HOOK_CLASSIC_AOD_NEXT_SONG_PREVIEW,
             nextSongPreviewPositionKey =
                 RootConstants.KEY_HOOK_CLASSIC_AOD_NEXT_SONG_PREVIEW_POSITION,
+            hidePureMusicPlaceholderKey =
+                RootConstants.KEY_HOOK_CLASSIC_AOD_HIDE_PURE_MUSIC_PLACEHOLDER,
             songInfoDisplayStyleKey =
                 RootConstants.KEY_HOOK_CLASSIC_AOD_SONG_INFO_DISPLAY_STYLE,
             songInfoFormatKey = RootConstants.KEY_HOOK_CLASSIC_AOD_SONG_INFO_FORMAT,
@@ -333,6 +338,14 @@ private fun AodSettingsPage(spec: AodSettingsSpec) {
             prefs.getBoolean(
                 spec.nextSongPreviewKey,
                 RootConstants.DEFAULT_HOOK_AOD_NEXT_SONG_PREVIEW,
+            )
+        )
+    }
+    var hidePureMusicPlaceholder by remember(spec.hidePureMusicPlaceholderKey) {
+        mutableStateOf(
+            prefs.getBoolean(
+                spec.hidePureMusicPlaceholderKey,
+                RootConstants.DEFAULT_HOOK_AOD_HIDE_PURE_MUSIC_PLACEHOLDER,
             )
         )
     }
@@ -687,6 +700,14 @@ private fun AodSettingsPage(spec: AodSettingsSpec) {
                     .fillMaxWidth()
             ) {
                 Column {
+                    SwitchPreference(
+                        title = stringResource(R.string.title_aod_hide_pure_music_placeholder),
+                        checked = hidePureMusicPlaceholder,
+                        onCheckedChange = {
+                            hidePureMusicPlaceholder = it
+                            saveConfig(spec.hidePureMusicPlaceholderKey, it)
+                        },
+                    )
                     OverlayDropdownPreference(
                         title = stringResource(R.string.title_aod_pause_style),
                         items = listOf(

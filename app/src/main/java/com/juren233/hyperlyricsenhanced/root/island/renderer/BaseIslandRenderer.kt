@@ -103,7 +103,7 @@ object BaseIslandRenderer : IslandRenderer {
             RootConstants.DEFAULT_HOOK_ISLAND_BEHAVIOR_AFTER_PAUSE
         )
         if (!(playbackActive || behavior != 0 || pauseTransitionGuard.nativeRestorePending)) return false
-        return !IslandPureMusicGate.isActive(prefs)
+        return !IslandPureMusicGate.isSystemCompactActive(prefs)
     }
 
     /**
@@ -120,7 +120,7 @@ object BaseIslandRenderer : IslandRenderer {
             RootConstants.DEFAULT_HOOK_ISLAND_BEHAVIOR_AFTER_PAUSE
         )
         if (!(playbackActive || behavior != 0 || pauseTransitionGuard.nativeRestorePending)) return false
-        return IslandPureMusicGate.isActive(prefs)
+        return IslandPureMusicGate.isSystemCompactActive(prefs)
     }
 
     private fun refreshPureMusicNative(prefs: android.content.SharedPreferences) {
@@ -753,8 +753,8 @@ object BaseIslandRenderer : IslandRenderer {
             return true
         }
         val iconVisibilityChanged = syncIconVisibility(cv, config)
-        if (IslandSlotContentAssembler.isInterludeMinimalDisplayActive(config) || iconVisibilityChanged) {
-            // 换句路径也要处理非歌词槽，否则单侧模式下残留的歌曲信息不会被隐藏。
+        if (IslandSlotContentAssembler.isMinimalDisplayActive(config) || iconVisibilityChanged) {
+            // 换句路径也要处理非歌词槽，否则单侧模式下残留的歌曲信息不会被隐藏（「歌曲信息」状态同理）。
             val mediaInfo = MediaMetadataHelper.getMediaInfo(cv.context, packageName, HookLogger)
             val leftChanged = updateSlot(cv, IslandProbeUtils.LEFT_TEST_VIEW_TAG, config.leftMode, prefs, config, mediaInfo)
             val rightChanged = updateSlot(cv, IslandProbeUtils.RIGHT_TEST_VIEW_TAG, config.rightMode, prefs, config, mediaInfo)

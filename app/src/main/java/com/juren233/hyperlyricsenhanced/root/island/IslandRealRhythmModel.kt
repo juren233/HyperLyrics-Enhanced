@@ -214,3 +214,79 @@ internal class IslandRealRhythmSmoother(count: Int = IslandRealRhythmGeometry.BA
         private const val SETTLED = 0.002f
     }
 }
+
+/**
+ * 真实律动当前所处的状态。用户反馈「不生效」时据此判断卡在哪一步，
+ * 只在状态翻转时输出一行运行日志（release 保留），不随帧或采集回调刷屏。
+ * 「有能量」与 [IslandRealRhythmAnalyzer] 一致：五个频段中至少一个不低于静音阈值。
+ * [logged] 为 false 的是亮灭屏、收起超级岛时的正常过渡态：不输出、也不覆盖上一次输出的状态，
+ * 这样亮屏后恢复到同一状态时不会重复输出。
+ */
+internal enum class IslandRealRhythmState(val description: String, val logged: Boolean = true) {
+    OFF("已关闭"),
+    MUTED("媒体静音或音量为 0，显示原生动画"),
+    NOT_MUSIC_WAVE("原生律动不是 musicWave，显示原生动画"),
+    START_FAILED("Visualizer 启动失败，等待原生重绑或设置变化后重试"),
+    HIDDEN("已接管，律动当前不可见，Visualizer 未运行", logged = false),
+    SCREEN_OFF("已接管，熄屏，Visualizer 未运行", logged = false),
+    STARTING("已接管，等待 Visualizer 首批数据", logged = false),
+    RUNNING("已接管，Visualizer 正在收到音频数据"),
+    NO_CALLBACK("已接管，Visualizer 持续没有采集回调"),
+    NO_ENERGY("已接管，Visualizer 有采集回调但各频段持续没有能量");
+
+    companion object {
+        /** 采集回调或有能量数据中断多久算异常。 */
+        const val CAPTURE_STALL_MS = 3_000L
+
+        /**
+         * @param engineStartedAtMs Visualizer 本次启动时刻；未运行为 null。
+         * @param lastCallbackMs / lastEnergyMs 本次启动后最近一次采集回调 / 有能量回调的时刻，没有为 -1。
+         */
+        fun resolve(
+            enabled: Boolean,
+            muted: Boolean,
+            anyMusicWave: Boolean,
+            startFailed: Boolean,
+            anyVisible: Boolean,
+            interactive: Boolean,
+            engineStartedAtMs: Long?,
+            lastCallbackMs: Long,
+            lastEnergyMs: Long,
+            nowMs: Long,
+        ): IslandRealRhythmState = when {
+            !enabled -> OFF
+            muted -> MUTED
+            !anyMusicWave -> NOT_MUSIC_WAVE
+            startFailed -> START_FAILED
+            !anyVisible -> HIDDEN
+            !interactive -> SCREEN_OFF
+            engineStartedAtMs == null -> STARTING
+            nowMs - max(engineStartedAtMs, lastCallbackMs) >= CAPTURE_STALL_MS -> NO_CALLBACK
+            nowMs - max(engineStartedAtMs, lastEnergyMs) >= CAPTURE_STALL_MS -> NO_ENERGY
+            lastEnergyMs < engineStartedAtMs -> STARTING
+            else -> RUNNING
+        }
+    }
+}
+
+/**
+ * 真实律动的采集目标。默认挂在输出混音 session 0；开启空间音频（小米「沉浸声」）后，
+ * 音乐在空间音频线程上播放，session 0 的 Visualizer 不会跟过去（2026-11-18 实测），
+ * 这时改挂到被空间化的媒体播放器自己的 session。
+ * 只对 `isSpatialized` 的播放器这样做：直通、独占、bit-perfect、低延迟轨道不会被空间化，
+ * 不会被挂上效果（session 上挂效果会让这些轨道降级或建轨失败，见知识库 island-audio-rhythm.md）。
+ */
+internal object IslandRealRhythmCaptureTarget {
+    const val OUTPUT_MIX_SESSION = 0
+
+    /** 不按音频用途筛选：椒盐音乐的 MediaPlayer 用 `USAGE_UNKNOWN` 播放，同样会被空间化（2026-11-18 实测）。 */
+    data class Player(
+        val sessionId: Int,
+        val started: Boolean,
+        val spatialized: Boolean,
+    )
+
+    fun resolve(players: List<Player>): Int =
+        players.firstOrNull { it.started && it.spatialized && it.sessionId > OUTPUT_MIX_SESSION }
+            ?.sessionId ?: OUTPUT_MIX_SESSION
+}

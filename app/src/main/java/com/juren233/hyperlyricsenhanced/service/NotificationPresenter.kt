@@ -402,7 +402,7 @@ class NotificationPresenter(
             songInfo.isNotBlank()
         LogManager.i(
             "NotificationPresenter",
-            "经典AOD歌曲信息: displayStyle=$displayStyle, format=$format, " +
+            "自定义AOD歌曲信息: displayStyle=$displayStyle, format=$format, " +
                 "title=$title, artist=$artist, " +
                 "pkg=${state.targetPackageName}, lyricPackage=$lyricPackage, " +
                 "interactive=${isScreenInteractive()}, fullscreenAod=$fullScreenAodActive, " +
@@ -463,7 +463,7 @@ class NotificationPresenter(
         )
         LogManager.i(
             "NotificationPresenter",
-            "经典AOD歌曲信息焦点通知已重新发布: id=$notificationId, song=$songInfo"
+            "自定义AOD歌曲信息焦点通知已重新发布: id=$notificationId, song=$songInfo"
         )
     }
 
@@ -498,14 +498,14 @@ class NotificationPresenter(
             }.onFailure {
                 LogManager.w(
                     "NotificationPresenter",
-                    "检查经典AOD焦点通知状态失败: id=$notificationId",
+                    "检查自定义AOD焦点通知状态失败: id=$notificationId",
                     it
                 )
             }.getOrDefault(true)
             if (stillActive) {
                 LogManager.i(
                     "NotificationPresenter",
-                    "经典AOD焦点通知状态确认正常: id=$notificationId, song=$songInfo"
+                    "自定义AOD焦点通知状态确认正常: id=$notificationId, song=$songInfo"
                 )
                 return@launch
             }
@@ -522,7 +522,7 @@ class NotificationPresenter(
             activeClassicAodNotificationId = retryId
             LogManager.w(
                 "NotificationPresenter",
-                "经典AOD焦点通知被系统移除，已自动重发: oldId=$notificationId, " +
+                "自定义AOD焦点通知被系统移除，已自动重发: oldId=$notificationId, " +
                     "newId=$retryId, song=$songInfo"
             )
         }

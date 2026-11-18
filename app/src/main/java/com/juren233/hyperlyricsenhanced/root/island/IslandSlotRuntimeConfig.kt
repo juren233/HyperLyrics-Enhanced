@@ -79,6 +79,16 @@ internal data class IslandSlotRuntimeConfig(
     val shortLyricSongInfo: Boolean = RootConstants.DEFAULT_HOOK_ISLAND_SHORT_LYRIC_SONG_INFO,
     val interludeMinimalDisplay: Boolean = RootConstants.DEFAULT_HOOK_ISLAND_INTERLUDE_MINIMAL_DISPLAY,
     val interludeMinimalRight: Int = RootConstants.DEFAULT_HOOK_ISLAND_INTERLUDE_MINIMAL_RIGHT,
+    /** 「歌曲信息」状态下右侧歌名与歌手的位置（居中 / 靠右）。 */
+    val songInfoPosition: Int = RootConstants.DEFAULT_HOOK_ISLAND_PURE_MUSIC_SONG_INFO_POSITION,
+    /** 选了「歌曲信息」且其「音频律动」开关开启：「歌曲信息」状态下显示律动，不论「音频律动常驻」。 */
+    val songInfoRhythm: Boolean = false,
+    /**
+     * 此刻处于「无歌词音乐期间音乐岛状态 = 歌曲信息」：选了该项且当前歌曲确定无歌词或判为纯音乐
+     * （[IslandPureMusicGate.state]，找词期间不生效）。左槽清空、封面显示、右槽显示歌名与歌手两行。
+     * 属于运行时状态，[from] 每次取用都重新判定，变化时重建配置。
+     */
+    val songInfoDisplay: Boolean = false,
     val fullIslandNextLineMode: Int = IslandNextLineMode.resolve(IslandNextLineMode.UNSPECIFIED, nextLyricLine),
     val fontWeightMode: Int = IslandFontWeightMode.CUSTOM,
     val systemFontWeight: IslandSystemFontWeight.State? = null,
@@ -103,28 +113,38 @@ internal data class IslandSlotRuntimeConfig(
     fun usesInterludeMinimalDisplay(interludeActive: Boolean): Boolean =
         interludeMinimalDisplay && interludeActive
 
+    /** 极简显示（间奏极简或「歌曲信息」状态）：左侧封面总是显示，非指示器槽位清空。 */
+    fun usesMinimalDisplay(interludeActive: Boolean): Boolean =
+        songInfoDisplay || usesInterludeMinimalDisplay(interludeActive)
+
     /** 极简显示期间「右侧显示」选了音频律动：倒计时圆点在此期间隐藏。 */
     fun hidesInterludeDots(interludeActive: Boolean): Boolean =
         usesInterludeMinimalDisplay(interludeActive) &&
             interludeMinimalRight == RootConstants.ISLAND_INTERLUDE_MINIMAL_RIGHT_RHYTHM
 
     /**
-     * 音频律动此刻是否可见：极简显示期间只看「右侧显示」（倒计时圆点时隐藏，音频律动或同时显示时显示），
-     * 其余时间看「音频律动常驻」。
+     * 音频律动此刻是否可见：间奏极简显示期间只看「右侧显示」（倒计时圆点时隐藏，音频律动或同时显示时显示），
+     * 「歌曲信息」状态看「音频律动常驻」或该状态自己的「音频律动」开关，其余时间看「音频律动常驻」。
      */
-    fun rhythmVisible(interludeActive: Boolean): Boolean =
-        if (usesInterludeMinimalDisplay(interludeActive)) interludeMinimalShowsRhythm else showRhythm
+    fun rhythmVisible(interludeActive: Boolean): Boolean = when {
+        songInfoDisplay -> showRhythm || songInfoRhythm
+        usesInterludeMinimalDisplay(interludeActive) -> interludeMinimalShowsRhythm
+        else -> showRhythm
+    }
 
     /**
-     * 左侧封面此刻是否可见：「音频封面」开启时始终显示；关闭时极简显示期间也显示（用户 2026-11-15 要求），
-     * 样式按「音频封面」关闭处理（默认样式）。
+     * 左侧封面此刻是否可见：「音频封面」开启时始终显示；关闭时极简显示期间（含「歌曲信息」状态）也显示
+     * （用户 2026-11-15 要求）。
      */
     fun albumVisible(interludeActive: Boolean): Boolean =
-        showAlbum || usesInterludeMinimalDisplay(interludeActive)
+        showAlbum || usesMinimalDisplay(interludeActive)
 
-    /** 律动可能出现在岛上（常驻，或极简显示期间按「右侧显示」出现）：律动取色据此决定是否生效。 */
+    /**
+     * 律动可能出现在岛上（常驻，极简显示期间按「右侧显示」出现，或「歌曲信息」状态按其开关出现）：
+     * 律动取色据此决定是否生效。
+     */
     val rhythmMayShow: Boolean
-        get() = showRhythm || (interludeMinimalDisplay && interludeMinimalShowsRhythm)
+        get() = showRhythm || (interludeMinimalDisplay && interludeMinimalShowsRhythm) || songInfoRhythm
 
     val isSingleSideMode: Boolean
         get() = activeMode == RootConstants.HOOK_LYRIC_MODE_SINGLE_SIDE
@@ -144,11 +164,14 @@ internal data class IslandSlotRuntimeConfig(
     fun lyricPosition(isLeft: Boolean): Int = if (isLeft) leftLyricPosition else rightLyricPosition
 
     // 全岛共用连续文本带；对半分离的两槽可独立对齐，渲染器仅对不溢出的行生效。
+    // 「歌曲信息」状态下两槽各自独立（全岛模式同样），右槽按「歌曲信息位置」，左槽已清空。
     fun centerLyric(isLeft: Boolean): Boolean =
-        !isFullIslandMode && IslandLyricPosition.centers(lyricPosition(isLeft))
+        if (songInfoDisplay) !isLeft && IslandLyricPosition.centers(songInfoPosition)
+        else !isFullIslandMode && IslandLyricPosition.centers(lyricPosition(isLeft))
 
     fun rightAlignLyric(isLeft: Boolean): Boolean =
-        !isFullIslandMode && IslandLyricPosition.alignsRight(lyricPosition(isLeft))
+        if (songInfoDisplay) !isLeft && IslandLyricPosition.alignsRight(songInfoPosition)
+        else !isFullIslandMode && IslandLyricPosition.alignsRight(lyricPosition(isLeft))
 
     /**
      * Horizontal placement for content-width slots. Apply this at both the
@@ -207,6 +230,9 @@ internal data class IslandSlotRuntimeConfig(
             gradientProgress,
             leftLyricPosition,
             rightLyricPosition,
+            songInfoPosition,
+            songInfoRhythm,
+            songInfoDisplay,
             centerGroupVocals,
             lyricAnimationEnabled,
             lyricAnimationId,
@@ -275,8 +301,9 @@ internal data class IslandSlotRuntimeConfig(
                 adjacentTranslationTargetIsLeft == true
             ))
 
+    // 「歌曲信息」状态的歌名与歌手写在右槽：单侧模式右侧选了「无内容」时，只在该状态期间注入右槽。
     val shouldInjectRight: Boolean
-        get() = (dynamicLimitEnabled || rightMaxWidthDp > 0) && (rightMode != 0 ||
+        get() = (dynamicLimitEnabled || rightMaxWidthDp > 0) && (rightMode != 0 || songInfoDisplay ||
             nextSongPreviewStyle == RootConstants.ISLAND_NEXT_SONG_PREVIEW_STYLE_FULL ||
             (
                 nextSongPreviewStyle == RootConstants.ISLAND_NEXT_SONG_PREVIEW_STYLE_HALF &&
@@ -368,12 +395,16 @@ internal data class IslandSlotRuntimeConfig(
 
         fun from(prefs: SharedPreferences): IslandSlotRuntimeConfig {
             val version = configVersion.get()
+            // 运行时状态随歌词可用性与当前歌曲变化，不经设置失效；每次取用都判定，与缓存不符时重建。
+            val songInfoDisplay = IslandPureMusicGate.isSongInfoActive(prefs)
             synchronized(configCacheLock) {
                 cachedConfig?.let { config ->
-                    if (cachedVersion == version && cachedPrefs === prefs) return config
+                    if (cachedVersion == version && cachedPrefs === prefs &&
+                        config.songInfoDisplay == songInfoDisplay
+                    ) return config
                 }
             }
-            val config = build(prefs)
+            val config = build(prefs, songInfoDisplay)
             synchronized(configCacheLock) {
                 cachedConfig = config
                 cachedPrefs = prefs
@@ -443,7 +474,7 @@ internal data class IslandSlotRuntimeConfig(
             }
         }
 
-        private fun build(prefs: SharedPreferences): IslandSlotRuntimeConfig {
+        private fun build(prefs: SharedPreferences, songInfoDisplay: Boolean): IslandSlotRuntimeConfig {
             val dynamicLimitEnabled = runtimeBoolean(prefs,
                 RootConstants.KEY_HOOK_ISLAND_DYNAMIC_LIMIT,
                 RootConstants.DEFAULT_HOOK_ISLAND_DYNAMIC_LIMIT)
@@ -477,6 +508,21 @@ internal data class IslandSlotRuntimeConfig(
                     RootConstants.KEY_HOOK_ISLAND_INTERLUDE_MINIMAL_RIGHT,
                     RootConstants.DEFAULT_HOOK_ISLAND_INTERLUDE_MINIMAL_RIGHT,
                 ),
+                songInfoPosition = runtimeInt(
+                    prefs,
+                    RootConstants.KEY_HOOK_ISLAND_PURE_MUSIC_SONG_INFO_POSITION,
+                    RootConstants.DEFAULT_HOOK_ISLAND_PURE_MUSIC_SONG_INFO_POSITION,
+                ),
+                songInfoRhythm = runtimeInt(
+                    prefs,
+                    RootConstants.KEY_HOOK_ISLAND_PURE_MUSIC_MODE,
+                    RootConstants.DEFAULT_HOOK_ISLAND_PURE_MUSIC_MODE,
+                ) == RootConstants.ISLAND_PURE_MUSIC_MODE_SONG_INFO && runtimeBoolean(
+                    prefs,
+                    RootConstants.KEY_HOOK_ISLAND_PURE_MUSIC_SONG_INFO_RHYTHM,
+                    RootConstants.DEFAULT_HOOK_ISLAND_PURE_MUSIC_SONG_INFO_RHYTHM,
+                ),
+                songInfoDisplay = songInfoDisplay,
                 leftMode = if (activeMode == RootConstants.HOOK_LYRIC_MODE_SINGLE_SIDE) runtimeInt(
                     prefs,
                     RootConstants.KEY_HOOK_ISLAND_CONTENT_LEFT,

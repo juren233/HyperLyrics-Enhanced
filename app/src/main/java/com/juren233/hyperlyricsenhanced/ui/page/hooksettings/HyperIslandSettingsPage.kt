@@ -112,9 +112,26 @@ fun HyperIslandSettingsPage() {
                 RootConstants.DEFAULT_HOOK_ISLAND_PURE_MUSIC_MODE,
             ).coerceIn(
                 RootConstants.ISLAND_PURE_MUSIC_MODE_KEEP,
-                RootConstants.ISLAND_PURE_MUSIC_MODE_SYSTEM_COMPACT,
+                RootConstants.ISLAND_PURE_MUSIC_MODE_SONG_INFO,
             )
         )
+    }
+    var pureMusicSongInfoPosition by remember {
+        mutableIntStateOf(
+            prefs.getInt(
+                RootConstants.KEY_HOOK_ISLAND_PURE_MUSIC_SONG_INFO_POSITION,
+                RootConstants.DEFAULT_HOOK_ISLAND_PURE_MUSIC_SONG_INFO_POSITION,
+            ).takeIf {
+                it == RootConstants.ISLAND_LYRIC_POSITION_CENTER ||
+                    it == RootConstants.ISLAND_LYRIC_POSITION_RIGHT
+            } ?: RootConstants.DEFAULT_HOOK_ISLAND_PURE_MUSIC_SONG_INFO_POSITION
+        )
+    }
+    var pureMusicSongInfoRhythm by remember {
+        mutableStateOf(prefs.getBoolean(
+            RootConstants.KEY_HOOK_ISLAND_PURE_MUSIC_SONG_INFO_RHYTHM,
+            RootConstants.DEFAULT_HOOK_ISLAND_PURE_MUSIC_SONG_INFO_RHYTHM,
+        ))
     }
     var interludeMinimalDisplay by remember {
         mutableStateOf(prefs.getBoolean(
@@ -377,6 +394,20 @@ fun HyperIslandSettingsPage() {
         listOf(
             R.string.option_island_pure_music_keep,
             R.string.option_island_pure_music_system_compact,
+            R.string.option_island_pure_music_song_info,
+        )
+    }.map { stringResource(id = it) }
+    // 下拉序号与存储值的对应：居中、靠右。
+    val pureMusicSongInfoPositionValues = remember {
+        listOf(
+            RootConstants.ISLAND_LYRIC_POSITION_CENTER,
+            RootConstants.ISLAND_LYRIC_POSITION_RIGHT,
+        )
+    }
+    val pureMusicSongInfoPositionOptions = remember {
+        listOf(
+            R.string.option_lyric_position_center,
+            R.string.option_lyric_position_right,
         )
     }.map { stringResource(id = it) }
     val realRhythmModeValues = remember {
@@ -410,7 +441,7 @@ fun HyperIslandSettingsPage() {
             }
         }
     }
-    // 音频律动与“纯音乐期间系统短岛”共用同一份真实律动设置，只在此处定义一次。
+    // 音频律动与“无歌词音乐期间系统短岛”共用同一份真实律动设置，只在此处定义一次。
     val realRhythmPreference: @Composable () -> Unit = {
         Column {
             OverlayDropdownPreference(
@@ -436,7 +467,7 @@ fun HyperIslandSettingsPage() {
             }
         }
     }
-    // 音频律动与“纯音乐期间系统短岛”共用同一份律动封面色设置，只在此处定义一次。
+    // 音频律动与“无歌词音乐期间系统短岛”共用同一份律动封面色设置，只在此处定义一次。
     val musicWaveColorModePreference: @Composable () -> Unit = {
         OverlayDropdownPreference(
             title = stringResource(id = R.string.title_audio_rhythm_cover_color),
@@ -684,25 +715,52 @@ fun HyperIslandSettingsPage() {
                 }
                 item(key = "pure_music_state") {
                     Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
-                        OverlayDropdownPreference(
-                            title = stringResource(id = R.string.title_island_pure_music_state),
-                            summary = stringResource(id = R.string.summary_island_pure_music_state),
-                            items = pureMusicModeOptions,
-                            selectedIndex = pureMusicMode,
-                            onSelectedIndexChange = {
-                                pureMusicMode = it
-                                saveConfig(RootConstants.KEY_HOOK_ISLAND_PURE_MUSIC_MODE, it)
-                            }
-                        )
-                        AnimatedVisibility(
-                            visible = pureMusicMode == RootConstants.ISLAND_PURE_MUSIC_MODE_SYSTEM_COMPACT,
-                            enter = SectionEnter,
-                            exit = SectionExit,
-                        ) {
-                            ArrowPreference(
-                                title = stringResource(id = R.string.title_island_pure_music_keywords),
-                                onClick = { navigator.navigate(Route.HyperIslandPureMusicKeywords) },
+                        Column {
+                            OverlayDropdownPreference(
+                                title = stringResource(id = R.string.title_island_pure_music_state),
+                                summary = stringResource(id = R.string.summary_island_pure_music_state),
+                                items = pureMusicModeOptions,
+                                selectedIndex = pureMusicMode,
+                                onSelectedIndexChange = {
+                                    pureMusicMode = it
+                                    saveConfig(RootConstants.KEY_HOOK_ISLAND_PURE_MUSIC_MODE, it)
+                                }
                             )
+                            AnimatedVisibility(
+                                visible = pureMusicMode == RootConstants.ISLAND_PURE_MUSIC_MODE_SONG_INFO,
+                                enter = SectionEnter,
+                                exit = SectionExit,
+                            ) {
+                                Column {
+                                    // 「歌曲信息」状态下封面总是显示，「音频封面」关闭时封面样式与白名单在这里设置（同极简显示）。
+                                    AnimatedVisibility(visible = !audioCover, enter = SectionEnter, exit = SectionExit) {
+                                        audioCoverStylePreference()
+                                    }
+                                    OverlayDropdownPreference(
+                                        title = stringResource(id = R.string.title_island_pure_music_song_info_position),
+                                        items = pureMusicSongInfoPositionOptions,
+                                        selectedIndex = pureMusicSongInfoPositionValues
+                                            .indexOf(pureMusicSongInfoPosition)
+                                            .coerceAtLeast(0),
+                                        onSelectedIndexChange = {
+                                            val value = pureMusicSongInfoPositionValues[it]
+                                            pureMusicSongInfoPosition = value
+                                            saveConfig(RootConstants.KEY_HOOK_ISLAND_PURE_MUSIC_SONG_INFO_POSITION, value)
+                                        },
+                                    )
+                                    // 「音频律动常驻」开启时律动已在岛上，这个开关只在常驻关闭时有意义。
+                                    AnimatedVisibility(visible = !audioRhythm, enter = SectionEnter, exit = SectionExit) {
+                                        SwitchPreference(
+                                            title = stringResource(id = R.string.title_audio_rhythm),
+                                            checked = pureMusicSongInfoRhythm,
+                                            onCheckedChange = {
+                                                pureMusicSongInfoRhythm = it
+                                                saveConfig(RootConstants.KEY_HOOK_ISLAND_PURE_MUSIC_SONG_INFO_RHYTHM, it)
+                                            },
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }

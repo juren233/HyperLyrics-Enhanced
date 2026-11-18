@@ -138,4 +138,86 @@ class IslandRealRhythmModelTest {
         assertFalse(values.weakBand)
         assertEquals(IslandRealRhythmConfig.DEFAULT_VALUES, IslandRealRhythmConfig.resolveValues(IslandRealRhythmConfig.MODE_ON, { 1 }, { false }))
     }
+
+    private fun state(
+        enabled: Boolean = true,
+        muted: Boolean = false,
+        anyMusicWave: Boolean = true,
+        startFailed: Boolean = false,
+        anyVisible: Boolean = true,
+        interactive: Boolean = true,
+        startedAt: Long? = 1_000L,
+        lastCallback: Long = -1L,
+        lastEnergy: Long = -1L,
+        now: Long = 1_500L,
+    ) = IslandRealRhythmState.resolve(
+        enabled, muted, anyMusicWave, startFailed, anyVisible, interactive,
+        startedAt, lastCallback, lastEnergy, now,
+    )
+
+    @Test fun `state reports why rhythm is not taken over in priority order`() {
+        assertEquals(IslandRealRhythmState.OFF, state(enabled = false, muted = true))
+        assertEquals(IslandRealRhythmState.MUTED, state(muted = true, anyMusicWave = false))
+        assertEquals(IslandRealRhythmState.NOT_MUSIC_WAVE, state(anyMusicWave = false, startFailed = true))
+        assertEquals(IslandRealRhythmState.START_FAILED, state(startFailed = true, anyVisible = false))
+        assertEquals(IslandRealRhythmState.HIDDEN, state(anyVisible = false, interactive = false))
+        assertEquals(IslandRealRhythmState.SCREEN_OFF, state(interactive = false))
+        assertEquals(IslandRealRhythmState.STARTING, state(startedAt = null))
+    }
+
+    @Test fun `state tracks capture health after engine start`() {
+        val stall = IslandRealRhythmState.CAPTURE_STALL_MS
+        assertEquals(IslandRealRhythmState.STARTING, state(now = 1_000L + stall - 1))
+        assertEquals(IslandRealRhythmState.NO_CALLBACK, state(now = 1_000L + stall))
+        assertEquals(
+            IslandRealRhythmState.NO_ENERGY,
+            state(lastCallback = 1_000L + stall, now = 1_000L + stall),
+        )
+        assertEquals(
+            IslandRealRhythmState.RUNNING,
+            state(lastCallback = 4_000L, lastEnergy = 4_000L, now = 4_100L),
+        )
+        // 回调还在，但有能量的数据已中断超过阈值。
+        assertEquals(
+            IslandRealRhythmState.NO_ENERGY,
+            state(lastCallback = 8_000L, lastEnergy = 4_000L, now = 8_000L),
+        )
+        // 回调整体中断（例如共享效果被关闭）。
+        assertEquals(
+            IslandRealRhythmState.NO_CALLBACK,
+            state(lastCallback = 4_000L, lastEnergy = 4_000L, now = 4_000L + stall),
+        )
+        // 上一次启动残留的时刻不算本次数据。
+        assertEquals(IslandRealRhythmState.STARTING, state(lastCallback = 500L, lastEnergy = 500L))
+    }
+
+    @Test fun `transient states are not logged`() {
+        assertFalse(IslandRealRhythmState.HIDDEN.logged)
+        assertFalse(IslandRealRhythmState.SCREEN_OFF.logged)
+        assertFalse(IslandRealRhythmState.STARTING.logged)
+        assertTrue(IslandRealRhythmState.NO_CALLBACK.logged)
+        assertTrue(IslandRealRhythmState.RUNNING.logged)
+    }
+
+    private fun capturePlayer(
+        session: Int,
+        started: Boolean = true,
+        spatialized: Boolean = false,
+    ) = IslandRealRhythmCaptureTarget.Player(session, started, spatialized)
+
+    @Test fun `capture stays on output mix unless a started player is spatialized`() {
+        assertEquals(0, IslandRealRhythmCaptureTarget.resolve(emptyList()))
+        assertEquals(0, IslandRealRhythmCaptureTarget.resolve(listOf(capturePlayer(17545))))
+        assertEquals(0, IslandRealRhythmCaptureTarget.resolve(listOf(capturePlayer(17545, started = false, spatialized = true))))
+        assertEquals(0, IslandRealRhythmCaptureTarget.resolve(listOf(capturePlayer(0, spatialized = true))))
+    }
+
+    @Test fun `capture follows the spatialized media player session`() {
+        assertEquals(
+            17545,
+            IslandRealRhythmCaptureTarget.resolve(
+                listOf(capturePlayer(17113, started = false), capturePlayer(17545, spatialized = true)),
+            ),
+        )
+    }
 }

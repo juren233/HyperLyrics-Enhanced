@@ -8,9 +8,11 @@ package com.juren233.hyperlyricsenhanced.online.source.ttml
 
 import com.juren233.hyperlyricsenhanced.lyric.LrcLine
 import com.juren233.hyperlyricsenhanced.online.model.LyricsLine
+import com.juren233.hyperlyricsenhanced.online.model.LyricsWord
 import org.w3c.dom.Element
 import org.w3c.dom.Node
 import java.io.ByteArrayInputStream
+import java.util.Locale
 import javax.xml.parsers.DocumentBuilderFactory
 
 internal data class TtmlParsedLyrics(
@@ -24,7 +26,18 @@ internal object TtmlLyricsParser {
     private const val MAX_LINES = 2_000
     private const val MAX_WORDS = 30_000
 
-    fun parseWordTimed(bytes: ByteArray): TtmlParsedLyrics? {
+    private data class ParsedParagraph(
+        val begin: Long,
+        val end: Long,
+        val key: String,
+        val text: String,
+        val words: List<LyricsWord>,
+        val secondaryWords: List<LyricsWord>,
+        val vocals: TtmlVocalParser.Vocals,
+    )
+
+    /** @param preferredLocale picks the translation language when a line carries several. */
+    fun parseWordTimed(bytes: ByteArray, preferredLocale: Locale = Locale.getDefault()): TtmlParsedLyrics? {
         if (bytes.isEmpty()) return null
         val prefix = bytes.decodeToString(0, minOf(bytes.size, 4_096)).lowercase()
         if ("<!doctype" in prefix || "<!entity" in prefix) return null
@@ -49,13 +62,12 @@ internal object TtmlLyricsParser {
         // by the content gate below. An explicit non-Word declaration is still rejected.
         if (timing.isNotBlank() && !timing.equals("Word", ignoreCase = true)) return null
 
-        val translations = metadataTextByLineKey(document, "translation")
+        val translations = metadataTranslationsByLineKey(document)
         val transliterations = metadataTextByLineKey(document, "transliteration")
         val paragraphs = document.getElementsByTagNameNS("*", "p")
         if (paragraphs.length == 0 || paragraphs.length > MAX_LINES) return null
 
-        val wordLines = ArrayList<LyricsLine>(paragraphs.length)
-        val lrcLines = ArrayList<LrcLine>(paragraphs.length)
+        val parsedParagraphs = ArrayList<ParsedParagraph>(paragraphs.length)
         var totalWords = 0
         var hasRealWordTiming = false
         for (index in 0 until paragraphs.length) {
@@ -78,19 +90,62 @@ internal object TtmlLyricsParser {
             val text = words.joinToString("") { it.text }
                 .ifBlank { paragraph.textContent.orEmpty().trim() }
             if (text.isBlank()) continue
-            wordLines += LyricsLine(start = begin, end = end, words = words, secondaryWords = secondaryWords)
+            parsedParagraphs += ParsedParagraph(begin, end, key, text, words, secondaryWords, vocals)
+        }
+        if (!hasRealWordTiming || parsedParagraphs.isEmpty()) return null
+
+        // Head (Apple-style) candidates come before inline ones, as before.
+        fun candidatesOf(paragraph: ParsedParagraph): List<TtmlTranslation> =
+            translations[paragraph.key].orEmpty() + paragraph.vocals.translations
+        val translationPlan = TtmlTranslationLanguage.plan(
+            preferredLocale,
+            parsedParagraphs.flatMap(::candidatesOf).map(TtmlTranslation::languageTag),
+        )
+        val wordLines = ArrayList<LyricsLine>(parsedParagraphs.size)
+        val lrcLines = ArrayList<LrcLine>(parsedParagraphs.size)
+        for (paragraph in parsedParagraphs) {
+            wordLines += LyricsLine(
+                start = paragraph.begin,
+                end = paragraph.end,
+                words = paragraph.words,
+                secondaryWords = paragraph.secondaryWords,
+            )
             lrcLines += LrcLine(
-                startTimeMs = begin,
-                content = text,
-                translation = (translations[key] ?: vocals.translation)?.takeIf(String::isNotBlank),
-                romanization = (transliterations[key] ?: vocals.romanization)?.takeIf(String::isNotBlank),
+                startTimeMs = paragraph.begin,
+                content = paragraph.text,
+                translation = translationPlan
+                    .select(candidatesOf(paragraph))
+                    ?.takeIf(String::isNotBlank),
+                romanization = (transliterations[paragraph.key] ?: paragraph.vocals.romanization)
+                    ?.takeIf(String::isNotBlank),
             )
         }
-        if (!hasRealWordTiming || wordLines.isEmpty()) return null
         return TtmlParsedLyrics(
             wordLines = wordLines.sortedBy(LyricsLine::start),
             lrcLines = lrcLines.sortedBy(LrcLine::startTimeMs),
         )
+    }
+
+    /** Apple-style `<translation xml:lang>` containers; each language is a separate candidate. */
+    private fun metadataTranslationsByLineKey(
+        document: org.w3c.dom.Document,
+    ): Map<String, List<TtmlTranslation>> {
+        val result = linkedMapOf<String, MutableList<TtmlTranslation>>()
+        val containers = document.getElementsByTagNameNS("*", "translation")
+        for (containerIndex in 0 until containers.length) {
+            val container = containers.item(containerIndex) as? Element ?: continue
+            val language = TtmlVocalParser.languageOf(container)
+            val textNodes = container.getElementsByTagNameNS("*", "text")
+            for (index in 0 until textNodes.length) {
+                val text = textNodes.item(index) as? Element ?: continue
+                val lineKey = text.getAttribute("for").trim()
+                val value = text.textContent.orEmpty().replace(Regex("\\s+"), " ").trim()
+                if (lineKey.isNotEmpty() && value.isNotEmpty()) {
+                    result.getOrPut(lineKey) { mutableListOf() } += TtmlTranslation(value, language)
+                }
+            }
+        }
+        return result
     }
 
     private fun metadataTextByLineKey(

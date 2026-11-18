@@ -50,11 +50,11 @@ This project is based on [limczhh/HyperLyric](https://github.com/limczhh/HyperLy
 </p>
 
 <p align="center">
-  <a href="assets/screenshots/两种AOD示例.jpg"><img src="assets/screenshots/两种AOD示例.jpg" alt="AOD lyrics: Left: lock-screen AOD · Right: classic AOD" width="36%" /></a>
+  <a href="assets/screenshots/两种AOD示例.jpg"><img src="assets/screenshots/两种AOD示例.jpg" alt="AOD lyrics: Left: lock-screen AOD · Right: Custom AOD" width="36%" /></a>
   <a href="assets/screenshots/平行窗口与Lyricon插件.jpg"><img src="assets/screenshots/平行窗口与Lyricon插件.jpg" alt="Parallel windows & plugins: Two-pane layout · Lyricon plugin management" width="60%" /></a>
 </p>
 <p align="center">
-  <sub><strong>AOD lyrics</strong> · Left: lock-screen AOD · Right: classic AOD</sub><br />
+  <sub><strong>AOD lyrics</strong> · Left: lock-screen AOD · Right: Custom AOD</sub><br />
   <sub><strong>Parallel windows & plugins</strong> · Two-pane layout · Lyricon plugin management</sub>
 </p>
 
@@ -74,7 +74,7 @@ Building on HyperLyric's system-level lyric display, Enhanced focuses on **fewer
 | **Fewer separate modules** | The Lyricon source requires Lyricon Central and a Lyricon Provider for the music app | **Built-in Lyricon Central and Apple Music Provider**; add, update, enable, disable and repair project-maintained plugins for other music apps within the app, without installing a separate APK module for each one |
 | **Enhancements inside Apple Music** | Lyrics are passed to the system UI through lyric providers | **Supplement lyrics, translations and pronunciation, and switch sources inside Apple Music**, alongside font, blur, regional metadata and playback adjustments |
 | **Multiple lyric and translation sources** | Online lyric retrieval from NetEase Cloud Music and QQ Music, plus translations supplied by lyric sources | **Four sources: NetEase, QQ Music, Kugou and Kuwo**, with source ordering, per-app controls and automatic best-match selection; Apple Music's native content takes priority by default, with missing content supplemented |
-| **AOD lyrics** | No dedicated AOD lyric feature | **Separate lock-screen AOD and classic AOD lyric modes**, with controls for main vocals, backing vocals, translations, the next line, duet layouts and pause behavior |
+| **AOD lyrics** | No dedicated AOD lyric feature | **Separate lock-screen AOD and Custom AOD lyric modes**, with controls for main vocals, backing vocals, translations, the next line, duet layouts and pause behavior |
 | **An interface tailored to the device and your needs** | A single configuration approach for feature controls and device support | **A two-pane parallel-window UI** for wide screens, plus **feature entry controls** for HyperIsland, AOD lyrics, notification lyrics and Apple Music enhancements, so you can keep only the sections you need |
 
 > **Please note:** This comparison describes the project's focus, not a comprehensive review or a ranking of the upstream project. Both projects continue to evolve, and differences may change between versions. Availability depends on the device, system and music app version; refer to each project's release notes and actual behavior on your device.
@@ -95,7 +95,7 @@ Building on HyperLyric's system-level lyric display, Enhanced focuses on **fewer
 | :--- | :--- |
 | **HyperIsland** | Word-by-word lyrics, backing vocals, duets, translations and pronunciation; dynamic width and width limits, fixed duet width and width-limit removal; cover art, colors and audio-reactive effects |
 | **Media cards** | Separate settings for notification-center cards and the expanded HyperIsland card, including cover backgrounds, blur, soft lighting and animated flowing colors |
-| **Lock-screen AOD / classic AOD** | Main lyrics, backing vocals, translations, the next line, duet layouts, pause behavior and positioning; classic AOD can show track information using a Focus notification or embedded text |
+| **Lock-screen AOD / Custom AOD** | Main lyrics, backing vocals, translations, the next line, duet layouts, pause behavior and positioning; Custom AOD can show track information using a Focus notification or embedded text |
 | **Notification-based Dynamic Island** | A non-root lyric display option with notification styles, icons, a progress bar, track information, tap actions and an app allowlist |
 
 Available styles and controls depend on the system, device and data supplied by the player. Notification-based Dynamic Island mode does not add native HyperOS HyperIsland to other devices.
@@ -180,7 +180,7 @@ If you only use Apple Music enhancements, you do not need to select system compo
 | HyperIsland and media-card enhancements | Targets HyperOS 3 / 4 with LSPosed v2.0+; depends on the specific SystemUI and system plugin implementations |
 | Apple Music enhancements | Android 13+ with LSPosed; the code includes adaptation profiles for **Apple Music 6.5.0–7.0.0**, not a guarantee of compatibility with arbitrary versions |
 | Project-maintained Provider plugins | Requires the relevant app, plugin and scope; consult the plugin catalog and release notes for versions and capabilities |
-| Lock-screen AOD / classic AOD | Xiaomi-family devices with a compatible AOD implementation; presentation varies by system |
+| Lock-screen AOD / Custom AOD | Xiaomi-family devices with a compatible AOD implementation; presentation varies by system |
 | Notification lyrics | Android 13+; depends on permissions, player output and background operation |
 | Focus notifications / Android Live Updates | Actual presentation is controlled by the system; Android Live Updates require Android 16+ and manufacturer support |
 | Media-card pull-down floating-window allowlist bypass | Targets the corresponding Android 16 / HyperOS 3.0.300+ implementation; compatibility must be reassessed after system updates |

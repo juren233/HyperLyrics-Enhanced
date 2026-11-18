@@ -242,7 +242,7 @@ internal fun LyriconSource.onActiveMediaSessionSnapshotChanged(raw: String?, rea
 
 /**
  * 活动播放者被门控阻断（Provider 僵尸发布、宿主已无 MediaSession）时，
- * 主动触发一次 sink 清除，恢复超级岛与经典 AOD 原生显示。
+ * 主动触发一次 sink 清除，恢复超级岛与自定义 AOD 原生显示。
  *
  * 解除阻断（会话重新出现，如划掉后台后重新打开播放、会话抖动恢复）时，
  * 被阻断窗口丢弃的歌曲回调不会自动补发：对同一播放者重放 Central 当前快照，

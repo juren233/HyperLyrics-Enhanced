@@ -39,7 +39,7 @@
     <string name="summary_dynamic_island_lyrics">Uses notifications to provide Dynamic Island lyrics on non-rooted devices</string>
     <string name="title_aod_lyrics">Xiaomi AOD Lyrics</string>
     <string name="title_lock_screen_aod">Lock Screen AOD</string>
-    <string name="title_classic_aod">Classic AOD</string>
+    <string name="title_classic_aod">Custom AOD</string>
     <string name="title_dynamic_island_config">Notification Island Lyrics Config</string>
     <string name="title_special_features">Special Features</string>
     <string name="title_global_features">Global Features</string>
@@ -723,7 +723,7 @@
     <string name="title_island_short_lyric_song_info">Show Song Info for Short Lyrics</string>
     <string name="summary_island_short_lyric_song_info">Long lyrics return to full-island scrolling</string>
     <string name="title_audio_rhythm_real_rhythm">Follow Real Music Rhythm</string>
-    <string name="summary_audio_rhythm_real_rhythm">Falls back to the system animation when muted</string>
+    <string name="summary_audio_rhythm_real_rhythm">Stays still when the spectrum is unavailable for direct output, USB bit-perfect, AAudio exclusive and low-latency playback; falls back to the system animation when muted</string>
     <string name="option_real_rhythm_off">Off</string>
     <string name="option_real_rhythm_on">On</string>
     <string name="option_real_rhythm_custom">Custom</string>
@@ -748,11 +748,14 @@
     <string name="real_rhythm_help_speed_body">How far a bar moves toward its target each frame. Higher is snappier, lower is softer. Rise and fall are set separately, for example a fast rise with a slow fall.</string>
     <string name="real_rhythm_help_weak_band_body">When on, a band that briefly goes silent is treated as very quiet and its bar shrinks gradually; when off, the bar drops to its shortest at once. When every band is silent, all five bars drop to their shortest.</string>
     <string name="title_audio_rhythm_cover_color">Audio Rhythm Cover Color</string>
-    <string name="title_island_pure_music_state">Island State During Instrumental Tracks</string>
-    <string name="summary_island_pure_music_state">With System Default, songs that have lyrics but none could be fetched also shrink to the compact island</string>
+    <string name="title_island_pure_music_state">Island State for Tracks Without Lyrics</string>
+    <string name="summary_island_pure_music_state">Applies to both songs without lyrics and instrumental tracks</string>
     <string name="option_island_pure_music_keep">Keep as is</string>
     <string name="option_island_pure_music_system_compact">System Default</string>
+    <string name="option_island_pure_music_song_info">Song Info</string>
+    <string name="title_island_pure_music_song_info_position">Song Info Position</string>
     <string name="title_island_pure_music_keywords">Instrumental Detection Keywords</string>
+    <string name="title_aod_hide_pure_music_placeholder">Hide Placeholder Lyrics for Instrumentals</string>
     <string name="summary_island_pure_music_keywords">A song is treated as instrumental when it has at most 5 lyric lines and any line contains one of these keywords (case and punctuation ignored)</string>
     <string name="action_island_pure_music_keyword_add">Add keyword</string>
     <string name="action_island_pure_music_keywords_reset">Reset to defaults</string>

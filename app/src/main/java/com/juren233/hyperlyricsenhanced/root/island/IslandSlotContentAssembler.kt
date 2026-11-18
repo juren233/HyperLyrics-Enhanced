@@ -428,6 +428,22 @@ internal object IslandSlotContentAssembler {
             isLeft = isLeft,
             independentSlots = independentSlots
         )
+        // 「歌曲信息」状态（无歌词音乐期间）：左槽与间奏极简一样清空；右槽显示歌名与歌手两行，与歌曲信息槽
+        // （模式 5）同一份取值与排版，对齐按「歌曲信息位置」。不走成对形变，避免空白槽参与过渡。
+        if (config.songInfoDisplay) {
+            IslandSeparatedLyricTransition.cancel(view)
+            IslandShortLyricTransition.cancel(view)
+            if (isLeft) {
+                return applyInterludeMinimalContent(
+                    view, prefs, config, effectiveMode, playbackActive, mediaInfo, force
+                )
+            }
+            configureView(view, prefs, config, SONG_INFO_SLOT_MODE, mediaInfo, force)
+            applyPlaybackActive(view, playbackActive)
+            return applyMetadataContent(
+                view, prefs, config, SONG_INFO_SLOT_MODE, force, mediaInfo, suppressAnimation
+            )
+        }
         // 间奏极简隐藏非指示器槽位（联播时为左槽歌曲信息）；右槽倒计时圆点按「右侧显示」保留，
         // 选了只显示音频律动时一并清空。极简窗口内不走成对形变，避免空白槽参与过渡。
         if (isInterludeMinimalDisplayActive(config)) {
@@ -541,6 +557,17 @@ internal object IslandSlotContentAssembler {
         playbackActive: Boolean = true
     ): Boolean {
         if (IslandContentUpdateCoordinator.deferContent(view)) return false
+        // 「歌曲信息」状态下两个槽都由 applySlotContent 的专用分支决定内容，换句不得直写歌词。
+        if (config.songInfoDisplay) {
+            return applySlotContent(
+                view = view,
+                prefs = prefs,
+                config = config,
+                mode = config.modeForTag(view.tag as? String ?: return false),
+                lineOverride = lineOverride,
+                playbackActive = playbackActive
+            )
+        }
         // Line-only updates must also enter/leave the temporary metadata slot and
         // restore its lyric style; a full metadata refresh is not required at a gap boundary.
         if (config.usesBothLyricSlots) {
@@ -915,6 +942,10 @@ internal object IslandSlotContentAssembler {
     internal fun isInterludeMinimalDisplayActive(config: IslandSlotRuntimeConfig): Boolean =
         config.usesInterludeMinimalDisplay(LyriconDataBridge.currentInterludeType != null)
 
+    /** 极简显示（间奏极简或「歌曲信息」状态）此刻是否生效：换句路径据此同时处理两个槽。 */
+    internal fun isMinimalDisplayActive(config: IslandSlotRuntimeConfig): Boolean =
+        config.usesMinimalDisplay(LyriconDataBridge.currentInterludeType != null)
+
     /** 音频律动此刻是否可见；岛端律动容器显隐、右侧内边距与图标锚点都以此为准。 */
     internal fun isRhythmVisible(config: IslandSlotRuntimeConfig): Boolean =
         config.rhythmVisible(LyriconDataBridge.currentInterludeType != null)
@@ -974,6 +1005,9 @@ internal object IslandSlotContentAssembler {
         prefs: SharedPreferences,
         config: IslandSlotRuntimeConfig,
     ): Boolean =
+        // 「歌曲信息」状态两槽内容各自独立（左槽清空、右槽歌曲信息）。按当前歌词行判定会在纯音乐提示行
+        // （如「纯音乐，请欣赏」）下把清空的左槽标成连续文本带，全岛动态长度随之放弃收缩，岛停在最大宽。
+        config.songInfoDisplay ||
         IslandFullIslandGapPolicy.usesIndependentSlots(
             config.activeMode,
             LyriconDataBridge.currentLyricLine
@@ -1255,9 +1289,13 @@ internal object IslandSlotContentAssembler {
                 "preferSessionMetadata=$preferSessionMetadata"
         }
 
+        val isLeftSlot = view.tag == IslandProbeUtils.LEFT_TEST_VIEW_TAG
         val signature = listOf(
             "metadata",
             mode,
+            // 同一模式在「歌曲信息」状态进出时对齐会变（单侧右槽本就是歌曲信息时内容不变）。
+            config.centerLyric(isLeftSlot),
+            config.rightAlignLyric(isLeftSlot),
             songName,
             artistName,
             albumName,
@@ -1355,6 +1393,9 @@ internal object IslandSlotContentAssembler {
         packageName == OfficialProviderCatalog.APPLE_MUSIC_PACKAGE_NAME
 
     private const val UNKNOWN_MEDIA_TITLE = "Playing~"
+
+    /** 「歌曲信息」状态右槽的内容：歌名与歌手两行（[buildMetadataLine] 模式 5）。 */
+    private const val SONG_INFO_SLOT_MODE = 5
 
     internal fun buildMetadataLine(
         mode: Int,

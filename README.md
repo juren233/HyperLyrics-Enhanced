@@ -50,11 +50,11 @@ HyperLyrics Enhanced 是为**小米 HyperOS 设备**打造的**超级岛 / 息�
 </p>
 
 <p align="center">
-  <a href="assets/screenshots/两种AOD示例.jpg"><img src="assets/screenshots/两种AOD示例.jpg" alt="息屏歌词: 左：锁屏 AOD · 右：经典 AOD" width="36%" /></a>
+  <a href="assets/screenshots/两种AOD示例.jpg"><img src="assets/screenshots/两种AOD示例.jpg" alt="息屏歌词: 左：锁屏 AOD · 右：自定义 AOD" width="36%" /></a>
   <a href="assets/screenshots/平行窗口与Lyricon插件.jpg"><img src="assets/screenshots/平行窗口与Lyricon插件.jpg" alt="平行窗口与插件: 宽屏双栏 · Lyricon 插件管理" width="60%" /></a>
 </p>
 <p align="center">
-  <sub><strong>息屏歌词</strong> · 左：锁屏 AOD · 右：经典 AOD</sub><br />
+  <sub><strong>息屏歌词</strong> · 左：锁屏 AOD · 右：自定义 AOD</sub><br />
   <sub><strong>平行窗口与插件</strong> · 宽屏双栏 · Lyricon 插件管理</sub>
 </p>
 
@@ -74,7 +74,7 @@ HyperLyrics Enhanced 是为**小米 HyperOS 设备**打造的**超级岛 / 息�
 | **更少的外部模块** | Lyricon 源需另装 Central 词幕服务模块与对应音乐 App 的 Lyricon Provider | **内置 Central 词幕服务模块与 Apple Music Provider**；其他音乐App的官方插件可在应用内添加、更新、启停和修复，无需逐个安装独立 APK 模块 |
 | **Apple Music 应用内增强** | 通过歌词提供器向系统界面传递歌词 | 不止获取歌词，还能**在 Apple Music 内补充歌词、翻译与发音、切换来源**，并调整字体、模糊、地区化歌曲信息及播放体验 |
 | **多来源歌词与翻译补全** | 已有网易云音乐、QQ 音乐在线取词路径，以及来源自带的翻译数据 | 扩展至**网易云、QQ、酷狗、酷我四源**，支持来源排序、按应用配置与自动择优；其中 Apple Music 默认原生内容优先，缺失部分再补全 |
-| **息屏歌词** | 未提供独立的息屏歌词功能 | 提供**锁屏 AOD 与经典 AOD 两套息屏歌词方案**，支持主句、伴唱、翻译、下一句、对唱布局和暂停行为配置 |
+| **息屏歌词** | 未提供独立的息屏歌词功能 | 提供**锁屏 AOD 与自定义 AOD 两套息屏歌词方案**，支持主句、伴唱、翻译、下一句、对唱布局和暂停行为配置 |
 | **按设备与需求设计界面** | 单一的功能开关与设备适配 | 增加**平板平行窗口 UI**，以及超级岛、息屏歌词、通知歌词和 Apple Music 优化的**功能入口管理**，让不同设备只保留需要的入口 |
 
 > **需要注意**：以上对比仅用于说明本项目的功能侧重，不代表对原项目的全面评价或优劣结论。双方均在持续更新，功能差异可能随版本变化；实际可用性受设备、系统及音乐 App 版本影响，请以各项目的版本说明和实际使用情况为准。
@@ -95,7 +95,7 @@ HyperLyrics Enhanced 是为**小米 HyperOS 设备**打造的**超级岛 / 息�
 | :--- | :--- |
 | **超级岛** | 逐字歌词、伴唱与对唱、翻译与发音；动态长度、动态上限调节、对唱固定长度、解除长度限制；封面、配色与音频律动 |
 | **媒体卡片** | 分别配置通知中心与超级岛展开卡片，提供封面背景、模糊、柔光、动态流光等外观选项 |
-| **锁屏 AOD / 经典 AOD** | 主句、伴唱、翻译、下一句、对唱布局、暂停行为与显示位置；经典 AOD 可选择焦点通知或嵌入式文本歌曲信息 |
+| **锁屏 AOD / 自定义 AOD** | 主句、伴唱、翻译、下一句、对唱布局、暂停行为与显示位置；自定义 AOD 可选择焦点通知或嵌入式文本歌曲信息 |
 | **通知型灵动岛** | 无 Root 歌词展示路径，支持通知样式、图标、进度条、歌曲信息、点击行为和播放器白名单 |
 
 具体样式与可用选项受系统、设备和播放器数据限制；通知型灵动岛模式不会把其他设备变成原生 HyperOS 超级岛。
@@ -180,7 +180,7 @@ HyperLyrics Enhanced 是为**小米 HyperOS 设备**打造的**超级岛 / 息�
 | 超级岛与媒体卡片增强 | 面向 HyperOS 3 / 4 与 LSPosed v2.0+；依赖具体 SystemUI 及系统插件实现 |
 | Apple Music 深度适配 | Android 13+ 与 LSPosed；当前代码包含 Apple Music **6.5.0-7.0.0** 等版本的适配配置，不能据此保证任意版本可用 |
 | 官方 Provider 插件 | 需要对应App、插件及作用域；可用版本和能力以插件目录及更新说明为准 |
-| 锁屏 AOD / 经典 AOD | 米系设备及兼容的 AOD 实现；不同系统的呈现方式可能不同 |
+| 锁屏 AOD / 自定义 AOD | 米系设备及兼容的 AOD 实现；不同系统的呈现方式可能不同 |
 | 通知歌词 | Android 13+；依赖权限、播放器输出及后台存活情况 |
 | 焦点通知 / Android 实时通知 | 由系统决定实际呈现；Android 实时通知需要 Android 16+ 及厂商支持 |
 | 下拉小窗白名单增强 | 面向 Android 16 / HyperOS 3.0.300+ 对应实现；系统更新后需重新确认兼容性 |

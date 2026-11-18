@@ -117,7 +117,7 @@ class AppLyricSink(
         val isWhitelisted = ConfigRepository.whitelistState.value.contains(data.currentPackageName)
         LogManager.d(
             "AppLyricSink",
-            "processSyncData: 超级岛开关=$enableDynamicIsland, 经典AOD歌曲信息=$classicAodSongInfoEnabled, " +
+            "processSyncData: 超级岛开关=$enableDynamicIsland, 自定义AOD歌曲信息=$classicAodSongInfoEnabled, " +
                 "白名单通过=$isWhitelisted, pkg=${data.currentPackageName}"
         )
 

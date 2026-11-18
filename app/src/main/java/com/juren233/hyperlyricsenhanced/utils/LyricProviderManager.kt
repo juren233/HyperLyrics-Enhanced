@@ -95,7 +95,7 @@ object LyricProviderManager {
         }
     }
 
-    private fun isValidModule(packageInfo: PackageInfo): Boolean {
+    internal fun isValidModule(packageInfo: PackageInfo): Boolean {
         val appInfo = packageInfo.applicationInfo ?: return false
         val isSystem = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
         val isUpdatedSystem = (appInfo.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0
@@ -162,6 +162,61 @@ object LyricProviderManager {
         // 这里暂时返回 false，或者你可以实现完整的校验
         return false 
     }
+
+    /**
+     * 独立 Provider 对应的目标 App，分两类：
+     * - Xposed 模块：读模块声明的作用域，即旧版 Xposed 的 `xposedscope` 元数据（字符串数组资源）
+     *   与 libxposed 的 `META-INF/xposed/scope.list`（上游 tomakino/LyricProvider 两种都在用）。
+     *   通用模块（如车载 Provider）声明为空，实际作用域由用户在 LSPosed 里勾选，读不到。
+     * - 音乐 App 自带的 Provider：App 自己声明 `lyricon_module`，既无 `xposedmodule` 也无
+     *   `META-INF/xposed/`（2026-11-18 真机核对 MD3Music、Halcyon、椒盐音乐），目标就是它自己。
+     */
+    fun declaredTargetPackages(context: Context): Set<String> {
+        val packageManager = context.packageManager
+        val modules = runCatching {
+            packageManager.getInstalledPackages(PackageManager.GET_META_DATA)
+        }.getOrDefault(emptyList()).filter { it.packageName != context.packageName && isValidModule(it) }
+        return modules.flatMapTo(linkedSetOf()) { module ->
+            val appInfo = module.applicationInfo ?: return@flatMapTo emptyList()
+            val apkXposed = apkXposedInfo(appInfo)
+            providerTargets(
+                packageName = module.packageName,
+                isXposedModule = appInfo.metaData?.containsKey("xposedmodule") == true || apkXposed.hasXposedEntries,
+                declaredScope = resourceScope(packageManager, appInfo) + apkXposed.scopeList,
+            )
+        }
+    }
+
+    /** 非 Xposed 模块的 Provider 由音乐 App 自带，刷新目标是它自己；Xposed 模块取声明的作用域。 */
+    internal fun providerTargets(
+        packageName: String,
+        isXposedModule: Boolean,
+        declaredScope: List<String>,
+    ): List<String> = if (isXposedModule) declaredScope else listOf(packageName)
+
+    private fun resourceScope(packageManager: PackageManager, appInfo: ApplicationInfo): List<String> {
+        val resId = appInfo.metaData?.getInt("xposedscope") ?: 0
+        if (resId == 0) return emptyList()
+        return runCatching {
+            packageManager.getResourcesForApplication(appInfo).getStringArray(resId).toList()
+        }.getOrDefault(emptyList()).map(String::trim).filter(String::isNotEmpty)
+    }
+
+    private class ApkXposedInfo(val hasXposedEntries: Boolean, val scopeList: List<String>)
+
+    /** libxposed 模块在 `META-INF/xposed/` 下放入口与作用域文件；有任何一项即视为 Xposed 模块。 */
+    private fun apkXposedInfo(appInfo: ApplicationInfo): ApkXposedInfo = runCatching {
+        java.util.zip.ZipFile(appInfo.sourceDir).use { zip ->
+            val hasXposedEntries = zip.entries().asSequence().any { it.name.startsWith("META-INF/xposed/") }
+            val scopeList = zip.getEntry("META-INF/xposed/scope.list")?.let { entry ->
+                zip.getInputStream(entry).bufferedReader().use { reader -> parseScopeList(reader.readText()) }
+            }.orEmpty()
+            ApkXposedInfo(hasXposedEntries, scopeList)
+        }
+    }.getOrDefault(ApkXposedInfo(hasXposedEntries = false, scopeList = emptyList()))
+
+    internal fun parseScopeList(text: String): List<String> =
+        text.lineSequence().map(String::trim).filter { it.isNotEmpty() && !it.startsWith("#") }.toList()
 
     fun categorizeModules(modules: List<LyricModule>, defaultCategory: String): List<ModuleCategory> {
         if (modules.isEmpty()) return emptyList()

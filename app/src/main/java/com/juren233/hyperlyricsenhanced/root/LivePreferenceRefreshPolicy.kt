@@ -28,6 +28,8 @@ internal object LivePreferenceRefreshPolicy {
         RootConstants.KEY_HOOK_ISLAND_PURE_MUSIC_MODE,
         RootConstants.KEY_HOOK_ISLAND_PURE_MUSIC_KEYWORDS,
         RootConstants.KEY_HOOK_ISLAND_PURE_MUSIC_KEYWORDS_SEEN_DEFAULTS,
+        RootConstants.KEY_HOOK_ISLAND_PURE_MUSIC_SONG_INFO_POSITION,
+        RootConstants.KEY_HOOK_ISLAND_PURE_MUSIC_SONG_INFO_RHYTHM,
         RootConstants.KEY_HOOK_ISLAND_CONTENT_LEFT,
         RootConstants.KEY_HOOK_ISLAND_CONTENT_RIGHT,
         RootConstants.KEY_HOOK_ISLAND_LEFT_LYRIC_POSITION,

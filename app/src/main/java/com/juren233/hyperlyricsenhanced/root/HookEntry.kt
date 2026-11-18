@@ -870,6 +870,7 @@ class HookEntry : XposedModule() {
                     RootConstants.KEY_HOOK_LOCK_SCREEN_AOD_SWAP_TRANSLATION,
                     RootConstants.KEY_HOOK_LOCK_SCREEN_AOD_NEXT_SONG_PREVIEW,
                     RootConstants.KEY_HOOK_LOCK_SCREEN_AOD_NEXT_SONG_PREVIEW_POSITION,
+                    RootConstants.KEY_HOOK_LOCK_SCREEN_AOD_HIDE_PURE_MUSIC_PLACEHOLDER,
                     RootConstants.KEY_HOOK_CLASSIC_AOD_MAIN_TEXT_SIZE,
                     RootConstants.KEY_HOOK_CLASSIC_AOD_BACKING_TEXT_SIZE,
                     RootConstants.KEY_HOOK_CLASSIC_AOD_TRANSLATION_TEXT_SIZE,
@@ -889,6 +890,7 @@ class HookEntry : XposedModule() {
                     RootConstants.KEY_HOOK_CLASSIC_AOD_SONG_INFO_SHOW_ICON,
                     RootConstants.KEY_HOOK_CLASSIC_AOD_NEXT_SONG_PREVIEW,
                     RootConstants.KEY_HOOK_CLASSIC_AOD_NEXT_SONG_PREVIEW_POSITION,
+                    RootConstants.KEY_HOOK_CLASSIC_AOD_HIDE_PURE_MUSIC_PLACEHOLDER,
                     RootConstants.KEY_HOOK_EARLY_NEXT_LINE_PREVIEW,
                     RootConstants.KEY_HOOK_EARLY_NEXT_LINE_PREVIEW_CUSTOM_MS,
                     RootConstants.KEY_HOOK_REMOVE_CJK_LYRIC_SPACES -> {
@@ -928,15 +930,21 @@ class HookEntry : XposedModule() {
                         }
                     }
                     RootConstants.KEY_HOOK_ISLAND_PURE_MUSIC_MODE,
-                    RootConstants.KEY_HOOK_ISLAND_PURE_MUSIC_KEYWORDS -> {
+                    RootConstants.KEY_HOOK_ISLAND_PURE_MUSIC_KEYWORDS,
+                    RootConstants.KEY_HOOK_ISLAND_PURE_MUSIC_SONG_INFO_POSITION -> {
                         postRuntimeUpdate {
                             IslandPureMusicGate.onPreferenceChanged()
                             IslandMusicWaveColorHooker.refresh()
                             BaseIslandRenderer.refreshActiveIsland()
+                            // 关键词同时决定两种 AOD 的「纯音乐隐藏占位歌词」。
+                            if (key == RootConstants.KEY_HOOK_ISLAND_PURE_MUSIC_KEYWORDS) {
+                                NotificationMediaAodLyricHooker.refresh()
+                            }
                         }
                     }
-                    // 极简显示的「右侧显示」可在常驻关闭时带出律动，律动取色是否生效随之变化。
+                    // 极简显示的「右侧显示」与「歌曲信息」的律动开关可在常驻关闭时带出律动，律动取色是否生效随之变化。
                     RootConstants.KEY_HOOK_ISLAND_RIGHT_ICON,
+                    RootConstants.KEY_HOOK_ISLAND_PURE_MUSIC_SONG_INFO_RHYTHM,
                     RootConstants.KEY_HOOK_ISLAND_INTERLUDE_MINIMAL_DISPLAY,
                     RootConstants.KEY_HOOK_ISLAND_INTERLUDE_MINIMAL_RIGHT -> {
                         postRuntimeUpdate {
@@ -1272,7 +1280,9 @@ class HookEntry : XposedModule() {
                     com.juren233.hyperlyricsenhanced.root.island.IslandRealRhythm.refresh(prefs)
                 }
                 if (key == RootConstants.KEY_HOOK_ISLAND_PURE_MUSIC_MODE ||
-                    key == RootConstants.KEY_HOOK_ISLAND_PURE_MUSIC_KEYWORDS
+                    key == RootConstants.KEY_HOOK_ISLAND_PURE_MUSIC_KEYWORDS ||
+                    key == RootConstants.KEY_HOOK_ISLAND_PURE_MUSIC_SONG_INFO_POSITION ||
+                    key == RootConstants.KEY_HOOK_ISLAND_PURE_MUSIC_SONG_INFO_RHYTHM
                 ) {
                     IslandPureMusicGate.onPreferenceChanged()
                     IslandMusicWaveColorHooker.refresh()

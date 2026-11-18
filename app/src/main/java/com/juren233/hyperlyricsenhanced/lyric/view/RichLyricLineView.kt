@@ -305,6 +305,10 @@ class RichLyricLineView(
     private var nextLineWatchdog: Runnable? = null
     private var centerMainLine: Boolean? = null
     private var centerSecondaryLine: Boolean? = null
+    // 调用方显式设置的靠右，与居中一样在重设样式后保留：样式（LyricViewStyle.alignRight）只作默认值，
+    // 否则槽位换样式而内容未变时（不再重套对齐），靠右会被样式的 false 冲掉退回靠左。
+    private var rightMainLine: Boolean? = null
+    private var rightSecondaryLine: Boolean? = null
     // 预览提升窗口的对齐暂存：提升动画期间旧句仍在上屏，视图级居中/靠右
     // 标志必须等提升落地（finishNextLinePromotion）再套用，否则旧句会先按
     // 下一句的方向重渲染（合唱居中句先变靠左再换字）。
@@ -553,7 +557,8 @@ class RichLyricLineView(
             style.centerIfPossible
         )
         applyLineCentering()
-        setLineAlignmentRight(style.alignRight)
+        main.alignRight = rightMainLine ?: style.alignRight
+        secondary.alignRight = rightSecondaryLine ?: style.alignRight
     }
 
     fun setLineCentering(centerMain: Boolean, centerSecondary: Boolean = centerMain) {
@@ -566,6 +571,8 @@ class RichLyricLineView(
         alignMainRight: Boolean,
         alignSecondaryRight: Boolean = alignMainRight
     ) {
+        rightMainLine = alignMainRight
+        rightSecondaryLine = alignSecondaryRight
         main.alignRight = alignMainRight
         secondary.alignRight = alignSecondaryRight
     }

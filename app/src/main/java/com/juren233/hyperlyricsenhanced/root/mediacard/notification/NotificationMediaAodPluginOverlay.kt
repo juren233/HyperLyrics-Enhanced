@@ -792,7 +792,7 @@ internal fun NotificationMediaAodLyricHooker.positionAodPluginOverlay(overlay: A
         overlay.appliedHeight = height
         HookLogger.i(
             TAG,
-            "经典 AOD 歌词覆盖层已按内容实测高度调整: " +
+            "自定义 AOD 歌词覆盖层已按内容实测高度调整: " +
                 "contentHeight=$contentHeight, bottomLimit=$bottomLimit, " +
                 "anchorFallback=${overlay.anchorIsFallback}, targetHeight=$height"
         )

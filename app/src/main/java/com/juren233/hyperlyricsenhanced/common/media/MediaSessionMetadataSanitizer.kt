@@ -169,7 +169,8 @@ class MediaSessionMetadataSanitizer(maxSessions: Int = DEFAULT_MAX_SESSIONS) {
 
         val previous = state.last
         val previousTitleNorm = state.lastTitleNorm
-        val boundary = if (previous == null) Boundary.NEW_TRACK else boundaryOf(previous, sample)
+        val boundary = if (previous == null) Boundary.NEW_TRACK else boundaryOf(state, previous, sample)
+        state.rememberKnownFields(sample, reset = boundary != Boundary.NONE)
         if (boundary != Boundary.NONE) {
             state.beginTrack(newToken = boundary == Boundary.NEW_TRACK)
             if (sample.positionMs in 0..TRACK_START_POSITION_MAX_MS) {
@@ -326,22 +327,32 @@ class MediaSessionMetadataSanitizer(maxSessions: Int = DEFAULT_MAX_SESSIONS) {
         NEW_TRACK,
     }
 
-    private fun boundaryOf(previous: SessionMetadataSample, current: SessionMetadataSample): Boundary {
-        val previousId = previous.mediaId?.trim().orEmpty()
+    /**
+     * mediaId、时长、专辑与本曲目段最近一次已知的值比较，而不是只和上一次采样比：md3music 切歌时
+     * 先发一份只有 MEDIA_URI 的空元数据，再发时长为 0、没有专辑的元数据，之后才补全（2026-11-17 真机）。
+     * 只和相邻采样比时，补上的新时长是拿去和 0 比的，换曲永远判不出来。
+     */
+    private fun boundaryOf(
+        state: TrackState,
+        previous: SessionMetadataSample,
+        current: SessionMetadataSample,
+    ): Boundary {
         val currentId = current.mediaId?.trim().orEmpty()
-        if (previousId.isNotEmpty() && currentId.isNotEmpty() && previousId != currentId) {
+        if (state.knownMediaId.isNotEmpty() && currentId.isNotEmpty() && state.knownMediaId != currentId) {
             return Boundary.NEW_TRACK
         }
-        if (previous.durationMs > 0L && current.durationMs > 0L && !isSameDuration(previous, current)) {
+        if (state.knownDurationMs > 0L && current.durationMs > 0L &&
+            abs(state.knownDurationMs - current.durationMs) > DURATION_TOLERANCE_MS
+        ) {
             return Boundary.NEW_TRACK
         }
-        val previousAlbum = normalizeForMatch(previous.album)
         val currentAlbum = normalizeForMatch(current.album)
         // 专辑只在两侧都非空且不同才算换曲：酷狗曲首专辑先是空串，几百毫秒后才补全。
-        if (previousAlbum.isNotEmpty() && currentAlbum.isNotEmpty() && previousAlbum != currentAlbum) {
+        if (state.knownAlbum.isNotEmpty() && currentAlbum.isNotEmpty() && state.knownAlbum != currentAlbum) {
             return Boundary.NEW_TRACK
         }
         if (!isPositionReset(previous, current)) return Boundary.NONE
+        val previousAlbum = normalizeForMatch(previous.album)
         // 进度归零本身分不清「同一首重播」和「换了一首同时长同专辑的歌」：歌手与专辑都没变就当重播，
         // 与此前按歌手、专辑、时长拼键的判定一致；单曲循环与拖回开头不能清空已加载的歌词。
         val sameSong = normalizeForMatch(previous.artist) == normalizeForMatch(current.artist) &&
@@ -455,6 +466,22 @@ class MediaSessionMetadataSanitizer(maxSessions: Int = DEFAULT_MAX_SESSIONS) {
         var baselineTitle: String? = null
         var polluted: Boolean = false
         var token: Long = 0L
+
+        /** 本曲目段最近一次已知的换曲判据字段；缺失的采样字段不覆盖它们。 */
+        var knownMediaId: String = ""
+        var knownDurationMs: Long = 0L
+        var knownAlbum: String = ""
+
+        fun rememberKnownFields(sample: SessionMetadataSample, reset: Boolean) {
+            if (reset) {
+                knownMediaId = ""
+                knownDurationMs = 0L
+                knownAlbum = ""
+            }
+            sample.mediaId?.trim()?.takeIf(String::isNotEmpty)?.let { knownMediaId = it }
+            if (sample.durationMs > 0L) knownDurationMs = sample.durationMs
+            normalizeForMatch(sample.album).takeIf(String::isNotEmpty)?.let { knownAlbum = it }
+        }
 
         fun beginTrack(newToken: Boolean) {
             lastTitleNorm = ""

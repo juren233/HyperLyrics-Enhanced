@@ -412,6 +412,76 @@ class MediaSessionMetadataSanitizerTest {
         assertFalse(playing.trackToken == another.trackToken)
     }
 
+    // ---- md3music 快速切歌（2026-11-17 真机）：切歌时先发上一首的专辑与时长，再发空元数据 ----
+
+    private fun md3(
+        title: String?,
+        artist: String?,
+        album: String?,
+        durationMs: Long,
+        positionMs: Long,
+        sampledAtMs: Long,
+    ) = sample(
+        title = title,
+        artist = artist,
+        packageName = MD3MUSIC,
+        album = album,
+        durationMs = durationMs,
+        positionMs = positionMs,
+        sampledAtMs = sampledAtMs,
+    )
+
+    @Test
+    fun `md3music quick skips get a new token for every song and are never treated as drift`() {
+        val previous = sanitizer.sanitize(md3("多远都要在一起", "G.E.M.邓紫棋", "新的心跳", 217_756L, 120_000L, 0L))
+        // 22:53:40.573 起：上一首播了约 120 秒，下一首《不该》。
+        val buGai = listOf(
+            md3("不该 (with aMEI)", "周杰伦、张惠妹", "新的心跳", 217_756L, 120_595L, 600L),
+            md3(null, null, null, 0L, 0L, 720L),
+            md3("不该 (with aMEI)", "周杰伦、张惠妹", null, 0L, 0L, 730L),
+            md3("不该 (with aMEI)", "周杰伦、张惠妹", null, 291_448L, 0L, 880L),
+            md3("不该 (with aMEI)", "周杰伦、张惠妹", "周杰伦的床边故事", 291_448L, 0L, 890L),
+        ).map(sanitizer::sanitize).last()
+        // 42.128 起：《不该》只播了 735 ms。
+        val callOfSilence = listOf(
+            md3("Call of Silence", "澤野弘之", "周杰伦的床边故事", 291_448L, 735L, 2_150L),
+            md3(null, null, null, 0L, 0L, 2_290L),
+            md3("Call of Silence", "澤野弘之", null, 0L, 0L, 2_350L),
+            md3("Call of Silence", "澤野弘之", null, 178_259L, 0L, 2_560L),
+            md3("Call of Silence", "澤野弘之", "TVアニメ「進撃の巨人」Season 2 オリジナルサウンドトラック", 178_259L, 0L, 2_580L),
+        ).map(sanitizer::sanitize).last()
+        // 44.690 起：《Call of Silence》只播了 1601 ms。
+        val babyDontCry = listOf(
+            md3("Baby, Don't Cry", "EXO", "TVアニメ「進撃の巨人」Season 2 オリジナルサウンドトラック", 178_259L, 1_601L, 4_710L),
+            md3(null, null, null, 0L, 0L, 4_760L),
+            md3("Baby, Don't Cry", "EXO", null, 0L, 0L, 4_830L),
+            md3("Baby, Don't Cry", "EXO", null, 235_964L, 0L, 4_950L),
+            md3("Baby, Don't Cry", "EXO", "The 1st Album XOXO (KISS&HUG)", 235_964L, 0L, 4_960L),
+        ).map(sanitizer::sanitize).last()
+
+        val tokens = listOf(previous, buGai, callOfSilence, babyDontCry).map { it.trackToken }
+        assertEquals(4, tokens.toSet().size)
+        assertEquals(Status.CLEAN, callOfSilence.status)
+        assertEquals(Status.CLEAN, babyDontCry.status)
+        assertEquals("Baby, Don't Cry", babyDontCry.title)
+        assertEquals("Baby, Don't Cry", babyDontCry.identityTitle)
+    }
+
+    @Test
+    fun `samples without duration or album neither split a song nor hide the next change`() {
+        val start = sanitizer.sanitize(kugou("Song", "Walters", "Album", 147_000L, 10_000L)).trackToken
+        // 同一首歌中途一份缺字段的元数据，之后字段原样回来：仍是同一首。
+        val gap = sanitizer.sanitize(kugou("Song", "Walters", "", 0L, 11_000L)).trackToken
+        val back = sanitizer.sanitize(kugou("Song", "Walters", "Album", 147_000L, 12_000L)).trackToken
+        // 再经过一份缺字段的元数据后专辑变了：换曲。
+        sanitizer.sanitize(kugou("Next", "Other", "", 0L, 13_000L))
+        val next = sanitizer.sanitize(kugou("Next", "Other", "Other Album", 147_000L, 14_000L)).trackToken
+
+        assertEquals(start, gap)
+        assertEquals(start, back)
+        assertFalse(start == next)
+    }
+
     @Test
     fun `tokens are never reused after the sanitizer is reset`() {
         val before = sanitizer.sanitize(kugou("Song", "Walters", "Album", 147_000L, 10_000L)).trackToken
@@ -677,6 +747,7 @@ class MediaSessionMetadataSanitizerTest {
         const val SALT = "com.salt.music"
         const val XIAOMI = "com.miui.player"
         const val KUGOU = "com.kugou.android"
+        const val MD3MUSIC = "com.md3music.md3music"
         const val SALT_ARTIST = "许冠杰 - 跟佢做个 FRIEND"
         const val SALT_ALBUM = "最佳拍档大显神通"
         const val SALT_DURATION_MS = 200_000L

@@ -1195,30 +1195,33 @@ internal fun LyriconSource.scheduleThirdPartyFallback(baseSong: LocalSong, delay
     if (!isOnlineTranslationEnabledFor(playerPackage)) return
     if (OnlineTranslationSourcePreferences.orderedSources(prefs).isEmpty()) return
     publication.cancelThirdPartyFallback()
+    thirdPartyFallbackQuerySong = baseSong
     val generation = thirdPartyFallbackRequest.schedule(
         delayMs = delayMs,
         query = {
             val application = app
+            // 等待期间同一首歌若有新上报，以最新的为准（见 ThirdPartySongUpdatePolicy.refreshPendingFallbackQuery）。
+            val querySong = thirdPartyFallbackQuerySong?.takeIf { isSameTrack(it, baseSong) } ?: baseSong
             if (application == null) {
                 diagnostic(
                     "椒盐音乐在线兜底无法启动: reason=application_unavailable, " +
-                        "title=${baseSong.name}"
+                        "title=${querySong.name}"
                 )
                 null
             } else {
                 fallbackRequestMutex.withLock {
                     diagnostic(
-                        "椒盐音乐在线兜底开始: title=${baseSong.name}, " +
-                            "artist=${baseSong.artist}, " +
+                        "椒盐音乐在线兜底开始: title=${querySong.name}, " +
+                            "artist=${querySong.artist}, duration=${querySong.duration}, " +
                             "preferOnline=${isSaltPreferOnlineEnabled()}"
                     )
-                    val cacheSong = onlineCacheSong(application, baseSong, playerPackage)
+                    val cacheSong = onlineCacheSong(application, querySong, playerPackage)
                     val outcome = OnlineLyricTargeter.fetchBestLyricWithNearMiss(
                         context = application,
                         pkgName = playerPackage,
-                        title = baseSong.name.orEmpty(),
-                        artist = baseSong.artist.orEmpty(),
-                        durationMs = baseSong.duration,
+                        title = querySong.name.orEmpty(),
+                        artist = querySong.artist.orEmpty(),
+                        durationMs = querySong.duration,
                         sourceOrder = OnlineTranslationSourcePreferences.orderedSources(prefs),
                         album = MediaMetadataHelper
                             .getMediaInfo(application, playerPackage, HookLogger)
@@ -1227,7 +1230,7 @@ internal fun LyriconSource.scheduleThirdPartyFallback(baseSong: LocalSong, delay
                         raceSources = OnlineTranslationSourcePreferences.isAutoSelectBestSourceEnabled(prefs),
                     )
                     MediaSessionSearchSongMapper.map(
-                        baseSong = baseSong,
+                        baseSong = querySong,
                         tag = cacheSong?.tag,
                         outcome = outcome.stripFullyChineseTranslations(),
                     )

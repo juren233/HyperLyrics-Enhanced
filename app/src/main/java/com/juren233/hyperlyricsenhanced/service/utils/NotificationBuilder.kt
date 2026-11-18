@@ -237,7 +237,7 @@ object NotificationBuilder {
             notificationManager.cancel(CLASSIC_AOD_SONG_INFO_NOTIFICATION_ID)
             notificationManager.cancel(CLASSIC_AOD_SONG_INFO_NOTIFICATION_ID_SECONDARY)
         } catch (e: Exception) {
-            LogManager.e("NotificationBuilder", "取消经典 AOD 歌曲信息通知失败", e)
+            LogManager.e("NotificationBuilder", "取消自定义 AOD 歌曲信息通知失败", e)
         }
     }
 
