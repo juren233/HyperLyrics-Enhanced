@@ -932,6 +932,14 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
         }
     }
 
+    /** 上浮几何依据的视口：接缝（左槽宽）与左右两槽合计宽；[promotionSnapshot] 与飞行中改目标共用。 */
+    internal fun promotionViewport(): Pair<Float, Float>? {
+        val sibling = siblingView ?: return null
+        val seam = (if (isRightSide) sibling else this).scrollWidth.toFloat()
+        val width = (scrollWidth + sibling.scrollWidth).toFloat()
+        return if (seam <= 0f || seam >= width) null else seam to width
+    }
+
     /** Uses the same normalized model, font advances and seam layout as the first bound frame. */
     internal fun promotionSnapshot(
         incoming: LyricLine? = null,
@@ -946,9 +954,7 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
         } else _model
         val units = buildSeamLayout(model) ?: return null
         val master = if (!spaceGateEnabled || isRightSide) this else sibling
-        val seam = (if (isRightSide) sibling else this).scrollWidth.toFloat()
-        val width = (scrollWidth + sibling.scrollWidth).toFloat()
-        if (seam <= 0f || seam >= width) return null
+        val (seam, width) = promotionViewport() ?: return null
         val endpoint = SpaceGatePromotionGeometry.endpoint(
             units, model.width, if (spaceGateEnabled) width else scrollWidth.toFloat(),
             if (spaceGateEnabled) seam else 0f, model.isAlignedRight, center, right,

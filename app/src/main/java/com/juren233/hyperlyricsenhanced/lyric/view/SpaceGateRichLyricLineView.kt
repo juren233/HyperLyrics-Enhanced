@@ -83,6 +83,11 @@ class SpaceGateRichLyricLineView(
     private var promotionLandingOffset: Float? = null
     private var fullIslandPromotion: SpaceGatePromotionRenderer? = null
     private var fullIslandPromotionAnimator: ValueAnimator? = null
+    /** 正在上浮的行；飞行中岛宽变化时据此按新视口重算落点。 */
+    private var fullIslandPromotionLine: LyricLine? = null
+    /** 动画当前插值进度，与改目标时刻的进度；渲染器进度为两者之间剩余段的占比，终点时刻和缓动不变。 */
+    private var fullIslandPromotionProgress = 0f
+    private var fullIslandPromotionBase = 0f
     internal var cancelLayoutRoleTransition: (() -> Unit)? = null
     internal var layoutRoleDrawing: ((Canvas) -> Unit)? = null
     private var applyingLayoutRoleContent = false
@@ -821,9 +826,12 @@ class SpaceGateRichLyricLineView(
     }
 
     private fun drawFullIslandPromotion(canvas: Canvas) {
+        retargetFullIslandPromotion()
         val own = fullIslandPromotion ?: return
+        val peer = main.siblingView?.parent as? SpaceGateRichLyricLineView
         val master = if (main.isRightSide) own else {
-            val other = (main.siblingView?.parent as? SpaceGateRichLyricLineView)?.fullIslandPromotion
+            peer?.retargetFullIslandPromotion()
+            val other = peer?.fullIslandPromotion
             other?.takeIf { it.matches(own) } ?: own
         }
         master.draw(canvas, main.isRightSide, width, height, shadowStyle = main.textPaint)
@@ -1034,18 +1042,13 @@ class SpaceGateRichLyricLineView(
             center = stagedPromotionCentering?.first ?: main.centerIfPossible,
             right = stagedPromotionRightAlign?.first ?: main.alignRight,
         ) ?: return false
-        if (source.text != target.text || source.paint.textSize <= 0f) return false
-        val from = source.geometry.glyphs
-        val to = target.geometry.glyphs
-        if (from.size != to.size || from.indices.any {
-                from[it].charStart != to[it].charStart || from[it].charEnd != to[it].charEnd
-            }) return false
+        if (!sameGlyphUnits(source, target)) return false
         val promotion = SpaceGatePromotionRenderer(source, target, secondary.top, main.top, line, secondary.alpha)
-        promotion.prepareShadows(
-            (if (main.isRightSide) main.siblingView else main)?.textPaint,
-            (if (main.isRightSide) main else main.siblingView)?.textPaint,
-        )
+        prepareFullIslandShadows(promotion)
         fullIslandPromotion = promotion
+        fullIslandPromotionLine = line
+        fullIslandPromotionProgress = 0f
+        fullIslandPromotionBase = 0f
         main.animate().cancel()
         secondary.animate().cancel()
         secondary.alpha = 0f
@@ -1063,7 +1066,8 @@ class SpaceGateRichLyricLineView(
         fullIslandPromotionAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
             this.duration = duration
             addUpdateListener {
-                promotion.fraction = it.animatedValue as Float
+                fullIslandPromotionProgress = it.animatedValue as Float
+                fullIslandPromotion?.fraction = remainingFraction()
                 invalidate()
                 (main.siblingView?.parent as? View)?.invalidate()
             }
@@ -1079,6 +1083,54 @@ class SpaceGateRichLyricLineView(
             start()
         }
         return true
+    }
+
+    private fun sameGlyphUnits(source: SpaceGatePromotionSnapshot, target: SpaceGatePromotionSnapshot): Boolean {
+        if (source.text != target.text || source.paint.textSize <= 0f) return false
+        val from = source.geometry.glyphs
+        val to = target.geometry.glyphs
+        return from.size == to.size && from.indices.all {
+            from[it].charStart == to[it].charStart && from[it].charEnd == to[it].charEnd
+        }
+    }
+
+    private fun prepareFullIslandShadows(promotion: SpaceGatePromotionRenderer) = promotion.prepareShadows(
+        (if (main.isRightSide) main.siblingView else main)?.textPaint,
+        (if (main.isRightSide) main else main.siblingView)?.textPaint,
+    )
+
+    private fun remainingFraction(): Float {
+        val base = fullIslandPromotionBase
+        return if (base >= 1f) 1f else ((fullIslandPromotionProgress - base) / (1f - base)).coerceIn(0f, 1f)
+    }
+
+    /**
+     * 飞行中岛宽变化（动态长度随换句同步收放）时，落点按开始时的视口算定就会与落地后的稳态不符而跳动。
+     * 视口一变就从当前绘制帧出发、改飞向按新视口算出的落点；岛宽照常同步变化，不等落地。
+     */
+    private fun retargetFullIslandPromotion() {
+        val current = fullIslandPromotion ?: return
+        val line = fullIslandPromotionLine ?: return
+        val (seam, width) = main.promotionViewport() ?: return
+        val old = current.geometry.target
+        if (old.seam == seam && old.viewWidth == width) return
+        val target = main.promotionSnapshot(
+            incoming = line,
+            center = stagedPromotionCentering?.first ?: main.centerIfPossible,
+            right = stagedPromotionRightAlign?.first ?: main.alignRight,
+        ) ?: return
+        // snapshot() 已含起点行的 top 与透明度，新渲染器以 0 / 1 接续。
+        val source = current.snapshot()
+        if (!sameGlyphUnits(source, target)) return
+        val promotion = SpaceGatePromotionRenderer(source, target, 0, main.top, line, 1f)
+        prepareFullIslandShadows(promotion)
+        fullIslandPromotionBase = fullIslandPromotionProgress
+        promotion.fraction = 0f
+        fullIslandPromotion = promotion
+        if (BuildConfig.DEBUG) {
+            HookLogger.d("SwitchTrace", "full promotion retarget view=${System.identityHashCode(this).toString(16)} " +
+                "at=$fullIslandPromotionProgress vw=${old.viewWidth}->$width seam=${old.seam}->$seam")
+        }
     }
 
     private fun finishNextLinePromotion(
@@ -1207,6 +1259,7 @@ class SpaceGateRichLyricLineView(
         }
         fullIslandPromotionAnimator = null
         fullIslandPromotion = null
+        fullIslandPromotionLine = null
         main.alpha = 1f
         main.translationY = 0f
         secondary.alpha = 1f
