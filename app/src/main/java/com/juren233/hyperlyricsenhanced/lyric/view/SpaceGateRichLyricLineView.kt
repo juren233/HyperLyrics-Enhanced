@@ -930,7 +930,7 @@ class SpaceGateRichLyricLineView(
         val secondaryTextStartX = secondary.currentTextStartX()
         val landingRightFlag = stagedPromotionRightAlign?.first ?: main.alignRight
         val landingCenterFlag = stagedPromotionCentering?.first ?: main.centerIfPossible
-        val targetScale = (main.textSize / secondary.textSize).coerceIn(0.5f, 2f)
+        val targetScale = NextLinePromotionMotion.targetScale(main.textSize, secondary.textSize)
         val targetTextWidth = main.measureLineTextWidth(nextMainText)
         promotionReserveWidth = PromotionWidthGeometry.reserveWidth(
             pendingWidth = pendingHugWidth,
@@ -1001,7 +1001,7 @@ class SpaceGateRichLyricLineView(
         secondary.pivotY = 0f
         main.animate()
             .alpha(0f)
-            .translationY(-main.height * 0.65f)
+            .translationY(-main.height * NextLinePromotionMotion.MAIN_EXIT_TRAVEL_FACTOR)
             .setDuration(transitionDuration)
             .withLayer()
             .start()
@@ -1054,7 +1054,7 @@ class SpaceGateRichLyricLineView(
         secondary.alpha = 0f
         main.animate()
             .alpha(0f)
-            .translationY(-main.height * 0.65f)
+            .translationY(-main.height * NextLinePromotionMotion.MAIN_EXIT_TRAVEL_FACTOR)
             .setDuration(duration)
             .withLayer()
             .start()
@@ -1270,9 +1270,9 @@ class SpaceGateRichLyricLineView(
     }
 
     private companion object {
-        const val NEXT_LINE_PROMOTION_DURATION = 220L
+        const val NEXT_LINE_PROMOTION_DURATION = NextLinePromotionMotion.DURATION_MS
         const val INTERLUDE_PROMOTION_DURATION = InterludeMotion.TRANSITION_DURATION_MS
-        const val NEXT_LINE_PREVIEW_FADE_DURATION = 140L
+        const val NEXT_LINE_PREVIEW_FADE_DURATION = NextLinePromotionMotion.PREVIEW_FADE_DURATION_MS
         const val PROMOTION_WATCHDOG_MARGIN_MS = 250L
     }
 }

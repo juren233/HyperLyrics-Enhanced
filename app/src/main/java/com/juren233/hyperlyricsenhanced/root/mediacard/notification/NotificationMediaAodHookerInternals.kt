@@ -37,6 +37,7 @@ import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.common.lyric.CjkLyricWhitespacePolicy
 import com.juren233.hyperlyricsenhanced.common.lyric.LyricMetadataKeys
 import com.juren233.hyperlyricsenhanced.common.media.MediaMetadataHelper
+import com.juren233.hyperlyricsenhanced.lyric.model.interfaces.IRichLyricLine
 import com.juren233.hyperlyricsenhanced.lyric.view.SongPreprocessor
 import com.juren233.hyperlyricsenhanced.root.ClassicAodFocusNotificationRecovery
 import com.juren233.hyperlyricsenhanced.root.HookEntry
@@ -135,11 +136,11 @@ internal class BackgroundConstraints private constructor(
 
 internal class LyricOverlay(
     val root: LinearLayout,
-    val main: TextView,
+    val main: AodWordSyncTextView,
     val translation: TextView,
-    val backing: TextView,
+    val backing: AodWordSyncTextView,
     val backingTranslation: TextView,
-    val overlappingMain: TextView,
+    val overlappingMain: AodWordSyncTextView,
     val overlappingTranslation: TextView,
     val overlappingBacking: TextView,
     val overlappingBackingTranslation: TextView,
@@ -162,6 +163,15 @@ internal class LyricOverlay(
     var lastHeightDriftKey: String? = null,
     var fullAodActive: Boolean = false,
     var heightAnimator: ValueAnimator? = null,
+    /**
+     * 最近一次真正应用到界面的歌词行，用来判断是否换句（供「歌词滚动」）。
+     * 之后的 [promotionRunning]、[promotionGeneration]、[skipNextPromotion] 是「转场进行中」标记，
+     * 「歌词滚动」的上浮与「灵动圆点」的淡入淡出共用。
+     */
+    var appliedLine: IRichLyricLine? = null,
+    var promotionRunning: Boolean = false,
+    var promotionGeneration: Int = 0,
+    var skipNextPromotion: Boolean = false,
 ) {
     val lifetime = AodOverlayLifetime()
 }

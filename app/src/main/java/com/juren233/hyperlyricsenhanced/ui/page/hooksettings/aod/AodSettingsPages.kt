@@ -66,6 +66,9 @@ private data class AodSettingsSpec(
     val songInfoTextSizeKey: String? = null,
     val songInfoPositionKey: String? = null,
     val songInfoShowIconKey: String? = null,
+    val wordSyncEffectKey: String? = null,
+    val interludeDotsKey: String? = null,
+    val lyricScrollKey: String? = null,
     val defaultMainTextSize: Int,
     val defaultBackingTextSize: Int,
     val defaultTranslationTextSize: Int,
@@ -110,6 +113,9 @@ fun LockScreenAodSettingsPage() {
                 RootConstants.KEY_HOOK_LOCK_SCREEN_AOD_NEXT_SONG_PREVIEW_POSITION,
             hidePureMusicPlaceholderKey =
                 RootConstants.KEY_HOOK_LOCK_SCREEN_AOD_HIDE_PURE_MUSIC_PLACEHOLDER,
+            wordSyncEffectKey = RootConstants.KEY_HOOK_LOCK_SCREEN_AOD_WORD_SYNC_EFFECT,
+            interludeDotsKey = RootConstants.KEY_HOOK_LOCK_SCREEN_AOD_INTERLUDE_DOTS,
+            lyricScrollKey = RootConstants.KEY_HOOK_LOCK_SCREEN_AOD_LYRIC_SCROLL,
             defaultMainTextSize = RootConstants.DEFAULT_HOOK_LOCK_SCREEN_AOD_MAIN_TEXT_SIZE,
             defaultBackingTextSize =
                 RootConstants.DEFAULT_HOOK_LOCK_SCREEN_AOD_BACKING_TEXT_SIZE,
@@ -349,6 +355,27 @@ private fun AodSettingsPage(spec: AodSettingsSpec) {
             )
         )
     }
+    var wordSyncEffect by remember(spec.wordSyncEffectKey) {
+        mutableStateOf(
+            spec.wordSyncEffectKey?.let {
+                prefs.getBoolean(it, RootConstants.DEFAULT_HOOK_AOD_WORD_SYNC_EFFECT)
+            } ?: RootConstants.DEFAULT_HOOK_AOD_WORD_SYNC_EFFECT
+        )
+    }
+    var interludeDots by remember(spec.interludeDotsKey) {
+        mutableStateOf(
+            spec.interludeDotsKey?.let {
+                prefs.getBoolean(it, RootConstants.DEFAULT_HOOK_AOD_INTERLUDE_DOTS)
+            } ?: RootConstants.DEFAULT_HOOK_AOD_INTERLUDE_DOTS
+        )
+    }
+    var lyricScroll by remember(spec.lyricScrollKey) {
+        mutableStateOf(
+            spec.lyricScrollKey?.let {
+                prefs.getBoolean(it, RootConstants.DEFAULT_HOOK_AOD_LYRIC_SCROLL)
+            } ?: RootConstants.DEFAULT_HOOK_AOD_LYRIC_SCROLL
+        )
+    }
     var nextSongPreviewPosition by remember(spec.nextSongPreviewPositionKey) {
         mutableIntStateOf(
             prefs.getInt(
@@ -519,6 +546,51 @@ private fun AodSettingsPage(spec: AodSettingsSpec) {
     )
 
     XposedLyricSettingPage(title = stringResource(spec.titleRes)) {
+        if (spec.wordSyncEffectKey != null || spec.interludeDotsKey != null ||
+            spec.lyricScrollKey != null) {
+            item(key = "aod_dynamic_effects") {
+                SmallTitle(text = stringResource(R.string.title_aod_dynamic_effects))
+                Card(
+                    modifier = Modifier
+                        .padding(horizontal = 12.dp)
+                        .padding(bottom = 12.dp)
+                        .fillMaxWidth()
+                ) {
+                    Column {
+                        spec.wordSyncEffectKey?.let { key ->
+                            SwitchPreference(
+                                title = stringResource(R.string.title_aod_word_sync_effect),
+                                checked = wordSyncEffect,
+                                onCheckedChange = {
+                                    wordSyncEffect = it
+                                    saveConfig(key, it)
+                                },
+                            )
+                        }
+                        spec.interludeDotsKey?.let { key ->
+                            SwitchPreference(
+                                title = stringResource(R.string.title_aod_interlude_dots),
+                                checked = interludeDots,
+                                onCheckedChange = {
+                                    interludeDots = it
+                                    saveConfig(key, it)
+                                },
+                            )
+                        }
+                        spec.lyricScrollKey?.let { key ->
+                            SwitchPreference(
+                                title = stringResource(R.string.title_aod_lyric_scroll),
+                                checked = lyricScroll,
+                                onCheckedChange = {
+                                    lyricScroll = it
+                                    saveConfig(key, it)
+                                },
+                            )
+                        }
+                    }
+                }
+            }
+        }
         item(key = "aod_text_style") {
             SmallTitle(text = stringResource(R.string.title_text))
             Card(

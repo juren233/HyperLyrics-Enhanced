@@ -38,8 +38,7 @@ internal class InterludeDotsRenderer {
         playbackActive = active
     }
 
-    fun width(textSize: Float): Float =
-        dotSize(textSize) * DOTS_VISUAL_WIDTH_IN_DIAMETERS * MAX_GROUP_SCALE
+    fun width(textSize: Float): Float = interludeDotsWidth(textSize)
 
     fun draw(
         canvas: Canvas,
@@ -54,9 +53,6 @@ internal class InterludeDotsRenderer {
         val positionMs = resolvePlaybackPosition(model, nowMs)
         val frame = resolveInterludeDotsFrame(positionMs, model.begin, model.end)
 
-        val diameter = dotSize(textPaint.textSize)
-        val radius = diameter / 2f
-        val step = diameter * DOT_STEP_IN_DIAMETERS
         val totalWidth = width(textPaint.textSize)
         val startX = resolveInterludeDotsStartX(
             totalWidth = totalWidth,
@@ -65,21 +61,10 @@ internal class InterludeDotsRenderer {
             centerIfPossible = centerIfPossible,
             alignRight = alignRight
         )
-        val centerY = viewHeight / 2f
-        val groupCenterX = startX + totalWidth / 2f
 
         dotPaint.color = textPaint.color
         dotPaint.shader = textPaint.shader
-
-        repeat(DOT_COUNT) { index ->
-            dotPaint.alpha = frame.dotAlphas[index] * frame.groupAlpha / 255
-            canvas.drawCircle(
-                groupCenterX + (index - 1) * step * frame.groupScale,
-                centerY,
-                radius * frame.groupScale,
-                dotPaint
-            )
-        }
+        drawInterludeDots(canvas, dotPaint, frame, textPaint.textSize, startX, viewHeight / 2f)
     }
 
     private fun resolvePlaybackPosition(model: LyricModel, nowMs: Long): Long {
@@ -95,13 +80,42 @@ internal class InterludeDotsRenderer {
         return extrapolated.coerceIn(model.begin, maxOf(model.begin, model.end))
     }
 
-    private fun dotSize(textSize: Float): Float = resolveInterludeDotSize(textSize)
+}
 
-    private companion object {
-        const val DOT_COUNT = 3
-        const val DOT_STEP_IN_DIAMETERS = 1.6f
-        const val DOTS_VISUAL_WIDTH_IN_DIAMETERS = 4.2f
-        const val MAX_GROUP_SCALE = 1.4f
+private const val DOT_COUNT = 3
+private const val DOT_STEP_IN_DIAMETERS = 1.6f
+private const val DOTS_VISUAL_WIDTH_IN_DIAMETERS = 4.2f
+private const val MAX_GROUP_SCALE = 1.4f
+
+/** 间奏指示点整体宽度（含最大呼吸缩放）；超级岛与 AOD 共用。 */
+internal fun interludeDotsWidth(textSize: Float): Float =
+    resolveInterludeDotSize(textSize) * DOTS_VISUAL_WIDTH_IN_DIAMETERS * MAX_GROUP_SCALE
+
+/**
+ * 按 [frame] 画三个指示点，[startX] 为点组左缘、[centerY] 为垂直中心；
+ * [paint] 的颜色/着色器由调用方设好，透明度在这里按帧覆盖。超级岛与 AOD 共用这一份绘制。
+ */
+internal fun drawInterludeDots(
+    canvas: Canvas,
+    paint: Paint,
+    frame: InterludeDotsFrame,
+    textSize: Float,
+    startX: Float,
+    centerY: Float,
+) {
+    val diameter = resolveInterludeDotSize(textSize)
+    val radius = diameter / 2f
+    val step = diameter * DOT_STEP_IN_DIAMETERS
+    val totalWidth = interludeDotsWidth(textSize)
+    val groupCenterX = startX + totalWidth / 2f
+    repeat(DOT_COUNT) { index ->
+        paint.alpha = frame.dotAlphas[index] * frame.groupAlpha / 255
+        canvas.drawCircle(
+            groupCenterX + (index - 1) * step * frame.groupScale,
+            centerY,
+            radius * frame.groupScale,
+            paint
+        )
     }
 }
 

@@ -767,6 +767,10 @@
     <string name="title_island_pure_music_song_info_position">Song Info Position</string>
     <string name="title_island_pure_music_keywords">Instrumental Detection Keywords</string>
     <string name="title_aod_hide_pure_music_placeholder">Hide Placeholder Lyrics for Instrumentals</string>
+    <string name="title_aod_dynamic_effects">Dynamic Effects</string>
+    <string name="title_aod_word_sync_effect">Word-by-Word Effect</string>
+    <string name="title_aod_interlude_dots">Dynamic Dots</string>
+    <string name="title_aod_lyric_scroll">Lyric Scroll</string>
     <string name="summary_island_pure_music_keywords">A song is treated as instrumental when it has at most 5 lyric lines and any line contains one of these keywords (case and punctuation ignored)</string>
     <string name="action_island_pure_music_keyword_add">Add keyword</string>
     <string name="action_island_pure_music_keywords_reset">Reset to defaults</string>

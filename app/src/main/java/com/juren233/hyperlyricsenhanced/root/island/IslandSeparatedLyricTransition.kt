@@ -12,6 +12,7 @@ import android.view.ViewTreeObserver
 import androidx.core.view.OneShotPreDrawListener
 import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.lyric.model.interfaces.IRichLyricLine
+import com.juren233.hyperlyricsenhanced.lyric.view.NextLinePromotionMotion
 import com.juren233.hyperlyricsenhanced.lyric.view.RichLyricLineView
 import com.juren233.hyperlyricsenhanced.lyric.view.line.SpaceGatePromotionGeometry
 import com.juren233.hyperlyricsenhanced.lyric.view.line.SpaceGatePromotionRenderer
@@ -342,7 +343,7 @@ internal object IslandSeparatedLyricTransition {
             oldFrames.getOrNull(side)?.let { frame ->
                 picture(canvas, slot, frame, 1f - fraction,
                     x = if (side == 0) slot.width - frame.width - (if (!oldSplit) slot.width * 0.12f * fraction else 0f) else 0f,
-                    y = if (tracks.any { it.source.preview }) -slot.main.height * 0.65f * fraction else 0f)
+                    y = if (tracks.any { it.source.preview }) -slot.main.height * NextLinePromotionMotion.MAIN_EXIT_TRAVEL_FACTOR * fraction else 0f)
             }
             newFrames.getOrNull(side)?.let { frame ->
                 picture(canvas, slot, frame, fraction,

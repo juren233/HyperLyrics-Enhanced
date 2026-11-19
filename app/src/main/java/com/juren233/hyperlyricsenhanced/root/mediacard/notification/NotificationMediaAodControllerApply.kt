@@ -38,6 +38,7 @@ import com.juren233.hyperlyricsenhanced.common.lyric.CjkLyricWhitespacePolicy
 import com.juren233.hyperlyricsenhanced.common.lyric.LyricMetadataKeys
 import com.juren233.hyperlyricsenhanced.common.media.MediaMetadataHelper
 import com.juren233.hyperlyricsenhanced.lyric.view.SongPreprocessor
+import com.juren233.hyperlyricsenhanced.lyric.view.hasLyricLineAdvanced
 import com.juren233.hyperlyricsenhanced.root.ClassicAodFocusNotificationRecovery
 import com.juren233.hyperlyricsenhanced.root.HookEntry
 import com.juren233.hyperlyricsenhanced.root.LyriconDataBridge
@@ -214,6 +215,41 @@ internal fun NotificationMediaAodLyricHooker.applyState(controller: Any, state: 
         restoreActions(state)
         return
     }
+    // 「歌词滚动」/「灵动圆点」转场期间保持旧内容，结束后由 safeApply 重新应用最新内容。
+    if (overlay.promotionRunning) return
+    val currentLine = LyriconDataBridge.currentLyricLine
+    if (!overlay.skipNextPromotion && AodInterludeEnter.shouldStart(
+            enabled = textStyle.interludeDots,
+            wasInterlude = overlay.main.isInterludeIndicator,
+            nowInterlude = content.main.isNotBlank() && AodWordProgress.interludeRange() != null,
+            hadMainText = overlay.main.text.isNotBlank(),
+            attached = overlay.root.isAttachedToWindow &&
+                overlay.root.visibility == View.VISIBLE,
+        )
+    ) {
+        AodInterludeEnter.start(overlay) { safeApply(controller, state) }
+        return
+    }
+    if (!overlay.skipNextPromotion && AodNextLinePromotion.shouldPromote(
+            enabled = textStyle.lyricScroll,
+            showNextLyric = textStyle.showNextLyric,
+            rowsBetweenBlank = AodNextLinePromotion.rowsBetweenBlank(overlay, content),
+            wasPreview = overlay.next.visibility == View.VISIBLE && overlay.next.text.isNotBlank(),
+            currentMainText = overlay.main.text.toString(),
+            previewText = overlay.next.text.toString(),
+            nextMainText = content.main,
+            lineAdvanced = hasLyricLineAdvanced(overlay.appliedLine, currentLine),
+            attached = overlay.root.isAttachedToWindow &&
+                overlay.root.visibility == View.VISIBLE,
+            mainHeight = overlay.main.height,
+            nextHeight = overlay.next.height,
+        )
+    ) {
+        AodNextLinePromotion.start(overlay, content.main, content.mainAlignment) {
+            safeApply(controller, state)
+        }
+        return
+    }
     val contentChanged = overlay.main.text.toString() != content.main ||
         overlay.translation.text.toString() != content.translation ||
         overlay.backing.text.toString() != content.backing ||
@@ -234,6 +270,7 @@ internal fun NotificationMediaAodLyricHooker.applyState(controller: Any, state: 
         overlay.drawWakeLock.acquire(NotificationMediaAodLyricHooker.DRAW_WAKE_LOCK_TIMEOUT_MS)
     }
     overlay.main.text = content.main
+    overlay.appliedLine = currentLine
     setOptionalText(overlay.translation, content.translation)
     setOptionalText(overlay.backing, content.backing)
     setOptionalText(overlay.backingTranslation, content.backingTranslation)
@@ -255,6 +292,33 @@ internal fun NotificationMediaAodLyricHooker.applyState(controller: Any, state: 
     NotificationMediaAodLyricHooker.applyLyricRowOrder(overlay, textStyle.swapTranslation)
     NotificationMediaAodLyricHooker.updateLockScreenLineSpacing(overlay)
     overlay.main.setTextColor(api.getTitleText(holder).currentTextColor)
+    val wordSyncPlaying = state.playing && state.aodActive
+    val wordSyncKeepAlive = {
+        overlay.drawWakeLock.acquire(NotificationMediaAodLyricHooker.DRAW_WAKE_LOCK_TIMEOUT_MS)
+    }
+    val wordSync = textStyle.wordSyncEffect
+    overlay.main.bindWordSync(
+        row = "main",
+        text = content.main,
+        words = if (wordSync) AodWordProgress.mainWords() else null,
+        interlude = if (textStyle.interludeDots) AodWordProgress.interludeRange() else null,
+        playing = wordSyncPlaying,
+        keepAlive = wordSyncKeepAlive,
+    )
+    overlay.backing.bindWordSync(
+        row = "backing",
+        text = content.backing,
+        words = if (wordSync) AodWordProgress.backingWords() else null,
+        playing = wordSyncPlaying,
+        keepAlive = wordSyncKeepAlive,
+    )
+    overlay.overlappingMain.bindWordSync(
+        row = "overlappingMain",
+        text = content.overlappingMain,
+        words = if (wordSync) AodWordProgress.overlappingMainWords() else null,
+        playing = wordSyncPlaying,
+        keepAlive = wordSyncKeepAlive,
+    )
     overlay.backing.setTextColor(api.getTitleText(holder).currentTextColor)
     overlay.overlappingMain.setTextColor(api.getTitleText(holder).currentTextColor)
     overlay.overlappingBacking.setTextColor(api.getTitleText(holder).currentTextColor)

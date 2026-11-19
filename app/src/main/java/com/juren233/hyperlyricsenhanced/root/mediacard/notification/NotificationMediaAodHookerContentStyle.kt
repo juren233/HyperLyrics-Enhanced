@@ -282,6 +282,18 @@ internal fun NotificationMediaAodLyricHooker.lockScreenAodTextStyle(): AodTextSt
         RootConstants.KEY_HOOK_LOCK_SCREEN_AOD_HIDE_PURE_MUSIC_PLACEHOLDER,
         RootConstants.DEFAULT_HOOK_AOD_HIDE_PURE_MUSIC_PLACEHOLDER,
     ) ?: RootConstants.DEFAULT_HOOK_AOD_HIDE_PURE_MUSIC_PLACEHOLDER,
+    wordSyncEffect = prefs?.getBoolean(
+        RootConstants.KEY_HOOK_LOCK_SCREEN_AOD_WORD_SYNC_EFFECT,
+        RootConstants.DEFAULT_HOOK_AOD_WORD_SYNC_EFFECT,
+    ) ?: RootConstants.DEFAULT_HOOK_AOD_WORD_SYNC_EFFECT,
+    interludeDots = prefs?.getBoolean(
+        RootConstants.KEY_HOOK_LOCK_SCREEN_AOD_INTERLUDE_DOTS,
+        RootConstants.DEFAULT_HOOK_AOD_INTERLUDE_DOTS,
+    ) ?: RootConstants.DEFAULT_HOOK_AOD_INTERLUDE_DOTS,
+    lyricScroll = prefs?.getBoolean(
+        RootConstants.KEY_HOOK_LOCK_SCREEN_AOD_LYRIC_SCROLL,
+        RootConstants.DEFAULT_HOOK_AOD_LYRIC_SCROLL,
+    ) ?: RootConstants.DEFAULT_HOOK_AOD_LYRIC_SCROLL,
 )
 
 internal fun NotificationMediaAodLyricHooker.classicAodTextStyle(): AodTextStyleConfig = AodTextStyleConfig(

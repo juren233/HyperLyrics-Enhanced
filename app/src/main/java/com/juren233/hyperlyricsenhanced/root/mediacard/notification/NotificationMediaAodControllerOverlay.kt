@@ -69,7 +69,7 @@ internal fun NotificationMediaAodLyricHooker.createOverlay(
     val album = api.getAlbumView(holder) ?: artist
     val context = player.context
 
-    val main = TextView(context).apply {
+    val main = AodWordSyncTextView(context).apply {
         gravity = Gravity.CENTER
         includeFontPadding = false
         typeface = title.typeface
@@ -89,7 +89,7 @@ internal fun NotificationMediaAodLyricHooker.createOverlay(
         )
         setTextColor(artist.currentTextColor)
     }
-    val backing = TextView(context).apply {
+    val backing = AodWordSyncTextView(context).apply {
         gravity = Gravity.CENTER
         includeFontPadding = false
         typeface = title.typeface
@@ -109,7 +109,7 @@ internal fun NotificationMediaAodLyricHooker.createOverlay(
         )
         setTextColor(artist.currentTextColor)
     }
-    val overlappingMain = TextView(context).apply {
+    val overlappingMain = AodWordSyncTextView(context).apply {
         gravity = Gravity.CENTER
         includeFontPadding = false
         typeface = title.typeface

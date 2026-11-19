@@ -62,6 +62,12 @@ object RootConstants {
         "key_hook_lock_screen_aod_next_song_preview_position"
     const val KEY_HOOK_LOCK_SCREEN_AOD_HIDE_PURE_MUSIC_PLACEHOLDER =
         "key_hook_lock_screen_aod_hide_pure_music_placeholder"
+    const val KEY_HOOK_LOCK_SCREEN_AOD_WORD_SYNC_EFFECT =
+        "key_hook_lock_screen_aod_word_sync_effect"
+    const val KEY_HOOK_LOCK_SCREEN_AOD_INTERLUDE_DOTS =
+        "key_hook_lock_screen_aod_interlude_dots"
+    const val KEY_HOOK_LOCK_SCREEN_AOD_LYRIC_SCROLL =
+        "key_hook_lock_screen_aod_lyric_scroll"
     const val KEY_HOOK_CLASSIC_AOD_MAIN_TEXT_SIZE =
         "key_hook_classic_aod_main_text_size"
     const val KEY_HOOK_CLASSIC_AOD_BACKING_TEXT_SIZE =
@@ -497,6 +503,12 @@ object RootConstants {
     const val DEFAULT_HOOK_AOD_NEXT_SONG_PREVIEW = true
     /** 「纯音乐隐藏占位歌词」：判为纯音乐（见「纯音乐判定关键词」）时不显示「纯音乐，请欣赏」之类的占位歌词。 */
     const val DEFAULT_HOOK_AOD_HIDE_PURE_MUSIC_PLACEHOLDER = true
+    /** 「动态效果」类的「逐字效果」：主行、伴唱按逐字时间轴平滑扫过。 */
+    const val DEFAULT_HOOK_AOD_WORD_SYNC_EFFECT = false
+    /** 「动态效果」类的「灵动圆点」：前奏/间奏指示行改画与超级岛同款的动态圆点。 */
+    const val DEFAULT_HOOK_AOD_INTERLUDE_DOTS = false
+    /** 「动态效果」类的「歌词滚动」：无翻译无发音且显示下一句歌词时，换句按超级岛的「下一句上浮」滚动。 */
+    const val DEFAULT_HOOK_AOD_LYRIC_SCROLL = false
     const val AOD_NEXT_SONG_PREVIEW_POSITION_LEFT = 0
     const val AOD_NEXT_SONG_PREVIEW_POSITION_CENTER = 1
     const val AOD_NEXT_SONG_PREVIEW_POSITION_RIGHT = 2

@@ -11,6 +11,7 @@ import android.view.ViewTreeObserver
 import androidx.core.view.OneShotPreDrawListener
 import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.lyric.model.interfaces.IRichLyricLine
+import com.juren233.hyperlyricsenhanced.lyric.view.NextLinePromotionMotion
 import com.juren233.hyperlyricsenhanced.lyric.view.SpaceGateRichLyricLineView
 import com.juren233.hyperlyricsenhanced.lyric.view.line.SpaceGatePromotionRenderer
 import com.juren233.hyperlyricsenhanced.lyric.view.line.SpaceGatePromotionGeometry
@@ -301,7 +302,7 @@ internal object IslandShortLyricTransition {
             // The moving lyric stays visible. Only the outgoing line and the metadata trade opacity.
             old?.let {
                 drawPicture(canvas, slot, it, 1f - fraction,
-                    y = if (promoting && (rightSide || oldFull)) -slot.main.height * 0.65f * fraction else 0f,
+                    y = if (promoting && (rightSide || oldFull)) -slot.main.height * NextLinePromotionMotion.MAIN_EXIT_TRAVEL_FACTOR * fraction else 0f,
                     x = if (!rightSide) slot.width - it.width -
                         (if (!oldFull) slot.width * 0.12f * fraction else 0f) else 0f)
             }

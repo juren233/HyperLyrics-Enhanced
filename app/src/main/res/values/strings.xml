@@ -765,6 +765,10 @@
     <string name="title_island_pure_music_song_info_position">歌曲信息位置</string>
     <string name="title_island_pure_music_keywords">纯音乐判定关键词</string>
     <string name="title_aod_hide_pure_music_placeholder">纯音乐隐藏占位歌词</string>
+    <string name="title_aod_dynamic_effects">动态效果</string>
+    <string name="title_aod_word_sync_effect">逐字效果</string>
+    <string name="title_aod_interlude_dots">灵动圆点</string>
+    <string name="title_aod_lyric_scroll">歌词滚动</string>
     <string name="summary_island_pure_music_keywords">整首歌可显示歌词不超过 5 行，且其中任一行包含以下任一关键词（忽略大小写与标点）时，判定为纯音乐</string>
     <string name="action_island_pure_music_keyword_add">添加关键词</string>
     <string name="action_island_pure_music_keywords_reset">恢复预设</string>
