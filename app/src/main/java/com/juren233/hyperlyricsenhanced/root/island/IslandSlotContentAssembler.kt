@@ -1498,6 +1498,9 @@ internal object IslandSlotContentAssembler {
                 // 岛在旧句淡出期间变到新句宽度，淡入时不再被截。落地后的重算照旧兜底。
                 view.pendingSwitchLine = earlyWidthLine
                 view.animateUpdate(switchPreset) { animatedUpdate(this) }
+                // 次句上浮的目标几何在开始时按当时的视口算好，飞行途中改岛宽会让落地位置与目标不符而跳动；
+                // 上浮按原设计在落地后再重算岛宽。
+                if (view.isNextLinePromotionRunning) view.pendingSwitchLine = null
                 if (earlyWidthLine != null && view.pendingSwitchLine != null &&
                     view.tag == IslandProbeUtils.RIGHT_TEST_VIEW_TAG
                 ) {

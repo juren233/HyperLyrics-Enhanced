@@ -24,6 +24,15 @@ class SpaceGateFadingEdgesTest {
     }
 
     @Test
+    fun `gapless seam has no camera so scrolling only fades the outer edges`() {
+        val edges = SpaceGateFadingEdges.resolve(
+            textWidth = 300f, scrollWidth = 300f, viewWidth = 100f,
+            seam = 50f, offset = -100f, edgeLength = 20f, plan = null, occluding = false,
+        )
+        assertEquals(SpaceGateFadingEdges(1f, 0f, 1f), edges)
+    }
+
+    @Test
     fun `stopped tail and words beside camera are fully visible`() {
         assertEquals(SpaceGateFadingEdges(1f, 0f, 0f), longLine(-200f))
         assertEquals(0.5f, longLine(-190f).camera, 0f)

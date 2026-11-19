@@ -26,6 +26,7 @@ internal data class SpaceGateFadingEdges(
             edgeLength: Float,
             plan: SeamStripPlan?,
             ghostStart: Float? = null,
+            occluding: Boolean = true,
         ): SpaceGateFadingEdges {
             if (edgeLength <= 0f || viewWidth <= 0f || scrollWidth <= viewWidth) return NONE
             // Capacity compensation can extend a naturally short line. Use its
@@ -36,8 +37,9 @@ internal data class SpaceGateFadingEdges(
                 if (end > 0f) (-start / edgeLength).coerceIn(0f, 1f) else 0f
             fun right(start: Float, end: Float): Float =
                 if (start < viewWidth) ((end - viewWidth) / edgeLength).coerceIn(0f, 1f) else 0f
+            // 无挖孔（横屏去间隙）时接缝处没有摄像头，滚动经过接缝不渐隐。
             fun camera(start: Float, end: Float): Float =
-                if (seam > 0f && seam < viewWidth) {
+                if (occluding && seam > 0f && seam < viewWidth) {
                     (minOf(seam - start, end - seam) / edgeLength).coerceIn(0f, 1f)
                 } else 0f
 

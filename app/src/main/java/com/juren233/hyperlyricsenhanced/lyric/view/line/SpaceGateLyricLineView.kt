@@ -786,6 +786,7 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
                 ghostSpacing = master.ghostSpacing,
                 isPlainText = master.isPlainText && !master.hasRightPreview,
             ),
+            occluding = master.seamOcclusion,
         )
         val previewStart = master.rightPreviewStart(vw) ?: return edges
         if (previewStart >= vw) return edges
