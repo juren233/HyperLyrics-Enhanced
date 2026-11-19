@@ -127,6 +127,14 @@ internal object IslandTextHooker {
 
         }
 
+        installFeature("始终保持超级岛显示") {
+            IslandKeepVisibleHooker.install(module, cl)
+        }
+
+        installFeature("配置变化内容区直接到位") {
+            IslandConfigChangeLayoutSnap.install(module, cl)
+        }
+
         installFeature("岛背景重入移除守卫") {
             IslandReentrantBackgroundRemovalHooker.install(module)
         }

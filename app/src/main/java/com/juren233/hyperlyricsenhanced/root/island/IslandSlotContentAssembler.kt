@@ -1213,6 +1213,7 @@ internal object IslandSlotContentAssembler {
                 }
                 is SpaceGateRichLyricLineView -> {
                     target.continuousSpaceGate = continuousSpaceGate
+                    IslandGaplessSeam.syncFromSlot(target, config)
                     target.line = targetLine
                     target.setPlaybackActive(playbackActive)
                     if (config.lyricMarqueeEnabled) target.post { target.requestStartMarquee() }
@@ -1246,6 +1247,11 @@ internal object IslandSlotContentAssembler {
             suppressAnimation = suppressContentAnimation,
             contentChanged = contentChanged,
             entranceOnly = lyricsJustBecameAvailable,
+            // 连续文本带换句：岛宽不必等淡出结束，按新句提前开始变化。
+            earlyWidthLine = targetLine.takeIf {
+                config.dynamicWidthEnabled && continuousSpaceGate &&
+                    (view as? SpaceGateRichLyricLineView)?.continuousSpaceGate == true
+            },
             update = applyLine
         )
         lastContentSignatures[view] = signature
@@ -1437,6 +1443,7 @@ internal object IslandSlotContentAssembler {
         suppressAnimation: Boolean = false,
         contentChanged: Boolean = true,
         entranceOnly: Boolean = false,
+        earlyWidthLine: IRichLyricLine? = null,
         update: (View) -> Unit
     ) {
         val shouldAnimate = shouldAnimateContentUpdate(
@@ -1487,7 +1494,15 @@ internal object IslandSlotContentAssembler {
                 }
             } else {
                 view.beginContentSwitchFreeze()
+                // 先登记即将落地的行（未挂载时动画会同步落地并清除它），再按它重算岛宽：
+                // 岛在旧句淡出期间变到新句宽度，淡入时不再被截。落地后的重算照旧兜底。
+                view.pendingSwitchLine = earlyWidthLine
                 view.animateUpdate(switchPreset) { animatedUpdate(this) }
+                if (earlyWidthLine != null && view.pendingSwitchLine != null &&
+                    view.tag == IslandProbeUtils.RIGHT_TEST_VIEW_TAG
+                ) {
+                    IslandViewHelper.triggerSystemRelayoutForDescendant(view)
+                }
             }
             else -> update(view)
         }

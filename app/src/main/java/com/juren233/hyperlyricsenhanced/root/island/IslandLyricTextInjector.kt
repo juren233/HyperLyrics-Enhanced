@@ -548,8 +548,11 @@ internal object IslandLyricTextInjector {
 
     private fun updateWrapper(wrapper: MaxWidthFrameLayout, widthPx: Int, config: IslandSlotRuntimeConfig, parentName: String): Boolean {
         var changed = false
-        val paddingLeft = config.paddingLeftPx(wrapper, parentName)
-        val paddingRight = config.paddingRightPx(
+        // 无挖孔连续文本带：朝向中间一侧的内边距由 IslandGaplessSeam 清零。
+        val innerSuppressed = IslandGaplessSeam.innerPaddingSuppressed(wrapper)
+        val isLeft = config.isLeftParent(parentName)
+        val paddingLeft = if (innerSuppressed && !isLeft) 0 else config.paddingLeftPx(wrapper, parentName)
+        val paddingRight = if (innerSuppressed && isLeft) 0 else config.paddingRightPx(
             wrapper,
             parentName,
             rhythmVisible = IslandSlotContentAssembler.isRhythmVisible(config),

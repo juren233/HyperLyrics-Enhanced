@@ -1,5 +1,7 @@
 package com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.translation
 
+import com.juren233.hyperlyricsenhanced.common.LyricModeUsage
+import com.juren233.hyperlyricsenhanced.ui.component.lyricModeScopedSummary
 import com.juren233.hyperlyricsenhanced.ui.component.SectionEnter
 import com.juren233.hyperlyricsenhanced.ui.component.SectionExit
 import androidx.compose.animation.AnimatedVisibility
@@ -19,7 +21,8 @@ import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 
 fun LazyListScope.translationSections(
-    adjacentBackgroundTranslationAvailable: Boolean,
+    /** 为 null 时不可用（置灰）；只对一个方向可用时副标题标出方向。 */
+    adjacentBackgroundTranslationScope: LyricModeUsage.Scope?,
     translationDisplayMode: Int,
     onTranslationDisplayModeChange: (Int) -> Unit,
     translationFallback: Boolean,
@@ -90,13 +93,14 @@ fun LazyListScope.translationSections(
                         title = stringResource(
                             R.string.title_adjacent_background_translation
                         ),
-                        summary = stringResource(
-                            R.string.summary_adjacent_background_translation
+                        summary = lyricModeScopedSummary(
+                            adjacentBackgroundTranslationScope,
+                            stringResource(R.string.summary_adjacent_background_translation),
                         ),
                         checked = adjacentBackgroundTranslation,
                         onCheckedChange = onAdjacentBackgroundTranslationChange,
                         enabled = translationControlsEnabled &&
-                            adjacentBackgroundTranslationAvailable,
+                            adjacentBackgroundTranslationScope != null,
                     )
                 }
             }

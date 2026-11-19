@@ -325,9 +325,21 @@ class SpaceGateRichLyricLineView(
         )
     }
 
+    /**
+     * 换句淡出期间即将落地的行。连续文本带的动态长度提前按它计算岛宽，让岛在旧句淡出时
+     * 就开始变宽/变窄，新句淡入时已在目标宽度（IslandSlotContentAssembler.applyContentUpdate 写入）。
+     * 内容落地（写 [line]）即清除。
+     */
+    internal var pendingSwitchLine: IRichLyricLine? = null
+
+    /** 动态长度计算岛宽所用的行：换句途中为即将落地的行，否则为当前行。 */
+    internal val widthDemandLine: IRichLyricLine?
+        get() = pendingSwitchLine ?: rawLine
+
     var line: IRichLyricLine?
         get() = rawLine
         set(value) {
+            pendingSwitchLine = null
             // An older YoYo completion may still bind during the shared fade-out. Its
             // queued content must not discard the newer pair waiting at the transparent frame.
             if (!applyingLayoutRoleContent && cancelLayoutRoleTransition != null && !YoYoAnimation.isRunning(this)) {
@@ -375,6 +387,50 @@ class SpaceGateRichLyricLineView(
         addView(secondary, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
         updateLayoutTransitionX()
     }
+
+    /** 接缝处是否有物理遮挡；false＝横屏无顶部挖孔、两槽直接相接（IslandGaplessSeam 写入）。 */
+    internal var seamOcclusion: Boolean
+        get() = main.seamOcclusion
+        set(value) {
+            main.seamOcclusion = value
+            secondary.seamOcclusion = value
+        }
+
+    /** 无挖孔连续文本带：两槽在接缝处相接，换句动画必须作为一条文本带整体运动。 */
+    private val bandMotion: Boolean
+        get() = !main.seamOcclusion && continuousSpaceGate && main.siblingView != null
+
+    private fun setBandShift(value: Float) {
+        main.bandShiftX = value
+        main.siblingView?.bandShiftX = value
+        secondary.bandShiftX = value
+        secondary.siblingView?.bandShiftX = value
+    }
+
+    /**
+     * 换句动画（YoYo）按各槽自身宽度设置位移：两槽位移量不同，且位移后的内容被各自容器裁剪，
+     * 无挖孔时接缝处会出现缺口。连续文本带改由右槽（主）的位移量平移整条带，视图本身不动；
+     * 左槽自己的位移忽略。其余情况保持原有视图位移。
+     */
+    override fun setTranslationX(translationX: Float) {
+        if (!bandMotion) {
+            if (main.bandShiftX != 0f || secondary.bandShiftX != 0f) setBandShift(0f)
+            super.setTranslationX(translationX)
+            return
+        }
+        super.setTranslationX(0f)
+        if (main.isRightSide) setBandShift(translationX)
+    }
+
+    /** 连续文本带的缩放以接缝为轴心：两半朝同一点缩放，接缝处保持相接。 */
+    override fun setPivotX(pivotX: Float) {
+        super.setPivotX(if (bandMotion) (if (main.isRightSide) 0f else width.toFloat()) else pivotX)
+    }
+
+    /** 连续文本带的接缝避让对 [rawLine] 主/次行在接缝 [seam] 处额外占用的最大宽度。 */
+    internal fun staticSeamClearance(seam: Float): Int = kotlin.math.ceil(
+        maxOf(main.staticSeamClearance(seam), secondary.staticSeamClearance(seam))
+    ).toInt()
 
     fun setSpaceGateConfig(isRightSide: Boolean, sibling: SpaceGateRichLyricLineView?) {
         main.isRightSide = isRightSide

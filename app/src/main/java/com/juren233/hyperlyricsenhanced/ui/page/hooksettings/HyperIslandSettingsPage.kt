@@ -1,5 +1,6 @@
 package com.juren233.hyperlyricsenhanced.ui.page.hooksettings
 
+import com.juren233.hyperlyricsenhanced.ui.component.lyricModeScopedSummary
 import com.juren233.hyperlyricsenhanced.ui.component.SectionEnter
 import com.juren233.hyperlyricsenhanced.ui.component.SectionExit
 import android.content.Context
@@ -29,6 +30,7 @@ import com.juren233.hyperlyricsenhanced.common.IslandMusicWaveColorMode
 import com.juren233.hyperlyricsenhanced.common.IslandNextLineMode
 import com.juren233.hyperlyricsenhanced.common.IslandProgressColorMode
 import com.juren233.hyperlyricsenhanced.common.IslandRealRhythmConfig
+import com.juren233.hyperlyricsenhanced.common.LyricModeResolver
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.common.UIConstants
 import com.juren233.hyperlyricsenhanced.common.PrefsBridge
@@ -66,7 +68,11 @@ fun HyperIslandSettingsPage() {
 
     var islandContentLeft by remember { mutableIntStateOf(prefs.getInt(RootConstants.KEY_HOOK_ISLAND_CONTENT_LEFT, RootConstants.DEFAULT_HOOK_ISLAND_CONTENT_LEFT)) }
     var islandContentRight by remember { mutableIntStateOf(prefs.getInt(RootConstants.KEY_HOOK_ISLAND_CONTENT_RIGHT, RootConstants.DEFAULT_HOOK_ISLAND_CONTENT_RIGHT)) }
-    val lyricMode by remember { mutableIntStateOf(prefs.getInt(RootConstants.KEY_HOOK_LYRIC_MODE, RootConstants.DEFAULT_HOOK_LYRIC_MODE)) }
+    // 竖屏模式与「横屏状态」任一方用到的模式，其设置都要显示（横屏只换模式，设置共用）；
+    // 只对一个方向生效的设置在副标题开头标出方向。
+    val lyricModes = remember { LyricModeResolver.usage(prefs) }
+    val singleSideScope = lyricModes.scopeOf(RootConstants.HOOK_LYRIC_MODE_SINGLE_SIDE)
+    val fullIslandScope = lyricModes.scopeOf(RootConstants.HOOK_LYRIC_MODE_FULL_ISLAND)
     val lyricSource by remember {
         mutableStateOf(
             prefs.getString(
@@ -83,10 +89,11 @@ fun HyperIslandSettingsPage() {
             )
         )
     }
-    var fullIslandNextLineMode by remember {
-        mutableIntStateOf(IslandNextLineMode.resolve(
+    val fullIslandNextLinePositionValues = listOf(IslandNextLineMode.SECOND_LINE, IslandNextLineMode.RIGHT)
+    var fullIslandNextLinePosition by remember {
+        mutableIntStateOf(IslandNextLineMode.resolvePosition(
+            prefs.getInt(RootConstants.KEY_HOOK_ISLAND_FULL_NEXT_LINE_POSITION, IslandNextLineMode.UNSPECIFIED),
             prefs.getInt(RootConstants.KEY_HOOK_ISLAND_NEXT_LINE_MODE, IslandNextLineMode.UNSPECIFIED),
-            nextLyricLine,
         ))
     }
     var audioCover by remember { mutableStateOf(prefs.getBoolean(RootConstants.KEY_HOOK_ISLAND_LEFT_ALBUM, RootConstants.DEFAULT_HOOK_ISLAND_LEFT_ALBUM)) }
@@ -319,8 +326,8 @@ fun HyperIslandSettingsPage() {
             R.string.option_island_next_song_preview_half
         )
     }.map { stringResource(id = it) }
-    val nextSongPreviewPositionOptionValues = remember(lyricMode) {
-        if (lyricMode == RootConstants.HOOK_LYRIC_MODE_SINGLE_SIDE) {
+    val nextSongPreviewPositionOptionValues = remember(singleSideScope) {
+        if (singleSideScope != null) {
             listOf(
                 RootConstants.ISLAND_NEXT_SONG_PREVIEW_POSITION_OTHER_SIDE,
                 RootConstants.ISLAND_NEXT_SONG_PREVIEW_POSITION_LEFT,
@@ -653,10 +660,13 @@ fun HyperIslandSettingsPage() {
                             AnimatedVisibility(visible = audioCover, enter = SectionEnter, exit = SectionExit) {
                                 audioCoverStylePreference()
                             }
-                            if (lyricMode == RootConstants.HOOK_LYRIC_MODE_FULL_ISLAND) {
+                            if (fullIslandScope != null) {
                                 SwitchPreference(
                                     title = stringResource(R.string.title_island_short_lyric_song_info),
-                                    summary = stringResource(R.string.summary_island_short_lyric_song_info),
+                                    summary = lyricModeScopedSummary(
+                                        fullIslandScope,
+                                        stringResource(R.string.summary_island_short_lyric_song_info),
+                                    ),
                                     checked = shortLyricSongInfo,
                                     onCheckedChange = {
                                         shortLyricSongInfo = it
@@ -764,28 +774,11 @@ fun HyperIslandSettingsPage() {
                         }
                     }
                 }
-                if ((lyricMode == RootConstants.HOOK_LYRIC_MODE_FULL_ISLAND ||
-                        lyricMode == RootConstants.HOOK_LYRIC_MODE_SEPARATED) &&
-                    (lyricSource == "lyricon" || lyricSource == "lyricinfo")
-                ) {
+                if (lyricSource == "lyricon" || lyricSource == "lyricinfo") {
                     item(key = "island_next_lyric") {
                         Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
-                            if (lyricMode == RootConstants.HOOK_LYRIC_MODE_FULL_ISLAND) {
-                                OverlayDropdownPreference(
-                                    title = stringResource(id = R.string.title_next_lyric_line),
-                                    summary = stringResource(id = R.string.summary_next_lyric_line),
-                                    items = listOf(
-                                        stringResource(R.string.island_next_line_off),
-                                        stringResource(R.string.island_next_line_second_line),
-                                        stringResource(R.string.island_next_line_right),
-                                    ),
-                                    selectedIndex = fullIslandNextLineMode,
-                                    onSelectedIndexChange = {
-                                        fullIslandNextLineMode = it
-                                        saveConfig(RootConstants.KEY_HOOK_ISLAND_NEXT_LINE_MODE, it)
-                                    }
-                                )
-                            } else {
+                            Column {
+                                // 所有模式共用；「右侧」只有全岛有，位置单独放在下方。
                                 SwitchPreference(
                                     title = stringResource(id = R.string.title_next_lyric_line),
                                     summary = stringResource(id = R.string.summary_next_lyric_line),
@@ -795,6 +788,30 @@ fun HyperIslandSettingsPage() {
                                         saveConfig(RootConstants.KEY_HOOK_NEXT_LYRIC_LINE, it)
                                     }
                                 )
+                                AnimatedVisibility(
+                                    visible = nextLyricLine && fullIslandScope != null,
+                                    enter = SectionEnter,
+                                    exit = SectionExit,
+                                ) {
+                                    OverlayDropdownPreference(
+                                        title = stringResource(id = R.string.title_island_full_next_line_position),
+                                        summary = lyricModeScopedSummary(fullIslandScope),
+                                        items = fullIslandNextLinePositionValues.map { value ->
+                                            stringResource(
+                                                if (value == IslandNextLineMode.RIGHT) R.string.island_next_line_right
+                                                else R.string.island_next_line_second_line
+                                            )
+                                        },
+                                        selectedIndex = fullIslandNextLinePositionValues
+                                            .indexOf(fullIslandNextLinePosition)
+                                            .coerceAtLeast(0),
+                                        onSelectedIndexChange = {
+                                            val value = fullIslandNextLinePositionValues[it]
+                                            fullIslandNextLinePosition = value
+                                            saveConfig(RootConstants.KEY_HOOK_ISLAND_FULL_NEXT_LINE_POSITION, value)
+                                        }
+                                    )
+                                }
                             }
                         }
                     }
@@ -862,12 +879,13 @@ fun HyperIslandSettingsPage() {
                         }
                     }
                 }
-                if (lyricMode == RootConstants.HOOK_LYRIC_MODE_SINGLE_SIDE) {
+                if (singleSideScope != null) {
                     item(key = "content_options") {
                         Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
                             Column {
                                 OverlayDropdownPreference(
                                     title = stringResource(id = R.string.title_hyper_island_left),
+                                    summary = lyricModeScopedSummary(singleSideScope),
                                     items = contentOptions,
                                     selectedIndex = islandContentLeft,
                                     onSelectedIndexChange = {
@@ -879,6 +897,7 @@ fun HyperIslandSettingsPage() {
                                 )
                                 OverlayDropdownPreference(
                                     title = stringResource(id = R.string.title_hyper_island_right),
+                                    summary = lyricModeScopedSummary(singleSideScope),
                                     items = contentOptions,
                                     selectedIndex = islandContentRight,
                                     onSelectedIndexChange = {
@@ -888,17 +907,6 @@ fun HyperIslandSettingsPage() {
                                         )
                                     }
                                 )
-                                if (lyricSource == "lyricon" || lyricSource == "lyricinfo") {
-                                    SwitchPreference(
-                                        title = stringResource(id = R.string.title_next_lyric_line),
-                                        summary = stringResource(id = R.string.summary_next_lyric_line),
-                                        checked = nextLyricLine,
-                                        onCheckedChange = {
-                                            nextLyricLine = it
-                                            saveConfig(RootConstants.KEY_HOOK_NEXT_LYRIC_LINE, it)
-                                        }
-                                    )
-                                }
                             }
                         }
                     }

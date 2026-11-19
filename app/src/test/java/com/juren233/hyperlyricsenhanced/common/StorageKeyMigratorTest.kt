@@ -84,6 +84,20 @@ class StorageKeyMigratorTest {
     }
 
     @Test
+    fun `restored legacy full island next line key clears the shared switch and position it migrates into`() {
+        assertEquals(
+            setOf(RootConstants.KEY_HOOK_ISLAND_FULL_NEXT_LINE_POSITION, RootConstants.KEY_HOOK_NEXT_LYRIC_LINE),
+            StorageKeyMigrator.keysSupersededByRestoredLegacy(setOf(RootConstants.KEY_HOOK_ISLAND_NEXT_LINE_MODE)),
+        )
+        assertEquals(
+            setOf(RootConstants.KEY_HOOK_ISLAND_FULL_NEXT_LINE_POSITION),
+            StorageKeyMigrator.keysSupersededByRestoredLegacy(
+                setOf(RootConstants.KEY_HOOK_ISLAND_NEXT_LINE_MODE, RootConstants.KEY_HOOK_NEXT_LYRIC_LINE),
+            ),
+        )
+    }
+
+    @Test
     fun `keys carried by the backup itself are never cleared`() {
         assertEquals(
             setOf(upgradeKey),

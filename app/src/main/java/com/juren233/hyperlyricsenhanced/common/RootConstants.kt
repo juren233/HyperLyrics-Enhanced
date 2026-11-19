@@ -103,6 +103,8 @@ object RootConstants {
     const val KEY_HOOK_CLASSIC_AOD_HIDE_PURE_MUSIC_PLACEHOLDER =
         "key_hook_classic_aod_hide_pure_music_placeholder"
     const val KEY_HOOK_LYRIC_MODE = "key_hook_lyric_mode"
+    /** 横屏时使用的歌词模式；[HOOK_LYRIC_MODE_FOLLOW_PORTRAIT] 表示跟随竖屏（[KEY_HOOK_LYRIC_MODE]）。 */
+    const val KEY_HOOK_LYRIC_MODE_LANDSCAPE = "key_hook_lyric_mode_landscape"
     const val KEY_HOOK_LYRIC_SOURCE = "key_hook_lyric_source"
     const val DEFAULT_HOOK_LYRIC_SOURCE = "lyricon"
 
@@ -229,6 +231,8 @@ object RootConstants {
     const val KEY_HOOK_REMOVE_FOCUS_WHITELIST = "key_hook_remove_focus_whitelist"
     const val KEY_HOOK_REMOVE_ISLAND_WHITELIST = "key_hook_remove_island_whitelist"
     const val KEY_HOOK_UNLOCK_ISLAND_LENGTH = "key_hook_unlock_island_length"
+    /** 始终保持超级岛显示：取值见 ISLAND_KEEP_VISIBLE_*。 */
+    const val KEY_HOOK_ISLAND_KEEP_VISIBLE = "key_hook_island_keep_visible"
 
     // ================= STYLE & TYPOGRAPHY KEYS =================
     const val KEY_HOOK_TEXT_SIZE = "key_hook_text_size"
@@ -282,7 +286,10 @@ object RootConstants {
     const val KEY_HOOK_TRANSLATION_ONLY = "key_hook_translation_only"
     const val KEY_HOOK_SWAP_TRANSLATION = "key_hook_swap_translation"
     const val KEY_HOOK_NEXT_LYRIC_LINE = "key_hook_next_lyric_line"
+    /** 旧全岛三档键（不显示 / 第二行 / 右侧），2026-11-19 起只作迁移输入，见 IslandNextLineMode。 */
     const val KEY_HOOK_ISLAND_NEXT_LINE_MODE = "key_hook_island_next_line_mode"
+    /** 全岛滚动时下一句歌词的位置：IslandNextLineMode.SECOND_LINE / RIGHT。 */
+    const val KEY_HOOK_ISLAND_FULL_NEXT_LINE_POSITION = "key_hook_island_full_next_line_position"
     const val KEY_HOOK_AUTO_SWITCH_TRANSLATION = "key_hook_auto_switch_translation"
     const val KEY_HOOK_ADJACENT_BACKGROUND_TRANSLATION =
         "key_hook_adjacent_background_translation"
@@ -377,6 +384,8 @@ object RootConstants {
     const val HOOK_LYRIC_MODE_FULL_ISLAND = 1
     const val HOOK_LYRIC_MODE_SEPARATED = 2
     const val DEFAULT_HOOK_LYRIC_MODE = HOOK_LYRIC_MODE_SINGLE_SIDE
+    const val HOOK_LYRIC_MODE_FOLLOW_PORTRAIT = -1
+    const val DEFAULT_HOOK_LYRIC_MODE_LANDSCAPE = HOOK_LYRIC_MODE_FOLLOW_PORTRAIT
     const val DEFAULT_HOOK_LYRICON_PROVIDER_DELAY = 0
     const val DEFAULT_HOOK_REMOVE_CJK_LYRIC_SPACES = false
     const val APPLE_MUSIC_CONTENT_UI_LANGUAGE_NONE = AppleMusicPreferenceKeys.APPLE_MUSIC_CONTENT_UI_LANGUAGE_NONE
@@ -514,6 +523,13 @@ object RootConstants {
     const val DEFAULT_HOOK_REMOVE_FOCUS_WHITELIST = false
     const val DEFAULT_HOOK_REMOVE_ISLAND_WHITELIST = false
     const val DEFAULT_HOOK_UNLOCK_ISLAND_LENGTH = false
+    /** 不开启：保持原生隐藏行为。 */
+    const val ISLAND_KEEP_VISIBLE_OFF = 0
+    /** 状态栏隐藏（全屏）时超级岛不随之隐藏。 */
+    const val ISLAND_KEEP_VISIBLE_STATUS_BAR_HIDDEN = 1
+    /** 在状态栏隐藏的基础上，处在音乐岛来源 App 内时音乐岛也不收进 App。 */
+    const val ISLAND_KEEP_VISIBLE_ALL = 2
+    const val DEFAULT_HOOK_ISLAND_KEEP_VISIBLE = ISLAND_KEEP_VISIBLE_OFF
     const val DEFAULT_HOOK_ISLAND_CONTENT_LEFT = 5
     const val DEFAULT_HOOK_ISLAND_CONTENT_RIGHT = 7
     const val DEFAULT_HOOK_ISLAND_LEFT_PADDING_LEFT = 5

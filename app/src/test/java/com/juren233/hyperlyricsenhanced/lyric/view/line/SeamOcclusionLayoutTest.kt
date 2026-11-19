@@ -660,4 +660,22 @@ class SeamOcclusionLayoutTest {
             seam += 0.25f
         }
     }
+
+    @Test
+    fun `gapless layout never straddles avoids or fades at the seam`() {
+        val text = "你好世界歌词"
+        val layout = requireNotNull(
+            SeamOcclusionLayout.build(text, FloatArray(text.length) { 20f }, occluding = false),
+        )
+        assertNull(layout.straddlingUnit(0f, 30f))
+        assertNull(layout.straddlingStaticUnit(0f, 30f))
+        assertEquals(0f, layout.rightShiftToClear(0f, 30f))
+        assertEquals(0f, layout.leftShiftToClear(0f, 30f))
+        val static = SeamStripPlan.staticClear(layout, 0f, 30f, SeamStripPlan.Anchor.HEAD, 200f)
+        assertNull(static.straddler)
+        assertTrue(static.bands.all { it.delta == 0f })
+        assertNull(SeamStripPlan.transit(layout, 0f, 30f).straddler)
+        // The same text with a camera seam does straddle, so the switch is what removes it.
+        assertNotNull(uniform(text, 20f).straddlingUnit(0f, 30f))
+    }
 }

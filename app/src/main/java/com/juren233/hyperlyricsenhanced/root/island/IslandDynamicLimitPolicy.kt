@@ -113,6 +113,15 @@ internal object IslandDynamicLimitPolicy {
         val width = minOf(original.width, maxOf(available, floor))
         if (width == original.width) return original
         val budget = (width - fixed).coerceAtLeast(0)
+        // 手机大岛围绕挖孔对称（原生与解锁结果均 left == right）。挖孔宽为奇数时
+        // （横屏实测 cutoutWidth=61）奇数 budget 会拆成差 1px 的两侧，下游全岛按内容
+        // 收缩要求两侧相等，于是整步被跳过。对称输入保持对称输出。
+        if (phoneCenter != null && original.left == original.right) {
+            var side = budget / 2
+            if (fixed + 2 * side < floor) side = minOf(original.left, (floor - fixed + 1) / 2)
+            val symmetricWidth = fixed + 2 * side
+            return Geometry(symmetricWidth, side, side, phoneCenter - symmetricWidth / 2)
+        }
         val left = minOf(original.left, maxOf(budget / 2, budget - original.right))
         val right = minOf(original.right, budget - left)
         val x = phoneCenter?.let { it - width / 2 } ?: (screenWidth - width) / 2

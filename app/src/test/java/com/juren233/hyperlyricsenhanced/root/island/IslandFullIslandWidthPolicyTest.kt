@@ -85,6 +85,35 @@ class IslandFullIslandWidthPolicyTest {
         }
     }
 
+    @Test fun `continuous band is measured once and split symmetrically`() {
+        // 300px of lyric, 110px cover/padding on the left, 30px rhythm/padding on the right.
+        assertEquals(220, IslandFullIslandWidthPolicy.continuousSide(300, 110, 30) { 0 })
+        // Side never drops below either overhead, even for an empty band.
+        assertEquals(110, IslandFullIslandWidthPolicy.continuousSide(0, 110, 30) { 0 })
+    }
+
+    @Test fun `continuous band reserves the seam avoidance at the resulting seam`() {
+        val seams = mutableListOf<Int>()
+        val side = IslandFullIslandWidthPolicy.continuousSide(300, 110, 30) { seam ->
+            seams += seam
+            if (seam < 120) 24 else 0
+        }
+        assertEquals(110, seams.first()) // 220 - 110
+        assertEquals(232, side) // (300 + 24 + 140 + 1) / 2
+    }
+
+    @Test fun `gapless override turns the native cutout into symmetric side capacity`() {
+        // 2026-11-19 landscape: limiter result with the 61px fallback cutout.
+        val native = Geometry(1924, 931, 932, 373)
+        val symmetric = Geometry(1923, 931, 931, 373)
+        val result = IslandFullIslandWidthPolicy.shrink(symmetric, 400, 400, 2670, 110, false, fixedOverride = 0)
+        assertEquals(Geometry(800, 400, 400, 935), result)
+        assertEquals(native, IslandFullIslandWidthPolicy.shrink(native, 400, 400, 2670, 110, false, fixedOverride = 0))
+        // Demand beyond the freed capacity is capped by it: each side gains half the cutout.
+        assertEquals(Geometry(1922, 961, 961, 374),
+            IslandFullIslandWidthPolicy.shrink(symmetric, 990, 990, 2670, 110, false, fixedOverride = 0))
+    }
+
     private fun shrink(left: Int, right: Int, floor: Int = 110) =
         IslandFullIslandWidthPolicy.shrink(phone, left, right, 1200, floor, false)
     private fun demand(area: Int, text: Int, content: Int) =

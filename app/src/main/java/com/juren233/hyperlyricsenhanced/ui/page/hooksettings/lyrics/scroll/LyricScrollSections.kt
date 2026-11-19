@@ -1,5 +1,7 @@
 package com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.scroll
 
+import com.juren233.hyperlyricsenhanced.common.LyricModeUsage
+import com.juren233.hyperlyricsenhanced.ui.component.lyricModeScopedSummary
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -17,7 +19,8 @@ import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 fun LazyListScope.lyricScrollSections(
-    lyricMode: Int,
+    /** 单侧模式专属的歌曲信息滚动设置：为 null 时不显示，只对一个方向生效时副标题标出方向。 */
+    marqueeMetadataScope: LyricModeUsage.Scope?,
     marqueeMode: Boolean,
     onMarqueeModeChange: (Boolean) -> Unit,
     marqueeSpeed: Int,
@@ -102,12 +105,15 @@ fun LazyListScope.lyricScrollSections(
                     )
                 }
             }
-            if (lyricMode == RootConstants.HOOK_LYRIC_MODE_SINGLE_SIDE) {
+            if (marqueeMetadataScope != null) {
                 Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
                     Column {
                         SwitchPreference(
                             title = stringResource(id = R.string.title_marquee_metadata_mode),
-                            summary = stringResource(id = R.string.summary_marquee_metadata_mode),
+                            summary = lyricModeScopedSummary(
+                                marqueeMetadataScope,
+                                stringResource(id = R.string.summary_marquee_metadata_mode),
+                            ),
                             checked = marqueeMetadataMode,
                             onCheckedChange = onMarqueeMetadataModeChange
                         )

@@ -6,7 +6,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import com.juren233.hyperlyricsenhanced.R
+import com.juren233.hyperlyricsenhanced.common.RootConstants
 import top.yukonga.miuix.kmp.basic.Card
+import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 
 /** 「特殊功能」分组内容：警告横幅（适用于下面全部开关）+ 开关卡片。主页与设置页（主页隐藏时）共用。 */
@@ -18,6 +20,19 @@ fun SpecialFeaturesContent(lyricHookSwitches: LyricHookSwitchController) {
             modifier = Modifier.settingsCard(),
         )
         Card(modifier = Modifier.settingsCard()) {
+            OverlayDropdownPreference(
+                title = stringResource(R.string.title_island_keep_visible),
+                items = listOf(
+                    stringResource(R.string.option_island_keep_visible_off),
+                    stringResource(R.string.option_island_keep_visible_status_bar_hidden),
+                    stringResource(R.string.option_island_keep_visible_all),
+                ),
+                selectedIndex = lyricHookSwitches.keepIslandVisible.coerceIn(
+                    RootConstants.ISLAND_KEEP_VISIBLE_OFF,
+                    RootConstants.ISLAND_KEEP_VISIBLE_ALL,
+                ),
+                onSelectedIndexChange = lyricHookSwitches::onKeepIslandVisibleChange,
+            )
             SwitchPreference(
                 title = stringResource(R.string.title_unlock_island_length),
                 checked = lyricHookSwitches.unlockIslandLength,

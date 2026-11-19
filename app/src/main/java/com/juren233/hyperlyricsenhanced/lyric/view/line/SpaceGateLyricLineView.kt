@@ -65,6 +65,32 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
             // A plain row may have refreshed without a seam while this peer was absent.
             if (_model.words.isEmpty()) seamLayoutModel = null
         }
+    /**
+     * 接缝处是否有物理遮挡（摄像头）。false 时两槽在接缝处直接相接（IslandGaplessSeam），
+     * 条带不再绕孔分段或渐隐。只影响接缝布局，虚拟画布与主从关系不变。
+     */
+    /**
+     * 无挖孔连续文本带的换句位移：两槽在接缝处相接时，换句动画的水平位移不能移动各自的视图
+     * （各槽按自身宽度位移、又被各自容器裁剪，接缝处会裂开），改为整条文本带在两个视口内同步平移。
+     * 由右槽（主）写入两槽，见 SpaceGateRichLyricLineView.setTranslationX。
+     */
+    var bandShiftX = 0f
+        set(value) {
+            if (field == value) return
+            field = value
+            invalidate()
+        }
+
+    var seamOcclusion = true
+        set(value) {
+            if (field == value) return
+            field = value
+            rightPreview.occluding = value
+            rightPreview.configure(textPaint, currentTypefaceSelector, backgroundColors, currentFontSignature())
+            if (seamLayoutModel != null || distributedSeamX >= 0) clearSeamLayout()
+            relayout()
+            invalidate()
+        }
     var spaceGateEnabled = true
         set(value) {
             if (field == value) return
@@ -806,7 +832,7 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
         }
 
         canvas.withSave {
-            translate(translationX, 0f)
+            translate(translationX + bandShiftX, 0f)
             drawContent(canvas, virtualWidth)
         }
 
@@ -869,6 +895,15 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
     }
 
     /** 与绘制同管线度量逐字符 advance 后构建单元表；退化输入返回 null（连续绘制）。 */
+    /**
+     * 静止绕孔分段在接缝 [seam]（虚拟坐标，左槽文字宽）处为当前行额外占用的 advance：
+     * 跨缝单元被整段推过缝时拉开的距离。无遮挡或无跨缝时为 0。供全岛动态长度估算连续歌词所需宽度。
+     */
+    internal fun staticSeamClearance(seam: Float): Float {
+        if (!spaceGateEnabled || !seamOcclusion) return 0f
+        return buildSeamLayout()?.rightShiftToClear(0f, seam) ?: 0f
+    }
+
     private fun buildSeamLayout(model: LyricModel = _model): SeamOcclusionLayout? {
         val text = if (model.isPlainText) model.text else model.wordText
         if (text.isEmpty()) return null
@@ -880,7 +915,7 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
             } else {
                 textPaint.getTextWidths(text, widths)
             }
-            SeamOcclusionLayout.build(text, widths)
+            SeamOcclusionLayout.build(text, widths, seamOcclusion)
         } else {
             // 逐字行：拼接各词的逐字 advance，与逐字绘制坐标系同源。
             val widths = FloatArray(text.length)
@@ -892,7 +927,7 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
                 filled += wordLength
             }
             if (filled != widths.size) return null
-            SeamOcclusionLayout.build(text, widths)
+            SeamOcclusionLayout.build(text, widths, seamOcclusion)
         }
     }
 

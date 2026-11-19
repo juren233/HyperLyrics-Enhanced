@@ -52,6 +52,10 @@
     <string name="summary_unsupported_device">You can still enable entries in App Settings</string>
     <string name="action_enter_app_settings">Open App Settings</string>
     <string name="title_unlock_island_length">Remove HyperIsland Length Limit</string>
+    <string name="title_island_keep_visible">Always Keep HyperIsland Visible</string>
+    <string name="option_island_keep_visible_off">Off</string>
+    <string name="option_island_keep_visible_status_bar_hidden">Only When Status Bar Is Hidden</string>
+    <string name="option_island_keep_visible_all">All Scenarios</string>
     <string name="title_remove_focus_whitelist">Remove Spotlight Whitelist</string>
     <string name="notice_special_features_conflict">Do not use with similar features from other modules</string>
     <string name="title_remove_island_whitelist">Remove Mini Window Whitelist</string>
@@ -223,6 +227,11 @@
     <string name="lyric_mode_full_island">Full-Island Scroll</string>
     <string name="lyric_mode_separated">Half-Split Scroll</string>
     <string name="title_lyric_mode">Lyrics Mode</string>
+    <string name="title_lyric_mode_landscape">Landscape Mode</string>
+    <string name="option_lyric_mode_follow_portrait">Follow Portrait</string>
+    <string name="label_lyric_mode_scope_portrait">Portrait Mode</string>
+    <string name="label_lyric_mode_scope_landscape">Landscape Mode</string>
+    <string name="format_lyric_mode_scope_summary">%1$s · %2$s</string>
     <string name="title_lyric_source">Lyrics Source</string>
     <string name="summary_lyric_source_apple_music_builtin">Lyricon is recommended: built-in plugins, no extra module, easier to use.</string>
     <string name="lyric_source_lyricon">Lyricon</string>
@@ -508,7 +517,7 @@
     <string name="title_translation_only">Translation Only</string>
     <string name="title_swap_translation">Swap Original Lyrics and Translation</string>
     <string name="title_next_lyric_line">Show Next Lyric Line</string>
-    <string name="island_next_line_off">Hidden</string>
+    <string name="title_island_full_next_line_position">Next Line in Full-Island Scroll</string>
     <string name="island_next_line_second_line">Second Line</string>
     <string name="island_next_line_right">Right Side</string>
     <string name="summary_next_lyric_line">The next lyric line is hidden while a translation is shown or minimal display is enabled</string>

@@ -22,6 +22,8 @@ import com.juren233.hyperlyricsenhanced.root.island.IslandAlbumCoverStyleHooker
 import com.juren233.hyperlyricsenhanced.root.island.IslandViewRegistry
 import com.juren233.hyperlyricsenhanced.root.island.IslandMusicWaveColorHooker
 import com.juren233.hyperlyricsenhanced.root.island.IslandPureMusicGate
+import com.juren233.hyperlyricsenhanced.root.island.IslandKeepVisibleHooker
+import com.juren233.hyperlyricsenhanced.root.island.IslandOrientationState
 import com.juren233.hyperlyricsenhanced.root.island.IslandProgressGlowController
 import com.juren233.hyperlyricsenhanced.root.island.IslandRuntimePreferenceOverrides
 import com.juren233.hyperlyricsenhanced.root.island.IslandRuntimePreferenceReader
@@ -73,6 +75,7 @@ import com.juren233.hyperlyricsenhanced.root.utils.TargetCrashRecorder
 import com.juren233.hyperlyricsenhanced.common.PreferenceDiagnostics
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.common.IslandFontWeightMode
+import com.juren233.hyperlyricsenhanced.common.LyricModeResolver
 import com.juren233.hyperlyricsenhanced.common.IslandRealRhythmConfig
 import com.juren233.hyperlyricsenhanced.common.UIConstants
 import com.juren233.hyperlyricsenhanced.common.media.NextTrackMetadataCache
@@ -112,6 +115,7 @@ class HookEntry : XposedModule() {
             private set
 
         private val HYPER_ISLAND_RUNTIME_REFRESH_KEYS = setOf(
+            RootConstants.KEY_HOOK_LYRIC_MODE_LANDSCAPE,
             RootConstants.KEY_HOOK_ISLAND_SHORT_LYRIC_SONG_INFO,
             RootConstants.KEY_HOOK_ISLAND_INTERLUDE_MINIMAL_DISPLAY,
             RootConstants.KEY_HOOK_ISLAND_INTERLUDE_MINIMAL_RIGHT,
@@ -170,6 +174,7 @@ class HookEntry : XposedModule() {
             RootConstants.KEY_HOOK_SWAP_TRANSLATION,
             RootConstants.KEY_HOOK_NEXT_LYRIC_LINE,
             RootConstants.KEY_HOOK_ISLAND_NEXT_LINE_MODE,
+            RootConstants.KEY_HOOK_ISLAND_FULL_NEXT_LINE_POSITION,
             RootConstants.KEY_HOOK_AUTO_SWITCH_TRANSLATION,
             RootConstants.KEY_HOOK_ADJACENT_BACKGROUND_TRANSLATION,
             RootConstants.KEY_HOOK_EXTRACT_COVER_TEXT_COLOR,
@@ -606,6 +611,18 @@ class HookEntry : XposedModule() {
                     ) BaseIslandRenderer.refreshActiveIsland()
                 }
             }
+            optionalRuntime("orientation", { IslandOrientationState.stop() }) {
+                IslandOrientationState.start {
+                    if (LyricModeResolver.landscapeOverride(
+                            IslandRuntimePreferenceReader.getInt(
+                                prefs,
+                                RootConstants.KEY_HOOK_LYRIC_MODE_LANDSCAPE,
+                                RootConstants.DEFAULT_HOOK_LYRIC_MODE_LANDSCAPE,
+                            )
+                        ) != null
+                    ) BaseIslandRenderer.refreshActiveIsland()
+                }
+            }
             optionalRuntime("pure_music_gate", { IslandPureMusicGate.stop() }) {
                 IslandPureMusicGate.start { prefs }
             }
@@ -1010,6 +1027,11 @@ class HookEntry : XposedModule() {
                             BaseIslandRenderer.refreshDynamicWidth()
                         }
                     }
+                    RootConstants.KEY_HOOK_ISLAND_KEEP_VISIBLE -> {
+                        postRuntimeUpdate {
+                            IslandKeepVisibleHooker.reapply()
+                        }
+                    }
                     in HYPER_ISLAND_RUNTIME_REFRESH_KEYS -> {
                         postRuntimeUpdate {
                             BaseIslandRenderer.refreshActiveIsland()
@@ -1133,6 +1155,8 @@ class HookEntry : XposedModule() {
         pendingSystemMediaProviderRefresh = null
         val cleanup = RuntimeResourceCleanup()
         cleanup.attempt("font_weight") { IslandSystemFontWeight.stop() }
+        cleanup.attempt("orientation") { IslandOrientationState.stop() }
+        cleanup.attempt("keep_visible") { IslandKeepVisibleHooker.restoreNative() }
         cleanup.attempt("bridge_traffic") { LyriconBridgeTrafficObserver.stop() }
         cleanup.attempt("pure_music_gate") { IslandPureMusicGate.stop() }
         cleanup.attempt("performance") { RuntimePerfDiagnostics.stopForReload() }
@@ -1263,6 +1287,9 @@ class HookEntry : XposedModule() {
                 }
                 if (key == RootConstants.KEY_HOOK_LYRIC_MODE && value is Int) {
                     activeMode = value
+                }
+                if (key == RootConstants.KEY_HOOK_ISLAND_KEEP_VISIBLE) {
+                    IslandKeepVisibleHooker.reapply()
                 }
                 if (key == RootConstants.KEY_HOOK_ISLAND_ALBUM_COVER_STYLE_APP_WHITELIST) {
                     IslandAlbumCoverStyleHooker.refresh()

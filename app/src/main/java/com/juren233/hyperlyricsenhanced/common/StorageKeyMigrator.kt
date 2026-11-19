@@ -81,6 +81,10 @@ object StorageKeyMigrator {
                 ),
                 MediaSessionOnlineFallbackPreferences.PACKAGES to
                     listBackedSwitchPackages.map(::listBackedSwitchKey),
+                RootConstants.KEY_HOOK_ISLAND_NEXT_LINE_MODE to listOf(
+                    RootConstants.KEY_HOOK_ISLAND_FULL_NEXT_LINE_POSITION,
+                    RootConstants.KEY_HOOK_NEXT_LYRIC_LINE,
+                ),
             )
 
     /**
@@ -160,10 +164,37 @@ object StorageKeyMigrator {
         return dirty
     }
 
+    /** 旧全岛三档键 → 共用开关 + 全岛位置（规则见 [IslandNextLineMode.migrateLegacy]），随后删除旧键。 */
+    private fun migrateFullIslandNextLine(
+        prefs: android.content.SharedPreferences,
+        edits: android.content.SharedPreferences.Editor,
+    ): Boolean {
+        val legacy = prefs.all[RootConstants.KEY_HOOK_ISLAND_NEXT_LINE_MODE] as? Int ?: return false
+        val migration = IslandNextLineMode.migrateLegacy(
+            legacyMode = legacy,
+            nextLyricLine = prefs.getBoolean(
+                RootConstants.KEY_HOOK_NEXT_LYRIC_LINE,
+                RootConstants.DEFAULT_HOOK_NEXT_LYRIC_LINE,
+            ),
+            portraitMode = prefs.getInt(RootConstants.KEY_HOOK_LYRIC_MODE, RootConstants.DEFAULT_HOOK_LYRIC_MODE),
+            hasPosition = prefs.contains(RootConstants.KEY_HOOK_ISLAND_FULL_NEXT_LINE_POSITION),
+        )
+        migration.fullIslandPosition?.let { edits.putInt(RootConstants.KEY_HOOK_ISLAND_FULL_NEXT_LINE_POSITION, it) }
+        migration.nextLyricLine?.let { edits.putBoolean(RootConstants.KEY_HOOK_NEXT_LYRIC_LINE, it) }
+        edits.remove(RootConstants.KEY_HOOK_ISLAND_NEXT_LINE_MODE)
+        LogManager.i(
+            TAG,
+            "migrated key=${RootConstants.KEY_HOOK_ISLAND_NEXT_LINE_MODE} value=$legacy -> " +
+                "position=${migration.fullIslandPosition} nextLyricLine=${migration.nextLyricLine}",
+        )
+        return true
+    }
+
     fun migrateLegacyKeys(context: Context) {
         val prefs = context.getSharedPreferences(PreferenceKeys.PREF_NAME, Context.MODE_PRIVATE)
         val edits = prefs.edit()
         var dirty = migrateLunaBeatAndLineToWord(prefs, edits)
+        dirty = migrateFullIslandNextLine(prefs, edits) || dirty
         renamedBooleanKeys.forEach { (legacyKey, currentKey) ->
             val legacyValue = prefs.all[legacyKey] as? Boolean ?: return@forEach
             if (!prefs.contains(currentKey)) {

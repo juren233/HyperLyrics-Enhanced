@@ -147,6 +147,7 @@ internal object IslandHostFacade {
     }
 
     fun clearInjectedViews(rootView: ViewGroup) {
+        IslandGaplessSeam.restore(rootView)
         IslandNativeTextCollisionGuard.clear(rootView)
         IslandViewHelper.clearInjectedViews(rootView)
         IslandProgressGlowController.clear(rootView)

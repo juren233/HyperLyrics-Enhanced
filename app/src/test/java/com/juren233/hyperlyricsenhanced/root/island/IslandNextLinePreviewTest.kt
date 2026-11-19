@@ -28,10 +28,32 @@ import org.junit.Test
 
 class IslandNextLinePreviewTest {
     @Test
-    fun `new installations default off and legacy enabled migrates to second row`() {
-        assertEquals(IslandNextLineMode.OFF, IslandNextLineMode.resolve(-1, false))
-        assertEquals(IslandNextLineMode.SECOND_LINE, IslandNextLineMode.resolve(-1, true))
-        assertEquals(IslandNextLineMode.OFF, IslandNextLineMode.resolve(99, true))
+    fun `full island position defaults to second row and falls back to the legacy three-way key`() {
+        assertEquals(IslandNextLineMode.SECOND_LINE, IslandNextLineMode.resolvePosition(-1, -1))
+        assertEquals(IslandNextLineMode.RIGHT, IslandNextLineMode.resolvePosition(-1, IslandNextLineMode.RIGHT))
+        assertEquals(IslandNextLineMode.SECOND_LINE, IslandNextLineMode.resolvePosition(-1, IslandNextLineMode.OFF))
+        assertEquals(IslandNextLineMode.SECOND_LINE,
+            IslandNextLineMode.resolvePosition(IslandNextLineMode.SECOND_LINE, IslandNextLineMode.RIGHT))
+        assertEquals(IslandNextLineMode.SECOND_LINE, IslandNextLineMode.resolvePosition(99, -1))
+    }
+
+    @Test
+    fun `legacy migration keeps the behaviour of the portrait mode in use`() {
+        val full = RootConstants.HOOK_LYRIC_MODE_FULL_ISLAND
+        val single = RootConstants.HOOK_LYRIC_MODE_SINGLE_SIDE
+        // 竖屏全岛：旧三档才是生效设置，开关跟随它。
+        assertEquals(IslandNextLineMode.LegacyMigration(true, IslandNextLineMode.RIGHT),
+            IslandNextLineMode.migrateLegacy(IslandNextLineMode.RIGHT, nextLyricLine = false, full, hasPosition = false))
+        assertEquals(IslandNextLineMode.LegacyMigration(false, IslandNextLineMode.SECOND_LINE),
+            IslandNextLineMode.migrateLegacy(IslandNextLineMode.OFF, nextLyricLine = true, full, hasPosition = false))
+        assertEquals(IslandNextLineMode.LegacyMigration(null, IslandNextLineMode.SECOND_LINE),
+            IslandNextLineMode.migrateLegacy(IslandNextLineMode.SECOND_LINE, nextLyricLine = true, full, hasPosition = false))
+        // 竖屏单侧：开关本就生效，不改。
+        assertEquals(IslandNextLineMode.LegacyMigration(null, IslandNextLineMode.RIGHT),
+            IslandNextLineMode.migrateLegacy(IslandNextLineMode.RIGHT, nextLyricLine = false, single, hasPosition = false))
+        // 已有位置键视为已迁移。
+        assertEquals(IslandNextLineMode.LegacyMigration(null, null),
+            IslandNextLineMode.migrateLegacy(IslandNextLineMode.RIGHT, nextLyricLine = false, full, hasPosition = true))
     }
 
     @Test
@@ -43,7 +65,10 @@ class IslandNextLinePreviewTest {
         LyriconDataBridge.currentNextLyricLine = RichLyricLine(begin = 2000, end = 4000, text = "Next")
         var signature = IslandSlotRuntimeConfig.from(prefs).styleSignature
         for (mode in listOf(IslandNextLineMode.RIGHT, IslandNextLineMode.OFF, IslandNextLineMode.SECOND_LINE)) {
-            IslandRuntimePreferenceOverrides.put(RootConstants.KEY_HOOK_ISLAND_NEXT_LINE_MODE, mode)
+            IslandRuntimePreferenceOverrides.put(RootConstants.KEY_HOOK_NEXT_LYRIC_LINE, mode != IslandNextLineMode.OFF)
+            if (mode != IslandNextLineMode.OFF) {
+                IslandRuntimePreferenceOverrides.put(RootConstants.KEY_HOOK_ISLAND_FULL_NEXT_LINE_POSITION, mode)
+            }
             val config = IslandSlotRuntimeConfig.from(prefs)
             assertTrue(signature != config.styleSignature)
             signature = config.styleSignature
@@ -66,7 +91,7 @@ class IslandNextLinePreviewTest {
     @Test
     fun `right preview clears on missing next and yields to arriving translation`() {
         val prefs = preferences()
-        IslandRuntimePreferenceOverrides.put(RootConstants.KEY_HOOK_ISLAND_NEXT_LINE_MODE, IslandNextLineMode.RIGHT)
+        IslandRuntimePreferenceOverrides.put(RootConstants.KEY_HOOK_ISLAND_FULL_NEXT_LINE_POSITION, IslandNextLineMode.RIGHT)
         fun preview() = IslandSlotContentAssembler.processedRawLine(prefs, IslandSlotRuntimeConfig.from(prefs))
             ?.metadata?.get(METADATA_NEXT_LINE_RIGHT_TEXT)
         LyriconDataBridge.currentLyricLine = RichLyricLine(text = "Current")
@@ -91,7 +116,7 @@ class IslandNextLinePreviewTest {
 
     @Test
     fun `right preview follows the CJK space preference without changing the source`() {
-        IslandRuntimePreferenceOverrides.put(RootConstants.KEY_HOOK_ISLAND_NEXT_LINE_MODE, IslandNextLineMode.RIGHT)
+        IslandRuntimePreferenceOverrides.put(RootConstants.KEY_HOOK_ISLAND_FULL_NEXT_LINE_POSITION, IslandNextLineMode.RIGHT)
         LyriconDataBridge.currentLyricLine = RichLyricLine(text = "Current")
         LyriconDataBridge.currentNextLyricLine = RichLyricLine(text = "下 一 句")
         for (removeSpaces in listOf(false, true)) {
@@ -193,12 +218,12 @@ class IslandNextLinePreviewTest {
     }
 
     @Test
-    fun `separated toggle always selects second row regardless of stored full island style`() {
+    fun `separated toggle always selects second row regardless of stored full island position`() {
         val prefs = preferences(mode = RootConstants.HOOK_LYRIC_MODE_SEPARATED)
         LyriconDataBridge.currentLyricLine = RichLyricLine(text = "Current")
         LyriconDataBridge.currentNextLyricLine = RichLyricLine(text = "Next")
-        for (fullStyle in listOf(IslandNextLineMode.OFF, IslandNextLineMode.SECOND_LINE, IslandNextLineMode.RIGHT)) {
-            IslandRuntimePreferenceOverrides.put(RootConstants.KEY_HOOK_ISLAND_NEXT_LINE_MODE, fullStyle)
+        for (fullStyle in listOf(IslandNextLineMode.SECOND_LINE, IslandNextLineMode.RIGHT)) {
+            IslandRuntimePreferenceOverrides.put(RootConstants.KEY_HOOK_ISLAND_FULL_NEXT_LINE_POSITION, fullStyle)
             var previousSignature: String? = null
             for (enabled in listOf(true, false, true)) {
                 IslandRuntimePreferenceOverrides.put(RootConstants.KEY_HOOK_NEXT_LYRIC_LINE, enabled)
@@ -206,7 +231,7 @@ class IslandNextLinePreviewTest {
                 val line = IslandSlotContentAssembler.processedRawLine(prefs, config)!!
                 assertEquals(enabled, config.nextLineEnabled)
                 assertFalse(config.nextLineOnRight)
-                assertEquals(fullStyle, config.fullIslandNextLineMode)
+                assertEquals(fullStyle, config.fullIslandNextLinePosition)
                 assertTrue(line.metadata?.get(METADATA_NEXT_LINE_RIGHT_TEXT).isNullOrBlank())
                 assertEquals(enabled, secondary(prefs).alwaysShow)
                 assertEquals(enabled, secondary(prefs).isNextLinePreview)

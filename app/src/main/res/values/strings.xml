@@ -53,6 +53,10 @@
     <string name="summary_unsupported_device">不过你依旧可以选择在应用设置中开启入口</string>
     <string name="action_enter_app_settings">进入应用设置</string>
     <string name="title_unlock_island_length">解除超级岛长度限制</string>
+    <string name="title_island_keep_visible">始终保持超级岛显示</string>
+    <string name="option_island_keep_visible_off">不开启</string>
+    <string name="option_island_keep_visible_status_bar_hidden">仅状态栏隐藏时</string>
+    <string name="option_island_keep_visible_all">全场景</string>
     <string name="title_remove_focus_whitelist">移除焦点通知白名单</string>
     <string name="notice_special_features_conflict">不要和其他模块的相同功能冲突使用</string>
     <string name="title_remove_island_whitelist">移除下拉小窗白名单</string>
@@ -224,6 +228,11 @@
     <string name="lyric_mode_full_island">全岛滚动</string>
     <string name="lyric_mode_separated">对半分离滚动</string>
     <string name="title_lyric_mode">歌词模式</string>
+    <string name="title_lyric_mode_landscape">横屏状态</string>
+    <string name="option_lyric_mode_follow_portrait">跟随竖屏</string>
+    <string name="label_lyric_mode_scope_portrait">竖屏模式</string>
+    <string name="label_lyric_mode_scope_landscape">横屏模式</string>
+    <string name="format_lyric_mode_scope_summary">%1$s · %2$s</string>
     <string name="title_lyric_source">歌词源</string>
     <string name="summary_lyric_source_apple_music_builtin">推荐选择 Lyricon 源，内置插件且无需额外模块，使用更方便</string>
     <string name="lyric_source_lyricon">Lyricon</string>
@@ -509,7 +518,7 @@
     <string name="title_translation_only">仅显示翻译</string>
     <string name="title_swap_translation">原词翻译对调位置</string>
     <string name="title_next_lyric_line">显示下一句歌词</string>
-    <string name="island_next_line_off">不显示</string>
+    <string name="title_island_full_next_line_position">全岛滚动时下一句歌词</string>
     <string name="island_next_line_second_line">第二行</string>
     <string name="island_next_line_right">右侧</string>
     <string name="summary_next_lyric_line">显示翻译与开启极简显示时不显示</string>

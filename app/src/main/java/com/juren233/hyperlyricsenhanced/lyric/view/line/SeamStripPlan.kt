@@ -360,6 +360,7 @@ internal data class SeamStripPlan private constructor(
             seam: Float,
             bands: List<Band>,
         ): Straddle? {
+            if (!layout.occluding) return null
             for (band in bands) {
                 if (band.charEnd <= band.charStart) continue
                 val u = layout.unitAt(seam - origin - band.delta) ?: continue

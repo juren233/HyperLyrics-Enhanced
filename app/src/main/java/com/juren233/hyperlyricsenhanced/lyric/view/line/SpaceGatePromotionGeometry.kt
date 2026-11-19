@@ -17,7 +17,8 @@ internal class SpaceGatePromotionGeometry(val source: Endpoint, val target: Endp
         val naturalEnd: Float = naturalStart + (end - start),
     )
 
-    data class Endpoint(val glyphs: List<Glyph>, val viewWidth: Float, val seam: Float)
+    /** [occluding] false: the seam has no camera (gapless landscape), so glyphs never fade there. */
+    data class Endpoint(val glyphs: List<Glyph>, val viewWidth: Float, val seam: Float, val occluding: Boolean = true)
 
     /** Keep the original font advances when a new animation starts from an in-flight frame. */
     fun frame(fraction: Float): Endpoint = target.copy(glyphs = source.glyphs.mapIndexed { index, glyph ->
@@ -40,7 +41,7 @@ internal class SpaceGatePromotionGeometry(val source: Endpoint, val target: Endp
     /** Same majority-side clipping and fade as normal camera transit, in fixed viewport coordinates. */
     fun fade(index: Int, fraction: Float): SeamStripPlan.SeamFade? {
         val glyph = source.glyphs[index]
-        if (glyph.blank) return null
+        if (glyph.blank || !target.occluding) return null
         val start = start(index, fraction)
         val end = end(index, fraction)
         val seam = target.seam
@@ -64,14 +65,14 @@ internal class SpaceGatePromotionGeometry(val source: Endpoint, val target: Endp
             Endpoint(endpoint.glyphs.map { glyph ->
                 val offset = seam - endpoint.seam
                 glyph.copy(start = glyph.start + offset, end = glyph.end + offset)
-            }, viewWidth, seam)
+            }, viewWidth, seam, endpoint.occluding)
 
         /** Independent slots have no seam avoidance; only their origin is moved into island coordinates. */
         fun inIsland(endpoint: Endpoint, leftWidth: Float, rightWidth: Float, isRightSide: Boolean): Endpoint =
             Endpoint(endpoint.glyphs.map { glyph ->
                 val offset = if (isRightSide) leftWidth else 0f
                 glyph.copy(start = glyph.start + offset, end = glyph.end + offset)
-            }, leftWidth + rightWidth, leftWidth)
+            }, leftWidth + rightWidth, leftWidth, endpoint.occluding)
 
         fun endpoint(
             units: SeamOcclusionLayout,
@@ -105,7 +106,7 @@ internal class SpaceGatePromotionGeometry(val source: Endpoint, val target: Endp
                     glyphs += Glyph(unit.charStart, unit.charEnd, unit.start, unit.start + shift, unit.end + shift, unit.blank, unit.end)
                 }
             }
-            return Endpoint(glyphs, viewWidth, seam)
+            return Endpoint(glyphs, viewWidth, seam, units.occluding)
         }
 
         fun lerp(from: Float, to: Float, fraction: Float): Float = when {

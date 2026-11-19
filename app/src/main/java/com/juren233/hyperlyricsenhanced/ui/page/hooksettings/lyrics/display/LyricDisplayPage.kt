@@ -12,6 +12,7 @@ import androidx.compose.ui.res.stringResource
 import com.juren233.hyperlyricsenhanced.R
 import com.juren233.hyperlyricsenhanced.common.IslandLyricPosition
 import com.juren233.hyperlyricsenhanced.common.IslandFontWeightMode
+import com.juren233.hyperlyricsenhanced.common.LyricModeResolver
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.ui.component.CustomFontColorPickerDialog
 import com.juren233.hyperlyricsenhanced.ui.component.NumberInputDialog
@@ -140,16 +141,22 @@ fun LyricDisplayPage() {
         )
     }
     var centerGroupVocals by remember { mutableStateOf(prefs.getBoolean(RootConstants.KEY_HOOK_CENTER_GROUP_VOCALS, RootConstants.DEFAULT_HOOK_CENTER_GROUP_VOCALS)) }
-    val lyricMode = prefs.getInt(RootConstants.KEY_HOOK_LYRIC_MODE, RootConstants.DEFAULT_HOOK_LYRIC_MODE)
-    val isSeparatedMode = lyricMode == RootConstants.HOOK_LYRIC_MODE_SEPARATED
-    val showSideLyricPositions = lyricMode == RootConstants.HOOK_LYRIC_MODE_SINGLE_SIDE || isSeparatedMode
+    // 竖屏模式与「横屏状态」任一方用到的模式，其设置都要显示；只对一个方向生效的标出方向。
+    val lyricModes = LyricModeResolver.usage(prefs)
+    val isSeparatedMode = !lyricModes.uses(RootConstants.HOOK_LYRIC_MODE_SINGLE_SIDE)
+    val sideLyricPositionScope = lyricModes.scopeOf(
+        RootConstants.HOOK_LYRIC_MODE_SINGLE_SIDE,
+        RootConstants.HOOK_LYRIC_MODE_SEPARATED,
+    )
     val leftContent = prefs.getInt(RootConstants.KEY_HOOK_ISLAND_CONTENT_LEFT, RootConstants.DEFAULT_HOOK_ISLAND_CONTENT_LEFT)
     val rightContent = prefs.getInt(RootConstants.KEY_HOOK_ISLAND_CONTENT_RIGHT, RootConstants.DEFAULT_HOOK_ISLAND_CONTENT_RIGHT)
-    val showCenterGroupVocals = IslandLyricPosition.supportsGroupVocalCentering(
-        lyricMode = lyricMode,
-        leftContent = leftContent,
-        rightContent = rightContent
-    )
+    val centerGroupVocalsScope = lyricModes.scope { mode ->
+        IslandLyricPosition.supportsGroupVocalCentering(
+            lyricMode = mode,
+            leftContent = leftContent,
+            rightContent = rightContent
+        )
+    }
 
     var showTextSizeDialog by remember { mutableStateOf(false) }
     var showTextSizeRatioDialog by remember { mutableStateOf(false) }
@@ -319,8 +326,8 @@ fun LyricDisplayPage() {
                 saveConfig(RootConstants.KEY_HOOK_ISLAND_RIGHT_LYRIC_POSITION, it)
             },
             centerGroupVocals = centerGroupVocals,
-            showCenterGroupVocals = showCenterGroupVocals,
-            showSideLyricPositions = showSideLyricPositions,
+            centerGroupVocalsScope = centerGroupVocalsScope,
+            sideLyricPositionScope = sideLyricPositionScope,
             sideLyricPositionsNonScrollingOnly = isSeparatedMode,
             onCenterGroupVocalsChange = {
                 centerGroupVocals = it

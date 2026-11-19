@@ -8,6 +8,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.stringResource
 import com.juren233.hyperlyricsenhanced.R
+import com.juren233.hyperlyricsenhanced.common.LyricModeResolver
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.common.lyric.AdjacentTranslationPolicy
 import com.juren233.hyperlyricsenhanced.root.utils.TranslationHelper
@@ -20,14 +21,8 @@ fun LyricTranslationPage() {
     val prefs = rememberHookPrefs()
     val saveConfig = rememberHookConfigSaver(prefs)
 
-    val lyricMode by remember {
-        mutableIntStateOf(
-            prefs.getInt(
-                RootConstants.KEY_HOOK_LYRIC_MODE,
-                RootConstants.DEFAULT_HOOK_LYRIC_MODE,
-            )
-        )
-    }
+    // 竖屏模式与「横屏状态」任一方用到的模式，其设置都要显示。
+    val lyricModes = remember { LyricModeResolver.usage(prefs) }
     val islandContentLeft by remember {
         mutableIntStateOf(
             prefs.getInt(
@@ -77,11 +72,9 @@ fun LyricTranslationPage() {
 
     XposedLyricSettingPage(title = stringResource(R.string.title_translation)) {
         translationSections(
-            adjacentBackgroundTranslationAvailable = AdjacentTranslationPolicy.isEligible(
-                lyricMode,
-                islandContentLeft,
-                islandContentRight,
-            ),
+            adjacentBackgroundTranslationScope = lyricModes.scope { mode ->
+                AdjacentTranslationPolicy.isEligible(mode, islandContentLeft, islandContentRight)
+            },
             translationDisplayMode = translationDisplayMode,
             onTranslationDisplayModeChange = {
                 translationDisplayMode = it

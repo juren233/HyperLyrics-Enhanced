@@ -22,6 +22,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.edit
 import com.juren233.hyperlyricsenhanced.R
+import com.juren233.hyperlyricsenhanced.common.LyricModeResolver
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.common.UIConstants
 import com.juren233.hyperlyricsenhanced.common.PrefsBridge
@@ -107,17 +108,41 @@ private fun LazyListScope.hookSettingsSections() {
             stringResource(R.string.lyric_mode_full_island),
             stringResource(R.string.lyric_mode_separated)
         )
-        Card(modifier = Modifier.padding(horizontal = 12.dp).fillMaxWidth()) {
-            OverlayDropdownPreference(
-                title = stringResource(R.string.title_lyric_mode),
-                items = lyricModeOptions,
-                selectedIndex = lyricMode,
-                    onSelectedIndexChange = { index ->
-                    lyricMode = index
-                    prefs.edit { putInt(RootConstants.KEY_HOOK_LYRIC_MODE, index) }
-                    PrefsBridge.putInt(RootConstants.KEY_HOOK_LYRIC_MODE, index)
-                }
+        var landscapeLyricMode by remember {
+            mutableIntStateOf(
+                prefs.getInt(
+                    RootConstants.KEY_HOOK_LYRIC_MODE_LANDSCAPE,
+                    RootConstants.DEFAULT_HOOK_LYRIC_MODE_LANDSCAPE,
+                )
             )
+        }
+        // 第 0 项「跟随竖屏」，其后与竖屏选项一一对应（存储值 = 下标 - 1）。
+        val landscapeLyricModeOptions = listOf(stringResource(R.string.option_lyric_mode_follow_portrait)) + lyricModeOptions
+        Card(modifier = Modifier.padding(horizontal = 12.dp).fillMaxWidth()) {
+            Column {
+                OverlayDropdownPreference(
+                    title = stringResource(R.string.title_lyric_mode),
+                    items = lyricModeOptions,
+                    selectedIndex = lyricMode,
+                    onSelectedIndexChange = { index ->
+                        lyricMode = index
+                        prefs.edit { putInt(RootConstants.KEY_HOOK_LYRIC_MODE, index) }
+                        PrefsBridge.putInt(RootConstants.KEY_HOOK_LYRIC_MODE, index)
+                    }
+                )
+                OverlayDropdownPreference(
+                    title = stringResource(R.string.title_lyric_mode_landscape),
+                    items = landscapeLyricModeOptions,
+                    selectedIndex = (LyricModeResolver.landscapeOverride(landscapeLyricMode)
+                        ?: RootConstants.HOOK_LYRIC_MODE_FOLLOW_PORTRAIT) + 1,
+                    onSelectedIndexChange = { index ->
+                        val value = index - 1
+                        landscapeLyricMode = value
+                        prefs.edit { putInt(RootConstants.KEY_HOOK_LYRIC_MODE_LANDSCAPE, value) }
+                        PrefsBridge.putInt(RootConstants.KEY_HOOK_LYRIC_MODE_LANDSCAPE, value)
+                    }
+                )
+            }
         }
     }
     item(key = "custom_config_title") {

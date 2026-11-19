@@ -7,6 +7,7 @@ import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.common.IslandLyricPosition
 import com.juren233.hyperlyricsenhanced.common.IslandNextLineMode
 import com.juren233.hyperlyricsenhanced.common.IslandFontWeightMode
+import com.juren233.hyperlyricsenhanced.common.LyricModeResolver
 import com.juren233.hyperlyricsenhanced.root.utils.IslandSystemFontWeight
 import com.juren233.hyperlyricsenhanced.common.lyric.AdjacentTranslationPolicy
 
@@ -89,15 +90,16 @@ internal data class IslandSlotRuntimeConfig(
      * 属于运行时状态，[from] 每次取用都重新判定，变化时重建配置。
      */
     val songInfoDisplay: Boolean = false,
-    val fullIslandNextLineMode: Int = IslandNextLineMode.resolve(IslandNextLineMode.UNSPECIFIED, nextLyricLine),
+    /** 全岛滚动时下一句歌词的位置（第二行 / 右侧）；是否显示由所有模式共用的 [nextLyricLine] 决定。 */
+    val fullIslandNextLinePosition: Int = IslandNextLineMode.DEFAULT_FULL_ISLAND_POSITION,
     val fontWeightMode: Int = IslandFontWeightMode.CUSTOM,
     val systemFontWeight: IslandSystemFontWeight.State? = null,
 ) {
     val nextLineEnabled: Boolean
-        get() = if (isFullIslandMode) fullIslandNextLineMode != IslandNextLineMode.OFF else nextLyricLine
+        get() = nextLyricLine
 
     val nextLineOnRight: Boolean
-        get() = isFullIslandMode && fullIslandNextLineMode == IslandNextLineMode.RIGHT
+        get() = isFullIslandMode && nextLyricLine && fullIslandNextLinePosition == IslandNextLineMode.RIGHT
 
     val translationDisplay: Boolean
         get() = translationDisplayMode != RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_OFF
@@ -256,7 +258,7 @@ internal data class IslandSlotRuntimeConfig(
             translationOnly,
             swapTranslation,
             nextLyricLine,
-            fullIslandNextLineMode,
+            fullIslandNextLinePosition,
             adjacentBackgroundTranslation,
             forceNextSongAtEnd,
             nextSongDurationSeconds,
@@ -478,10 +480,19 @@ internal data class IslandSlotRuntimeConfig(
             val dynamicLimitEnabled = runtimeBoolean(prefs,
                 RootConstants.KEY_HOOK_ISLAND_DYNAMIC_LIMIT,
                 RootConstants.DEFAULT_HOOK_ISLAND_DYNAMIC_LIMIT)
-            val activeMode = runtimeInt(
-                prefs,
-                RootConstants.KEY_HOOK_LYRIC_MODE,
-                RootConstants.DEFAULT_HOOK_LYRIC_MODE
+            // 横屏状态只换模式（方向变化时由 IslandOrientationState 让缓存失效）。
+            val activeMode = LyricModeResolver.effective(
+                portraitMode = runtimeInt(
+                    prefs,
+                    RootConstants.KEY_HOOK_LYRIC_MODE,
+                    RootConstants.DEFAULT_HOOK_LYRIC_MODE
+                ),
+                landscapeMode = runtimeInt(
+                    prefs,
+                    RootConstants.KEY_HOOK_LYRIC_MODE_LANDSCAPE,
+                    RootConstants.DEFAULT_HOOK_LYRIC_MODE_LANDSCAPE
+                ),
+                isLandscape = IslandOrientationState.isLandscape,
             )
             val nextSongDurationSeconds = prefs.getInt(
                 RootConstants.KEY_HOOK_ISLAND_NEXT_SONG_DURATION,
@@ -622,9 +633,9 @@ internal data class IslandSlotRuntimeConfig(
                     RootConstants.KEY_HOOK_NEXT_LYRIC_LINE,
                     RootConstants.DEFAULT_HOOK_NEXT_LYRIC_LINE,
                 ),
-                fullIslandNextLineMode = IslandNextLineMode.resolve(
+                fullIslandNextLinePosition = IslandNextLineMode.resolvePosition(
+                    runtimeInt(prefs, RootConstants.KEY_HOOK_ISLAND_FULL_NEXT_LINE_POSITION, IslandNextLineMode.UNSPECIFIED),
                     runtimeInt(prefs, RootConstants.KEY_HOOK_ISLAND_NEXT_LINE_MODE, IslandNextLineMode.UNSPECIFIED),
-                    runtimeBoolean(prefs, RootConstants.KEY_HOOK_NEXT_LYRIC_LINE, RootConstants.DEFAULT_HOOK_NEXT_LYRIC_LINE),
                 ),
                 adjacentBackgroundTranslation = prefs.getBoolean(RootConstants.KEY_HOOK_ADJACENT_BACKGROUND_TRANSLATION, RootConstants.DEFAULT_HOOK_ADJACENT_BACKGROUND_TRANSLATION),
                 extractCoverTextColor = runtimeBoolean(

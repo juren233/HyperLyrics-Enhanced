@@ -22,6 +22,14 @@ internal class SpaceGateRightPreviewRenderer {
     private var fontSignature = 0
     private var units: SeamOcclusionLayout? = null
 
+    /** Mirrors [SpaceGateLyricLineView.seamOcclusion]; a change rebuilds the units on the next configure. */
+    var occluding: Boolean = true
+        set(value) {
+            if (field == value) return
+            field = value
+            styleKey = null
+        }
+
     val hasText: Boolean get() = model.text.isNotBlank()
     val text: String get() = model.text
     val width: Float get() = model.width
@@ -50,7 +58,7 @@ internal class SpaceGateRightPreviewRenderer {
         val widths = FloatArray(model.text.length)
         if (fonts != null) MixedTypefaceText.getTextWidths(paint, model.text, fonts, widths)
         else paint.getTextWidths(model.text, widths)
-        units = SeamOcclusionLayout.build(model.text, widths)
+        units = SeamOcclusionLayout.build(model.text, widths, occluding)
         paint.shader = if (colors.size > 1) {
             LinearGradient(0f, 0f, model.width.coerceAtLeast(1f), 0f, colors, null, Shader.TileMode.CLAMP)
         } else null

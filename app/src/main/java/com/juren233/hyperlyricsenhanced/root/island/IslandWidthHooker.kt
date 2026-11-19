@@ -4,6 +4,7 @@ import com.juren233.hyperlyricsenhanced.root.reload.SystemUiHookLifetime
 import android.view.ViewGroup
 import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.lyric.view.LyricHugMeasureWindow
+import com.juren233.hyperlyricsenhanced.root.HookEntry
 import com.juren233.hyperlyricsenhanced.root.island.IslandTextHookerSupport.TAG
 import com.juren233.hyperlyricsenhanced.root.island.IslandTextHookerSupport.findFieldValue
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
@@ -39,6 +40,8 @@ internal object IslandWidthHooker {
                 if (!IslandProbeUtils.isHyperIslandEnabled()) return@runCatching
                 val contentView = chain.thisObject as? ViewGroup ?: return@runCatching
                 hookedContentView = contentView
+                // 旋转后原生必然重算岛宽：先更新方向，本次注入即按「横屏状态」的模式。
+                IslandOrientationState.observe(contentView)
                 // 所有宽度计算路径（含系统自发调用、非歌词态）都必须提供内容视图，
                 // 否则动态上限在窗口外会直接放行未截断结果，出现超长岛。
                 IslandDynamicWidthLimiter.calculatingContent = contentView
@@ -60,9 +63,13 @@ internal object IslandWidthHooker {
                     IslandLyricTextInjector.injectSlots(contentView, reconfigureExisting = false)
                 }
                 val contentChanged = IslandLyricTextInjector.refreshCurrentContent(contentView)
+                // 横屏无顶部挖孔时连续歌词去掉中间间隙；状态翻转改变区域布局，不得复用旧预测量。
+                val gapChanged = HookEntry.instance?.prefs?.let { prefs ->
+                    IslandGaplessSeam.sync(contentView, IslandSlotRuntimeConfig.from(prefs))
+                } == true
                 // proceed 内的测量规格与上次相同且子树无 FORCE_LAYOUT 标志时会整体短路，
                 // 动态长度开启时必须先标记区域子树，换行后的新文字宽度才能进入岛宽计算。
-                if (IslandViewHelper.reuseNaturalWidthPremeasure(contentView, slotsChanged || contentChanged)) {
+                if (IslandViewHelper.reuseNaturalWidthPremeasure(contentView, slotsChanged || contentChanged || gapChanged)) {
                     traceIslandPerformance("HLE.width.premeasureReused") { }
                     if (BuildConfig.DEBUG && !premeasureReuseLogged) {
                         premeasureReuseLogged = true

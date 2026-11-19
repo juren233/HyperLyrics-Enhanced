@@ -182,6 +182,33 @@ class IslandDynamicLimitPolicyTest {
         assertEquals(636, result.width)
     }
 
+    @Test fun `odd landscape cutout keeps a symmetric phone island`() {
+        // 2026-11-19 landscape log: cutoutWidth=61, unlocked candidate [2731, 1335, 1335, -30].
+        val candidate = Geometry(2731, 1335, 1335, -30)
+        val result = IslandDynamicLimitPolicy.limit(
+            candidate, 2670, listOf(Span(163, 355, text = true, clock = true)), gap = 19, minWidth = 110)
+        assertEquals(result.left, result.right)
+        assertEquals(61 + 2 * result.left, result.width)
+        assertTrue(result.width <= 2 * (1335 - 355 - 19))
+        assertEquals(1335 - result.width / 2, result.x)
+    }
+
+    @Test fun `odd cutout floor stays at or above the pill`() {
+        val candidate = Geometry(2731, 1335, 1335, -30)
+        val result = IslandDynamicLimitPolicy.limit(
+            candidate, 2670, listOf(Span(163, 1320, text = true, clock = true)), gap = 19, minWidth = 110)
+        assertEquals(result.left, result.right)
+        assertTrue(result.width >= 110)
+    }
+
+    @Test fun `asymmetric native phone shape is not forced symmetric`() {
+        val small = Geometry(689, 340, 288, 965)
+        val result = IslandDynamicLimitPolicy.limit(
+            small, 2670, listOf(Span(163, 1100, text = true, clock = true)), gap = 19, minWidth = 110)
+        // Unchanged pre-existing split for a natively asymmetric (HasSmallIsland) shape.
+        assertEquals(Geometry(380, 159, 160, 1119), result)
+    }
+
     @Test fun `without clock marks the geometric fallback is unchanged`() {
         val result = IslandDynamicLimitPolicy.limit(
             ballOriginal, 1200, ballObstacles(clockMarked = false), gap = 16, minWidth = 110)

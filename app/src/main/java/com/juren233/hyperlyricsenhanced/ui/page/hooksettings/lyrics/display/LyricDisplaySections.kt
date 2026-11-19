@@ -1,5 +1,7 @@
 package com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.display
 
+import com.juren233.hyperlyricsenhanced.common.LyricModeUsage
+import com.juren233.hyperlyricsenhanced.ui.component.lyricModeScopedSummary
 import com.juren233.hyperlyricsenhanced.ui.component.SectionEnter
 import com.juren233.hyperlyricsenhanced.ui.component.SectionExit
 import androidx.compose.animation.AnimatedVisibility
@@ -50,8 +52,9 @@ fun LazyListScope.lyricDisplaySections(
     onRightLyricPositionChange: (Int) -> Unit,
     centerGroupVocals: Boolean,
     onCenterGroupVocalsChange: (Boolean) -> Unit,
-    showCenterGroupVocals: Boolean,
-    showSideLyricPositions: Boolean,
+    /** 为 null 时不显示；只对一个方向生效时副标题标出方向。 */
+    centerGroupVocalsScope: LyricModeUsage.Scope?,
+    sideLyricPositionScope: LyricModeUsage.Scope?,
     sideLyricPositionsNonScrollingOnly: Boolean
 ) {
     item(key = "lyric_display") {
@@ -98,14 +101,17 @@ fun LazyListScope.lyricDisplaySections(
                         stringResource(id = R.string.option_lyric_position_right),
                     )
                     AnimatedVisibility(
-                        visible = showSideLyricPositions,
+                        visible = sideLyricPositionScope != null,
                         enter = SectionEnter,
                         exit = SectionExit,
                     ) {
                         Column {
-                            val positionSummary = if (sideLyricPositionsNonScrollingOnly) {
-                                stringResource(R.string.summary_lyric_position_non_scrolling)
-                            } else null
+                            val positionSummary = lyricModeScopedSummary(
+                                sideLyricPositionScope,
+                                if (sideLyricPositionsNonScrollingOnly) {
+                                    stringResource(R.string.summary_lyric_position_non_scrolling)
+                                } else null,
+                            )
                             OverlayDropdownPreference(
                                 title = stringResource(id = R.string.title_left_lyric_position),
                                 summary = positionSummary,
@@ -122,9 +128,10 @@ fun LazyListScope.lyricDisplaySections(
                             )
                         }
                     }
-                    AnimatedVisibility(visible = showCenterGroupVocals, enter = SectionEnter, exit = SectionExit) {
+                    AnimatedVisibility(visible = centerGroupVocalsScope != null, enter = SectionEnter, exit = SectionExit) {
                         SwitchPreference(
                             title = stringResource(id = R.string.title_center_group_vocals),
+                            summary = lyricModeScopedSummary(centerGroupVocalsScope),
                             checked = centerGroupVocals,
                             onCheckedChange = onCenterGroupVocalsChange
                         )

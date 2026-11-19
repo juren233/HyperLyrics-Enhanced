@@ -23,6 +23,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -87,6 +88,14 @@ class LyricHookSwitchController internal constructor(
     )
         private set
 
+    var keepIslandVisible by mutableIntStateOf(
+        prefs.getInt(
+            RootConstants.KEY_HOOK_ISLAND_KEEP_VISIBLE,
+            RootConstants.DEFAULT_HOOK_ISLAND_KEEP_VISIBLE,
+        )
+    )
+        private set
+
     var removeFocusWhitelist by mutableStateOf(
         prefs.getBoolean(
             RootConstants.KEY_HOOK_REMOVE_FOCUS_WHITELIST,
@@ -122,6 +131,11 @@ class LyricHookSwitchController internal constructor(
                     RootConstants.KEY_HOOK_UNLOCK_ISLAND_LENGTH,
                     RootConstants.DEFAULT_HOOK_UNLOCK_ISLAND_LENGTH,
                 )
+            RootConstants.KEY_HOOK_ISLAND_KEEP_VISIBLE ->
+                keepIslandVisible = p.getInt(
+                    RootConstants.KEY_HOOK_ISLAND_KEEP_VISIBLE,
+                    RootConstants.DEFAULT_HOOK_ISLAND_KEEP_VISIBLE,
+                )
             RootConstants.KEY_HOOK_REMOVE_FOCUS_WHITELIST ->
                 removeFocusWhitelist = p.getBoolean(
                     RootConstants.KEY_HOOK_REMOVE_FOCUS_WHITELIST,
@@ -153,6 +167,17 @@ class LyricHookSwitchController internal constructor(
             checked = checked,
             currentValue = unlockIslandLength,
         ) { unlockIslandLength = it }
+    }
+
+    /** 需要 LSPosed 作用域：未激活时只能选「不开启」。 */
+    fun onKeepIslandVisibleChange(value: Int) {
+        if (value != RootConstants.ISLAND_KEEP_VISIBLE_OFF && RootApplication.xposedService == null) {
+            showXposedNotActive()
+        } else if (value != keepIslandVisible) {
+            keepIslandVisible = value
+            prefs.edit { putInt(RootConstants.KEY_HOOK_ISLAND_KEEP_VISIBLE, value) }
+            PrefsBridge.putInt(RootConstants.KEY_HOOK_ISLAND_KEEP_VISIBLE, value)
+        }
     }
 
     fun onRemoveFocusWhitelistToggle(checked: Boolean) {
@@ -228,16 +253,20 @@ class LyricHookSwitchController internal constructor(
         onChanged: (Boolean) -> Unit,
     ) {
         if (checked && RootApplication.xposedService == null) {
-            scope.launch {
-                sheetSnackbarHostState.showSnackbar(
-                    message = messages.xposedNotActive,
-                    duration = SnackbarDuration.Custom(2000L),
-                )
-            }
+            showXposedNotActive()
         } else if (checked != currentValue) {
             onChanged(checked)
             prefs.edit { putBoolean(key, checked) }
             PrefsBridge.putBoolean(key, checked)
+        }
+    }
+
+    private fun showXposedNotActive() {
+        scope.launch {
+            sheetSnackbarHostState.showSnackbar(
+                message = messages.xposedNotActive,
+                duration = SnackbarDuration.Custom(2000L),
+            )
         }
     }
 

@@ -25,6 +25,12 @@ package com.juren233.hyperlyricsenhanced.lyric.view.line
 internal class SeamOcclusionLayout private constructor(
     private val units: List<Unit>,
     private val staticUnits: List<Unit>,
+    /**
+     * 接缝处是否有物理遮挡（摄像头）。false＝两槽在接缝处直接相接（横屏无顶部挖孔，
+     * 见 IslandGaplessSeam）：没有任何单元跨缝，条带按自然 advance 连续绘制，
+     * 不渐隐、不绕孔分段。所有跨缝判定都经由本类，开关只在此处生效。
+     */
+    val occluding: Boolean = true,
 ) {
 
     internal class Unit internal constructor(
@@ -67,6 +73,7 @@ internal class SeamOcclusionLayout private constructor(
         straddlingUnit(stripOffset, seam, staticUnits)
 
     private fun straddlingUnit(stripOffset: Float, seam: Float, table: List<Unit>): Unit? {
+        if (!occluding) return null
         val u = unitAt(seam - stripOffset, table) ?: return null
         if (u.blank) return null
         val drawnStart = stripOffset + u.start
@@ -140,7 +147,7 @@ internal class SeamOcclusionLayout private constructor(
          * 由 [text] 与绘制同管线的逐字符 advance [charWidths] 构建单元表。
          * 返回 null 表示输入退化（空文本/宽度不足），调用方回退连续绘制。
          */
-        fun build(text: String, charWidths: FloatArray): SeamOcclusionLayout? {
+        fun build(text: String, charWidths: FloatArray, occluding: Boolean = true): SeamOcclusionLayout? {
             if (text.isEmpty() || charWidths.size < text.length) return null
             val prefix = FloatArray(text.length + 1)
             for (i in text.indices) {
@@ -215,7 +222,7 @@ internal class SeamOcclusionLayout private constructor(
                     staticUnits.add(unit)
                 }
             }
-            return SeamOcclusionLayout(units, staticUnits)
+            return SeamOcclusionLayout(units, staticUnits, occluding)
         }
 
         private fun isLatinWordChar(c: Char): Boolean =

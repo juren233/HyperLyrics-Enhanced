@@ -8,6 +8,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.stringResource
 import com.juren233.hyperlyricsenhanced.R
+import com.juren233.hyperlyricsenhanced.common.LyricModeResolver
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.ui.component.NumberInputDialog
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.common.XposedLyricSettingPage
@@ -19,7 +20,7 @@ fun LyricScrollPage() {
     val prefs = rememberHookPrefs()
     val saveConfig = rememberHookConfigSaver(prefs)
 
-    val lyricMode by remember { mutableIntStateOf(prefs.getInt(RootConstants.KEY_HOOK_LYRIC_MODE, RootConstants.DEFAULT_HOOK_LYRIC_MODE)) }
+    val lyricModes = remember { LyricModeResolver.usage(prefs) }
     var marqueeMode by remember { mutableStateOf(prefs.getBoolean(RootConstants.KEY_HOOK_MARQUEE_MODE, RootConstants.DEFAULT_HOOK_MARQUEE_MODE)) }
     var marqueeSpeed by remember { mutableIntStateOf(prefs.getInt(RootConstants.KEY_HOOK_MARQUEE_SPEED, RootConstants.DEFAULT_HOOK_MARQUEE_SPEED)) }
     var marqueeDelay by remember { mutableIntStateOf(prefs.getInt(RootConstants.KEY_HOOK_MARQUEE_DELAY, RootConstants.DEFAULT_HOOK_MARQUEE_DELAY)) }
@@ -120,7 +121,7 @@ fun LyricScrollPage() {
 
     XposedLyricSettingPage(title = stringResource(id = R.string.title_marquee)) {
         lyricScrollSections(
-            lyricMode = lyricMode,
+            marqueeMetadataScope = lyricModes.scopeOf(RootConstants.HOOK_LYRIC_MODE_SINGLE_SIDE),
             marqueeMode = marqueeMode,
             onMarqueeModeChange = {
                 marqueeMode = it
