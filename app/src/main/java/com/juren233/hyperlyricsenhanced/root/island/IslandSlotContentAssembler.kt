@@ -851,11 +851,9 @@ internal object IslandSlotContentAssembler {
         // 分离歌词：把当前行按视觉宽度均分为左右两段。词级 timing 由
         // RichLyricLineSplitter 保留，因此播放进度会先走完左段，再进入右段。
         val density = view.resources.displayMetrics.density
-        val leftMaxPx = config.contentWidthPx(
-            view.resources.displayMetrics.widthPixels,
-            density,
-            isLeft = true
-        )?.toFloat() ?: 0f
+        // 左槽的文字上限：单侧长度预算扣掉封面当前被原生预留的宽度，与注入时的包装层上限一致。
+        val leftContainer = IslandIconReservation.containerOf(view.rootView, IslandProbeUtils.LEFT_PARENT_NAME)
+        val leftMaxPx = config.contentWidthPx(view, leftContainer, isLeft = true)?.toFloat() ?: 0f
         val fonts = splitFonts(prefs, config)
         val selector = MixedTypefaceText.typefaceSelector(fonts.base, fonts.narrow)
         val measureEnv = splitMeasureEnv(

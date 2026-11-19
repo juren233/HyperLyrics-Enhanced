@@ -697,8 +697,10 @@
     <string name="summary_island_dynamic_width">Automatically shrinks to match the longer side; the maximum is set below</string>
     <string name="title_island_duet_fixed_length">Fixed Width for Duet Lyrics</string>
     <string name="summary_island_duet_fixed_length">Uses the longest duet line width and restores the original duet positioning</string>
-    <string name="title_left_content_width">Left Content Width</string>
-    <string name="title_right_content_width">Right Content Width</string>
+    <string name="title_island_side_length">Side Length</string>
+    <string name="summary_island_side_length">Includes the space used by the cover and audio rhythm</string>
+    <string name="value_island_side_length_unlimited">Unlimited</string>
+    <string name="format_island_side_length_dp">%1$d dp</string>
     <string name="label_content_width_range">Range: 0–500</string>
     <string name="title_left_padding">Left Content Padding</string>
     <string name="title_right_padding">Right Content Padding</string>

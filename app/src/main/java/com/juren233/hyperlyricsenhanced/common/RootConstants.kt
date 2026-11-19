@@ -170,8 +170,11 @@ object RootConstants {
     const val KEY_HOOK_ISLAND_LEFT_PADDING_RIGHT = "key_hook_island_left_padding_right"
     const val KEY_HOOK_ISLAND_RIGHT_PADDING_LEFT = "key_hook_island_right_padding_left"
     const val KEY_HOOK_ISLAND_RIGHT_PADDING_RIGHT = "key_hook_island_right_padding_right"
+    /** 旧键：左右各自的文字长度上限，现只作迁移输入，规则见 [IslandSideLength]。 */
     const val KEY_HOOK_ISLAND_LEFT_CONTENT_MAX_WIDTH = "key_hook_island_left_content_max_width"
     const val KEY_HOOK_ISLAND_RIGHT_CONTENT_MAX_WIDTH = "key_hook_island_right_content_max_width"
+    /** 单侧长度（dp）：含封面或律动占位的单侧总预算，0 为不限，规则见 [IslandSideLength]。 */
+    const val KEY_HOOK_ISLAND_SIDE_LENGTH = "key_hook_island_side_length"
     const val KEY_HOOK_ISLAND_DYNAMIC_LIMIT = "key_hook_island_dynamic_limit"
     const val KEY_HOOK_ISLAND_DYNAMIC_WIDTH = "key_hook_island_dynamic_width"
     const val KEY_HOOK_ISLAND_DUET_FIXED_LENGTH = "key_hook_island_duet_fixed_length"
@@ -538,6 +541,7 @@ object RootConstants {
     const val DEFAULT_HOOK_ISLAND_RIGHT_PADDING_RIGHT = 0
     const val DEFAULT_HOOK_ISLAND_LEFT_CONTENT_MAX_WIDTH = 80
     const val DEFAULT_HOOK_ISLAND_RIGHT_CONTENT_MAX_WIDTH = 100
+    const val DEFAULT_HOOK_ISLAND_SIDE_LENGTH = IslandSideLength.DEFAULT
     const val DEFAULT_HOOK_ISLAND_DYNAMIC_LIMIT = false
     const val DEFAULT_HOOK_ISLAND_DYNAMIC_WIDTH = false
     const val DEFAULT_HOOK_ISLAND_DUET_FIXED_LENGTH = false

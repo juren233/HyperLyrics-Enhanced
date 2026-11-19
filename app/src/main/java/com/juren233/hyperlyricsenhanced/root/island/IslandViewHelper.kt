@@ -432,6 +432,19 @@ object IslandViewHelper {
         }
     }
 
+    /**
+     * 文字容器在图标一侧的外边距（px）：原生靠它给图标留位置，左侧是起始边距、右侧是末端边距。
+     * 当前值为 0 但此前被 [clearTextContainerMargin] 清过时取清除前的值，避免图标刚重新占位、
+     * 边距尚未还原的瞬间读到 0。
+     */
+    internal fun iconSideMarginPx(container: View, isLeft: Boolean): Int {
+        val lp = container.layoutParams as? ViewGroup.MarginLayoutParams ?: return 0
+        val live = if (isLeft) lp.marginStart else lp.marginEnd
+        if (live > 0) return live
+        val snapshot = originalMargins[container] ?: return 0
+        return if (isLeft) snapshot.marginStart else snapshot.marginEnd
+    }
+
     /** 只还原 [clearTextContainerMargin] 清掉的起始边距（封面重新可见）；没有清过（无快照）时不动。 */
     fun restoreTextContainerMarginStart(rootView: ViewGroup, parentName: String) {
         restoreTextContainerMargin(rootView, parentName, restoreStart = true, restoreEnd = false)

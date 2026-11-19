@@ -98,6 +98,25 @@ class StorageKeyMigratorTest {
     }
 
     @Test
+    fun `restored legacy content width keys clear the side length they migrate into`() {
+        val expected = setOf(RootConstants.KEY_HOOK_ISLAND_SIDE_LENGTH)
+        assertEquals(
+            expected,
+            StorageKeyMigrator.keysSupersededByRestoredLegacy(setOf(RootConstants.KEY_HOOK_ISLAND_LEFT_CONTENT_MAX_WIDTH)),
+        )
+        assertEquals(
+            expected,
+            StorageKeyMigrator.keysSupersededByRestoredLegacy(setOf(RootConstants.KEY_HOOK_ISLAND_RIGHT_CONTENT_MAX_WIDTH)),
+        )
+        assertEquals(
+            emptySet<String>(),
+            StorageKeyMigrator.keysSupersededByRestoredLegacy(
+                setOf(RootConstants.KEY_HOOK_ISLAND_LEFT_CONTENT_MAX_WIDTH, RootConstants.KEY_HOOK_ISLAND_SIDE_LENGTH),
+            ),
+        )
+    }
+
+    @Test
     fun `keys carried by the backup itself are never cleared`() {
         assertEquals(
             setOf(upgradeKey),

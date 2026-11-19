@@ -7,6 +7,7 @@ import android.content.Context
 import androidx.compose.animation.AnimatedVisibility
 import com.juren233.hyperlyricsenhanced.ui.component.NumberInputDialog
 import com.juren233.hyperlyricsenhanced.ui.component.PaddingInputDialog
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -30,6 +31,7 @@ import com.juren233.hyperlyricsenhanced.common.IslandMusicWaveColorMode
 import com.juren233.hyperlyricsenhanced.common.IslandNextLineMode
 import com.juren233.hyperlyricsenhanced.common.IslandProgressColorMode
 import com.juren233.hyperlyricsenhanced.common.IslandRealRhythmConfig
+import com.juren233.hyperlyricsenhanced.common.IslandSideLength
 import com.juren233.hyperlyricsenhanced.common.LyricModeResolver
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.common.UIConstants
@@ -43,6 +45,7 @@ import com.juren233.hyperlyricsenhanced.ui.utils.pageScrollModifiers
 import com.juren233.hyperlyricsenhanced.ui.utils.rememberBlurBackdrop
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.BasicComponent
+import top.yukonga.miuix.kmp.basic.Slider
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
@@ -59,6 +62,7 @@ import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import androidx.compose.ui.res.stringResource
 import com.juren233.hyperlyricsenhanced.R
+import kotlin.math.roundToInt
 
 @Composable
 fun HyperIslandSettingsPage() {
@@ -186,8 +190,16 @@ fun HyperIslandSettingsPage() {
     var leftPaddingRight by remember { mutableIntStateOf(prefs.getInt(RootConstants.KEY_HOOK_ISLAND_LEFT_PADDING_RIGHT, RootConstants.DEFAULT_HOOK_ISLAND_LEFT_PADDING_RIGHT)) }
     var rightPaddingLeft by remember { mutableIntStateOf(prefs.getInt(RootConstants.KEY_HOOK_ISLAND_RIGHT_PADDING_LEFT, RootConstants.DEFAULT_HOOK_ISLAND_RIGHT_PADDING_LEFT)) }
     var rightPaddingRight by remember { mutableIntStateOf(prefs.getInt(RootConstants.KEY_HOOK_ISLAND_RIGHT_PADDING_RIGHT, RootConstants.DEFAULT_HOOK_ISLAND_RIGHT_PADDING_RIGHT)) }
-    var leftContentWidth by remember { mutableIntStateOf(prefs.getInt(RootConstants.KEY_HOOK_ISLAND_LEFT_CONTENT_MAX_WIDTH, RootConstants.DEFAULT_HOOK_ISLAND_LEFT_CONTENT_MAX_WIDTH).coerceIn(0, 500)) }
-    var rightContentWidth by remember { mutableIntStateOf(prefs.getInt(RootConstants.KEY_HOOK_ISLAND_RIGHT_CONTENT_MAX_WIDTH, RootConstants.DEFAULT_HOOK_ISLAND_RIGHT_CONTENT_MAX_WIDTH).coerceIn(0, 500)) }
+    var sideLength by remember {
+        fun stored(key: String): Int? = if (prefs.contains(key)) prefs.getInt(key, 0) else null
+        mutableIntStateOf(
+            IslandSideLength.resolve(
+                stored = stored(RootConstants.KEY_HOOK_ISLAND_SIDE_LENGTH),
+                legacyLeft = stored(RootConstants.KEY_HOOK_ISLAND_LEFT_CONTENT_MAX_WIDTH),
+                legacyRight = stored(RootConstants.KEY_HOOK_ISLAND_RIGHT_CONTENT_MAX_WIDTH),
+            )
+        )
+    }
     var dynamicLimit by remember { mutableStateOf(prefs.getBoolean(RootConstants.KEY_HOOK_ISLAND_DYNAMIC_LIMIT, RootConstants.DEFAULT_HOOK_ISLAND_DYNAMIC_LIMIT)) }
     var dynamicWidth by remember { mutableStateOf(prefs.getBoolean(RootConstants.KEY_HOOK_ISLAND_DYNAMIC_WIDTH, RootConstants.DEFAULT_HOOK_ISLAND_DYNAMIC_WIDTH)) }
     var duetFixedLength by remember { mutableStateOf(prefs.getBoolean(RootConstants.KEY_HOOK_ISLAND_DUET_FIXED_LENGTH, RootConstants.DEFAULT_HOOK_ISLAND_DUET_FIXED_LENGTH)) }
@@ -287,8 +299,7 @@ fun HyperIslandSettingsPage() {
 
     var showLeftPaddingDialog by remember { mutableStateOf(false) }
     var showRightPaddingDialog by remember { mutableStateOf(false) }
-    var showLeftContentWidthDialog by remember { mutableStateOf(false) }
-    var showRightContentWidthDialog by remember { mutableStateOf(false) }
+    var showSideLengthDialog by remember { mutableStateOf(false) }
     var showProgressCustomColorDialog by remember { mutableStateOf(false) }
 
     fun saveConfig(key: String, value: Any) {
@@ -532,24 +543,14 @@ fun HyperIslandSettingsPage() {
     ) { innerPadding ->
         val lazyListState = rememberLazyListState()
         NumberInputDialog(
-            show = showLeftContentWidthDialog && !dynamicLimit,
-            title = stringResource(id = R.string.title_left_content_width), 
-            label = stringResource(id = R.string.label_content_width_range), 
-            initialValue = leftContentWidth, 
-            min = 0,
-            max = 500,
-            onDismiss = { showLeftContentWidthDialog = false }, 
-            onConfirm = { value -> if (!dynamicLimit) { leftContentWidth = value; saveConfig(RootConstants.KEY_HOOK_ISLAND_LEFT_CONTENT_MAX_WIDTH, value) } }
-        )
-        NumberInputDialog(
-            show = showRightContentWidthDialog && !dynamicLimit,
-            title = stringResource(id = R.string.title_right_content_width), 
-            label = stringResource(id = R.string.label_content_width_range), 
-            initialValue = rightContentWidth, 
-            min = 0,
-            max = 500,
-            onDismiss = { showRightContentWidthDialog = false }, 
-            onConfirm = { value -> if (!dynamicLimit) { rightContentWidth = value; saveConfig(RootConstants.KEY_HOOK_ISLAND_RIGHT_CONTENT_MAX_WIDTH, value) } }
+            show = showSideLengthDialog && !dynamicLimit,
+            title = stringResource(id = R.string.title_island_side_length),
+            label = stringResource(id = R.string.label_content_width_range),
+            initialValue = sideLength,
+            min = IslandSideLength.UNLIMITED,
+            max = IslandSideLength.MAX,
+            onDismiss = { showSideLengthDialog = false },
+            onConfirm = { value -> if (!dynamicLimit) { sideLength = value; saveConfig(RootConstants.KEY_HOOK_ISLAND_SIDE_LENGTH, value) } }
         )
         PaddingInputDialog(show = showLeftPaddingDialog, title = stringResource(id = R.string.title_left_padding), initialLeft = leftPaddingLeft, initialRight = leftPaddingRight, onDismiss = { showLeftPaddingDialog = false }, onConfirm = { l, r -> leftPaddingLeft = l; leftPaddingRight = r; saveConfig(RootConstants.KEY_HOOK_ISLAND_LEFT_PADDING_LEFT, l); saveConfig(RootConstants.KEY_HOOK_ISLAND_LEFT_PADDING_RIGHT, r) })
         PaddingInputDialog(show = showRightPaddingDialog, title = stringResource(id = R.string.title_right_padding), initialLeft = rightPaddingLeft, initialRight = rightPaddingRight, onDismiss = { showRightPaddingDialog = false }, onConfirm = { l, r -> rightPaddingLeft = l; rightPaddingRight = r; saveConfig(RootConstants.KEY_HOOK_ISLAND_RIGHT_PADDING_LEFT, l); saveConfig(RootConstants.KEY_HOOK_ISLAND_RIGHT_PADDING_RIGHT, r) })
@@ -613,8 +614,7 @@ fun HyperIslandSettingsPage() {
                                 onCheckedChange = {
                                     dynamicLimit = it
                                     if (it) {
-                                        showLeftContentWidthDialog = false
-                                        showRightContentWidthDialog = false
+                                        showSideLengthDialog = false
                                     }
                                     saveConfig(RootConstants.KEY_HOOK_ISLAND_DYNAMIC_LIMIT, it)
                                 }
@@ -624,20 +624,30 @@ fun HyperIslandSettingsPage() {
                                 enter = SectionEnter,
                                 exit = SectionExit,
                             ) {
-                                Column {
-                                    ArrowPreference(
-                                        title = stringResource(id = R.string.title_left_content_width),
-                                        endActions = { Text("$leftContentWidth", fontSize = MiuixTheme.textStyles.body2.fontSize, color = MiuixTheme.colorScheme.onSurfaceVariantActions) },
-                                        enabled = !dynamicLimit,
-                                        onClick = { if (!dynamicLimit) showLeftContentWidthDialog = true }
-                                    )
-                                    ArrowPreference(
-                                        title = stringResource(id = R.string.title_right_content_width),
-                                        endActions = { Text("$rightContentWidth", fontSize = MiuixTheme.textStyles.body2.fontSize, color = MiuixTheme.colorScheme.onSurfaceVariantActions) },
-                                        enabled = !dynamicLimit,
-                                        onClick = { if (!dynamicLimit) showRightContentWidthDialog = true }
-                                    )
-                                }
+                                BasicComponent(
+                                    title = stringResource(id = R.string.title_island_side_length),
+                                    summary = stringResource(id = R.string.summary_island_side_length),
+                                    endActions = {
+                                        Text(
+                                            text = if (sideLength == IslandSideLength.UNLIMITED) {
+                                                stringResource(id = R.string.value_island_side_length_unlimited)
+                                            } else {
+                                                stringResource(id = R.string.format_island_side_length_dp, sideLength)
+                                            },
+                                            fontSize = MiuixTheme.textStyles.body2.fontSize,
+                                            color = MiuixTheme.colorScheme.onSurfaceVariantActions,
+                                            modifier = Modifier.clickable { showSideLengthDialog = true },
+                                        )
+                                    },
+                                    bottomAction = {
+                                        Slider(
+                                            value = sideLength.toFloat(),
+                                            onValueChange = { sideLength = IslandSideLength.coerce(it.roundToInt()) },
+                                            onValueChangeFinished = { saveConfig(RootConstants.KEY_HOOK_ISLAND_SIDE_LENGTH, sideLength) },
+                                            valueRange = IslandSideLength.UNLIMITED.toFloat()..IslandSideLength.MAX.toFloat(),
+                                        )
+                                    },
+                                )
                             }
                             ArrowPreference(
                                 title = stringResource(id = R.string.title_left_padding), 

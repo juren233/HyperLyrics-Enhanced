@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import android.view.View
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.common.IslandLyricPosition
+import com.juren233.hyperlyricsenhanced.common.IslandSideLength
 import com.juren233.hyperlyricsenhanced.common.IslandNextLineMode
 import com.juren233.hyperlyricsenhanced.common.IslandFontWeightMode
 import com.juren233.hyperlyricsenhanced.common.LyricModeResolver
@@ -362,17 +363,32 @@ internal data class IslandSlotRuntimeConfig(
     }
 
     fun widthPx(rootView: View, parentName: String): Int? {
-        val metrics = rootView.resources.displayMetrics
-        return contentWidthPx(metrics.widthPixels, metrics.density, isLeftParent(parentName))
+        val isLeft = isLeftParent(parentName)
+        return contentWidthPx(rootView, IslandIconReservation.containerOf(rootView, parentName), isLeft)
     }
 
-    internal fun contentWidthPx(screenWidthPx: Int, density: Float, isLeft: Boolean): Int? {
+    /** 以文字容器当前的图标预留换算文字上限；[container] 为 null 时不扣预留。 */
+    fun contentWidthPx(view: View, container: View?, isLeft: Boolean): Int? {
+        val metrics = view.resources.displayMetrics
+        val placed = if (isLeft) IslandSlotContentAssembler.isAlbumPlaced(this)
+        else IslandSlotContentAssembler.isRhythmVisible(this)
+        val reserved = IslandIconReservation.reservedPx(container, isLeft, placed)
+        val limit = contentWidthPx(metrics.widthPixels, metrics.density, isLeft, reserved)
+        if (!dynamicLimitEnabled && limit != null) {
+            val budget = ((if (isLeft) leftMaxWidthDp else rightMaxWidthDp) * metrics.density).toInt()
+            IslandIconReservation.debugLog(container, isLeft, placed, budget, reserved, limit)
+        }
+        return limit
+    }
+
+    /** [reservedPx]：本侧图标被原生预留的宽度，从单侧长度预算里扣除（自动模式不使用预算）。 */
+    internal fun contentWidthPx(screenWidthPx: Int, density: Float, isLeft: Boolean, reservedPx: Int = 0): Int? {
         // Automatic mode uses a physical measurement bound; the native-result limiter
         // supplies the final status-bar-safe geometry, including cover and cutout space.
         if (dynamicLimitEnabled) return (screenWidthPx / 2).coerceAtLeast(1)
         val maxWidthDp = if (isLeft) leftMaxWidthDp else rightMaxWidthDp
         if (maxWidthDp <= 0) return null
-        return (maxWidthDp * density).toInt().coerceAtLeast(1)
+        return IslandIconReservation.textLimitPx((maxWidthDp * density).toInt(), reservedPx)
     }
 
     fun paddingLeftPx(rootView: View, parentName: String): Int {
@@ -480,6 +496,8 @@ internal data class IslandSlotRuntimeConfig(
             val dynamicLimitEnabled = runtimeBoolean(prefs,
                 RootConstants.KEY_HOOK_ISLAND_DYNAMIC_LIMIT,
                 RootConstants.DEFAULT_HOOK_ISLAND_DYNAMIC_LIMIT)
+            // 自动模式下不读手动长度。
+            val sideLengthDp = if (dynamicLimitEnabled) 0 else resolveSideLengthDp(prefs)
             // 横屏状态只换模式（方向变化时由 IslandOrientationState 让缓存失效）。
             val activeMode = LyricModeResolver.effective(
                 portraitMode = runtimeInt(
@@ -551,8 +569,8 @@ internal data class IslandSlotRuntimeConfig(
                 rightPaddingLeftDp = prefs.getInt(RootConstants.KEY_HOOK_ISLAND_RIGHT_PADDING_LEFT, RootConstants.DEFAULT_HOOK_ISLAND_RIGHT_PADDING_LEFT),
                 rightPaddingRightDp = prefs.getInt(RootConstants.KEY_HOOK_ISLAND_RIGHT_PADDING_RIGHT, RootConstants.DEFAULT_HOOK_ISLAND_RIGHT_PADDING_RIGHT),
                 // Do not even read manual lengths while automatic control is active.
-                leftMaxWidthDp = if (dynamicLimitEnabled) 0 else runtimeInt(prefs, RootConstants.KEY_HOOK_ISLAND_LEFT_CONTENT_MAX_WIDTH, RootConstants.DEFAULT_HOOK_ISLAND_LEFT_CONTENT_MAX_WIDTH),
-                rightMaxWidthDp = if (dynamicLimitEnabled) 0 else runtimeInt(prefs, RootConstants.KEY_HOOK_ISLAND_RIGHT_CONTENT_MAX_WIDTH, RootConstants.DEFAULT_HOOK_ISLAND_RIGHT_CONTENT_MAX_WIDTH),
+                leftMaxWidthDp = sideLengthDp,
+                rightMaxWidthDp = sideLengthDp,
                 dynamicLimitEnabled = dynamicLimitEnabled,
                 dynamicWidthEnabled = prefs.getBoolean(RootConstants.KEY_HOOK_ISLAND_DYNAMIC_WIDTH, RootConstants.DEFAULT_HOOK_ISLAND_DYNAMIC_WIDTH),
                 duetFixedLengthEnabled = prefs.getBoolean(
@@ -705,6 +723,18 @@ internal data class IslandSlotRuntimeConfig(
             legacyCenterEnabled = false
         )
     }
+
+    /** 单侧长度：新键优先，没有时由旧左右文字上限推出（升级后 App 尚未打开、迁移未落盘的窗口期）。 */
+    private fun resolveSideLengthDp(prefs: SharedPreferences): Int {
+        fun stored(key: String): Int? = runtimeInt(prefs, key, ABSENT_PREFERENCE).takeIf { it >= 0 }
+        return IslandSideLength.resolve(
+            stored = stored(RootConstants.KEY_HOOK_ISLAND_SIDE_LENGTH),
+            legacyLeft = stored(RootConstants.KEY_HOOK_ISLAND_LEFT_CONTENT_MAX_WIDTH),
+            legacyRight = stored(RootConstants.KEY_HOOK_ISLAND_RIGHT_CONTENT_MAX_WIDTH),
+        )
+    }
+
+    private const val ABSENT_PREFERENCE = -1
 
     private fun runtimeInt(
         prefs: SharedPreferences,

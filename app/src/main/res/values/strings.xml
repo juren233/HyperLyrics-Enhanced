@@ -695,8 +695,10 @@
     <string name="summary_island_dynamic_width">自动跟随较长一侧收缩，长度上限受下方设定影响</string>
     <string name="title_island_duet_fixed_length">对唱歌词固定长度</string>
     <string name="summary_island_duet_fixed_length">开启后取对唱歌词中最长句宽度，该选项可恢复原有的对唱位置</string>
-    <string name="title_left_content_width">左侧内容长度</string>
-    <string name="title_right_content_width">右侧内容长度</string>
+    <string name="title_island_side_length">单侧长度</string>
+    <string name="summary_island_side_length">含封面、音频律动占用的长度</string>
+    <string name="value_island_side_length_unlimited">不限</string>
+    <string name="format_island_side_length_dp">%1$d dp</string>
     <string name="label_content_width_range">范围：0 ~ 500</string>
     <string name="title_left_padding">左侧内容内边距</string>
     <string name="title_right_padding">右侧内容内边距</string>

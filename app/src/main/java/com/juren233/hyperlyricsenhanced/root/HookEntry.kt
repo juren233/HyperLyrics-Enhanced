@@ -127,6 +127,7 @@ class HookEntry : XposedModule() {
             RootConstants.KEY_HOOK_ISLAND_RIGHT_PADDING_RIGHT,
             RootConstants.KEY_HOOK_ISLAND_LEFT_CONTENT_MAX_WIDTH,
             RootConstants.KEY_HOOK_ISLAND_RIGHT_CONTENT_MAX_WIDTH,
+            RootConstants.KEY_HOOK_ISLAND_SIDE_LENGTH,
             RootConstants.KEY_HOOK_ISLAND_BEHAVIOR_AFTER_PAUSE,
             RootConstants.KEY_HOOK_ISLAND_FORCE_NEXT_SONG_AT_END,
             RootConstants.KEY_HOOK_ISLAND_NEXT_SONG_DURATION,

@@ -262,7 +262,7 @@ class IslandSlotRuntimeConfigTest {
 
     @Test
     fun `automatic limit never reads manual widths including zero and tiny values`() {
-        val prefs = widthPreferences(left = 0, right = 1, rejectManualReads = true)
+        val prefs = widthPreferences(mapOf(RootConstants.KEY_HOOK_ISLAND_SIDE_LENGTH to 1), rejectManualReads = true)
         IslandRuntimePreferenceOverrides.put(RootConstants.KEY_HOOK_ISLAND_DYNAMIC_LIMIT, true)
         val config = IslandSlotRuntimeConfig.from(prefs)
         assertTrue(config.dynamicLimitEnabled)
@@ -271,21 +271,48 @@ class IslandSlotRuntimeConfigTest {
     }
 
     @Test
-    fun `turning automatic limit off restores saved asymmetric manual widths`() {
-        val prefs = widthPreferences(left = 45, right = 120)
+    fun `turning automatic limit off restores the saved side length minus the icon reservation`() {
+        val prefs = widthPreferences(mapOf(RootConstants.KEY_HOOK_ISLAND_SIDE_LENGTH to 150))
         IslandRuntimePreferenceOverrides.put(RootConstants.KEY_HOOK_ISLAND_DYNAMIC_LIMIT, true)
         val automatic = IslandSlotRuntimeConfig.from(prefs)
         IslandRuntimePreferenceOverrides.put(RootConstants.KEY_HOOK_ISLAND_DYNAMIC_LIMIT, false)
         val manual = IslandSlotRuntimeConfig.from(prefs)
         assertFalse(manual.dynamicLimitEnabled)
-        assertEquals(135, manual.contentWidthPx(1080, 3f, isLeft = true))
-        assertEquals(360, manual.contentWidthPx(1080, 3f, isLeft = false))
+        // 预算 150dp × 3 = 450px：图标不占位时整份给文字；占位时扣掉原生预留。
+        assertEquals(450, manual.contentWidthPx(1080, 3f, isLeft = true))
+        assertEquals(450, manual.contentWidthPx(1080, 3f, isLeft = false))
+        assertEquals(372, manual.contentWidthPx(1080, 3f, isLeft = true, reservedPx = 78))
+        assertEquals(330, manual.contentWidthPx(1080, 3f, isLeft = false, reservedPx = 120))
         assertTrue(automatic.styleSignature != manual.styleSignature)
     }
 
     @Test
-    fun `automatic mode leaves saved zero width untouched for later manual mode`() {
-        val prefs = widthPreferences(left = 0, right = 100)
+    fun `legacy left and right widths resolve to a side length until migration is written`() {
+        val prefs = widthPreferences(mapOf(
+            RootConstants.KEY_HOOK_ISLAND_LEFT_CONTENT_MAX_WIDTH to 45,
+            RootConstants.KEY_HOOK_ISLAND_RIGHT_CONTENT_MAX_WIDTH to 120,
+        ))
+        IslandRuntimePreferenceOverrides.put(RootConstants.KEY_HOOK_ISLAND_DYNAMIC_LIMIT, false)
+        val config = IslandSlotRuntimeConfig.from(prefs)
+        // max(45, 120) + 26 = 146dp
+        assertEquals(438, config.contentWidthPx(1080, 3f, isLeft = true))
+    }
+
+    @Test
+    fun `new side length wins over stale legacy widths`() {
+        val prefs = widthPreferences(mapOf(
+            RootConstants.KEY_HOOK_ISLAND_SIDE_LENGTH to 100,
+            RootConstants.KEY_HOOK_ISLAND_LEFT_CONTENT_MAX_WIDTH to 45,
+            RootConstants.KEY_HOOK_ISLAND_RIGHT_CONTENT_MAX_WIDTH to 120,
+        ))
+        IslandRuntimePreferenceOverrides.put(RootConstants.KEY_HOOK_ISLAND_DYNAMIC_LIMIT, false)
+        val config = IslandSlotRuntimeConfig.from(prefs)
+        assertEquals(300, config.contentWidthPx(1080, 3f, isLeft = true))
+    }
+
+    @Test
+    fun `automatic mode leaves saved zero side length untouched for later manual mode`() {
+        val prefs = widthPreferences(mapOf(RootConstants.KEY_HOOK_ISLAND_SIDE_LENGTH to 0))
         IslandRuntimePreferenceOverrides.put(RootConstants.KEY_HOOK_ISLAND_DYNAMIC_LIMIT, true)
         val automatic = IslandSlotRuntimeConfig.from(prefs)
         assertEquals(540, automatic.contentWidthPx(1080, 3f, true))
@@ -473,10 +500,11 @@ class IslandSlotRuntimeConfigTest {
         } as SharedPreferences
     }
 
-    private fun widthPreferences(left: Int, right: Int, rejectManualReads: Boolean = false): SharedPreferences {
-        val values = mapOf(
-            RootConstants.KEY_HOOK_ISLAND_LEFT_CONTENT_MAX_WIDTH to left,
-            RootConstants.KEY_HOOK_ISLAND_RIGHT_CONTENT_MAX_WIDTH to right,
+    private fun widthPreferences(values: Map<String, Int>, rejectManualReads: Boolean = false): SharedPreferences {
+        val manualKeys = setOf(
+            RootConstants.KEY_HOOK_ISLAND_SIDE_LENGTH,
+            RootConstants.KEY_HOOK_ISLAND_LEFT_CONTENT_MAX_WIDTH,
+            RootConstants.KEY_HOOK_ISLAND_RIGHT_CONTENT_MAX_WIDTH,
         )
         return Proxy.newProxyInstance(SharedPreferences::class.java.classLoader,
             arrayOf(SharedPreferences::class.java)) { _, method, args ->
@@ -485,7 +513,7 @@ class IslandSlotRuntimeConfigTest {
                 "contains" -> values.containsKey(args!![0])
                 "getInt" -> {
                     val key = args!![0] as String
-                    check(!rejectManualReads || key !in values) { "Automatic mode read manual width" }
+                    check(!rejectManualReads || key !in manualKeys) { "Automatic mode read manual width" }
                     values[key] ?: args[1]
                 }
                 "getString", "getStringSet", "getBoolean", "getFloat", "getLong" -> args!![1]

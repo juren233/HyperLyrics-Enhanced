@@ -85,6 +85,12 @@ object StorageKeyMigrator {
                     RootConstants.KEY_HOOK_ISLAND_FULL_NEXT_LINE_POSITION,
                     RootConstants.KEY_HOOK_NEXT_LYRIC_LINE,
                 ),
+                RootConstants.KEY_HOOK_ISLAND_LEFT_CONTENT_MAX_WIDTH to listOf(
+                    RootConstants.KEY_HOOK_ISLAND_SIDE_LENGTH,
+                ),
+                RootConstants.KEY_HOOK_ISLAND_RIGHT_CONTENT_MAX_WIDTH to listOf(
+                    RootConstants.KEY_HOOK_ISLAND_SIDE_LENGTH,
+                ),
             )
 
     /**
@@ -190,11 +196,30 @@ object StorageKeyMigrator {
         return true
     }
 
+    /** 旧左右文字上限 → 单侧长度（规则见 [IslandSideLength.resolve]），随后删除旧键。新键已存在视为已迁移。 */
+    private fun migrateSideLength(
+        prefs: android.content.SharedPreferences,
+        edits: android.content.SharedPreferences.Editor,
+    ): Boolean {
+        val left = prefs.all[RootConstants.KEY_HOOK_ISLAND_LEFT_CONTENT_MAX_WIDTH] as? Int
+        val right = prefs.all[RootConstants.KEY_HOOK_ISLAND_RIGHT_CONTENT_MAX_WIDTH] as? Int
+        if (left == null && right == null) return false
+        if (!prefs.contains(RootConstants.KEY_HOOK_ISLAND_SIDE_LENGTH)) {
+            val migrated = IslandSideLength.resolve(stored = null, legacyLeft = left, legacyRight = right)
+            edits.putInt(RootConstants.KEY_HOOK_ISLAND_SIDE_LENGTH, migrated)
+            LogManager.i(TAG, "migrated left/right content width $left/$right -> side length $migrated")
+        }
+        edits.remove(RootConstants.KEY_HOOK_ISLAND_LEFT_CONTENT_MAX_WIDTH)
+        edits.remove(RootConstants.KEY_HOOK_ISLAND_RIGHT_CONTENT_MAX_WIDTH)
+        return true
+    }
+
     fun migrateLegacyKeys(context: Context) {
         val prefs = context.getSharedPreferences(PreferenceKeys.PREF_NAME, Context.MODE_PRIVATE)
         val edits = prefs.edit()
         var dirty = migrateLunaBeatAndLineToWord(prefs, edits)
         dirty = migrateFullIslandNextLine(prefs, edits) || dirty
+        dirty = migrateSideLength(prefs, edits) || dirty
         renamedBooleanKeys.forEach { (legacyKey, currentKey) ->
             val legacyValue = prefs.all[legacyKey] as? Boolean ?: return@forEach
             if (!prefs.contains(currentKey)) {
