@@ -34,13 +34,14 @@ internal object MediaSessionOnlineFallbackPreferences {
 
     fun isPreference(key: String?): Boolean = key == PACKAGES || key == LINE_TO_WORD
 
-    /** 在「启用App」里外显、且开关就存放在本名单里的播放器（其余外显 App 各有自己的开关键）。 */
-    val SURFACED_PACKAGES: Set<String> = setOf(
+    /**
+     * 在「启用App」里有自己开关、打开后同时按本名单的方式补充歌词的播放器；它们不存进 [PACKAGES]。
+     * 2026-11-19 之前网易云、QQ 音乐的开关存在 [PACKAGES] 里，旧值由 StorageKeyMigrator 迁到各自的开关键。
+     */
+    val OWN_SWITCH_PACKAGES: List<String> = listOf(
+        CatalogPlatform.SPOTIFY_PACKAGE,
+        OnlineTranslationSourcePreferences.QISHUI_PACKAGE,
         CatalogPlatform.NETEASE_PACKAGE,
         CatalogPlatform.QQ_MUSIC_PACKAGE,
     )
-
-    /** 「启用App」里外显的播放器与「更多App」共用这份名单，开关只增删名单成员。 */
-    fun withPackage(packages: Set<String>, packageName: String, enabled: Boolean): Set<String> =
-        if (enabled) packages + packageName else packages - packageName
 }

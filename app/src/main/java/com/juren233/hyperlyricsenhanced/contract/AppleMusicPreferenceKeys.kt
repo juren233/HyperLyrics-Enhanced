@@ -165,6 +165,10 @@ object AppleMusicPreferenceKeys {
         "key_hook_online_translation_app_spotify"
     const val KEY_HOOK_ONLINE_TRANSLATION_APP_SALT =
         "key_hook_online_translation_app_salt"
+    const val KEY_HOOK_ONLINE_TRANSLATION_APP_NETEASE =
+        "key_hook_online_translation_app_netease"
+    const val KEY_HOOK_ONLINE_TRANSLATION_APP_QQ =
+        "key_hook_online_translation_app_qq"
     const val DEFAULT_HOOK_ONLINE_TRANSLATION_SOURCE_ORDER =
         "AMLL,LB,NE,QM,KUWO,KUGOU"
     const val DEFAULT_HOOK_ONLINE_TRANSLATION_AUTO_SELECT_BEST_SOURCE = true
@@ -177,5 +181,7 @@ object AppleMusicPreferenceKeys {
     const val DEFAULT_HOOK_ONLINE_TRANSLATION_APP_QISHUI = false
     const val DEFAULT_HOOK_ONLINE_TRANSLATION_APP_SPOTIFY = false
     const val DEFAULT_HOOK_ONLINE_TRANSLATION_APP_SALT = false
+    const val DEFAULT_HOOK_ONLINE_TRANSLATION_APP_NETEASE = false
+    const val DEFAULT_HOOK_ONLINE_TRANSLATION_APP_QQ = false
 
 }

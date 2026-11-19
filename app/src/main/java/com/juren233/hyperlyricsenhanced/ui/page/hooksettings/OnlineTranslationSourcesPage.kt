@@ -8,7 +8,6 @@ package com.juren233.hyperlyricsenhanced.ui.page.hooksettings
 
 import com.juren233.hyperlyricsenhanced.ui.component.SectionEnter
 import com.juren233.hyperlyricsenhanced.ui.component.SectionExit
-import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.graphics.drawable.Drawable
 import android.widget.ImageView
@@ -25,7 +24,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -41,13 +39,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.juren233.hyperlyricsenhanced.R
-import androidx.core.content.edit
 import com.juren233.hyperlyricsenhanced.common.MediaSessionOnlineFallbackPreferences
-import com.juren233.hyperlyricsenhanced.common.PrefsBridge
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.online.OnlineTranslationSourcePreferences
 import com.juren233.hyperlyricsenhanced.online.model.Source
-import com.juren233.hyperlyricsenhanced.online.source.ttml.CatalogPlatform
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.common.XposedLyricSettingPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.common.rememberHookConfigSaver
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.common.rememberHookPrefs
@@ -122,26 +117,10 @@ fun OnlineTranslationSourcesPage() {
     val listState = rememberLazyListState()
     val appEnabled = remember {
         mutableStateMapOf<String, Boolean>().apply {
-            val fallbackPackages = MediaSessionOnlineFallbackPreferences.read(prefs).packages
             ENABLED_APPS.forEach { app ->
-                this[app.packageName] = if (app.packageName in MediaSessionOnlineFallbackPreferences.SURFACED_PACKAGES) {
-                    app.packageName in fallbackPackages
-                } else {
-                    OnlineTranslationSourcePreferences.isAppEnabled(prefs, app.packageName)
-                }
+                this[app.packageName] = OnlineTranslationSourcePreferences.isAppEnabled(prefs, app.packageName)
             }
         }
-    }
-    // 「更多App」页里增删这些播放器后，回到本页要同步。
-    DisposableEffect(prefs) {
-        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-            if (MediaSessionOnlineFallbackPreferences.isPreference(key)) {
-                val packages = MediaSessionOnlineFallbackPreferences.read(prefs).packages
-                MediaSessionOnlineFallbackPreferences.SURFACED_PACKAGES.forEach { appEnabled[it] = it in packages }
-            }
-        }
-        prefs.registerOnSharedPreferenceChangeListener(listener)
-        onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
     }
     val context = LocalContext.current
     var installedApps by remember(context) { mutableStateOf<List<InstalledTranslationApp>?>(null) }
@@ -244,16 +223,8 @@ fun OnlineTranslationSourcesPage() {
             appEnabled = appEnabled,
             onCheckedChange = { packageName, checked ->
                 appEnabled[packageName] = checked
-                if (packageName in MediaSessionOnlineFallbackPreferences.SURFACED_PACKAGES) {
-                    val packages = MediaSessionOnlineFallbackPreferences.withPackage(
-                        MediaSessionOnlineFallbackPreferences.read(prefs).packages, packageName, checked,
-                    )
-                    prefs.edit { putStringSet(MediaSessionOnlineFallbackPreferences.PACKAGES, packages) }
-                    PrefsBridge.putStringSet(MediaSessionOnlineFallbackPreferences.PACKAGES, packages)
-                } else {
-                    OnlineTranslationSourcePreferences.appPreferenceKey(packageName)?.let { key ->
-                        saveConfig(key, checked)
-                    }
+                OnlineTranslationSourcePreferences.appPreferenceKey(packageName)?.let { key ->
+                    saveConfig(key, checked)
                 }
             },
         )
@@ -453,11 +424,11 @@ private val ENABLED_APPS = listOf(
         R.string.summary_online_translation_app_lyrics_translation,
     ),
     TranslationApp(
-        CatalogPlatform.NETEASE_PACKAGE,
+        OnlineTranslationSourcePreferences.NETEASE_PACKAGE,
         R.string.summary_online_translation_app_lyrics_translation,
     ),
     TranslationApp(
-        CatalogPlatform.QQ_MUSIC_PACKAGE,
+        OnlineTranslationSourcePreferences.QQ_MUSIC_PACKAGE,
         R.string.summary_online_translation_app_lyrics_translation,
     ),
 )

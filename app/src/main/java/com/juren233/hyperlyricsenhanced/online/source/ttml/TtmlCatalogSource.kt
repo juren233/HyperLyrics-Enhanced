@@ -12,6 +12,7 @@ import com.juren233.hyperlyricsenhanced.online.cache.CachedSearchSource
 import com.juren233.hyperlyricsenhanced.online.cache.CatalogCacheRef
 import com.juren233.hyperlyricsenhanced.online.cache.OnlineLyricCacheKind
 import com.juren233.hyperlyricsenhanced.online.cache.OnlineLyricCacheSong
+import com.juren233.hyperlyricsenhanced.online.OnlineTranslationSourcePreferences
 import com.juren233.hyperlyricsenhanced.online.isWordTimedOnlineLyrics
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -53,10 +54,10 @@ internal fun TtmlLookupResult.toSourceStatus(source: Source): AppleMissingLyrics
 internal enum class CatalogPlatform { APPLE_MUSIC, NETEASE, QQ_MUSIC, SPOTIFY;
 
     companion object {
-        const val APPLE_MUSIC_PACKAGE = "com.apple.android.music"
-        const val NETEASE_PACKAGE = "com.netease.cloudmusic"
-        const val QQ_MUSIC_PACKAGE = "com.tencent.qqmusic"
-        const val SPOTIFY_PACKAGE = "com.spotify.music"
+        const val APPLE_MUSIC_PACKAGE = OnlineTranslationSourcePreferences.APPLE_MUSIC_PACKAGE
+        const val NETEASE_PACKAGE = OnlineTranslationSourcePreferences.NETEASE_PACKAGE
+        const val QQ_MUSIC_PACKAGE = OnlineTranslationSourcePreferences.QQ_MUSIC_PACKAGE
+        const val SPOTIFY_PACKAGE = OnlineTranslationSourcePreferences.SPOTIFY_PACKAGE
         private const val SPOTIFY_TRACK_URI_PREFIX = "spotify:track:"
 
         /**

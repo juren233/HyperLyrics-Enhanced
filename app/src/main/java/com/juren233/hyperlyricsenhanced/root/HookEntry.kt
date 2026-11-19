@@ -56,11 +56,11 @@ import com.juren233.hyperlyricsenhanced.root.timeline.SystemMediaPlaybackAnchor
 import com.juren233.hyperlyricsenhanced.root.source.MediaSessionLyricsFetcher
 import com.juren233.hyperlyricsenhanced.online.cache.OnlineLyricCacheUsage
 import com.juren233.hyperlyricsenhanced.root.source.MediaSessionOnlineFallbackCoordinator
+import com.juren233.hyperlyricsenhanced.root.source.OnlineEnrichmentAppGate
 import com.juren233.hyperlyricsenhanced.root.source.OnlineFallbackSongMapper
 import com.juren233.hyperlyricsenhanced.common.MediaSessionOnlineFallbackPreferences
 import com.juren233.hyperlyricsenhanced.online.OnlineLyricTargeter
 import com.juren233.hyperlyricsenhanced.online.OnlineTranslationSourcePreferences
-import com.juren233.hyperlyricsenhanced.online.source.ttml.CatalogPlatform
 import com.juren233.hyperlyricsenhanced.lyric.model.Song
 import com.juren233.hyperlyricsenhanced.timeline.model.TrackIdentity
 import com.juren233.hyperlyricsenhanced.root.aitrans.AITranslator
@@ -685,20 +685,16 @@ class HookEntry : XposedModule() {
                     val stored = MediaSessionOnlineFallbackPreferences.read(prefs)
                     stored.copy(
                         packages = if (SystemUiEnhancementGate.lyricRuntimeMode() == SystemUiLyricRuntimeMode.LYRIC_DISPLAY) {
-                            val named = IslandRuntimePreferenceOverrides.getStringSet(
-                                MediaSessionOnlineFallbackPreferences.PACKAGES, stored.packages,
-                            ).orEmpty()
-                            // Spotify、汽水的开关是「启用App」里既有的那一个，不另存名单。
-                            val accountSwitchPackages = listOf(
-                                CatalogPlatform.SPOTIFY_PACKAGE,
-                                OnlineTranslationSourcePreferences.QISHUI_PACKAGE,
-                            ).filter { packageName ->
-                                val key = OnlineTranslationSourcePreferences.appPreferenceKey(packageName)
-                                key != null && IslandRuntimePreferenceOverrides.getBoolean(
-                                    key,
-                                    OnlineTranslationSourcePreferences.isAppEnabled(prefs, packageName),
-                                )
-                            }
+                            val named = OnlineEnrichmentAppGate.moreAppsPackages(prefs)
+                            // 这些播放器的开关是「启用App」里各自的那一个，不另存名单。
+                            val accountSwitchPackages = MediaSessionOnlineFallbackPreferences.OWN_SWITCH_PACKAGES
+                                .filter { packageName ->
+                                    val key = OnlineTranslationSourcePreferences.appPreferenceKey(packageName)
+                                    key != null && IslandRuntimePreferenceOverrides.getBoolean(
+                                        key,
+                                        OnlineTranslationSourcePreferences.isAppEnabled(prefs, packageName),
+                                    )
+                                }
                             named + accountSwitchPackages
                         } else emptySet(),
                         lineToWord = IslandRuntimePreferenceOverrides.getBoolean(
@@ -807,6 +803,7 @@ class HookEntry : XposedModule() {
                         .isSourcePreference(key) ||
                     com.juren233.hyperlyricsenhanced.online.OnlineTranslationSourcePreferences
                         .isAppPreference(key) ||
+                    key == MediaSessionOnlineFallbackPreferences.PACKAGES ||
                     key == RootConstants.KEY_HOOK_APPLE_MUSIC_RESTORE_CJK_ORIGINAL_METADATA ||
                     key == RootConstants.KEY_HOOK_APPLE_MUSIC_SIMPLIFY_TRADITIONAL_CONTENT ||
                     key == RootConstants.KEY_HOOK_APPLE_MUSIC_NATIVE_ONLINE_TRANSLATION ||

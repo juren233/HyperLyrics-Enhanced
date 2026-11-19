@@ -102,4 +102,41 @@ class StorageKeyMigratorTest {
             ),
         )
     }
+
+    @Test
+    fun `NetEase and QQ Music in the more apps list move to their own switch keys`() {
+        val kugou = "com.kugou.android.lite"
+        assertEquals(
+            StorageKeyMigrator.ListBackedSwitchMigration(
+                packages = setOf(kugou),
+                enabledKeys = setOf(neteaseSwitchKey, qqSwitchKey),
+            ),
+            StorageKeyMigrator.listBackedSwitchMigration(
+                setOf("com.netease.cloudmusic", "com.tencent.qqmusic", kugou),
+            ),
+        )
+    }
+
+    @Test
+    fun `more apps list without NetEase or QQ Music needs no switch migration`() {
+        assertEquals(null, StorageKeyMigrator.listBackedSwitchMigration(setOf("com.kugou.android.lite")))
+        assertEquals(null, StorageKeyMigrator.listBackedSwitchMigration(emptySet()))
+    }
+
+    @Test
+    fun `restored more apps list decides NetEase and QQ Music switches it does not carry`() {
+        assertEquals(
+            setOf(neteaseSwitchKey, qqSwitchKey),
+            StorageKeyMigrator.keysSupersededByRestoredLegacy(setOf(MediaSessionOnlineFallbackPreferences.PACKAGES)),
+        )
+        assertEquals(
+            setOf(qqSwitchKey),
+            StorageKeyMigrator.keysSupersededByRestoredLegacy(
+                setOf(MediaSessionOnlineFallbackPreferences.PACKAGES, neteaseSwitchKey),
+            ),
+        )
+    }
+
+    private val neteaseSwitchKey = "key_hook_online_translation_app_netease"
+    private val qqSwitchKey = "key_hook_online_translation_app_qq"
 }

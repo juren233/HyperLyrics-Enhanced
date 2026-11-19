@@ -1,6 +1,7 @@
 package com.juren233.hyperlyricsenhanced.common
 
 import android.content.Context
+import com.juren233.hyperlyricsenhanced.online.OnlineTranslationSourcePreferences
 import com.juren233.hyperlyricsenhanced.utils.LogManager
 
 /**
@@ -35,7 +36,39 @@ object StorageKeyMigrator {
      */
     private const val LEGACY_LINE_TO_WORD_LYRICS = "key_hook_apple_music_upgrade_line_to_word_lyrics"
 
-    /** 旧键 → 由它迁移出的键；逐行转逐字旧布尔键既是 LunaBeat 旧键的目标，也是模式键的来源。 */
+    /**
+     * 2026-11-19 之前，网易云、QQ 音乐在「启用App」里的开关存在「更多App」名单里（在名单内即开启），
+     * 现改为各自的开关键，与 Spotify、汽水一致。名单里的这两个包迁成开关键为开，并从名单移除。
+     */
+    private val listBackedSwitchPackages = setOf(
+        OnlineTranslationSourcePreferences.NETEASE_PACKAGE,
+        OnlineTranslationSourcePreferences.QQ_MUSIC_PACKAGE,
+    )
+
+    private fun listBackedSwitchKey(packageName: String): String =
+        requireNotNull(OnlineTranslationSourcePreferences.appPreferenceKey(packageName)) {
+            "缺少开关键: $packageName"
+        }
+
+    internal data class ListBackedSwitchMigration(
+        val packages: Set<String>,
+        val enabledKeys: Set<String>,
+    )
+
+    /** 名单里有要迁出的包时，返回迁移后的名单与要置为开启的开关键；没有则为 null。 */
+    internal fun listBackedSwitchMigration(packages: Set<String>): ListBackedSwitchMigration? {
+        val moved = packages.filter(listBackedSwitchPackages::contains)
+        if (moved.isEmpty()) return null
+        return ListBackedSwitchMigration(
+            packages = packages - moved.toSet(),
+            enabledKeys = moved.map(::listBackedSwitchKey).toSet(),
+        )
+    }
+
+    /**
+     * 旧键 → 由它迁移出的键；逐行转逐字旧布尔键既是 LunaBeat 旧键的目标，也是模式键的来源。
+     * 「更多App」名单本身不是旧键，但旧备份里的它代表网易云、QQ 音乐开关当时的状态（不在名单即关闭）。
+     */
     private val legacyKeyTargets: Map<String, List<String>> =
         renamedBooleanKeys.associate { (legacyKey, currentKey) -> legacyKey to listOf(currentKey) } +
             mapOf(
@@ -46,6 +79,8 @@ object StorageKeyMigrator {
                 LEGACY_LINE_TO_WORD_LYRICS to listOf(
                     RootConstants.KEY_HOOK_APPLE_MUSIC_LINE_TO_WORD_SOURCE_MODE,
                 ),
+                MediaSessionOnlineFallbackPreferences.PACKAGES to
+                    listBackedSwitchPackages.map(::listBackedSwitchKey),
             )
 
     /**
@@ -145,6 +180,17 @@ object StorageKeyMigrator {
             LogManager.i(TAG, "migrated string-typed set key=$key")
             dirty = true
         }
+        // 在上面的字符串修正之后写入，同一个 Editor 里后写的值生效。
+        StringSetPreferences.read(prefs, MediaSessionOnlineFallbackPreferences.PACKAGES, null)
+            ?.let(::listBackedSwitchMigration)
+            ?.let { migration ->
+                migration.enabledKeys.forEach { key ->
+                    edits.putBoolean(key, true)
+                    LogManager.i(TAG, "migrated ${MediaSessionOnlineFallbackPreferences.PACKAGES} -> $key value=true")
+                }
+                edits.putStringSet(MediaSessionOnlineFallbackPreferences.PACKAGES, migration.packages)
+                dirty = true
+            }
         // 旧版恢复备份把整数值的浮点偏好（如 1.0）写成了 Int，SystemUI 的 getFloat 会抛类型转换异常。
         FloatPreferences.KEYS.forEach { key ->
             val raw = prefs.all[key]

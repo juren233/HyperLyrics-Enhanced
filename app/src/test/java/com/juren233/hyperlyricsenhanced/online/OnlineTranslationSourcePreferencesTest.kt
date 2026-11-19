@@ -79,6 +79,33 @@ class OnlineTranslationSourcePreferencesTest {
                 OnlineTranslationSourcePreferences.SPOTIFY_PACKAGE,
             ),
         )
+        assertEquals(
+            false,
+            OnlineTranslationSourcePreferences.appDefaultEnabled(
+                OnlineTranslationSourcePreferences.NETEASE_PACKAGE,
+            ),
+        )
+        assertEquals(
+            false,
+            OnlineTranslationSourcePreferences.appDefaultEnabled(
+                OnlineTranslationSourcePreferences.QQ_MUSIC_PACKAGE,
+            ),
+        )
+    }
+
+    @Test
+    fun `NetEase and QQ Music have their own switch keys`() {
+        listOf(
+            OnlineTranslationSourcePreferences.NETEASE_PACKAGE to "key_hook_online_translation_app_netease",
+            OnlineTranslationSourcePreferences.QQ_MUSIC_PACKAGE to "key_hook_online_translation_app_qq",
+        ).forEach { (packageName, key) ->
+            assertEquals(key, OnlineTranslationSourcePreferences.appPreferenceKey(packageName))
+            assertEquals(true, OnlineTranslationSourcePreferences.isAppPreference(key))
+            assertEquals(
+                true,
+                OnlineTranslationSourcePreferences.isAppEnabled(TestSharedPreferences(mapOf(key to true)), packageName),
+            )
+        }
     }
 
     @Test
@@ -196,7 +223,7 @@ class OnlineTranslationSourcePreferencesTest {
             true,
             OnlineTranslationSourcePreferences.isOnlineLyricsAllowedForApp(
                 null,
-                "com.tencent.qqmusic",
+                "com.kugou.android.lite",
             ),
         )
         // 空包名保持原行为

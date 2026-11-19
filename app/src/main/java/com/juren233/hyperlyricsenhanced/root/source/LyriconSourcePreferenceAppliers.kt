@@ -6,6 +6,7 @@
 
 package com.juren233.hyperlyricsenhanced.root.source
 
+import com.juren233.hyperlyricsenhanced.common.MediaSessionOnlineFallbackPreferences
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.common.lyric.ApplePronunciationVisibilityPolicy
 import com.juren233.hyperlyricsenhanced.common.lyric.LyricMetadataKeys
@@ -25,6 +26,9 @@ internal fun LyriconSource.onPreferenceChanged(key: String?) {
         OnlineTranslationSourcePreferences.isAppPreference(key)
     ) {
         mainHandler.post { applyOnlineTranslationPreferenceChange(key.orEmpty()) }
+    }
+    if (key == MediaSessionOnlineFallbackPreferences.PACKAGES) {
+        mainHandler.post { applyMoreAppsPreferenceChange() }
     }
     if (key == RootConstants.KEY_HOOK_APPLE_MUSIC_RESTORE_CJK_ORIGINAL_METADATA) {
         mainHandler.post { applyOriginalMetadataPreferenceChange() }
@@ -287,23 +291,36 @@ private fun LyriconSource.applyOriginalMetadataPreferenceChange() {
     }
 }
 
-private fun LyriconSource.applyOnlineTranslationPreferenceChange(key: String) {
-    if (activeCentralPlayerPackageName != null &&
-        activeCentralPlayerPackageName != LyriconSource.APPLE_MUSIC_PACKAGE
+/** 三方播放器当前歌曲按最新配置重新决定在线补全；返回 false 表示当前不是三方播放器。 */
+private fun LyriconSource.reapplyThirdPartyOnlinePreference(): Boolean {
+    if (activeCentralPlayerPackageName == null ||
+        activeCentralPlayerPackageName == LyriconSource.APPLE_MUSIC_PACKAGE
     ) {
-        val song = currentThirdPartySong ?: return
-        cancelThirdPartyFallback(reason = "third_party_preference_changed")
-        cancelOnlineTranslation(
-            clearAttempt = true,
-            clearMatched = true,
-            reason = "third_party_preference_changed",
-        )
-        if (currentPublishedThirdPartySong != song) {
-            publishThirdPartySong(song, restorePosition = true)
-        }
-        reevaluateThirdPartyOnlineMatching(song)
-        return
+        return false
     }
+    val song = currentThirdPartySong ?: return true
+    cancelThirdPartyFallback(reason = "third_party_preference_changed")
+    cancelOnlineTranslation(
+        clearAttempt = true,
+        clearMatched = true,
+        reason = "third_party_preference_changed",
+    )
+    if (currentPublishedThirdPartySong != song) {
+        publishThirdPartySong(song, restorePosition = true)
+    }
+    reevaluateThirdPartyOnlineMatching(song)
+    return true
+}
+
+/** 「更多App」名单变化只影响没有自己开关的三方播放器（见 [OnlineEnrichmentAppGate]）。 */
+private fun LyriconSource.applyMoreAppsPreferenceChange() {
+    val playerPackage = activeCentralPlayerPackageName ?: return
+    if (OnlineEnrichmentAppGate.hasOwnSwitch(playerPackage)) return
+    reapplyThirdPartyOnlinePreference()
+}
+
+private fun LyriconSource.applyOnlineTranslationPreferenceChange(key: String) {
+    if (reapplyThirdPartyOnlinePreference()) return
 
     val nativeSong = currentAppleSong ?: return
     val sourcePreferenceChanged = OnlineTranslationSourcePreferences.isSourcePreference(key)

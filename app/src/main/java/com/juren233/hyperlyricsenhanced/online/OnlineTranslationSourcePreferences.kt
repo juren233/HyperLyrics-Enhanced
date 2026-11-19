@@ -15,6 +15,8 @@ object OnlineTranslationSourcePreferences {
     const val QISHUI_PACKAGE = "com.luna.music"
     const val SPOTIFY_PACKAGE = "com.spotify.music"
     const val SALT_PACKAGE = "com.salt.music"
+    const val NETEASE_PACKAGE = "com.netease.cloudmusic"
+    const val QQ_MUSIC_PACKAGE = "com.tencent.qqmusic"
 
     val defaultOrder: List<Source> = listOf(
         Source.AMLL,
@@ -98,6 +100,8 @@ object OnlineTranslationSourcePreferences {
         QISHUI_PACKAGE -> AppleMusicPreferenceKeys.KEY_HOOK_ONLINE_TRANSLATION_APP_QISHUI
         SPOTIFY_PACKAGE -> AppleMusicPreferenceKeys.KEY_HOOK_ONLINE_TRANSLATION_APP_SPOTIFY
         SALT_PACKAGE -> AppleMusicPreferenceKeys.KEY_HOOK_ONLINE_TRANSLATION_APP_SALT
+        NETEASE_PACKAGE -> AppleMusicPreferenceKeys.KEY_HOOK_ONLINE_TRANSLATION_APP_NETEASE
+        QQ_MUSIC_PACKAGE -> AppleMusicPreferenceKeys.KEY_HOOK_ONLINE_TRANSLATION_APP_QQ
         else -> null
     }
 
@@ -106,6 +110,8 @@ object OnlineTranslationSourcePreferences {
         QISHUI_PACKAGE -> AppleMusicPreferenceKeys.DEFAULT_HOOK_ONLINE_TRANSLATION_APP_QISHUI
         SPOTIFY_PACKAGE -> AppleMusicPreferenceKeys.DEFAULT_HOOK_ONLINE_TRANSLATION_APP_SPOTIFY
         SALT_PACKAGE -> AppleMusicPreferenceKeys.DEFAULT_HOOK_ONLINE_TRANSLATION_APP_SALT
+        NETEASE_PACKAGE -> AppleMusicPreferenceKeys.DEFAULT_HOOK_ONLINE_TRANSLATION_APP_NETEASE
+        QQ_MUSIC_PACKAGE -> AppleMusicPreferenceKeys.DEFAULT_HOOK_ONLINE_TRANSLATION_APP_QQ
         else -> false
     }
 
@@ -142,5 +148,7 @@ object OnlineTranslationSourcePreferences {
         AppleMusicPreferenceKeys.KEY_HOOK_ONLINE_TRANSLATION_APP_QISHUI,
         AppleMusicPreferenceKeys.KEY_HOOK_ONLINE_TRANSLATION_APP_SPOTIFY,
         AppleMusicPreferenceKeys.KEY_HOOK_ONLINE_TRANSLATION_APP_SALT,
+        AppleMusicPreferenceKeys.KEY_HOOK_ONLINE_TRANSLATION_APP_NETEASE,
+        AppleMusicPreferenceKeys.KEY_HOOK_ONLINE_TRANSLATION_APP_QQ,
     )
 }

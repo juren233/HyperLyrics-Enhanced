@@ -578,7 +578,7 @@ class LyriconSource : LyricSource {
         configuredOnlineSources().filter(Source::isTtmlCatalog)
 
     internal fun isOnlineTranslationEnabledFor(packageName: String?): Boolean =
-        OnlineTranslationSourcePreferences.isAppEnabled(
+        OnlineEnrichmentAppGate.isEnabled(
             prefs,
             packageName ?: APPLE_MUSIC_PACKAGE,
         ) &&

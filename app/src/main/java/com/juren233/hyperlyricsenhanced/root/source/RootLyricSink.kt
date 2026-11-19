@@ -400,7 +400,7 @@ class RootLyricSink(
         val packageName = LyriconDataBridge.currentLyricPackageName ?: return false
         if (song.lyrics.isNullOrEmpty()) return false
         if (song.lyrics?.any { !it.translation.isNullOrBlank() } == true) return false
-        return OnlineTranslationSourcePreferences.isAppEnabled(prefs, packageName) &&
+        return OnlineEnrichmentAppGate.isEnabled(prefs, packageName) &&
             OnlineTranslationSourcePreferences.orderedSources(prefs).isNotEmpty()
     }
 
