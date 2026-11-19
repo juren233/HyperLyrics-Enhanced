@@ -6,12 +6,9 @@
 
 package com.juren233.hyperlyricsenhanced.ui.page.hooksettings
 
-import android.content.Context
-import android.content.Intent
-import android.content.pm.PackageManager
-import android.graphics.Bitmap
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import android.graphics.Bitmap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -41,7 +38,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.focus.focusProperties
-import androidx.core.graphics.drawable.toBitmap
 import androidx.core.content.edit
 import com.juren233.hyperlyricsenhanced.ui.component.lazyCardRow
 import com.juren233.hyperlyricsenhanced.R
@@ -53,9 +49,6 @@ import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.common.StringSetPreferences
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.common.XposedLyricSettingPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.common.rememberHookPrefs
-import com.juren233.hyperlyricsenhanced.ui.utils.LocaleUtils
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.InputField
@@ -67,8 +60,6 @@ import top.yukonga.miuix.kmp.icon.basic.SearchCleanup
 import top.yukonga.miuix.kmp.icon.extended.Music
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
-
-private const val APP_ICON_BITMAP_SIZE_PX = 96
 
 @Composable
 fun HyperIslandAlbumCoverWhitelistPage() {
@@ -114,7 +105,13 @@ internal fun InstalledAppSelectionPage(
         )
     }
     var searchQuery by remember { mutableStateOf("") }
-    var installedApps by remember { mutableStateOf<List<InstalledApp>?>(null) }
+    var installedApps by remember(includeNonLauncherApps) {
+        mutableStateOf(
+            InstalledAppRepository.cachedApps(includeNonLauncherApps)
+                ?.takeIf { hasInstalledAppsPermission }
+                ?.map { InstalledApp(it, installed = true) },
+        )
+    }
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
     ) { granted ->
@@ -131,19 +128,18 @@ internal fun InstalledAppSelectionPage(
 
     LaunchedEffect(context, hasInstalledAppsPermission, includeNonLauncherApps) {
         installedApps = if (hasInstalledAppsPermission) {
-            withContext(Dispatchers.IO) {
-                loadInstalledApps(context, includeNonLauncherApps)
-            }
+            InstalledAppRepository.loadApps(context, includeNonLauncherApps)
+                .map { InstalledApp(it, installed = true) }
         } else {
             emptyList()
         }
     }
     val knownApps = installedApps.orEmpty().filter { it.app.packageName !in excludedPackages }
-    // 已卸载或暂时不可见的包仍可从已启用组移除。
-    val apps = if (includeNonLauncherApps) {
+    // 已卸载或暂时不可见的包仍可从已启用组移除；列表读完后才补，加载中统一显示「加载中」。
+    val apps = if (includeNonLauncherApps && installedApps != null) {
         knownApps + enabledPackages
             .filter { pkg -> pkg !in excludedPackages && knownApps.none { it.app.packageName == pkg } }
-            .map { pkg -> InstalledApp(IslandMusicAppCatalog.App(pkg, pkg), null) }
+            .map { pkg -> InstalledApp(IslandMusicAppCatalog.App(pkg, pkg), installed = false) }
     } else knownApps
     val filteredApps = apps.filter { app ->
         val query = searchQuery.trim()
@@ -295,7 +291,7 @@ private fun LazyListScope.appSection(
             Box(modifier = Modifier.lazyCardRow(index, apps.size)) {
                 IslandMusicAppSwitchPreference(
                     app = installedApp.app,
-                    icon = installedApp.icon,
+                    installed = installedApp.installed,
                     checked = installedApp.app.packageName in enabledPackages,
                     onCheckedChange = { checked ->
                         onCheckedChange(installedApp.app.packageName, checked)
@@ -309,7 +305,7 @@ private fun LazyListScope.appSection(
 @Composable
 private fun IslandMusicAppSwitchPreference(
     app: IslandMusicAppCatalog.App,
-    icon: Bitmap?,
+    installed: Boolean,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
 ) {
@@ -321,24 +317,43 @@ private fun IslandMusicAppSwitchPreference(
         onCheckedChange = onCheckedChange,
         startAction = {
             Row {
-                AppIcon(icon)
+                AppIcon(app.packageName.takeIf { installed })
                 Spacer(modifier = Modifier.width(8.dp))
             }
         },
     )
 }
 
+/** 图标在行可见时才加载；加载中留空，读不到时显示音乐图标。 */
 @Composable
-private fun AppIcon(icon: Bitmap?) {
+private fun AppIcon(packageName: String?) {
+    val context = LocalContext.current
+    // null：加载中；Result 里的 null：读不到图标。按包名重置：同一行可能先以未安装显示，列表读完后才有包名。
+    var icon by remember(packageName) {
+        mutableStateOf(
+            when {
+                packageName == null -> Result.success(null)
+                else -> InstalledAppRepository.cachedIcon(packageName)?.let { Result.success(it) }
+                    ?: Result.success<Bitmap?>(null).takeIf { InstalledAppRepository.isIconMissing(packageName) }
+            },
+        )
+    }
+    LaunchedEffect(packageName) {
+        if (icon == null && packageName != null) {
+            icon = Result.success(InstalledAppRepository.loadIcon(context.applicationContext, packageName))
+        }
+    }
+    val loaded = icon
     Box(modifier = Modifier.size(40.dp)) {
-        if (icon != null) {
+        val bitmap = loaded?.getOrNull()
+        if (bitmap != null) {
             Image(
-                bitmap = remember(icon) { icon.asImageBitmap() },
+                bitmap = remember(bitmap) { bitmap.asImageBitmap() },
                 contentDescription = null,
                 contentScale = ContentScale.Fit,
                 modifier = Modifier.fillMaxSize(),
             )
-        } else {
+        } else if (loaded != null) {
             Icon(
                 imageVector = MiuixIcons.Music,
                 contentDescription = null,
@@ -350,59 +365,8 @@ private fun AppIcon(icon: Bitmap?) {
     }
 }
 
+/** [installed] 为 false：名单里有、但已卸载或当前看不到的包。 */
 private data class InstalledApp(
     val app: IslandMusicAppCatalog.App,
-    val icon: Bitmap?,
+    val installed: Boolean,
 )
-
-private fun loadInstalledApps(context: Context, includeNonLauncherApps: Boolean): List<InstalledApp> {
-    val packageManager = LocaleUtils.systemLanguageContext(context).packageManager
-    val launcherIntent = Intent(Intent.ACTION_MAIN).apply {
-        addCategory(Intent.CATEGORY_LAUNCHER)
-    }
-
-    val applications = if (includeNonLauncherApps) {
-        packageManager.getInstalledApplications(PackageManager.ApplicationInfoFlags.of(0L))
-    } else {
-        packageManager.queryIntentActivities(
-            launcherIntent,
-            PackageManager.ResolveInfoFlags.of(PackageManager.MATCH_ALL.toLong()),
-        ).mapNotNull { it.activityInfo?.applicationInfo }
-    }
-    return applications.asSequence()
-        .filter { it.packageName != context.packageName }
-        .distinctBy { it.packageName }
-        .map { applicationInfo ->
-            val app = IslandMusicAppCatalog.App(
-                packageName = applicationInfo.packageName,
-                displayName = runCatching { applicationInfo.loadLabel(packageManager).toString() }
-                    .getOrDefault(applicationInfo.packageName)
-                    .takeUnless(String::isBlank)
-                    ?: applicationInfo.packageName,
-            )
-            InstalledApp(
-                app = app,
-                icon = runCatching {
-                    applicationInfo.loadIcon(packageManager).toBitmap(
-                        width = APP_ICON_BITMAP_SIZE_PX,
-                        height = APP_ICON_BITMAP_SIZE_PX,
-                        config = Bitmap.Config.ARGB_8888,
-                    )
-                }.getOrNull(),
-            )
-        }
-        .sortedWith(
-            Comparator { left, right ->
-                val nameComparison = left.app.displayName.compareTo(
-                    right.app.displayName,
-                    ignoreCase = true,
-                )
-                if (nameComparison != 0) {
-                    nameComparison
-                } else {
-                    left.app.packageName.compareTo(right.app.packageName)
-                }
-            },
-        )
-        .toList()
-}
