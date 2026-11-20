@@ -150,9 +150,7 @@ internal class SuperLyricContentAdapter(
             translation = translated?.text ?: previous.translation,
             translationWords = translated?.words?.map { LyricWord(it.startTime, it.endTime, text = it.word) }
                 ?: previous.translationWords.takeIf { translated == null || translated.text == previous.translation },
-            secondary = secondary?.text ?: previous.secondary,
-            secondaryWords = secondary?.words?.map { LyricWord(it.startTime, it.endTime, text = it.word) }
-                ?: previous.secondaryWords.takeIf { secondary == null || secondary.text == previous.secondary },
+            roma = secondary?.text ?: previous.roma,
         )
         if (update == previous) return lines
         return lines.toMutableList().apply { set(index, update) }
@@ -169,8 +167,10 @@ internal class SuperLyricContentAdapter(
         words = line.words?.map { LyricWord(it.startTime, it.endTime, text = it.word) },
         translation = translation?.text ?: line.translation,
         translationWords = translation?.words?.map { LyricWord(it.startTime, it.endTime, text = it.word) },
-        secondary = secondary?.text ?: line.secondary,
-        secondaryWords = secondary?.words?.map { LyricWord(it.startTime, it.endTime, text = it.word) },
+        // 3.x 协议的 secondary 是行级罗马音（3.5 引入，4.0 拆为 translation/phonetic），
+        // 不是对唱次行。映射进 roma 槽位才能受「翻译/发音显示」开关控制；
+        // 透传到 secondary 槽会在岛上无条件渲染，绕过开关。
+        roma = secondary?.text ?: line.secondary,
     )
 
     private data class Metadata(

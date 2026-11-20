@@ -7,7 +7,6 @@
 package com.juren233.hyperlyricsenhanced.root.island
 
 import android.content.Context
-import android.content.SharedPreferences
 import android.text.TextPaint
 import android.view.View
 import com.juren233.hyperlyricsenhanced.BuildConfig
@@ -165,7 +164,6 @@ internal fun IslandSlotContentAssembler.applyLineRightAlignment(
 }
 
 internal fun IslandSlotContentAssembler.isNextLinePreviewEnabled(
-    prefs: SharedPreferences,
     config: IslandSlotRuntimeConfig,
     currentLine: IRichLyricLine? = LyriconDataBridge.currentLyricLine,
     interludeActive: Boolean = LyriconDataBridge.currentInterludeType != null,
@@ -173,8 +171,8 @@ internal fun IslandSlotContentAssembler.isNextLinePreviewEnabled(
     if (!config.nextLineEnabled) return false
     if (config.usesInterludeMinimalDisplay(interludeActive)) return false
     if (LyriconDataBridge.isTextMode) return false
-    val source = prefs.getString(RootConstants.KEY_HOOK_LYRIC_SOURCE, RootConstants.DEFAULT_HOOK_LYRIC_SOURCE)
-    if (source != "lyricon" && source != "lyricinfo") return false
+    // 能否预览由数据决定：三个取词源统一走完整时间轴，没有下一句时下游自然渲染为空。
+    // 不再按取词来源偏好放行——旧检查写于 superlyric 仍是逐行推送、没有时间轴的年代。
     return shouldUseNextLinePreview(
         config.translationDisplayMode,
         config.translationFallback,

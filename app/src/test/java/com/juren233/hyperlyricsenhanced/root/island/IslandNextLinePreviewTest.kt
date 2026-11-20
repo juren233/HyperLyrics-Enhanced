@@ -207,11 +207,17 @@ class IslandNextLinePreviewTest {
     }
 
     @Test
-    fun `unsupported source and text mode do not show preview`() {
+    fun `preview follows timeline data for every source and text mode still blocks it`() {
         LyriconDataBridge.currentLyricLine = RichLyricLine(text = "Current")
         LyriconDataBridge.currentNextLyricLine = RichLyricLine(text = "Next")
-        assertFalse(secondary(preferences(source = "text")).alwaysShow)
-        assertFalse(secondary(preferences(mode = RootConstants.HOOK_LYRIC_MODE_SEPARATED, source = "text")).alwaysShow)
+        // 取词来源不再决定预览可用性：superlyric 与 lyricon/lyricinfo 一样由数据驱动。
+        for (source in listOf("lyricon", "superlyric", "lyricinfo")) {
+            assertTrue("source=$source 应允许下一句预览", secondary(preferences(source = source)).alwaysShow)
+            assertTrue(
+                "source=$source 分离模式应允许下一句预览",
+                secondary(preferences(mode = RootConstants.HOOK_LYRIC_MODE_SEPARATED, source = source)).alwaysShow,
+            )
+        }
         LyriconDataBridge.isTextMode = true
         assertFalse(secondary(preferences()).alwaysShow)
         assertFalse(secondary(preferences(mode = RootConstants.HOOK_LYRIC_MODE_SEPARATED)).alwaysShow)
@@ -390,7 +396,7 @@ class IslandNextLinePreviewTest {
             translationDisplayMode = config.translationDisplayMode,
             translationFallback = config.translationFallback,
             translationOnly = config.translationOnly,
-            nextLinePreview = IslandSlotContentAssembler.isNextLinePreviewEnabled(prefs, config),
+            nextLinePreview = IslandSlotContentAssembler.isNextLinePreviewEnabled(config),
         )
         return LyricLineAssembler(
             displayMode = options.displayMode,

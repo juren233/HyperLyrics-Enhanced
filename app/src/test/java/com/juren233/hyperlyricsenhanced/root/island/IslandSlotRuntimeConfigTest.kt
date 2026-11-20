@@ -253,10 +253,10 @@ class IslandSlotRuntimeConfigTest {
         assertTrue(minimalConfig.interludeMinimalDisplay)
 
         assertTrue(IslandSlotContentAssembler.isNextLinePreviewEnabled(
-            normalPrefs, normalConfig, interludeActive = true
+            normalConfig, interludeActive = true
         ))
         assertFalse(IslandSlotContentAssembler.isNextLinePreviewEnabled(
-            minimalPrefs, minimalConfig, interludeActive = true
+            minimalConfig, interludeActive = true
         ))
     }
 

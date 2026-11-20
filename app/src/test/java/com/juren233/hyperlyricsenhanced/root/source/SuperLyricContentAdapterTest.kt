@@ -29,7 +29,11 @@ class SuperLyricContentAdapterTest {
         val lines = content.song!!.lyrics!!
         assertEquals(listOf("Hello", "World"), lines.map { it.text })
         assertEquals(listOf("你好", "世界"), lines.map { it.translation })
-        assertEquals(listOf("ni hao", "shi jie"), lines.map { it.secondary })
+        assertEquals(listOf("ni hao", "shi jie"), lines.map { it.roma })
+        assertTrue(
+            "superlyric 的 secondary（罗马音）不得进入不受翻译/发音开关控制的对唱 secondary 槽",
+            lines.all { it.secondary == null && it.secondaryWords == null },
+        )
         assertEquals(1000L, lines[0].words!![0].begin)
         assertEquals(2500L, lines[0].words!![0].end)
         assertTrue(sink.lines.isEmpty())
@@ -116,6 +120,55 @@ class SuperLyricContentAdapterTest {
         val line = sink.contents.last().song!!.lyrics!![0]
         assertEquals("新译文", line.translation)
         assertNull(line.translationWords)
+    }
+
+    @Test
+    fun `delta secondary refreshes roma of the current row without touching translation`() {
+        adapter.publish(PLAYER, full().setCurrentLyricIndex(0), sink)
+        adapter.publish(PLAYER, delta().setSecondary(SuperLyricLine("ni hao v2")), sink)
+        val lines = sink.contents.last().song!!.lyrics!!
+        assertEquals("ni hao v2", lines[0].roma)
+        assertEquals("你好", lines[0].translation)
+        assertNull(lines[0].secondary)
+        assertEquals("shi jie", lines[1].roma)
+        assertEquals("世界", lines[1].translation)
+    }
+
+    @Test
+    fun `delta translation refresh keeps the row roma intact`() {
+        adapter.publish(PLAYER, full().setCurrentLyricIndex(0), sink)
+        adapter.publish(PLAYER, delta().setTranslation(SuperLyricLine("新译文")), sink)
+        val line = sink.contents.last().song!!.lyrics!![0]
+        assertEquals("新译文", line.translation)
+        assertEquals("ni hao", line.roma)
+        assertNull(line.secondary)
+    }
+
+    @Test
+    fun `secondary without translation still maps to roma only`() {
+        val onlySecondary = SuperLyricData()
+            .setLyricId("fingerprint").setTitle("Song").setArtist("Artist").setAlbum("Album")
+            .setDuration(9000L)
+            .setAllLyrics(arrayOf(
+                SuperLyricLine("Hello", null, null, "ni hao", 1000L, 3000L),
+                SuperLyricLine("World", null, null, "shi jie", 4000L, 6000L),
+            ))
+        adapter.publish(PLAYER, onlySecondary, sink)
+        val lines = sink.contents.single().song!!.lyrics!!
+        assertEquals(listOf("ni hao", "shi jie"), lines.map { it.roma })
+        assertEquals(listOf(null, null), lines.map { it.translation })
+        assertTrue(lines.all { it.secondary == null && it.secondaryWords == null })
+    }
+
+    @Test
+    fun `data level secondary enriches only the current row roma`() {
+        val enriched = full().setLyric(SuperLyricLine("Hello", 1000L, 3000L))
+            .setSecondary(SuperLyricLine("data level roma"))
+        adapter.publish(PLAYER, enriched, sink)
+        val lines = sink.contents.single().song!!.lyrics!!
+        assertEquals("data level roma", lines[0].roma)
+        assertEquals("shi jie", lines[1].roma)
+        assertTrue(lines.all { it.secondary == null })
     }
 
     @Test
@@ -214,7 +267,8 @@ class SuperLyricContentAdapterTest {
             .setSecondary(SuperLyricLine("ni hao"))
         adapter.publish(PLAYER, data, sink)
         assertEquals("你好", sink.lines.single().translation)
-        assertEquals("ni hao", sink.lines.single().secondary)
+        assertEquals("ni hao", sink.lines.single().roma)
+        assertNull("旧版单行推送同样不得写入对唱 secondary 槽", sink.lines.single().secondary)
         assertEquals(2500L, sink.lines.single().words!!.single().end)
         adapter.publish(PLAYER, SuperLyricData().setLyric(SuperLyricLine("Text"))
             .setTranslation(SuperLyricLine("文本")), sink)

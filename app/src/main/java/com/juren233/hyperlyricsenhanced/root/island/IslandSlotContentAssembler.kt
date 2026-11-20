@@ -468,7 +468,7 @@ internal object IslandSlotContentAssembler {
         // 同一宿主另一槽仍是预览内容时，成对形态提交会在落地时把当前歌词画回预览槽。
         val previewContentInHost = hasNextSongPreviewContentInHost(view)
         if (!IslandSeparatedLyricTransition.isApplying(view)) {
-            val previewEnabled = isNextLinePreviewEnabled(prefs, config)
+            val previewEnabled = isNextLinePreviewEnabled(config)
             if (config.isSeparatedMode && mode == 7 && !suppressAnimation && !previewContentInHost &&
                 (config.lyricAnimationEnabled || previewEnabled)
             ) {
@@ -499,7 +499,7 @@ internal object IslandSlotContentAssembler {
             }
         }
         if (!IslandShortLyricTransition.isApplying(view)) {
-            val previewEnabled = config.isFullIslandMode && isNextLinePreviewEnabled(prefs, config)
+            val previewEnabled = config.isFullIslandMode && isNextLinePreviewEnabled(config)
             val canTransitionRoles = config.isFullIslandMode && (config.shortLyricSongInfo || config.nextLineOnRight) &&
                 mode == 7 && !suppressAnimation && !previewContentInHost &&
                 (config.lyricAnimationEnabled || previewEnabled) &&
@@ -1022,7 +1022,7 @@ internal object IslandSlotContentAssembler {
         )
             ?: RichLyricLine(text = songName, words = emptyList())
 
-        if (config != null && isNextLinePreviewEnabled(prefs, config, rawLine)) {
+        if (config != null && isNextLinePreviewEnabled(config, rawLine)) {
             val nextLine = displayLyricLine(prefs, LyriconDataBridge.currentNextLyricLine)
             return rawLine.withNextLinePreview(
                 nextLine = nextLine,
@@ -1110,7 +1110,7 @@ internal object IslandSlotContentAssembler {
             config.activeMode, LyriconDataBridge.currentLyricLine,
         ) else null
         val alignmentIsLeft = if (continuousSpaceGate) true else isLeft
-        val centerCurrentLine = if (config.nextLineOnRight && isNextLinePreviewEnabled(prefs, config)) false
+        val centerCurrentLine = if (config.nextLineOnRight && isNextLinePreviewEnabled(config)) false
             else shouldCenterLine(config, targetLine, alignmentIsLeft)
         val isNextLinePreview = targetLine?.metadata?.getBoolean(
             METADATA_NEXT_LINE_PREVIEW
@@ -1551,7 +1551,7 @@ internal object IslandSlotContentAssembler {
             translationDisplayMode = config.translationDisplayMode,
             translationFallback = config.translationFallback,
             translationOnly = TranslationHelper.isTranslationOnly(prefs),
-            nextLinePreview = isNextLinePreviewEnabled(prefs, config)
+            nextLinePreview = isNextLinePreviewEnabled(config)
         )
         // 对唱固定长度：仅在动态长度开启时消费开关；歌曲含对唱行才抬宽到全曲最长行。
         val duetSongLyrics = if (config.dynamicWidthEnabled && config.duetFixedLengthEnabled) {

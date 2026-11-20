@@ -451,6 +451,43 @@ class LyricLineAssemblerTest {
         assertFalse(offAssembler.buildSecondary(lineWithBoth).alwaysShow)
     }
     @Test
+    fun `superlyric shaped row keeps both translation and roma behind the display switch`() {
+        // superlyric 适配层产出的形态：正文 + 翻译 + 罗马音，绝无 secondary。
+        val superLyricRow = RichLyricLine(
+            begin = 1_000, end = 3_000, text = "Hello",
+            translation = "你好",
+            roma = "ni hao",
+        )
+        val off = LyricLineAssembler(
+            displayMode = RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_OFF,
+            hideSecondaryContent = true,
+        )
+        val offResult = off.buildSecondary(superLyricRow)
+        assertFalse("关闭档第二行必须为空", offResult.alwaysShow)
+        assertNull(offResult.line.text)
+
+        val pronunciation = LyricLineAssembler(
+            displayMode = RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_PRONUNCIATION,
+            hideSecondaryContent = false,
+        )
+        assertEquals("ni hao", pronunciation.buildSecondary(superLyricRow).line.text)
+
+        val translation = LyricLineAssembler(
+            displayMode = RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_TRANSLATION,
+            hideSecondaryContent = false,
+        )
+        assertEquals("你好", translation.buildSecondary(superLyricRow).line.text)
+
+        // 对唱 secondary 是歌词本体，不受翻译/发音开关控制——因此开关闸门必须留在
+        // superlyric 适配层（不写入 secondary），不能加在这个分支上。
+        val duetRow = RichLyricLine(
+            begin = 1_000, end = 3_000, text = "Main",
+            secondary = "Duet",
+        )
+        assertTrue(off.buildSecondary(duetRow).alwaysShow)
+    }
+
+    @Test
     fun `new timeline line preempts a running preview promotion`() {
         val promoted = RichLyricLine(begin = 1_000, end = 1_180, text = "Second")
         val incoming = RichLyricLine(begin = 1_180, end = 1_360, text = "Third")
