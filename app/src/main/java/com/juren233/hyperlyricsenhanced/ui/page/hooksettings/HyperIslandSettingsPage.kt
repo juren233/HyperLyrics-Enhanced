@@ -77,14 +77,6 @@ fun HyperIslandSettingsPage() {
     val lyricModes = remember { LyricModeResolver.usage(prefs) }
     val singleSideScope = lyricModes.scopeOf(RootConstants.HOOK_LYRIC_MODE_SINGLE_SIDE)
     val fullIslandScope = lyricModes.scopeOf(RootConstants.HOOK_LYRIC_MODE_FULL_ISLAND)
-    val lyricSource by remember {
-        mutableStateOf(
-            prefs.getString(
-                RootConstants.KEY_HOOK_LYRIC_SOURCE,
-                RootConstants.DEFAULT_HOOK_LYRIC_SOURCE
-            ) ?: RootConstants.DEFAULT_HOOK_LYRIC_SOURCE
-        )
-    }
     var nextLyricLine by remember {
         mutableStateOf(
             prefs.getBoolean(
@@ -784,44 +776,43 @@ fun HyperIslandSettingsPage() {
                         }
                     }
                 }
-                if (lyricSource == "lyricon" || lyricSource == "lyricinfo") {
-                    item(key = "island_next_lyric") {
-                        Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
-                            Column {
-                                // 所有模式共用；「右侧」只有全岛有，位置单独放在下方。
-                                SwitchPreference(
-                                    title = stringResource(id = R.string.title_next_lyric_line),
-                                    summary = stringResource(id = R.string.summary_next_lyric_line),
-                                    checked = nextLyricLine,
-                                    onCheckedChange = {
-                                        nextLyricLine = it
-                                        saveConfig(RootConstants.KEY_HOOK_NEXT_LYRIC_LINE, it)
+                item(key = "island_next_lyric") {
+                    Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
+                        Column {
+                            // 所有模式共用；「右侧」只有全岛有，位置单独放在下方。
+                            // 下一句预览由时间轴数据驱动，不再按取词来源隐藏入口。
+                            SwitchPreference(
+                                title = stringResource(id = R.string.title_next_lyric_line),
+                                summary = stringResource(id = R.string.summary_next_lyric_line),
+                                checked = nextLyricLine,
+                                onCheckedChange = {
+                                    nextLyricLine = it
+                                    saveConfig(RootConstants.KEY_HOOK_NEXT_LYRIC_LINE, it)
+                                }
+                            )
+                            AnimatedVisibility(
+                                visible = nextLyricLine && fullIslandScope != null,
+                                enter = SectionEnter,
+                                exit = SectionExit,
+                            ) {
+                                OverlayDropdownPreference(
+                                    title = stringResource(id = R.string.title_island_full_next_line_position),
+                                    summary = lyricModeScopedSummary(fullIslandScope),
+                                    items = fullIslandNextLinePositionValues.map { value ->
+                                        stringResource(
+                                            if (value == IslandNextLineMode.RIGHT) R.string.island_next_line_right
+                                            else R.string.island_next_line_second_line
+                                        )
+                                    },
+                                    selectedIndex = fullIslandNextLinePositionValues
+                                        .indexOf(fullIslandNextLinePosition)
+                                        .coerceAtLeast(0),
+                                    onSelectedIndexChange = {
+                                        val value = fullIslandNextLinePositionValues[it]
+                                        fullIslandNextLinePosition = value
+                                        saveConfig(RootConstants.KEY_HOOK_ISLAND_FULL_NEXT_LINE_POSITION, value)
                                     }
                                 )
-                                AnimatedVisibility(
-                                    visible = nextLyricLine && fullIslandScope != null,
-                                    enter = SectionEnter,
-                                    exit = SectionExit,
-                                ) {
-                                    OverlayDropdownPreference(
-                                        title = stringResource(id = R.string.title_island_full_next_line_position),
-                                        summary = lyricModeScopedSummary(fullIslandScope),
-                                        items = fullIslandNextLinePositionValues.map { value ->
-                                            stringResource(
-                                                if (value == IslandNextLineMode.RIGHT) R.string.island_next_line_right
-                                                else R.string.island_next_line_second_line
-                                            )
-                                        },
-                                        selectedIndex = fullIslandNextLinePositionValues
-                                            .indexOf(fullIslandNextLinePosition)
-                                            .coerceAtLeast(0),
-                                        onSelectedIndexChange = {
-                                            val value = fullIslandNextLinePositionValues[it]
-                                            fullIslandNextLinePosition = value
-                                            saveConfig(RootConstants.KEY_HOOK_ISLAND_FULL_NEXT_LINE_POSITION, value)
-                                        }
-                                    )
-                                }
                             }
                         }
                     }
