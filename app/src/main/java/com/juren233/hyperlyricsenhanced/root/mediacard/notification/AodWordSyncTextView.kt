@@ -6,6 +6,7 @@
 
 package com.juren233.hyperlyricsenhanced.root.mediacard.notification
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.LinearGradient
@@ -16,7 +17,7 @@ import android.text.Layout
 import android.text.TextPaint
 import android.view.Choreographer
 import android.view.Gravity
-import androidx.appcompat.widget.AppCompatTextView
+import android.widget.TextView
 import com.juren233.hyperlyricsenhanced.lyric.model.LyricWord
 import com.juren233.hyperlyricsenhanced.lyric.view.line.drawInterludeDots
 import com.juren233.hyperlyricsenhanced.lyric.view.line.interludeDotsWidth
@@ -27,17 +28,19 @@ import kotlin.math.floor
 /**
  * AOD 的逐字扫过效果与前奏/间奏动态圆点，由「动态效果」类的两个开关分别控制（默认关闭）。
  *
- * 仍是 [AppCompatTextView]：测量、自动换行、对齐、字号字体都沿用 TextView 原生行为，因此长句换成多行后
+ * 仍是 [TextView]：测量、自动换行、对齐、字号字体都沿用原生行为，因此长句换成多行后
  * 逐字高亮按行依次扫过（已唱行全亮，当前行带柔和渐变边缘从左扫到右，未唱行压暗）。
- * 没有逐字数据或文本对不上时完全走 TextView 原有绘制。前奏/间奏指示行改画与超级岛
+ * 没有逐字数据或文本对不上时完全走 [TextView] 原有绘制。前奏/间奏指示行改画与超级岛
  * 共用的三点指示器（帧与绘制函数同源，见 InterludeDotsRenderer.kt）。
  *
  * 播放期间由自己的 [Choreographer] 帧循环逐帧重绘，并按 [KEEP_ALIVE_INTERVAL_MS] 续
  * 绘制唤醒锁，与流光息屏保活是同一种出帧方式（息屏下无人持锁时不合成帧）。
  */
-// hook 进程内纯代码创建；继承 AppCompatTextView 与仓库自定义 TextView 惯例一致，
-// appcompat 类已随模块包加载进目标进程（ProviderLogo 同样引用）。
-internal class AodWordSyncTextView(context: Context) : AppCompatTextView(context) {
+// AppCompatCustomView 的前提是控件由 AppCompatActivity 在 AppCompat 主题下从 XML 加载、
+// 内置控件会被替换为 AppCompat 版本；本类在 SystemUI 进程内以代码创建，宿主没有这套机制，
+// 规则不适用。改继承 AppCompatTextView 反而会用模块的资源 ID 去读 SystemUI 主题。
+@SuppressLint("AppCompatCustomView")
+internal class AodWordSyncTextView(context: Context) : TextView(context) {
 
     private var syncText = ""
     private var syncWords: List<LyricWord>? = null
