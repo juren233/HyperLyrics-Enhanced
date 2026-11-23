@@ -5,6 +5,7 @@
  */
 package com.juren233.hyperlyricsenhanced.root.source
 
+import com.juren233.hyperlyricsenhanced.common.coroutines.ModuleDispatchers
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
@@ -16,7 +17,7 @@ import kotlinx.coroutines.withContext
 /** Keeps race publications ordered while expensive matching runs away from the UI thread. */
 internal class OnlineTranslationPreparationQueue(
     private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main.immediate,
-    private val workerDispatcher: CoroutineDispatcher = Dispatchers.Default,
+    private val workerDispatcher: CoroutineDispatcher = ModuleDispatchers.Default,
 ) {
     private val mutex = Mutex()
 

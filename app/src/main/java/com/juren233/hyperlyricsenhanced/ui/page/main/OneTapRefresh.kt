@@ -6,6 +6,7 @@
 
 package com.juren233.hyperlyricsenhanced.ui.page.main
 
+import com.juren233.hyperlyricsenhanced.common.coroutines.ModuleDispatchers
 import android.content.Context
 import android.content.pm.PackageManager
 import androidx.compose.foundation.layout.Arrangement
@@ -36,7 +37,6 @@ import com.juren233.hyperlyricsenhanced.ui.component.AppWindowDialog
 import com.juren233.hyperlyricsenhanced.ui.utils.LocaleUtils
 import com.juren233.hyperlyricsenhanced.utils.LyricProviderManager
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.BasicComponent
@@ -316,7 +316,7 @@ internal class OneTapRefreshController(
 
     private fun reloadLegacyProviderTargets() {
         scope.launch {
-            val loaded = withContext(Dispatchers.IO) { LyricProviderManager.declaredTargetPackages(context) }
+            val loaded = withContext(ModuleDispatchers.IO) { LyricProviderManager.declaredTargetPackages(context) }
             if (loaded == legacyProviderTargets) return@launch
             legacyProviderTargets = loaded
             // 面板已打开时补上新列出的 App，已勾选的项保持不变。

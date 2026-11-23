@@ -2,6 +2,7 @@
 
 package com.juren233.hyperlyricsenhanced.ui.page
 
+import com.juren233.hyperlyricsenhanced.common.coroutines.ModuleDispatchers
 import com.juren233.hyperlyricsenhanced.ui.component.SectionEnter
 import com.juren233.hyperlyricsenhanced.ui.component.SectionExit
 import android.content.Context
@@ -48,7 +49,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -418,7 +418,7 @@ fun MainPage(outroStage: Int = MAIN_PAGE_OUTRO_STAGES) {
     var aboutDeviceName by remember { mutableStateOf(AboutDeviceInfoHelper.resolveDeviceName(context)) }
     LaunchedEffect(fullyComposed) {
         if (!fullyComposed) return@LaunchedEffect
-        val rootName = withContext(Dispatchers.IO) {
+        val rootName = withContext(ModuleDispatchers.IO) {
             AboutDeviceInfoHelper.resolveDeviceNameWithRoot(context)
         }
         if (!rootName.isNullOrBlank()) {

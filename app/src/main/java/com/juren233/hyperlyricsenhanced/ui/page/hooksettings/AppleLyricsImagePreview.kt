@@ -6,6 +6,7 @@
 
 package com.juren233.hyperlyricsenhanced.ui.page.hooksettings
 
+import com.juren233.hyperlyricsenhanced.common.coroutines.ModuleDispatchers
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -30,7 +31,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.juren233.hyperlyricsenhanced.R
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.Card
 
@@ -97,7 +97,7 @@ internal fun rememberAppleLyricsSamples(): AppleLyricsImagePreviewCache.Samples?
     var samples by remember { mutableStateOf(AppleLyricsImagePreviewCache.cachedSamples()) }
     LaunchedEffect(Unit) {
         if (samples == null) {
-            samples = withContext(Dispatchers.IO) { AppleLyricsImagePreviewCache.loadSamples(context) }
+            samples = withContext(ModuleDispatchers.IO) { AppleLyricsImagePreviewCache.loadSamples(context) }
         }
     }
     return samples

@@ -1,6 +1,7 @@
 /* Copyright 2026 juren233 */
 package com.juren233.hyperlyricsenhanced.lyric.view.line
 
+import com.juren233.hyperlyricsenhanced.common.coroutines.ModuleThreads
 import android.graphics.Paint
 import android.graphics.Typeface
 import com.juren233.hyperlyricsenhanced.BuildConfig
@@ -115,7 +116,7 @@ internal class IncomingLyricWidth {
 
     private companion object {
         val worker = ThreadPoolExecutor(0, 1, 30L, TimeUnit.SECONDS, LinkedBlockingQueue(16), { task ->
-            Thread(task, "HLE-lyric-width").apply { isDaemon = true; priority = Thread.MIN_PRIORITY }
+            ModuleThreads.newThread("HLE-lyric-width", task = task).apply { priority = Thread.MIN_PRIORITY }
         })
     }
 }

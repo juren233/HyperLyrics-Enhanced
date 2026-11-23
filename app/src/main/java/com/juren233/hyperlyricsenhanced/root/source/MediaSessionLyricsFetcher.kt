@@ -6,6 +6,7 @@
 
 package com.juren233.hyperlyricsenhanced.root.source
 
+import com.juren233.hyperlyricsenhanced.common.coroutines.ModuleDispatchers
 import android.content.Context
 import kotlinx.coroutines.async
 import com.juren233.hyperlyricsenhanced.BuildConfig
@@ -29,7 +30,6 @@ import com.juren233.hyperlyricsenhanced.online.source.ttml.CatalogPlatform
 import com.juren233.hyperlyricsenhanced.online.source.ttml.TtmlCatalogSources
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import com.juren233.hyperlyricsenhanced.timeline.model.TrackIdentity
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
@@ -86,9 +86,9 @@ internal object MediaSessionSearchSongMapper {
 
 internal class MediaSessionLyricsFetcher(private val context: Context) {
     private val qqCatalogSongId = QqMusicCatalogSongId(
-        details = { ids -> withContext(Dispatchers.IO) { LyricApiProvider.qmSongCatalog.details(ids) } },
+        details = { ids -> withContext(ModuleDispatchers.IO) { LyricApiProvider.qmSongCatalog.details(ids) } },
         match = { title, artist, durationMs ->
-            withContext(Dispatchers.IO) {
+            withContext(ModuleDispatchers.IO) {
                 LyricApiProvider.qmSongCatalog.matchByMetadata(title, artist, durationMs)
             }
         },

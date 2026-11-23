@@ -1,6 +1,7 @@
 /* Copyright 2026 juren233 */
 package com.juren233.hyperlyricsenhanced.root.island
 
+import com.juren233.hyperlyricsenhanced.common.coroutines.ModuleThreads
 import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioDeviceInfo
@@ -132,11 +133,11 @@ internal object IslandRealRhythmOutputInfo {
         val (readEnd, writeEnd) = ParcelFileDescriptor.createPipe().let { it[0] to it[1] }
         var text: String? = null
         var readError: Throwable? = null
-        val reader = Thread({
+        val reader = ModuleThreads.newThread("HLE-RealRhythmAfDump", daemon = false) {
             runCatching {
                 ParcelFileDescriptor.AutoCloseInputStream(readEnd).bufferedReader().use { text = it.readText() }
             }.onFailure { readError = it }
-        }, "HLE-RealRhythmAfDump").apply { start() }
+        }.apply { start() }
         return try {
             try {
                 binder.dump(writeEnd.fileDescriptor, emptyArray())
@@ -166,7 +167,7 @@ internal object IslandRealRhythmOutputInfo {
 
     /** 只列出未待机的输出线程；没有时说明当前没有活动的输出线程。 */
     fun summarizeAudioFlingerDump(dump: String): String {
-        data class Thread(
+        data class OutputThread(
             val name: String,
             val type: String,
             var standby: String = "?",
@@ -174,13 +175,13 @@ internal object IslandRealRhythmOutputInfo {
             var activeTracks: String = "?",
             var session0Visualizer: Boolean = false,
         )
-        val threads = mutableListOf<Thread>()
-        var current: Thread? = null
+        val threads = mutableListOf<OutputThread>()
+        var current: OutputThread? = null
         var chainSession: String? = null
         dump.lineSequence().forEach { line ->
             threadHeader.find(line)?.let { match ->
                 current = if (match.groupValues[1] == "Output") {
-                    Thread(match.groupValues[2], match.groupValues[3]).also(threads::add)
+                    OutputThread(match.groupValues[2], match.groupValues[3]).also(threads::add)
                 } else {
                     null
                 }

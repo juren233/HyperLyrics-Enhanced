@@ -47,6 +47,17 @@ internal object IslandNativeSlotPlacement {
         return left || right || album || rhythm
     }
 
+    /**
+     * Hot reload: restores every anchor this generation still holds, whatever tree it is in.
+     * [restore] reaches only modules under the roots the teardown visits; an anchor left on a
+     * host view keeps its layout listener, and with it this generation, on that view.
+     */
+    fun releaseForReload() {
+        iconAnchors.entries.toList().forEach { (module, anchor) -> anchor.restore(module) }
+        iconAnchors.clear()
+        originalGravities.keys.toList().forEach { applyModuleGravity(it, false, Gravity.START) }
+    }
+
     fun restore(root: ViewGroup) {
         preserveNativeIconAnchor(root, IslandProbeUtils.LEFT_PARENT_NAME, false, "album")
         preserveNativeIconAnchor(root, IslandProbeUtils.RIGHT_PARENT_NAME, false, "rhythm")

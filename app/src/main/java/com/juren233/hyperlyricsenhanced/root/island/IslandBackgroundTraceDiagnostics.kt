@@ -455,6 +455,11 @@ internal object IslandBackgroundTraceDiagnostics {
         return find().also { if (it !== cached) lastSummary = "" }
     }
 
+    /** Hot reload: a still-running sample would keep this generation's pre-draw listener attached. */
+    fun releaseForReload() {
+        stop(null)
+    }
+
     private fun stop(reason: String?) {
         listener?.let { created ->
             observedTree?.takeIf { it.isAlive }?.removeOnPreDrawListener(created)

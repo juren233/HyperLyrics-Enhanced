@@ -1,5 +1,6 @@
 package com.juren233.hyperlyricsenhanced.ui.page.hooksettings
 
+import com.juren233.hyperlyricsenhanced.common.coroutines.ModuleDispatchers
 import com.juren233.hyperlyricsenhanced.ui.component.SectionEnter
 import com.juren233.hyperlyricsenhanced.ui.component.SectionExit
 import com.juren233.hyperlyricsenhanced.common.FloatPreferences
@@ -53,7 +54,6 @@ import com.juren233.hyperlyricsenhanced.ui.navigation.Route
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.common.XposedLyricSettingPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.common.rememberHookConfigSaver
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.common.rememberHookPrefs
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.Card
@@ -109,7 +109,7 @@ fun AppleMusicOptimizationPage(
     var pluginUpdate by remember { mutableStateOf<AppleMusicPluginUpdate?>(null) }
     val refreshPluginGate: () -> Unit = {
         coroutineScope.launch {
-            val item = withContext(Dispatchers.IO) {
+            val item = withContext(ModuleDispatchers.IO) {
                 OfficialProviderRepository.loadInstalledItems(context)
                     .firstOrNull {
                         it.catalog.id == OfficialProviderCatalog.APPLE_MUSIC_PLUGIN_ID
@@ -126,7 +126,7 @@ fun AppleMusicOptimizationPage(
                 return@launch
             }
             // 读插件目录（联网，失败时回退本地缓存）；不读目标进程状态，避免触发 root 授权。
-            val catalogItem = withContext(Dispatchers.IO) {
+            val catalogItem = withContext(ModuleDispatchers.IO) {
                 runCatching {
                     OfficialProviderRepository.loadItems(context, includeTargetState = false)
                         .firstOrNull { it.catalog.id == OfficialProviderCatalog.APPLE_MUSIC_PLUGIN_ID }

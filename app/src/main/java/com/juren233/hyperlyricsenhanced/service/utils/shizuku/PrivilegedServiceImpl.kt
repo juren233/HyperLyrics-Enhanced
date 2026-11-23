@@ -1,5 +1,6 @@
 ﻿package com.juren233.hyperlyricsenhanced.service.utils.shizuku
 
+import com.juren233.hyperlyricsenhanced.common.coroutines.ModuleThreads
 import androidx.annotation.Keep
 import com.juren233.hyperlyricsenhanced.IPrivilegedService
 import com.juren233.hyperlyricsenhanced.IPrivilegedLogCallback
@@ -19,7 +20,7 @@ class PrivilegedServiceImpl : IPrivilegedService.Stub() {
         private const val TAG = "PrivilegedServiceImpl"
         private const val OP_TIMEOUT_MS = 3000L
         private val workerThread: HandlerThread by lazy {
-            HandlerThread("PrivilegedServiceWorker").apply { start() }
+            ModuleThreads.handlerThread("PrivilegedServiceWorker").apply { start() }
         }
         private val workerHandler: Handler by lazy { Handler(workerThread.looper) }
         

@@ -328,12 +328,14 @@ internal fun IslandExpandedMediaAmbientFlowHooker.applyCardTheme(binder: Any) {
     api.getHolders(binder).forEach { holder ->
         val player = api.getPlayer(holder)
         if (!applyLightExpandedBackground(api, player, lightContext)) {
-            player.post {
+            // Retry once the player is laid out. One pending retry per player: a detached player
+            // (the island fake view) would otherwise queue a retry on every theme pass.
+            cardThemeRetries.post(player) { view ->
                 if (activeBinders.contains(binder) && shouldUseLightTheme(binder)) {
                     runCatching {
-                        applyLightExpandedBackground(api, player, lightContext)
+                        applyLightExpandedBackground(api, view, lightContext)
                     }.onFailure {
-                HookLogger.e(TAG, "应用延后的实时通知背景失败", it)
+                        HookLogger.e(TAG, "应用延后的实时通知背景失败", it)
                     }
                 }
             }

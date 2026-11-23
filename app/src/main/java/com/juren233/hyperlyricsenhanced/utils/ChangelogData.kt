@@ -1,6 +1,6 @@
 package com.juren233.hyperlyricsenhanced.utils
 
-import kotlinx.coroutines.Dispatchers
+import com.juren233.hyperlyricsenhanced.common.coroutines.ModuleDispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -39,7 +39,7 @@ object ChangelogData {
 
     suspend fun fetchChangelog(
         currentVersionName: String
-    ): List<ChangelogItem> = withContext(Dispatchers.IO) {
+    ): List<ChangelogItem> = withContext(ModuleDispatchers.IO) {
         fetchReleases()
             .asSequence()
             .filterNot { it.draft || it.prerelease }

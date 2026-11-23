@@ -1,5 +1,6 @@
 package com.juren233.hyperlyricsenhanced.root.source
 
+import com.juren233.hyperlyricsenhanced.common.coroutines.ModuleDispatchers
 import android.app.Application
 import android.content.Context
 import android.content.Intent
@@ -121,7 +122,7 @@ class LyriconSource : LyricSource {
     private var cleanupFailure: RuntimeResourceCleanupException? = null
     internal val loggedPlayerVersionSnapshots = ConcurrentHashMap.newKeySet<String>()
     internal val mainHandler = Handler(Looper.getMainLooper())
-    internal val fallbackScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    internal val fallbackScope = CoroutineScope(SupervisorJob() + ModuleDispatchers.IO)
     internal val fallbackRequestMutex = Mutex()
     internal val publication = LyriconPublication()
     internal val currentAppleSong get() = publication.currentAppleSong

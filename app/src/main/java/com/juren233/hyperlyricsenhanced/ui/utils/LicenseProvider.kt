@@ -27,7 +27,6 @@ object LicenseProvider {
             LicenseItem("SuperLyric", "HChenX", "https://github.com/HChenX/SuperLyric"),
             LicenseItem("SuperLyricApi", "HChenX", "https://github.com/HChenX/SuperLyricApi"),
             LicenseItem("LyricInfo", "lidesheng", "https://github.com/limczhh/LyricInfo"),
-            LicenseItem("retrofit", "square", "https://github.com/square/retrofit"),
             LicenseItem("okhttp", "square", "https://github.com/square/okhttp"),
             LicenseItem("Lyrico", "Replica0110", "https://github.com/Replica0110/Lyrico"),
             LicenseItem("opencc4j", "houbb", "https://github.com/houbb/opencc4j"),

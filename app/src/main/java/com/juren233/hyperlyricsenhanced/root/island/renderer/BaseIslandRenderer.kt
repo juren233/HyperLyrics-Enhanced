@@ -21,6 +21,7 @@ import com.juren233.hyperlyricsenhanced.root.island.IslandPureMusicGate
 import com.juren233.hyperlyricsenhanced.root.island.IslandLyricTextInjector
 import com.juren233.hyperlyricsenhanced.root.island.IslandMediaReinstater
 import com.juren233.hyperlyricsenhanced.root.island.IslandMusicWaveColorHooker
+import com.juren233.hyperlyricsenhanced.root.island.IslandNativeSlotPlacement
 import com.juren233.hyperlyricsenhanced.root.island.IslandProbeUtils
 import com.juren233.hyperlyricsenhanced.root.island.IslandProgressGlowController
 import com.juren233.hyperlyricsenhanced.root.island.IslandReattachAssistant
@@ -643,10 +644,17 @@ object BaseIslandRenderer : IslandRenderer {
         pauseTransitionGuard.reset()
         playbackActive = false
         clearedByPause = true
-        IslandViewRegistry.allRootsForReload().forEach { root ->
-            com.juren233.hyperlyricsenhanced.root.island.IslandTextHookerSupport
-                .clearInjectedIsland(root, suppressRelayout = true)
-        }
+        (IslandViewRegistry.allRootsForReload() + IslandLyricTextInjector.ownedRootsForReload())
+            .distinct()
+            .forEach { root ->
+                com.juren233.hyperlyricsenhanced.root.island.IslandTextHookerSupport
+                    .clearInjectedIsland(root, suppressRelayout = true)
+            }
+        // Clearing only hides this generation's wrappers; the next generation would remove them
+        // from a tree only when it touches that tree again, and the fake transition view may not
+        // be touched for the rest of the process.
+        IslandLyricTextInjector.removeOwnedWrappersForReload()
+        IslandNativeSlotPlacement.releaseForReload()
         IslandViewRegistry.releaseForReload()
         nextSongPreviewActive.clear()
         IslandSlotContentAssembler.clearAllNextSongPreviewContent()

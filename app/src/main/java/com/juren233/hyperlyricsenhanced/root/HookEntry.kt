@@ -1164,7 +1164,6 @@ class HookEntry : XposedModule() {
         cleanup.attempt("bridge_traffic") { LyriconBridgeTrafficObserver.stop() }
         cleanup.attempt("pure_music_gate") { IslandPureMusicGate.stop() }
         cleanup.attempt("performance") { RuntimePerfDiagnostics.stopForReload() }
-        cleanup.attempt("artwork") { MediaMetadataHelper.clearArtworkResolution() }
         cleanup.attempt("system_media_providers") { OfficialProviderSystemMediaRuntime.releaseAll() }
         ClassicAodFocusNotificationRecovery.resetConfirmedLyricPlayer()
         if (!forHotReload) {
@@ -1215,6 +1214,9 @@ class HookEntry : XposedModule() {
         localTimelineDriver = null
         cleanup.attempt("playback_anchor") { playbackAnchor?.stop() }
         playbackAnchor = null
+        // Last: stopping sources and the timeline synchronously refreshes AOD/island views, which
+        // query MediaMetadataHelper and would register its session listener again.
+        cleanup.attempt("artwork") { MediaMetadataHelper.clearArtworkResolution() }
         runtimeApp = null
         cleanup.throwIfFailed()
     }

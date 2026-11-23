@@ -6,6 +6,7 @@
 
 package com.juren233.hyperlyricsenhanced.ui.page.hooksettings
 
+import com.juren233.hyperlyricsenhanced.common.coroutines.ModuleDispatchers
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
@@ -19,7 +20,6 @@ import com.juren233.hyperlyricsenhanced.common.IslandMusicAppCatalog
 import com.juren233.hyperlyricsenhanced.ui.utils.LocaleUtils
 import com.juren233.hyperlyricsenhanced.utils.LogManager
 import java.util.concurrent.ConcurrentHashMap
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -46,7 +46,7 @@ internal object InstalledAppRepository {
     /** 无图标的包也记下，免得每次滚过都重读。 */
     private val missingIcons = ConcurrentHashMap.newKeySet<String>()
 
-    private val iconDispatcher = Dispatchers.IO.limitedParallelism(4)
+    private val iconDispatcher = ModuleDispatchers.IO.limitedParallelism(4)
 
     private val labelParallelism = Runtime.getRuntime().availableProcessors().coerceIn(2, 8)
 
@@ -54,7 +54,7 @@ internal object InstalledAppRepository {
         lists[includeNonLauncherApps]
 
     suspend fun loadApps(context: Context, includeNonLauncherApps: Boolean): List<IslandMusicAppCatalog.App> =
-        withContext(Dispatchers.IO) {
+        withContext(ModuleDispatchers.IO) {
             val startedAt = SystemClock.elapsedRealtime()
             val packageManager = LocaleUtils.systemLanguageContext(context).packageManager
             val applications = installedApplications(packageManager, includeNonLauncherApps)

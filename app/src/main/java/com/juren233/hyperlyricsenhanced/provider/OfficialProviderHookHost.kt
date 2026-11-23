@@ -6,6 +6,7 @@
 
 package com.juren233.hyperlyricsenhanced.provider
 
+import com.juren233.hyperlyricsenhanced.common.coroutines.ModuleThreads
 import android.app.Application
 import android.app.ActivityManager
 import android.app.Instrumentation
@@ -65,7 +66,7 @@ internal class OfficialProviderHookHost(
     }
     internal val dexWatchdogTimeoutScheduler: ScheduledExecutorService? = if (BuildConfig.DEBUG) {
         Executors.newSingleThreadScheduledExecutor { task ->
-            Thread(task, "HLE-Provider-DexWatchdog").apply { isDaemon = true }
+            ModuleThreads.newThread("HLE-Provider-DexWatchdog", task = task)
         }
     } else {
         null

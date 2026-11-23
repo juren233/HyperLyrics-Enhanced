@@ -6,6 +6,7 @@
 
 package com.juren233.hyperlyricsenhanced.online.source.lunabeat
 
+import com.juren233.hyperlyricsenhanced.common.coroutines.ModuleDispatchers
 import android.content.Context
 import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.online.cache.OnlineLyricCachePolicy
@@ -17,7 +18,6 @@ import com.juren233.hyperlyricsenhanced.online.source.ttml.TtmlCatalogIo.readLim
 import com.juren233.hyperlyricsenhanced.online.source.ttml.TtmlLookupResult
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
@@ -27,6 +27,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import okhttp3.Call
+import com.juren233.hyperlyricsenhanced.common.net.buildOwned
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -65,7 +66,7 @@ internal object LunaBeatTtmlRepository : TtmlCatalogSource {
         .connectTimeout(5, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
         .retryOnConnectionFailure(true)
-        .build()
+        .buildOwned()
     private val mutex = Mutex()
     private const val MAX_REMEMBERED_MISSES = 512
     private val misses = object : LinkedHashMap<String, Long>(64, 0.75f, true) {
@@ -102,7 +103,7 @@ internal object LunaBeatTtmlRepository : TtmlCatalogSource {
         if (!supports(platform)) return
         val normalizedId = songId.trim().takeIf(String::isNotEmpty) ?: return
         mutex.withLock {
-            withContext(Dispatchers.IO) {
+            withContext(ModuleDispatchers.IO) {
                 val appContext = context.applicationContext
                 hitRecordFile(appContext, normalizedId)?.let { record ->
                     readHitRecord(record)?.let { (entryId, _) -> ttmlFile(appContext, entryId).delete() }
@@ -116,7 +117,7 @@ internal object LunaBeatTtmlRepository : TtmlCatalogSource {
     /** Removes cached lyric files and hit records; the catalog index stays. */
     override suspend fun clearAll(context: Context) {
         mutex.withLock {
-            withContext(Dispatchers.IO) {
+            withContext(ModuleDispatchers.IO) {
                 cacheDir(context.applicationContext).listFiles()
                     ?.filter { it.name != INDEX_FILE_NAME }
                     ?.forEach { it.delete() }

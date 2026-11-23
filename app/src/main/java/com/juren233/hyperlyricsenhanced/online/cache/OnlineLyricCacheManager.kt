@@ -6,6 +6,7 @@
 
 package com.juren233.hyperlyricsenhanced.online.cache
 
+import com.juren233.hyperlyricsenhanced.common.coroutines.ModuleDispatchers
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -21,7 +22,6 @@ import com.juren233.hyperlyricsenhanced.online.source.ttml.CatalogPlatform
 import com.juren233.hyperlyricsenhanced.online.source.ttml.TtmlCatalogSources
 import com.juren233.hyperlyricsenhanced.utils.LogManager
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -44,14 +44,14 @@ data class OnlineLyricCacheSnapshot(
  * TTML catalog files. Clearing a catalog lookup also removes its file and remembered miss.
  */
 internal object OnlineLyricCacheManager {
-    suspend fun snapshot(context: Context): OnlineLyricCacheSnapshot = withContext(Dispatchers.IO) {
+    suspend fun snapshot(context: Context): OnlineLyricCacheSnapshot = withContext(ModuleDispatchers.IO) {
         val songs = CachedSearchSource.cacheFor(context).summaries()
         val databaseBytes = CachedSearchSource.storeFor(context).databaseFiles.sumOf { it.length() }
         val catalogBytes = TtmlCatalogSources.all.sumOf { runCatching { it.cacheBytes(context) }.getOrDefault(0L) }
         OnlineLyricCacheSnapshot(songs = songs, totalBytes = databaseBytes + catalogBytes)
     }
 
-    suspend fun delete(context: Context, selection: OnlineLyricCacheSelection) = withContext(Dispatchers.IO) {
+    suspend fun delete(context: Context, selection: OnlineLyricCacheSelection) = withContext(ModuleDispatchers.IO) {
         val refs = CachedSearchSource.cacheFor(context).delete(selection)
         clearCatalogFiles(context, refs)
         // Files written before the index existed are only reachable through a catalog-wide clear.
@@ -66,7 +66,7 @@ internal object OnlineLyricCacheManager {
     }
 
     /** Applies a new 「缓存上限」 to this process's copy at once. */
-    suspend fun trim(context: Context, maxSongs: Int) = withContext(Dispatchers.IO) {
+    suspend fun trim(context: Context, maxSongs: Int) = withContext(ModuleDispatchers.IO) {
         val refs = CachedSearchSource.cacheFor(context).trim(maxSongs)
         clearCatalogFiles(context, refs)
         LogManager.i(TAG, "在线歌词缓存已按上限裁剪: maxSongs=$maxSongs, catalogFiles=${refs.size}")
@@ -86,7 +86,7 @@ internal object OnlineLyricCacheManager {
         }
     }
 
-    private val backgroundScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val backgroundScope = CoroutineScope(SupervisorJob() + ModuleDispatchers.IO)
 
     private const val TAG = "OnlineLyricCache"
 }
@@ -124,14 +124,14 @@ object OnlineLyricCacheIpc {
     internal const val DELETE_BATCH_TAGS = 200
 
     private val json = Json { ignoreUnknownKeys = true }
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = CoroutineScope(SupervisorJob() + ModuleDispatchers.IO)
 
     /** SystemUI's snapshot, or null when SystemUI does not answer (module not loaded there). */
     suspend fun requestSnapshot(context: Context): OnlineLyricCacheSnapshot? {
         val result = request(context, OPERATION_SNAPSHOT, null) ?: return null
         @Suppress("DEPRECATION")
         val memory = result.getParcelable<SharedMemory>(RESULT_SNAPSHOT) ?: return null
-        return withContext(Dispatchers.Default) {
+        return withContext(ModuleDispatchers.Default) {
             runCatching { readSnapshot(memory) }
                 .onFailure { LogManager.w(TAG, "SystemUI 缓存快照读取失败", it) }
                 .getOrNull()
@@ -243,6 +243,12 @@ object OnlineLyricCacheIpc {
             }
             val maxSongs = intent.getIntExtra(EXTRA_MAX_SONGS, 0)
             val appContext = context.applicationContext
+            // Counted until answered: a generation retired meanwhile closes its database only after.
+            val store = CachedSearchSource.storeFor(appContext)
+            if (!store.enterRequest()) {
+                reply.send(0, null)
+                return
+            }
             scope.launch {
                 var memory: SharedMemory? = null
                 val result = runCatching {
@@ -267,6 +273,7 @@ object OnlineLyricCacheIpc {
                 } finally {
                     // The Binder driver duplicated the descriptor into the app while sending.
                     memory?.close()
+                    store.exitRequest()
                 }
             }
         }

@@ -6,6 +6,7 @@
 
 package com.juren233.hyperlyricsenhanced.ui.page.hooksettings
 
+import com.juren233.hyperlyricsenhanced.common.coroutines.ModuleDispatchers
 import android.graphics.Bitmap
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -31,7 +32,6 @@ import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.common.XposedLyricSettingPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.common.rememberHookConfigSaver
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.common.rememberHookPrefs
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.BasicComponent
@@ -87,7 +87,7 @@ fun AppleLyricsImageBackgroundPage() {
     // The story background stands in when no image is set.
     val samples = rememberAppleLyricsSamples()
     LaunchedEffect(sourceRevision) {
-        val loaded = withContext(Dispatchers.IO) {
+        val loaded = withContext(ModuleDispatchers.IO) {
             PreviewSource(
                 stamp = AppleLyricsImageBackgroundStore.sourceStamp(context),
                 bitmap = AppleLyricsImageBackgroundStore.loadSource(
@@ -106,7 +106,7 @@ fun AppleLyricsImageBackgroundPage() {
         val card = samples?.card ?: return@LaunchedEffect
         val key = previewKey(source.stamp, blur, brightness)
         if (key == drawnKey) return@LaunchedEffect
-        val composed = withContext(Dispatchers.Default) {
+        val composed = withContext(ModuleDispatchers.Default) {
             val rendered = source.bitmap?.let { AppleLyricsImageBackgroundStore.render(it, blur, brightness) }
             val background = rendered ?: samples.background ?: return@withContext null
             try {
@@ -126,7 +126,7 @@ fun AppleLyricsImageBackgroundPage() {
         val blurValue = blur
         val brightnessValue = brightness
         coroutineScope.launch {
-            val published = withContext(Dispatchers.IO) {
+            val published = withContext(ModuleDispatchers.IO) {
                 AppleLyricsImageBackgroundStore.publish(context, blurValue, brightnessValue)
             }
             if (!published && AppleLyricsImageBackgroundStore.hasSource(context)) {
@@ -137,7 +137,7 @@ fun AppleLyricsImageBackgroundPage() {
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         coroutineScope.launch {
-            val imported = withContext(Dispatchers.IO) {
+            val imported = withContext(ModuleDispatchers.IO) {
                 AppleLyricsImageBackgroundStore.importSource(context, uri)
             }
             if (!imported) {

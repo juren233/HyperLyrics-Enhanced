@@ -6,6 +6,7 @@
 
 package com.juren233.hyperlyricsenhanced.online.source.ttml
 
+import com.juren233.hyperlyricsenhanced.common.coroutines.ModuleDispatchers
 import android.content.Context
 import com.juren233.hyperlyricsenhanced.common.lyric.AppleMissingLyricsSourceStatus
 import com.juren233.hyperlyricsenhanced.online.cache.CachedSearchSource
@@ -14,7 +15,6 @@ import com.juren233.hyperlyricsenhanced.online.cache.OnlineLyricCacheKind
 import com.juren233.hyperlyricsenhanced.online.cache.OnlineLyricCacheSong
 import com.juren233.hyperlyricsenhanced.online.OnlineTranslationSourcePreferences
 import com.juren233.hyperlyricsenhanced.online.isWordTimedOnlineLyrics
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.juren233.hyperlyricsenhanced.online.model.Source
 import com.juren233.hyperlyricsenhanced.online.source.amll.AmllTtmlRepository
@@ -22,6 +22,8 @@ import com.juren233.hyperlyricsenhanced.online.source.lunabeat.LunaBeatTtmlRepos
 import okhttp3.ResponseBody
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
 import java.security.MessageDigest
@@ -131,7 +133,7 @@ internal suspend fun TtmlCatalogSource.lookup(
 ): TtmlLookupResult {
     val result = findWordTimed(context, platform, songId, retryMiss)
     if (cacheSong != null && result.searched) {
-        withContext(Dispatchers.IO) {
+        withContext(ModuleDispatchers.IO) {
             val found = result.match != null
             val cache = CachedSearchSource.cacheFor(context)
             cache.store(
@@ -205,16 +207,42 @@ internal object TtmlCatalogIo {
             .toString()
     }.getOrNull()
 
-    /** Returns false when the cache could not be written; callers treat the cache as optional. */
-    fun writeAtomically(target: File, bytes: ByteArray): Boolean = runCatching {
-        target.parentFile?.mkdirs()
-        val temporary = File(target.parentFile, target.name + ".tmp")
-        temporary.writeBytes(bytes)
-        if (!temporary.renameTo(target)) {
-            target.writeBytes(bytes)
-            temporary.delete()
-        }
-    }.isSuccess
+    /**
+     * Replaces [target] with [bytes] in one rename, so a reader sees the old file or the new one,
+     * never a part. Each write has a temporary file of its own: concurrent writers of one target
+     * (two lookups of one song, or two module generations after a SystemUI hot reload) would
+     * otherwise truncate each other's temporary file and could rename a partly written one into place.
+     * Returns false when the cache could not be written, leaving [target] as it was; callers treat
+     * the cache as optional.
+     */
+    fun writeAtomically(target: File, bytes: ByteArray): Boolean {
+        val directory = target.absoluteFile.parentFile ?: return false
+        var temporary: File? = null
+        val written = runCatching {
+            directory.mkdirs()
+            val file = File.createTempFile("${target.name}.", TEMPORARY_SUFFIX, directory)
+            temporary = file
+            file.writeBytes(bytes)
+            // Not File.renameTo: on the build host it returned false now and then while other
+            // writers renamed onto the same target, where an immediate Files.move succeeded
+            // (TtmlCatalogIoWriteTest, 2026-11-23). Files.move reports why it failed.
+            Files.move(file.toPath(), target.toPath(), StandardCopyOption.ATOMIC_MOVE)
+            true
+        }.getOrDefault(false)
+        if (!written) temporary?.delete()
+        return written
+    }
+
+    /** Suffix of [writeAtomically]'s temporary files; a crash between write and rename can leave one. */
+    const val TEMPORARY_SUFFIX = ".tmp"
+
+    /**
+     * Whether [bytes] are a whole TTML file worth keeping even when [buildMatch] finds no word
+     * timing: strict UTF-8 (what [buildMatch] requires of a match) and a complete TTML document
+     * ([TtmlLyricsParser.isTtmlDocument]). False for a file cut short or corrupted.
+     */
+    fun isCompleteTtml(bytes: ByteArray): Boolean =
+        bytes.decodeUtf8Strict() != null && TtmlLyricsParser.isTtmlDocument(bytes)
 
     /** Builds a match from raw bytes, or null when they are not strict UTF-8 word-timed TTML. */
     fun buildMatch(

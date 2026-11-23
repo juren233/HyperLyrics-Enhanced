@@ -1,5 +1,6 @@
 package com.juren233.hyperlyricsenhanced.service
 
+import com.juren233.hyperlyricsenhanced.common.coroutines.ModuleDispatchers
 import android.app.Notification
 import android.app.NotificationManager
 import android.graphics.Bitmap
@@ -242,7 +243,7 @@ class NotificationPresenter(
                 if (isBypassFocusLimitEnabled) {
                     networkCutJob?.cancel()
                     val seq = ++networkCutSeq
-                    networkCutJob = scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                    networkCutJob = scope.launch(ModuleDispatchers.IO) {
                         networkCutMutex.lock()
                         try {
                             // 1. 闪断 XMSF 联网
@@ -291,7 +292,7 @@ class NotificationPresenter(
 
         if (isBypassFocusLimitEnabled) {
             networkCutJob?.cancel()
-            scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            scope.launch(ModuleDispatchers.IO) {
                 ShizukuManager.setXmsfNetworkingEnabled(context, true)
             }
         }

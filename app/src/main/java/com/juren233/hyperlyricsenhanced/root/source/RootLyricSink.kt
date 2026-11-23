@@ -1,5 +1,7 @@
 package com.juren233.hyperlyricsenhanced.root.source
 
+import com.juren233.hyperlyricsenhanced.root.reload.ModuleGeneration
+import com.juren233.hyperlyricsenhanced.common.coroutines.ModuleDispatchers
 import com.juren233.hyperlyricsenhanced.common.FloatPreferences
 import android.content.SharedPreferences
 import android.os.Handler
@@ -20,7 +22,6 @@ import com.juren233.hyperlyricsenhanced.lyric.model.Song
 import com.juren233.hyperlyricsenhanced.lyric.style.AiTranslationConfigs
 import com.juren233.hyperlyricsenhanced.lyric.style.AiTranslationProvider
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
@@ -30,7 +31,7 @@ class RootLyricSink(
     private val prefs: SharedPreferences? = null
 ) : LyricSink {
 
-    private val aiTransScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val aiTransScope = CoroutineScope(ModuleDispatchers.IO + SupervisorJob())
     private var activeAiTranslationJob: Job? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private var lastPositionDispatchTimeMs = 0L
@@ -54,6 +55,7 @@ class RootLyricSink(
     }
 
     override fun onSongChanged(song: Any?) {
+        if (!ModuleGeneration.mayPublish("RootLyricSink.onSongChanged")) return
         MediaCardDiagnosticLogger.log(
             stage = "root_sink",
             event = "song_callback",
@@ -68,10 +70,12 @@ class RootLyricSink(
     }
 
     override fun onOnlineTranslationMatched(song: Any?) {
+        if (!ModuleGeneration.mayPublish("RootLyricSink.onOnlineTranslationMatched")) return
         handleSongChanged(song, onlineTranslationMatched = true)
     }
 
     override fun onOnlineTranslationUnavailable(song: Any?) {
+        if (!ModuleGeneration.mayPublish("RootLyricSink.onOnlineTranslationUnavailable")) return
         val nativeSong = song as? Song ?: return
         val currentSong = LyriconDataBridge.currentSong ?: return
         if (!isSameSong(currentSong, nativeSong)) return
@@ -120,6 +124,7 @@ class RootLyricSink(
     }
 
     override fun onLyricLine(line: Any?) {
+        if (!ModuleGeneration.mayPublish("RootLyricSink.onLyricLine")) return
         MediaCardDiagnosticLogger.log(
             stage = "root_sink",
             event = "lyric_line_dropped",
@@ -129,6 +134,7 @@ class RootLyricSink(
     }
 
     override fun onPlainText(text: String?) {
+        if (!ModuleGeneration.mayPublish("RootLyricSink.onPlainText")) return
         MediaCardDiagnosticLogger.log(
             stage = "root_sink",
             event = "plain_text_dropped",
@@ -144,6 +150,7 @@ class RootLyricSink(
         album: String?,
         publisher: String?,
     ) {
+        if (!ModuleGeneration.mayPublish("RootLyricSink.onTrackTransition")) return
         MediaCardDiagnosticLogger.log(
             stage = "root_sink",
             event = "track_transition_begin",
@@ -176,6 +183,7 @@ class RootLyricSink(
 
     @Synchronized
     override fun onStop() {
+        if (!ModuleGeneration.mayPublish("RootLyricSink.onStop")) return
         MediaCardDiagnosticLogger.log(
             stage = "root_sink",
             event = "stop_begin",
@@ -197,6 +205,7 @@ class RootLyricSink(
     }
 
     override fun onMetadata(title: String?, artist: String?, album: String?, publisher: String?) {
+        if (!ModuleGeneration.mayPublish("RootLyricSink.onMetadata")) return
         MediaCardDiagnosticLogger.log(
             stage = "root_sink",
             event = "metadata_callback",
@@ -216,6 +225,7 @@ class RootLyricSink(
     // must not write an old paused value back to the bridge after a resume callback completes.
     @Synchronized
     override fun onPlaybackStateChanged(isPlaying: Boolean) {
+        if (!ModuleGeneration.mayPublish("RootLyricSink.onPlaybackStateChanged")) return
         MediaCardDiagnosticLogger.log(
             stage = "root_sink",
             event = "playback_state_callback",
@@ -235,6 +245,7 @@ class RootLyricSink(
 
     @Synchronized
     override fun onPositionChanged(position: Long) {
+        if (!ModuleGeneration.mayPublish("RootLyricSink.onPositionChanged")) return
         if (position == lastReceivedPosition) {
             logPositionDiagnostic(position, "dropped_duplicate")
             MediaCardDiagnosticLogger.logLazy(
@@ -281,6 +292,7 @@ class RootLyricSink(
 
     @Synchronized
     override fun onSeekTo(position: Long) {
+        if (!ModuleGeneration.mayPublish("RootLyricSink.onSeekTo")) return
         cancelPendingPositionDispatch()
         lastReceivedPosition = position
         lastDispatchedPosition = position

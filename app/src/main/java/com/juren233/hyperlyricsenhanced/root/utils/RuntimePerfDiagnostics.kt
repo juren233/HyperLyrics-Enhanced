@@ -15,6 +15,7 @@
 
 package com.juren233.hyperlyricsenhanced.root.utils
 
+import com.juren233.hyperlyricsenhanced.common.coroutines.ModuleThreads
 import android.app.Application
 import android.content.Intent
 import android.content.IntentFilter
@@ -214,7 +215,7 @@ object RuntimePerfDiagnostics {
         }
 
         sampler = Executors.newSingleThreadScheduledExecutor { task ->
-            Thread(task, "HyperLyrics Enhanced-PerfDiag").apply { isDaemon = true }
+            ModuleThreads.newThread("HyperLyrics Enhanced-PerfDiag", task = task)
         }.also {
             it.scheduleWithFixedDelay(
                 ::sample,

@@ -1,5 +1,6 @@
 package com.juren233.hyperlyricsenhanced.utils
 
+import com.juren233.hyperlyricsenhanced.common.coroutines.ModuleDispatchers
 import android.content.Context
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -13,7 +14,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.core.content.edit
 import com.juren233.hyperlyricsenhanced.R
 import com.juren233.hyperlyricsenhanced.root.RootApplication
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -26,7 +26,7 @@ import com.juren233.hyperlyricsenhanced.common.StringSetPreferences
 import com.juren233.hyperlyricsenhanced.common.UIConstants
 
 object BackupRestoreManager {
-    suspend fun buildBackupJson(context: Context): String = withContext(Dispatchers.IO) {
+    suspend fun buildBackupJson(context: Context): String = withContext(ModuleDispatchers.IO) {
         val prefs = context.getSharedPreferences(UIConstants.PREF_NAME, Context.MODE_PRIVATE)
         val config = JSONObject()
         prefs.all.forEach { (key, value) ->
@@ -50,7 +50,7 @@ object BackupRestoreManager {
         }.toString(2)
     }
 
-    suspend fun restoreFromJson(context: Context, json: String): Boolean = withContext(Dispatchers.IO) {
+    suspend fun restoreFromJson(context: Context, json: String): Boolean = withContext(ModuleDispatchers.IO) {
         val prefs = context.getSharedPreferences(UIConstants.PREF_NAME, Context.MODE_PRIVATE)
         try {
             val root = JSONObject(json)
@@ -123,7 +123,7 @@ fun rememberBackupRestoreHelper(snackbarHostState: SnackbarHostState): BackupRes
             coroutineScope.launch {
                 try {
                     val jsonBytes = BackupRestoreManager.buildBackupJson(context).toByteArray(Charsets.UTF_8)
-                    withContext(Dispatchers.IO) {
+                    withContext(ModuleDispatchers.IO) {
                         context.contentResolver.openOutputStream(uri)?.use {
                             it.write(jsonBytes)
                             it.flush()
@@ -149,7 +149,7 @@ fun rememberBackupRestoreHelper(snackbarHostState: SnackbarHostState): BackupRes
             if (uri == null) return@rememberLauncherForActivityResult
             coroutineScope.launch {
                 try {
-                    val json = withContext(Dispatchers.IO) {
+                    val json = withContext(ModuleDispatchers.IO) {
                         context.contentResolver.openInputStream(uri)?.use {
                             it.bufferedReader(Charsets.UTF_8).readText()
                         } ?: ""

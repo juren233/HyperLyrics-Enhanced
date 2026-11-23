@@ -16,6 +16,8 @@ import com.juren233.hyperlyricsenhanced.lyric.view.line.LyricTextPaintOwner
 import com.juren233.hyperlyricsenhanced.root.island.renderer.BaseIslandRenderer
 import com.juren233.hyperlyricsenhanced.root.island.view.MaxWidthFrameLayout
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
+import java.lang.ref.WeakReference
+import java.util.WeakHashMap
 
 /**
  * Stage-4 / 富歌词大岛视图注入与更新调度。
@@ -26,6 +28,25 @@ import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
  */
 internal object IslandLyricTextInjector {
     private const val TAG = "IslandLyricTextInjector"
+
+    /**
+     * Every wrapper this generation inserted into a host tree, with the island root it went into.
+     * The registry only knows real island roots; the native transition's fake content view
+     * (`DynamicIslandContentFakeView`) is injected too and keeps its children until its next
+     * transition, so a hot reload must find this generation's views through what it created.
+     */
+    private val ownedWrappers = WeakHashMap<MaxWidthFrameLayout, WeakReference<ViewGroup>>()
+
+    /** Island roots that still hold a wrapper of this generation. Main thread only. */
+    internal fun ownedRootsForReload(): List<ViewGroup> =
+        ownedWrappers.values.mapNotNull { it.get() }.distinct()
+
+    /** Last step of a hot reload: takes this generation's wrappers out of every host tree. */
+    internal fun removeOwnedWrappersForReload() {
+        val wrappers = ownedWrappers.keys.toList()
+        ownedWrappers.clear()
+        wrappers.forEach { wrapper -> (wrapper.parent as? ViewGroup)?.removeView(wrapper) }
+    }
 
     fun injectSlots(rootView: ViewGroup, reconfigureExisting: Boolean = true, suppressAnimation: Boolean = false): Boolean {
         if (IslandContentUpdateCoordinator.deferContent(rootView)) return false
@@ -412,6 +433,7 @@ internal object IslandLyricTextInjector {
             maxWidthPx = widthPx
             keepVisible = true
         }
+        ownedWrappers[wrapperView] = WeakReference(rootView)
         updateWrapper(wrapperView, widthPx, config, parentName)
         wrapperView.addView(createLyricView(rootView, viewTag, config, mode, suppressAnimation), createLyricTextLayoutParams(config))
 

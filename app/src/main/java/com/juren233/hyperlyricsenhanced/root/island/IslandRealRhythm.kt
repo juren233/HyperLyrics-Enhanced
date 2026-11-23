@@ -1,6 +1,7 @@
 /* Copyright 2026 juren233 */
 package com.juren233.hyperlyricsenhanced.root.island
 
+import com.juren233.hyperlyricsenhanced.common.coroutines.ModuleThreads
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -327,12 +328,12 @@ internal object IslandRealRhythm {
 
     /** 拿不到数据时附带一次输出信息；跨进程读取放到后台线程，不阻塞主线程。 */
     private fun logOutputInfo(context: Context) {
-        Thread({
+        ModuleThreads.newThread("HLE-RealRhythmOutput", daemon = false) {
             HookLogger.i(TAG, "真实律动输出信息: ${IslandRealRhythmOutputInfo.playback(context)}")
             if (BuildConfig.DEBUG) {
                 HookLogger.i(TAG, "真实律动输出线程: ${IslandRealRhythmOutputInfo.audioFlingerThreads()}")
             }
-        }, "HLE-RealRhythmOutput").start()
+        }.start()
     }
 
     private fun startEngine() {
@@ -425,7 +426,7 @@ internal object IslandRealRhythm {
      * FFT 回调里换算目标高度后交给主线程帧回调。
      */
     private class Engine(private val sessionId: Int) {
-        private val thread = HandlerThread("HLE-RealRhythm").apply { start() }
+        private val thread = ModuleThreads.handlerThread("HLE-RealRhythm").apply { start() }
         private val handler = Handler(thread.looper)
         private var visualizer: Visualizer? = null
         private val stats = DebugStats()

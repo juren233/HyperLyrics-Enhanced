@@ -1,5 +1,6 @@
 package com.juren233.hyperlyricsenhanced.root.mediacard.notification.background
 
+import com.juren233.hyperlyricsenhanced.common.coroutines.ModuleThreads
 import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.Bitmap
@@ -20,6 +21,7 @@ import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.root.HookEntry
 import com.juren233.hyperlyricsenhanced.root.SystemUiEnhancementGate
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
+import com.juren233.hyperlyricsenhanced.root.utils.shutdownNowAndRelease
 import io.github.libxposed.api.XposedModule
 import java.lang.reflect.Field
 import java.util.Collections
@@ -191,7 +193,7 @@ internal object NotificationMediaBackgroundController {
     }
 
     fun releaseAll() {
-        executor.shutdownNow()
+        executor.shutdownNowAndRelease()
         val snapshot = synchronized(states) { states.values.toList() }
         snapshot.forEach { state ->
             state.request.incrementAndGet()
@@ -373,7 +375,7 @@ internal object NotificationMediaBackgroundController {
     }
 
     private fun newExecutor(): ExecutorService = Executors.newSingleThreadExecutor { task ->
-        Thread(task, "HyperLyrics Enhanced-MediaBackground").apply { isDaemon = true }
+        ModuleThreads.newThread("HyperLyrics Enhanced-MediaBackground", task = task)
     }
 
     private data class ControllerState(

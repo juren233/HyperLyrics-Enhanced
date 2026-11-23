@@ -6,6 +6,7 @@
 
 package com.juren233.hyperlyricsenhanced.utils
 
+import com.juren233.hyperlyricsenhanced.common.coroutines.ModuleDispatchers
 import android.content.Context
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -67,7 +68,7 @@ fun rememberExportAllLogs(snackbarHostState: SnackbarHostState): () -> Unit {
         contract = ActivityResultContracts.CreateDocument("text/plain"),
         onResult = { uri ->
             if (uri == null) return@rememberLauncherForActivityResult
-            coroutineScope.launch(Dispatchers.IO) {
+            coroutineScope.launch(ModuleDispatchers.IO) {
                 try {
                     val output = context.contentResolver.openOutputStream(uri, "wt")
                         ?: throw IOException("Unable to open the selected file")

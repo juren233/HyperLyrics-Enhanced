@@ -6,6 +6,7 @@
 
 package io.github.proify.lyricon.central
 
+import com.juren233.hyperlyricsenhanced.root.reload.ModuleGeneration
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
@@ -14,6 +15,7 @@ import androidx.core.content.ContextCompat
 import com.juren233.hyperlyricsenhanced.root.utils.LyricRuntimeDiagnostics
 import com.juren233.hyperlyricsenhanced.root.utils.RuntimeResourceCleanup
 import com.juren233.hyperlyricsenhanced.root.utils.RuntimeResourceCleanupException
+import io.github.proify.lyricon.central.provider.ProviderHandover
 import io.github.proify.lyricon.central.provider.player.SystemActiveAudioPlaybackMonitor
 import io.github.proify.lyricon.central.util.ScreenStateMonitor
 import java.util.concurrent.atomic.AtomicBoolean
@@ -134,6 +136,9 @@ object BridgeCentral {
         LyricRuntimeDiagnostics.record("central_bridge_activated") {
             "replayPending=${pending.size} actions=${pending.map { it.action?.substringAfterLast('.') }}"
         }
+        // Providers the previous generation served keep their relays: adopt them before any new
+        // registration of the same provider could create a second connection.
+        ProviderHandover.adoptIncoming(CentralRuntime.providers)
         pending.forEach(CentralRuntime.registration::handle)
     }
 
@@ -159,6 +164,7 @@ object BridgeCentral {
     }
 
     internal fun discardPendingRegistrations() {
+        ProviderHandover.discardIncoming()
         synchronized(this) {
             LyricRuntimeDiagnostics.record("central_bridge_pending_discarded") {
                 "dropped=${pendingRegistrations.size} actions=${pendingRegistrations.values.map { it.action?.substringAfterLast('.') }}"
@@ -174,6 +180,7 @@ object BridgeCentral {
      */
     fun sendBootCompleted() {
         if (!::context.isInitialized || !active.get()) return
+        if (!ModuleGeneration.mayPublish("BridgeCentral.sendBootCompleted")) return
         context.sendBroadcast(Intent(Constants.ACTION_CENTRAL_BOOT_COMPLETED))
     }
 

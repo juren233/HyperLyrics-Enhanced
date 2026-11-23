@@ -6,6 +6,7 @@
 
 package com.juren233.hyperlyricsenhanced.online.source.kugou
 
+import com.juren233.hyperlyricsenhanced.common.coroutines.ModuleDispatchers
 import com.juren233.hyperlyricsenhanced.online.model.LyricsLine
 import com.juren233.hyperlyricsenhanced.online.model.LyricsResult
 import com.juren233.hyperlyricsenhanced.online.model.LyricsWord
@@ -13,11 +14,11 @@ import com.juren233.hyperlyricsenhanced.online.model.OnlineSourceRequestExceptio
 import com.juren233.hyperlyricsenhanced.online.model.SearchSource
 import com.juren233.hyperlyricsenhanced.online.model.SongSearchResult
 import com.juren233.hyperlyricsenhanced.online.model.Source
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import com.juren233.hyperlyricsenhanced.common.net.buildOwned
+import com.juren233.hyperlyricsenhanced.common.net.httpUrlConnectionEquivalent
+import okhttp3.Request
 import org.json.JSONObject
-import java.net.HttpURLConnection
-import java.net.URI
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
@@ -34,7 +35,7 @@ class KugouSource : SearchSource {
         separator: String,
         pageSize: Int,
         durationMs: Long,
-    ): List<SongSearchResult> = withContext(Dispatchers.IO) {
+    ): List<SongSearchResult> = withContext(ModuleDispatchers.IO) {
         KugouNetwork.search(keyword, durationMs, pageSize).map { candidate ->
             SongSearchResult(
                 id = candidate.downloadId,
@@ -52,7 +53,7 @@ class KugouSource : SearchSource {
     }
 
     override suspend fun getLyrics(song: SongSearchResult): LyricsResult? =
-        withContext(Dispatchers.IO) {
+        withContext(ModuleDispatchers.IO) {
             val accessKey = song.extras["accessKey"] ?: return@withContext null
             val contentType = song.extras["contentType"]?.toIntOrNull() ?: 0
             val raw = KugouNetwork.download(song.id, accessKey, contentType)
@@ -70,6 +71,8 @@ private data class KugouCandidate(
 )
 
 private object KugouNetwork {
+    private val client by lazy { httpUrlConnectionEquivalent(5_000L, 8_000L).buildOwned() }
+
     private const val SEARCH_URL = "https://lyrics.kugou.com/v2/search"
     private const val DOWNLOAD_URL = "https://lyrics.kugou.com/v2/download"
     private const val APP_ID = "1005"
@@ -136,27 +139,22 @@ private object KugouNetwork {
     }
 
     private fun requestJson(url: String): JSONObject {
-        val connection = (URI(url).toURL().openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
-            connectTimeout = 5_000
-            readTimeout = 8_000
-            setRequestProperty("Accept", "application/json")
-            setRequestProperty("Accept-Encoding", "identity")
-            setRequestProperty("User-Agent", "Android-KuGou/$CLIENT_VERSION")
-            setRequestProperty("clienttime", System.currentTimeMillis().toString())
-            setRequestProperty("mid", mid)
-            setRequestProperty("dfid", "-")
-            setRequestProperty("uuid", mid)
-            setRequestProperty("userid", "0")
-            setRequestProperty("token", "")
-        }
-        return try {
-            check(connection.responseCode == HttpURLConnection.HTTP_OK) {
-                "Kugou HTTP ${connection.responseCode}"
-            }
-            JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
-        } finally {
-            connection.disconnect()
+        val request = Request.Builder()
+            .url(url)
+            .get()
+            .header("Accept", "application/json")
+            .header("Accept-Encoding", "identity")
+            .header("User-Agent", "Android-KuGou/$CLIENT_VERSION")
+            .header("clienttime", System.currentTimeMillis().toString())
+            .header("mid", mid)
+            .header("dfid", "-")
+            .header("uuid", mid)
+            .header("userid", "0")
+            .header("token", "")
+            .build()
+        client.newCall(request).execute().use { response ->
+            check(response.code == 200) { "Kugou HTTP ${response.code}" }
+            return JSONObject(response.body!!.bytes().toString(Charsets.UTF_8))
         }
     }
 

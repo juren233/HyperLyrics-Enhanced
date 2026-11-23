@@ -1,10 +1,10 @@
 package com.juren233.hyperlyricsenhanced.online
 
+import com.juren233.hyperlyricsenhanced.common.coroutines.ModuleDispatchers
 import android.content.Context
 import com.juren233.hyperlyricsenhanced.common.ServiceConstants
 import com.juren233.hyperlyricsenhanced.common.UIConstants
 import com.juren233.hyperlyricsenhanced.utils.LogManager
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 
@@ -58,7 +58,7 @@ object LrcCacheManager {
         return null
     }
 
-    suspend fun getLyricFromCache(context: Context, title: String, artist: String): String? = withContext(Dispatchers.IO) {
+    suspend fun getLyricFromCache(context: Context, title: String, artist: String): String? = withContext(ModuleDispatchers.IO) {
         val fileName = "${sanitizeFileName(artist)} - ${sanitizeFileName(title)}.lrc"
         LogManager.d("LrcCache", "正在查找缓存: $fileName")
         val file = findCacheFile(context, title, artist)
@@ -79,7 +79,7 @@ object LrcCacheManager {
         null
     }
 
-    suspend fun saveLyricToCache(context: Context, title: String, artist: String, lrcContent: String) = withContext(Dispatchers.IO) {
+    suspend fun saveLyricToCache(context: Context, title: String, artist: String, lrcContent: String) = withContext(ModuleDispatchers.IO) {
         val fileName = generateCacheFileName(context, title, artist)
         val file = File(getCacheDir(context), fileName)
         try {

@@ -1,5 +1,6 @@
 ﻿package com.juren233.hyperlyricsenhanced.root.aitrans
 
+import com.juren233.hyperlyricsenhanced.common.coroutines.ModuleDispatchers
 import android.content.Context
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import com.juren233.hyperlyricsenhanced.lyric.model.Song
@@ -7,7 +8,6 @@ import com.juren233.hyperlyricsenhanced.lyric.style.AiTranslationConfigs
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -28,7 +28,7 @@ object AITranslator {
     private const val MAX_PENDING_TRANSLATIONS = 5
 
     private val cacheGeneration = AtomicInteger(0)
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val scope = CoroutineScope(ModuleDispatchers.IO + SupervisorJob())
     private val cache = AITranslationCache(
         maxCacheSize = MAX_CACHE_SIZE,
         generation = cacheGeneration,
@@ -83,6 +83,9 @@ object AITranslator {
         scheduler.releaseForReload()
         scope.cancel()
     }
+
+    /** After the generation retired: see [AITranslationCache.retire]. */
+    internal fun retireDatabase() = cache.retire()
 
     fun cancelActiveRequests() {
         scheduler.cancelAll()

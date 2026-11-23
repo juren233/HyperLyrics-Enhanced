@@ -10,7 +10,9 @@ import android.content.ContentValues
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
+import com.juren233.hyperlyricsenhanced.common.db.DatabaseRetirement
 import com.juren233.hyperlyricsenhanced.online.model.Source
+import com.juren233.hyperlyricsenhanced.root.reload.ModuleGeneration
 import java.io.File
 
 /**
@@ -19,6 +21,20 @@ import java.io.File
  */
 internal class SqliteOnlineLyricCacheStore(context: Context) : OnlineLyricCacheStore {
     private val helper = Helper(context.applicationContext)
+    private val retirement = DatabaseRetirement("在线歌词缓存库") { helper.close() }
+
+    /** SystemUI hot reload: closes this generation's connections once no operation is running. */
+    fun retire() = retirement.retire()
+
+    internal val isClosed: Boolean get() = retirement.isClosed
+
+    /**
+     * Counts a request that uses the database across several calls ([OnlineLyricCacheIpc]), so a
+     * retiring generation finishes it before closing. False once closed; a true result needs [exitRequest].
+     */
+    fun enterRequest(): Boolean = retirement.enter()
+
+    fun exitRequest() = retirement.exit()
 
     /** The database file and its journal, for the storage figure of the management page. */
     val databaseFiles: List<File>
@@ -27,7 +43,7 @@ internal class SqliteOnlineLyricCacheStore(context: Context) : OnlineLyricCacheS
             listOf(file, File(file.path + "-journal"), File(file.path + "-wal"))
         }.orEmpty()
 
-    override fun get(key: String): StoredCacheEntry? =
+    override fun get(key: String): StoredCacheEntry? = retirement.operation(null) {
         helper.readableDatabase.query(
             TABLE_ENTRIES,
             arrayOf(COLUMN_PAYLOAD, COLUMN_PERMANENT, COLUMN_STORED_AT),
@@ -37,13 +53,17 @@ internal class SqliteOnlineLyricCacheStore(context: Context) : OnlineLyricCacheS
             null,
             null,
         ).use { cursor ->
-            if (!cursor.moveToFirst()) return null
-            StoredCacheEntry(
-                payload = cursor.getBlob(0),
-                permanent = cursor.getInt(1) != 0,
-                storedAtMs = cursor.getLong(2),
-            )
+            if (!cursor.moveToFirst()) {
+                null
+            } else {
+                StoredCacheEntry(
+                    payload = cursor.getBlob(0),
+                    permanent = cursor.getInt(1) != 0,
+                    storedAtMs = cursor.getLong(2),
+                )
+            }
         }
+    }
 
     override fun put(
         key: String,
@@ -54,7 +74,8 @@ internal class SqliteOnlineLyricCacheStore(context: Context) : OnlineLyricCacheS
         source: Source,
         kind: OnlineLyricCacheKind,
         sizeBytes: Long,
-    ) {
+    ) = retirement.operation<Unit>(Unit) {
+        if (!ModuleGeneration.mayPublish(PUT_EXIT)) return@operation
         val db = helper.writableDatabase
         db.inTransaction {
             db.insertWithOnConflict(
@@ -75,7 +96,7 @@ internal class SqliteOnlineLyricCacheStore(context: Context) : OnlineLyricCacheS
         }
     }
 
-    override fun markPermanent(keys: Collection<String>) {
+    override fun markPermanent(keys: Collection<String>) = retirement.operation<Unit>(Unit) {
         val db = helper.writableDatabase
         db.inTransaction {
             val values = ContentValues().apply { put(COLUMN_PERMANENT, 1) }
@@ -83,7 +104,7 @@ internal class SqliteOnlineLyricCacheStore(context: Context) : OnlineLyricCacheS
         }
     }
 
-    override fun remove(key: String) {
+    override fun remove(key: String) = retirement.operation<Unit>(Unit) {
         val db = helper.writableDatabase
         db.inTransaction {
             db.delete(TABLE_ENTRIES, "$COLUMN_KEY = ?", arrayOf(key))
@@ -91,10 +112,12 @@ internal class SqliteOnlineLyricCacheStore(context: Context) : OnlineLyricCacheS
         }
     }
 
-    override fun link(song: OnlineLyricCacheSong, keys: Collection<String>, usedAtMs: Long) {
-        val db = helper.writableDatabase
-        db.inTransaction { linkLocked(db, song, keys, usedAtMs) }
-    }
+    override fun link(song: OnlineLyricCacheSong, keys: Collection<String>, usedAtMs: Long) =
+        retirement.operation<Unit>(Unit) {
+            if (!ModuleGeneration.mayPublish(LINK_EXIT)) return@operation
+            val db = helper.writableDatabase
+            db.inTransaction { linkLocked(db, song, keys, usedAtMs) }
+        }
 
     private fun linkLocked(db: SQLiteDatabase, song: OnlineLyricCacheSong, keys: Collection<String>, usedAtMs: Long) {
         // A lookup made without the album (metadata not ready yet) keeps the album already recorded.
@@ -121,7 +144,7 @@ internal class SqliteOnlineLyricCacheStore(context: Context) : OnlineLyricCacheS
         }
     }
 
-    override fun recordMatch(tag: String, source: Source, score: Int?, wordTimed: Boolean) {
+    override fun recordMatch(tag: String, source: Source, score: Int?, wordTimed: Boolean) = retirement.operation<Unit>(Unit) {
         helper.writableDatabase.execSQL(
             "INSERT OR REPLACE INTO $TABLE_SONG_SOURCES ($COLUMN_TAG, $COLUMN_SOURCE, $COLUMN_SCORE, $COLUMN_WORD_TIMED) " +
                 "SELECT ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM $TABLE_SONGS WHERE $COLUMN_TAG = ?)",
@@ -129,7 +152,7 @@ internal class SqliteOnlineLyricCacheStore(context: Context) : OnlineLyricCacheS
         )
     }
 
-    override fun markUsed(tag: String, used: OnlineLyricCacheLastUsed) {
+    override fun markUsed(tag: String, used: OnlineLyricCacheLastUsed) = retirement.operation<Unit>(Unit) {
         val values = ContentValues().apply {
             put(COLUMN_LAST_LYRICS_SOURCE, used.lyrics)
             put(COLUMN_LAST_TRANSLATION_SOURCE, used.translation)
@@ -138,7 +161,7 @@ internal class SqliteOnlineLyricCacheStore(context: Context) : OnlineLyricCacheS
         helper.writableDatabase.update(TABLE_SONGS, values, "$COLUMN_TAG = ?", arrayOf(tag))
     }
 
-    override fun trimSongs(maxSongs: Int, expiredBeforeMs: Long): List<String> {
+    override fun trimSongs(maxSongs: Int, expiredBeforeMs: Long): List<String> = retirement.operation(emptyList()) {
         val db = helper.writableDatabase
         val catalogKeys = mutableListOf<String>()
         db.inTransaction {
@@ -163,10 +186,10 @@ internal class SqliteOnlineLyricCacheStore(context: Context) : OnlineLyricCacheS
             ).use { cursor -> while (cursor.moveToNext()) catalogKeys += cursor.getString(0) }
             deleteUnreferenced(db)
         }
-        return catalogKeys
+        catalogKeys
     }
 
-    override fun summaries(expiredBeforeMs: Long): List<OnlineLyricCacheSongSummary> {
+    override fun summaries(expiredBeforeMs: Long): List<OnlineLyricCacheSongSummary> = retirement.operation(emptyList()) {
         val db = helper.writableDatabase
         db.inTransaction { deleteExpiredMisses(db, expiredBeforeMs) }
         val songs = LinkedHashMap<String, Triple<OnlineLyricCacheSong, Long, OnlineLyricCacheLastUsed>>()
@@ -225,7 +248,7 @@ internal class SqliteOnlineLyricCacheStore(context: Context) : OnlineLyricCacheS
                 )
             }
         }
-        return songs.values.map { (song, usedAt, lastUsed) ->
+        songs.values.map { (song, usedAt, lastUsed) ->
             OnlineLyricCacheSongSummary(
                 song = song,
                 usedAtMs = usedAt,
@@ -235,7 +258,7 @@ internal class SqliteOnlineLyricCacheStore(context: Context) : OnlineLyricCacheS
         }
     }
 
-    override fun delete(selection: OnlineLyricCacheSelection): List<String> {
+    override fun delete(selection: OnlineLyricCacheSelection): List<String> = retirement.operation(emptyList()) {
         val (where, args) = selectionClause(selection)
         val db = helper.writableDatabase
         val catalogKeys = mutableListOf<String>()
@@ -247,7 +270,7 @@ internal class SqliteOnlineLyricCacheStore(context: Context) : OnlineLyricCacheS
             db.delete(TABLE_ENTRIES, where, args)
             deleteUnreferenced(db)
         }
-        return catalogKeys
+        catalogKeys
     }
 
     private fun selectionClause(selection: OnlineLyricCacheSelection): Pair<String, Array<String>> {
@@ -389,7 +412,11 @@ internal class SqliteOnlineLyricCacheStore(context: Context) : OnlineLyricCacheS
         }
     }
 
-    private companion object {
+    internal companion object {
+        /** [ModuleGeneration] exits: a retired generation adds no response or song link (deletions still run). */
+        const val PUT_EXIT = "在线歌词缓存写入"
+        const val LINK_EXIT = "在线歌词缓存歌曲关联"
+
         const val DATABASE_NAME = "hyperlyricsenhanced_online_lyrics.db"
         const val DATABASE_VERSION = 5
         const val TABLE_ENTRIES = "entries"

@@ -6,13 +6,13 @@
 
 package com.juren233.hyperlyricsenhanced.online.cache
 
+import com.juren233.hyperlyricsenhanced.common.coroutines.ModuleDispatchers
 import android.content.Context
 import com.juren233.hyperlyricsenhanced.common.lyric.LyricMetadataKeys
 import com.juren233.hyperlyricsenhanced.lyric.model.Song
 import com.juren233.hyperlyricsenhanced.lyric.model.lyricMetadataOf
 import com.juren233.hyperlyricsenhanced.online.model.Source
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
@@ -33,7 +33,7 @@ object OnlineLyricCacheUsage {
     /** The source of an online lyric body, for fetch paths that no other key names it for. */
     const val KEY_SOURCE = "onlineLyricCacheSource"
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = CoroutineScope(SupervisorJob() + ModuleDispatchers.IO)
 
     @Volatile
     private var appContext: Context? = null

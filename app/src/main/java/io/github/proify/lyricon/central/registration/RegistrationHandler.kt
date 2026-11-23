@@ -6,6 +6,7 @@
 
 package io.github.proify.lyricon.central.registration
 
+import com.juren233.hyperlyricsenhanced.root.reload.ModuleGeneration
 import android.content.Intent
 import android.util.Log
 import com.juren233.hyperlyricsenhanced.root.utils.LyricRuntimeDiagnostics
@@ -27,6 +28,7 @@ internal class RegistrationHandler(
 ) {
 
     fun handle(intent: Intent) {
+        if (!ModuleGeneration.mayPublish("RegistrationHandler.handle")) return
         LyricRuntimeDiagnostics.record("central_registration_dispatch") { "action=${intent.action}" }
         when (intent.action) {
             Constants.ACTION_REGISTER_PROVIDER -> registerProvider(intent)
@@ -54,7 +56,7 @@ internal class RegistrationHandler(
             ProviderFlowDiagnostics.log("registration_callback_begin", info) {
                 connection.diagnosticState()
             }
-            binder.onRegistrationCallback(connection.service)
+            binder.onRegistrationCallback(connection.remoteService)
             ProviderFlowDiagnostics.log("registration_callback_returned", info) {
                 connection.diagnosticState()
             }

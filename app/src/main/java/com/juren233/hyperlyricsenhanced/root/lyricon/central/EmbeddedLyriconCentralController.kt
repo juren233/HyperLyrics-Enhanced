@@ -48,7 +48,11 @@ internal object EmbeddedLyriconCentralController {
         if (!enabled) {
             standaloneProbeTimeout?.let(mainHandler::removeCallbacks)
             standaloneProbeTimeout = null
-            if (!prepared) return
+            if (!prepared) {
+                // No lyric display after a hot reload: providers handed over will not be served.
+                BridgeCentral.discardPendingRegistrations()
+                return
+            }
             prepared = false
             started.set(false)
             try {

@@ -12,6 +12,7 @@ import io.github.libxposed.api.XposedInterface.Hooker
 import io.github.libxposed.api.XposedModule
 import java.lang.reflect.Executable
 import java.lang.reflect.Method
+import java.util.concurrent.ConcurrentHashMap
 
 object UnlockFocusWhitelist {
     private const val TARGET_CLASS = "miui.systemui.notification.NotificationSettingsManager"
@@ -20,13 +21,14 @@ object UnlockFocusWhitelist {
     private const val PLUGIN_INSTANCE_CLASS = "com.android.systemui.shared.plugins.PluginInstance"
 
     internal lateinit var module: XposedModule
-    private val hookedClassLoaders =
+    private val hookedClassLoaders = java.util.Collections.synchronizedSet(
         java.util.Collections.newSetFromMap(java.util.WeakHashMap<ClassLoader, Boolean>())
-    private val focusSettingsHookedClassLoaders =
-        java.util.Collections.newSetFromMap(java.util.WeakHashMap<ClassLoader, Boolean>())
-    private val focusSettingsHandles = mutableListOf<HookHandle>()
-    private val whitelistHandles = mutableListOf<HookHandle>()
-    private val knownClassLoaders = mutableSetOf<ClassLoader>()
+    )
+    // 按目标方法去重：多个子 loader 委托到同一个定义 loader 时，同一方法只装一份 Hook。
+    private val focusSettingsHandles = ConcurrentHashMap<Method, HookHandle>()
+    private val whitelistHandles = ConcurrentHashMap<Method, HookHandle>()
+    private val authCallbackLoaders = DefiningClassLoaderTracker(AUTH_CALLBACK_CLASS)
+    private var registeredPrefs: SharedPreferences? = null
     private var prefsListener: SharedPreferences.OnSharedPreferenceChangeListener? = null
     private val loggedFirstFocusHit = java.util.concurrent.atomic.AtomicBoolean(false)
 
@@ -35,7 +37,8 @@ object UnlockFocusWhitelist {
         val prefs = (module as HookEntry).prefs
         val prefKey = RootConstants.KEY_HOOK_REMOVE_FOCUS_WHITELIST
 
-        prefsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        unregisterPreferenceListener()
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
             if (key == prefKey) {
                 val enabled = prefs.getBoolean(
                     prefKey,
@@ -48,7 +51,9 @@ object UnlockFocusWhitelist {
                 }
             }
         }
-        prefs.registerOnSharedPreferenceChangeListener(prefsListener)
+        prefsListener = listener
+        registeredPrefs = prefs
+        prefs.registerOnSharedPreferenceChangeListener(listener)
 
         runCatching {
             val pluginInstanceClass = defaultClassLoader.loadClass(PLUGIN_INSTANCE_CLASS)
@@ -76,8 +81,14 @@ object UnlockFocusWhitelist {
 
     internal fun doHookInClassLoader(cl: ClassLoader?) {
         if (cl == null || !hookedClassLoaders.add(cl)) return
-        knownClassLoaders.add(cl)
         installFocusSettingsHooks(cl)
+
+        // 开关关闭时也要记下定义授权回调类的 loader，重新开启时才能给它补装。
+        val authClass = runCatching { authCallbackLoaders.resolve(cl) }
+            .onFailure { e ->
+                HookLogger.e("UnlockFocusWhitelist", "注入焦点通知授权失败: classLoader=$cl", e)
+            }
+            .getOrNull() ?: return
 
         val prefs = (module as? HookEntry)?.prefs ?: return
         if (
@@ -86,22 +97,20 @@ object UnlockFocusWhitelist {
                 RootConstants.DEFAULT_HOOK_REMOVE_FOCUS_WHITELIST,
             )
         ) {
-            installWhitelistHooks(cl)
+            installWhitelistHooks(authClass)
         }
     }
 
     private fun installFocusSettingsHooks(cl: ClassLoader) {
-        if (!focusSettingsHookedClassLoaders.add(cl)) return
         runCatching {
             val targetClass = cl.loadClass(TARGET_CLASS)
             val methods = targetClass.declaredMethods.filter {
-                it.name == "canShowFocus" || it.name == "canCustomFocus"
+                (it.name == "canShowFocus" || it.name == "canCustomFocus") &&
+                    !focusSettingsHandles.containsKey(it)
             }
             methods.forEach { method ->
                 module.deoptimize(method)
-                focusSettingsHandles.add(
-                    module.hook(method).intercept(FocusSettingsHooker())
-                )
+                installOnce(focusSettingsHandles, method, FocusSettingsHooker())
             }
             if (methods.isNotEmpty()) {
                 HookLogger.i(
@@ -120,36 +129,67 @@ object UnlockFocusWhitelist {
         }
     }
 
-    private fun installWhitelistHooks(cl: ClassLoader) {
+    private fun installWhitelistHooks(authClass: Class<*>) {
         runCatching {
-            val authClass = cl.loadClass(AUTH_CALLBACK_CLASS)
             val method = authClass.declaredMethods.find { it.name == "invokeSuspend" }
-            if (method != null) {
+            if (method != null && !whitelistHandles.containsKey(method)) {
                 module.deoptimize(method)
-                whitelistHandles.add(
-                    module.hook(method).intercept(AuthResultHooker())
-                )
-                HookLogger.i("UnlockFocusWhitelist", "焦点通知授权 Hook 已安装")
+                if (installOnce(whitelistHandles, method, AuthResultHooker())) {
+                    HookLogger.i("UnlockFocusWhitelist", "焦点通知授权 Hook 已安装")
+                }
             }
         }.onFailure { e ->
-            if (e !is ClassNotFoundException) {
-                HookLogger.e(
-                    "UnlockFocusWhitelist",
-                    "注入焦点通知授权失败: classLoader=$cl",
-                    e,
-                )
-            }
+            HookLogger.e(
+                "UnlockFocusWhitelist",
+                "注入焦点通知授权失败: classLoader=${authClass.classLoader}",
+                e,
+            )
         }
     }
 
+    /** 并发补装同一方法时只保留一份 Hook；返回本次是否装上。 */
+    private fun installOnce(
+        handles: ConcurrentHashMap<Method, HookHandle>,
+        method: Method,
+        hooker: Hooker,
+    ): Boolean {
+        val handle = module.hook(method).intercept(hooker)
+        if (handles.putIfAbsent(method, handle) != null) {
+            handle.unhook()
+            return false
+        }
+        return true
+    }
+
     private fun hookAllKnownClassLoaders() {
-        knownClassLoaders.toList().forEach(::installWhitelistHooks)
+        authCallbackLoaders.knownClasses().forEach(::installWhitelistHooks)
     }
 
     private fun unhookWhitelist() {
-        whitelistHandles.forEach { it.unhook() }
+        whitelistHandles.values.forEach { it.unhook() }
         whitelistHandles.clear()
         HookLogger.i("UnlockFocusWhitelist", "焦点通知授权 Hook 已移除")
+    }
+
+    private fun unregisterPreferenceListener() {
+        val listener = prefsListener
+        val prefs = registeredPrefs
+        prefsListener = null
+        registeredPrefs = null
+        if (listener != null) prefs?.unregisterOnSharedPreferenceChangeListener(listener)
+    }
+
+    /**
+     * 旧模块代退出时释放偏好监听和全部 loader/Hook 记录。
+     * 不在这里 unhook：旧一代的 Hook 由框架交给新一代统一移除，旧一代在交接时调用
+     * unhook 会与框架持有的模块锁互等（见 docs/knowledge-base/systemui-hot-reload.md）。
+     */
+    internal fun releaseForReload() {
+        unregisterPreferenceListener()
+        focusSettingsHandles.clear()
+        whitelistHandles.clear()
+        hookedClassLoaders.clear()
+        authCallbackLoaders.clear()
     }
 
     private fun isWhitelistRemovalEnabled(): Boolean {

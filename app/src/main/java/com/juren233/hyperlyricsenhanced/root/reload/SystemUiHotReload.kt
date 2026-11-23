@@ -3,6 +3,8 @@ package com.juren233.hyperlyricsenhanced.root.reload
 
 import android.app.Application
 import android.view.ViewGroup
+import com.juren233.hyperlyricsenhanced.common.media.MediaMetadataHelper
+import com.juren233.hyperlyricsenhanced.root.ClassicAodFocusNotificationRecovery
 import com.juren233.hyperlyricsenhanced.root.HookEntry
 import com.juren233.hyperlyricsenhanced.root.UnlockFocusWhitelist
 import com.juren233.hyperlyricsenhanced.root.UnlockIslandWhitelist
@@ -15,10 +17,12 @@ import com.juren233.hyperlyricsenhanced.root.mediacard.notification.Notification
 import com.juren233.hyperlyricsenhanced.root.mediacard.notification.NotificationMediaAodLyricHooker
 import com.juren233.hyperlyricsenhanced.root.mediacard.notification.NotificationMediaCoverStyleHooker
 import com.juren233.hyperlyricsenhanced.root.mediacard.notification.background.MediaBackgroundRendererPool
+import com.juren233.hyperlyricsenhanced.root.source.AppleDirectBridgeHandover
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import com.juren233.hyperlyricsenhanced.root.utils.RuntimePerfDiagnostics
 import com.juren233.hyperlyricsenhanced.root.utils.RuntimeResourceCleanup
 import io.github.libxposed.api.XposedInterface.HookHandle
+import io.github.proify.lyricon.central.provider.ProviderHandover
 
 /** The host owns transferred objects; each module generation creates its own listeners and UI. */
 internal object SystemUiHotReload {
@@ -38,11 +42,17 @@ internal object SystemUiHotReload {
             put("notificationCover", NotificationMediaCoverStyleHooker.snapshotForReload())
             put("notificationMedia", NotificationMediaAmbientFlowHooker.snapshotForReload())
             put("aod", NotificationMediaAodLyricHooker.snapshotForReload())
+            // Completed by the Apple bridge's stop() during teardown below.
+            put("appleDirectBridge", AppleDirectBridgeHandover.snapshotForReload())
+            // Completed by the central's provider connections as they close during teardown below.
+            put("lyriconProviders", ProviderHandover.snapshotForReload())
         }
         // Runs synchronously on the UI thread. A posted release is not a completed release.
         runTeardown(listOf(
             "BaseIslandRenderer.beginHotReload" to { BaseIslandRenderer.beginHotReload() },
             "module.cleanupForHotReload" to { module.cleanupForHotReload() },
+            "UnlockIslandWhitelist.releaseForReload" to { UnlockIslandWhitelist.releaseForReload() },
+            "UnlockFocusWhitelist.releaseForReload" to { UnlockFocusWhitelist.releaseForReload() },
             "IslandTouchHooker.releaseForReload" to { IslandTouchHooker.releaseForReload() },
             "IslandStatusBarSpaceMonitor.releaseForReload" to { IslandStatusBarSpaceMonitor.releaseForReload() },
             "IslandStatusBarColorMonitor.releaseForReload" to { IslandStatusBarColorMonitor.releaseForReload() },
@@ -61,7 +71,29 @@ internal object SystemUiHotReload {
             "BaseIslandRenderer.releaseForReload" to { BaseIslandRenderer.releaseForReload() },
             "EmbeddedLyriconCentralController.releaseForReload" to { EmbeddedLyriconCentralController.releaseForReload() },
             "RuntimePerfDiagnostics.stopForReload" to { RuntimePerfDiagnostics.stopForReload() },
+            // After every hooker above: they query MediaMetadataHelper while releasing.
+            "MediaMetadataHelper.releaseForReload" to { MediaMetadataHelper.releaseForReload() },
+            "ClassicAodFocusNotificationRecovery.releaseForReload" to {
+                ClassicAodFocusNotificationRecovery.releaseForReload()
+            },
+            "IslandBackgroundTraceDiagnostics.releaseForReload" to {
+                IslandBackgroundTraceDiagnostics.releaseForReload()
+            },
+            "ModuleGenerationRelease.unregisterLyriconReceivers" to {
+                ModuleGenerationRelease.unregisterLyriconReceivers(app)
+            },
+            // After every view owner above: no view of this generation is left to animate.
+            "ModuleGenerationRelease.releaseAnimatorPropertyCaches" to {
+                ModuleGenerationRelease.releaseAnimatorPropertyCaches()
+            },
         ))
+        // From here nothing this generation still finishes may leave it (ModuleGeneration exits).
+        ModuleGeneration.retire()
+        // Only after every owner above has stopped. Work still in flight runs to its end on this
+        // generation's own dispatchers, which are never shut down: a rejected dispatch crashes SystemUI.
+        ModuleGenerationRelease.releaseMainThreadEventLoop()
+        ModuleGenerationRelease.releaseHttpClients()
+        ModuleGenerationRelease.releaseDatabases()
         return state
     }
 
@@ -77,6 +109,10 @@ internal object SystemUiHotReload {
         // Reinstall through the SAME verified installers as a cold start. Name-only matching
         // loses overloads, constructors, shared hook chains and newly introduced target groups.
         oldHooks.forEach { it.unhook() }
+        // Before the sources start: the Apple bridge must adopt the relay Apple already holds.
+        AppleDirectBridgeHandover.receive(state["appleDirectBridge"])
+        // Adopted when this generation's central activates, which may be after restore returns.
+        ProviderHandover.receive(state["lyriconProviders"])
         module.initializeAfterHotReload(app)
         module.installSystemUiHooks(state["systemLoader"] as? ClassLoader
             ?: error("SystemUI reload state has no original ClassLoader"))
@@ -104,6 +140,7 @@ internal object SystemUiHotReload {
         NotificationMediaAmbientFlowHooker.restoreAfterReload(ReloadSnapshot.rows(state, "notificationMedia"))
         IslandExpandedMediaAmbientFlowHooker.restoreAfterReload(ReloadSnapshot.items(state, "expandedMedia"))
         NotificationMediaAodLyricHooker.restoreAfterReload(aod)
+        AppleDirectBridgeHandover.discardIncoming()
         BaseIslandRenderer.refreshActiveIsland()
         HookLogger.i("HookEntry", "系统界面热重载恢复完成：超级岛、触控、媒体卡片、AOD")
     }

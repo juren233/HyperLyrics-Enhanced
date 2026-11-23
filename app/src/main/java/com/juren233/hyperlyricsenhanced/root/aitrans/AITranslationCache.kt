@@ -1,5 +1,7 @@
 ﻿package com.juren233.hyperlyricsenhanced.root.aitrans
 
+import com.juren233.hyperlyricsenhanced.common.coroutines.ModuleDispatchers
+import com.juren233.hyperlyricsenhanced.common.db.DatabaseRetirement
 import android.content.ContentValues
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
@@ -27,7 +29,14 @@ internal class AITranslationCache(
     }
 
     private val dbMutex = Mutex()
+    @Volatile
     private var dbHelper: DatabaseHelper? = null
+    private val retirement = DatabaseRetirement("AI 翻译缓存库") { dbHelper?.close() }
+
+    /** SystemUI hot reload: closes this generation's connections once no operation is running. */
+    fun retire() = retirement.retire()
+
+    internal val isClosed: Boolean get() = retirement.isClosed
 
     private val memory: MutableMap<String, List<TranslationItem>> =
         Collections.synchronizedMap(
@@ -56,6 +65,10 @@ internal class AITranslationCache(
     }
 
     suspend fun getFromDb(key: String): List<TranslationItem>? = dbMutex.withLock {
+        retirement.operation(null) { readFromDb(key) }
+    }
+
+    private fun readFromDb(key: String): List<TranslationItem>? {
         val db = dbHelper?.readableDatabase ?: return null
         return runCatching {
             db.query(
@@ -80,37 +93,43 @@ internal class AITranslationCache(
     suspend fun saveToDb(key: String, items: List<TranslationItem>) {
         val jsonData = items.toJson()
         dbMutex.withLock {
-            val db = dbHelper?.writableDatabase ?: return@withLock
-            runCatching {
-                val values = ContentValues().apply {
-                    put(DatabaseHelper.COLUMN_ID, key)
-                    put(DatabaseHelper.COLUMN_DATA, jsonData)
-                    put(DatabaseHelper.COLUMN_TIMESTAMP, System.currentTimeMillis())
-                }
-                db.insertWithOnConflict(
-                    DatabaseHelper.TABLE_NAME,
-                    null,
-                    values,
-                    SQLiteDatabase.CONFLICT_REPLACE
-                )
-            }.onFailure {
-                HookLogger.e(TAG, "写入翻译缓存失败", it)
+            retirement.operation<Unit>(Unit) { writeToDb(key, jsonData) }
+        }
+    }
+
+    private fun writeToDb(key: String, jsonData: String) {
+        val db = dbHelper?.writableDatabase ?: return
+        runCatching {
+            val values = ContentValues().apply {
+                put(DatabaseHelper.COLUMN_ID, key)
+                put(DatabaseHelper.COLUMN_DATA, jsonData)
+                put(DatabaseHelper.COLUMN_TIMESTAMP, System.currentTimeMillis())
             }
+            db.insertWithOnConflict(
+                DatabaseHelper.TABLE_NAME,
+                null,
+                values,
+                SQLiteDatabase.CONFLICT_REPLACE
+            )
+        }.onFailure {
+            HookLogger.e(TAG, "写入翻译缓存失败", it)
         }
     }
 
     fun clear(callback: () -> Unit) {
         generation.incrementAndGet()
         memory.clear()
-        scope.launch(Dispatchers.IO) {
+        scope.launch(ModuleDispatchers.IO) {
             dbMutex.withLock {
-                runCatching {
-                    dbHelper?.writableDatabase?.delete(DatabaseHelper.TABLE_NAME, null, null)
-                    HookLogger.d(TAG, "翻译缓存数据库已清空")
-                    withContext(Dispatchers.Main) { callback() }
-                }.onFailure {
-                    HookLogger.e(TAG, "清空翻译缓存数据库失败", it)
+                val cleared = retirement.operation(false) {
+                    runCatching {
+                        dbHelper?.writableDatabase?.delete(DatabaseHelper.TABLE_NAME, null, null)
+                        HookLogger.d(TAG, "翻译缓存数据库已清空")
+                    }.onFailure {
+                        HookLogger.e(TAG, "清空翻译缓存数据库失败", it)
+                    }.isSuccess
                 }
+                if (cleared) withContext(Dispatchers.Main) { callback() }
             }
         }
     }

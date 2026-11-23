@@ -1,5 +1,6 @@
 package com.juren233.hyperlyricsenhanced.utils
 
+import com.juren233.hyperlyricsenhanced.common.coroutines.ModuleDispatchers
 import android.content.Context
 import android.util.Log
 import com.juren233.hyperlyricsenhanced.BuildConfig
@@ -9,7 +10,6 @@ import com.juren233.hyperlyricsenhanced.common.LogLevelPolicy
 import com.juren233.hyperlyricsenhanced.common.LogLevelPreference
 import com.juren233.hyperlyricsenhanced.ui.page.log.LogEntry
 import com.juren233.hyperlyricsenhanced.common.UIConstants
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.BufferedReader
 import java.io.File
@@ -158,7 +158,7 @@ object LogManager : HyperLogger {
 
     // ========================= 读取 =========================
 
-    suspend fun readAppLogs(): List<LogEntry> = withContext(Dispatchers.IO) {
+    suspend fun readAppLogs(): List<LogEntry> = withContext(ModuleDispatchers.IO) {
         val file = logFile ?: return@withContext emptyList()
         if (!file.exists()) return@withContext emptyList()
 
@@ -200,7 +200,7 @@ object LogManager : HyperLogger {
         isAppLog: Boolean,
         selectedLevel: String,
         writer: Writer
-    ): Int = withContext(Dispatchers.IO) {
+    ): Int = withContext(ModuleDispatchers.IO) {
         if (isAppLog) {
             exportAppLogs(selectedLevel, writer)
         } else {
@@ -268,7 +268,7 @@ object LogManager : HyperLogger {
         return XposedLogFiles(foundDir, logFiles)
     }
 
-    private suspend fun readXposedLogs(context: Context): List<LogEntry> = withContext(Dispatchers.IO) {
+    private suspend fun readXposedLogs(context: Context): List<LogEntry> = withContext(ModuleDispatchers.IO) {
         val entries = BoundedLogBuffer()
         var matchedEntryCount = 0
         try {

@@ -6,6 +6,7 @@
 
 package com.juren233.hyperlyricsenhanced.ui.page.hooksettings
 
+import com.juren233.hyperlyricsenhanced.common.coroutines.ModuleDispatchers
 import com.juren233.hyperlyricsenhanced.ui.component.SectionEnter
 import com.juren233.hyperlyricsenhanced.ui.component.SectionExit
 import android.content.pm.PackageManager
@@ -47,7 +48,6 @@ import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.common.Xpose
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.common.rememberHookConfigSaver
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.common.rememberHookPrefs
 import com.juren233.hyperlyricsenhanced.ui.utils.LocaleUtils
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Icon
@@ -135,7 +135,7 @@ fun OnlineTranslationSourcesPage() {
         }
     }
     LaunchedEffect(context) {
-        installedApps = withContext(Dispatchers.IO) {
+        installedApps = withContext(ModuleDispatchers.IO) {
             val packageManager = LocaleUtils.systemLanguageContext(context).packageManager
             val installedPackageNames = packageManager
                 .getInstalledPackages(PackageManager.PackageInfoFlags.of(0L))

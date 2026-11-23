@@ -9,6 +9,7 @@ package com.juren233.hyperlyricsenhanced.online.source.ttml
 import com.juren233.hyperlyricsenhanced.lyric.LrcLine
 import com.juren233.hyperlyricsenhanced.online.model.LyricsLine
 import com.juren233.hyperlyricsenhanced.online.model.LyricsWord
+import org.w3c.dom.Document
 import org.w3c.dom.Element
 import org.w3c.dom.Node
 import java.io.ByteArrayInputStream
@@ -36,13 +37,26 @@ internal object TtmlLyricsParser {
         val vocals: TtmlVocalParser.Vocals,
     )
 
-    /** @param preferredLocale picks the translation language when a line carries several. */
-    fun parseWordTimed(bytes: ByteArray, preferredLocale: Locale = Locale.getDefault()): TtmlParsedLyrics? {
+    private const val TTML_NAMESPACE = "http://www.w3.org/ns/ttml"
+
+    /**
+     * Whether [bytes] are one whole TTML document: they parse, with the same secure settings as
+     * [parseWordTimed], into well-formed XML whose root is `tt` in the TTML namespace. A file cut
+     * short is not well-formed (its root element is never closed), so it fails here; a complete
+     * TTML file without word timing passes. Every AMLL TTML DB file sampled on 2026-11-23 (60, 15
+     * per platform folder) had this root.
+     */
+    fun isTtmlDocument(bytes: ByteArray): Boolean {
+        val root = parseDocument(bytes)?.documentElement ?: return false
+        return root.localName == "tt" && root.namespaceURI == TTML_NAMESPACE
+    }
+
+    /** Well-formed XML without a DOCTYPE or external entities, else null. */
+    private fun parseDocument(bytes: ByteArray): Document? {
         if (bytes.isEmpty()) return null
         val prefix = bytes.decodeToString(0, minOf(bytes.size, 4_096)).lowercase()
         if ("<!doctype" in prefix || "<!entity" in prefix) return null
-
-        val document = runCatching {
+        return runCatching {
             val factory = DocumentBuilderFactory.newInstance().apply {
                 isNamespaceAware = true
                 runCatching { isXIncludeAware = false }
@@ -53,7 +67,12 @@ internal object TtmlLyricsParser {
                 setSecureFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false)
             }
             factory.newDocumentBuilder().parse(ByteArrayInputStream(bytes))
-        }.getOrNull() ?: return null
+        }.getOrNull()
+    }
+
+    /** @param preferredLocale picks the translation language when a line carries several. */
+    fun parseWordTimed(bytes: ByteArray, preferredLocale: Locale = Locale.getDefault()): TtmlParsedLyrics? {
+        val document = parseDocument(bytes) ?: return null
 
         val root = document.documentElement ?: return null
         val timing = root.getAttributeNS(ITUNES_NAMESPACE, "timing")

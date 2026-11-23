@@ -6,6 +6,7 @@
 
 package com.juren233.hyperlyricsenhanced.ui.page.hooksettings
 
+import com.juren233.hyperlyricsenhanced.common.coroutines.ModuleDispatchers
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -36,7 +37,6 @@ import com.juren233.hyperlyricsenhanced.ui.component.TextInputDialog
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.common.XposedLyricSettingPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.common.rememberHookConfigSaver
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.common.rememberHookPrefs
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.Card
@@ -93,7 +93,7 @@ fun AppleLyricsImageBackgroundColorPage() {
         val card = samples?.card ?: return@LaunchedEffect
         val key = listOf(color, withQr)
         if (key == drawnKey) return@LaunchedEffect
-        val composed = withContext(Dispatchers.Default) {
+        val composed = withContext(ModuleDispatchers.Default) {
             AppleLyricsImageBackgroundStore.composePreview(color, card, samples.wordmark, withQr)
         }
         preview = composed

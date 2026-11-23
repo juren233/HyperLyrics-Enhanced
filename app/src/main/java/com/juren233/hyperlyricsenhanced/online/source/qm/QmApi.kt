@@ -3,11 +3,16 @@
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import com.juren233.hyperlyricsenhanced.common.net.HttpResult
+import com.juren233.hyperlyricsenhanced.common.net.post
+import kotlinx.serialization.DeserializationStrategy
+import kotlinx.serialization.SerializationStrategy
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
-import retrofit2.Call
-import retrofit2.http.Body
-import retrofit2.http.POST
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.RequestBody.Companion.toRequestBody
 
 
 @Serializable
@@ -71,14 +76,32 @@ data class QmLyricsData(
     val roma: String = ""
 )
 
-interface QmApi {
-    @POST("cgi-bin/musicu.fcg")
-    fun searchSong(@Body body: QmRequestBody): Call<QmBaseWrapper<QmSearchData>>
+/** QQ Music's `musicu.fcg` gateway; JSON in and out with the shared [json] configuration. */
+class QmApi internal constructor(
+    private val client: OkHttpClient,
+    private val json: Json,
+) {
+    internal fun searchSong(body: QmRequestBody): HttpResult<QmBaseWrapper<QmSearchData>> =
+        post(body, QmRequestBody.serializer(), QmBaseWrapper.serializer(QmSearchData.serializer()))
 
-    @POST("cgi-bin/musicu.fcg")
-    fun getLyrics(@Body body: QmRequestBody): Call<QmBaseWrapper<QmLyricsData>>
+    internal fun getLyrics(body: QmRequestBody): HttpResult<QmBaseWrapper<QmLyricsData>> =
+        post(body, QmRequestBody.serializer(), QmBaseWrapper.serializer(QmLyricsData.serializer()))
 
     /** 多模块合并请求（模块键由调用方决定），用于 [QmSongCatalog]。 */
-    @POST("cgi-bin/musicu.fcg")
-    fun request(@Body body: JsonObject): Call<JsonObject>
+    internal fun request(body: JsonObject): HttpResult<JsonObject> =
+        post(body, JsonObject.serializer(), JsonObject.serializer())
+
+    // Same body and Content-Type ("application/json; charset=utf-8") the Retrofit converter sent.
+    private fun <B, T> post(
+        body: B,
+        writer: SerializationStrategy<B>,
+        reader: DeserializationStrategy<T>,
+    ): HttpResult<T> = client.post(URL, json.encodeToString(writer, body).toRequestBody(JSON)) {
+        json.decodeFromString(reader, it.string())
+    }
+
+    private companion object {
+        const val URL = "https://u.y.qq.com/cgi-bin/musicu.fcg"
+        val JSON = "application/json".toMediaType()
+    }
 }

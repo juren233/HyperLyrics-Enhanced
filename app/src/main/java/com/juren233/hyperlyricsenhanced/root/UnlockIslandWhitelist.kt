@@ -9,15 +9,19 @@ import io.github.libxposed.api.XposedInterface.HookHandle
 import io.github.libxposed.api.XposedInterface.Hooker
 import io.github.libxposed.api.XposedModule
 import java.lang.reflect.Method
+import java.util.concurrent.ConcurrentHashMap
 
 object UnlockIslandWhitelist {
     private const val TARGET_CLASS = "miui.systemui.notification.NotificationSettingsManager"
     private const val TARGET_METHOD = "mediaIslandSupportMiniWindow"
 
     internal lateinit var module: XposedModule
-    private val hookedClassLoaders = java.util.Collections.newSetFromMap(java.util.WeakHashMap<ClassLoader, Boolean>())
-    private val hookHandles = mutableMapOf<Method, HookHandle>()
-    private val knownClassLoaders = mutableSetOf<ClassLoader>()
+    private val hookedClassLoaders = java.util.Collections.synchronizedSet(
+        java.util.Collections.newSetFromMap(java.util.WeakHashMap<ClassLoader, Boolean>())
+    )
+    private val hookHandles = ConcurrentHashMap<Method, HookHandle>()
+    private val targetLoaders = DefiningClassLoaderTracker(TARGET_CLASS)
+    private var registeredPrefs: SharedPreferences? = null
     private var prefsListener: SharedPreferences.OnSharedPreferenceChangeListener? = null
     private val loggedFirstHit = java.util.concurrent.atomic.AtomicBoolean(false)
 
@@ -26,7 +30,8 @@ object UnlockIslandWhitelist {
         val prefs = (module as HookEntry).prefs
         val prefKey = RootConstants.KEY_HOOK_REMOVE_ISLAND_WHITELIST
 
-        prefsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        unregisterPreferenceListener()
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
             if (key == prefKey) {
                 val enabled = prefs.getBoolean(prefKey, RootConstants.DEFAULT_HOOK_REMOVE_ISLAND_WHITELIST)
                 if (enabled) {
@@ -36,36 +41,39 @@ object UnlockIslandWhitelist {
                 }
             }
         }
-        prefs.registerOnSharedPreferenceChangeListener(prefsListener)
+        prefsListener = listener
+        registeredPrefs = prefs
+        prefs.registerOnSharedPreferenceChangeListener(listener)
 
-        if (prefs.getBoolean(prefKey, RootConstants.DEFAULT_HOOK_REMOVE_ISLAND_WHITELIST)) {
-            doHookInClassLoader(defaultClassLoader)
-        } else {
-            hookedClassLoaders.add(defaultClassLoader)
-            knownClassLoaders.add(defaultClassLoader)
-        }
+        doHookInClassLoader(defaultClassLoader)
     }
 
     fun doHookInClassLoader(cl: ClassLoader?) {
         if (cl == null || !hookedClassLoaders.add(cl)) return
-        knownClassLoaders.add(cl)
+        // 开关关闭时也要记下定义目标类的 loader，重新开启时才能给它补装。
+        val targetClass = runCatching { targetLoaders.resolve(cl) }
+            .onFailure { e -> HookLogger.e("UnlockIslandWhitelist", "媒体超级岛下拉小窗白名单注入失败", e) }
+            .getOrNull() ?: return
 
         val prefs = (module as? HookEntry)?.prefs ?: return
         val enabled = prefs.getBoolean(RootConstants.KEY_HOOK_REMOVE_ISLAND_WHITELIST, RootConstants.DEFAULT_HOOK_REMOVE_ISLAND_WHITELIST)
         if (!enabled) return
 
-        installHook(cl)
+        installHook(targetClass)
     }
 
-    private fun installHook(cl: ClassLoader) {
+    private fun installHook(targetClass: Class<*>) {
         runCatching {
-            val targetClass = cl.loadClass(TARGET_CLASS)
             val method = targetClass.declaredMethods.find { it.name == TARGET_METHOD }
 
             if (method != null && !hookHandles.containsKey(method)) {
                 module.deoptimize(method)
                 val handle = module.hook(method).intercept(ReturnTrueHooker())
-                hookHandles[method] = handle
+                // 并发补装时只保留一份 Hook。
+                if (hookHandles.putIfAbsent(method, handle) != null) {
+                    handle.unhook()
+                    return@runCatching
+                }
             HookLogger.i(
                 "UnlockIslandWhitelist",
                 "超级岛下拉小窗白名单 Hook 已安装: method=$TARGET_METHOD"
@@ -77,22 +85,38 @@ object UnlockIslandWhitelist {
                 )
             }
         }.onFailure { e ->
-            if (e !is ClassNotFoundException) {
-                HookLogger.e("UnlockIslandWhitelist", "媒体超级岛下拉小窗白名单注入失败", e)
-            }
+            HookLogger.e("UnlockIslandWhitelist", "媒体超级岛下拉小窗白名单注入失败", e)
         }
     }
 
     private fun hookAllKnownClassLoaders() {
-        knownClassLoaders.toList().forEach { cl ->
-            installHook(cl)
-        }
+        targetLoaders.knownClasses().forEach(::installHook)
     }
 
     private fun unhookAll() {
         hookHandles.values.forEach { it.unhook() }
         hookHandles.clear()
             HookLogger.i("UnlockIslandWhitelist", "超级岛下拉小窗白名单 Hook 已移除")
+    }
+
+    private fun unregisterPreferenceListener() {
+        val listener = prefsListener
+        val prefs = registeredPrefs
+        prefsListener = null
+        registeredPrefs = null
+        if (listener != null) prefs?.unregisterOnSharedPreferenceChangeListener(listener)
+    }
+
+    /**
+     * 旧模块代退出时释放偏好监听和全部 loader/Hook 记录。
+     * 不在这里 unhook：旧一代的 Hook 由框架交给新一代统一移除，旧一代在交接时调用
+     * unhook 会与框架持有的模块锁互等（见 docs/knowledge-base/systemui-hot-reload.md）。
+     */
+    internal fun releaseForReload() {
+        unregisterPreferenceListener()
+        hookHandles.clear()
+        hookedClassLoaders.clear()
+        targetLoaders.clear()
     }
 
     class ReturnTrueHooker : Hooker {

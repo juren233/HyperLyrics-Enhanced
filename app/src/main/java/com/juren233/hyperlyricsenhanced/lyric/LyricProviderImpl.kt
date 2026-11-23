@@ -1,5 +1,6 @@
 package com.juren233.hyperlyricsenhanced.lyric
 
+import com.juren233.hyperlyricsenhanced.common.coroutines.ModuleDispatchers
 import android.content.Context
 import com.juren233.hyperlyricsenhanced.common.UIConstants
 import com.juren233.hyperlyricsenhanced.common.lyric.LrcParser
@@ -7,13 +8,12 @@ import com.juren233.hyperlyricsenhanced.online.LrcCacheManager
 import com.juren233.hyperlyricsenhanced.online.OnlineLyricTargeter
 import com.juren233.hyperlyricsenhanced.online.OnlineTranslationSourcePreferences
 import com.juren233.hyperlyricsenhanced.utils.LogManager
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 class LyricProviderImpl(private val context: Context) : ILyricProvider {
 
     override suspend fun fetchLyrics(params: LyricSearchParams): List<LrcLine>? {
-        return withContext(Dispatchers.IO) {
+        return withContext(ModuleDispatchers.IO) {
             // 三方在线源取词受「启用App」开关约束；未收录开关的包保持原行为。
             val prefs = context.getSharedPreferences(UIConstants.PREF_NAME, Context.MODE_PRIVATE)
             if (!OnlineTranslationSourcePreferences.isOnlineLyricsAllowedForApp(

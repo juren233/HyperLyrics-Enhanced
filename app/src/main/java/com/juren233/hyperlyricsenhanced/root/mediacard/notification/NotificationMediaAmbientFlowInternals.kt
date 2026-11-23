@@ -8,6 +8,7 @@
 
 package com.juren233.hyperlyricsenhanced.root.mediacard.notification
 
+import com.juren233.hyperlyricsenhanced.common.coroutines.ModuleThreads
 import android.content.Context
 import android.content.res.Configuration
 import android.graphics.Bitmap
@@ -66,7 +67,7 @@ internal sealed interface MediaFlowColorPayload {
 internal data class ControllerThemeState(val originalContext: Context)
 
 internal fun NotificationMediaAmbientFlowHooker.newColorExecutor() = Executors.newSingleThreadExecutor { task ->
-    Thread(task, "HyperLyrics Enhanced-MediaColor").apply { isDaemon = true }
+    ModuleThreads.newThread("HyperLyrics Enhanced-MediaColor", task = task)
 }
 
 internal class CardThemeApi private constructor(

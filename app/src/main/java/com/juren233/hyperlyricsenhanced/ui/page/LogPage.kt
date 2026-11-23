@@ -2,6 +2,7 @@
 
 package com.juren233.hyperlyricsenhanced.ui.page
 
+import com.juren233.hyperlyricsenhanced.common.coroutines.ModuleDispatchers
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
@@ -168,7 +169,7 @@ fun LogPage() {
             pendingExportRequest = null
             if (uri == null) return@rememberLauncherForActivityResult
             if (request == null) return@rememberLauncherForActivityResult
-            coroutineScope.launch(Dispatchers.IO) {
+            coroutineScope.launch(ModuleDispatchers.IO) {
                 try {
                     val output = context.contentResolver.openOutputStream(uri, "wt")
                         ?: throw IOException("Unable to open the selected file")

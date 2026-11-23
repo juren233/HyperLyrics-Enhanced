@@ -1,6 +1,6 @@
 package com.juren233.hyperlyricsenhanced.utils
 
-import kotlinx.coroutines.Dispatchers
+import com.juren233.hyperlyricsenhanced.common.coroutines.ModuleDispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
@@ -58,7 +58,7 @@ object UpdateData {
         }
     }
 
-    private suspend fun fetchLatestRelease(): AvailableUpdate? = withContext(Dispatchers.IO) {
+    private suspend fun fetchLatestRelease(): AvailableUpdate? = withContext(ModuleDispatchers.IO) {
         val connection = URL(LATEST_RELEASE_API).openConnection() as HttpURLConnection
         try {
             connection.requestMethod = "GET"

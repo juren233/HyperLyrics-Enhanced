@@ -1,5 +1,6 @@
 package com.juren233.hyperlyricsenhanced.root.mediacard.island.background
 
+import com.juren233.hyperlyricsenhanced.common.coroutines.ModuleThreads
 import android.content.Context
 import android.content.SharedPreferences
 import android.content.res.ColorStateList
@@ -20,6 +21,7 @@ import com.juren233.hyperlyricsenhanced.root.SystemUiEnhancementGate
 import com.juren233.hyperlyricsenhanced.root.mediacard.notification.background.MediaBackgroundRendererPool
 import com.juren233.hyperlyricsenhanced.root.mediacard.notification.background.NotificationMediaColorConfig
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
+import com.juren233.hyperlyricsenhanced.root.utils.shutdownNowAndRelease
 import io.github.libxposed.api.XposedModule
 import java.util.Collections
 import java.util.WeakHashMap
@@ -267,7 +269,7 @@ internal object IslandExpandedMediaBackgroundController {
     }
 
     fun releaseAll() {
-        executor.shutdownNow()
+        executor.shutdownNowAndRelease()
         val snapshot = synchronized(states) { states.values.toList() }
         val fakeSnapshot = synchronized(fakeStates) { fakeStates.values.toList() }
         states.clear()
@@ -726,7 +728,7 @@ internal object IslandExpandedMediaBackgroundController {
     }
 
     private fun newExecutor(): ExecutorService = Executors.newSingleThreadExecutor { task ->
-        Thread(task, "HyperLyrics Enhanced-IslandMediaBackground").apply { isDaemon = true }
+        ModuleThreads.newThread("HyperLyrics Enhanced-IslandMediaBackground", task = task)
     }
 
     private data class BinderState(

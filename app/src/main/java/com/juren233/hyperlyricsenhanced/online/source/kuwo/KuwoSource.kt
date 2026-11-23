@@ -6,6 +6,7 @@
 
 package com.juren233.hyperlyricsenhanced.online.source.kuwo
 
+import com.juren233.hyperlyricsenhanced.common.coroutines.ModuleDispatchers
 import com.juren233.hyperlyricsenhanced.online.model.LyricsLine
 import com.juren233.hyperlyricsenhanced.online.model.LyricsResult
 import com.juren233.hyperlyricsenhanced.online.model.OnlineSourceRequestException
@@ -13,12 +14,12 @@ import com.juren233.hyperlyricsenhanced.online.model.LyricsWord
 import com.juren233.hyperlyricsenhanced.online.model.SearchSource
 import com.juren233.hyperlyricsenhanced.online.model.SongSearchResult
 import com.juren233.hyperlyricsenhanced.online.model.Source
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import com.juren233.hyperlyricsenhanced.common.net.buildOwned
+import com.juren233.hyperlyricsenhanced.common.net.httpUrlConnectionEquivalent
+import okhttp3.Request
 import org.json.JSONObject
 import java.io.ByteArrayInputStream
-import java.net.HttpURLConnection
-import java.net.URI
 import java.net.URLEncoder
 import java.nio.charset.Charset
 import java.nio.charset.StandardCharsets
@@ -35,7 +36,7 @@ class KuwoSource : SearchSource {
         separator: String,
         pageSize: Int,
         durationMs: Long,
-    ): List<SongSearchResult> = withContext(Dispatchers.IO) {
+    ): List<SongSearchResult> = withContext(ModuleDispatchers.IO) {
         KuwoNetwork.search(keyword, page, pageSize).map { candidate ->
             SongSearchResult(
                 id = candidate.rid.toString(),
@@ -49,7 +50,7 @@ class KuwoSource : SearchSource {
     }
 
     override suspend fun getLyrics(song: SongSearchResult): LyricsResult? =
-        withContext(Dispatchers.IO) {
+        withContext(ModuleDispatchers.IO) {
             val rid = song.id.toLongOrNull()?.takeIf { it > 0L } ?: return@withContext null
             KuwoLyricsParser.toLyricsResult(KuwoNetwork.fetchLyrics(rid))
         }
@@ -64,6 +65,8 @@ private data class KuwoCandidate(
 )
 
 private object KuwoNetwork {
+    private val client by lazy { httpUrlConnectionEquivalent(5_000L, 8_000L).buildOwned() }
+
     private const val SEARCH_URL =
         "https://www.kuwo.cn/openapi/v1/www/search/searchMusicBykeyWord"
     private const val OPEN_LYRIC_URL = "https://www.kuwo.cn/openapi/v1/www/lyric/getlyric"
@@ -129,22 +132,16 @@ private object KuwoNetwork {
         requestBytes(url).toString(StandardCharsets.UTF_8)
 
     private fun requestBytes(url: String, userAgent: String = "Mozilla/5.0"): ByteArray {
-        val connection = (URI(url).toURL().openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
-            connectTimeout = 5_000
-            readTimeout = 8_000
-            instanceFollowRedirects = true
-            setRequestProperty("User-Agent", userAgent)
-            setRequestProperty("Referer", "https://www.kuwo.cn/")
-            setRequestProperty("Accept-Encoding", "identity")
-        }
-        return try {
-            check(connection.responseCode == HttpURLConnection.HTTP_OK) {
-                "Kuwo HTTP ${connection.responseCode}"
-            }
-            connection.inputStream.use { it.readBytes() }
-        } finally {
-            connection.disconnect()
+        val request = Request.Builder()
+            .url(url)
+            .get()
+            .header("User-Agent", userAgent)
+            .header("Referer", "https://www.kuwo.cn/")
+            .header("Accept-Encoding", "identity")
+            .build()
+        client.newCall(request).execute().use { response ->
+            check(response.code == 200) { "Kuwo HTTP ${response.code}" }
+            return response.body!!.bytes()
         }
     }
 

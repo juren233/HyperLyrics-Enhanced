@@ -1,5 +1,6 @@
 package com.juren233.hyperlyricsenhanced.service.source
 
+import com.juren233.hyperlyricsenhanced.common.coroutines.ModuleDispatchers
 import android.content.Context
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.graphics.toColorInt
@@ -12,7 +13,6 @@ import com.juren233.hyperlyricsenhanced.service.scheduler.LyricScheduler
 import com.juren233.hyperlyricsenhanced.service.scheduler.LyricSchedulerListener
 import com.juren233.hyperlyricsenhanced.utils.LogManager
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collectLatest
@@ -60,7 +60,7 @@ class AppLyricSink(
     private val fetchGeneration = AtomicLong(0L)
 
     fun startCollecting(lyricUpdateFlow: Flow<SyncData>, newSongFlow: Flow<Unit>) {
-        collectJob = scope.launch(Dispatchers.Default) {
+        collectJob = scope.launch(ModuleDispatchers.Default) {
             lyricUpdateFlow.conflate().collectLatest { data -> processSyncData(data) }
         }
         scope.launch {
@@ -209,7 +209,7 @@ class AppLyricSink(
         if (needFetchLyrics && lyricSource != ServiceConstants.LYRIC_SOURCE_TITLE) {
             fetchJob?.cancel()
             val generation = fetchGeneration.incrementAndGet()
-            fetchJob = scope.launch(Dispatchers.IO) {
+            fetchJob = scope.launch(ModuleDispatchers.IO) {
                 val isOnline = lyricSource == ServiceConstants.LYRIC_SOURCE_ONLINE
                 if (isOnline) {
                     DynamicLyricData.updateFetchingLyrics(true)

@@ -14,8 +14,14 @@ import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import io.github.proify.lyricon.provider.ProviderInfo
 import java.nio.ByteBuffer
 
+/**
+ * The 8-byte memory a provider writes its playback position into. The provider maps it once, when
+ * it binds, and keeps writing to that mapping; a hot reload therefore hands this exact memory to the
+ * next generation ([adopted]) instead of creating a new one the provider would never see.
+ */
 internal class PositionMemoryBridge(
-    private val providerInfo: ProviderInfo
+    private val providerInfo: ProviderInfo,
+    adopted: SharedMemory? = null,
 ) {
 
     private var readBuffer: ByteBuffer? = null
@@ -26,7 +32,7 @@ internal class PositionMemoryBridge(
         private set
 
     init {
-        initialize()
+        if (adopted != null) adopt(adopted) else initialize()
     }
 
     fun readPosition(): Long {
@@ -49,11 +55,24 @@ internal class PositionMemoryBridge(
         "memoryAvailable=${sharedMemory != null}, bufferAvailable=${readBuffer != null}, " +
             "lastReadFailure=${lastReadFailure ?: "none"}"
 
-    fun close() {
+    /** With [keepMemory] only this mapping is released; the memory itself passes to its next owner. */
+    fun close(keepMemory: Boolean = false) {
         readBuffer?.let { runCatching { SharedMemory.unmap(it) } }
-        sharedMemory?.close()
+        if (!keepMemory) sharedMemory?.close()
         readBuffer = null
         sharedMemory = null
+    }
+
+    private fun adopt(memory: SharedMemory) {
+        try {
+            readBuffer = memory.mapReadOnly()
+            sharedMemory = memory
+        } catch (t: Throwable) {
+            // A fresh memory would not help: the provider keeps writing to the inherited one.
+            memory.close()
+            lastReadFailure = "adopt_failed:${t.javaClass.simpleName}"
+            Log.e(TAG, "Inherited SharedMemory could not be mapped", t)
+        }
     }
 
     private fun initialize() {

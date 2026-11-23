@@ -73,6 +73,13 @@
 -keep class io.github.proify.lyricon.provider.** { *; }
 -keep class io.github.proify.lyricon.lyric.model.** { *; }
 
+# SystemUI hot reload unregisters the subscriber library's process-wide receiver reflectively
+# (the class is Kotlin-internal and has no unregister API; see ModuleGenerationRelease).
+-keep class io.github.proify.lyricon.subscriber.CentralServiceReceiver {
+    static <fields>;
+    public boolean isInitialized();
+}
+
 # The Apple Music Pack also compiles against kotlinx.coroutines and kotlinx.serialization
 # as compileOnly and resolves them from the core class loader at runtime. Keep only the
 # classes the Pack references: keeping all of kotlinx.coroutines disables R8's direct
@@ -132,3 +139,10 @@
 # one external runtime contract instead of allowing class merging or signature optimization.
 -keep class io.github.proify.lyricon.subscriber.** { *; }
 -keep class io.github.proify.lyricon.central.** { *; }
+
+# The build rewrites the Lyricon libraries' Dispatchers.getDefault() calls to this getter
+# (LyriconDispatcherRewrite in app/build.gradle.kts); keep it pinned so the packaged-APK check
+# can find each rewritten call by name after R8.
+-keep class com.juren233.hyperlyricsenhanced.common.coroutines.ModuleDispatchers {
+    public static kotlinx.coroutines.CoroutineDispatcher getDefault();
+}

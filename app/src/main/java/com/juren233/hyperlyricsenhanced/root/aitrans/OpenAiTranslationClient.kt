@@ -1,25 +1,31 @@
 ﻿package com.juren233.hyperlyricsenhanced.root.aitrans
 
+import com.juren233.hyperlyricsenhanced.common.coroutines.ModuleDispatchers
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import com.juren233.hyperlyricsenhanced.common.extensions.json
 import com.juren233.hyperlyricsenhanced.common.extensions.toJson
 import com.juren233.hyperlyricsenhanced.lyric.model.Song
 import com.juren233.hyperlyricsenhanced.lyric.style.AiTranslationConfigs
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import com.juren233.hyperlyricsenhanced.common.net.buildOwned
+import com.juren233.hyperlyricsenhanced.common.net.httpUrlConnectionEquivalent
+import com.juren233.hyperlyricsenhanced.common.net.withPlatformUserAgent
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.EOFException
-import java.io.OutputStreamWriter
-import java.net.HttpURLConnection
-import java.net.URL
 
 /** OpenAI-compatible Chat Completions client for lyric translation. */
 internal object OpenAiTranslationClient {
+    private val client by lazy { httpUrlConnectionEquivalent(60_000L, 180_000L).buildOwned() }
+    private val JSON_TYPE = "application/json".toMediaType()
+
     suspend fun request(
         configs: AiTranslationConfigs,
         song: Song? = null,
         texts: List<String>
-    ): List<TranslationItem>? = withContext(Dispatchers.IO) {
+    ): List<TranslationItem>? = withContext(ModuleDispatchers.IO) {
         if (configs.apiKey.isNullOrBlank()) {
             HookLogger.w("OpenAiTranslationClient", "跳过翻译请求: reason=missing_api_key")
             return@withContext null
@@ -55,38 +61,32 @@ internal object OpenAiTranslationClient {
             frequencyPenalty = configs.frequencyPenalty
         )
 
-        var connection: HttpURLConnection? = null
         try {
-            val url = URL(apiUrl)
         HookLogger.d("OpenAiTranslationClient", "发送翻译请求: model=${configs.model}, url=$apiUrl")
 
-            connection = (url.openConnection() as HttpURLConnection).apply {
-                requestMethod = "POST"
-                connectTimeout = 60 * 1000
-                readTimeout = 3 * (60 * 1000)
-                doOutput = true
-                setRequestProperty("Content-Type", "application/json")
-                setRequestProperty("Authorization", "Bearer ${configs.apiKey}")
-            }
+            val request = Request.Builder()
+                .url(apiUrl)
+                // Bytes, not a String: the Content-Type stays exactly "application/json".
+                .post(chatRequest.toJson().toByteArray(Charsets.UTF_8).toRequestBody(JSON_TYPE))
+                .withPlatformUserAgent()
+                .header("Authorization", "Bearer ${configs.apiKey}")
+                .build()
 
-            OutputStreamWriter(connection.outputStream).use {
-                it.write(chatRequest.toJson())
-            }
-
-            val responseCode = connection.responseCode
-            if (responseCode == HttpURLConnection.HTTP_OK) {
-                val responseBody = connection.inputStream.bufferedReader().use { it.readText() }
-                val responseObj = json.decodeFromString<OpenAiChatResponse>(responseBody)
-                val content = responseObj.choices.firstOrNull()?.message?.content ?: run {
-                HookLogger.w("OpenAiTranslationClient", "翻译响应为空")
-                    return@withContext null
+            client.newCall(request).execute().use { response ->
+                val responseCode = response.code
+                if (responseCode == 200) {
+                    val responseBody = response.body!!.bytes().toString(Charsets.UTF_8)
+                    val responseObj = json.decodeFromString<OpenAiChatResponse>(responseBody)
+                    val content = responseObj.choices.firstOrNull()?.message?.content ?: run {
+                    HookLogger.w("OpenAiTranslationClient", "翻译响应为空")
+                        return@withContext null
+                    }
+                HookLogger.d("OpenAiTranslationClient", "翻译请求完成: code=$responseCode")
+                    AITranslationResponseParser.parse(content, requestIndices)
+                } else {
+                HookLogger.e("OpenAiTranslationClient", "翻译请求失败: code=$responseCode")
+                    null
                 }
-            HookLogger.d("OpenAiTranslationClient", "翻译请求完成: code=$responseCode")
-                AITranslationResponseParser.parse(content, requestIndices)
-            } else {
-                val errorBody = connection.errorStream?.bufferedReader()?.use { it.readText() } ?: "无错误信息"
-            HookLogger.e("OpenAiTranslationClient", "翻译请求失败: code=$responseCode")
-                null
             }
         } catch (e: CancellationException) {
             throw e
@@ -100,8 +100,6 @@ internal object OpenAiTranslationClient {
                 e
             )
             null
-        } finally {
-            connection?.disconnect()
         }
     }
 

@@ -1,5 +1,6 @@
 ﻿package com.juren233.hyperlyricsenhanced.online.source.ne
 
+import com.juren233.hyperlyricsenhanced.common.coroutines.ModuleDispatchers
 import android.content.Context
 import android.util.Base64
 import com.juren233.hyperlyricsenhanced.utils.LogManager
@@ -12,7 +13,6 @@ import com.juren233.hyperlyricsenhanced.online.model.Source
 import com.juren233.hyperlyricsenhanced.online.utils.NeCryptoUtils
 import com.juren233.hyperlyricsenhanced.online.utils.YrcParser
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -161,7 +161,7 @@ class NeSource(
                     "https://interface.music.163.com/eapi/register/anonimous",
                     headers,
                     requestBody
-                ).execute()
+                )
 
                 if (response.isSuccessful) {
                     val setCookieHeaders = response.headers().values("Set-Cookie")
@@ -182,7 +182,7 @@ class NeSource(
                     val wnmcid = "${(1..6).map { ('a'..'z').random() }.joinToString("")}.${System.currentTimeMillis()}.01.0"
                     cookieMap["WNMCID"] = wnmcid
 
-                    val responseBodyBytes = response.body()?.bytes() ?: byteArrayOf()
+                    val responseBodyBytes = response.body() ?: byteArrayOf()
                     if (responseBodyBytes.isNotEmpty()) {
                         val decrypted = NeCryptoUtils.aesDecrypt(responseBodyBytes)
                         val jsonRes = json.decodeFromString<JsonObject>(decrypted)
@@ -239,7 +239,7 @@ class NeSource(
         path: String,
         params: JsonObject,
         encryptPath: String? = null
-    ): String = withContext(Dispatchers.Default) {
+    ): String = withContext(ModuleDispatchers.Default) {
 
         val headerParam = buildJsonObject {
             put("clientSign", clientSign)
@@ -274,8 +274,8 @@ class NeSource(
 
         val fullUrl = "https://interface.music.163.com$path"
 
-        val responseBody = api.request(fullUrl, headers, requestBody).execute()
-        val responseBytes = responseBody.body()?.bytes() ?: return@withContext ""
+        val responseBody = api.request(fullUrl, headers, requestBody)
+        val responseBytes = responseBody.body() ?: return@withContext ""
         if (responseBytes.isEmpty()) return@withContext ""
 
         try {
@@ -299,7 +299,7 @@ class NeSource(
         pageSize: Int,
         durationMs: Long,
     ): List<SongSearchResult> = withContext(
-        Dispatchers.IO) {
+        ModuleDispatchers.IO) {
         ensureInit()
 
         val path = "/eapi/search/song/list/page"
@@ -346,7 +346,7 @@ class NeSource(
         }
     }
 
-    override suspend fun getLyrics(song: SongSearchResult): LyricsResult? = withContext(Dispatchers.IO) {
+    override suspend fun getLyrics(song: SongSearchResult): LyricsResult? = withContext(ModuleDispatchers.IO) {
         ensureInit()
         val path = "/eapi/song/lyric/v1"
         val params = buildJsonObject {

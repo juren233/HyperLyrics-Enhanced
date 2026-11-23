@@ -80,7 +80,7 @@ internal class QmSongCatalog(private val api: QmApi) {
                 })
             })
         }
-        val response = api.request(body).execute()
+        val response = api.request(body)
         if (!response.isSuccessful) return null
         return parseMetadataMatch(response.body() ?: return null)
     }
@@ -99,7 +99,7 @@ internal class QmSongCatalog(private val api: QmApi) {
                 })
             }
         }
-        val response = api.request(body).execute()
+        val response = api.request(body)
         if (!response.isSuccessful) return emptyMap()
         return parseDetails(response.body() ?: return emptyMap(), wanted.size)
     }

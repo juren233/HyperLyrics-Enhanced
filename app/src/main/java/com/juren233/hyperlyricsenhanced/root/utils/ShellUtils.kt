@@ -1,6 +1,6 @@
 package com.juren233.hyperlyricsenhanced.root.utils
 
-import kotlinx.coroutines.Dispatchers
+import com.juren233.hyperlyricsenhanced.common.coroutines.ModuleDispatchers
 import kotlinx.coroutines.withContext
 import java.io.DataOutputStream
 import java.util.concurrent.TimeUnit
@@ -14,7 +14,7 @@ object ShellUtils {
         return killAppProcesses(listOf(SYSTEM_UI_PACKAGE))
     }
 
-    suspend fun hasRootAccess(): Boolean = withContext(Dispatchers.IO) {
+    suspend fun hasRootAccess(): Boolean = withContext(ModuleDispatchers.IO) {
         var process: Process? = null
         try {
             process = ProcessBuilder("su", "-c", "id -u")
@@ -105,7 +105,7 @@ object ShellUtils {
     }
 
     suspend fun execRootScriptSilent(cmd: String, inputScript: String? = null): Boolean {
-        return withContext(Dispatchers.IO) {
+        return withContext(ModuleDispatchers.IO) {
             var process: Process? = null
             var os: DataOutputStream? = null
             try {
@@ -132,7 +132,7 @@ object ShellUtils {
      * 供需要回读内容的调用方使用（插件目标进程状态读回）。
      */
     suspend fun execRootScriptLines(cmd: String, inputScript: String): List<String>? {
-        return withContext(Dispatchers.IO) {
+        return withContext(ModuleDispatchers.IO) {
             var process: Process? = null
             var os: DataOutputStream? = null
             try {

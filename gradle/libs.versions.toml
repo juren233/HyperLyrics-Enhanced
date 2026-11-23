@@ -11,11 +11,9 @@ composeBom = "2026.04.01"
 miuix = "0.9.4"
 palette = "1.0.0"
 kotlin = "2.3.21"
-retrofit = "2.11.0"
 okhttp = "4.12.0"
 kotlinxSerializationJson = "1.6.3"
 kotlinxCoroutines = "1.9.0"
-retrofitSerializationConverter = "1.0.0"
 libxposed = "102.0.0"
 daimajia-animations = "2.4"
 daimajia-easing = "2.4"
@@ -66,12 +64,10 @@ miuix-icons-android = { group = "top.yukonga.miuix.kmp", name = "miuix-icons-and
 miuix-nav-android = { group = "top.yukonga.miuix.kmp", name = "miuix-nav-android", version.ref = "miuix" }
 
 # --- Network & Serialization ---
-retrofit2-retrofit = { group = "com.squareup.retrofit2", name = "retrofit", version.ref = "retrofit" }
 squareup-okhttp3 = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinxSerializationJson" }
 kotlinx-coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "kotlinxCoroutines" }
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "kotlinxCoroutines" }
-retrofit2-kotlinx-serialization-converter = { group = "com.jakewharton.retrofit", name = "retrofit2-kotlinx-serialization-converter", version.ref = "retrofitSerializationConverter" }
 
 # --- Xposed ---
 libxposed-api = { group = "io.github.libxposed", name = "api", version.ref = "libxposed" }

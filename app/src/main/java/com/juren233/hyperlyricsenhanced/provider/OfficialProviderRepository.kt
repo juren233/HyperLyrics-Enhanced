@@ -6,14 +6,15 @@
 
 package com.juren233.hyperlyricsenhanced.provider
 
+import com.juren233.hyperlyricsenhanced.common.coroutines.ModuleDispatchers
 import android.content.Context
 import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.common.PrefsBridge
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.coroutines.CancellationException
+import com.juren233.hyperlyricsenhanced.common.net.buildOwned
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
@@ -123,12 +124,12 @@ object OfficialProviderRepository {
         .connectTimeout(8, TimeUnit.SECONDS)
         .readTimeout(12, TimeUnit.SECONDS)
         .callTimeout(20, TimeUnit.SECONDS)
-        .build()
+        .buildOwned()
     private val packClient = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .callTimeout(90, TimeUnit.SECONDS)
-        .build()
+        .buildOwned()
     private val json = Json {
         // 新版目录可能新增字段；旧版 App 忽略未知字段而不是让整个插件页报错。
         ignoreUnknownKeys = true
@@ -143,7 +144,7 @@ object OfficialProviderRepository {
      * remote catalog is only needed by the download screen.
      */
     suspend fun loadInstalledItems(context: Context): List<OfficialProviderItem> =
-        withContext(Dispatchers.IO) {
+        withContext(ModuleDispatchers.IO) {
             OfficialProviderCatalog.definitions.mapNotNull { definition ->
                 val installedVersionCode = PrefsBridge.getInt(
                     OfficialProviderCatalog.installedVersionKey(definition.id),
@@ -631,7 +632,7 @@ object OfficialProviderRepository {
         maxBytes: Int,
         client: OkHttpClient = catalogClient,
     ): ByteArray =
-        withContext(Dispatchers.IO) {
+        withContext(ModuleDispatchers.IO) {
             val request = Request.Builder().url(url).get().build()
             val startedAtNanos = System.nanoTime()
             client.newCall(request).execute().use { response ->

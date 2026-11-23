@@ -1,5 +1,6 @@
 package com.juren233.hyperlyricsenhanced.root.mediacard.island
 
+import com.juren233.hyperlyricsenhanced.common.coroutines.ModuleThreads
 import com.juren233.hyperlyricsenhanced.root.reload.SystemUiHookLifetime
 import android.content.Context
 import android.content.SharedPreferences
@@ -44,6 +45,7 @@ import com.juren233.hyperlyricsenhanced.root.mediacard.island.background.IslandE
 import com.juren233.hyperlyricsenhanced.root.mediacard.island.background.IslandExpandedMediaBackgroundHost
 import com.juren233.hyperlyricsenhanced.root.mediacard.notification.background.NotificationMediaColorConfig
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
+import com.juren233.hyperlyricsenhanced.root.utils.LatestViewPost
 import com.juren233.hyperlyricsenhanced.root.utils.MediaCardDiagnosticLogger
 import io.github.libxposed.api.XposedInterface.Chain
 import io.github.libxposed.api.XposedInterface.HookHandle
@@ -102,6 +104,7 @@ object IslandExpandedMediaAmbientFlowHooker {
         WeakHashMap<Any, MutableSet<String>>()
     )
     internal val themeStates = Collections.synchronizedMap(WeakHashMap<View, ViewThemeState>())
+    internal val cardThemeRetries = LatestViewPost()
     internal val lightBackgroundModes = Collections.synchronizedMap(
         WeakHashMap<View, IslandExpandedMediaLightBackgroundMode>()
     )
@@ -114,7 +117,7 @@ object IslandExpandedMediaAmbientFlowHooker {
     internal val restoringNativeForeground = ThreadLocal<Boolean>()
     private val bindingBinder = ThreadLocal<Any?>()
     internal val colorExecutor = Executors.newSingleThreadExecutor { task ->
-        Thread(task, "HyperLyrics Enhanced-IslandMediaColor").apply { isDaemon = true }
+        ModuleThreads.newThread("HyperLyrics Enhanced-IslandMediaColor", task = task)
     }
     // 封面图标（setFixIcon）先于 binder 的 artWorkDrawable 刷新到达（真机日志：图标 T+0、
     // binder 滞后 0.6~0.7s，且滞后那跳并不保证出现）。流光封面色必须以图标更新为触发源，
@@ -248,6 +251,7 @@ object IslandExpandedMediaAmbientFlowHooker {
             IslandExpandedMediaElementController.cleanup()
             synchronized(fakeFlowStates) { fakeFlowStates.keys.toList() }
                 .forEach(::removeCustomFakeFlow)
+            cardThemeRetries.cancelAll()
             activeBinders.clear()
             themeStates.clear()
             lightBackgroundModes.clear()

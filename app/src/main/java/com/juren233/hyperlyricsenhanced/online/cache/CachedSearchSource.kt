@@ -6,13 +6,13 @@
 
 package com.juren233.hyperlyricsenhanced.online.cache
 
+import com.juren233.hyperlyricsenhanced.common.coroutines.ModuleDispatchers
 import android.content.Context
 import com.juren233.hyperlyricsenhanced.online.isWordTimedOnlineLyrics
 import com.juren233.hyperlyricsenhanced.online.model.LyricsResult
 import com.juren233.hyperlyricsenhanced.online.model.SearchSource
 import com.juren233.hyperlyricsenhanced.online.model.SongSearchResult
 import com.juren233.hyperlyricsenhanced.utils.LogManager
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
@@ -152,7 +152,7 @@ internal class CachedSearchSource(
 
     private fun songKey(song: SongSearchResult) = "${song.source.name}$KEY_SEPARATOR${song.id}"
 
-    private suspend fun <T> io(block: () -> T): T = withContext(Dispatchers.IO) { block() }
+    private suspend fun <T> io(block: () -> T): T = withContext(ModuleDispatchers.IO) { block() }
 
     companion object {
         private const val TAG = "OnlineLyricCache"
@@ -166,11 +166,36 @@ internal class CachedSearchSource(
 
         internal fun storeFor(context: Context): SqliteOnlineLyricCacheStore = sharedFor(context).second
 
+        @Volatile
+        private var retired = false
+
+        /**
+         * SystemUI hot reload, once the generation is retired: its database closes as soon as no
+         * operation on it is running ([SqliteOnlineLyricCacheStore.retire]). A store first asked for
+         * after this is created closed, so a late caller never opens the database again.
+         */
+        fun retireForReload() {
+            val store = synchronized(this) {
+                retired = true
+                shared?.second
+            }
+            store?.retire()
+        }
+
+        /** Unit tests share one JVM: a test that retires the shared store must restore it. */
+        internal fun resetForTest() {
+            synchronized(this) {
+                retired = false
+                shared = null
+            }
+        }
+
         private fun sharedFor(context: Context) =
             shared ?: synchronized(this) {
                 shared ?: run {
                     val appContext = context.applicationContext
                     val store = SqliteOnlineLyricCacheStore(appContext)
+                    if (retired) store.retire()
                     OnlineLyricResponseCache(
                         store = store,
                         onStoreFailure = { operation, error ->

@@ -6,6 +6,8 @@
 
 package io.github.proify.lyricon.central.provider
 
+import android.os.IBinder
+import android.os.SharedMemory
 import io.github.proify.lyricon.central.connection.ConnectionRegistry
 import io.github.proify.lyricon.central.ProviderFlowDiagnostics
 import io.github.proify.lyricon.central.provider.player.ActivePlayerCoordinator
@@ -32,7 +34,30 @@ internal class ProviderDirectory(
             "${registered.diagnosticState()}, candidate=${ProviderFlowDiagnostics.id(candidate)}, " +
                 "accepted=${registered === candidate}"
         }
+        if (registered === candidate) candidate.attachRelays()
         return registered
+    }
+
+    /**
+     * Rebuilds a connection inherited from the previous module generation on the provider's
+     * existing relays and position memory. The caller replays its state, then attaches the relays.
+     * Null when this provider registered anew first (that registration then owns the connection).
+     */
+    fun adopt(
+        binder: IProviderBinder,
+        info: ProviderInfo,
+        serviceRelay: IBinder,
+        playerRelay: IBinder,
+        adoptedMemory: SharedMemory?,
+    ): ProviderConnection? {
+        if (registry.get(info) != null) return null
+        val candidate = ProviderConnection(binder, info, activePlayers, serviceRelay, playerRelay, adoptedMemory)
+        val registered = registry.register(candidate)
+        ProviderFlowDiagnostics.log("connection_adopt", info) {
+            "${registered.diagnosticState()}, candidate=${ProviderFlowDiagnostics.id(candidate)}, " +
+                "accepted=${registered === candidate}"
+        }
+        return candidate.takeIf { registered === it }
     }
 
     fun closeAll(retire: Boolean = true) = registry.closeAll(retire)

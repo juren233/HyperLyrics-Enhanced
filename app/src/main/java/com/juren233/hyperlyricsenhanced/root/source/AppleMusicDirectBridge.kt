@@ -1,5 +1,6 @@
 package com.juren233.hyperlyricsenhanced.root.source
 
+import com.juren233.hyperlyricsenhanced.root.reload.ModuleGeneration
 import android.app.Application
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -77,6 +78,17 @@ internal class AppleMusicDirectBridge(
     private var latestOnlineTranslationGeneration: Int? = null
     @Volatile
     private var latestMissingLyricsSupplementPayload: ByteArray? = null
+    // Last Apple state, handed to the next generation on hot reload (Apple does not re-send it).
+    @Volatile
+    private var lastSongPayload: ByteArray? = null
+    @Volatile
+    private var lastPlaying: Boolean? = null
+    @Volatile
+    private var lastPosition: Long? = null
+    @Volatile
+    private var hasLastText = false
+    @Volatile
+    private var lastText: String? = null
 
     private val binder = object : IAppleMusicLyricBridge.Stub() {
         override fun registerTranslationReceiver(receiver: IAppleMusicTranslationReceiver?) {
@@ -118,6 +130,7 @@ internal class AppleMusicDirectBridge(
                 recordStaleSongDrop("before_post", compressedSong.size)
                 return
             }
+            lastSongPayload = compressedSong
             bridgeDiagnostic(
                 "stage=direct_song_payload_received, bytes=${compressedSong.size}, " +
                     "empty=${compressedSong.isEmpty()}",
@@ -146,18 +159,25 @@ internal class AppleMusicDirectBridge(
         }
 
         override fun onPlaybackStateChanged(isPlaying: Boolean) {
+            if (isCurrentConnection()) lastPlaying = isPlaying
             postToSource { source.onDirectPlaybackStateChanged(isPlaying) }
         }
 
         override fun onPositionChanged(position: Long) {
+            if (isCurrentConnection()) lastPosition = position
             postToSource { source.onDirectPositionChanged(position) }
         }
 
         override fun onSeekTo(position: Long) {
+            if (isCurrentConnection()) lastPosition = position
             postToSource { source.onDirectSeekTo(position) }
         }
 
         override fun onReceiveText(text: String?) {
+            if (isCurrentConnection()) {
+                hasLastText = true
+                lastText = text
+            }
             postToSource { source.onDirectText(text) }
         }
 
@@ -231,7 +251,46 @@ internal class AppleMusicDirectBridge(
         )
         registered = true
         bridgeDiagnostic("stage=direct_bridge_receiver_registered")
-        requestRegistration("initial", immediately = true)
+        AppleDirectBridgeHandover.attach(binder.asBinder())
+        val inherited = AppleDirectBridgeHandover.takeIncoming()
+        if (inherited == null || !adoptHandover(inherited)) {
+            requestRegistration("initial", immediately = true)
+        }
+    }
+
+    /**
+     * Hot reload: Apple stays connected to the same relay, so it neither re-registers its
+     * translation receiver nor re-sends the current song. Take both over from the retired
+     * generation and replay the last state into this one.
+     */
+    private fun adoptHandover(inherited: AppleDirectBridgeHandover.State): Boolean {
+        val receiverBinder = inherited.translationReceiver
+        val adopted = receiverBinder != null && receiverBinder.isBinderAlive &&
+            withAppleDirectLifecycle(lifecycleLock) {
+                val entry = translationConnection.replace(
+                    IAppleMusicTranslationReceiver.Stub.asInterface(receiverBinder),
+                )
+                val connected = entry != null && translationConnection.current === entry
+                if (connected) {
+                    awaitingTranslationReceiver = false
+                    registrationRetry.connected()
+                    mainHandler.removeCallbacks(registrationRetryRunnable)
+                }
+                connected
+            }
+        bridgeDiagnostic(
+            "stage=direct_bridge_handover_adopted, receiverAdopted=$adopted, " +
+                "songBytes=${inherited.songPayload?.size}, playing=${inherited.playing}, " +
+                "position=${inherited.position}, hasText=${inherited.hasText}",
+        )
+        recoveryDiagnostic("direct_handover_adopted", "receiverAdopted=$adopted")
+        inherited.songPayload?.let(binder::onSongChanged)
+        inherited.playing?.let(binder::onPlaybackStateChanged)
+        // While playing, Apple pushes positions continuously and a replayed one would arrive after a
+        // newer live one; only a paused position needs replaying.
+        if (inherited.playing != true) inherited.position?.let(binder::onPositionChanged)
+        if (inherited.hasText) binder.onReceiveText(inherited.text)
+        return adopted
     }
 
     fun stop() {
@@ -243,10 +302,27 @@ internal class AppleMusicDirectBridge(
             registrationAttempted = false
             awaitingTranslationReceiver = false
             registrationRetry.stop()
+            AppleDirectBridgeHandover.detach()
             if (!shouldUnregister) return
             val cleanup = RuntimeResourceCleanup()
             cleanup.attempt("Apple direct bridge callbacks") { mainHandler.removeCallbacksAndMessages(null) }
-            cleanup.attempt("Apple translation receiver death recipient") {
+            if (AppleDirectBridgeHandover.isHandingOver) {
+                // Hot reload: ownership of Apple's receiver moves to the next generation, it is not
+                // revoked, so Apple must not be told its translation was cleared.
+                cleanup.attempt("Apple direct bridge handover") {
+                    AppleDirectBridgeHandover.recordOutgoing(
+                        AppleDirectBridgeHandover.State(
+                            translationReceiver = translationConnection.current?.binder,
+                            songPayload = lastSongPayload,
+                            playing = lastPlaying,
+                            position = lastPosition,
+                            hasText = hasLastText,
+                            text = lastText,
+                        ),
+                    )
+                    translationConnection.clear()
+                }
+            } else cleanup.attempt("Apple translation receiver death recipient") {
                 // Source ownership is already revoked. Clear the former owner's Apple translation
                 // directly, without re-entering normal send/reconnect paths or accepting callbacks.
                 translationConnection.clearWithFinalNotification { receiver ->
@@ -267,7 +343,9 @@ internal class AppleMusicDirectBridge(
         bridgeDiagnostic("stage=direct_bridge_stopped")
     }
 
-    private fun isCurrentConnection(): Boolean = registered && source.directBridge === this
+    /** Every call to and from Apple goes through this check, including the retired-generation exit. */
+    private fun isCurrentConnection(): Boolean =
+        registered && source.directBridge === this && ModuleGeneration.mayPublish("AppleMusicDirectBridge")
 
     private fun postToSource(songPayloadBytes: Int? = null, action: () -> Unit) {
         if (!isCurrentConnection()) {
@@ -454,7 +532,8 @@ internal class AppleMusicDirectBridge(
 
     private fun sendRegistration() {
         val extras = Bundle().apply {
-            putBinder(AppleDirectBridgeContract.EXTRA_BINDER, binder.asBinder())
+            // Advertise the process-lifetime relay, never this generation's own Binder.
+            putBinder(AppleDirectBridgeContract.EXTRA_BINDER, AppleDirectBridgeHandover.relay())
         }
         val intent = Intent(AppleDirectBridgeContract.ACTION_REGISTER)
             .setPackage(AppleDirectBridgeContract.APPLE_MUSIC_PACKAGE)

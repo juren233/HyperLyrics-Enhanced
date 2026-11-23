@@ -6,13 +6,13 @@
 
 package com.juren233.hyperlyricsenhanced.provider.auto
 
+import com.juren233.hyperlyricsenhanced.common.coroutines.ModuleDispatchers
 import android.content.Context
 import com.juren233.hyperlyricsenhanced.provider.OfficialProviderAcquisitionLog
 import com.juren233.hyperlyricsenhanced.provider.OfficialProviderItem
 import com.juren233.hyperlyricsenhanced.provider.OfficialProviderRepository
 import com.juren233.hyperlyricsenhanced.provider.ProviderAutoUpdateDecision
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
@@ -43,7 +43,7 @@ object OfficialProviderAutoUpdater {
         fun pendingIds(): String = pending.joinToString { it.catalog.id }
     }
 
-    suspend fun findUpdates(context: Context): Plan = withContext(Dispatchers.IO) {
+    suspend fun findUpdates(context: Context): Plan = withContext(ModuleDispatchers.IO) {
         // includeTargetState=false：后台只读界面流程持久化的目标状态缓存，
         // 不触发 root 读回（未授权时会反复弹授权）；缓存为空时坏版本降级
         // 自然退化为不降级。
@@ -60,7 +60,7 @@ object OfficialProviderAutoUpdater {
         Plan(checked = updatable.size, pending = pending)
     }
 
-    suspend fun install(context: Context, plan: Plan): Outcome = withContext(Dispatchers.IO) {
+    suspend fun install(context: Context, plan: Plan): Outcome = withContext(ModuleDispatchers.IO) {
         val updated = mutableListOf<String>()
         val failed = mutableListOf<String>()
         plan.pending.forEach { item ->

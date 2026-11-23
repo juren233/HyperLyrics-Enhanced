@@ -1,5 +1,6 @@
 package com.juren233.hyperlyricsenhanced.common.media
 
+import com.juren233.hyperlyricsenhanced.common.coroutines.ModuleThreads
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.ImageDecoder
@@ -56,7 +57,7 @@ object MediaMetadataHelper {
     private val lastTrackSignatureByPackage = HashMap<String, String>()
     private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
     private val artworkExecutor = Executors.newSingleThreadExecutor { task ->
-        Thread(task, "HyperLyrics-MediaArtwork").apply { isDaemon = true }
+        ModuleThreads.newThread("HyperLyrics-MediaArtwork", task = task)
     }
     private val artworkGeneration = AtomicInteger(0)
     private val artworkCache = LinkedHashMap<String, ArtworkCacheEntry>(8, 0.75f, true)
@@ -186,6 +187,17 @@ object MediaMetadataHelper {
 
     fun setMediaInfoChangedListener(listener: ((String) -> Unit)?) {
         mediaInfoChangedListener = listener
+    }
+
+    /**
+     * Hot reload only, after every consumer of this helper has been released: drop the session
+     * observers (a query from any earlier teardown step would have registered them again) and stop
+     * the artwork pool for good. `shutdown()` also unregisters the libcore Cleaner action that would
+     * otherwise keep this module ClassLoader reachable through the pool's thread factory.
+     */
+    fun releaseForReload() {
+        clearArtworkResolution()
+        artworkExecutor.shutdown()
     }
 
     fun clearArtworkResolution() {

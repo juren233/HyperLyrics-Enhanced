@@ -1,10 +1,10 @@
 package com.juren233.hyperlyricsenhanced.utils
 
+import com.juren233.hyperlyricsenhanced.common.coroutines.ModuleDispatchers
 import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withContext
@@ -47,7 +47,7 @@ object LyricProviderManager {
     suspend fun loadProviders(context: Context, stateFlow: MutableStateFlow<ProviderUiState>) {
         stateFlow.update { it.copy(isLoading = true) }
 
-        withContext(Dispatchers.IO) {
+        withContext(ModuleDispatchers.IO) {
             try {
                 val packageManager = context.packageManager
                 @Suppress("DEPRECATION")

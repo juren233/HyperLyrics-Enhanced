@@ -1,5 +1,6 @@
 package com.juren233.hyperlyricsenhanced.root.source
 
+import com.juren233.hyperlyricsenhanced.common.coroutines.ModuleDispatchers
 import com.juren233.hyperlyricsenhanced.common.MediaSessionOnlineFallbackPreferences.Settings
 import com.juren233.hyperlyricsenhanced.lyric.model.Song
 import com.juren233.hyperlyricsenhanced.lyric.source.TimelineContent
@@ -26,7 +27,7 @@ internal class MediaSessionOnlineFallbackCoordinator(
     private val settings: () -> Settings,
     private val fetchSong: suspend (TrackIdentity, List<Source>) -> Song?,
     dispatcher: CoroutineDispatcher = Dispatchers.Main.immediate,
-    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val ioDispatcher: CoroutineDispatcher = ModuleDispatchers.IO,
     private val nowMs: () -> Long = { System.nanoTime() / 1_000_000L },
     private val graceMs: Long = 1_500L,
     /** 「自动」来源的竞速取词：先到的结果通过回调先交出，返回按优先级裁决后的最终结果。 */

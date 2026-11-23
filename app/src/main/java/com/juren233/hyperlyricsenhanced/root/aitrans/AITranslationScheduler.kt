@@ -1,5 +1,6 @@
 ﻿package com.juren233.hyperlyricsenhanced.root.aitrans
 
+import com.juren233.hyperlyricsenhanced.common.coroutines.ModuleDispatchers
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import com.juren233.hyperlyricsenhanced.lyric.model.Song
 import com.juren233.hyperlyricsenhanced.lyric.style.AiTranslationConfigs
@@ -8,7 +9,6 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
@@ -27,7 +27,7 @@ internal class AITranslationScheduler(
         const val TAG = "AITranslationScheduler"
     }
 
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val scope = CoroutineScope(ModuleDispatchers.IO + SupervisorJob())
     private val lock = Any()
     private val jobs = ConcurrentHashMap<String, TranslationJob>()
     private val pending = ArrayDeque<TranslationJob>()

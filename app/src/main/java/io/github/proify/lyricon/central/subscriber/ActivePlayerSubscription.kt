@@ -6,6 +6,7 @@
 
 package io.github.proify.lyricon.central.subscriber
 
+import com.juren233.hyperlyricsenhanced.root.reload.ModuleGeneration
 import android.os.SharedMemory
 import android.os.SystemClock
 import android.os.Parcel
@@ -49,6 +50,7 @@ internal class ActivePlayerSubscription(
 
     @OptIn(ExperimentalSerializationApi::class)
     override fun onActiveProviderChanged(providerInfo: ProviderInfo?) {
+        if (!ModuleGeneration.mayPublish("ActivePlayerSubscription.onActiveProviderChanged")) return
         if (providerInfo == null) {
             remoteListener?.onActiveProviderChanged(null)
             return
@@ -60,6 +62,7 @@ internal class ActivePlayerSubscription(
     }
 
     override fun onSongChanged(song: Song?) {
+        if (!ModuleGeneration.mayPublish("ActivePlayerSubscription.onSongChanged")) return
         val bytes = song?.let { json.encodeToString(it).toByteArray() } ?: byteArrayOf()
         ProviderFlowDiagnostics.log("subscriber_song_delivery") {
             "subscription=${ProviderFlowDiagnostics.id(this)}, subscriber=$subscriberPackageName, " +
@@ -73,10 +76,12 @@ internal class ActivePlayerSubscription(
     }
 
     override fun onPlaybackStateChanged(isPlaying: Boolean) {
+        if (!ModuleGeneration.mayPublish("ActivePlayerSubscription.onPlaybackStateChanged")) return
         remoteListener?.onPlaybackStateChanged(isPlaying)
     }
 
     override fun onPositionChanged(position: Long) {
+        if (!ModuleGeneration.mayPublish("ActivePlayerSubscription.onPositionChanged")) return
         val buffer = positionBuffer
         try {
             buffer?.putLong(0, position)
@@ -98,18 +103,22 @@ internal class ActivePlayerSubscription(
     }
 
     override fun onSeekTo(position: Long) {
+        if (!ModuleGeneration.mayPublish("ActivePlayerSubscription.onSeekTo")) return
         remoteListener?.onSeekTo(position)
     }
 
     override fun onSendText(text: String?) {
+        if (!ModuleGeneration.mayPublish("ActivePlayerSubscription.onSendText")) return
         remoteListener?.onReceiveText(text)
     }
 
     override fun onDisplayTranslationChanged(isDisplayTranslation: Boolean) {
+        if (!ModuleGeneration.mayPublish("ActivePlayerSubscription.onDisplayTranslationChanged")) return
         remoteListener?.onDisplayTranslationChanged(isDisplayTranslation)
     }
 
     override fun onDisplayRomaChanged(isDisplayRoma: Boolean) {
+        if (!ModuleGeneration.mayPublish("ActivePlayerSubscription.onDisplayRomaChanged")) return
         remoteListener?.onDisplayRomaChanged(isDisplayRoma)
     }
 

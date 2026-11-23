@@ -1,6 +1,7 @@
 package com.juren233.hyperlyricsenhanced.online.source.qm
 
 
+import com.juren233.hyperlyricsenhanced.common.coroutines.ModuleDispatchers
 import android.util.Base64
 import com.juren233.hyperlyricsenhanced.common.lyric.SongMetadataQueryPolicy
 import com.juren233.hyperlyricsenhanced.online.model.LyricsResult
@@ -13,7 +14,6 @@ import com.juren233.hyperlyricsenhanced.online.utils.QmCryptoUtils
 import com.juren233.hyperlyricsenhanced.online.utils.QrcParser
 import com.juren233.hyperlyricsenhanced.utils.LogManager
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -38,7 +38,7 @@ class QmSource(
         artist: String,
         durationMs: Long,
         separator: String,
-    ): List<SongSearchResult> = withContext(Dispatchers.IO) {
+    ): List<SongSearchResult> = withContext(ModuleDispatchers.IO) {
         if (artist.isBlank()) return@withContext emptyList()
         for ((candidateTitle, candidateArtist) in SongMetadataQueryPolicy.metadataQueries(title, artist)) {
             val match = catalog.matchByMetadata(candidateTitle, candidateArtist, durationMs) ?: continue
@@ -72,7 +72,7 @@ class QmSource(
         separator: String,
         pageSize: Int,
         durationMs: Long,
-    ): List<SongSearchResult> = withContext(Dispatchers.IO) {
+    ): List<SongSearchResult> = withContext(ModuleDispatchers.IO) {
         val param = buildJsonObject {
             put("search_id", Random.nextLong(10000000000000000L, 90000000000000000L).toString())
             put("remoteplace", "search.android.keyboard")
@@ -96,7 +96,7 @@ class QmSource(
         )
 
         try {
-            val response = api.searchSong(reqBody).execute()
+            val response = api.searchSong(reqBody)
             if (!response.isSuccessful) {
                 LogManager.w("QmSource", "搜索 HTTP 失败: code=${response.code()}")
                 throw OnlineSourceRequestException("QM search HTTP ${response.code()}")
@@ -136,7 +136,7 @@ class QmSource(
         }
     }
 
-    override suspend fun getLyrics(song: SongSearchResult): LyricsResult? = withContext(Dispatchers.IO) {
+    override suspend fun getLyrics(song: SongSearchResult): LyricsResult? = withContext(ModuleDispatchers.IO) {
         if (song.id == "0") return@withContext null
 
         val param = buildJsonObject {
@@ -168,7 +168,7 @@ class QmSource(
         )
 
         try {
-            val response = api.getLyrics(reqBody).execute()
+            val response = api.getLyrics(reqBody)
             if (!response.isSuccessful) {
                 LogManager.w("QmSource", "歌词 HTTP 失败: code=${response.code()}")
                 throw OnlineSourceRequestException("QM lyrics HTTP ${response.code()}")
@@ -177,7 +177,7 @@ class QmSource(
             if (resp.req0.code != 0) throw OnlineSourceRequestException("QM lyrics code ${resp.req0.code}")
             val data = resp.req0.data ?: throw OnlineSourceRequestException("QM lyrics without data")
 
-            val lyricsData = withContext(Dispatchers.Default) {
+            val lyricsData = withContext(ModuleDispatchers.Default) {
                 val qrcText = if (data.lyric.isNotEmpty()) QmCryptoUtils.decryptQrc(data.lyric) else ""
                 val transText = if (data.trans.isNotEmpty()) QmCryptoUtils.decryptQrc(data.trans) else null
                 val romaText = if (data.roma.isNotEmpty()) QmCryptoUtils.decryptQrc(data.roma) else null

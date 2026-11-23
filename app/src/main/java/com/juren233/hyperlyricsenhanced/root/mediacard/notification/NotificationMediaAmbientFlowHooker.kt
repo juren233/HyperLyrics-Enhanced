@@ -29,6 +29,7 @@ import com.juren233.hyperlyricsenhanced.root.mediacard.background.MediaFlowTone
 import com.juren233.hyperlyricsenhanced.root.mediacard.notification.background.NotificationMediaBackgroundController
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import com.juren233.hyperlyricsenhanced.root.utils.MediaCardDiagnosticLogger
+import com.juren233.hyperlyricsenhanced.root.utils.shutdownNowAndRelease
 import io.github.libxposed.api.XposedInterface.Chain
 import io.github.libxposed.api.XposedInterface.Hooker
 import io.github.libxposed.api.XposedModule
@@ -267,7 +268,7 @@ object NotificationMediaAmbientFlowHooker {
         val controllers = synchronized(activeControllers) { activeControllers.toList() }
         states.clear()
         activeControllers.clear()
-        colorExecutor.shutdownNow()
+        colorExecutor.shutdownNowAndRelease()
         NotificationMediaBackgroundController.releaseAll()
         NotificationMediaMaterialThemeHooker.releaseAll()
         if (Looper.myLooper() == Looper.getMainLooper()) {

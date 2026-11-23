@@ -1,7 +1,6 @@
 ﻿package com.juren233.hyperlyricsenhanced.online
 
 import android.content.Context
-import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
 import com.juren233.hyperlyricsenhanced.online.model.SearchSource
 import com.juren233.hyperlyricsenhanced.online.source.ne.NeApi
 import com.juren233.hyperlyricsenhanced.online.source.ne.NeSource
@@ -11,9 +10,8 @@ import com.juren233.hyperlyricsenhanced.online.source.qm.QmApi
 import com.juren233.hyperlyricsenhanced.online.source.qm.QmSongCatalog
 import com.juren233.hyperlyricsenhanced.online.source.qm.QmSource
 import kotlinx.serialization.json.Json
-import okhttp3.MediaType.Companion.toMediaType
+import com.juren233.hyperlyricsenhanced.common.net.buildOwned
 import okhttp3.OkHttpClient
-import retrofit2.Retrofit
 import java.util.concurrent.TimeUnit
 
 object LyricApiProvider {
@@ -30,17 +28,10 @@ object LyricApiProvider {
             .connectTimeout(5, TimeUnit.SECONDS)
             .readTimeout(8, TimeUnit.SECONDS)
             .retryOnConnectionFailure(true)
-            .build()
+            .buildOwned()
     }
 
-    private val neApi by lazy {
-        Retrofit.Builder()
-            .baseUrl("https://interface.music.163.com/")
-            .client(baseClient)
-            .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
-            .build()
-            .create(NeApi::class.java)
-    }
+    private val neApi by lazy { NeApi(baseClient) }
 
     private val qmApi by lazy {
         val qmClient = baseClient.newBuilder()
@@ -51,14 +42,9 @@ object LyricApiProvider {
                     .build()
                 chain.proceed(req)
             }
-            .build()
+            .buildOwned()
 
-        Retrofit.Builder()
-            .baseUrl("https://u.y.qq.com/")
-            .client(qmClient)
-            .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
-            .build()
-            .create(QmApi::class.java)
+        QmApi(qmClient, json)
     }
 
     val qmSource: SearchSource by lazy { QmSource(qmApi) }

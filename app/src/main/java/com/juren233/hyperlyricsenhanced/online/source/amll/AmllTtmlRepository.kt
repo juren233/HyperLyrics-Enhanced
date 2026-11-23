@@ -6,6 +6,7 @@
 
 package com.juren233.hyperlyricsenhanced.online.source.amll
 
+import com.juren233.hyperlyricsenhanced.common.coroutines.ModuleDispatchers
 import android.content.Context
 import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.online.cache.OnlineLyricCachePolicy
@@ -16,8 +17,8 @@ import com.juren233.hyperlyricsenhanced.online.source.ttml.TtmlCatalogIo
 import com.juren233.hyperlyricsenhanced.online.source.ttml.TtmlCatalogIo.readLimited
 import com.juren233.hyperlyricsenhanced.online.source.ttml.TtmlLookupResult
 import com.juren233.hyperlyricsenhanced.online.source.ttml.directorySize
+import com.juren233.hyperlyricsenhanced.root.reload.ModuleGeneration
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
@@ -26,6 +27,7 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import okhttp3.Call
 import okhttp3.Callback
+import com.juren233.hyperlyricsenhanced.common.net.buildOwned
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -43,6 +45,9 @@ internal object AmllTtmlRepository : TtmlCatalogSource {
     override val source: Source = Source.AMLL
 
     private const val TAG = "AmllTtml"
+
+    /** [ModuleGeneration] exit of a retired generation's fetched file. */
+    internal const val CACHE_WRITE_EXIT = "AMLL TTML 缓存文件写入"
     private const val PRIMARY_URL =
         "https://raw.githubusercontent.com/amll-dev/amll-ttml-db/refs/heads/main/"
     private const val MIRROR_URL = "https://amll-ttml-db.stevexmh.net/"
@@ -54,7 +59,7 @@ internal object AmllTtmlRepository : TtmlCatalogSource {
         .connectTimeout(5, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
         .retryOnConnectionFailure(true)
-        .build()
+        .buildOwned()
 
     private val misses = object : LinkedHashMap<String, Long>(64, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Long>?): Boolean =
@@ -87,22 +92,26 @@ internal object AmllTtmlRepository : TtmlCatalogSource {
         platform: CatalogPlatform,
         songId: String,
         retryMiss: Boolean,
-    ): TtmlLookupResult = withContext(Dispatchers.IO) {
+    ): TtmlLookupResult = withContext(ModuleDispatchers.IO) {
         val rawId = catalogId(songId) ?: return@withContext TtmlLookupResult(null, searched = false)
         val layout = layoutOf(platform)
         val id = "${layout.folder}/$rawId"
         val now = System.currentTimeMillis()
         val cacheFile = cacheFile(context, layout, rawId)
         // A file found once is kept until the user clears it (OnlineLyricCachePolicy).
-        readCache(cacheFile)?.let { cached -> return@withContext lookupFrom(id, cached) }
+        cachedLookup(cacheFile, id)?.let { cached -> return@withContext cached }
         if (!retryMiss && isRecentMiss(id, now)) {
             return@withContext TtmlLookupResult(null, searched = true)
         }
         when (val fetched = fetch(layout, rawId)) {
             is Fetch.Hit -> {
                 synchronized(misses) { misses.remove(id) }
-                TtmlCatalogIo.writeAtomically(cacheFile, fetched.bytes)
-                lookupFrom(id, fetched.bytes)
+                val result = lookupFrom(id, fetched.bytes)
+                // A file that does not parse is not kept: cachedLookup would only delete it again.
+                if (worthKeeping(fetched.bytes, result) && ModuleGeneration.mayPublish(CACHE_WRITE_EXIT)) {
+                    TtmlCatalogIo.writeAtomically(cacheFile, fetched.bytes)
+                }
+                result
             }
             Fetch.NotFound -> {
                 synchronized(misses) { misses[id] = now }
@@ -114,7 +123,7 @@ internal object AmllTtmlRepository : TtmlCatalogSource {
     }
 
     override suspend fun clear(context: Context, platform: CatalogPlatform, songId: String) =
-        withContext(Dispatchers.IO) {
+        withContext(ModuleDispatchers.IO) {
             val rawId = catalogId(songId) ?: return@withContext
             val layout = layoutOf(platform)
             cacheFile(context, layout, rawId).delete()
@@ -122,7 +131,7 @@ internal object AmllTtmlRepository : TtmlCatalogSource {
             Unit
         }
 
-    override suspend fun clearAll(context: Context) = withContext(Dispatchers.IO) {
+    override suspend fun clearAll(context: Context) = withContext(ModuleDispatchers.IO) {
         cacheDir(context).listFiles()?.forEach { it.delete() }
         clearMisses()
     }
@@ -238,10 +247,30 @@ internal object AmllTtmlRepository : TtmlCatalogSource {
         })
     }
 
-    private fun readCache(file: File): ByteArray? {
-        if (!file.isFile || file.length() !in 1..TtmlCatalogIo.MAX_TTML_BYTES.toLong()) return null
-        return runCatching { file.readBytes() }.getOrNull()
+    /**
+     * The answer of the cached [file], or null when it has to be fetched. Decided by parsing, not
+     * by size ([TtmlCatalogIo.isCompleteTtml]): a complete TTML file without word timing is kept
+     * and answers "no match" without a new download, as a fetched one always did; a file that does
+     * not parse (cut short, corrupted) is deleted, since kept it would answer every later lookup
+     * with no lyrics until the user cleared the cache. The size bound only limits what is read into
+     * memory; nothing larger is ever written ([fetch] reads at most that much).
+     */
+    internal fun cachedLookup(file: File, id: String): TtmlLookupResult? {
+        if (!file.isFile) return null
+        val bytes = file.takeIf { it.length() <= TtmlCatalogIo.MAX_TTML_BYTES }
+            ?.let { runCatching { it.readBytes() }.getOrNull() }
+        val result = bytes?.let { lookupFrom(id, it) }
+        if (bytes != null && result != null && worthKeeping(bytes, result)) return result
+        if (!file.delete()) debug("unusable cache file could not be deleted: ${file.name}")
+        return null
     }
+
+    /**
+     * A match, or a complete TTML file that has none; not a file that fails to parse. Decides both
+     * whether a fetched file is written and whether a cached one is kept.
+     */
+    internal fun worthKeeping(bytes: ByteArray, result: TtmlLookupResult): Boolean =
+        result.match != null || TtmlCatalogIo.isCompleteTtml(bytes)
 
     private fun cacheDir(context: Context): File =
         File(context.applicationContext.filesDir, CACHE_DIR_NAME).apply { mkdirs() }

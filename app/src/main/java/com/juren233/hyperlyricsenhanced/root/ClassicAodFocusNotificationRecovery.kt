@@ -1,5 +1,7 @@
 package com.juren233.hyperlyricsenhanced.root
 
+import com.juren233.hyperlyricsenhanced.root.reload.ModuleGeneration
+import com.juren233.hyperlyricsenhanced.common.coroutines.ModuleThreads
 import android.app.AppOpsManager
 import android.app.Application
 import android.content.ComponentName
@@ -31,7 +33,7 @@ internal object ClassicAodFocusNotificationRecovery {
     private var lastSentLyricPackage: String? = null
     // 跨进程调用可能拉起 App 进程，不能阻塞 SystemUI 主线程或歌词回调线程。
     private val refreshExecutor = Executors.newSingleThreadExecutor { task ->
-        Thread(task, "HyperLyrics Enhanced-ClassicAodFocus").apply { isDaemon = true }
+        ModuleThreads.newThread("HyperLyrics Enhanced-ClassicAodFocus", task = task)
     }
 
     fun ensureListenerCanRecover(app: Application, prefs: SharedPreferences) {
@@ -92,6 +94,11 @@ internal object ClassicAodFocusNotificationRecovery {
         requestAppRefresh(context, "lyric_player_confirmed")
     }
 
+    /** Hot reload only: `shutdown()` also unregisters the libcore Cleaner action for this pool. */
+    fun releaseForReload() {
+        refreshExecutor.shutdown()
+    }
+
     fun resetConfirmedLyricPlayer() {
         confirmedLyricPlayer = null
         lastSentLyricPackage = null
@@ -132,6 +139,7 @@ internal object ClassicAodFocusNotificationRecovery {
 
         val appContext = context.applicationContext ?: context
         refreshExecutor.execute {
+            if (!ModuleGeneration.mayPublish("ClassicAodFocusNotificationRecovery.refresh")) return@execute
             runCatching {
                 appContext.contentResolver.call(
                     Uri.parse(

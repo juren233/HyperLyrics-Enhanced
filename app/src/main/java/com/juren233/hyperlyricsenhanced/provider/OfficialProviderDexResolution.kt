@@ -6,6 +6,7 @@
 
 package com.juren233.hyperlyricsenhanced.provider
 
+import com.juren233.hyperlyricsenhanced.common.coroutines.ModuleThreads
 import android.app.Application
 import android.app.ActivityManager
 import android.app.Instrumentation
@@ -247,8 +248,8 @@ internal fun OfficialProviderHookHost.startDexBatchResolution(
     reason: String,
 ) {
     if (!registration.resolutionRunning.compareAndSet(false, true)) return
-    Thread(
-        {
+    ModuleThreads.newThread(
+        task = {
             val result = this.DexKitSession(registration.application).use { session ->
                 runCatching {
                     val resolvedByKey = LinkedHashMap<String, OfficialProviderMethodTarget>()
@@ -316,9 +317,8 @@ internal fun OfficialProviderHookHost.startDexBatchResolution(
                 }
             }
         },
-        "HLE-Provider-DexKit",
+        name = "HLE-Provider-DexKit",
     ).apply {
-        isDaemon = true
         start()
     }
 }
@@ -329,8 +329,8 @@ internal fun OfficialProviderHookHost.startDexHookResolution(
     reason: String,
 ) {
     if (!registration.resolutionRunning.compareAndSet(false, true)) return
-    Thread(
-        {
+    ModuleThreads.newThread(
+        task = {
             val generation = registration.activation.current()
             val result = this.DexKitSession(registration.application).use { session ->
                 runCatching {
@@ -394,9 +394,8 @@ internal fun OfficialProviderHookHost.startDexHookResolution(
                 )
             }
         },
-        "HLE-Provider-DexKit",
+        name = "HLE-Provider-DexKit",
     ).apply {
-        isDaemon = true
         start()
     }
 }

@@ -1,6 +1,7 @@
 /* Copyright 2026 juren233. Licensed under the Apache License, Version 2.0. */
 package com.juren233.hyperlyricsenhanced.common.bridge
 
+import com.juren233.hyperlyricsenhanced.root.reload.ModuleGeneration
 import android.app.BroadcastOptions
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -29,6 +30,7 @@ internal fun Context.sendAppleDirectBroadcast(intent: Intent) {
  * API 33 the broadcast goes without it. Every broadcast whose receiver checks the sender goes through here.
  */
 internal fun Context.sendBroadcastSharingIdentity(intent: Intent) {
+    if (!ModuleGeneration.mayPublish("broadcast ${intent.action}")) return
     if (Build.VERSION.SDK_INT >= 34) {
         val options = BroadcastOptions.makeBasic().setShareIdentityEnabled(true).toBundle()
         sendBroadcast(intent, null, options)

@@ -1,5 +1,6 @@
 package com.juren233.hyperlyricsenhanced.root.island
 
+import com.juren233.hyperlyricsenhanced.common.coroutines.ModuleThreads
 import com.juren233.hyperlyricsenhanced.root.reload.SystemUiHookLifetime
 import android.content.Context
 import android.content.SharedPreferences
@@ -21,6 +22,7 @@ import com.juren233.hyperlyricsenhanced.root.SystemUiEnhancementGate
 import com.juren233.hyperlyricsenhanced.root.mediacard.MediaArtworkSampler
 import com.juren233.hyperlyricsenhanced.root.utils.CoverColorHelper
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
+import com.juren233.hyperlyricsenhanced.root.utils.shutdownNowAndRelease
 import io.github.libxposed.api.XposedInterface.Chain
 import io.github.libxposed.api.XposedInterface.Hooker
 import io.github.libxposed.api.XposedModule
@@ -497,7 +499,7 @@ internal object IslandMusicWaveColorHooker {
         synchronized(watchdogLock) { watchdogScheduled = false }
         cleanup()
         mainHandler.removeCallbacksAndMessages(null)
-        colorExecutor.shutdownNow()
+        colorExecutor.shutdownNowAndRelease()
     }
 
     fun cleanup() {
@@ -724,7 +726,7 @@ internal object IslandMusicWaveColorHooker {
 
     private fun newColorExecutor(): ExecutorService {
         return Executors.newSingleThreadExecutor { task ->
-            Thread(task, "HyperLyrics Enhanced-MusicWaveColor").apply { isDaemon = true }
+            ModuleThreads.newThread("HyperLyrics Enhanced-MusicWaveColor", task = task)
         }
     }
 

@@ -2,12 +2,10 @@
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import okhttp3.ResponseBody
-import retrofit2.Call
-import retrofit2.http.Body
-import retrofit2.http.HeaderMap
-import retrofit2.http.POST
-import retrofit2.http.Url
+import com.juren233.hyperlyricsenhanced.common.net.HttpResult
+import com.juren233.hyperlyricsenhanced.common.net.post
+import okhttp3.OkHttpClient
+import okhttp3.RequestBody
 
 @Serializable
 data class NeSearchResponse(
@@ -70,11 +68,11 @@ data class NeUser(
     @SerialName("nickname") val nickname: String? = null
 )
 
-interface NeApi {
-    @POST
-    fun request(
-        @Url url: String,
-        @HeaderMap headers: Map<String, String>,
-        @Body body: okhttp3.RequestBody
-    ): Call<ResponseBody>
+/** Netease's encrypted endpoints; the raw response bytes for a 2xx answer, else none. */
+class NeApi internal constructor(private val client: OkHttpClient) {
+    internal fun request(
+        url: String,
+        headers: Map<String, String>,
+        body: RequestBody,
+    ): HttpResult<ByteArray> = client.post(url, body, headers) { it.bytes() }
 }

@@ -6,6 +6,7 @@
 
 package com.juren233.hyperlyricsenhanced.ui.page.hooksettings
 
+import com.juren233.hyperlyricsenhanced.common.coroutines.ModuleDispatchers
 import android.content.Context
 import android.text.format.Formatter
 import androidx.compose.animation.AnimatedVisibility
@@ -76,7 +77,6 @@ import com.juren233.hyperlyricsenhanced.ui.utils.LocalAppThemeController
 import com.juren233.hyperlyricsenhanced.ui.utils.floatingBlurSurface
 import com.juren233.hyperlyricsenhanced.ui.utils.LocaleUtils
 import com.juren233.hyperlyricsenhanced.ui.utils.isMonet
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.BasicComponent
@@ -266,7 +266,7 @@ internal object OnlineLyricCacheRepository {
     suspend fun load(context: Context): OnlineLyricCacheState {
         val systemUi = OnlineLyricCacheIpc.requestSnapshot(context)
         val app = OnlineLyricCacheManager.snapshot(context)
-        return withContext(Dispatchers.Default) { OnlineLyricCacheState(systemUi, app) }
+        return withContext(ModuleDispatchers.Default) { OnlineLyricCacheState(systemUi, app) }
     }
 
     /** Applies [selection] to both copies. */
@@ -382,7 +382,7 @@ internal fun OnlineLyricCachePage(
         state = loaded
         val ids = loaded.songs.mapTo(HashSet()) { it.id }
         selected = selected.filterTo(linkedSetOf()) { it in ids }
-        appLabels = withContext(Dispatchers.IO) { loadAppLabels(context, loaded.songs) }
+        appLabels = withContext(ModuleDispatchers.IO) { loadAppLabels(context, loaded.songs) }
     }
 
     val current = state
