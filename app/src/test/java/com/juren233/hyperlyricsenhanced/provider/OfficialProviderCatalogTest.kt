@@ -250,6 +250,19 @@ class OfficialProviderCatalogTest {
     }
 
     @Test
+    fun `declares every injected provider target in the static Xposed scope`() {
+        val scopes = requireNotNull(
+            javaClass.classLoader?.getResourceAsStream("META-INF/xposed/scope.list"),
+        ).bufferedReader().useLines { lines -> lines.map(String::trim).toSet() }
+
+        val missing = OfficialProviderCatalog.definitions
+            .flatMap(OfficialProviderScopeManager::scopeTargets)
+            .filterNot(scopes::contains)
+
+        assertTrue("scope.list 缺少插件目标: $missing", missing.isEmpty())
+    }
+
+    @Test
     fun `validates provider package against its declared player packages`() {
         assertTrue(
             OfficialProviderCatalog.isOfficialProviderPair(
