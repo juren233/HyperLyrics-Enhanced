@@ -85,6 +85,7 @@ import com.juren233.hyperlyricsenhanced.provider.OfficialProviderCatalog
 import com.juren233.hyperlyricsenhanced.provider.OfficialProviderPreferencePolicy
 import com.juren233.hyperlyricsenhanced.provider.OfficialProviderRuntime
 import com.juren233.hyperlyricsenhanced.provider.OfficialProviderSystemMediaRuntime
+import com.juren233.hyperlyricsenhanced.provider.ProviderBaselinePack
 import io.github.libxposed.api.XposedInterface.Chain
 import io.github.libxposed.api.XposedInterface.Hooker
 import io.github.libxposed.api.XposedModule
@@ -506,6 +507,9 @@ class HookEntry : XposedModule() {
         optionalRuntime("notification_cover_hook") {
             NotificationMediaCoverStyleHooker.hook(this, classLoader)
         }
+        optionalRuntime("media_session_actions") {
+            com.juren233.hyperlyricsenhanced.root.mediacard.MediaSessionActionsOverride.install(this)
+        }
         try {
             UnlockIslandWhitelist.hook(this, classLoader)
         } catch (e: Exception) {
@@ -647,7 +651,17 @@ class HookEntry : XposedModule() {
             val renderer = BaseIslandRenderer
             val sink = RootLyricSink(renderer, prefs)
 
-            OfficialProviderPreferencePolicy.configure(prefs)
+            OfficialProviderPreferencePolicy.configure(
+                preferences = prefs,
+                debugBaselines = if (com.juren233.hyperlyricsenhanced.BuildConfig.DEBUG) {
+                    OfficialProviderCatalog.definitions.mapNotNull { definition ->
+                        ProviderBaselinePack.manifest(this@HookEntry, definition.id)
+                            ?.let { definition.id to it }
+                    }.toMap()
+                } else {
+                    emptyMap()
+                },
+            )
             OnlineLyricCacheLimit.bind(prefs)
             val officialProviderPlayers = OfficialProviderCatalog.definitions
                 .flatMapTo(linkedSetOf()) { definition -> definition.targetPackages }

@@ -53,6 +53,7 @@ object OfficialProviderCatalog {
                 "com.tencent.qqmusic",
                 "com.tencent.qqmusicpad",
                 "com.miui.player",
+                "com.tencent.freemusic",
             ),
             secondaryProcesses = setOf(
                 "com.tencent.qqmusic:QQPlayerService",
@@ -62,6 +63,7 @@ object OfficialProviderCatalog {
                 "com.tencent.qqmusic" to "QQ音乐",
                 "com.tencent.qqmusicpad" to "QQ音乐HD",
                 "com.miui.player" to "小米音乐",
+                "com.tencent.freemusic" to "QQ音乐简洁版",
             ),
         ),
         Definition(

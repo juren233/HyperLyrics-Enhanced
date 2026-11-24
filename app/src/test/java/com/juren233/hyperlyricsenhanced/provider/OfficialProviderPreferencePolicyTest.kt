@@ -76,4 +76,41 @@ class OfficialProviderPreferencePolicyTest {
             ).isEmpty(),
         )
     }
+
+    @Test
+    fun `debug baseline counts only when newer than the installed Pack and targets the player`() {
+        val targets = listOf("com.tencent.qqmusic", "com.tencent.freemusic")
+        assertTrue(
+            OfficialProviderPreferencePolicy.isDebugBaselineActive(
+                baselineVersionCode = 40,
+                baselineTargets = targets,
+                installedVersion = 39,
+                playerPackageName = "com.tencent.freemusic",
+            ),
+        )
+        assertFalse(
+            OfficialProviderPreferencePolicy.isDebugBaselineActive(
+                baselineVersionCode = 39,
+                baselineTargets = targets,
+                installedVersion = 39,
+                playerPackageName = "com.tencent.freemusic",
+            ),
+        )
+        assertFalse(
+            OfficialProviderPreferencePolicy.isDebugBaselineActive(
+                baselineVersionCode = 40,
+                baselineTargets = targets,
+                installedVersion = 0,
+                playerPackageName = "com.tencent.freemusic",
+            ),
+        )
+        assertFalse(
+            OfficialProviderPreferencePolicy.isDebugBaselineActive(
+                baselineVersionCode = 40,
+                baselineTargets = targets,
+                installedVersion = 39,
+                playerPackageName = "com.miui.player",
+            ),
+        )
+    }
 }

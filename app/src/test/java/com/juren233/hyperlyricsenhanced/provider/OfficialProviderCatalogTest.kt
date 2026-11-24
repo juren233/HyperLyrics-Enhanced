@@ -31,12 +31,36 @@ class OfficialProviderCatalogTest {
                 "com.tencent.qqmusic",
                 "com.tencent.qqmusicpad",
                 "com.miui.player",
+                "com.tencent.freemusic",
             ),
             definition.targetPackages,
         )
         assertEquals("QQ音乐", definition.displayNameForPackage("com.tencent.qqmusic"))
         assertEquals("QQ音乐HD", definition.displayNameForPackage("com.tencent.qqmusicpad"))
         assertEquals("小米音乐", definition.displayNameForPackage("com.miui.player"))
+        assertEquals("QQ音乐简洁版", definition.displayNameForPackage("com.tencent.freemusic"))
+    }
+
+    @Test
+    fun `runs QQ Music free edition only in its main process`() {
+        assertTrue(
+            OfficialProviderCatalog.shouldLoadIntoProcess(
+                packageName = "com.tencent.freemusic",
+                processName = "com.tencent.freemusic",
+            )
+        )
+        assertFalse(
+            OfficialProviderCatalog.shouldLoadIntoProcess(
+                packageName = "com.tencent.freemusic",
+                processName = "com.tencent.freemusic:pushservice",
+            )
+        )
+        assertTrue(
+            OfficialProviderCatalog.isOfficialProviderPair(
+                providerPackageName = "com.juren233.hyperlyricsenhanced.provider.qqmusic",
+                playerPackageName = "com.tencent.freemusic",
+            )
+        )
     }
 
     @Test
