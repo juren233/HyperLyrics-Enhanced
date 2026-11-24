@@ -133,4 +133,28 @@ class SourceClockUpdatePolicyTest {
             )
         )
     }
+
+    @Test
+    fun `persistent small backtrack reanchors instead of waiting for ttl`() {
+        assertEquals(
+            SourceClockUpdatePolicy.Action.IGNORE_BACKTRACK,
+            SourceClockUpdatePolicy.decide(
+                explicitSeek = false,
+                previousAnchorPosition = 40_000,
+                projectedPosition = 40_900,
+                incomingPosition = 40_300,
+                backtrackStreakMs = SourceClockUpdatePolicy.PERSISTENT_BACKTRACK_MS - 1,
+            ),
+        )
+        assertEquals(
+            SourceClockUpdatePolicy.Action.ANCHOR,
+            SourceClockUpdatePolicy.decide(
+                explicitSeek = false,
+                previousAnchorPosition = 40_000,
+                projectedPosition = 41_000,
+                incomingPosition = 40_400,
+                backtrackStreakMs = SourceClockUpdatePolicy.PERSISTENT_BACKTRACK_MS,
+            ),
+        )
+    }
 }

@@ -608,6 +608,59 @@ class LyriconDataBridgeTest {
     }
 
     @Test
+    fun `identical same song content replacement is not reported as a line change`() {
+        useAppleMusic()
+        val lines = listOf(
+            RichLyricLine(begin = 1_000, end = 2_000, text = "Current"),
+            RichLyricLine(begin = 2_000, end = 3_000, text = "Next"),
+        )
+        val originalSong = Song(id = "song-1", name = "Song", artist = "Artist", lyrics = lines)
+        LyriconDataBridge.updateSong(originalSong)
+        LyriconDataBridge.updatePlaybackState(true)
+        LyriconDataBridge.updatePosition(1_500)
+
+        assertTrue(
+            LyriconDataBridge.replaceSameSongContent(
+                originalSong.copy(lyrics = lines.map { it.copy() })
+            )
+        )
+
+        assertFalse(LyriconDataBridge.updatePosition(1_520))
+        assertEquals("Current", LyriconDataBridge.currentLyric)
+        assertTrue(LyriconDataBridge.updatePosition(2_100))
+        assertEquals("Next", LyriconDataBridge.currentLyric)
+    }
+
+    @Test
+    fun `consecutive identical lyric lines still switch line by line`() {
+        useAppleMusic()
+        val lines = listOf(
+            RichLyricLine(begin = 1_000, end = 2_000, text = "La la la"),
+            RichLyricLine(begin = 2_000, end = 3_000, text = "La la la"),
+            RichLyricLine(begin = 3_000, end = 4_000, text = "La la la"),
+        )
+        val song = Song(id = "song-1", name = "Song", artist = "Artist", lyrics = lines)
+        LyriconDataBridge.updateSong(song)
+        LyriconDataBridge.updatePlaybackState(true)
+
+        assertTrue(LyriconDataBridge.updatePosition(1_100))
+        assertEquals(1_000L, LyriconDataBridge.currentLyricLine?.begin)
+        assertFalse(LyriconDataBridge.updatePosition(1_500))
+        // 文字相同、时间不同：仍然是换句。
+        assertTrue(LyriconDataBridge.updatePosition(2_100))
+        assertEquals(2_000L, LyriconDataBridge.currentLyricLine?.begin)
+
+        // 句中重发同一份歌词：同一句不算换句，下一句照常换。
+        assertTrue(
+            LyriconDataBridge.replaceSameSongContent(song.copy(lyrics = lines.map { it.copy() }))
+        )
+        assertFalse(LyriconDataBridge.updatePosition(2_500))
+        assertEquals(2_000L, LyriconDataBridge.currentLyricLine?.begin)
+        assertTrue(LyriconDataBridge.updatePosition(3_100))
+        assertEquals(3_000L, LyriconDataBridge.currentLyricLine?.begin)
+    }
+
+    @Test
     fun `different song still uses full reset`() {
         val firstSong = Song(
             id = "song-1",

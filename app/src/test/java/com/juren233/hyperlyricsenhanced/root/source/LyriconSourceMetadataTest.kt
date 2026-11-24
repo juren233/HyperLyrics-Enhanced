@@ -7,11 +7,13 @@
 package com.juren233.hyperlyricsenhanced.root.source
 
 import com.juren233.hyperlyricsenhanced.common.lyric.LyricMetadataKeys
+import com.juren233.hyperlyricsenhanced.lyric.model.LyricWord
 import com.juren233.hyperlyricsenhanced.lyric.model.RichLyricLine
 import com.juren233.hyperlyricsenhanced.lyric.model.Song
 import com.juren233.hyperlyricsenhanced.lyric.model.lyricMetadataOf
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -110,6 +112,81 @@ class LyriconSourceMetadataTest {
         )
 
         assertEquals(lunaBeat, merged)
+    }
+
+    @Test
+    fun `line to word upgrade keeps word lyrics when unmarked line-level native is resent`() {
+        val upgraded = Song(
+            id = "1541905893",
+            metadata = lyricMetadataOf(
+                LyricMetadataKeys.APPLE_MISSING_LYRICS_SUPPLEMENT to "true",
+                LyricMetadataKeys.APPLE_MISSING_LYRICS_SOURCE to "NE",
+            ),
+            lyrics = listOf(
+                RichLyricLine(
+                    begin = 0L,
+                    end = 1_000L,
+                    text = "Vintage tee",
+                    words = listOf(
+                        LyricWord(begin = 0L, end = 500L, text = "Vintage "),
+                        LyricWord(begin = 500L, end = 1_000L, text = "tee"),
+                    ),
+                )
+            ),
+        )
+        val nativeLineLevel = Song(
+            id = "1541905893",
+            lyrics = listOf(RichLyricLine(begin = 0L, end = 1_000L, text = "Vintage tee")),
+        )
+
+        val merged = mergeMissingLyricsSupplementMetadata(
+            previousSong = upgraded,
+            incomingSong = nativeLineLevel,
+            sameTrack = true,
+            authoritativeSource = "NE",
+            lineToWordReplaced = true,
+        )
+
+        assertSame(upgraded, merged)
+    }
+
+    @Test
+    fun `unmarked line-level resend still inherits supplement when no line to word upgrade owns the song`() {
+        val supplement = Song(
+            id = "1",
+            metadata = lyricMetadataOf(
+                LyricMetadataKeys.APPLE_MISSING_LYRICS_SUPPLEMENT to "true",
+                LyricMetadataKeys.APPLE_MISSING_LYRICS_SOURCE to "NE",
+            ),
+            lyrics = listOf(
+                RichLyricLine(
+                    begin = 0L,
+                    end = 1_000L,
+                    text = "ab",
+                    words = listOf(
+                        LyricWord(begin = 0L, end = 500L, text = "a"),
+                        LyricWord(begin = 500L, end = 1_000L, text = "b"),
+                    ),
+                )
+            ),
+        )
+        val incoming = Song(
+            id = "1",
+            lyrics = listOf(RichLyricLine(begin = 0L, end = 1_000L, text = "ab")),
+        )
+
+        val merged = mergeMissingLyricsSupplementMetadata(
+            previousSong = supplement,
+            incomingSong = incoming,
+            sameTrack = true,
+            authoritativeSource = "NE",
+            lineToWordReplaced = false,
+        )
+
+        assertEquals(incoming.lyrics, merged?.lyrics)
+        assertTrue(
+            merged?.metadata?.getString(LyricMetadataKeys.APPLE_MISSING_LYRICS_SUPPLEMENT).toBoolean()
+        )
     }
 
     @Test

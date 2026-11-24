@@ -337,6 +337,14 @@ object LyriconDataBridge : StateResetter {
         System.nanoTime() / 1_000_000L
     }
 
+    /** 同一对象，或内容相同的行（时间轴包装 [TimedLine] 比较其包住的原始行）。 */
+    private fun sameLineContent(a: IRichLyricLine?, b: IRichLyricLine?): Boolean = when {
+        a === b -> true
+        a == null || b == null -> false
+        a is TimedLine && b is TimedLine -> a.line == b.line
+        else -> a == b
+    }
+
     private fun applyPosition(position: Long): Boolean {
         currentPosition = position
         if (isTextMode) {
@@ -394,7 +402,9 @@ object LyriconDataBridge : StateResetter {
         currentLyricLine = displayLine
         currentNextLyricLine = interlude?.next ?: (previewLine ?: foundLine)?.next
         val newText = displayLine?.text ?: currentLyric ?: ""
-        val changed = displayLine !== previousLine || newText != currentLyric
+        // 同曲内容替换（重发同一份歌词、只改了别的行）后行对象会换新，但内容没变：按值比较，
+        // 不当作换句，避免岛/息屏把当前句重新绑定、进度与跑马灯从头开始。
+        val changed = !sameLineContent(displayLine, previousLine) || newText != currentLyric
 
         currentLyric = newText
         if (changed) {

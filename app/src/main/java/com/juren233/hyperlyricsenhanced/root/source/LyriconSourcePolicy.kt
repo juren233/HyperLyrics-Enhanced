@@ -108,6 +108,10 @@ internal fun hasWordTimedAppleNativeLyrics(song: LocalSong?): Boolean =
             .toBoolean() &&
         song.lyrics.orEmpty().any { line -> !line.words.isNullOrEmpty() }
 
+/** 任一行带逐字时间轴（不看补充标记）。 */
+internal fun hasWordTimedLines(song: LocalSong?): Boolean =
+    song?.lyrics.orEmpty().any { line -> !line.words.isNullOrEmpty() }
+
 /**
  * 「所有来源」下搜索源能否作为逐行转逐字的来源：只在 Apple 原生已有歌词时可以，因为那才是对原生的升级。
  * 原生没有歌词时搜索源走普通补充链路（一次多源检索、逐行结果照常采用），不再逐个单源只收逐字后又整体重查一遍。
@@ -287,6 +291,20 @@ internal fun mergeMissingLyricsSupplementMetadata(
         )
     ) {
         return incomingSong
+    }
+    if (
+        !incomingIsSupplement &&
+        lineToWordReplaced &&
+        !authoritativeSource.isNullOrBlank() &&
+        authoritativeSource != LyriconSource.APPLE_NATIVE_LYRICS_SOURCE &&
+        previousSource == authoritativeSource &&
+        hasWordTimedLines(previousSong) &&
+        !incomingSong.lyrics.isNullOrEmpty() &&
+        !hasWordTimedLines(incomingSong)
+    ) {
+        // 逐行转逐字已把本曲换成三方逐字歌词：Apple 同曲重发的逐行原生歌词（如目录元数据就绪后的
+        // 重新发布）不带补充标记，不能只继承补充标记而换成逐行正文，否则逐字（含息屏逐字）整首丢失。
+        return previousSong
     }
     val merged = linkedMapOf<String, String?>()
     incomingSong.metadata?.forEach { (key, value) -> merged[key] = value }

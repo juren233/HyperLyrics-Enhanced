@@ -36,6 +36,8 @@ internal object SourceClockUpdatePolicy {
         previousAnchorPosition: Long?,
         projectedPosition: Long?,
         incomingPosition: Long,
+        /** 连续被判为小幅回退的时长（从第一次忽略算起）；null = 当前不在回退连续段内。 */
+        backtrackStreakMs: Long? = null,
     ): Action {
         if (explicitSeek) return Action.SEEK
         if (previousAnchorPosition == null) return Action.ANCHOR
@@ -44,7 +46,14 @@ internal object SourceClockUpdatePolicy {
 
         val deltaFromProjection = incomingPosition - projectedPosition
         if (deltaFromProjection < 0 && -deltaFromProjection <= SMALL_BACKTRACK_TOLERANCE_MS) {
-            return Action.IGNORE_BACKTRACK
+            // 单个乱序/陈旧样本忽略；但持续偏后说明源时钟确实比外推慢，再忽略下去
+            // 锚点会一直超前，最后在 TTL 到期或偏差超过阈值时一次性抽回。持续偏后就重新锚定，
+            // 显示层由 DisplayPositionSmoother 减速消化，不会往回跳。
+            return if (backtrackStreakMs != null && backtrackStreakMs >= PERSISTENT_BACKTRACK_MS) {
+                Action.ANCHOR
+            } else {
+                Action.IGNORE_BACKTRACK
+            }
         }
         return if (abs(deltaFromProjection) >= DISCONTINUITY_THRESHOLD_MS) {
             Action.SEEK
@@ -55,4 +64,5 @@ internal object SourceClockUpdatePolicy {
 
     private const val SMALL_BACKTRACK_TOLERANCE_MS = 1_500L
     private const val DISCONTINUITY_THRESHOLD_MS = 1_500L
+    const val PERSISTENT_BACKTRACK_MS = 1_000L
 }

@@ -11,6 +11,8 @@ import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.common.lyric.LyricMetadataKeys
 import com.juren233.hyperlyricsenhanced.lyric.model.LyricWord
 import com.juren233.hyperlyricsenhanced.lyric.model.interfaces.IRichLyricLine
+import com.juren233.hyperlyricsenhanced.lyric.view.RelativeWordBuilder
+import com.juren233.hyperlyricsenhanced.lyric.view.isTitleLine
 import com.juren233.hyperlyricsenhanced.root.LyriconDataBridge
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 
@@ -40,6 +42,33 @@ internal object AodWordProgress {
 
     /** 主行的逐字数据；功能未开启、纯文本模式或没有逐字时间轴时为 null。 */
     fun mainWords(): List<LyricWord>? = wordsOf(displayLine()?.words)
+
+    private val relativeWordBuilder = RelativeWordBuilder()
+    private var lineSpanKey: Pair<IRichLyricLine, String>? = null
+    private var lineSpanCache: List<LyricWord>? = null
+
+    /**
+     * 当前主行没有逐字时间轴（逐行歌词）时，把整行展示文本 [text] 当作一个进度单元铺满该行的起止时间：
+     * [progressChars] 按非空白字符匀速推进，中文按字、英文按字母，合成代码与岛上相对进度共用，但只受息屏逐字开关控制。
+     * 间奏指示、标题占位行、没有有效时长的行返回 null（照旧整行显示）。同一行重复绑定复用同一列表，
+     * 避免逐字视图把它当作新内容重绘。
+     */
+    fun lineSpanWords(text: String): List<LyricWord>? {
+        val line = displayLine() ?: return null
+        if (!line.words.isNullOrEmpty()) return null
+        if (line.metadata?.getBoolean(LyricMetadataKeys.INSTRUMENTAL) == true) return null
+        if (line.isTitleLine()) return null
+        return lineSpanWordsFor(line, text)?.also { lineSpanCache = it }
+    }
+
+    internal fun lineSpanWordsFor(line: IRichLyricLine, text: String): List<LyricWord>? {
+        if (text.isBlank() || line.begin < 0L || line.end <= line.begin) return null
+        val key = line to text
+        if (key == lineSpanKey) lineSpanCache?.let { return it }
+        lineSpanKey = key
+        // 与岛上「相对进度歌词」同一合成：整行一个进度单元，铺满该行起止时间。
+        return relativeWordBuilder.build(line, text, null).also { lineSpanCache = it }
+    }
 
     /** 伴唱行的逐字数据：非重叠分组时伴唱就是当前行的 secondary。 */
     fun backingWords(): List<LyricWord>? =

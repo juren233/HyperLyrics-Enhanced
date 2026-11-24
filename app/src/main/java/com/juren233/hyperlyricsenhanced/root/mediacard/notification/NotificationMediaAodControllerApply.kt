@@ -300,7 +300,8 @@ internal fun NotificationMediaAodLyricHooker.applyState(controller: Any, state: 
     overlay.main.bindWordSync(
         row = "main",
         text = content.main,
-        words = if (wordSync) AodWordProgress.mainWords() else null,
+        // 息屏逐字开着时，逐行歌词也按该行起止时间逐字推进，只看息屏自己的开关。
+        words = if (wordSync) AodWordProgress.mainWords() ?: AodWordProgress.lineSpanWords(content.main) else null,
         interlude = if (textStyle.interludeDots) AodWordProgress.interludeRange() else null,
         playing = wordSyncPlaying,
         keepAlive = wordSyncKeepAlive,

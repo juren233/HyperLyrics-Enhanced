@@ -7,8 +7,10 @@
 package com.juren233.hyperlyricsenhanced.root.mediacard.notification
 
 import com.juren233.hyperlyricsenhanced.lyric.model.LyricWord
+import com.juren233.hyperlyricsenhanced.lyric.model.RichLyricLine
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Test
 
 class AodWordProgressTest {
@@ -61,5 +63,38 @@ class AodWordProgressTest {
     @Test
     fun `display text that differs from word text is unavailable`() {
         assertNull(AodWordProgress.progressChars("HelloWorld", words, 2_160L))
+    }
+
+    @Test
+    fun `line level lyric sweeps evenly across the line span`() {
+        val line = RichLyricLine(begin = 10_000, end = 14_000, text = "我们的歌")
+        val span = AodWordProgress.lineSpanWordsFor(line, "我们的歌")!!
+        assertEquals(1, span.size)
+        assertEquals(0f, AodWordProgress.progressChars("我们的歌", span, 9_000L)!!, 0.001f)
+        // 4 个字铺满 4 秒：过 1 秒正好 1 个字，过 3 秒 3 个字。
+        assertEquals(1f, AodWordProgress.progressChars("我们的歌", span, 11_000L)!!, 0.001f)
+        assertEquals(3f, AodWordProgress.progressChars("我们的歌", span, 13_000L)!!, 0.001f)
+        assertEquals(4f, AodWordProgress.progressChars("我们的歌", span, 15_000L)!!, 0.001f)
+    }
+
+    @Test
+    fun `line span ignores spaces when spreading english text`() {
+        val line = RichLyricLine(begin = 0, end = 1_000, text = "ab cd")
+        val span = AodWordProgress.lineSpanWordsFor(line, "ab cd")!!
+        // 4 个非空白字符，过半 -> 前 2 个字母 "ab" 填满，空格不占时间，紧接着的空格一并算进去。
+        assertEquals(3f, AodWordProgress.progressChars("ab cd", span, 500L)!!, 0.001f)
+    }
+
+    @Test
+    fun `line span is reused for the same line and text`() {
+        val line = RichLyricLine(begin = 0, end = 2_000, text = "hello")
+        val first = AodWordProgress.lineSpanWordsFor(line, "hello")
+        assertSame(first, AodWordProgress.lineSpanWordsFor(line, "hello"))
+    }
+
+    @Test
+    fun `line without usable timing gets no synthesized sweep`() {
+        assertNull(AodWordProgress.lineSpanWordsFor(RichLyricLine(begin = 2_000, end = 2_000, text = "x"), "x"))
+        assertNull(AodWordProgress.lineSpanWordsFor(RichLyricLine(begin = 0, end = 2_000, text = " "), " "))
     }
 }

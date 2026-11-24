@@ -140,7 +140,7 @@ class LocalTimelineDriver(
                         appliedTrackKey,
                     )
                 ) return@runOnMain
-                val position = timelinePosition()
+                val position = displayPosition()
                 when (val plan = FallbackSwitchPolicy.plan(displayedContent?.song?.lyrics.orEmpty(), position)) {
                     FallbackSwitchPolicy.Plan.ApplyNow -> applyContent(content)
                     is FallbackSwitchPolicy.Plan.Defer -> {
@@ -214,12 +214,14 @@ class LocalTimelineDriver(
             appliedTrackKey = null
             appliedPackageName = null
             pendingContent = null
+            pendingSameTrackReplace = null
             displayedContent = null
             fallbackOwner = null
             primaryContentListener = null
             appliedContentCache.clear()
             clearStreamingContent()
             resetSourceClock()
+            displayClock.reset()
             anchorPlaying = false
             hintPlaying = false
             hintPackage = null
@@ -320,7 +322,7 @@ class LocalTimelineDriver(
     override fun onPlainText(text: String?) {
         val value = text?.takeIf { it.isNotBlank() } ?: return
         runOnMain {
-            val position = timelinePosition()?.coerceAtLeast(0L) ?: 0L
+            val position = displayPosition()?.coerceAtLeast(0L) ?: 0L
             clearStreamingContent()
             applyStreamingLine(
                 RichLyricLine(
@@ -354,6 +356,16 @@ class LocalTimelineDriver(
     @Volatile
     private var sourceAnchorElapsedMs: Long = 0L
 
+    /** 最近一次真正收到源样本的单调时刻（恢复播放时的重新计时不算）。 */
+    private var sourceSampleAtMs: Long = 0L
+
+    /** 当前这段「源样本持续偏后」从何时开始；0 = 不在偏后连续段内。 */
+    private var sourceBacktrackSinceMs: Long = 0L
+
+    /** 播放中的显示位置平滑：纠偏调速而不是跳，只有真正的 seek/切换才跳。 */
+    private val displayClock = DisplayPositionSmoother()
+    private var displayCorrectingLogged = false
+
     private var sourceClockAcceptedSinceDiag = 0
     private var sourceClockDuplicatesSinceDiag = 0
     private var sourceClockBacktracksSinceDiag = 0
@@ -371,6 +383,7 @@ class LocalTimelineDriver(
             previousAnchorPosition = sourceAnchorPosition,
             projectedPosition = projected,
             incomingPosition = anchored,
+            backtrackStreakMs = sourceBacktrackSinceMs.takeIf { it > 0L }?.let { now - it },
         )
         when (action) {
             SourceClockUpdatePolicy.Action.IGNORE_DUPLICATE -> {
@@ -379,14 +392,23 @@ class LocalTimelineDriver(
                 return
             }
             SourceClockUpdatePolicy.Action.IGNORE_BACKTRACK -> {
+                if (sourceBacktrackSinceMs == 0L) sourceBacktrackSinceMs = now
                 sourceClockBacktracksSinceDiag++
                 logSourceClockSummaryIfNeeded(now, action, anchored, projected)
                 return
             }
             SourceClockUpdatePolicy.Action.ANCHOR,
             SourceClockUpdatePolicy.Action.SEEK -> {
+                if (sourceBacktrackSinceMs != 0L && BuildConfig.DEBUG) {
+                    diagnostic(
+                        "源时钟重新锚定: action=$action, incoming=$anchored, projected=$projected, " +
+                            "backtrackStreakMs=${now - sourceBacktrackSinceMs}"
+                    )
+                }
+                sourceBacktrackSinceMs = 0L
                 sourceAnchorPosition = anchored
                 sourceAnchorElapsedMs = now
+                sourceSampleAtMs = now
                 if (
                     anchorInactiveSinceMs != null && event == "position" &&
                     previous != null && anchored > previous &&
@@ -399,13 +421,30 @@ class LocalTimelineDriver(
             }
         }
 
-        if (action == SourceClockUpdatePolicy.Action.SEEK) {
-            renderSink.onSeekTo(anchored)
-        } else if (renderedPlaying != true) {
-            // 播放中由 33ms 单一位置循环驱动渲染；来源回调只校准锚点，避免
-            // 高频来源与本地循环同时写 UI。暂停态没有循环，仍立即刷新位置。
-            renderSink.onPositionChanged(anchored)
+        if (renderedPlaying != true) {
+            // 暂停态没有位置循环，也没有可见的推进，直接对齐。
+            val shown = displayClock.snap(anchored, now)
+            if (action == SourceClockUpdatePolicy.Action.SEEK) {
+                renderSink.onSeekTo(shown)
+            } else {
+                renderSink.onPositionChanged(shown)
+            }
+        } else if (event == "seek") {
+            // 来源明确上报的 seek：立即跳。
+            commitPendingSameTrackReplace(force = true, reason = "seek")
+            renderSink.onSeekTo(displayClock.snap(anchored, now))
+        } else if (action == SourceClockUpdatePolicy.Action.SEEK) {
+            // 位置不连续但不是明确 seek：可能是真 seek，也可能只是源时钟纠偏。
+            // 交给平滑器判断，够大才跳，否则由位置循环调速消化。
+            val truth = timelinePosition() ?: anchored
+            val step = displayClock.advance(truth, now)
+            if (step.jumped) {
+                diagnostic("显示位置跳转(源不连续): to=${step.position}, incoming=$anchored")
+                renderSink.onSeekTo(step.position)
+            }
         }
+        // 播放中由 33ms 单一位置循环驱动渲染；来源回调只校准锚点，避免
+        // 高频来源与本地循环同时写 UI。
     }
 
     private fun logSourceClockSummaryIfNeeded(
@@ -433,6 +472,8 @@ class LocalTimelineDriver(
     private fun resetSourceClock() {
         sourceAnchorPosition = null
         sourceAnchorElapsedMs = 0L
+        sourceSampleAtMs = 0L
+        sourceBacktrackSinceMs = 0L
         sourceProgressWhileAnchorInactiveAtMs = 0L
         sourceClockAcceptedSinceDiag = 0
         sourceClockDuplicatesSinceDiag = 0
@@ -451,7 +492,7 @@ class LocalTimelineDriver(
         if (SourceClockUpdatePolicy.preferSystemAfterSeek(
                 packageName = anchor.currentTrack?.packageName,
                 sourcePosition = sourcePosition,
-                sourceSampleAtMs = sourceAnchorElapsedMs,
+                sourceSampleAtMs = sourceSampleAtMs,
                 systemPosition = systemPosition,
                 systemStateUpdatedAtMs = anchor.anchor()?.stateUpdatedAtMs ?: 0L,
             )
@@ -459,6 +500,23 @@ class LocalTimelineDriver(
             return systemPosition
         }
         return sourcePosition ?: systemPosition
+    }
+
+    /** 当前显示给用户的位置（平滑后）；尚未建立时取真实位置。 */
+    private fun displayPosition(): Long? = displayClock.displayed ?: timelinePosition()
+
+    /**
+     * 离散事件后下发位置。[keepDisplay]（同曲内容替换、同曲标题回退）且正在播放时沿用
+     * 已显示的位置，不打断平滑；其余情况对齐到真实位置。
+     */
+    private fun dispatchTimelinePosition(keepDisplay: Boolean = false) {
+        val shown = displayClock.displayed
+        if (keepDisplay && shown != null && renderedPlaying == true) {
+            renderSink.onPositionChanged(shown)
+            return
+        }
+        val truth = timelinePosition() ?: return
+        renderSink.onPositionChanged(displayClock.snap(truth, SystemClock.elapsedRealtime()))
     }
 
     private fun projectedSourcePosition(now: Long): Long? {
@@ -496,6 +554,7 @@ class LocalTimelineDriver(
             clearStreamingContent()
             // 曲目身份已变：旧曲的源时钟锚点必须作废，外推不得跨曲延续。
             resetSourceClock()
+            displayClock.reset()
             if (preserveHost && track != null) {
                 prepareTrackTransition(track)
             } else {
@@ -577,6 +636,10 @@ class LocalTimelineDriver(
     override fun onPlaybackStateChanged(isPlaying: Boolean) {
         runOnMain {
             if (isPlaying) {
+                if (!anchorPlaying && sourceAnchorPosition != null && sourceAnchorElapsedMs != 0L) {
+                    // 暂停期间收到的源样本是冻结值；恢复播放从现在起外推，暂停时长不能算进去。
+                    sourceAnchorElapsedMs = SystemClock.elapsedRealtime()
+                }
                 anchorInactiveSinceMs = null
                 sourceProgressWhileAnchorInactiveAtMs = 0L
             } else if (anchorPlaying || anchorInactiveSinceMs == null) {
@@ -635,7 +698,8 @@ class LocalTimelineDriver(
             startPositionLoop()
         } else {
             stopPositionLoop()
-            timelinePosition()?.let(renderSink::onPositionChanged)
+            commitPendingSameTrackReplace(force = true, reason = "paused")
+            dispatchTimelinePosition()
         }
     }
 
@@ -725,7 +789,36 @@ class LocalTimelineDriver(
         }
     }
 
-    private fun applyContent(content: TimelineContent) {
+    /**
+     * 同曲内容替换（翻译到达、补充/逐字来源到达、来源重发）在播放中晚到时先挂起，
+     * 等当前句自然换句的那一帧再应用：句中重新绑定会让岛/息屏的当前句进度与跑马灯从头来一次。
+     * 换曲、清空时作废；暂停、seek、等待过久时立即应用。
+     */
+    private class PendingSameTrackReplace(
+        val content: TimelineContent,
+        val trackKey: String,
+        val queuedAtMs: Long,
+    )
+
+    private var pendingSameTrackReplace: PendingSameTrackReplace? = null
+
+    private fun commitPendingSameTrackReplace(force: Boolean, reason: String) {
+        val pending = pendingSameTrackReplace ?: return
+        if (pending.trackKey != appliedTrackKey) {
+            pendingSameTrackReplace = null
+            return
+        }
+        val waitedMs = SystemClock.elapsedRealtime() - pending.queuedAtMs
+        if (!force && waitedMs < SameTrackReplacePolicy.MAX_DEFER_MS) return
+        pendingSameTrackReplace = null
+        diagnostic(
+            "同曲内容替换已应用: reason=${if (force) reason else "timeout"}, waitedMs=$waitedMs, " +
+                "lines=${pending.content.song?.lyrics?.size ?: 0}"
+        )
+        applyContent(pending.content, allowDefer = false)
+    }
+
+    private fun applyContent(content: TimelineContent, allowDefer: Boolean = true) {
         pendingFallbackSwitch = null
         if (!SystemUiEnhancementGate.isLyricRuntimeEnabled()) {
             recordContentDecision(content, "FEATURE_DISABLED")
@@ -748,6 +841,26 @@ class LocalTimelineDriver(
             }
             return
         }
+        val incomingTrackKey = track.normalizedKey()
+        if (
+            allowDefer && SameTrackReplacePolicy.shouldDefer(
+                streaming = content.streaming,
+                sameTrack = appliedTrackKey == incomingTrackKey,
+                playing = renderedPlaying == true,
+                displayedHasLyrics = !displayedContent?.song?.lyrics.isNullOrEmpty(),
+                lineShowing = !LyriconDataBridge.isTextMode && LyriconDataBridge.currentLyricLine != null,
+            )
+        ) {
+            val queuedAt = pendingSameTrackReplace?.takeIf { it.trackKey == incomingTrackKey }?.queuedAtMs
+                ?: SystemClock.elapsedRealtime()
+            pendingSameTrackReplace = PendingSameTrackReplace(content, incomingTrackKey, queuedAt)
+            diagnostic(
+                "同曲内容替换等换句再应用: source=${content.sourceId}, " +
+                    "lines=${song.lyrics?.size ?: 0}, position=${displayClock.displayed}"
+            )
+            return
+        }
+        pendingSameTrackReplace = null
         if (!content.streaming) clearStreamingContent()
         displayedContent = content
         OnlineLyricCacheUsage.onShown(song)
@@ -771,8 +884,15 @@ class LocalTimelineDriver(
         }
         val shown = TimelineContentPolicy.displayMetadata(track, song)
         renderSink.onMetadata(shown.title, shown.artist, track.album, track.packageName)
-        resetSourceClock()
-        timelinePosition()?.let(renderSink::onPositionChanged)
+        if (sameTrack) {
+            // 同一首的内容替换（翻译到达、流式逐行、补充来源切换）：源时钟仍然有效，
+            // 重置会让位置临时回退到会话外推，两者的固定偏差就成了一次抽动。
+            dispatchTimelinePosition(keepDisplay = true)
+        } else {
+            resetSourceClock()
+            displayClock.reset()
+            dispatchTimelinePosition()
+        }
         refreshRenderPlaybackState()
         if (content.sourceId == activeSourceId) primaryContentListener?.invoke()
         HookLogger.i(
@@ -826,12 +946,14 @@ class LocalTimelineDriver(
 
     private fun clearTimeline(showTrackFallback: Boolean) {
         pendingFallbackSwitch = null
+        pendingSameTrackReplace = null
         displayedContent = null
         stopPositionLoop()
         appliedTrackKey = null
         appliedPackageName = null
         renderedPlaying = null
         resetSourceClock()
+        displayClock.reset()
         renderSink.onStop()
         if (showTrackFallback && SystemUiEnhancementGate.isLyricRuntimeEnabled()) {
             // 标题回退只服务模块作用域内的音乐 App（含汽水的系统媒体路径）。
@@ -854,18 +976,20 @@ class LocalTimelineDriver(
     private fun publishTitleFallback(track: TrackIdentity, fallbackTitle: String) {
         // Metadata-only presentation owns a track too. Leaving this null after onStop()
         // prevents later playback callbacks from ever resuming the title placeholder.
+        val sameTrack = appliedTrackKey == track.normalizedKey()
         appliedTrackKey = track.normalizedKey()
         appliedPackageName = track.packageName
         LyriconDataBridge.updateLyricPackage(track.packageName)
         LyriconDataBridge.currentSongName = fallbackTitle.ifBlank { track.displayTitle }
         renderSink.onMetadata(track.displayTitle, track.displayArtist, track.album, track.packageName)
-        timelinePosition()?.let(renderSink::onPositionChanged)
+        dispatchTimelinePosition(keepDisplay = sameTrack)
         refreshRenderPlaybackState()
         diagnostic("标题回退已绑定: pkg=${track.packageName}, key=$appliedTrackKey, playing=$renderedPlaying")
     }
 
     private fun prepareTrackTransition(track: TrackIdentity) {
         pendingFallbackSwitch = null
+        pendingSameTrackReplace = null
         displayedContent = null
         stopPositionLoop()
         // A same-player track change must keep its position clock even while
@@ -878,7 +1002,8 @@ class LocalTimelineDriver(
             album = track.album,
             publisher = track.packageName,
         )
-        timelinePosition()?.let(renderSink::onPositionChanged)
+        displayClock.reset()
+        dispatchTimelinePosition()
         if (renderedPlaying == true) startPositionLoop()
         diagnostic("同包切歌保留岛宿主: pkg=${track.packageName}, title=${track.title}")
     }
@@ -926,6 +1051,9 @@ class LocalTimelineDriver(
 
     private fun startPositionLoop() {
         if (stopped || activeInstance !== this || positionJob?.isActive == true || appliedTrackKey == null) return
+        // 暂停/停循环期间不计入推进；显示位置从上次下发处接着走。
+        displayClock.rebase(SystemClock.elapsedRealtime())
+        displayCorrectingLogged = false
         positionJob = positionScope.launch {
             while (
                 isActive && !stopped && activeInstance === this@LocalTimelineDriver && PlaybackSmoothingPolicy.shouldDrivePositionLoop(
@@ -937,17 +1065,48 @@ class LocalTimelineDriver(
                     refreshRenderPlaybackState()
                     if (!isActive || renderedPlaying != true) break
                 }
-                val position = timelinePosition()
+                val step = timelinePosition()?.let { advanceDisplay(it) }
+                val position = step?.position
                 commitPendingFallbackSwitch(position)
                 val lineBeforeChange = LyriconDataBridge.currentLyricLine
-                position?.let(renderSink::onPositionChanged)
-                if (position != null && LyriconDataBridge.currentLyricLine !== lineBeforeChange) {
+                step?.let {
+                    if (it.jumped) renderSink.onSeekTo(it.position) else renderSink.onPositionChanged(it.position)
+                }
+                val lineChanged = LyriconDataBridge.currentLyricLine !== lineBeforeChange
+                if (position != null && lineChanged) {
                     // 换句时刻：稳定窗内恢复 33ms 快档，喂换句动画与跑马灯闩锁重试。
                     lastLineChangeAtMs = SystemClock.uptimeMillis()
                 }
+                commitPendingSameTrackReplace(
+                    force = lineChanged || step?.jumped == true ||
+                        LyriconDataBridge.currentLyricLine == null,
+                    reason = if (lineChanged) "line_changed" else "no_line",
+                )
                 delay(nextPositionIntervalMs(position))
             }
         }
+    }
+
+    private fun advanceDisplay(truth: Long): DisplayPositionSmoother.Step {
+        val before = displayClock.displayed
+        val step = displayClock.advance(truth, SystemClock.elapsedRealtime())
+        if (BuildConfig.DEBUG) {
+            if (step.jumped) {
+                diagnostic("显示位置跳转: from=$before, to=${step.position}, truth=$truth")
+                displayCorrectingLogged = false
+            } else if (displayClock.isCorrecting != displayCorrectingLogged) {
+                displayCorrectingLogged = displayClock.isCorrecting
+                diagnostic(
+                    if (displayCorrectingLogged) {
+                        "开始平滑纠偏: shown=${step.position}, truth=$truth, " +
+                            "rate=${"%.2f".format(java.util.Locale.US, displayClock.rate)}"
+                    } else {
+                        "平滑纠偏完成: shown=${step.position}, truth=$truth"
+                    }
+                )
+            }
+        }
+        return step
     }
 
     private fun stopPositionLoop() {
@@ -966,6 +1125,8 @@ class LocalTimelineDriver(
      */
     private fun nextPositionIntervalMs(position: Long?): Long {
         if (position == null) return TimelineCadencePolicy.MID_LINE_INTERVAL_MS
+        // 调速纠偏期间显示时钟不是 1 倍速，按边界距离睡会睡过头；回到快档逐帧推进。
+        if (displayClock.isCorrecting) return TimelineCadencePolicy.MIN_INTERVAL_MS
         val msSinceLineChange = lastLineChangeAtMs.takeIf { it > 0L }
             ?.let { SystemClock.uptimeMillis() - it }
         return TimelineCadencePolicy.nextIntervalMs(
