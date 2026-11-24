@@ -20,9 +20,20 @@ permissions:
   contents: write
   actions: read
 
+# 任务结构：
+#   gate    → 解析版本与渠道，决定是否构建
+#   check   → 单元测试与 Lint（与 build 并行）
+#   build   → 编译、签名；canary 在这里直接出包打标签，不等 check
+#   publish → 仅 stable / beta：等 check 与 build 都通过后才发布
 jobs:
-  build:
+  gate:
     runs-on: ubuntu-latest
+    outputs:
+      skip: ${{ steps.gate.outputs.skip }}
+      channel: ${{ steps.gate.outputs.channel }}
+      full_name: ${{ steps.gate.outputs.full_name }}
+      full_tag: ${{ steps.gate.outputs.full_tag }}
+      code: ${{ steps.gate.outputs.code }}
 
     steps:
       - name: 拉取代码 Checkout
@@ -70,55 +81,101 @@ jobs:
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
+  check:
+    needs: gate
+    if: needs.gate.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 拉取代码 Checkout
+        uses: actions/checkout@v6
+
       - name: 安装 JDK Setup Java
-        if: steps.gate.outputs.skip != 'true'
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '21'
 
       - name: 安装 Android SDK Setup Android SDK
-        if: steps.gate.outputs.skip != 'true'
         uses: android-actions/setup-android@v4
         with:
           packages: platform-tools platforms;android-34 build-tools;34.0.0
 
       - name: 配置 Gradle Setup Gradle
-        if: steps.gate.outputs.skip != 'true'
         uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: wrapper
           cache-read-only: ${{ github.event_name == 'pull_request' }}
 
       - name: 授权脚本 Grant Permission
-        if: steps.gate.outputs.skip != 'true'
-        run: chmod +x gradlew .github/scripts/resolve-version.sh
+        run: chmod +x gradlew
 
+      # lintRelease 需要先把 release 整套编译一遍（约 3.5～5 分钟），
+      # 只在真正要发 stable / beta 的推送上跑；canary 与 PR 只跑 Debug 检查。
       - name: 本地逻辑与静态检查 Unit Tests and Lint
-        if: steps.gate.outputs.skip != 'true'
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          CHANNEL: ${{ needs.gate.outputs.channel }}
+          FULL_NAME: ${{ needs.gate.outputs.full_name }}
         run: |
           set -euo pipefail
-          ./gradlew --no-daemon --max-workers=2 \
-            :app:testDebugUnitTest :app:lintDebug :app:lintRelease
+
+          tasks=(:app:testDebugUnitTest :app:lintDebug)
+          if [[ "$EVENT_NAME" != "pull_request" && ( "$CHANNEL" == "stable" || "$CHANNEL" == "beta" ) ]]; then
+            tasks+=(:app:lintRelease)
+          fi
+
+          ./gradlew --no-daemon --max-workers=4 "${tasks[@]}" \
+            --build-cache -PciVersionName="$FULL_NAME"
+
+  build:
+    needs: gate
+    if: needs.gate.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 拉取代码 Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: 安装 JDK Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: 安装 Android SDK Setup Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools platforms;android-34 build-tools;34.0.0
+
+      - name: 配置 Gradle Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: wrapper
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+
+      - name: 授权脚本 Grant Permission
+        run: chmod +x gradlew
 
       - name: 构建 Debug 或 Release Build
-        if: steps.gate.outputs.skip != 'true'
         env:
-          CHANNEL: ${{ steps.gate.outputs.channel }}
-          FULL_NAME: ${{ steps.gate.outputs.full_name }}
+          CHANNEL: ${{ needs.gate.outputs.channel }}
+          FULL_NAME: ${{ needs.gate.outputs.full_name }}
         run: |
           set -euo pipefail
 
           if [[ "$CHANNEL" == "stable" || "$CHANNEL" == "beta" ]]; then
-            ./gradlew --no-daemon --max-workers=2 assembleDebug assembleRelease \
+            ./gradlew --no-daemon --max-workers=4 assembleDebug assembleRelease \
               --build-cache -PciVersionName="$FULL_NAME"
           else
-            ./gradlew --no-daemon --max-workers=2 assembleDebug \
+            ./gradlew --no-daemon --max-workers=4 assembleDebug \
               --build-cache -PciVersionName="$FULL_NAME"
           fi
 
       - name: 校验 Release Provider ABI Verify Release Provider ABI
-        if: steps.gate.outputs.skip != 'true' && (steps.gate.outputs.channel == 'stable' || steps.gate.outputs.channel == 'beta')
+        if: needs.gate.outputs.channel == 'stable' || needs.gate.outputs.channel == 'beta'
         run: |
           set -euo pipefail
           RELEASE_APK=$(find app/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' -print -quit)
@@ -126,28 +183,28 @@ jobs:
           python3 scripts/verify_official_provider_abi.py "$RELEASE_APK"
 
       - name: 上传 PR 构建产物 Upload PR Artifacts
-        if: github.event_name == 'pull_request' && steps.gate.outputs.skip == 'false'
+        if: github.event_name == 'pull_request'
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ steps.gate.outputs.channel }}-debug-v${{ steps.gate.outputs.full_name }}-${{ steps.gate.outputs.code }}
+          name: ${{ needs.gate.outputs.channel }}-debug-v${{ needs.gate.outputs.full_name }}-${{ needs.gate.outputs.code }}
           path: app/build/outputs/apk/**/*.apk
           if-no-files-found: error
 
       - name: 解码签名密钥 Decode Keystore
-        if: github.event_name != 'pull_request' && steps.gate.outputs.skip == 'false'
+        if: github.event_name != 'pull_request'
         env:
           SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
         run: echo "$SIGNING_KEY" | base64 -d > release.jks
 
       - name: 签名 Debug APK Sign Debug APK
-        if: github.event_name != 'pull_request' && steps.gate.outputs.skip == 'false'
+        if: github.event_name != 'pull_request'
         env:
           STORE_PASS: ${{ secrets.KEY_STORE_PASSWORD }}
           KEY_PASS: ${{ secrets.KEY_PASSWORD }}
           KEY_ALIAS: ${{ secrets.ALIAS }}
-          CHANNEL: ${{ steps.gate.outputs.channel }}
-          V_NAME: ${{ steps.gate.outputs.full_name }}
-          V_CODE: ${{ steps.gate.outputs.code }}
+          CHANNEL: ${{ needs.gate.outputs.channel }}
+          V_NAME: ${{ needs.gate.outputs.full_name }}
+          V_CODE: ${{ needs.gate.outputs.code }}
         run: |
           set -euo pipefail
 
@@ -184,19 +241,20 @@ jobs:
           fi
 
       - name: 上传 Canary 构建产物 Upload Canary Artifact
-        if: github.event_name != 'pull_request' && steps.gate.outputs.skip == 'false' && steps.gate.outputs.channel == 'canary'
+        if: github.event_name != 'pull_request' && needs.gate.outputs.channel == 'canary'
         uses: actions/upload-artifact@v7
         with:
-          name: canary-debug-v${{ steps.gate.outputs.full_name }}-${{ steps.gate.outputs.code }}
-          path: HyperLyrics Enhanced-debug-v${{ steps.gate.outputs.full_name }}-${{ steps.gate.outputs.code }}.apk
+          name: canary-debug-v${{ needs.gate.outputs.full_name }}-${{ needs.gate.outputs.code }}
+          path: HyperLyrics Enhanced-debug-v${{ needs.gate.outputs.full_name }}-${{ needs.gate.outputs.code }}.apk
           if-no-files-found: error
 
+      # canary 不等 check：Lint 失败时整轮仍会标红，但这一版 canary 已经发出。
       - name: 创建 Canary 标签 Create Canary Tag
-        if: github.event_name != 'pull_request' && steps.gate.outputs.skip == 'false' && steps.gate.outputs.channel == 'canary'
+        if: github.event_name != 'pull_request' && needs.gate.outputs.channel == 'canary'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          FULL_TAG: ${{ steps.gate.outputs.full_tag }}
-          FULL_NAME: ${{ steps.gate.outputs.full_name }}
+          FULL_TAG: ${{ needs.gate.outputs.full_tag }}
+          FULL_NAME: ${{ needs.gate.outputs.full_name }}
           COMMIT_SHA: ${{ github.sha }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
@@ -220,54 +278,82 @@ jobs:
             -m "对应 GitHub Actions：${RUN_URL}"
           git push origin "$FULL_TAG"
 
+      - name: 暂存待发布 APK Stage Signed APKs
+        if: github.event_name != 'pull_request' && (needs.gate.outputs.channel == 'stable' || needs.gate.outputs.channel == 'beta')
+        uses: actions/upload-artifact@v7
+        with:
+          name: signed-apks-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            HyperLyrics Enhanced-debug-v${{ needs.gate.outputs.full_name }}-${{ needs.gate.outputs.code }}.apk
+            HyperLyrics Enhanced-release-v${{ needs.gate.outputs.full_name }}-${{ needs.gate.outputs.code }}.apk
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    needs: [gate, check, build]
+    if: github.event_name != 'pull_request' && needs.gate.outputs.skip == 'false' && (needs.gate.outputs.channel == 'stable' || needs.gate.outputs.channel == 'beta')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 拉取代码 Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: 取回待发布 APK Download Signed APKs
+        uses: actions/download-artifact@v7
+        with:
+          name: signed-apks-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .
+
       - name: 生成发布说明 Generate Release Body
-        if: github.event_name != 'pull_request' && steps.gate.outputs.skip == 'false' && (steps.gate.outputs.channel == 'stable' || steps.gate.outputs.channel == 'beta')
         id: release_body
+        env:
+          CHANNEL: ${{ needs.gate.outputs.channel }}
         run: |
           set -euo pipefail
 
-          CHANNEL="${{ steps.gate.outputs.channel }}"
           BODY_DELIMITER="release_body_$(git rev-parse HEAD)"
           echo "body<<$BODY_DELIMITER" >> "$GITHUB_OUTPUT"
           .github/scripts/generate-release-body.sh HEAD "$CHANNEL" >> "$GITHUB_OUTPUT"
           echo "$BODY_DELIMITER" >> "$GITHUB_OUTPUT"
 
       - name: 创建正式版发布 Create Stable Release
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && steps.gate.outputs.skip == 'false' && steps.gate.outputs.channel == 'stable'
+        if: github.ref == 'refs/heads/main' && needs.gate.outputs.channel == 'stable'
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: v${{ steps.gate.outputs.full_name }}
+          tag_name: v${{ needs.gate.outputs.full_name }}
           target_commitish: ${{ github.sha }}
-          name: v${{ steps.gate.outputs.full_name }}
+          name: v${{ needs.gate.outputs.full_name }}
           body: ${{ steps.release_body.outputs.body }}
           draft: false
           prerelease: false
           generate_release_notes: false
           files: |
-            HyperLyrics Enhanced-debug-v${{ steps.gate.outputs.full_name }}-${{ steps.gate.outputs.code }}.apk
-            HyperLyrics Enhanced-release-v${{ steps.gate.outputs.full_name }}-${{ steps.gate.outputs.code }}.apk
+            HyperLyrics Enhanced-debug-v${{ needs.gate.outputs.full_name }}-${{ needs.gate.outputs.code }}.apk
+            HyperLyrics Enhanced-release-v${{ needs.gate.outputs.full_name }}-${{ needs.gate.outputs.code }}.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 创建 Beta Pre-release
-        if: github.event_name != 'pull_request' && steps.gate.outputs.skip == 'false' && steps.gate.outputs.channel == 'beta'
+        if: needs.gate.outputs.channel == 'beta'
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: v${{ steps.gate.outputs.full_name }}
+          tag_name: v${{ needs.gate.outputs.full_name }}
           target_commitish: ${{ github.sha }}
-          name: v${{ steps.gate.outputs.full_name }}
+          name: v${{ needs.gate.outputs.full_name }}
           body: ${{ steps.release_body.outputs.body }}
           draft: false
           prerelease: true
           generate_release_notes: false
           files: |
-            HyperLyrics Enhanced-debug-v${{ steps.gate.outputs.full_name }}-${{ steps.gate.outputs.code }}.apk
-            HyperLyrics Enhanced-release-v${{ steps.gate.outputs.full_name }}-${{ steps.gate.outputs.code }}.apk
+            HyperLyrics Enhanced-debug-v${{ needs.gate.outputs.full_name }}-${{ needs.gate.outputs.code }}.apk
+            HyperLyrics Enhanced-release-v${{ needs.gate.outputs.full_name }}-${{ needs.gate.outputs.code }}.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 同步 LSPosed 仓库资料 Sync LSPosed Metadata
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && steps.gate.outputs.skip == 'false' && steps.gate.outputs.channel == 'stable'
+        if: github.ref == 'refs/heads/main' && needs.gate.outputs.channel == 'stable'
         env:
           GH_TOKEN: ${{ secrets.LSP_REPO_TOKEN }}
           LSP_REPO: Xposed-Modules-Repo/com.juren233.hyperlyricsenhanced
@@ -298,16 +384,16 @@ jobs:
           fi
 
       - name: 发布到 LSPosed 仓库 Publish LSPosed Release
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && steps.gate.outputs.skip == 'false' && steps.gate.outputs.channel == 'stable'
+        if: github.ref == 'refs/heads/main' && needs.gate.outputs.channel == 'stable'
         env:
           GH_TOKEN: ${{ secrets.LSP_REPO_TOKEN }}
           LSP_REPO: Xposed-Modules-Repo/com.juren233.hyperlyricsenhanced
           RELEASE_BODY: ${{ steps.release_body.outputs.body }}
+          V_NAME: ${{ needs.gate.outputs.full_name }}
+          V_CODE: ${{ needs.gate.outputs.code }}
         run: |
           set -euo pipefail
 
-          V_NAME="${{ steps.gate.outputs.full_name }}"
-          V_CODE="${{ steps.gate.outputs.code }}"
           TARGET_TAG="${V_CODE}-${V_NAME// /_}"
           RELEASE_APK="HyperLyrics Enhanced-release-v${V_NAME}-${V_CODE}.apk"
           LSP_BODY="$RUNNER_TEMP/lsp-release-body.md"
