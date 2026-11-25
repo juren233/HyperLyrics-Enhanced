@@ -4,10 +4,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.core.graphics.ColorUtils
 import com.juren233.hyperlyricsenhanced.ui.page.MonetThemeTestSupport.appThemeTokens
+import com.juren233.hyperlyricsenhanced.ui.page.MonetThemeTestSupport.compose
 import com.juren233.hyperlyricsenhanced.ui.page.MonetThemeTestSupport.miuixTokens
 import com.juren233.hyperlyricsenhanced.ui.utils.MonetAccentTuning
 import com.juren233.hyperlyricsenhanced.ui.utils.MonetPalette
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -52,9 +54,20 @@ class DarkMonetRedTest {
     }
 
     @Test
+    fun swatchAndMiniPreviewShowTheSameRed() {
+        assertEquals(expected, compose { accentSwatchColors(5) }[red])
+        assertEquals(expected, compose { accentSwatchColors(2) }[red]) // 莫奈关闭的深色页面，色块预览开启莫奈后的颜色
+        assertEquals(expected, compose { previewPalette(ThemeModeSelection.BRIGHTNESS_DARK, monet = true, monetColorIndex = red) }.accent)
+        // 浅色色块不变
+        assertEquals(miuixTokens(4, red).getValue("Primary"), compose { accentSwatchColors(4) }[red])
+        assertNotEquals(expected, compose { previewPalette(ThemeModeSelection.BRIGHTNESS_LIGHT, monet = true, monetColorIndex = red) }.accent)
+    }
+
+    @Test
     @Config(qualifiers = "night")
     fun followSystemMonet_inDarkSystem_usesNewRed() {
         assertEquals(expected, appThemeTokens(3, red).getValue("Primary"))
+        assertEquals(expected, compose { accentSwatchColors(3) }[red])
     }
 
     @Test

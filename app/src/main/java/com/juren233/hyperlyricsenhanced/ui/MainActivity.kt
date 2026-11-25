@@ -10,6 +10,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.common.SetupFlowVersion
+import com.juren233.hyperlyricsenhanced.common.MoreSettingsPreferences
 import com.juren233.hyperlyricsenhanced.common.UIConstants
 import com.juren233.hyperlyricsenhanced.provider.auto.ProviderAutoUpdateScheduler
 import com.juren233.hyperlyricsenhanced.ui.navigation.AppNavigation
@@ -47,7 +48,7 @@ class MainActivity : ComponentActivity() {
         val setupCompleted = prefs.getBoolean(UIConstants.KEY_SETUP_COMPLETED, UIConstants.DEFAULT_SETUP_COMPLETED) &&
             SetupFlowVersion.isCompleted(prefs)
         
-        val excludeFromRecents = prefs.getBoolean(UIConstants.KEY_EXCLUDE_FROM_RECENTS, UIConstants.DEFAULT_EXCLUDE_FROM_RECENTS)
+        val excludeFromRecents = MoreSettingsPreferences.excludeFromRecents(prefs)
         if (excludeFromRecents) {
             try {
                 val am = getSystemService(ACTIVITY_SERVICE) as android.app.ActivityManager
@@ -56,7 +57,7 @@ class MainActivity : ComponentActivity() {
         }
 
         // 隐藏图标状态持久保存在 PackageManager，这里按偏好收敛一次（如备份恢复后的漂移）
-        AppUtils.applyLauncherIconVisibility(this, prefs.getBoolean(UIConstants.KEY_HIDE_APP_ICON, UIConstants.DEFAULT_HIDE_APP_ICON))
+        AppUtils.applyLauncherIconVisibility(this, MoreSettingsPreferences.hideAppIcon(prefs))
 
         // 后台插件自动更新：注册周期任务，并按节流触发一次打开 App 的检查。
         ProviderAutoUpdateScheduler.onAppOpened(this)

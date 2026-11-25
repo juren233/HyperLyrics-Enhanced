@@ -68,6 +68,7 @@ import com.juren233.hyperlyricsenhanced.utils.formatAppVersion
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.common.ClassicAodSongInfoConfig
 import com.juren233.hyperlyricsenhanced.common.FeatureEntryConfig
+import com.juren233.hyperlyricsenhanced.common.MoreSettingsPreferences
 import com.juren233.hyperlyricsenhanced.common.UIConstants
 import com.juren233.hyperlyricsenhanced.R
 import com.juren233.hyperlyricsenhanced.common.PrefsBridge
@@ -255,10 +256,10 @@ fun MainPage(outroStage: Int = MAIN_PAGE_OUTRO_STAGES) {
 
     // --- prefs & state ---
     var floatingNavBarEnabled by remember {
-        mutableStateOf(prefs.getBoolean(UIConstants.KEY_FLOATING_NAV_BAR, UIConstants.DEFAULT_FLOATING_NAV_BAR))
+        mutableStateOf(MoreSettingsPreferences.floatingNavBar(prefs))
     }
     var parallelWindowUiEnabled by remember {
-        mutableStateOf(prefs.getBoolean(UIConstants.KEY_PARALLEL_WINDOW_UI, UIConstants.DEFAULT_PARALLEL_WINDOW_UI))
+        mutableStateOf(MoreSettingsPreferences.parallelWindowUi(prefs))
     }
     // 平行窗口 UI：仅宽屏且开关开启时启用（侧栏 + 双栏场景），关闭后回落为底部栏单栏布局
     val parallelWindowUi = isWideScreen && parallelWindowUiEnabled
@@ -291,9 +292,9 @@ fun MainPage(outroStage: Int = MAIN_PAGE_OUTRO_STAGES) {
         SharedPreferences.OnSharedPreferenceChangeListener { p, key ->
             when (key) {
                 UIConstants.KEY_FLOATING_NAV_BAR ->
-                    floatingNavBarEnabled = p.getBoolean(UIConstants.KEY_FLOATING_NAV_BAR, UIConstants.DEFAULT_FLOATING_NAV_BAR)
+                    floatingNavBarEnabled = MoreSettingsPreferences.floatingNavBar(p)
                 UIConstants.KEY_PARALLEL_WINDOW_UI ->
-                    parallelWindowUiEnabled = p.getBoolean(UIConstants.KEY_PARALLEL_WINDOW_UI, UIConstants.DEFAULT_PARALLEL_WINDOW_UI)
+                    parallelWindowUiEnabled = MoreSettingsPreferences.parallelWindowUi(p)
                 RootConstants.KEY_HOOK_ENABLE_HYPER_ISLAND ->
                     enableHyperIsland = p.getBoolean(RootConstants.KEY_HOOK_ENABLE_HYPER_ISLAND, RootConstants.DEFAULT_HOOK_ENABLE_HYPER_ISLAND)
                 RootConstants.KEY_HOOK_ENABLE_AOD_LYRICS ->

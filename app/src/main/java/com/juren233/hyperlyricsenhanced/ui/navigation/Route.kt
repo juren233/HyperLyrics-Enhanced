@@ -21,6 +21,9 @@ sealed interface Route : NavKey {
      */
     @Serializable
     data class Settings(val scrollToFeatureSwitches: Boolean = false) : Route
+    /** 应用设置 → 外观 →「更多」子页：手势与界面、高级。 */
+    @Serializable
+    data object MoreSettings : Route
     @Serializable
     data object HookSettings : Route
     @Serializable

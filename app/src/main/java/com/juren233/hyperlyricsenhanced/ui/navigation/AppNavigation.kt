@@ -22,6 +22,7 @@ import top.yukonga.miuix.kmp.nav.core.rememberNavSystemCornerRadius
 import top.yukonga.miuix.kmp.nav.transition.NavSwipeDirection
 import top.yukonga.miuix.kmp.nav.transition.NavTransition
 import kotlin.reflect.KClass
+import com.juren233.hyperlyricsenhanced.common.MoreSettingsPreferences
 import com.juren233.hyperlyricsenhanced.common.UIConstants
 import com.juren233.hyperlyricsenhanced.ui.page.MAIN_PAGE_OUTRO_STAGES
 import com.juren233.hyperlyricsenhanced.ui.page.MAIN_STAGE_SHELL
@@ -36,6 +37,7 @@ import com.juren233.hyperlyricsenhanced.ui.page.setup.setupOutroDestination
 import com.juren233.hyperlyricsenhanced.ui.page.setup.setupOutroTraceLayout
 import com.juren233.hyperlyricsenhanced.ui.page.LicensesPage
 import com.juren233.hyperlyricsenhanced.ui.page.LogPage
+import com.juren233.hyperlyricsenhanced.ui.page.MoreSettingsPage
 import com.juren233.hyperlyricsenhanced.ui.page.SettingsPage
 import com.juren233.hyperlyricsenhanced.ui.page.PoetryPage
 import com.juren233.hyperlyricsenhanced.ui.page.HookSettingsPage
@@ -105,19 +107,19 @@ fun AppNavigation(startRoute: Route) {
         context.getSharedPreferences(UIConstants.PREF_NAME, Context.MODE_PRIVATE)
     }
     var parallelWindowUiEnabled by remember {
-        mutableStateOf(prefs.getBoolean(UIConstants.KEY_PARALLEL_WINDOW_UI, UIConstants.DEFAULT_PARALLEL_WINDOW_UI))
+        mutableStateOf(MoreSettingsPreferences.parallelWindowUi(prefs))
     }
     var swipeBackGestureEnabled by remember {
-        mutableStateOf(prefs.getBoolean(UIConstants.KEY_SWIPE_BACK_GESTURE, UIConstants.DEFAULT_SWIPE_BACK_GESTURE))
+        mutableStateOf(MoreSettingsPreferences.swipeBackGesture(prefs))
     }
     DisposableEffect(prefs) {
         val listener = SharedPreferences.OnSharedPreferenceChangeListener { p, key ->
             when (key) {
                 UIConstants.KEY_PARALLEL_WINDOW_UI -> {
-                    parallelWindowUiEnabled = p.getBoolean(UIConstants.KEY_PARALLEL_WINDOW_UI, UIConstants.DEFAULT_PARALLEL_WINDOW_UI)
+                    parallelWindowUiEnabled = MoreSettingsPreferences.parallelWindowUi(p)
                 }
                 UIConstants.KEY_SWIPE_BACK_GESTURE -> {
-                    swipeBackGestureEnabled = p.getBoolean(UIConstants.KEY_SWIPE_BACK_GESTURE, UIConstants.DEFAULT_SWIPE_BACK_GESTURE)
+                    swipeBackGestureEnabled = MoreSettingsPreferences.swipeBackGesture(p)
                 }
             }
         }
@@ -158,6 +160,7 @@ fun AppNavigation(startRoute: Route) {
                     SettingsPage(scrollToFeatureSwitches = settings.scrollToFeatureSwitches)
                 }
             }
+            appEntry<Route.MoreSettings>(swipeDismiss = swipeDismiss) { MoreSettingsPage() }
             appEntry<Route.HookSettings>(swipeDismiss = swipeDismiss) { HookSettingsPage() }
             appEntry<Route.AppleMusicOptimization>(swipeDismiss = swipeDismiss) { AppleMusicOptimizationPage() }
             appEntry<Route.AppleLyricsImageBackground>(swipeDismiss = swipeDismiss) { AppleLyricsImageBackgroundPage() }

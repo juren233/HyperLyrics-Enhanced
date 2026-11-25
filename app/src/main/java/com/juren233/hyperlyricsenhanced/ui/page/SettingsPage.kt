@@ -1,15 +1,10 @@
 package com.juren233.hyperlyricsenhanced.ui.page
 
-import com.juren233.hyperlyricsenhanced.ui.component.SectionEnter
-import com.juren233.hyperlyricsenhanced.ui.component.SectionExit
 import android.content.Context
 import android.content.SharedPreferences
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -18,7 +13,6 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
@@ -28,30 +22,31 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.core.content.edit
 import com.juren233.hyperlyricsenhanced.R
 import com.juren233.hyperlyricsenhanced.ui.component.SpecialFeaturesContent
+import com.juren233.hyperlyricsenhanced.ui.component.IslandGlyph
+import com.juren233.hyperlyricsenhanced.ui.component.SettingsTileGrid
+import com.juren233.hyperlyricsenhanced.ui.component.SettingsTileSpec
+import com.juren233.hyperlyricsenhanced.ui.component.settingsCard
+import top.yukonga.miuix.kmp.icon.extended.Community
+import top.yukonga.miuix.kmp.icon.extended.Lock
+import top.yukonga.miuix.kmp.icon.extended.Music
 import com.juren233.hyperlyricsenhanced.common.FeatureEntryApplier
 import com.juren233.hyperlyricsenhanced.common.FeatureEntryConfig
 import com.juren233.hyperlyricsenhanced.common.LogLevelPreference
 import com.juren233.hyperlyricsenhanced.common.PrefsBridge
 import com.juren233.hyperlyricsenhanced.common.RootConstants
-import com.juren233.hyperlyricsenhanced.common.TopBarProgressiveBlurPreference
 import com.juren233.hyperlyricsenhanced.common.UIConstants
-import com.juren233.hyperlyricsenhanced.root.settings.SettingsEntryProfile
 import com.juren233.hyperlyricsenhanced.ui.component.LogExportGuideDialog
-import com.juren233.hyperlyricsenhanced.ui.component.LyricHookPermissionSheet
 import com.juren233.hyperlyricsenhanced.ui.component.rememberLogExportGuideState
 import com.juren233.hyperlyricsenhanced.ui.component.LyricHookSwitchController
 import com.juren233.hyperlyricsenhanced.ui.component.rememberLyricHookSwitchController
 import com.juren233.hyperlyricsenhanced.ui.navigation.LocalNavigator
 import com.juren233.hyperlyricsenhanced.ui.navigation.Route
-import com.juren233.hyperlyricsenhanced.ui.utils.AppUtils
 import com.juren233.hyperlyricsenhanced.ui.utils.BlurredBar
 import com.juren233.hyperlyricsenhanced.ui.utils.LocaleUtils
 import com.juren233.hyperlyricsenhanced.ui.utils.pageScrollModifiers
 import com.juren233.hyperlyricsenhanced.ui.utils.rememberBlurBackdrop
-import com.juren233.hyperlyricsenhanced.ui.utils.rememberIsWideScreen
 import com.juren233.hyperlyricsenhanced.utils.LogExportSource
 import com.juren233.hyperlyricsenhanced.utils.rememberExportAllLogs
 import top.yukonga.miuix.kmp.basic.Card
@@ -68,15 +63,7 @@ import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.WindowDropdownPreference
-import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
-
-private fun setExcludeFromRecents(context: Context, exclude: Boolean) {
-    try {
-        val am = context.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
-        am.appTasks?.forEach { it.setExcludeFromRecents(exclude) }
-    } catch (_: Exception) { }
-}
 
 @Composable
 fun SettingsPage(scrollToFeatureSwitches: Boolean = false) {
@@ -144,17 +131,10 @@ fun SettingsPage(scrollToFeatureSwitches: Boolean = false) {
             }
         }
     ) { innerPadding ->
-        // “功能开关”分组前的条目数，与 settingsSections 里的 key 顺序保持一致：
-        // 主页隐藏时其迁移区块（4 项 + 通知型灵动岛 1 项）排在最前，另有个性化标题与内容 2 项。
-        val featureSwitchesItemIndex = (
-            if (!homePageVisible) {
-                4 + if (featureEntries.dynamicIsland) 1 else 0
-            } else {
-                0
-            }
-            ) + 2
+        // 从主页「去设置里打开入口」跳过来（scrollToFeatureSwitches）时定位到「功能入口」组：
+        // 它前面是外观的标题、面板与「更多」入口三项，与 settingsSections 里的 key 顺序保持一致。
         val lazyListState = rememberLazyListState(
-            initialFirstVisibleItemIndex = if (scrollToFeatureSwitches) featureSwitchesItemIndex else 0,
+            initialFirstVisibleItemIndex = if (scrollToFeatureSwitches) FEATURE_ENTRIES_ITEM_INDEX else 0,
         )
         val top = innerPadding.calculateTopPadding()
         val bottom = innerPadding.calculateBottomPadding()
@@ -219,9 +199,11 @@ fun SettingsPage(scrollToFeatureSwitches: Boolean = false) {
         }
     }
 
-    LyricHookPermissionSheet(controller = lyricHookSwitches)
     LogExportGuideDialog(state = logExportGuide)
 }
+
+/** settingsSections 中「功能入口」标题的位置：前面是外观的标题、面板与「更多」入口。 */
+internal const val FEATURE_ENTRIES_ITEM_INDEX = 3
 
 private fun LazyListScope.settingsSections(
     backupRestoreHelper: com.juren233.hyperlyricsenhanced.utils.BackupRestoreHelper,
@@ -237,39 +219,80 @@ private fun LazyListScope.settingsSections(
     appleMusicEntryEnabled: Boolean,
     onAppleMusicEntryToggle: (Boolean) -> Unit,
 ) {
-    // 主页被隐藏（三个歌词入口都关闭）时，主页的歌词设置与特殊功能迁到设置页顶部；
-    // 主页仍保留时这些内容留在主页，设置页不重复列出。
-    // 通知型灵动岛歌词卡片由 dynamicIslandEntryEnabled 单独门控：入口开启时主页必然保留，不会走到这里。
+    // 外观：深浅模式预览卡 + 莫奈取色/语言磁贴 + 强调色色块，放在最上面。
+    item(key = "appearance_title") {
+        SmallTitle(text = stringResource(R.string.title_appearance))
+    }
+    item(key = "appearance_content") {
+        SettingsAppearancePanel()
+    }
+    // 更多：手势与界面、高级两组收进子页，入口挂在外观组末尾。
+    item(key = "advanced_settings_entry") {
+        val navigator = LocalNavigator.current
+        Card(modifier = Modifier.settingsCard()) {
+            ArrowPreference(
+                title = stringResource(R.string.title_more_settings),
+                summary = stringResource(R.string.summary_more_settings),
+                onClick = { navigator.navigate(Route.MoreSettings) },
+            )
+        }
+    }
+
+    // 功能入口：磁贴，点一下显示/隐藏对应入口（行为与原来的开关相同）。
+    item(key = "feature_entries_title") {
+        SmallTitle(text = stringResource(R.string.title_feature_entries))
+    }
+    item(key = "feature_entries_tiles") {
+        val shown = stringResource(R.string.feature_entry_state_shown)
+        val hidden = stringResource(R.string.feature_entry_state_hidden)
+        fun state(enabled: Boolean) = if (enabled) shown else hidden
+        SettingsTileGrid(
+            listOf(
+                SettingsTileSpec(
+                    key = "entry_hyper_island",
+                    title = stringResource(R.string.title_miui_systemui_enhancement),
+                    status = state(hyperIslandEntryEnabled),
+                    active = hyperIslandEntryEnabled,
+                    onClick = { onHyperIslandEntryToggle(!hyperIslandEntryEnabled) },
+                ) { tint, modifier -> IslandGlyph(color = tint, modifier = modifier) },
+                SettingsTileSpec(
+                    key = "entry_aod_lyrics",
+                    title = stringResource(R.string.title_aod_lyrics),
+                    status = state(aodLyricsEntryEnabled),
+                    active = aodLyricsEntryEnabled,
+                    onClick = { onAodLyricsEntryToggle(!aodLyricsEntryEnabled) },
+                ) { tint, modifier -> Icon(MiuixIcons.Lock, null, modifier, tint) },
+                SettingsTileSpec(
+                    key = "entry_dynamic_island",
+                    title = stringResource(R.string.title_dynamic_island_lyrics),
+                    status = state(dynamicIslandEntryEnabled),
+                    active = dynamicIslandEntryEnabled,
+                    onClick = { onDynamicIslandEntryToggle(!dynamicIslandEntryEnabled) },
+                ) { tint, modifier -> Icon(MiuixIcons.Community, null, modifier, tint) },
+                SettingsTileSpec(
+                    key = "entry_apple_music",
+                    title = stringResource(R.string.title_apple_music_optimization_page),
+                    status = state(appleMusicEntryEnabled),
+                    active = appleMusicEntryEnabled,
+                    onClick = { onAppleMusicEntryToggle(!appleMusicEntryEnabled) },
+                ) { tint, modifier -> Icon(MiuixIcons.Music, null, modifier, tint) },
+            ),
+        )
+    }
+    // 主页被隐藏（三个歌词入口都关闭）时，主页的歌词设置与特殊功能迁到这里；
+    //    主页仍保留时这些内容留在主页，设置页不重复列出。
+    //    通知型灵动岛歌词开关只在主页：它的入口一开启主页就必然保留，迁移区块里不放它。
     if (showMigratedHomeSections) {
         item(key = "global_features_title") {
             SmallTitle(text = stringResource(R.string.title_global_features))
         }
         item(key = "lyric_settings") {
             val navigator = LocalNavigator.current
-            Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
+            Card(modifier = Modifier.settingsCard()) {
                 ArrowPreference(
                     title = stringResource(R.string.title_lyric_settings),
                     onClick = { navigator.navigate(Route.LyricSettings) },
                 )
-            }
-        }
-        if (dynamicIslandEntryEnabled) item(key = "dynamic_island_lyrics") {
-            val navigator = LocalNavigator.current
-            Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
-                Column {
-                    SwitchPreference(
-                        title = stringResource(R.string.title_dynamic_island_lyrics),
-                        summary = stringResource(R.string.summary_dynamic_island_lyrics),
-                        checked = lyricHookSwitches.enableDynamicIsland,
-                        onCheckedChange = lyricHookSwitches::onDynamicIslandToggle,
-                    )
-                    AnimatedVisibility(visible = lyricHookSwitches.enableDynamicIsland, enter = SectionEnter, exit = SectionExit) {
-                        ArrowPreference(
-                            title = stringResource(R.string.title_dynamic_island_config),
-                            onClick = { navigator.navigate(Route.DynamicIslandNotification) },
-                        )
-                    }
-                }
             }
         }
         item(key = "special_features_title") {
@@ -280,152 +303,24 @@ private fun LazyListScope.settingsSections(
         }
     }
 
-    item(key = "personalization_title") {
-        SmallTitle(text = stringResource(R.string.title_personalization))
+    // 数据管理（备份 / 恢复）
+    item(key = "backup_restore_title") {
+        SmallTitle(text = stringResource(R.string.title_backup_restore))
     }
-    item(key = "personalization_content") {
-        val context = LocalContext.current
-        val activity = androidx.activity.compose.LocalActivity.current
-        val prefs = remember { context.getSharedPreferences(UIConstants.PREF_NAME, Context.MODE_PRIVATE) }
-        var themeMode by remember { mutableIntStateOf(prefs.getInt(UIConstants.KEY_THEME_MODE, UIConstants.DEFAULT_THEME_MODE)) }
-        val themeOptions = listOf(stringResource(R.string.theme_system), stringResource(R.string.theme_light), stringResource(R.string.theme_dark), stringResource(R.string.theme_system_monet), stringResource(R.string.theme_light_monet), stringResource(R.string.theme_dark_monet))
-        var appLanguage by remember { mutableIntStateOf(prefs.getInt(UIConstants.KEY_APP_LANGUAGE, UIConstants.DEFAULT_APP_LANGUAGE)) }
-        val languageOptions = listOf(stringResource(R.string.language_system), stringResource(R.string.language_simplified_chinese), stringResource(R.string.language_english))
-
-        Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
-            Column {
-                WindowDropdownPreference(title = stringResource(R.string.title_theme), items = themeOptions, selectedIndex = themeMode, onSelectedIndexChange = { themeMode = it; prefs.edit { putInt(UIConstants.KEY_THEME_MODE, it) } })
-                WindowDropdownPreference(
-                    title = stringResource(R.string.title_app_language),
-                    items = languageOptions,
-                    selectedIndex = appLanguage,
-                    onSelectedIndexChange = {
-                        if (appLanguage == it) return@WindowDropdownPreference
-                        appLanguage = it
-                        prefs.edit { putInt(UIConstants.KEY_APP_LANGUAGE, it) }
-                    }
-                )
-                if (themeMode >= 3) {
-                    var monetColorIndex by remember { mutableIntStateOf(prefs.getInt(UIConstants.KEY_MONET_COLOR, UIConstants.DEFAULT_MONET_COLOR)) }
-                    val monetOptions = listOf(stringResource(R.string.monet_default), stringResource(R.string.monet_blue), stringResource(R.string.monet_green), stringResource(R.string.monet_red), stringResource(R.string.monet_yellow), stringResource(R.string.monet_orange), stringResource(R.string.monet_purple), stringResource(R.string.monet_pink))
-                    WindowDropdownPreference(title = stringResource(R.string.title_monet), items = monetOptions, selectedIndex = monetColorIndex, onSelectedIndexChange = { monetColorIndex = it; prefs.edit { putInt(UIConstants.KEY_MONET_COLOR, it) } })
-                }
-                var predictiveBackGestureEnabled by remember { mutableStateOf(prefs.getBoolean(UIConstants.KEY_PREDICTIVE_BACK_GESTURE, UIConstants.DEFAULT_PREDICTIVE_BACK_GESTURE)) }
-                SwitchPreference(title = stringResource(R.string.title_predictive_back), checked = predictiveBackGestureEnabled, onCheckedChange = {
-                    predictiveBackGestureEnabled = it; prefs.edit { putBoolean(UIConstants.KEY_PREDICTIVE_BACK_GESTURE, it) }
-                    runCatching { org.lsposed.hiddenapibypass.HiddenApiBypass.addHiddenApiExemptions("Landroid/content/pm/ApplicationInfo;->setEnableOnBackInvokedCallback"); val m = android.content.pm.ApplicationInfo::class.java.getDeclaredMethod("setEnableOnBackInvokedCallback", Boolean::class.javaPrimitiveType); m.isAccessible = true; m.invoke(context.applicationInfo, it) }
-                    activity?.recreate()
-                })
-                var swipeBackGestureEnabled by remember { mutableStateOf(prefs.getBoolean(UIConstants.KEY_SWIPE_BACK_GESTURE, UIConstants.DEFAULT_SWIPE_BACK_GESTURE)) }
-                SwitchPreference(title = stringResource(R.string.title_swipe_back_gesture), checked = swipeBackGestureEnabled, onCheckedChange = { swipeBackGestureEnabled = it; prefs.edit { putBoolean(UIConstants.KEY_SWIPE_BACK_GESTURE, it) } })
-                var parallelWindowUiEnabled by remember { mutableStateOf(prefs.getBoolean(UIConstants.KEY_PARALLEL_WINDOW_UI, UIConstants.DEFAULT_PARALLEL_WINDOW_UI)) }
-                val isWideScreen = rememberIsWideScreen()
-                // 平行窗口 UI 仅平板（宽屏）提供；开启期间底部栏导航不可用，隐藏悬浮底栏开关
-                if (isWideScreen) {
-                    SwitchPreference(title = stringResource(R.string.title_parallel_window_ui), checked = parallelWindowUiEnabled, onCheckedChange = { parallelWindowUiEnabled = it; prefs.edit { putBoolean(UIConstants.KEY_PARALLEL_WINDOW_UI, it) } })
-                }
-                var floatingNavBarEnabled by remember { mutableStateOf(prefs.getBoolean(UIConstants.KEY_FLOATING_NAV_BAR, UIConstants.DEFAULT_FLOATING_NAV_BAR)) }
-                var topBarProgressiveBlurEnabled by remember {
-                    mutableStateOf(TopBarProgressiveBlurPreference.read(prefs))
-                }
-                SwitchPreference(
-                    title = stringResource(R.string.title_top_bar_progressive_blur),
-                    checked = topBarProgressiveBlurEnabled,
-                    onCheckedChange = {
-                        topBarProgressiveBlurEnabled = it
-                        prefs.edit {
-                            putBoolean(UIConstants.KEY_TOP_BAR_PROGRESSIVE_BLUR, it)
-                            remove(UIConstants.KEY_TOP_BAR_PROGRESSIVE_BLUR_MODE)
-                        }
-                    },
-                )
-                if (!(isWideScreen && parallelWindowUiEnabled)) {
-                    SwitchPreference(title = stringResource(R.string.title_floating_nav), checked = floatingNavBarEnabled, onCheckedChange = { floatingNavBarEnabled = it; prefs.edit { putBoolean(UIConstants.KEY_FLOATING_NAV_BAR, it) } })
-                }
-                var excludeFromRecents by remember { mutableStateOf(prefs.getBoolean(UIConstants.KEY_EXCLUDE_FROM_RECENTS, UIConstants.DEFAULT_EXCLUDE_FROM_RECENTS)) }
-                SwitchPreference(title = stringResource(R.string.title_exclude_from_recents), checked = excludeFromRecents, onCheckedChange = { excludeFromRecents = it; prefs.edit { putBoolean(UIConstants.KEY_EXCLUDE_FROM_RECENTS, it) }; setExcludeFromRecents(context, it) })
-                var hideAppIcon by remember { mutableStateOf(prefs.getBoolean(UIConstants.KEY_HIDE_APP_ICON, UIConstants.DEFAULT_HIDE_APP_ICON)) }
-                SwitchPreference(title = stringResource(R.string.title_hide_app_icon), checked = hideAppIcon, onCheckedChange = { hideAppIcon = it; PrefsBridge.putBoolean(UIConstants.KEY_HIDE_APP_ICON, it); AppUtils.applyLauncherIconVisibility(context, it) })
-                AnimatedVisibility(
-                    visible = hideAppIcon,
-                    enter = SectionEnter,
-                    exit = SectionExit,
-                ) {
-                    var settingsEntryPosition by remember {
-                        mutableStateOf(
-                            SettingsEntryProfile.resolveEntryPosition(
-                                positionExists = prefs.contains(UIConstants.KEY_SETTINGS_ENTRY_POSITION),
-                                positionValue = prefs.getInt(UIConstants.KEY_SETTINGS_ENTRY_POSITION, 0),
-                                legacyShowEntryExists = prefs.contains(UIConstants.KEY_SHOW_SETTINGS_ENTRY),
-                                legacyShowEntry = prefs.getBoolean(UIConstants.KEY_SHOW_SETTINGS_ENTRY, UIConstants.DEFAULT_SHOW_SETTINGS_ENTRY),
-                            )
-                        )
-                    }
-                    val settingsEntryPositionOptions = listOf(
-                        stringResource(R.string.settings_entry_position_hidden),
-                        stringResource(R.string.settings_entry_position_top),
-                        stringResource(R.string.settings_entry_position_middle),
-                        stringResource(R.string.settings_entry_position_bottom),
-                    )
-                    WindowDropdownPreference(
-                        title = stringResource(R.string.title_show_settings_entry),
-                        summary = stringResource(R.string.summary_show_settings_entry),
-                        items = settingsEntryPositionOptions,
-                        selectedIndex = settingsEntryPosition,
-                        onSelectedIndexChange = {
-                            settingsEntryPosition = it
-                            PrefsBridge.putInt(UIConstants.KEY_SETTINGS_ENTRY_POSITION, it)
-                        },
-                    )
-                }
-            }
-        }
-    }
-    item(key = "feature_entries_title") {
-        // 该分组统称“功能开关”（原“功能入口”）。
-        SmallTitle(text = stringResource(R.string.title_feature_switches))
-    }
-    item(key = "feature_entries_content") {
-        Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
-            Column {
-                SwitchPreference(
-                    title = stringResource(R.string.title_feature_entry_hyper_island),
-                    checked = hyperIslandEntryEnabled,
-                    onCheckedChange = onHyperIslandEntryToggle,
-                )
-                SwitchPreference(
-                    title = stringResource(R.string.title_feature_entry_aod_lyrics),
-                    checked = aodLyricsEntryEnabled,
-                    onCheckedChange = onAodLyricsEntryToggle,
-                )
-                SwitchPreference(
-                    title = stringResource(R.string.title_feature_entry_dynamic_island),
-                    checked = dynamicIslandEntryEnabled,
-                    onCheckedChange = onDynamicIslandEntryToggle,
-                )
-                SwitchPreference(
-                    title = stringResource(R.string.title_feature_entry_apple_music),
-                    checked = appleMusicEntryEnabled,
-                    onCheckedChange = onAppleMusicEntryToggle,
-                )
-            }
-        }
-    }
-    item(key = "config_management_title") {
-        SmallTitle(text = stringResource(R.string.title_config_management))
-    }
-    item(key = "config_management_content") {
-        Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
+    item(key = "backup_restore_content") {
+        Card(modifier = Modifier.settingsCard()) {
             Column {
                 ArrowPreference(title = stringResource(R.string.title_backup), onClick = { backupRestoreHelper.launchBackup() })
                 ArrowPreference(title = stringResource(R.string.title_restore), onClick = { backupRestoreHelper.launchRestore() })
             }
         }
     }
-    item(key = "debug_info_title") {
-        SmallTitle(text = stringResource(R.string.title_debug_info))
+
+    // 日志
+    item(key = "logs_title") {
+        SmallTitle(text = stringResource(R.string.title_logs))
     }
-    item(key = "debug_info_content") {
+    item(key = "logs_content") {
         val navigator = LocalNavigator.current
         val context = LocalContext.current
         val prefs = remember { context.getSharedPreferences(UIConstants.PREF_NAME, Context.MODE_PRIVATE) }
@@ -439,22 +334,20 @@ private fun LazyListScope.settingsSections(
             onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
         }
         val logLevelOptions = listOf(stringResource(R.string.log_level_normal), stringResource(R.string.log_level_verbose))
-        Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
+        Card(modifier = Modifier.settingsCard()) {
             Column {
                 WindowDropdownPreference(
-                    title = stringResource(R.string.title_log_level), 
-                    items = logLevelOptions, 
-                    selectedIndex = logLevel, 
+                    title = stringResource(R.string.title_log_level),
+                    items = logLevelOptions,
+                    selectedIndex = logLevel,
                     onSelectedIndexChange = {
                         logLevel = it
                         LogLevelPreference.write(it)
                     }
                 )
                 ArrowPreference(
-                    title = stringResource(R.string.title_view_logs), 
-                    onClick = { 
-                        navigator.navigate(Route.Log) 
-                    }
+                    title = stringResource(R.string.title_view_logs),
+                    onClick = { navigator.navigate(Route.Log) },
                 )
                 ArrowPreference(
                     title = stringResource(R.string.export_all_logs),
@@ -463,12 +356,14 @@ private fun LazyListScope.settingsSections(
             }
         }
     }
+
+    // 杂项：与旧版一致，放在页面最底部。
     item(key = "misc_title") {
         SmallTitle(text = stringResource(R.string.title_misc))
     }
     item(key = "misc_content") {
         val navigator = LocalNavigator.current
-        Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
+        Card(modifier = Modifier.settingsCard()) {
             ArrowPreference(
                 title = stringResource(R.string.title_review_setup),
                 onClick = { navigator.navigate(Route.SetupReview) },

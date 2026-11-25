@@ -2,7 +2,8 @@
 package com.juren233.hyperlyricsenhanced.ui.component
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.ui.graphics.colorspace.ColorSpaces
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.compositeOver
@@ -17,7 +18,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.text.font.FontWeight
@@ -217,7 +217,6 @@ private fun NoticeCardLayout(
 
 /** 状态切换（磁贴开关、头卡状态）的过渡，与项目其余状态动画一致（300ms FastOutSlowIn）。 */
 private fun <T> stateChangeTween() = tween<T>(durationMillis = 300, easing = FastOutSlowInEasing)
-private val TileColorAnimation = stateChangeTween<Color>()
 /** 可点击大卡片的按压反馈（按下处所在的角向下倾斜）：首启流程的选项卡片、头卡与磁贴共用。 */
 val CardPressFeedback = PressFeedbackType.Tilt
 private val TileGap = 12.dp
@@ -238,7 +237,7 @@ private val HeroSuccessHue = Color(0xFF2DB55D)
 private val HeroWarningHue = Color(0xFFF2A516)
 private val HeroErrorHue = Color(0xFFE5484D)
 
-private class TonalPalette(
+internal class TonalPalette(
     val container: Color,
     val content: Color,
     val secondary: Color,
@@ -274,6 +273,88 @@ private fun heroPalette(tone: HeroTone): TonalPalette = tonalPalette(
 )
 
 /**
+ * 状态切换的颜色过渡权重：[states] 里每个状态一份 0–1 的权重，当前 [state] 为 1、其余为 0，状态变化时按 300ms 过渡。
+ * 调用方把每个状态「按当前主题现取」的颜色交给 [blendColors] 按权重混合。
+ *
+ * 不用 animateColorAsState：它对目标色做补间，切换深浅色或强调色时目标色变了，也会被补间 300ms，
+ * 结果页面背景（直接取主题色）立刻变了，卡片底色却慢半拍才跟上。这里只对状态本身做动画，
+ * 主题变化时两端颜色在同一帧换成新主题的颜色，与页面背景同步。
+ */
+@Composable
+internal fun <S> animateStateWeights(state: S, states: List<S>, label: String): List<Float> =
+    states.map { option ->
+        key(option) {
+            animateFloatAsState(
+                targetValue = if (option == state) 1f else 0f,
+                animationSpec = stateChangeTween(),
+                label = label,
+            ).value
+        }
+    }
+
+/** 按权重混合颜色（sRGB 分量加权平均）；某一项权重为 1、其余为 0 时结果与该项颜色完全相同。 */
+internal fun blendColors(colors: List<Color>, weights: List<Float>): Color {
+    require(colors.size == weights.size) { "colors 与 weights 数量不一致" }
+    var red = 0f
+    var green = 0f
+    var blue = 0f
+    var alpha = 0f
+    var total = 0f
+    colors.forEachIndexed { index, color ->
+        val weight = weights[index].coerceIn(0f, 1f)
+        if (weight == 0f) return@forEachIndexed
+        val srgb = color.convert(ColorSpaces.Srgb)
+        red += srgb.red * weight
+        green += srgb.green * weight
+        blue += srgb.blue * weight
+        alpha += srgb.alpha * weight
+        total += weight
+    }
+    if (total == 0f) return colors[weights.indices.maxBy { weights[it] }]
+    return Color(red / total, green / total, blue / total, alpha / total)
+}
+
+/** 开/关两态的颜色过渡比例（0 关、1 开），与 [blendColors] 配合使用，见 [animateStateWeights]。 */
+@Composable
+internal fun animateToggleWeights(on: Boolean, label: String): List<Float> =
+    animateStateWeights(on, ToggleStates, label)
+
+/** [animateToggleWeights] 的颜色两端：关在前、开在后。 */
+internal fun toggleColor(off: Color, on: Color, weights: List<Float>): Color = blendColors(listOf(off, on), weights)
+
+private val ToggleStates = listOf(false, true)
+private val HeroTones = HeroTone.entries
+
+/** 头卡当前色调的配色：色调变化时过渡，主题变化时立即到位（见 [animateStateWeights]）。 */
+@Composable
+internal fun animatedHeroPalette(tone: HeroTone): TonalPalette {
+    val weights = animateStateWeights(tone, HeroTones, label = "heroTone")
+    val palettes = HeroTones.map { heroPalette(it) }
+    return TonalPalette(
+        container = blendColors(palettes.map { it.container }, weights),
+        content = blendColors(palettes.map { it.content }, weights),
+        secondary = blendColors(palettes.map { it.secondary }, weights),
+        decoration = blendColors(palettes.map { it.decoration }, weights),
+    )
+}
+
+/** 磁贴的底色、文字色与状态文字色。 */
+internal class TileColors(val container: Color, val content: Color, val status: Color)
+
+/** 磁贴开启/关闭时的配色：开关变化时过渡，主题变化时立即到位（见 [animateStateWeights]）。 */
+@Composable
+internal fun animatedTileColors(active: Boolean): TileColors {
+    val colors = MiuixTheme.colorScheme
+    val activePalette = heroPalette(HeroTone.Accent)
+    val weights = animateToggleWeights(active, label = "tileActive")
+    return TileColors(
+        container = toggleColor(colors.surfaceContainer, activePalette.container, weights),
+        content = toggleColor(colors.onSurface, activePalette.content, weights),
+        status = toggleColor(colors.onSurfaceVariantSummary, activePalette.secondary, weights),
+    )
+}
+
+/**
  * 页面顶部的大头卡：标题、可选的状态说明、左下角可选的附加提示（纯文字，逐条排列，贴卡片底部），右下角一枚放大的装饰图标。
  * 配色与图标随 [tone]、[decorationIcon] 变化时平滑过渡。
  */
@@ -288,11 +369,11 @@ fun HeroCard(
     notes: List<String> = emptyList(),
     onClick: (() -> Unit)? = null,
 ) {
-    val palette = heroPalette(tone)
-    val container by animateColorAsState(palette.container, TileColorAnimation, label = "heroContainer")
-    val content by animateColorAsState(palette.content, TileColorAnimation, label = "heroContent")
-    val secondary by animateColorAsState(palette.secondary, TileColorAnimation, label = "heroSecondary")
-    val decoration by animateColorAsState(palette.decoration, TileColorAnimation, label = "heroDecoration")
+    val palette = animatedHeroPalette(tone)
+    val container = palette.container
+    val content = palette.content
+    val secondary = palette.secondary
+    val decoration = palette.decoration
     Card(
         modifier = modifier,
         colors = CardDefaults.defaultColors(color = container, contentColor = content),
@@ -422,25 +503,13 @@ fun SettingsTileGrid(tiles: List<SettingsTileSpec>, modifier: Modifier = Modifie
     }
 }
 
+/** 单枚磁贴；需要自己排版（如磁贴上要挂弹出菜单）时直接用。 */
 @Composable
-private fun SettingsTile(tile: SettingsTileSpec, modifier: Modifier) {
-    val colors = MiuixTheme.colorScheme
-    val activePalette = heroPalette(HeroTone.Accent)
-    val container by animateColorAsState(
-        targetValue = if (tile.active) activePalette.container else colors.surfaceContainer,
-        animationSpec = TileColorAnimation,
-        label = "tileContainer",
-    )
-    val content by animateColorAsState(
-        targetValue = if (tile.active) activePalette.content else colors.onSurface,
-        animationSpec = TileColorAnimation,
-        label = "tileContent",
-    )
-    val status by animateColorAsState(
-        targetValue = if (tile.active) activePalette.secondary else colors.onSurfaceVariantSummary,
-        animationSpec = TileColorAnimation,
-        label = "tileStatus",
-    )
+internal fun SettingsTile(tile: SettingsTileSpec, modifier: Modifier) {
+    val tileColors = animatedTileColors(tile.active)
+    val container = tileColors.container
+    val content = tileColors.content
+    val status = tileColors.status
     Card(
         modifier = modifier
             .height(TileHeight)

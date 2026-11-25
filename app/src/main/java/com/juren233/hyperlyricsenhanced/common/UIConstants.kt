@@ -46,9 +46,9 @@ object UIConstants {
     const val DEFAULT_THEME_MODE = 0
     const val DEFAULT_APP_LANGUAGE = 0
     const val DEFAULT_MONET_COLOR = 0
-    const val DEFAULT_PREDICTIVE_BACK_GESTURE = false
+    const val DEFAULT_PREDICTIVE_BACK_GESTURE = true
     const val DEFAULT_SWIPE_BACK_GESTURE = true
-    const val DEFAULT_FLOATING_NAV_BAR = false
+    const val DEFAULT_FLOATING_NAV_BAR = true
     const val DEFAULT_TOP_BAR_PROGRESSIVE_BLUR = true
     const val DEFAULT_PARALLEL_WINDOW_UI = true
     const val DEFAULT_EXCLUDE_FROM_RECENTS = false
