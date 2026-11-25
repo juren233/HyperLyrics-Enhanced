@@ -46,7 +46,6 @@ import com.juren233.hyperlyricsenhanced.ui.component.LyricHookSwitchController
 import com.juren233.hyperlyricsenhanced.ui.component.rememberLyricHookSwitchController
 import com.juren233.hyperlyricsenhanced.ui.navigation.LocalNavigator
 import com.juren233.hyperlyricsenhanced.ui.navigation.Route
-import com.juren233.hyperlyricsenhanced.ui.page.main.MainTabPolicy
 import com.juren233.hyperlyricsenhanced.ui.utils.AppUtils
 import com.juren233.hyperlyricsenhanced.ui.utils.BlurredBar
 import com.juren233.hyperlyricsenhanced.ui.utils.LocaleUtils
@@ -105,26 +104,12 @@ fun SettingsPage(scrollToFeatureSwitches: Boolean = false) {
     val appleMusicInstalled = remember(context) {
         FeatureEntryConfig.isAppleMusicInstalled(context)
     }
-    var hyperIslandEntryEnabled by remember {
-        mutableStateOf(
-            prefs.getBoolean(UIConstants.KEY_FEATURE_ENTRY_HYPER_ISLAND, xiaomiDevice)
-        )
-    }
-    var aodLyricsEntryEnabled by remember {
-        mutableStateOf(
-            prefs.getBoolean(UIConstants.KEY_FEATURE_ENTRY_AOD_LYRICS, xiaomiDevice)
-        )
-    }
-    var dynamicIslandEntryEnabled by remember {
-        mutableStateOf(
-            prefs.getBoolean(UIConstants.KEY_FEATURE_ENTRY_DYNAMIC_ISLAND, true)
-        )
-    }
-    var appleMusicEntryEnabled by remember {
-        mutableStateOf(
-            prefs.getBoolean(UIConstants.KEY_FEATURE_ENTRY_APPLE_MUSIC, appleMusicInstalled)
-        )
-    }
+    // 入口状态跟随偏好刷新：「回顾基础设置流程页」等别处改了入口，返回设置页时立即对上。
+    val featureEntries = rememberSettingsFeatureEntryState(
+        prefs = prefs,
+        xiaomiDevice = xiaomiDevice,
+        appleMusicInstalled = appleMusicInstalled,
+    )
     // 关闭入口等于停用对应功能：功能自身开关在关闭期间暂存并置为停用，重新打开入口后原样恢复，
     // 因此关闭入口不会丢失关闭前的设置。
     val toggleFeatureEntry: (String, Boolean, (Boolean) -> Unit, String?) -> Unit =
@@ -140,11 +125,7 @@ fun SettingsPage(scrollToFeatureSwitches: Boolean = false) {
             writes.forEach { (key, value) -> PrefsBridge.putBoolean(key, value) }
         }
     // 主页是否保留：三个歌词入口至少有一个开启。主页保留时不在设置页重复列出它的内容。
-    val homePageVisible = MainTabPolicy.isHomePageVisible(
-        hyperIslandEntryEnabled = hyperIslandEntryEnabled,
-        aodLyricsEntryEnabled = aodLyricsEntryEnabled,
-        dynamicIslandEntryEnabled = dynamicIslandEntryEnabled,
-    )
+    val homePageVisible = featureEntries.homePageVisible
 
     Scaffold(
         snackbarHost = { SnackbarHost(state = snackbarHostState) },
@@ -167,7 +148,7 @@ fun SettingsPage(scrollToFeatureSwitches: Boolean = false) {
         // 主页隐藏时其迁移区块（4 项 + 通知型灵动岛 1 项）排在最前，另有个性化标题与内容 2 项。
         val featureSwitchesItemIndex = (
             if (!homePageVisible) {
-                4 + if (dynamicIslandEntryEnabled) 1 else 0
+                4 + if (featureEntries.dynamicIsland) 1 else 0
             } else {
                 0
             }
@@ -197,22 +178,22 @@ fun SettingsPage(scrollToFeatureSwitches: Boolean = false) {
                     },
                     lyricHookSwitches = lyricHookSwitches,
                     showMigratedHomeSections = !homePageVisible,
-                    dynamicIslandEntryEnabled = dynamicIslandEntryEnabled,
-                    hyperIslandEntryEnabled = hyperIslandEntryEnabled,
+                    dynamicIslandEntryEnabled = featureEntries.dynamicIsland,
+                    hyperIslandEntryEnabled = featureEntries.hyperIsland,
                     onHyperIslandEntryToggle = { enabled ->
                         toggleFeatureEntry(
                             UIConstants.KEY_FEATURE_ENTRY_HYPER_ISLAND,
                             enabled,
-                            { hyperIslandEntryEnabled = it },
+                            { featureEntries.hyperIsland = it },
                             RootConstants.KEY_HOOK_ENABLE_HYPER_ISLAND,
                         )
                     },
-                    aodLyricsEntryEnabled = aodLyricsEntryEnabled,
+                    aodLyricsEntryEnabled = featureEntries.aodLyrics,
                     onAodLyricsEntryToggle = { enabled ->
                         toggleFeatureEntry(
                             UIConstants.KEY_FEATURE_ENTRY_AOD_LYRICS,
                             enabled,
-                            { aodLyricsEntryEnabled = it },
+                            { featureEntries.aodLyrics = it },
                             RootConstants.KEY_HOOK_ENABLE_AOD_LYRICS,
                         )
                     },
@@ -220,16 +201,16 @@ fun SettingsPage(scrollToFeatureSwitches: Boolean = false) {
                         toggleFeatureEntry(
                             UIConstants.KEY_FEATURE_ENTRY_DYNAMIC_ISLAND,
                             enabled,
-                            { dynamicIslandEntryEnabled = it },
+                            { featureEntries.dynamicIsland = it },
                             RootConstants.KEY_HOOK_ENABLE_DYNAMIC_ISLAND,
                         )
                     },
-                    appleMusicEntryEnabled = appleMusicEntryEnabled,
+                    appleMusicEntryEnabled = featureEntries.appleMusic,
                     onAppleMusicEntryToggle = { enabled ->
                         toggleFeatureEntry(
                             UIConstants.KEY_FEATURE_ENTRY_APPLE_MUSIC,
                             enabled,
-                            { appleMusicEntryEnabled = it },
+                            { featureEntries.appleMusic = it },
                             null,
                         )
                     },

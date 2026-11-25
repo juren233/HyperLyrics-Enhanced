@@ -142,13 +142,13 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 import kotlin.time.Duration.Companion.milliseconds
 
 /** 工作模式：米系超级岛歌词（Hook 系统界面）。 */
-private const val SETUP_MODE_MI_HYPER_ISLAND = 0
+internal const val SETUP_MODE_MI_HYPER_ISLAND = 0
 
 /** 工作模式：通知型灵动岛歌词（通知监听，无需 root）。 */
-private const val SETUP_MODE_DYNAMIC_ISLAND = 1
+internal const val SETUP_MODE_DYNAMIC_ISLAND = 1
 
 /** 工作模式：非米系设备，仅使用 Apple Music 体验优化，其余功能入口隐藏并禁用。 */
-private const val SETUP_MODE_APPLE_MUSIC_ONLY = 2
+internal const val SETUP_MODE_APPLE_MUSIC_ONLY = 2
 
 @Composable
 fun SetupPage(onNavigateToMain: () -> Unit) {
@@ -530,7 +530,7 @@ private fun SetupPageColumn(
  * 解除此前选择“米系超级岛歌词”等留下的关闭，保证后续流程正常。
  * 写入同步到宿主进程，退出引导后立即生效。
  */
-private fun applySetupModeEntrySideEffects(prefs: SharedPreferences, mode: Int) {
+internal fun applySetupModeEntrySideEffects(prefs: SharedPreferences, mode: Int) {
     val entryClosures = when (mode) {
         // 米系超级岛歌词：通知型灵动岛歌词入口关闭并禁用。
         SETUP_MODE_MI_HYPER_ISLAND -> listOf(
