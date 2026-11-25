@@ -37,6 +37,7 @@ import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.common.lyric.CjkLyricWhitespacePolicy
 import com.juren233.hyperlyricsenhanced.common.lyric.LyricMetadataKeys
 import com.juren233.hyperlyricsenhanced.common.media.MediaMetadataHelper
+import com.juren233.hyperlyricsenhanced.lyric.model.interfaces.IRichLyricLine
 import com.juren233.hyperlyricsenhanced.lyric.view.SongPreprocessor
 import com.juren233.hyperlyricsenhanced.root.ClassicAodFocusNotificationRecovery
 import com.juren233.hyperlyricsenhanced.root.HookEntry
@@ -191,7 +192,10 @@ internal fun NotificationMediaAodLyricHooker.applyAodPluginState(aodView: Any, s
                 "overlay=${state.overlay != null}",
             dedupeKey = diagnosticKey,
         )
-        state.overlay?.root?.visibility = View.GONE
+        state.overlay?.let { overlay ->
+            AodLyricTransition.finish(overlay)
+            overlay.root.visibility = View.GONE
+        }
         return
     }
 
@@ -221,21 +225,15 @@ internal fun NotificationMediaAodLyricHooker.applyAodPluginState(aodView: Any, s
     if (contentChanged || styleChanged || alignmentChanged) {
         overlay.drawWakeLock.acquire(NotificationMediaAodLyricHooker.DRAW_WAKE_LOCK_TIMEOUT_MS)
     }
-    overlay.main.text = content.main
-    setOptionalText(overlay.translation, content.translation)
-    setOptionalText(overlay.backing, content.backing)
-    setOptionalText(overlay.backingTranslation, content.backingTranslation)
-    setOptionalText(overlay.overlappingMain, content.overlappingMain)
-    setOptionalText(overlay.overlappingTranslation, content.overlappingTranslation)
-    setOptionalText(overlay.overlappingBacking, content.overlappingBacking)
-    setOptionalText(
-        overlay.overlappingBackingTranslation,
-        content.overlappingBackingTranslation
+    val pendingTransition = applyClassicLyricContent(
+        overlay = overlay,
+        content = content,
+        textStyle = textStyle,
+        currentLine = LyriconDataBridge.currentLyricLine,
+        nowInterlude = AodWordProgress.interludeRange() != null,
+        words = AodLyricRowsApply.currentWords(textStyle, content.main),
+        playing = state.playing,
     )
-    setOptionalText(overlay.next, content.next)
-    NotificationMediaAodLyricHooker.applyContentAlignment(overlay, content)
-    NotificationMediaAodLyricHooker.applyClassicTextStyle(overlay, textStyle)
-    NotificationMediaAodLyricHooker.applyLyricRowOrder(overlay, textStyle.swapTranslation)
     updateClassicEmbeddedSongInfo(overlay, songInfo)
     updateClassicLineSpacing(overlay)
     overlay.root.visibility = View.VISIBLE
@@ -270,11 +268,57 @@ internal fun NotificationMediaAodLyricHooker.applyAodPluginState(aodView: Any, s
             "songInfo=${songInfo.text.isNotBlank()}",
         dedupeKey = diagnosticKey,
     )
+    pendingTransition?.let { AodLyricTransition.begin(overlay, it, content.mainAlignment) }
     if (contentChanged || styleChanged || alignmentChanged) {
         overlay.root.invalidate()
         overlay.parent.invalidate()
         NotificationMediaAodLyricHooker.requestAodFrameRefresh(aodView.javaClass.classLoader)
     }
+}
+
+/**
+ * 把一次歌词内容写进自定义 AOD 的歌词行，「动态效果」与锁屏 AOD 走同一份代码（[AodLyricRowsApply]），
+ * 开关读自定义 AOD 自己的（[classicAodTextStyle]）。返回的转场要在歌词层定位之后再开始。
+ */
+internal fun NotificationMediaAodLyricHooker.applyClassicLyricContent(
+    overlay: AodPluginOverlay,
+    content: AodLyricContent,
+    textStyle: AodTextStyleConfig,
+    currentLine: IRichLyricLine?,
+    nowInterlude: Boolean,
+    words: AodRowWords,
+    playing: Boolean,
+): AodLyricTransition.Pending? {
+    val pendingTransition = AodLyricRowsApply.prepareTransition(
+        rows = overlay,
+        content = content,
+        style = textStyle,
+        currentLine = currentLine,
+        nowInterlude = nowInterlude,
+    )
+    overlay.main.text = content.main
+    overlay.appliedLine = currentLine
+    setOptionalText(overlay.translation, content.translation)
+    setOptionalText(overlay.backing, content.backing)
+    setOptionalText(overlay.backingTranslation, content.backingTranslation)
+    setOptionalText(overlay.overlappingMain, content.overlappingMain)
+    setOptionalText(overlay.overlappingTranslation, content.overlappingTranslation)
+    setOptionalText(overlay.overlappingBacking, content.overlappingBacking)
+    setOptionalText(
+        overlay.overlappingBackingTranslation,
+        content.overlappingBackingTranslation
+    )
+    setOptionalText(overlay.next, content.next)
+    NotificationMediaAodLyricHooker.applyContentAlignment(overlay, content)
+    NotificationMediaAodLyricHooker.applyClassicTextStyle(overlay, textStyle)
+    NotificationMediaAodLyricHooker.applyLyricRowOrder(overlay, textStyle.swapTranslation)
+    AodLyricRowsApply.bindWordSync(
+        rows = overlay,
+        content = content,
+        words = words,
+        playing = playing,
+    )
+    return pendingTransition
 }
 
 @SuppressLint("UseKtx")
@@ -369,7 +413,52 @@ internal fun NotificationMediaAodLyricHooker.createAodPluginOverlay(
     }
     val parent = movingContainer ?: aodRoot
     val context = aodRoot.context
-    val main = TextView(context).apply {
+    val drawWakeLock = context.getSystemService(PowerManager::class.java).newWakeLock(
+        DRAW_WAKE_LOCK_LEVEL,
+        "${context.packageName}:HyperLyricsAodDraw"
+    ).apply {
+        setReferenceCounted(false)
+    }
+    val overlay = buildAodPluginOverlay(
+        context = context,
+        parent = parent,
+        aodRoot = aodRoot,
+        anchor = anchor,
+        anchorIsFallback = notificationIcons == null,
+        drawWakeLock = drawWakeLock,
+    )
+    overlay.main.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+        updateClassicLineSpacing(overlay)
+    }
+    val preDrawListener = ViewTreeObserver.OnPreDrawListener {
+        positionAodPluginOverlay(overlay)
+        true
+    }
+    overlay.preDrawListener = preDrawListener
+    aodRoot.viewTreeObserver.addOnPreDrawListener(preDrawListener)
+    positionAodPluginOverlay(overlay)
+    HookLogger.i(
+        TAG,
+        "通知图标式息屏歌词已挂载: parent=${parent.javaClass.name}, " +
+            "anchor=${anchor.javaClass.name}, anchorFallback=${notificationIcons == null}"
+    )
+    return overlay
+}
+
+/**
+ * 创建自定义 AOD 歌词层的控件并挂到 [parent] 上（不定位、不注册监听）。
+ * 主句、伴唱、第二句、第二句伴唱四行用与锁屏 AOD 同一个逐字控件 [AodWordSyncTextView]。
+ */
+@SuppressLint("UseKtx")
+internal fun buildAodPluginOverlay(
+    context: Context,
+    parent: FrameLayout,
+    aodRoot: FrameLayout,
+    anchor: View,
+    anchorIsFallback: Boolean,
+    drawWakeLock: PowerManager.WakeLock,
+): AodPluginOverlay {
+    val main = AodWordSyncTextView(context).apply {
         gravity = Gravity.CENTER
         includeFontPadding = false
         setTextColor(0xFFFFFFFF.toInt())
@@ -387,7 +476,7 @@ internal fun NotificationMediaAodLyricHooker.createAodPluginOverlay(
             RootConstants.DEFAULT_HOOK_CLASSIC_AOD_TRANSLATION_TEXT_SIZE.toFloat(),
         )
     }
-    val backing = TextView(context).apply {
+    val backing = AodWordSyncTextView(context).apply {
         gravity = Gravity.CENTER
         includeFontPadding = false
         typeface = main.typeface
@@ -407,7 +496,7 @@ internal fun NotificationMediaAodLyricHooker.createAodPluginOverlay(
             RootConstants.DEFAULT_HOOK_CLASSIC_AOD_TRANSLATION_TEXT_SIZE.toFloat(),
         )
     }
-    val overlappingMain = TextView(context).apply {
+    val overlappingMain = AodWordSyncTextView(context).apply {
         gravity = Gravity.CENTER
         includeFontPadding = false
         typeface = main.typeface
@@ -427,7 +516,7 @@ internal fun NotificationMediaAodLyricHooker.createAodPluginOverlay(
             RootConstants.DEFAULT_HOOK_CLASSIC_AOD_TRANSLATION_TEXT_SIZE.toFloat(),
         )
     }
-    val overlappingBacking = TextView(context).apply {
+    val overlappingBacking = AodWordSyncTextView(context).apply {
         gravity = Gravity.CENTER
         includeFontPadding = false
         typeface = main.typeface
@@ -478,11 +567,11 @@ internal fun NotificationMediaAodLyricHooker.createAodPluginOverlay(
         addView(
             sourceIcon,
             LinearLayout.LayoutParams(
-                (AOD_PLUGIN_SONG_INFO_ICON_DP * resources.displayMetrics.density).toInt(),
-                (AOD_PLUGIN_SONG_INFO_ICON_DP * resources.displayMetrics.density).toInt()
+                (NotificationMediaAodLyricHooker.AOD_PLUGIN_SONG_INFO_ICON_DP * resources.displayMetrics.density).toInt(),
+                (NotificationMediaAodLyricHooker.AOD_PLUGIN_SONG_INFO_ICON_DP * resources.displayMetrics.density).toInt()
             ).apply {
                 marginEnd = (
-                    AOD_PLUGIN_SONG_INFO_ICON_GAP_DP * resources.displayMetrics.density
+                    NotificationMediaAodLyricHooker.AOD_PLUGIN_SONG_INFO_ICON_GAP_DP * resources.displayMetrics.density
                 ).toInt()
             }
         )
@@ -628,13 +717,7 @@ internal fun NotificationMediaAodLyricHooker.createAodPluginOverlay(
             Gravity.TOP or Gravity.START
         )
     )
-    val drawWakeLock = context.getSystemService(PowerManager::class.java).newWakeLock(
-        DRAW_WAKE_LOCK_LEVEL,
-        "${context.packageName}:HyperLyricsAodDraw"
-    ).apply {
-        setReferenceCounted(false)
-    }
-    val overlay = AodPluginOverlay(
+    return AodPluginOverlay(
         root = root,
         songInfoRow = songInfoRow,
         sourceIcon = sourceIcon,
@@ -651,25 +734,9 @@ internal fun NotificationMediaAodLyricHooker.createAodPluginOverlay(
         parent = parent,
         aodRoot = aodRoot,
         anchor = anchor,
-        anchorIsFallback = notificationIcons == null,
+        anchorIsFallback = anchorIsFallback,
         drawWakeLock = drawWakeLock
     )
-    main.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
-        updateClassicLineSpacing(overlay)
-    }
-    val preDrawListener = ViewTreeObserver.OnPreDrawListener {
-        positionAodPluginOverlay(overlay)
-        true
-    }
-    overlay.preDrawListener = preDrawListener
-    aodRoot.viewTreeObserver.addOnPreDrawListener(preDrawListener)
-    positionAodPluginOverlay(overlay)
-    HookLogger.i(
-        TAG,
-        "通知图标式息屏歌词已挂载: parent=${parent.javaClass.name}, " +
-            "anchor=${anchor.javaClass.name}, anchorFallback=${notificationIcons == null}"
-    )
-    return overlay
 }
 
 internal fun NotificationMediaAodLyricHooker.updateClassicLineSpacing(overlay: AodPluginOverlay) {

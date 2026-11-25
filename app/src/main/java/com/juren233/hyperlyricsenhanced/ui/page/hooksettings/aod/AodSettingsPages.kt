@@ -157,6 +157,9 @@ fun ClassicAodSettingsPage() {
             songInfoTextSizeKey = RootConstants.KEY_HOOK_CLASSIC_AOD_SONG_INFO_TEXT_SIZE,
             songInfoPositionKey = RootConstants.KEY_HOOK_CLASSIC_AOD_SONG_INFO_POSITION,
             songInfoShowIconKey = RootConstants.KEY_HOOK_CLASSIC_AOD_SONG_INFO_SHOW_ICON,
+            wordSyncEffectKey = RootConstants.KEY_HOOK_CLASSIC_AOD_WORD_SYNC_EFFECT,
+            interludeDotsKey = RootConstants.KEY_HOOK_CLASSIC_AOD_INTERLUDE_DOTS,
+            lyricScrollKey = RootConstants.KEY_HOOK_CLASSIC_AOD_LYRIC_SCROLL,
             defaultMainTextSize = RootConstants.DEFAULT_HOOK_CLASSIC_AOD_MAIN_TEXT_SIZE,
             defaultBackingTextSize = RootConstants.DEFAULT_HOOK_CLASSIC_AOD_BACKING_TEXT_SIZE,
             defaultTranslationTextSize =

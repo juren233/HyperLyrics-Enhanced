@@ -108,6 +108,12 @@ object RootConstants {
         "key_hook_classic_aod_next_song_preview_position"
     const val KEY_HOOK_CLASSIC_AOD_HIDE_PURE_MUSIC_PLACEHOLDER =
         "key_hook_classic_aod_hide_pure_music_placeholder"
+    const val KEY_HOOK_CLASSIC_AOD_WORD_SYNC_EFFECT =
+        "key_hook_classic_aod_word_sync_effect"
+    const val KEY_HOOK_CLASSIC_AOD_INTERLUDE_DOTS =
+        "key_hook_classic_aod_interlude_dots"
+    const val KEY_HOOK_CLASSIC_AOD_LYRIC_SCROLL =
+        "key_hook_classic_aod_lyric_scroll"
     const val KEY_HOOK_LYRIC_MODE = "key_hook_lyric_mode"
     /** 横屏时使用的歌词模式；[HOOK_LYRIC_MODE_FOLLOW_PORTRAIT] 表示跟随竖屏（[KEY_HOOK_LYRIC_MODE]）。 */
     const val KEY_HOOK_LYRIC_MODE_LANDSCAPE = "key_hook_lyric_mode_landscape"

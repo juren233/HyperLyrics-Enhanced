@@ -296,29 +296,29 @@ internal class MediaHeaderHeightController private constructor(
 }
 
 internal class AodPluginOverlay(
-    val root: LinearLayout,
+    override val root: LinearLayout,
     val songInfoRow: LinearLayout,
     val sourceIcon: ImageView,
     val songInfo: TextView,
-    val main: TextView,
-    val translation: TextView,
-    val backing: TextView,
-    val backingTranslation: TextView,
-    val overlappingMain: TextView,
-    val overlappingTranslation: TextView,
-    val overlappingBacking: TextView,
-    val overlappingBackingTranslation: TextView,
-    val next: TextView,
+    override val main: AodWordSyncTextView,
+    override val translation: TextView,
+    override val backing: AodWordSyncTextView,
+    override val backingTranslation: TextView,
+    override val overlappingMain: AodWordSyncTextView,
+    override val overlappingTranslation: TextView,
+    override val overlappingBacking: AodWordSyncTextView,
+    override val overlappingBackingTranslation: TextView,
+    override val next: TextView,
     val parent: FrameLayout,
     val aodRoot: FrameLayout,
     val anchor: View,
     // true = 锚点为 mTableModeContainer 兜底（mNotificationIcons 缺失，issue #70）：
     // 垂直优先"锚点下缘 + 间距"跟着时钟防烧屏漂移，越界时钳制贴底安全区。
     val anchorIsFallback: Boolean = false,
-    val drawWakeLock: PowerManager.WakeLock,
+    override val drawWakeLock: PowerManager.WakeLock,
     var preDrawListener: ViewTreeObserver.OnPreDrawListener? = null,
     var appliedHeight: Int? = null,
-    var appliedTextStyle: AodTextStyleConfig? = null,
+    override var appliedTextStyle: AodTextStyleConfig? = null,
     var appliedSongInfoPackage: String? = null,
     var appliedSongInfoTextSize: Int? = null,
     var appliedSongInfoShowsIcon: Boolean? = null,
@@ -327,7 +327,37 @@ internal class AodPluginOverlay(
     var appliedOverlappingAlignment: AodLyricAlignment? = null,
     var appliedOverlappingBackingAlignment: AodLyricAlignment? = null,
     var appliedNextAlignment: AodLyricAlignment? = null,
-)
+    override var appliedLine: IRichLyricLine? = null,
+    override var transition: AodLyricTransition.Running? = null,
+    override var transitionGeneration: Int = 0,
+) : AodLyricRows {
+    /** 覆盖层被拆除（[NotificationMediaAodLyricHooker] 移除 root）后不再开始新的转场。 */
+    var detached: Boolean = false
+
+    private var savedParentClipChildren: Boolean? = null
+
+    override val transitionHost: ViewGroup get() = parent
+
+    override val transitionAllowed: Boolean get() = !detached
+
+    /** 嵌入式歌曲信息行在歌词上方时，旧句上浮到它下沿为止，不压住歌曲信息。 */
+    override fun ghostClipTopInRoot(): Int =
+        if (songInfoRow.visibility == View.VISIBLE) songInfoRow.bottom else 0
+
+    /**
+     * 歌词层高度随内容即时变化，从下方上浮进入的行在转场前半段会超出歌词层下沿；
+     * 转场期间放开父容器（时钟容器）的裁切，结束后还原。
+     */
+    override fun onTransitionStart() {
+        if (savedParentClipChildren == null) savedParentClipChildren = parent.clipChildren
+        parent.clipChildren = false
+    }
+
+    override fun onTransitionFinish() {
+        savedParentClipChildren?.let { parent.clipChildren = it }
+        savedParentClipChildren = null
+    }
+}
 
 internal data class AodPluginState(
     var attached: Boolean = false,

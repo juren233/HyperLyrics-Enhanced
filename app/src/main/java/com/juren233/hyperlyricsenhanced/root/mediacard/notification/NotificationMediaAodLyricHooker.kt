@@ -595,6 +595,8 @@ object NotificationMediaAodLyricHooker {
 
     private fun removeAodPluginOverlay(state: AodPluginState) {
         val overlay = state.overlay ?: return
+        runCatching { AodLyricTransition.finish(overlay) }
+        overlay.detached = true
         overlay.preDrawListener?.let { listener ->
             if (overlay.aodRoot.viewTreeObserver.isAlive) {
                 overlay.aodRoot.viewTreeObserver.removeOnPreDrawListener(listener)

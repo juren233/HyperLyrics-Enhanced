@@ -923,6 +923,9 @@ class HookEntry : XposedModule() {
                     RootConstants.KEY_HOOK_CLASSIC_AOD_NEXT_SONG_PREVIEW,
                     RootConstants.KEY_HOOK_CLASSIC_AOD_NEXT_SONG_PREVIEW_POSITION,
                     RootConstants.KEY_HOOK_CLASSIC_AOD_HIDE_PURE_MUSIC_PLACEHOLDER,
+                    RootConstants.KEY_HOOK_CLASSIC_AOD_WORD_SYNC_EFFECT,
+                    RootConstants.KEY_HOOK_CLASSIC_AOD_INTERLUDE_DOTS,
+                    RootConstants.KEY_HOOK_CLASSIC_AOD_LYRIC_SCROLL,
                     RootConstants.KEY_HOOK_EARLY_NEXT_LINE_PREVIEW,
                     RootConstants.KEY_HOOK_EARLY_NEXT_LINE_PREVIEW_CUSTOM_MS,
                     RootConstants.KEY_HOOK_REMOVE_CJK_LYRIC_SPACES -> {

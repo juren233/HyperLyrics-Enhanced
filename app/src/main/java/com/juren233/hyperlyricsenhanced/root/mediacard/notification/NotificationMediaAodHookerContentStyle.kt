@@ -217,7 +217,11 @@ internal fun NotificationMediaAodLyricHooker.currentActualLyrics() =
         line.metadata?.getBoolean(SongPreprocessor.KEY_TITLE_LINE) == true
     }
 
-internal fun NotificationMediaAodLyricHooker.lockScreenAodTextStyle(): AodTextStyleConfig = AodTextStyleConfig(
+internal fun NotificationMediaAodLyricHooker.lockScreenAodTextStyle(): AodTextStyleConfig =
+    lockScreenAodTextStyle(prefs)
+
+/** 锁屏 AOD 的显示设置；[prefs] 为空时全部取默认值。 */
+internal fun lockScreenAodTextStyle(prefs: SharedPreferences?): AodTextStyleConfig = with(prefs) { AodTextStyleConfig(
     mainTextSize = readAodTextSize(
         key = RootConstants.KEY_HOOK_LOCK_SCREEN_AOD_MAIN_TEXT_SIZE,
         defaultValue = RootConstants.DEFAULT_HOOK_LOCK_SCREEN_AOD_MAIN_TEXT_SIZE,
@@ -294,9 +298,13 @@ internal fun NotificationMediaAodLyricHooker.lockScreenAodTextStyle(): AodTextSt
         RootConstants.KEY_HOOK_LOCK_SCREEN_AOD_LYRIC_SCROLL,
         RootConstants.DEFAULT_HOOK_AOD_LYRIC_SCROLL,
     ) ?: RootConstants.DEFAULT_HOOK_AOD_LYRIC_SCROLL,
-)
+) }
 
-internal fun NotificationMediaAodLyricHooker.classicAodTextStyle(): AodTextStyleConfig = AodTextStyleConfig(
+internal fun NotificationMediaAodLyricHooker.classicAodTextStyle(): AodTextStyleConfig =
+    classicAodTextStyle(prefs)
+
+/** 自定义 AOD 的显示设置；[prefs] 为空时全部取默认值。 */
+internal fun classicAodTextStyle(prefs: SharedPreferences?): AodTextStyleConfig = with(prefs) { AodTextStyleConfig(
     mainTextSize = readAodTextSize(
         key = RootConstants.KEY_HOOK_CLASSIC_AOD_MAIN_TEXT_SIZE,
         defaultValue = RootConstants.DEFAULT_HOOK_CLASSIC_AOD_MAIN_TEXT_SIZE,
@@ -361,38 +369,50 @@ internal fun NotificationMediaAodLyricHooker.classicAodTextStyle(): AodTextStyle
         RootConstants.KEY_HOOK_CLASSIC_AOD_HIDE_PURE_MUSIC_PLACEHOLDER,
         RootConstants.DEFAULT_HOOK_AOD_HIDE_PURE_MUSIC_PLACEHOLDER,
     ) ?: RootConstants.DEFAULT_HOOK_AOD_HIDE_PURE_MUSIC_PLACEHOLDER,
-)
+    wordSyncEffect = prefs?.getBoolean(
+        RootConstants.KEY_HOOK_CLASSIC_AOD_WORD_SYNC_EFFECT,
+        RootConstants.DEFAULT_HOOK_AOD_WORD_SYNC_EFFECT,
+    ) ?: RootConstants.DEFAULT_HOOK_AOD_WORD_SYNC_EFFECT,
+    interludeDots = prefs?.getBoolean(
+        RootConstants.KEY_HOOK_CLASSIC_AOD_INTERLUDE_DOTS,
+        RootConstants.DEFAULT_HOOK_AOD_INTERLUDE_DOTS,
+    ) ?: RootConstants.DEFAULT_HOOK_AOD_INTERLUDE_DOTS,
+    lyricScroll = prefs?.getBoolean(
+        RootConstants.KEY_HOOK_CLASSIC_AOD_LYRIC_SCROLL,
+        RootConstants.DEFAULT_HOOK_AOD_LYRIC_SCROLL,
+    ) ?: RootConstants.DEFAULT_HOOK_AOD_LYRIC_SCROLL,
+) }
 
-internal fun NotificationMediaAodLyricHooker.readAodTextSize(
+internal fun SharedPreferences?.readAodTextSize(
     key: String,
     defaultValue: Int,
     min: Int,
     max: Int,
 ): Int = AodMediaLyricPolicy.sanitizeTextSize(
-    value = prefs?.getInt(key, defaultValue) ?: defaultValue,
+    value = this?.getInt(key, defaultValue) ?: defaultValue,
     defaultValue = defaultValue,
     min = min,
     max = max,
 )
 
-internal fun NotificationMediaAodLyricHooker.readAodNextLyricStyle(key: String): Int =
+internal fun SharedPreferences?.readAodNextLyricStyle(key: String): Int =
     AodMediaLyricPolicy.sanitizeNextLyricStyle(
-        prefs?.getInt(
+        this?.getInt(
             key,
             RootConstants.DEFAULT_HOOK_AOD_NEXT_LYRIC_STYLE,
         ) ?: RootConstants.DEFAULT_HOOK_AOD_NEXT_LYRIC_STYLE
     )
 
-internal fun NotificationMediaAodLyricHooker.readAodNextSongPreviewPosition(key: String): Int =
+internal fun SharedPreferences?.readAodNextSongPreviewPosition(key: String): Int =
     AodMediaLyricPolicy.sanitizeNextSongPreviewPosition(
-        prefs?.getInt(
+        this?.getInt(
             key,
             RootConstants.DEFAULT_HOOK_AOD_NEXT_SONG_PREVIEW_POSITION,
         ) ?: RootConstants.DEFAULT_HOOK_AOD_NEXT_SONG_PREVIEW_POSITION
     )
 
-internal fun NotificationMediaAodLyricHooker.readAodPauseStyle(key: String): Int =
-    (prefs?.getInt(
+internal fun SharedPreferences?.readAodPauseStyle(key: String): Int =
+    (this?.getInt(
         key,
         RootConstants.DEFAULT_HOOK_AOD_PAUSE_STYLE,
     ) ?: RootConstants.DEFAULT_HOOK_AOD_PAUSE_STYLE).coerceIn(

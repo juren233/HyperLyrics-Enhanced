@@ -56,6 +56,9 @@ internal class AodWordSyncTextView(context: Context) : TextView(context) {
     /** 当前绑定的是前奏/间奏指示行。 */
     val isInterludeIndicator: Boolean get() = interlude != null
 
+    /** 当前行绑定了可用的逐字数据（逐字扫过生效）。 */
+    val hasWordSync: Boolean get() = syncWords != null
+
     private val dimPaint = TextPaint()
     private val brightPaint = TextPaint()
     private val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG)
