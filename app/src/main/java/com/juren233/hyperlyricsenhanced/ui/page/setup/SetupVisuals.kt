@@ -59,6 +59,8 @@ import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Text
 import com.juren233.hyperlyricsenhanced.ui.utils.LocalAppThemeController
 import com.juren233.hyperlyricsenhanced.ui.utils.isMonet
+import com.juren233.hyperlyricsenhanced.ui.utils.MonetPalette
+import com.juren233.hyperlyricsenhanced.ui.utils.ThemeUtils
 import top.yukonga.miuix.kmp.theme.ColorSchemeMode
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.ThemeController
@@ -93,9 +95,11 @@ internal fun rememberIslandLogoPalette(): IslandLogoPalette {
     val accentEnd: Color
     if (monet) {
         // 超级岛胶囊在浅色与深色模式下都是深色，与系统超级岛一致；取深色方案的色调 20 / 80 / 90。
-        val darkMonet = remember(theme?.keyColor) {
+        val darkController = remember(theme?.keyColor) {
             ThemeController(colorSchemeMode = ColorSchemeMode.MonetDark, keyColor = theme?.keyColor)
-        }.currentColors()
+        }
+        // 与主题一样套用强调色修正（深色莫奈红改用 #F78E80），按种子色找回强调色下标。
+        val darkMonet = ThemeUtils.themeColors(darkController, MonetPalette.keyColors.indexOf(theme?.keyColor))
         body = darkMonet.onPrimary
         detail = darkMonet.primary
         accentStart = darkMonet.primary
