@@ -81,6 +81,62 @@ class QrcParserTest {
         )
     }
 
+    @Test
+    fun `each QRC timestamp belongs to the text in front of it`() {
+        val result = QrcParser.parse(
+            LyricsData(
+                original = qrc(
+                    "[730,1817]遗(730,216)憾(946,240)要(1186,305)\n" +
+                        "[3678,3020]love (3678,480)you (4158,980)girl(5138,800)"
+                ),
+                type = "qrc",
+            ),
+        )
+
+        val chinese = result.original[0].words
+        assertEquals(listOf("遗", "憾", "要"), chinese.map { it.text })
+        assertEquals(listOf(730L, 946L, 1186L), chinese.map { it.start })
+        assertEquals(listOf(946L, 1186L, 1491L), chinese.map { it.end })
+
+        val english = result.original[1].words
+        assertEquals(listOf("love ", "you ", "girl"), english.map { it.text })
+        assertEquals(listOf(3678L, 4158L, 5138L), english.map { it.start })
+        assertEquals(listOf(4158L, 5138L, 5938L), english.map { it.end })
+    }
+
+    @Test
+    fun `timed spaces extend the word in front of them`() {
+        val result = QrcParser.parse(
+            LyricsData(
+                original = qrc(
+                    "[6698,2950]you're(6698,1) (6699,369)the(7068,1) (7069,379)like(8278,10)"
+                ),
+                type = "qrc",
+            ),
+        )
+
+        val words = result.original.single().words
+        assertEquals(listOf("you're ", "the ", "like"), words.map { it.text })
+        assertEquals(listOf(6698L, 7068L, 8278L), words.map { it.start })
+        assertEquals(listOf(7068L, 7448L, 8288L), words.map { it.end })
+    }
+
+    @Test
+    fun `untexted timestamps extend the word in front of them`() {
+        val result = QrcParser.parse(
+            LyricsData(
+                original = qrc(
+                    "[6698,2950]you're (6698,1)(6699,369)the (7068,1)(7069,379)like(8278,10)"
+                ),
+                type = "qrc",
+            ),
+        )
+
+        val words = result.original.single().words
+        assertEquals(listOf("you're ", "the ", "like"), words.map { it.text })
+        assertEquals(listOf(7068L, 7448L, 8288L), words.map { it.end })
+    }
+
     private fun qrc(content: String): String =
         """
         <?xml version="1.0" encoding="utf-8"?>

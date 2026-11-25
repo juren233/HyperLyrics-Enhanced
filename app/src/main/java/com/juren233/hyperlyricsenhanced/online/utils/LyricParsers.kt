@@ -99,7 +99,8 @@ internal object LrcParserUtils {
 
 object QrcParser {
     private val QRC_LINE_PATTERN: Pattern = Pattern.compile("^\\[(\\d+),(\\d+)](.*)$")
-    private val QRC_WORD_PATTERN: Pattern = Pattern.compile("\\((\\d+),(\\d+)\\)([^()]*)")
+    // QRC 的逐字格式是「文字(开始,时长)」：时间戳跟在它所属的文字后面。
+    private val QRC_WORD_PATTERN: Pattern = Pattern.compile("(.*?)\\((\\d+),(\\d+)\\)")
     private val QRC_XML_PATTERN = Pattern.compile("<Lyric_1 LyricType=\"1\" LyricContent=\"(.*?)\"/>", Pattern.DOTALL)
     private val TAG_PATTERN = Pattern.compile("^\\[(\\w+):([^]]*)]$")
 
@@ -178,18 +179,24 @@ object QrcParser {
 
                 var currentPos = 0
                 while (wordMatcher.find(currentPos)) {
-                    val wordText = wordMatcher.group(3) ?: ""
-                    val wordStart = wordMatcher.group(1)!!.toLong()
-                    val wordDuration = wordMatcher.group(2)!!.toLong()
+                    val wordText = wordMatcher.group(1) ?: ""
+                    val wordStart = wordMatcher.group(2)!!.toLong()
+                    val wordDuration = wordMatcher.group(3)!!.toLong()
                     val wordEnd = wordStart + wordDuration
 
-                    val preWordText = lineContent.substring(currentPos, wordMatcher.start())
-                    if (preWordText.isNotBlank()) {
-                        words.add(LyricsWord(lastWordEnd, wordStart, preWordText.trimStart()))
+                    val previous = words.lastOrNull()
+                    if (wordText.isBlank() && previous != null) {
+                        // 有些 QRC 给词本身只标 1ms，把这个词的实际时长标在紧跟着的空格或空段上，
+                        // 例如 you're(6698,1) (6699,369) 或 you're (6698,1)(6699,369)。
+                        // 这段时长并回前一个词，前一个词一直唱到它结束，逐字才是连续推进的。
+                        words[words.lastIndex] = previous.copy(
+                            end = maxOf(previous.end, wordEnd),
+                            text = previous.text + wordText,
+                        )
+                    } else if (wordText.isNotEmpty()) {
+                        words.add(LyricsWord(start = wordStart, end = wordEnd, text = wordText))
                     }
-
-                    words.add(LyricsWord(start = wordStart, end = wordEnd, text = wordText))
-                    lastWordEnd = wordEnd
+                    lastWordEnd = maxOf(lastWordEnd, wordEnd)
                     currentPos = wordMatcher.end()
                 }
 

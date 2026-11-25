@@ -10,6 +10,7 @@ import com.juren233.hyperlyricsenhanced.common.coroutines.ModuleDispatchers
 import android.content.Context
 import com.juren233.hyperlyricsenhanced.online.isWordTimedOnlineLyrics
 import com.juren233.hyperlyricsenhanced.online.model.LyricsResult
+import com.juren233.hyperlyricsenhanced.online.model.Source
 import com.juren233.hyperlyricsenhanced.online.model.SearchSource
 import com.juren233.hyperlyricsenhanced.online.model.SongSearchResult
 import com.juren233.hyperlyricsenhanced.utils.LogManager
@@ -67,8 +68,7 @@ internal class CachedSearchSource(
     }
 
     override suspend fun getLyrics(song: SongSearchResult): LyricsResult? {
-        val key = listOf("lyrics", sourceType.name, song.id, song.extras.toSortedMap().toString())
-            .joinToString(KEY_SEPARATOR)
+        val key = lyricsKey(sourceType, song)
         val cached = io { cache.lookup(key, retryMiss) }
         if (cached != null) {
             decodeOrNull(key) { OnlineLyricCacheCodec.decodeLyrics(cached) }?.let { lyrics ->
@@ -157,6 +157,22 @@ internal class CachedSearchSource(
     companion object {
         private const val TAG = "OnlineLyricCache"
         private const val KEY_SEPARATOR = "\u0000"
+
+        /**
+         * 缓存里存的是解析后的歌词，不是原始响应。某个源的解析器修了 bug 以后在这里加版本号，
+         * 旧解析结果就不会再被命中，会重新拉取并用新解析器解析。
+         * QM：QRC 时间戳归属修正（文字在前、时间在后），并把带时长的空格并回前一个词。
+         */
+        private val LYRICS_PARSER_REVISIONS = mapOf(Source.QM to "qrc2")
+
+        internal fun lyricsKey(sourceType: Source, song: SongSearchResult): String =
+            listOfNotNull(
+                "lyrics",
+                sourceType.name,
+                song.id,
+                song.extras.toSortedMap().toString(),
+                LYRICS_PARSER_REVISIONS[sourceType],
+            ).joinToString(KEY_SEPARATOR)
 
         @Volatile
         private var shared: Pair<OnlineLyricResponseCache, SqliteOnlineLyricCacheStore>? = null

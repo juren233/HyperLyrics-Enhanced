@@ -127,6 +127,25 @@ class OnlineLyricCacheTest {
     }
 
     @Test
+    fun `QM lyrics parsed by the old QRC parser are fetched again`() = runBlocking {
+        val cache = newCache()
+        val oldKey = listOf("lyrics", Source.QM.name, song.id, song.extras.toSortedMap().toString())
+            .joinToString("\u0000")
+        cache.store(
+            song = appleSong("1"),
+            key = oldKey,
+            payload = OnlineLyricCacheCodec.encodeLyrics(lyrics),
+            permanent = true,
+            source = Source.QM,
+            kind = OnlineLyricCacheKind.LYRICS,
+        )
+        val delegate = FakeSource(lyricsResult = { lyrics })
+        cached(delegate, cache).getLyrics(song)
+        cached(delegate, cache).getLyrics(song)
+        assertEquals(1, delegate.lyricsCalls)
+    }
+
+    @Test
     fun `a song without lyrics is a miss`() = runBlocking {
         val cache = newCache()
         val delegate = FakeSource(lyricsResult = { null })
