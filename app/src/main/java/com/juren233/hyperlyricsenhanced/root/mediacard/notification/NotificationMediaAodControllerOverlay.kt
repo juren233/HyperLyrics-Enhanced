@@ -129,7 +129,7 @@ internal fun NotificationMediaAodLyricHooker.createOverlay(
         )
         setTextColor(artist.currentTextColor)
     }
-    val overlappingBacking = TextView(context).apply {
+    val overlappingBacking = AodWordSyncTextView(context).apply {
         gravity = Gravity.CENTER
         includeFontPadding = false
         typeface = title.typeface

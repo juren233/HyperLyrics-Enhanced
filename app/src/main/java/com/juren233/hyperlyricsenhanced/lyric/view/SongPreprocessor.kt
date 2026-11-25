@@ -7,6 +7,7 @@
 package com.juren233.hyperlyricsenhanced.lyric.view
 
 import com.juren233.hyperlyricsenhanced.common.lyric.LyricMetadataKeys
+import com.juren233.hyperlyricsenhanced.common.lyric.LyricWordsMetadataCodec
 import com.juren233.hyperlyricsenhanced.lyric.model.LyricWord
 import com.juren233.hyperlyricsenhanced.lyric.model.RichLyricLine
 import com.juren233.hyperlyricsenhanced.lyric.model.Song
@@ -100,6 +101,10 @@ internal class SongPreprocessor(
             LyricMetadataKeys.OVERLAPPING_SECONDARY_BACKING to secondary.secondary,
             LyricMetadataKeys.OVERLAPPING_SECONDARY_BACKING_TRANSLATION to
                 secondaryBackingTranslation,
+            LyricMetadataKeys.OVERLAPPING_PRIMARY_BACKING_WORDS to
+                LyricWordsMetadataCodec.encode(primary.secondaryWords),
+            LyricMetadataKeys.OVERLAPPING_SECONDARY_BACKING_WORDS to
+                LyricWordsMetadataCodec.encode(secondary.secondaryWords),
         )
         return RichLyricLine(
             begin = primary.begin,

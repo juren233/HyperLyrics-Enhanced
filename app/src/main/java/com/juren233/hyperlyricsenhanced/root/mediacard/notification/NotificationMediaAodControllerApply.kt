@@ -320,6 +320,13 @@ internal fun NotificationMediaAodLyricHooker.applyState(controller: Any, state: 
         playing = wordSyncPlaying,
         keepAlive = wordSyncKeepAlive,
     )
+    overlay.overlappingBacking.bindWordSync(
+        row = "overlappingBacking",
+        text = content.overlappingBacking,
+        words = if (wordSync) AodWordProgress.overlappingBackingWords() else null,
+        playing = wordSyncPlaying,
+        keepAlive = wordSyncKeepAlive,
+    )
     overlay.backing.setTextColor(api.getTitleText(holder).currentTextColor)
     overlay.overlappingMain.setTextColor(api.getTitleText(holder).currentTextColor)
     overlay.overlappingBacking.setTextColor(api.getTitleText(holder).currentTextColor)

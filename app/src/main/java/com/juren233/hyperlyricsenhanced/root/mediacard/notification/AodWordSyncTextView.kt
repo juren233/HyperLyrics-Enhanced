@@ -23,13 +23,13 @@ import com.juren233.hyperlyricsenhanced.lyric.view.line.drawInterludeDots
 import com.juren233.hyperlyricsenhanced.lyric.view.line.interludeDotsWidth
 import com.juren233.hyperlyricsenhanced.lyric.view.line.resolveInterludeDotsFrame
 import com.juren233.hyperlyricsenhanced.lyric.view.line.resolveInterludeDotsStartX
-import kotlin.math.floor
 
 /**
  * AOD 的逐字扫过效果与前奏/间奏动态圆点，由「动态效果」类的两个开关分别控制（默认关闭）。
  *
  * 仍是 [TextView]：测量、自动换行、对齐、字号字体都沿用原生行为，因此长句换成多行后
- * 逐字高亮按行依次扫过（已唱行全亮，当前行带柔和渐变边缘从左扫到右，未唱行压暗）。
+ * 逐字高亮按行依次扫过：唱的时候是一条固定宽度的柔和渐变边缘从左扫到右，停顿、句尾处
+ * 柔边在一小段时间内整体往右滑出、补满已唱部分，换行处尾巴随进度继续补亮，不会一帧跳白（见 [AodWordFill]）。
  * 没有逐字数据或文本对不上时完全走 [TextView] 原有绘制。前奏/间奏指示行改画与超级岛
  * 共用的三点指示器（帧与绘制函数同源，见 InterludeDotsRenderer.kt）。
  *
@@ -43,7 +43,10 @@ import kotlin.math.floor
 internal class AodWordSyncTextView(context: Context) : TextView(context) {
 
     private var syncText = ""
+    private var syncRow = ""
     private var syncWords: List<LyricWord>? = null
+    /** 这一行预计被换走的时刻，补满要赶在这之前完成。 */
+    private var syncLeaveMs: Long? = null
     private var interlude: LongRange? = null
     private var playing = false
     private var keepAlive: (() -> Unit)? = null
@@ -56,6 +59,16 @@ internal class AodWordSyncTextView(context: Context) : TextView(context) {
     private val dimPaint = TextPaint()
     private val brightPaint = TextPaint()
     private val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+
+    private var fill: AodWordFill? = null
+    private var fillText: String? = null
+    private var fillWords: List<LyricWord>? = null
+    private var fillLayout: Layout? = null
+    private var fillTextSize = 0f
+    private var fillLeaveMs: Long? = null
+    private var charLeft = FloatArray(0)
+    private var charRight = FloatArray(0)
+    private var profileBuffer = DoubleArray(0)
 
     private val frameCallback = Choreographer.FrameCallback {
         loopRunning = false
@@ -89,6 +102,9 @@ internal class AodWordSyncTextView(context: Context) : TextView(context) {
         }
         val changed = syncText != text || syncWords !== usable ||
             this.interlude != interlude || this.playing != playing
+        if (usable != null && usable !== syncWords) AodWordProgress.logBoundWords(row, text, usable)
+        syncLeaveMs = if (usable != null) AodWordProgress.displayLeaveMs() else null
+        syncRow = row
         syncText = text
         syncWords = usable
         this.interlude = interlude
@@ -98,8 +114,12 @@ internal class AodWordSyncTextView(context: Context) : TextView(context) {
         if (shouldRun()) startLoop()
     }
 
-    private fun animationEnd(): Long =
-        maxOf(syncWords?.lastOrNull()?.end ?: Long.MIN_VALUE, interlude?.last ?: Long.MIN_VALUE)
+    /** 最后一个字唱完后还要留出补亮时间，帧循环跑到补满为止。 */
+    private fun animationEnd(): Long = maxOf(
+        syncWords?.maxOfOrNull { AodWordProgress.effectiveEnd(it) + AodWordFill.SETTLE_MS.toLong() }
+            ?: Long.MIN_VALUE,
+        interlude?.last ?: Long.MIN_VALUE,
+    )
 
     private fun shouldRun(): Boolean =
         playing && (syncWords != null || interlude != null) && isAttachedToWindow && isShown
@@ -138,12 +158,16 @@ internal class AodWordSyncTextView(context: Context) : TextView(context) {
             return
         }
         val words = syncWords
+        val position = AodWordProgress.currentPositionMs()
         val chars = if (words != null && layout != null && text.toString() == syncText) {
-            AodWordProgress.progressChars(syncText, words, AodWordProgress.currentPositionMs())
+            AodWordProgress.progressChars(syncText, words, position)?.also {
+                AodWordProgress.logProgressSample(syncRow, position, it, syncText.length)
+            }
         } else {
             null
         }
-        if (chars == null || layout == null) {
+        val fill = if (chars != null && words != null && layout != null) fillFor(layout, words) else null
+        if (fill == null || layout == null) {
             super.onDraw(canvas)
             return
         }
@@ -153,7 +177,7 @@ internal class AodWordSyncTextView(context: Context) : TextView(context) {
             (compoundPaddingLeft + scrollX).toFloat(),
             extendedPaddingTop.toFloat(),
         )
-        drawProgress(canvas, layout, chars)
+        drawProgress(canvas, layout, fill, position.toDouble())
         canvas.restore()
     }
 
@@ -174,7 +198,49 @@ internal class AodWordSyncTextView(context: Context) : TextView(context) {
         drawInterludeDots(canvas, dotPaint, frame, textSize, startX, layout.height / 2f)
     }
 
-    private fun drawProgress(canvas: Canvas, layout: Layout, chars: Float) {
+    /** 按当前排版量出每个字符的左右横坐标（与旧版 progressX 同一口径），再建补亮模型；排版不变时复用。 */
+    private fun fillFor(layout: Layout, words: List<LyricWord>): AodWordFill? {
+        val textSize = paint.textSize
+        if (fillText == syncText && fillWords === words && fillLayout === layout && fillTextSize == textSize &&
+            fillLeaveMs == syncLeaveMs
+        ) {
+            return fill
+        }
+        val text = layout.text
+        val length = text.length
+        val left = FloatArray(length)
+        val right = FloatArray(length)
+        for (line in 0 until layout.lineCount) {
+            val start = layout.getLineStart(line)
+            val end = layout.getLineEnd(line).coerceAtMost(length)
+            val lineLeft = layout.getLineLeft(line)
+            val lineRight = layout.getLineRight(line)
+            for (index in start until end) {
+                val x0 = if (index <= start) lineLeft else layout.getPrimaryHorizontal(index)
+                val x1 = if (index + 1 >= end) lineRight else layout.getPrimaryHorizontal(index + 1)
+                left[index] = x0.coerceIn(lineLeft, lineRight)
+                right[index] = x1.coerceIn(left[index], maxOf(lineRight, left[index]))
+            }
+        }
+        charLeft = left
+        charRight = right
+        if (profileBuffer.size < length * 12) profileBuffer = DoubleArray(length * 12)
+        fill = AodWordFill.build(
+            text = syncText,
+            words = words,
+            charWidth = { (right[it] - left[it]).toDouble() },
+            edgePx = (textSize * EDGE_WIDTH_FACTOR).toDouble(),
+            leaveMs = syncLeaveMs?.toDouble(),
+        )
+        fillLeaveMs = syncLeaveMs
+        fillText = syncText
+        fillWords = words
+        fillLayout = layout
+        fillTextSize = textSize
+        return fill
+    }
+
+    private fun drawProgress(canvas: Canvas, layout: Layout, fill: AodWordFill, positionMs: Double) {
         val bright = currentTextColor
         dimPaint.set(paint)
         dimPaint.color = withAlpha(bright, DIM_ALPHA_FACTOR)
@@ -183,52 +249,56 @@ internal class AodWordSyncTextView(context: Context) : TextView(context) {
         brightPaint.shader = null
 
         val text = layout.text
-        val length = text.length
-        val charIndex = floor(chars).toInt().coerceIn(0, length)
-        val fraction = chars - charIndex
-        val activeLine = if (length == 0) 0 else layout.getLineForOffset(charIndex.coerceAtMost(length - 1))
-        val allSung = chars >= length
-
+        val length = minOf(text.length, fill.length)
+        val buffer = profileBuffer
         for (line in 0 until layout.lineCount) {
             val start = layout.getLineStart(line)
             val end = layout.getLineEnd(line)
             val left = layout.getLineLeft(line)
             val baseline = layout.getLineBaseline(line).toFloat()
             canvas.drawText(text, start, end, left, baseline, dimPaint)
+            val count = fill.profile(start, end.coerceAtMost(length), positionMs, buffer)
+            if (count == 0) continue
+            var lit = false
+            var full = true
+            var i = 1
+            while (i < count) {
+                if (buffer[i] > 0.0) lit = true
+                if (buffer[i] < 1.0) full = false
+                i += 2
+            }
             when {
-                allSung || line < activeLine ->
-                    canvas.drawText(text, start, end, left, baseline, brightPaint)
-                line == activeLine -> {
-                    val x = progressX(layout, line, charIndex, fraction)
-                    val edge = paint.textSize * EDGE_WIDTH_FACTOR
+                !lit -> Unit
+                full -> canvas.drawText(text, start, end, left, baseline, brightPaint)
+                else -> {
+                    val lineLeft = left
+                    val lineRight = layout.getLineRight(line)
+                    val width = lineRight - lineLeft
+                    if (width <= 0f) continue
+                    val stops = count / 2
+                    val colors = IntArray(stops)
+                    val positions = FloatArray(stops)
+                    var previous = 0f
+                    for (stop in 0 until stops) {
+                        val coord = buffer[stop * 2]
+                        val index = coord.toInt().coerceIn(start, (end - 1).coerceAtLeast(start)).coerceAtMost(length - 1)
+                        val fraction = (coord - index).coerceIn(0.0, 1.0).toFloat()
+                        val x = charLeft[index] + (charRight[index] - charLeft[index]) * fraction
+                        val position = ((x - lineLeft) / width).coerceIn(previous, 1f)
+                        positions[stop] = position
+                        previous = position
+                        colors[stop] = AodWordFill.stopColor(bright, buffer[stop * 2 + 1])
+                    }
+                    brightPaint.color = AodWordFill.gradientPaintColor(bright)
                     brightPaint.shader = LinearGradient(
-                        x - edge, 0f, x, 0f,
-                        bright, bright and 0x00FFFFFF,
-                        Shader.TileMode.CLAMP,
+                        lineLeft, 0f, lineRight, 0f, colors, positions, Shader.TileMode.CLAMP,
                     )
                     canvas.drawText(text, start, end, left, baseline, brightPaint)
                     brightPaint.shader = null
+                    brightPaint.color = bright
                 }
             }
         }
-    }
-
-    /** 当前行内高亮边缘的横坐标：字符边界之间按小数部分线性插值。 */
-    private fun progressX(layout: Layout, line: Int, charIndex: Int, fraction: Float): Float {
-        val lineStart = layout.getLineStart(line)
-        val lineEnd = layout.getLineEnd(line)
-        val x0 = if (charIndex <= lineStart) {
-            layout.getLineLeft(line)
-        } else {
-            layout.getPrimaryHorizontal(charIndex.coerceAtMost(lineEnd))
-        }
-        val nextIndex = charIndex + 1
-        val x1 = if (nextIndex >= lineEnd) {
-            layout.getLineRight(line)
-        } else {
-            layout.getPrimaryHorizontal(nextIndex)
-        }
-        return (x0 + (x1 - x0) * fraction).coerceIn(layout.getLineLeft(line), layout.getLineRight(line))
     }
 
     private fun withAlpha(color: Int, factor: Float): Int {
@@ -240,7 +310,7 @@ internal class AodWordSyncTextView(context: Context) : TextView(context) {
         /** 未唱部分相对已唱部分的亮度。 */
         const val DIM_ALPHA_FACTOR = 0.4f
 
-        /** 渐变边缘宽度，相对字号。 */
+        /** 柔边宽度，相对字号。 */
         const val EDGE_WIDTH_FACTOR = 0.6f
 
         /** 小于 DRAW_WAKE_LOCK_TIMEOUT_MS（1s），保证播放期间锁不断档。 */

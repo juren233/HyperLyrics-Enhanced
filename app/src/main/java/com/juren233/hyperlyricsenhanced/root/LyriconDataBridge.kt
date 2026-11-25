@@ -315,6 +315,34 @@ object LyriconDataBridge : StateResetter {
         return best
     }
 
+    /**
+     * 当前显示行预计被换掉的时刻（歌词时间轴毫秒）：下一句开始、提前预览或间奏指示接手的那一刻。
+     * 纯文本模式、间奏指示行、或当前行不在时间轴里时返回 null。
+     */
+    fun displayLeaveMs(): Long? {
+        if (isTextMode || timingNavigator.size == 0) return null
+        val shown = currentLyricLine as? TimedLine ?: return null
+        val advanceMs = earlyNextLinePreviewMs
+        // 显示行只会在这几个时刻变化（与 nextDisplayChangeMs 同一组候选），逐个按 applyPosition 的规则推演。
+        val candidates = sortedSetOf<Long>()
+        fun consider(candidateMs: Long) {
+            if (candidateMs > currentPosition) candidates += candidateMs
+        }
+        consider(shown.end + 1L)
+        shown.next?.let { consider(it.begin) }
+        if (advanceMs != null) {
+            consider(shown.end - advanceMs)
+            shown.next?.let { consider(it.begin - advanceMs) }
+        }
+        for (candidate in candidates) {
+            val found = timingNavigator.lineAtOrPrevious(candidate)
+            if (interludeTracker.evaluate(candidate, found, null, advanceMs) != null) return candidate
+            val display = earlyNextLinePreview(found, candidate) ?: found
+            if (!sameLineContent(display, shown)) return candidate
+        }
+        return null
+    }
+
     fun updatePlaybackState(isPlaying: Boolean) {
         MediaCardDiagnosticLogger.log(
             stage = "bridge",

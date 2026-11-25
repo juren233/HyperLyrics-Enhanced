@@ -142,7 +142,7 @@ internal class LyricOverlay(
     val backingTranslation: TextView,
     val overlappingMain: AodWordSyncTextView,
     val overlappingTranslation: TextView,
-    val overlappingBacking: TextView,
+    val overlappingBacking: AodWordSyncTextView,
     val overlappingBackingTranslation: TextView,
     val next: TextView,
     val artist: View,

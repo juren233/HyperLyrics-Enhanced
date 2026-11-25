@@ -9,12 +9,16 @@ package com.juren233.hyperlyricsenhanced.root.mediacard.notification
 import android.os.SystemClock
 import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.common.lyric.LyricMetadataKeys
+import com.juren233.hyperlyricsenhanced.common.lyric.LyricWordsMetadataCodec
 import com.juren233.hyperlyricsenhanced.lyric.model.LyricWord
+import com.juren233.hyperlyricsenhanced.lyric.model.extensions.deepCopy
+import com.juren233.hyperlyricsenhanced.lyric.model.extensions.normalize
 import com.juren233.hyperlyricsenhanced.lyric.model.interfaces.IRichLyricLine
 import com.juren233.hyperlyricsenhanced.lyric.view.RelativeWordBuilder
 import com.juren233.hyperlyricsenhanced.lyric.view.isTitleLine
 import com.juren233.hyperlyricsenhanced.root.LyriconDataBridge
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
+import java.util.IdentityHashMap
 
 /**
  * AOD「动态效果」（逐字效果、灵动圆点）的数据侧：把逐字时间轴换算成「已唱字符数」，
@@ -27,12 +31,54 @@ internal object AodWordProgress {
 
     private const val TAG = "AodWordProgress"
     private const val STATS_WINDOW_MS = 5_000L
+    private const val NORMALIZED_CACHE_SIZE = 8
+    private const val MIN_SWEEP_MS = 120L
+    private const val PROGRESS_SAMPLE_INTERVAL_MS = 1_000L
+    private const val MAX_LOGGED_WORDS = 24
 
     /** 帧统计与不一致日志只在 debug 构建采集；效果本身由「动态效果」开关控制。 */
     private val diagnosticsEnabled: Boolean get() = BuildConfig.DEBUG
 
     fun wordsOf(words: List<LyricWord>?): List<LyricWord>? =
-        words?.takeIf { list -> list.any { it.end > it.begin } }
+        words?.takeIf { list -> list.any { effectiveEnd(it) > it.begin } }?.let(::normalized)
+
+    /** 与超级岛逐字渲染同一口径的词尾：end 无效时用 duration 兜底。 */
+    internal fun effectiveEnd(word: LyricWord): Long = when {
+        word.end > word.begin -> word.end
+        word.duration > 0L -> word.begin + word.duration
+        else -> word.end
+    }
+
+    private val normalizedCache = IdentityHashMap<List<LyricWord>, List<LyricWord>>()
+
+    /**
+     * 时长短得没法看出扫字过程的词（数据里常见 1ms、10ms），如果和下一个词之间还有空档，
+     * 就让它一直扫到下一个词开始，避免一个词瞬间从头亮到尾。只改规整后的副本。
+     */
+    internal fun stretchInstantWords(words: List<LyricWord>) {
+        for (index in 0 until words.lastIndex) {
+            val word = words[index]
+            val nextBegin = words[index + 1].begin
+            if (word.end - word.begin < MIN_SWEEP_MS && nextBegin > word.end) {
+                word.end = nextBegin
+                word.duration = nextBegin - word.begin
+            }
+        }
+    }
+
+    /**
+     * 超级岛逐字渲染前会把每行逐字 [normalize]（按时间排序、无效时间的词并入相邻词、
+     * 拆开的英文片段合并成一个词），息屏过去直接用原始列表。这里换成同一份规范化结果，
+     * 同一原始列表复用同一个实例，避免逐字视图把它当作新内容重绘。
+     */
+    internal fun normalized(words: List<LyricWord>): List<LyricWord> {
+        normalizedCache[words]?.let { return it }
+        if (normalizedCache.size >= NORMALIZED_CACHE_SIZE) normalizedCache.clear()
+        val result = words.deepCopy().normalize().takeIf { it.isNotEmpty() }
+            ?.also(::stretchInstantWords) ?: words
+        normalizedCache[words] = result
+        return result
+    }
 
     private fun displayLine(): IRichLyricLine? =
         if (LyriconDataBridge.isTextMode) null else LyriconDataBridge.currentLyricLine
@@ -70,9 +116,33 @@ internal object AodWordProgress {
         return relativeWordBuilder.build(line, text, null).also { lineSpanCache = it }
     }
 
-    /** 伴唱行的逐字数据：非重叠分组时伴唱就是当前行的 secondary。 */
-    fun backingWords(): List<LyricWord>? =
-        displayLine()?.takeUnless(::isOverlappingGroup)?.let { wordsOf(it.secondaryWords) }
+    /**
+     * 伴唱行的逐字数据：非重叠分组时伴唱就是当前行的 secondary；
+     * 重叠分组时取第一句自己的伴唱逐字（分组时编码在元数据里）。
+     */
+    fun backingWords(): List<LyricWord>? {
+        val line = displayLine() ?: return null
+        if (!isOverlappingGroup(line)) return wordsOf(line.secondaryWords)
+        return wordsOf(metadataWords(line, LyricMetadataKeys.OVERLAPPING_PRIMARY_BACKING_WORDS))
+    }
+
+    /** 重叠分组中第二句的伴唱逐字数据。 */
+    fun overlappingBackingWords(): List<LyricWord>? =
+        displayLine()?.takeIf(::isOverlappingGroup)?.let {
+            wordsOf(metadataWords(it, LyricMetadataKeys.OVERLAPPING_SECONDARY_BACKING_WORDS))
+        }
+
+    private val decodedWordsCache = HashMap<String, List<LyricWord>>()
+
+    /** 解码结果按原字符串缓存，保证每帧拿到同一个列表实例，规整缓存才能命中。 */
+    private fun metadataWords(line: IRichLyricLine, key: String): List<LyricWord>? {
+        val encoded = line.metadata?.getString(key)?.takeIf { it.isNotBlank() } ?: return null
+        decodedWordsCache[encoded]?.let { return it }
+        val decoded = LyricWordsMetadataCodec.decode(encoded) ?: return null
+        if (decodedWordsCache.size >= NORMALIZED_CACHE_SIZE) decodedWordsCache.clear()
+        decodedWordsCache[encoded] = decoded
+        return decoded
+    }
 
     /** 重叠分组中第二句主行的逐字数据（分组行的 secondary 即该句）。 */
     fun overlappingMainWords(): List<LyricWord>? =
@@ -84,6 +154,9 @@ internal object AodWordProgress {
         if (line.metadata?.getBoolean(LyricMetadataKeys.INSTRUMENTAL) != true) return null
         return line.begin..line.end
     }
+
+    /** 当前显示行预计被换掉的时刻（下一句开始、提前预览或间奏接手），未知为 null。 */
+    fun displayLeaveMs(): Long? = LyriconDataBridge.displayLeaveMs()
 
     /** 当前播放位置：与 AOD 位置轮询同源的估算位置。 */
     fun currentPositionMs(): Long =
@@ -101,11 +174,12 @@ internal object AodWordProgress {
         var revealed = 0f
         for (word in words) {
             val length = word.text.orEmpty().count { !it.isWhitespace() }
-            if (positionMs >= word.end) {
+            val end = effectiveEnd(word)
+            if (positionMs >= end) {
                 revealed += length
             } else {
-                if (positionMs > word.begin && word.end > word.begin) {
-                    revealed += length * (positionMs - word.begin).toFloat() / (word.end - word.begin)
+                if (positionMs > word.begin && end > word.begin) {
+                    revealed += length * (positionMs - word.begin).toFloat() / (end - word.begin)
                 }
                 break
             }
@@ -144,6 +218,38 @@ internal object AodWordProgress {
             TAG,
             "逐字文本与展示文本对不上: row=$row, textLen=${text.length}, joinedLen=${joined.length}, " +
                 "words=${words.size}, firstDiff=$diff, text=[${around(expected)}], joined=[${around(actual)}]",
+        )
+    }
+
+    private var lastLoggedWords: List<LyricWord>? = null
+
+    /** 仅 debug：某一行绑定了新的逐字列表时记下每个词的时间（排查息屏与岛上进度不一致）。 */
+    fun logBoundWords(row: String, text: String, words: List<LyricWord>?) {
+        if (!diagnosticsEnabled || words == null || words === lastLoggedWords) return
+        lastLoggedWords = words
+        val timings = words.take(MAX_LOGGED_WORDS).joinToString(" ") { word ->
+            "${word.begin}-${effectiveEnd(word)}:${word.text.orEmpty().replace(' ', '_')}"
+        }
+        val more = if (words.size > MAX_LOGGED_WORDS) " …+${words.size - MAX_LOGGED_WORDS}" else ""
+        HookLogger.i(
+            TAG,
+            "息屏逐字绑定: row=$row, textLen=${text.length}, words=${words.size}, " +
+                "line=${displayLine()?.let { "${it.begin}-${it.end}" }}, timings=$timings$more",
+        )
+    }
+
+    private val lastSampleMs = HashMap<String, Long>()
+
+    /** 仅 debug：每行每秒记一次绘制时的位置与已唱字符，直接看进度是连续还是卡住/跳。 */
+    fun logProgressSample(row: String, positionMs: Long, chars: Float, length: Int) {
+        if (!diagnosticsEnabled) return
+        val now = SystemClock.elapsedRealtime()
+        if (now - (lastSampleMs[row] ?: 0L) < PROGRESS_SAMPLE_INTERVAL_MS) return
+        lastSampleMs[row] = now
+        HookLogger.i(
+            TAG,
+            "息屏逐字进度采样: row=$row, position=$positionMs, chars=${"%.2f".format(chars)}/$length, " +
+                "bridgePosition=${LyriconDataBridge.currentPosition}",
         )
     }
 

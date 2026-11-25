@@ -10,6 +10,7 @@ import com.juren233.hyperlyricsenhanced.lyric.model.LyricWord
 import com.juren233.hyperlyricsenhanced.lyric.model.RichLyricLine
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Assert.assertSame
 import org.junit.Test
 
@@ -96,5 +97,33 @@ class AodWordProgressTest {
     fun `line without usable timing gets no synthesized sweep`() {
         assertNull(AodWordProgress.lineSpanWordsFor(RichLyricLine(begin = 2_000, end = 2_000, text = "x"), "x"))
         assertNull(AodWordProgress.lineSpanWordsFor(RichLyricLine(begin = 0, end = 2_000, text = " "), " "))
+    }
+
+    @Test
+    fun `out of order words are sorted like the island before progress`() {
+        val raw = listOf(
+            LyricWord(begin = 2_000, end = 2_400, text = "world"),
+            LyricWord(begin = 1_000, end = 1_400, text = "Hel"),
+            LyricWord(begin = 1_400, end = 1_800, text = "lo "),
+        )
+        val normalized = AodWordProgress.wordsOf(raw)!!
+        assertEquals(listOf(1_000L, 1_400L, 2_000L), normalized.map { it.begin })
+        assertEquals(1.5f, AodWordProgress.progressChars("Hello world", normalized, 1_200L)!!, 0.001f)
+        // 同一原始列表复用同一实例，不触发重绘
+        assertTrue(normalized === AodWordProgress.wordsOf(raw))
+        // 原始数据不被改动
+        assertEquals(2_000L, raw.first().begin)
+    }
+
+    @Test
+    fun `instant words sweep until the next word starts`() {
+        val words = listOf(
+            LyricWord(begin = 6_698, end = 6_699, text = "you're "),
+            LyricWord(begin = 7_068, end = 7_069, text = "the "),
+            LyricWord(begin = 7_448, end = 7_900, text = "one"),
+        )
+        val stretched = AodWordProgress.normalized(words)
+        assertEquals(listOf(7_068L, 7_448L, 7_900L), stretched.map { it.end })
+        assertEquals(6_699L, words.first().end)
     }
 }

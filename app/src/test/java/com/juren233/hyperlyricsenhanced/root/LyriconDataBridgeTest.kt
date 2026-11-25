@@ -692,6 +692,44 @@ class LyriconDataBridgeTest {
     }
 
     @Test
+    fun `display leaves the line when the next line starts right after it`() {
+        // 12:57 日志：「看看从前」唱到 192996，下一句 193006 就开始，中间只有 10 ms。
+        LyriconDataBridge.updateSong(Song(name = "Song", lyrics = listOf(
+            RichLyricLine(begin = 189_444, end = 192_996, text = "看看从前"),
+            RichLyricLine(begin = 193_006, end = 196_333, text = "看看从前"),
+        )))
+        LyriconDataBridge.updatePosition(192_000)
+        assertEquals(189_444L, LyriconDataBridge.currentLyricLine?.begin)
+        assertEquals(193_006L, LyriconDataBridge.displayLeaveMs())
+        // 开了提前预览时，按提前量更早换句（日志里设为 100 ms）。
+        LyriconDataBridge.configureEarlyNextLinePreview(2, 100)
+        LyriconDataBridge.updatePosition(192_000)
+        assertEquals(192_896L, LyriconDataBridge.displayLeaveMs())
+        LyriconDataBridge.configureEarlyNextLinePreview(4, 300)
+        LyriconDataBridge.updatePosition(192_000)
+        assertEquals(192_696L, LyriconDataBridge.displayLeaveMs())
+    }
+
+    @Test
+    fun `display leaves the line at its end when a long interlude follows`() {
+        LyriconDataBridge.updateSong(Song(name = "Song", lyrics = listOf(
+            RichLyricLine(begin = 1_000, end = 2_000, text = "Before"),
+            RichLyricLine(begin = 12_000, end = 13_000, text = "After"),
+        )))
+        LyriconDataBridge.updatePosition(1_500)
+        assertEquals(2_001L, LyriconDataBridge.displayLeaveMs())
+    }
+
+    @Test
+    fun `display keeps the line across a short gap and stays on the last line`() {
+        preparePreviewSong()
+        LyriconDataBridge.updatePosition(1_500)
+        assertEquals(4_000L, LyriconDataBridge.displayLeaveMs())
+        LyriconDataBridge.updatePosition(6_500)
+        assertEquals(null, LyriconDataBridge.displayLeaveMs())
+    }
+
+    @Test
     fun `next display change defaults to current line end without preview`() {
         preparePreviewSong()
         // 无预览（mode 0 = null）：候选只剩当前行结束与下一行起点。
