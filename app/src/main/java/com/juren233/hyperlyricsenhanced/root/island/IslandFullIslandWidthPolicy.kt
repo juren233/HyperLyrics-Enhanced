@@ -16,17 +16,28 @@ internal object IslandFullIslandWidthPolicy {
     /**
      * 连续文本带（全岛歌词）所需的对称单侧区域宽。整句只算一次：左右两槽文字宽之和
      * `2 * side - leftOverhead - rightOverhead` 须容下 [content] 加接缝避让额外占用的宽度；
-     * [clearance] 以左槽文字宽（接缝位置）求该额外宽度，接缝随单侧宽右移，迭代两次取最大。
+     * [clearance] 以左槽文字宽（接缝位置）求该额外宽度。
+     *
+     * 接缝随单侧宽右移，跨缝词簇的避让量也随之 1:1 增长，固定迭代次数收敛不到落点
+     * （单词 "You" 两次迭代后仍差一截，绘制端判超宽改为夹缝滚动）。这里直接求满足
+     * 条件的最小单侧宽：余量 `view - content - clearance` 随单侧宽单调不减（同词内每步 +1，
+     * 越过词尾避让量归零），二分即可，且与绘制端判定同一条件。
      */
     fun continuousSide(content: Int, leftOverhead: Int, rightOverhead: Int, clearance: (seam: Int) -> Int): Int {
-        fun side(extra: Int): Int = maxOf(
-            leftOverhead,
-            rightOverhead,
-            (content.coerceAtLeast(0) + extra.coerceAtLeast(0) + leftOverhead + rightOverhead + 1) / 2,
-        )
-        var side = side(0)
-        repeat(2) { side = maxOf(side, side(clearance(side - leftOverhead))) }
-        return side
+        val needed = content.coerceAtLeast(0)
+        fun fits(side: Int): Boolean =
+            needed + clearance(side - leftOverhead).coerceAtLeast(0) <= 2 * side - leftOverhead - rightOverhead
+        val base = maxOf(leftOverhead, rightOverhead, (needed + leftOverhead + rightOverhead + 1) / 2)
+        if (fits(base)) return base
+        // 接缝越过整句末尾后不再有跨缝词簇，此时只需容下内容本身，必然满足。
+        var high = maxOf(base, needed + leftOverhead + rightOverhead)
+        if (!fits(high)) return high
+        var low = base // 不满足
+        while (high - low > 1) {
+            val mid = low + (high - low) / 2
+            if (fits(mid)) high = mid else low = mid
+        }
+        return high
     }
 
     /**

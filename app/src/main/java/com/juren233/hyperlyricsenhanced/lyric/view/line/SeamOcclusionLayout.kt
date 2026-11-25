@@ -93,6 +93,16 @@ internal class SeamOcclusionLayout private constructor(
         return (seam - (stripOffset + u.start)).coerceAtLeast(0f)
     }
 
+    /**
+     * 静止态实际按完整词簇绕孔（[straddlingStaticUnit]，见 SpaceGateLineLayout 的容量判定），
+     * 跨缝词簇整段推到缝右所需的平移量 ≥0；无跨缝词簇返回 0。动态长度估算必须用这一粒度，
+     * 按逐字单元估会把 "You" 这类单词的避让量少算一截，岛宽不够时绘制端只能改为滚动。
+     */
+    fun staticRightShiftToClear(stripOffset: Float, seam: Float): Float {
+        val u = straddlingStaticUnit(stripOffset, seam) ?: return 0f
+        return (seam - (stripOffset + u.start)).coerceAtLeast(0f)
+    }
+
     /** 镜像：左段平移量 ≤0，把跨缝单元拉到缝左（TAIL 侧完整显示）。 */
     fun leftShiftToClear(stripOffset: Float, seam: Float): Float {
         val u = straddlingUnit(stripOffset, seam) ?: return 0f

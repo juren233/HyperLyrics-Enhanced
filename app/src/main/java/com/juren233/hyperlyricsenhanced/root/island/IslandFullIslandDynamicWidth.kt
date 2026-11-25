@@ -72,7 +72,8 @@ internal object IslandFullIslandDynamicWidth {
                     content = right.measureIndependentContentWidth(line),
                     leftOverhead = IslandFullIslandWidthPolicy.overhead(leftArea.measuredWidth, left.measuredWidth),
                     rightOverhead = IslandFullIslandWidthPolicy.overhead(rightArea.measuredWidth, right.measuredWidth),
-                ) { seam -> right.staticSeamClearance(seam.toFloat()) }
+                    clearance = right.staticSeamClearance(line),
+                )
                 leftDemand = side
                 rightDemand = side
             } else {

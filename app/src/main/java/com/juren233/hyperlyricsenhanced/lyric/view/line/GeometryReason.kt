@@ -10,4 +10,5 @@ internal object GeometryReason {
     const val RESIZE = 5
     const val ROLE_SNAPSHOT = 6
     const val PROMOTION_SNAPSHOT = 7
+    const val WIDTH_DEMAND = 8
 }

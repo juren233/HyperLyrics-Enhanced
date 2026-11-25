@@ -897,12 +897,20 @@ open class SpaceGateLyricLineView(context: Context, attrs: AttributeSet? = null)
 
     /** 与绘制同管线度量逐字符 advance 后构建单元表；退化输入返回 null（连续绘制）。 */
     /**
-     * 静止绕孔分段在接缝 [seam]（虚拟坐标，左槽文字宽）处为当前行额外占用的 advance：
-     * 跨缝单元被整段推过缝时拉开的距离。无遮挡或无跨缝时为 0。供全岛动态长度估算连续歌词所需宽度。
+     * 静止绕孔分段在接缝 seam（虚拟坐标，左槽文字宽）处为 [incoming]（null＝当前行）额外占用的
+     * advance：跨缝的完整词簇被整段推过缝时拉开的距离，与 SpaceGateLineLayout 判定是否改为滚动
+     * 的规则同源。单元表只构建一次，返回的函数供全岛动态长度在不同接缝位置反复求值。
      */
-    internal fun staticSeamClearance(seam: Float): Float {
-        if (!spaceGateEnabled || !seamOcclusion) return 0f
-        return buildSeamLayout()?.rightShiftToClear(0f, seam) ?: 0f
+    internal fun staticSeamClearanceProbe(incoming: LyricLine? = null): (Float) -> Float {
+        if (!spaceGateEnabled || !seamOcclusion) return { 0f }
+        val model = if (incoming == null) _model else {
+            if (incoming.text.isNullOrBlank()) return { 0f }
+            incoming.normalize().createModel().apply {
+                updateSizesDiagnosed(textPaint, currentTypefaceSelector, diagnosticReason = GeometryReason.WIDTH_DEMAND)
+            }
+        }
+        val layout = buildSeamLayout(model) ?: return { 0f }
+        return { seam -> layout.staticRightShiftToClear(0f, seam) }
     }
 
     private fun buildSeamLayout(model: LyricModel = _model): SeamOcclusionLayout? {

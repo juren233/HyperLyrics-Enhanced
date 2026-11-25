@@ -3,6 +3,8 @@ package com.juren233.hyperlyricsenhanced.root.island
 
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.root.island.IslandDynamicLimitPolicy.Geometry
+import com.juren233.hyperlyricsenhanced.lyric.view.line.SeamOcclusionLayout
+import com.juren233.hyperlyricsenhanced.lyric.view.line.SpaceGateLineLayout
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -99,7 +101,28 @@ class IslandFullIslandWidthPolicyTest {
             if (seam < 120) 24 else 0
         }
         assertEquals(110, seams.first()) // 220 - 110
-        assertEquals(232, side) // (300 + 24 + 140 + 1) / 2
+        // 最小满足者：seam 120 起不再跨缝，2 * 230 - 140 = 320 >= 300。
+        assertEquals(230, side)
+    }
+
+    @Test fun `lone You from the 1024 log gets a side wide enough for the renderer to stay static`() {
+        // 日志 hyperlyricsenhanced_all_logs_20261125_1024，10:24:00.694：
+        // IslandFullWidth continuous demand=148/148 capacity=Geometry(width=640, left=280, right=280)；
+        // 随后 IslandScroll sync right=true content=55.0 scrollW=126.01953 vw=72 seam=36.0。
+        // 单侧 148、左槽文字宽 36 → 两侧固定占用各 112；"You" 模型宽 55、单元 advance 合计 54.02。
+        // 单字 advance 拆分是合成的（日志只有总宽）；真实字体下的 148 由 FullIslandShortWordWidthTest 复现。
+        val layout = requireNotNull(SeamOcclusionLayout.build("You", floatArrayOf(19.6f, 17.8f, 16.62f)))
+        val device = SpaceGateLineLayout(55f, 72f, layout, 36f)
+        assertTrue("先复现真机：72px 带宽、缝 36 时绘制端判超宽", device.isOverflow)
+        assertEquals(126.02f, device.scrollWidth, 0.01f)
+
+        val side = IslandFullIslandWidthPolicy.continuousSide(55, 112, 112) { seam ->
+            kotlin.math.ceil(layout.staticRightShiftToClear(0f, seam.toFloat())).toInt()
+        }
+        val geometry = SpaceGateLineLayout(55f, (2 * side - 224).toFloat(), layout, (side - 112).toFloat())
+        assertFalse("单侧 $side 下 You 仍会在夹缝里滚动", geometry.isOverflow)
+        // 日志容量单侧 280：岛确实能撑到这个宽度。
+        assertEquals(side, IslandFullIslandWidthPolicy.shrink(Geometry(640, 280, 280, 280), side, side, 1200, 110, false).right)
     }
 
     @Test fun `gapless override turns the native cutout into symmetric side capacity`() {

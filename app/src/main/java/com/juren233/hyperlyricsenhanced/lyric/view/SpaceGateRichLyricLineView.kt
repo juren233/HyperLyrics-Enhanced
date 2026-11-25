@@ -432,10 +432,23 @@ class SpaceGateRichLyricLineView(
         super.setPivotX(if (bandMotion) (if (main.isRightSide) 0f else width.toFloat()) else pivotX)
     }
 
-    /** 连续文本带的接缝避让对 [rawLine] 主/次行在接缝 [seam] 处额外占用的最大宽度。 */
-    internal fun staticSeamClearance(seam: Float): Int = kotlin.math.ceil(
-        maxOf(main.staticSeamClearance(seam), secondary.staticSeamClearance(seam))
-    ).toInt()
+    /**
+     * 连续文本带的接缝避让：[targetLine]（换句途中为即将落地的行，与动态长度的内容宽同一行）
+     * 主/次行在接缝 seam 处额外占用的最大宽度。次行与 [measureIndependentContentWidth] 一样只在常显时计入。
+     */
+    internal fun staticSeamClearance(targetLine: IRichLyricLine): (Int) -> Int {
+        // 每行只度量、构建单元表一次，求最小岛宽时各接缝位置复用。
+        val mainProbe = main.staticSeamClearanceProbe(assembler.buildMain(targetLine).line)
+        val secondaryResult = assembler.buildSecondary(targetLine)
+        val secondaryProbe = if (secondaryResult.alwaysShow) {
+            secondary.staticSeamClearanceProbe(secondaryResult.line)
+        } else null
+        return { seam ->
+            kotlin.math.ceil(
+                maxOf(mainProbe(seam.toFloat()), secondaryProbe?.invoke(seam.toFloat()) ?: 0f)
+            ).toInt()
+        }
+    }
 
     fun setSpaceGateConfig(isRightSide: Boolean, sibling: SpaceGateRichLyricLineView?) {
         main.isRightSide = isRightSide
