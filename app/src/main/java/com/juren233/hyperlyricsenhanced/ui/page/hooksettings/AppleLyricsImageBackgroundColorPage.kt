@@ -46,6 +46,7 @@ import top.yukonga.miuix.kmp.basic.OkHsvValueSlider
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.color.core.Transforms
 import top.yukonga.miuix.kmp.color.space.OkHsv
+import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /**
@@ -81,20 +82,30 @@ fun AppleLyricsImageBackgroundColorPage() {
         )
     }
 
+    var cardShadow by remember {
+        mutableStateOf(
+            prefs.getBoolean(
+                RootConstants.KEY_HOOK_APPLE_MUSIC_LYRICS_IMAGE_CUSTOM_COLOR_CARD_SHADOW,
+                RootConstants.DEFAULT_HOOK_APPLE_MUSIC_LYRICS_IMAGE_CARD_SHADOW,
+            )
+        )
+    }
+
     // What a poster was drawn from; the last one is reused when the page is opened again.
-    val initialKey = remember { listOf(color, withQr) }
+    val initialKey = remember { listOf(color, withQr, cardShadow) }
     var preview by remember {
         mutableStateOf(AppleLyricsImagePreviewCache.preview(AppleLyricsImagePreviewCache.PAGE_COLOR, initialKey))
     }
     var drawnKey by remember { mutableStateOf<Any?>(initialKey.takeIf { preview != null }) }
     val samples = rememberAppleLyricsSamples()
     // A newer colour cancels the pending render.
-    LaunchedEffect(samples, color) {
+    LaunchedEffect(samples, color, cardShadow) {
         val card = samples?.card ?: return@LaunchedEffect
-        val key = listOf(color, withQr)
+        val shadow = cardShadow
+        val key = listOf(color, withQr, shadow)
         if (key == drawnKey) return@LaunchedEffect
         val composed = withContext(ModuleDispatchers.Default) {
-            AppleLyricsImageBackgroundStore.composePreview(color, card, samples.wordmark, withQr)
+            AppleLyricsImageBackgroundStore.composePreview(color, card, samples.wordmark, withQr, shadow)
         }
         preview = composed
         drawnKey = key
@@ -184,6 +195,14 @@ fun AppleLyricsImageBackgroundColorPage() {
                         OkHsvSaturationSlider(currentH = hue, currentS = saturation, onSaturationChanged = { saturation = it; exactColor = null })
                         OkHsvValueSlider(currentH = hue, currentS = saturation, currentV = value, onValueChanged = { value = it; exactColor = null })
                     }
+                    SwitchPreference(
+                        title = stringResource(R.string.title_apple_music_lyrics_image_card_shadow),
+                        checked = cardShadow,
+                        onCheckedChange = { enabled ->
+                            cardShadow = enabled
+                            saveConfig(RootConstants.KEY_HOOK_APPLE_MUSIC_LYRICS_IMAGE_CUSTOM_COLOR_CARD_SHADOW, enabled)
+                        },
+                    )
                 }
             }
         }

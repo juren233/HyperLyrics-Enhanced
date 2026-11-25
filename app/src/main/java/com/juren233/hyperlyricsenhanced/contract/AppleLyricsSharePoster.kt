@@ -36,6 +36,8 @@ object AppleLyricsSharePoster {
         val subtitleSize: Float,
         val tileRadius: Float,
         val shadowRadius: Float,
+        /** How far the card shadow drops below the card. */
+        val shadowOffsetY: Float,
         val cardCornerRadius: Float,
     )
 
@@ -65,6 +67,7 @@ object AppleLyricsSharePoster {
             subtitleSize = unit * 3.3f,
             tileRadius = unit * 3f,
             shadowRadius = unit * 3.5f,
+            shadowOffsetY = unit * 3.5f / 3f,
             cardCornerRadius = cardWidth * 0.035f,
         )
     }
@@ -144,7 +147,7 @@ object AppleLyricsSharePoster {
     /** Alpha of the footer subtitle relative to the title colour. */
     const val SUBTITLE_ALPHA = 170
 
-    /** Shadow under the card (ARGB). */
+    /** Optional shadow under the card (ARGB), on the custom colour and custom image backgrounds. */
     const val SHADOW_COLOR = 0x55000000
 
     const val WHITE = 0xFFFFFFFF.toInt()

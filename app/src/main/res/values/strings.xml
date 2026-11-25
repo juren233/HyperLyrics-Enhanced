@@ -98,6 +98,7 @@
     <string name="action_apple_music_lyrics_image_pick_background">选择图片</string>
     <string name="title_apple_music_lyrics_image_background_blur">模糊</string>
     <string name="title_apple_music_lyrics_image_background_brightness">亮度</string>
+    <string name="title_apple_music_lyrics_image_card_shadow">卡片阴影</string>
     <string name="toast_apple_music_lyrics_image_background_read_failed">图片读取失败</string>
     <string name="toast_apple_music_lyrics_image_background_save_failed">背景图保存失败，请确认模块已在 LSPosed 中启用</string>
     <string name="title_apple_music_volume_balance">动态提升Dolby Atmos外放音量</string>

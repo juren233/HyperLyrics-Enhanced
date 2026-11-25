@@ -39,6 +39,7 @@ import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Slider
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.preference.ArrowPreference
+import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import kotlin.math.roundToInt
 
@@ -72,10 +73,20 @@ fun AppleLyricsImageBackgroundPage() {
             RootConstants.DEFAULT_HOOK_APPLE_MUSIC_LYRICS_IMAGE_QR_CODE,
         )
     }
+    var cardShadow by remember {
+        mutableStateOf(
+            prefs.getBoolean(
+                RootConstants.KEY_HOOK_APPLE_MUSIC_LYRICS_IMAGE_CUSTOM_IMAGE_CARD_SHADOW,
+                RootConstants.DEFAULT_HOOK_APPLE_MUSIC_LYRICS_IMAGE_CARD_SHADOW,
+            )
+        )
+    }
     // What a poster was drawn from; the last one is reused when the page is opened again.
-    fun previewKey(sourceStamp: Long, blurLevel: Int, brightnessLevel: Int): Any =
-        listOf(sourceStamp, blurLevel, brightnessLevel, withQr)
-    val initialKey = remember { previewKey(AppleLyricsImageBackgroundStore.sourceStamp(context), blur, brightness) }
+    fun previewKey(sourceStamp: Long, blurLevel: Int, brightnessLevel: Int, shadow: Boolean): Any =
+        listOf(sourceStamp, blurLevel, brightnessLevel, withQr, shadow)
+    val initialKey = remember {
+        previewKey(AppleLyricsImageBackgroundStore.sourceStamp(context), blur, brightness, cardShadow)
+    }
     var preview by remember {
         mutableStateOf(AppleLyricsImagePreviewCache.preview(AppleLyricsImagePreviewCache.PAGE_IMAGE, initialKey))
     }
@@ -101,16 +112,17 @@ fun AppleLyricsImageBackgroundPage() {
     }
     // collectLatest-like: a newer slider value cancels the pending render. Waits for the source,
     // so the story background never flashes in before a picked image.
-    LaunchedEffect(previewSource, samples, blur, brightness) {
+    LaunchedEffect(previewSource, samples, blur, brightness, cardShadow) {
         val source = previewSource ?: return@LaunchedEffect
         val card = samples?.card ?: return@LaunchedEffect
-        val key = previewKey(source.stamp, blur, brightness)
+        val shadow = cardShadow
+        val key = previewKey(source.stamp, blur, brightness, shadow)
         if (key == drawnKey) return@LaunchedEffect
         val composed = withContext(ModuleDispatchers.Default) {
             val rendered = source.bitmap?.let { AppleLyricsImageBackgroundStore.render(it, blur, brightness) }
             val background = rendered ?: samples.background ?: return@withContext null
             try {
-                AppleLyricsImageBackgroundStore.composePreview(background, card, samples.wordmark, withQr)
+                AppleLyricsImageBackgroundStore.composePreview(background, card, samples.wordmark, withQr, shadow)
             } finally {
                 rendered?.recycle()
             }
@@ -191,6 +203,14 @@ fun AppleLyricsImageBackgroundPage() {
                                 brightness,
                             )
                             publish()
+                        },
+                    )
+                    SwitchPreference(
+                        title = stringResource(R.string.title_apple_music_lyrics_image_card_shadow),
+                        checked = cardShadow,
+                        onCheckedChange = { enabled ->
+                            cardShadow = enabled
+                            saveConfig(RootConstants.KEY_HOOK_APPLE_MUSIC_LYRICS_IMAGE_CUSTOM_IMAGE_CARD_SHADOW, enabled)
                         },
                     )
                 }

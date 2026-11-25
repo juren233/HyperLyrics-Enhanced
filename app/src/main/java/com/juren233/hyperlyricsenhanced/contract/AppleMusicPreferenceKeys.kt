@@ -39,6 +39,12 @@ object AppleMusicPreferenceKeys {
         "key_hook_apple_music_lyrics_image_background_color"
     const val KEY_HOOK_APPLE_MUSIC_LYRICS_IMAGE_QR_CODE =
         "key_hook_apple_music_lyrics_image_qr_code"
+    /** Shadow under the card on the custom colour background. */
+    const val KEY_HOOK_APPLE_MUSIC_LYRICS_IMAGE_CUSTOM_COLOR_CARD_SHADOW =
+        "key_hook_apple_music_lyrics_image_custom_color_card_shadow"
+    /** Shadow under the card on the custom image background. */
+    const val KEY_HOOK_APPLE_MUSIC_LYRICS_IMAGE_CUSTOM_IMAGE_CARD_SHADOW =
+        "key_hook_apple_music_lyrics_image_custom_image_card_shadow"
     const val KEY_HOOK_APPLE_MUSIC_VOLUME_BALANCE =
         "key_hook_apple_music_volume_balance"
     const val KEY_HOOK_APPLE_MUSIC_PREVENT_NETWORK_AUTO_SKIP =
@@ -100,6 +106,7 @@ object AppleMusicPreferenceKeys {
         APPLE_MUSIC_LYRICS_IMAGE_BACKGROUND_COVER_BLUR
     const val DEFAULT_HOOK_APPLE_MUSIC_LYRICS_IMAGE_BACKGROUND_COLOR = 0xFF2C2C2E.toInt()
     const val DEFAULT_HOOK_APPLE_MUSIC_LYRICS_IMAGE_QR_CODE = true
+    const val DEFAULT_HOOK_APPLE_MUSIC_LYRICS_IMAGE_CARD_SHADOW = false
     /**
      * Xposed Remote File holding the finished custom background (blur and brightness already
      * applied by the core); the Provider only crops it to the poster.

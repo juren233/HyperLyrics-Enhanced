@@ -225,11 +225,18 @@ internal object AppleLyricsImageBackgroundStore {
 
     /**
      * Draws a preview poster the way the Provider composes the export: [background] cover-cropped
-     * behind Apple's real lyric [card], plus the QR footer when [withQr]. Geometry and colours
+     * behind Apple's real lyric [card], plus its shadow when [cardShadow] and the QR footer when
+     * [withQr]. Geometry and colours
      * come from [AppleLyricsSharePoster], the same source the Provider uses.
      */
-    fun composePreview(background: Bitmap, card: Bitmap, wordmark: Drawable?, withQr: Boolean): Bitmap =
-        composePreview(card, wordmark, withQr) { canvas, width, height ->
+    fun composePreview(
+        background: Bitmap,
+        card: Bitmap,
+        wordmark: Drawable?,
+        withQr: Boolean,
+        cardShadow: Boolean,
+    ): Bitmap =
+        composePreview(card, wordmark, withQr, cardShadow) { canvas, width, height ->
             canvas.drawColor(OPAQUE)
             val crop = AppleLyricsSharePoster.coverCrop(background.width, background.height, width, height)
             canvas.drawBitmap(
@@ -241,8 +248,8 @@ internal object AppleLyricsImageBackgroundStore {
         }
 
     /** Same poster over a flat [color]; drawn opaque, as the Provider paints its flat background. */
-    fun composePreview(color: Int, card: Bitmap, wordmark: Drawable?, withQr: Boolean): Bitmap =
-        composePreview(card, wordmark, withQr) { canvas, _, _ -> canvas.drawColor(color or OPAQUE) }
+    fun composePreview(color: Int, card: Bitmap, wordmark: Drawable?, withQr: Boolean, cardShadow: Boolean): Bitmap =
+        composePreview(card, wordmark, withQr, cardShadow) { canvas, _, _ -> canvas.drawColor(color or OPAQUE) }
 
     /**
      * Apple Music's wordmark from the installed app, for the footer subtitle; null when Apple Music
@@ -267,6 +274,7 @@ internal object AppleLyricsImageBackgroundStore {
         card: Bitmap,
         wordmark: Drawable?,
         withQr: Boolean,
+        cardShadow: Boolean,
         drawBackground: (Canvas, Int, Int) -> Unit,
     ): Bitmap {
         val cardWidth = previewEdge(card.width)
@@ -287,15 +295,17 @@ internal object AppleLyricsImageBackgroundStore {
             (spec.cardLeft + cardWidth).toFloat(),
             (spec.cardTop + cardHeight).toFloat(),
         )
-        canvas.drawRoundRect(
-            RectF(cardRect).apply { offset(0f, spec.shadowRadius / 3f) },
-            spec.cardCornerRadius,
-            spec.cardCornerRadius,
-            Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = AppleLyricsSharePoster.SHADOW_COLOR
-                maskFilter = BlurMaskFilter(spec.shadowRadius.coerceAtLeast(1f), BlurMaskFilter.Blur.NORMAL)
-            },
-        )
+        if (cardShadow) {
+            canvas.drawRoundRect(
+                RectF(cardRect).apply { offset(0f, spec.shadowOffsetY) },
+                spec.cardCornerRadius,
+                spec.cardCornerRadius,
+                Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    color = AppleLyricsSharePoster.SHADOW_COLOR
+                    maskFilter = BlurMaskFilter(spec.shadowRadius.coerceAtLeast(1f), BlurMaskFilter.Blur.NORMAL)
+                },
+            )
+        }
         canvas.drawBitmap(card, null, cardRect, Paint(Paint.FILTER_BITMAP_FLAG))
         if (withQr) drawFooter(canvas, spec, footerForeground, wordmark)
         return poster
