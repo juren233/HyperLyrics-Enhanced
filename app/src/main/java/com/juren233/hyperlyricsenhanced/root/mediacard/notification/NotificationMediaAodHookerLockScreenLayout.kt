@@ -30,6 +30,7 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.view.animation.AccelerateDecelerateInterpolator
 import android.view.animation.DecelerateInterpolator
 import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.common.ClassicAodSongInfoConfig
@@ -57,18 +58,18 @@ import java.util.Collections
 import java.util.WeakHashMap
 import kotlin.math.roundToInt
 
-internal fun NotificationMediaAodLyricHooker.updateLockScreenCardHeight(
-    overlay: LyricOverlay,
-    forceRemeasure: Boolean = false
-) {
+internal fun NotificationMediaAodLyricHooker.updateLockScreenCardHeight(overlay: LyricOverlay) {
     if (!overlay.lifetime.allowsUpdates || !overlay.root.isShown) return
     if (updateLockScreenHorizontalMargins(overlay)) {
         overlay.root.post {
-            updateLockScreenCardHeight(overlay, forceRemeasure = true)
+            updateLockScreenCardHeight(overlay)
         }
         return
     }
-    if (forceRemeasure) {
+    // 每次都按不限高度重新量一遍歌词区。歌词区放在卡片里面，布局时拿到的高度会被
+    // 卡片当前高度卡住；如果拿那个高度当目标，卡片每次只能长一两像素，高度动画就会
+    // 不停从头开始，看起来是卡片被缓慢推开。
+    run {
         val measuredWidth = overlay.root.width.takeIf { it > 0 }
             ?: overlay.root.measuredWidth
         if (measuredWidth > 0) {
@@ -314,7 +315,7 @@ internal fun NotificationMediaAodLyricHooker.animateLockScreenCardHeight(
         ?: overlay.playerSize.baseHeight
     val animator = ValueAnimator.ofFloat(0f, 1f).apply {
         duration = LOCK_SCREEN_AOD_HEIGHT_ANIMATION_MS
-        interpolator = DecelerateInterpolator()
+        interpolator = AccelerateDecelerateInterpolator()
         addUpdateListener { animation ->
             val fraction = animation.animatedValue as Float
             resizeViewToHeight(

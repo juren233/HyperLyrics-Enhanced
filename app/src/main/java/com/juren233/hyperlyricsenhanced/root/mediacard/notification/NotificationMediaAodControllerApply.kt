@@ -167,6 +167,7 @@ internal fun NotificationMediaAodLyricHooker.applyState(controller: Any, state: 
         )
         restoreActions(state)
         state.overlay?.let { overlay ->
+            AodLyricTransition.finish(overlay)
             overlay.root.visibility = View.GONE
             restorePlayerHeight(overlay, state.fullAod)
         }
@@ -215,41 +216,31 @@ internal fun NotificationMediaAodLyricHooker.applyState(controller: Any, state: 
         restoreActions(state)
         return
     }
-    // 「歌词滚动」/「灵动圆点」转场期间保持旧内容，结束后由 safeApply 重新应用最新内容。
-    if (overlay.promotionRunning) return
     val currentLine = LyriconDataBridge.currentLyricLine
-    if (!overlay.skipNextPromotion && AodInterludeEnter.shouldStart(
-            enabled = textStyle.interludeDots,
+    val oldRows = AodLyricTransition.shownRows(overlay)
+    val newRows = AodLyricTransition.contentRows(content)
+    val styleChangedBeforeApply = overlay.appliedTextStyle != textStyle
+    val transitionKind = if (styleChangedBeforeApply) {
+        AodTransitionKind.NONE
+    } else {
+        AodLyricTransitionPolicy.decide(
+            canAnimate = AodLyricTransition.canAnimate(overlay),
+            lyricScroll = textStyle.lyricScroll,
+            interludeDots = textStyle.interludeDots,
             wasInterlude = overlay.main.isInterludeIndicator,
             nowInterlude = content.main.isNotBlank() && AodWordProgress.interludeRange() != null,
-            hadMainText = overlay.main.text.isNotBlank(),
-            attached = overlay.root.isAttachedToWindow &&
-                overlay.root.visibility == View.VISIBLE,
-        )
-    ) {
-        AodInterludeEnter.start(overlay) { safeApply(controller, state) }
-        return
-    }
-    if (!overlay.skipNextPromotion && AodNextLinePromotion.shouldPromote(
-            enabled = textStyle.lyricScroll,
-            showNextLyric = textStyle.showNextLyric,
-            rowsBetweenBlank = AodNextLinePromotion.rowsBetweenBlank(overlay, content),
-            wasPreview = overlay.next.visibility == View.VISIBLE && overlay.next.text.isNotBlank(),
-            currentMainText = overlay.main.text.toString(),
-            previewText = overlay.next.text.toString(),
-            nextMainText = content.main,
             lineAdvanced = hasLyricLineAdvanced(overlay.appliedLine, currentLine),
-            attached = overlay.root.isAttachedToWindow &&
-                overlay.root.visibility == View.VISIBLE,
-            mainHeight = overlay.main.height,
-            nextHeight = overlay.next.height,
+            oldRows = oldRows,
+            newRows = newRows,
         )
-    ) {
-        AodNextLinePromotion.start(overlay, content.main, content.mainAlignment) {
-            safeApply(controller, state)
-        }
-        return
     }
+    // 转场进行中又有新变化：当前转场直接落到终点，再从终点状态开始下一次。
+    if (transitionKind != AodTransitionKind.NONE || styleChangedBeforeApply ||
+        AodLyricTransitionPolicy.rowsDiffer(oldRows, newRows)
+    ) {
+        AodLyricTransition.finish(overlay)
+    }
+    val pendingTransition = AodLyricTransition.capture(overlay, transitionKind, oldRows, newRows)
     val contentChanged = overlay.main.text.toString() != content.main ||
         overlay.translation.text.toString() != content.translation ||
         overlay.backing.text.toString() != content.backing ||
@@ -375,10 +366,7 @@ internal fun NotificationMediaAodLyricHooker.applyState(controller: Any, state: 
             ),
             dedupeKey = diagnosticKey,
         )
-        updateLockScreenCardHeight(
-            overlay,
-            forceRemeasure = contentChanged || styleChanged,
-        )
+        updateLockScreenCardHeight(overlay)
         DisplayDiagnosticLogger.log(
             channel = "AOD_LOCK",
             result = "shown",
@@ -389,6 +377,7 @@ internal fun NotificationMediaAodLyricHooker.applyState(controller: Any, state: 
             dedupeKey = diagnosticKey,
         )
     }
+    pendingTransition?.let { AodLyricTransition.begin(overlay, it, content.mainAlignment) }
     if (contentChanged || styleChanged) {
         overlay.root.invalidate()
         (overlay.root.parent as? View)?.invalidate()

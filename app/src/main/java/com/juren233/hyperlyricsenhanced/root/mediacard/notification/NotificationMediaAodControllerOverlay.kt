@@ -338,6 +338,7 @@ internal fun NotificationMediaAodLyricHooker.safeApply(controller: Any, state: C
             )
             restoreActions(state)
             state.overlay?.let { overlay ->
+                runCatching { AodLyricTransition.finish(overlay) }
                 overlay.root.visibility = View.GONE
                 restorePlayerHeight(overlay, state.fullAod)
             }

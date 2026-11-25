@@ -88,7 +88,8 @@ object NotificationMediaAodLyricHooker {
     internal const val LOCK_SCREEN_AOD_TOP_GAP_DP = 17f
     internal const val LOCK_SCREEN_AOD_BOTTOM_GAP_DP = 21f
     internal const val LOCK_SCREEN_AOD_SIDE_MARGIN_EXTRA_DP = 1f
-    internal const val LOCK_SCREEN_AOD_HEIGHT_ANIMATION_MS = 160L
+    // 与歌词切换转场同时长、同曲线，卡片高度和歌词一起落地。
+    internal const val LOCK_SCREEN_AOD_HEIGHT_ANIMATION_MS = AodLyricTransitionPolicy.MOVE_DURATION_MS
     // Hidden PowerManager level that permits frame submission while the display is dozing.
     private const val DRAW_WAKE_LOCK_LEVEL = 0x80
 
@@ -583,6 +584,7 @@ object NotificationMediaAodLyricHooker {
 
     private fun removeOverlay(state: ControllerState) {
         val overlay = state.overlay ?: return
+        runCatching { AodLyricTransition.finish(overlay) }
         overlay.lifetime.dispose()
         // 宿主销毁即释放息屏绘制窗口；正常路径由 1s 超时兜底，这里消除残留窗口。
         if (overlay.drawWakeLock.isHeld) overlay.drawWakeLock.release()

@@ -163,15 +163,11 @@ internal class LyricOverlay(
     var lastHeightDriftKey: String? = null,
     var fullAodActive: Boolean = false,
     var heightAnimator: ValueAnimator? = null,
-    /**
-     * 最近一次真正应用到界面的歌词行，用来判断是否换句（供「歌词滚动」）。
-     * 之后的 [promotionRunning]、[promotionGeneration]、[skipNextPromotion] 是「转场进行中」标记，
-     * 「歌词滚动」的上浮与「灵动圆点」的淡入淡出共用。
-     */
+    /** 最近一次真正应用到界面的歌词行，用来判断是否换句（供「歌词滚动」）。 */
     var appliedLine: IRichLyricLine? = null,
-    var promotionRunning: Boolean = false,
-    var promotionGeneration: Int = 0,
-    var skipNextPromotion: Boolean = false,
+    /** 正在进行的切换转场（「歌词滚动」与「灵动圆点」共用），见 [AodLyricTransition]。 */
+    var transition: AodLyricTransition.Running? = null,
+    var transitionGeneration: Int = 0,
 ) {
     val lifetime = AodOverlayLifetime()
 }
