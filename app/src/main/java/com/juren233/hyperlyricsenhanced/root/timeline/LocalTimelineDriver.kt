@@ -349,18 +349,8 @@ class LocalTimelineDriver(
         runOnMain { acceptSourceClock(position, "seek") }
     }
 
-    /** 源时钟锚点：活动源最近一次上报的（位置, 单调时刻）。 */
-    @Volatile
-    private var sourceAnchorPosition: Long? = null
-
-    @Volatile
-    private var sourceAnchorElapsedMs: Long = 0L
-
-    /** 最近一次真正收到源样本的单调时刻（恢复播放时的重新计时不算）。 */
-    private var sourceSampleAtMs: Long = 0L
-
-    /** 当前这段「源样本持续偏后」从何时开始；0 = 不在偏后连续段内。 */
-    private var sourceBacktrackSinceMs: Long = 0L
+    /** 源时钟锚点与偏后连续段（纯逻辑，见 [SourceClockTracker]）。 */
+    private val sourceClock = SourceClockTracker(SOURCE_CLOCK_TTL_MS)
 
     /** 播放中的显示位置平滑：纠偏调速而不是跳，只有真正的 seek/切换才跳。 */
     private val displayClock = DisplayPositionSmoother()
@@ -376,15 +366,15 @@ class LocalTimelineDriver(
         if (appliedTrackKey == null) return
         val anchored = position.coerceAtLeast(0L)
         val now = SystemClock.elapsedRealtime()
-        val previous = sourceAnchorPosition
-        val projected = projectedSourcePosition(now)
-        val action = SourceClockUpdatePolicy.decide(
+        val result = sourceClock.accept(
+            position = anchored,
             explicitSeek = event == "seek",
-            previousAnchorPosition = sourceAnchorPosition,
-            projectedPosition = projected,
-            incomingPosition = anchored,
-            backtrackStreakMs = sourceBacktrackSinceMs.takeIf { it > 0L }?.let { now - it },
+            nowMs = now,
+            playing = anchor.anchor()?.isPlaying == true,
         )
+        val action = result.action
+        val previous = result.previous
+        val projected = result.projected
         when (action) {
             SourceClockUpdatePolicy.Action.IGNORE_DUPLICATE -> {
                 sourceClockDuplicatesSinceDiag++
@@ -392,23 +382,18 @@ class LocalTimelineDriver(
                 return
             }
             SourceClockUpdatePolicy.Action.IGNORE_BACKTRACK -> {
-                if (sourceBacktrackSinceMs == 0L) sourceBacktrackSinceMs = now
                 sourceClockBacktracksSinceDiag++
                 logSourceClockSummaryIfNeeded(now, action, anchored, projected)
                 return
             }
             SourceClockUpdatePolicy.Action.ANCHOR,
             SourceClockUpdatePolicy.Action.SEEK -> {
-                if (sourceBacktrackSinceMs != 0L && BuildConfig.DEBUG) {
+                if (result.endedBacktrackStreakMs != null && BuildConfig.DEBUG) {
                     diagnostic(
                         "源时钟重新锚定: action=$action, incoming=$anchored, projected=$projected, " +
-                            "backtrackStreakMs=${now - sourceBacktrackSinceMs}"
+                            "backtrackStreakMs=${result.endedBacktrackStreakMs}"
                     )
                 }
-                sourceBacktrackSinceMs = 0L
-                sourceAnchorPosition = anchored
-                sourceAnchorElapsedMs = now
-                sourceSampleAtMs = now
                 if (
                     anchorInactiveSinceMs != null && event == "position" &&
                     previous != null && anchored > previous &&
@@ -470,10 +455,7 @@ class LocalTimelineDriver(
     }
 
     private fun resetSourceClock() {
-        sourceAnchorPosition = null
-        sourceAnchorElapsedMs = 0L
-        sourceSampleAtMs = 0L
-        sourceBacktrackSinceMs = 0L
+        sourceClock.reset()
         sourceProgressWhileAnchorInactiveAtMs = 0L
         sourceClockAcceptedSinceDiag = 0
         sourceClockDuplicatesSinceDiag = 0
@@ -492,7 +474,7 @@ class LocalTimelineDriver(
         if (SourceClockUpdatePolicy.preferSystemAfterSeek(
                 packageName = anchor.currentTrack?.packageName,
                 sourcePosition = sourcePosition,
-                sourceSampleAtMs = sourceSampleAtMs,
+                sourceSampleAtMs = sourceClock.sampleAtMs,
                 systemPosition = systemPosition,
                 systemStateUpdatedAtMs = anchor.anchor()?.stateUpdatedAtMs ?: 0L,
             )
@@ -519,14 +501,11 @@ class LocalTimelineDriver(
         renderSink.onPositionChanged(displayClock.snap(truth, SystemClock.elapsedRealtime()))
     }
 
-    private fun projectedSourcePosition(now: Long): Long? {
-        val src = sourceAnchorPosition ?: return null
-        val age = now - sourceAnchorElapsedMs
-        if (age !in 0..SOURCE_CLOCK_TTL_MS) return null
+    private fun projectedSourcePosition(now: Long): Long? =
         // Session PAUSED/BUFFERING cannot be turned into an advancing clock by a stale
         // source activity hint. Fresh source samples still move the anchor explicitly.
-        return if (anchor.anchor()?.isPlaying == true) src + age else src
-    }
+        sourceClock.projected(now, playing = anchor.anchor()?.isPlaying == true)
+
     override fun onMetadata(title: String?, artist: String?, album: String?, publisher: String?) = Unit
     override fun currentPlaybackState(): Boolean = !stopped && (renderedPlaying ?: anchorPlaying)
 
@@ -636,9 +615,9 @@ class LocalTimelineDriver(
     override fun onPlaybackStateChanged(isPlaying: Boolean) {
         runOnMain {
             if (isPlaying) {
-                if (!anchorPlaying && sourceAnchorPosition != null && sourceAnchorElapsedMs != 0L) {
+                if (!anchorPlaying) {
                     // 暂停期间收到的源样本是冻结值；恢复播放从现在起外推，暂停时长不能算进去。
-                    sourceAnchorElapsedMs = SystemClock.elapsedRealtime()
+                    sourceClock.retimeOnResume(SystemClock.elapsedRealtime())
                 }
                 anchorInactiveSinceMs = null
                 sourceProgressWhileAnchorInactiveAtMs = 0L
@@ -646,7 +625,7 @@ class LocalTimelineDriver(
                 anchorInactiveSinceMs = SystemClock.elapsedRealtime()
                 sourceProgressWhileAnchorInactiveAtMs = 0L
                 // Keep the last source value for duplicate rejection, but stop projecting it.
-                sourceAnchorElapsedMs = 0L
+                sourceClock.stopProjecting()
             }
             anchorPlaying = isPlaying
             if (appliedTrackKey == null) return@runOnMain

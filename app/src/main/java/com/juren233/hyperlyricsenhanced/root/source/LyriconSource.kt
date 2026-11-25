@@ -174,6 +174,9 @@ class LyriconSource : LyricSource {
     @Volatile
     internal var latestSourceSwitchTraceRequest: OnlineSourceSwitchRequest? = null
     internal val applePositionState = ApplePlaybackPositionState()
+
+    /** 兜底歌词期间的中心进度去重（见 [AppleFallbackCentralClock]）；只在中心回调线程读写。 */
+    private val appleFallbackCentralClock = AppleFallbackCentralClock()
     internal val lastAdjustedPosition get() = applePositionState.lastAdjustedPosition
     internal val centralPlaybackPositionWitness = CentralPlaybackPositionWitness()
     internal val localMediaSessionState = AppleLocalMediaSessionState()
@@ -1076,15 +1079,24 @@ private fun createActivePlayerListener(generation: Long): ActivePlayerListener =
             }
         }
         if (centralAppleProviderActive && fallbackSongActive) {
-            logCentralPositionDiagnostic(position, null, "dropped_apple_fallback_active")
+            // 兜底歌词：直连参考已冻结、MediaSession 外推可能超前，不走 resolve，
+            // 只把新读到的中心原始进度交给时间轴（见 AppleFallbackCentralClock）。
+            val forwarded = appleFallbackCentralClock.accept(position, activeProviderDelayMs)
+            if (forwarded == null) {
+                logCentralPositionDiagnostic(position, null, "dropped_apple_fallback_repeat")
+                return@dispatchCentralCallback
+            }
+            maybeCommitPendingOnlineTranslation(forwarded)
+            sink?.onPositionChanged(forwarded)
+            logCentralPositionDiagnostic(position, forwarded, "forwarded_apple_fallback")
             MediaCardDiagnosticLogger.logLazy(
                 stage = "central",
-                event = "position_dropped",
-                reason = "apple_fallback_active",
+                event = "position_forwarded",
                 positionSample = true,
-            ) { "rawPosition=$position" }
+            ) { "rawPosition=$position,forwardedPosition=$forwarded,apple=true,fallback=true,sink=${sink != null}" }
             return@dispatchCentralCallback
         }
+        appleFallbackCentralClock.reset()
         val adjustedPosition = (position - activeProviderDelayMs).coerceAtLeast(0L)
         if (centralAppleProviderActive) {
             val resolution = resolveApplePosition(adjustedPosition, explicitSeek = false)
