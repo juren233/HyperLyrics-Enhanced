@@ -217,30 +217,13 @@ internal fun NotificationMediaAodLyricHooker.applyState(controller: Any, state: 
         return
     }
     val currentLine = LyriconDataBridge.currentLyricLine
-    val oldRows = AodLyricTransition.shownRows(overlay)
-    val newRows = AodLyricTransition.contentRows(content)
-    val styleChangedBeforeApply = overlay.appliedTextStyle != textStyle
-    val transitionKind = if (styleChangedBeforeApply) {
-        AodTransitionKind.NONE
-    } else {
-        AodLyricTransitionPolicy.decide(
-            canAnimate = AodLyricTransition.canAnimate(overlay),
-            lyricScroll = textStyle.lyricScroll,
-            interludeDots = textStyle.interludeDots,
-            wasInterlude = overlay.main.isInterludeIndicator,
-            nowInterlude = content.main.isNotBlank() && AodWordProgress.interludeRange() != null,
-            lineAdvanced = hasLyricLineAdvanced(overlay.appliedLine, currentLine),
-            oldRows = oldRows,
-            newRows = newRows,
-        )
-    }
-    // 转场进行中又有新变化：当前转场直接落到终点，再从终点状态开始下一次。
-    if (transitionKind != AodTransitionKind.NONE || styleChangedBeforeApply ||
-        AodLyricTransitionPolicy.rowsDiffer(oldRows, newRows)
-    ) {
-        AodLyricTransition.finish(overlay)
-    }
-    val pendingTransition = AodLyricTransition.capture(overlay, transitionKind, oldRows, newRows)
+    val pendingTransition = AodLyricRowsApply.prepareTransition(
+        rows = overlay,
+        content = content,
+        style = textStyle,
+        currentLine = currentLine,
+        nowInterlude = AodWordProgress.interludeRange() != null,
+    )
     val contentChanged = overlay.main.text.toString() != content.main ||
         overlay.translation.text.toString() != content.translation ||
         overlay.backing.text.toString() != content.backing ||
@@ -283,40 +266,11 @@ internal fun NotificationMediaAodLyricHooker.applyState(controller: Any, state: 
     NotificationMediaAodLyricHooker.applyLyricRowOrder(overlay, textStyle.swapTranslation)
     NotificationMediaAodLyricHooker.updateLockScreenLineSpacing(overlay)
     overlay.main.setTextColor(api.getTitleText(holder).currentTextColor)
-    val wordSyncPlaying = state.playing && state.aodActive
-    val wordSyncKeepAlive = {
-        overlay.drawWakeLock.acquire(NotificationMediaAodLyricHooker.DRAW_WAKE_LOCK_TIMEOUT_MS)
-    }
-    val wordSync = textStyle.wordSyncEffect
-    overlay.main.bindWordSync(
-        row = "main",
-        text = content.main,
-        // 息屏逐字开着时，逐行歌词也按该行起止时间逐字推进，只看息屏自己的开关。
-        words = if (wordSync) AodWordProgress.mainWords() ?: AodWordProgress.lineSpanWords(content.main) else null,
-        interlude = if (textStyle.interludeDots) AodWordProgress.interludeRange() else null,
-        playing = wordSyncPlaying,
-        keepAlive = wordSyncKeepAlive,
-    )
-    overlay.backing.bindWordSync(
-        row = "backing",
-        text = content.backing,
-        words = if (wordSync) AodWordProgress.backingWords() else null,
-        playing = wordSyncPlaying,
-        keepAlive = wordSyncKeepAlive,
-    )
-    overlay.overlappingMain.bindWordSync(
-        row = "overlappingMain",
-        text = content.overlappingMain,
-        words = if (wordSync) AodWordProgress.overlappingMainWords() else null,
-        playing = wordSyncPlaying,
-        keepAlive = wordSyncKeepAlive,
-    )
-    overlay.overlappingBacking.bindWordSync(
-        row = "overlappingBacking",
-        text = content.overlappingBacking,
-        words = if (wordSync) AodWordProgress.overlappingBackingWords() else null,
-        playing = wordSyncPlaying,
-        keepAlive = wordSyncKeepAlive,
+    AodLyricRowsApply.bindWordSync(
+        rows = overlay,
+        content = content,
+        words = AodLyricRowsApply.currentWords(textStyle, content.main),
+        playing = state.playing && state.aodActive,
     )
     overlay.backing.setTextColor(api.getTitleText(holder).currentTextColor)
     overlay.overlappingMain.setTextColor(api.getTitleText(holder).currentTextColor)

@@ -10,7 +10,7 @@ import com.juren233.hyperlyricsenhanced.lyric.view.NextLinePromotionMotion
 import kotlin.math.PI
 import kotlin.math.cos
 
-/** 锁屏 AOD 一次内容变化用哪种转场。 */
+/** 息屏歌词（锁屏 AOD 与自定义 AOD）一次内容变化用哪种转场。 */
 internal enum class AodTransitionKind {
     /** 直接替换，不做动画。 */
     NONE,
@@ -66,7 +66,7 @@ internal enum class AodRowExit {
 internal data class AodRowPlan(val enter: AodRowEnter, val exit: AodRowExit)
 
 /**
- * 锁屏 AOD 转场的判定与数值，全部是纯函数。动作时长与位移系数与超级岛的「下一句上浮」同源
+ * 息屏歌词转场的判定与数值，全部是纯函数。动作时长与位移系数与超级岛的「下一句上浮」同源
  * （[NextLinePromotionMotion]），所有行同时开始、同时结束。
  */
 internal object AodLyricTransitionPolicy {

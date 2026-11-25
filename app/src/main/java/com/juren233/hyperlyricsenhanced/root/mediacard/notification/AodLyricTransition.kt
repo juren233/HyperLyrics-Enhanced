@@ -23,10 +23,10 @@ import android.widget.TextView
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 
 /**
- * 锁屏 AOD 歌词的切换转场（「歌词滚动」与「灵动圆点」共用）。
+ * 息屏歌词的切换转场（「歌词滚动」与「灵动圆点」共用），锁屏 AOD 与自定义 AOD 共用（见 [AodLyricRows]）。
  *
  * 做法是「先排版、再倒推」：新内容立即应用到真实控件并完成排版，再让每一行从旧位置/旧字号
- * 动到新位置；旧内容先拍成快照放在媒体卡片的 overlay 上，由快照完成上浮或淡出。因此：
+ * 动到新位置；旧内容先拍成快照放在宿主（锁屏为媒体卡片，自定义 AOD 为时钟容器）的 overlay 上，由快照完成上浮或淡出。因此：
  * - 落地帧就是真实排版，长句换行不会在落地时跳一下；
  * - 新主行一开始就绑定逐字进度，上浮途中就在扫；
  * - 转场进行中又来新内容时，当前转场直接跳到终点，再从终点状态开始下一次，不排队等。
@@ -65,7 +65,7 @@ internal object AodLyricTransition {
         internal val layerTypes = HashMap<View, Int>()
     }
 
-    fun viewOf(overlay: LyricOverlay, row: AodLyricRow): TextView = when (row) {
+    fun viewOf(overlay: AodLyricRows, row: AodLyricRow): TextView = when (row) {
         AodLyricRow.MAIN -> overlay.main
         AodLyricRow.TRANSLATION -> overlay.translation
         AodLyricRow.BACKING -> overlay.backing
@@ -78,7 +78,7 @@ internal object AodLyricTransition {
     }
 
     /** 当前界面上各行显示的文本（隐藏的行为空）。 */
-    fun shownRows(overlay: LyricOverlay): Map<AodLyricRow, String> =
+    fun shownRows(overlay: AodLyricRows): Map<AodLyricRow, String> =
         AodLyricRow.entries.associateWith { row ->
             val view = viewOf(overlay, row)
             if (view.visibility == View.VISIBLE) view.text.toString() else ""
@@ -97,14 +97,14 @@ internal object AodLyricTransition {
         AodLyricRow.NEXT to content.next,
     ).mapValues { (_, text) -> if (text.isBlank()) "" else text }
 
-    fun canAnimate(overlay: LyricOverlay): Boolean =
-        overlay.lifetime.allowsUpdates && overlay.root.isAttachedToWindow &&
+    fun canAnimate(overlay: AodLyricRows): Boolean =
+        overlay.transitionAllowed && overlay.root.isAttachedToWindow &&
             overlay.root.visibility == View.VISIBLE && overlay.root.isShown &&
             overlay.root.width > 0 && overlay.root.height > 0
 
     /** 在应用新内容之前调用：给要离开的行拍快照、记下旧位置。[kind] 为 NONE 时返回 null。 */
     fun capture(
-        overlay: LyricOverlay,
+        overlay: AodLyricRows,
         kind: AodTransitionKind,
         oldRows: Map<AodLyricRow, String>,
         newRows: Map<AodLyricRow, String>,
@@ -151,14 +151,14 @@ internal object AodLyricTransition {
                 oldNextTextSize = next.textSize,
             )
         }.onFailure {
-            HookLogger.e(TAG, "锁屏 AOD 转场拍快照失败，改为直接替换", it)
+            HookLogger.e(TAG, "息屏歌词转场拍快照失败，改为直接替换", it)
         }.getOrNull()
     }
 
     /** 在新内容应用之后调用：等下一次排版完成后从旧状态倒推开始动画。 */
-    fun begin(overlay: LyricOverlay, pending: Pending, mainAlignment: AodLyricAlignment) {
+    fun begin(overlay: AodLyricRows, pending: Pending, mainAlignment: AodLyricAlignment) {
         finish(overlay)
-        val host = overlay.player
+        val host = overlay.transitionHost
         val generation = ++overlay.transitionGeneration
         val layer = GhostLayer(pending.ghosts.values.toList())
         val running = Running(generation, layer, host)
@@ -168,10 +168,11 @@ internal object AodLyricTransition {
         val (rootLeft, rootTop) = offsetIn(overlay.root, host)
         layer.originX = rootLeft.toFloat()
         layer.originY = rootTop.toFloat()
-        layer.clipTop = rootTop.toFloat()
+        layer.clipTop = (rootTop + overlay.ghostClipTopInRoot()).toFloat()
         layer.setBounds(0, 0, host.width, maxOf(host.height, rootTop + overlay.root.height * 2))
         host.overlay.add(layer)
         overlay.root.clipChildren = false
+        overlay.onTransitionStart()
 
         // 新内容在排版完成前不能露出：先把要「进入」的行藏起来。
         pending.plans.forEach { (row, plan) ->
@@ -194,7 +195,7 @@ internal object AodLyricTransition {
                 if (overlay.transition !== running) return true
                 runCatching { startAnimation(overlay, running, pending, mainAlignment) }
                     .onFailure {
-                        HookLogger.e(TAG, "锁屏 AOD 转场启动失败，直接落地", it)
+                        HookLogger.e(TAG, "息屏歌词转场启动失败，直接落地", it)
                         finish(overlay)
                     }
                 return true
@@ -211,7 +212,7 @@ internal object AodLyricTransition {
     }
 
     private fun startAnimation(
-        overlay: LyricOverlay,
+        overlay: AodLyricRows,
         running: Running,
         pending: Pending,
         mainAlignment: AodLyricAlignment,
@@ -333,7 +334,7 @@ internal object AodLyricTransition {
      * 立即结束转场并落到终点：所有行回到静止值，快照移除。没有转场时什么也不做。
      * 复位的唯一入口：先停动画再写回静止值，避免残余帧把中间值写回。
      */
-    fun finish(overlay: LyricOverlay) {
+    fun finish(overlay: AodLyricRows) {
         val running = overlay.transition ?: return
         overlay.transition = null
         running.preDraw?.let { listener ->
@@ -359,6 +360,7 @@ internal object AodLyricTransition {
         // 快照不主动 recycle：渲染线程可能仍持有上一帧的绘制记录，交给 GC 回收。
         running.host.overlay.remove(running.layer)
         overlay.root.clipChildren = true
+        overlay.onTransitionFinish()
         overlay.root.invalidate()
     }
 

@@ -134,17 +134,60 @@ internal class BackgroundConstraints private constructor(
     }
 }
 
+/**
+ * 一组息屏歌词行：锁屏 AOD（媒体卡片里）与自定义 AOD（时钟下方）各有一组，
+ * 切句转场 [AodLyricTransition] 与逐字绑定只认这组行，两边共用同一套效果代码。
+ */
+internal interface AodLyricRows {
+    val root: LinearLayout
+    val main: AodWordSyncTextView
+    val translation: TextView
+    val backing: AodWordSyncTextView
+    val backingTranslation: TextView
+    val overlappingMain: AodWordSyncTextView
+    val overlappingTranslation: TextView
+    val overlappingBacking: AodWordSyncTextView
+    val overlappingBackingTranslation: TextView
+    val next: TextView
+    val drawWakeLock: PowerManager.WakeLock
+
+    /** 最近一次应用的显示设置；设置变化的那次直接替换，不做转场。 */
+    var appliedTextStyle: AodTextStyleConfig?
+
+    /** 最近一次真正应用到界面的歌词行，用来判断是否换句（供「歌词滚动」）。 */
+    var appliedLine: IRichLyricLine?
+
+    /** 正在进行的切换转场（「歌词滚动」与「灵动圆点」共用），见 [AodLyricTransition]。 */
+    var transition: AodLyricTransition.Running?
+    var transitionGeneration: Int
+
+    /** 旧内容快照画在它的 overlay 上。 */
+    val transitionHost: ViewGroup
+
+    /** 覆盖层仍在使用中（未被拆除），可以开始转场。 */
+    val transitionAllowed: Boolean
+
+    /** 旧内容快照的上沿裁切线，相对 [root] 顶部：上浮退出的旧句到这里为止，不压到上方的内容。 */
+    fun ghostClipTopInRoot(): Int = 0
+
+    /** 转场开始：行会被平移到自身排版位置之外，宿主需要暂时放开裁切。 */
+    fun onTransitionStart() = Unit
+
+    /** 转场结束（含提前结束）：恢复 [onTransitionStart] 改过的状态。 */
+    fun onTransitionFinish() = Unit
+}
+
 internal class LyricOverlay(
-    val root: LinearLayout,
-    val main: AodWordSyncTextView,
-    val translation: TextView,
-    val backing: AodWordSyncTextView,
-    val backingTranslation: TextView,
-    val overlappingMain: AodWordSyncTextView,
-    val overlappingTranslation: TextView,
-    val overlappingBacking: AodWordSyncTextView,
-    val overlappingBackingTranslation: TextView,
-    val next: TextView,
+    override val root: LinearLayout,
+    override val main: AodWordSyncTextView,
+    override val translation: TextView,
+    override val backing: AodWordSyncTextView,
+    override val backingTranslation: TextView,
+    override val overlappingMain: AodWordSyncTextView,
+    override val overlappingTranslation: TextView,
+    override val overlappingBacking: AodWordSyncTextView,
+    override val overlappingBackingTranslation: TextView,
+    override val next: TextView,
     val artist: View,
     val album: View,
     val player: ViewGroup,
@@ -152,9 +195,9 @@ internal class LyricOverlay(
     val backgroundSize: ViewSizeSnapshot,
     val backgroundConstraints: BackgroundConstraints?,
     val headerHeightController: MediaHeaderHeightController?,
-    val drawWakeLock: PowerManager.WakeLock,
+    override val drawWakeLock: PowerManager.WakeLock,
     var appliedCardHeight: Int? = null,
-    var appliedTextStyle: AodTextStyleConfig? = null,
+    override var appliedTextStyle: AodTextStyleConfig? = null,
     var appliedMainAlignment: AodLyricAlignment? = null,
     var appliedBackingAlignment: AodLyricAlignment? = null,
     var appliedOverlappingAlignment: AodLyricAlignment? = null,
@@ -163,13 +206,15 @@ internal class LyricOverlay(
     var lastHeightDriftKey: String? = null,
     var fullAodActive: Boolean = false,
     var heightAnimator: ValueAnimator? = null,
-    /** 最近一次真正应用到界面的歌词行，用来判断是否换句（供「歌词滚动」）。 */
-    var appliedLine: IRichLyricLine? = null,
-    /** 正在进行的切换转场（「歌词滚动」与「灵动圆点」共用），见 [AodLyricTransition]。 */
-    var transition: AodLyricTransition.Running? = null,
-    var transitionGeneration: Int = 0,
-) {
+    override var appliedLine: IRichLyricLine? = null,
+    override var transition: AodLyricTransition.Running? = null,
+    override var transitionGeneration: Int = 0,
+) : AodLyricRows {
     val lifetime = AodOverlayLifetime()
+
+    override val transitionHost: ViewGroup get() = player
+
+    override val transitionAllowed: Boolean get() = lifetime.allowsUpdates
 }
 
 internal class MediaHeaderHeightController private constructor(
