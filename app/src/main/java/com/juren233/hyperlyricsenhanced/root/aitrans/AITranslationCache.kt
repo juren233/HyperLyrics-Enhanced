@@ -16,16 +16,46 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.util.Collections
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
-/** Memory + SQLite cache for completed song-level AI translations. */
+/**
+ * Memory + SQLite cache for completed song-level AI translations.
+ *
+ * A failed read or write never sticks: every call asks [SQLiteOpenHelper] for the database again,
+ * which reopens it if it was closed (SQLite closes and deletes a corrupt file itself), and a failed
+ * statement leaves the connection usable. So once storage is freed the next call works again
+ * without restarting System UI. After a failure, the first read that works again logs
+ * [READ_RECOVERED_MESSAGE] and the first write (or clear) that works again logs
+ * [WRITE_RECOVERED_MESSAGE], so log analysis can tell the failure is over. Reads and writes are
+ * tracked apart: with a full disk reads still work while every write fails.
+ * Opening the database is inside the same guard: a cache that can't open only loses caching, never
+ * the translation itself.
+ */
 internal class AITranslationCache(
     private val maxCacheSize: Int,
     private val generation: AtomicInteger,
-    private val scope: CoroutineScope
+    private val scope: CoroutineScope,
+    private val recoveredLog: (String) -> Unit = { HookLogger.i(TAG, it) },
 ) {
-    private companion object {
+    internal companion object {
         const val TAG = "AITranslationCache"
+        /** i 级，正式版也写：读取失败过之后第一次读成功时写一条。 */
+        const val READ_RECOVERED_MESSAGE = "翻译缓存读取已恢复"
+        /** i 级，正式版也写：写入或清空失败过之后第一次写成功时写一条。 */
+        const val WRITE_RECOVERED_MESSAGE = "翻译缓存写入已恢复"
+    }
+
+    private val readFailing = AtomicBoolean(false)
+    private val writeFailing = AtomicBoolean(false)
+
+    private fun onReadResult(ok: Boolean) = onResult(readFailing, ok, READ_RECOVERED_MESSAGE)
+
+    private fun onWriteResult(ok: Boolean) = onResult(writeFailing, ok, WRITE_RECOVERED_MESSAGE)
+
+    private fun onResult(failing: AtomicBoolean, ok: Boolean, recovered: String) {
+        if (!ok) failing.set(true)
+        else if (failing.compareAndSet(true, false)) recoveredLog(recovered)
     }
 
     private val dbMutex = Mutex()
@@ -69,9 +99,9 @@ internal class AITranslationCache(
     }
 
     private fun readFromDb(key: String): List<TranslationItem>? {
-        val db = dbHelper?.readableDatabase ?: return null
+        val helper = dbHelper ?: return null
         return runCatching {
-            db.query(
+            helper.readableDatabase.query(
                 DatabaseHelper.TABLE_NAME,
                 arrayOf(DatabaseHelper.COLUMN_DATA),
                 "${DatabaseHelper.COLUMN_ID} = ?",
@@ -83,8 +113,9 @@ internal class AITranslationCache(
                         cursor.getString(cursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_DATA))
                     json.decodeFromString<List<TranslationItem>>(jsonData)
                 } else null
-            }
+            }.also { onReadResult(ok = true) }
         }.getOrElse {
+            onReadResult(ok = false)
             HookLogger.e(TAG, "查询翻译缓存失败", it)
             null
         }
@@ -98,20 +129,25 @@ internal class AITranslationCache(
     }
 
     private fun writeToDb(key: String, jsonData: String) {
-        val db = dbHelper?.writableDatabase ?: return
+        val helper = dbHelper ?: return
         runCatching {
             val values = ContentValues().apply {
                 put(DatabaseHelper.COLUMN_ID, key)
                 put(DatabaseHelper.COLUMN_DATA, jsonData)
                 put(DatabaseHelper.COLUMN_TIMESTAMP, System.currentTimeMillis())
             }
-            db.insertWithOnConflict(
+            val rowId = helper.writableDatabase.insertWithOnConflict(
                 DatabaseHelper.TABLE_NAME,
                 null,
                 values,
                 SQLiteDatabase.CONFLICT_REPLACE
             )
+            // SQLite errors throw; -1 would mean the row was not written at all, so count it as a failure too.
+            check(rowId != -1L) { "insertWithOnConflict returned -1" }
+        }.onSuccess {
+            onWriteResult(ok = true)
         }.onFailure {
+            onWriteResult(ok = false)
             HookLogger.e(TAG, "写入翻译缓存失败", it)
         }
     }
@@ -125,7 +161,10 @@ internal class AITranslationCache(
                     runCatching {
                         dbHelper?.writableDatabase?.delete(DatabaseHelper.TABLE_NAME, null, null)
                         HookLogger.d(TAG, "翻译缓存数据库已清空")
+                    }.onSuccess {
+                        onWriteResult(ok = true)
                     }.onFailure {
+                        onWriteResult(ok = false)
                         HookLogger.e(TAG, "清空翻译缓存数据库失败", it)
                     }.isSuccess
                 }
