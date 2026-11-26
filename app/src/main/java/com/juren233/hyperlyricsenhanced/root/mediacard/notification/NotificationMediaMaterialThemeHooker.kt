@@ -40,7 +40,7 @@ internal object NotificationMediaMaterialThemeHooker {
 
     private val hookedClassLoaders = Collections.newSetFromMap(WeakHashMap<ClassLoader, Boolean>())
 
-    /** Media header view -> material applied through which method with which base context. */
+    /** Media header view -> material applied by which effect, through which method, with which base context. */
     private val appliedViews = Collections.synchronizedMap(WeakHashMap<Any, AppliedMaterial>())
 
     /**
@@ -52,7 +52,11 @@ internal object NotificationMediaMaterialThemeHooker {
         Collections.newSetFromMap(IdentityHashMap<Any, Boolean>())
     }
 
-    private class AppliedMaterial(val method: Method, val baseContext: Context)
+    /**
+     * apply 是效果对象上的实例方法：效果对象是接收者，view 是第一个参数。
+     * 重放必须用同一个效果对象当接收者，不能把 view 当接收者。静态实现时 effect 为 null。
+     */
+    internal class AppliedMaterial(val effect: Any?, val method: Method, val baseContext: Context)
 
     fun install(xposedModule: XposedInterface, classLoader: ClassLoader, themeProvider: () -> Int) {
         if (!hookedClassLoaders.add(classLoader)) return
@@ -99,7 +103,7 @@ internal object NotificationMediaMaterialThemeHooker {
         if (entries.isEmpty()) return
         for ((view, applied) in entries) {
             runCatching {
-                applied.method.invoke(view, applied.baseContext)
+                applied.method.invoke(applied.effect, view, applied.baseContext)
             }.onFailure { error ->
                 HookLogger.w(
                     TAG,
@@ -123,23 +127,35 @@ internal object NotificationMediaMaterialThemeHooker {
         return context.createConfigurationContext(configuration)
     }
 
-    private class EffectApplyHook(
+    internal class EffectApplyHook(
         private val applyMethod: Method,
         private val themeProvider: () -> Int,
+        private val glassWriter: NotificationMediaGlassTheme.GlassWriter? = null,
     ) : Hooker {
         override fun intercept(chain: Chain): Any? {
             if (SystemUiHookLifetime.retired) return chain.proceed()
+            val effect = chain.thisObject
             val view = chain.getArg(0) ?: return chain.proceed()
             val context = chain.getArg(1) as? Context ?: return chain.proceed()
             val inFlight = inFlightViews.get()
             if (!inFlight.add(view)) return chain.proceed()
             try {
-                appliedViews[view] = AppliedMaterial(applyMethod, context)
+                appliedViews[view] = AppliedMaterial(effect, applyMethod, context)
                 val theme = themeProvider()
                 if (theme == RootConstants.MEDIA_CARD_THEME_FOLLOW_SYSTEM) {
                     return chain.proceed()
                 }
-                return chain.proceed(arrayOf(view, overrideNightMode(context, theme)))
+                val result = chain.proceed(arrayOf(view, overrideNightMode(context, theme)))
+                // 柔光玻璃的玻璃参数是写死的，不随 context 变化，需要在系统 apply 之后补写。
+                runCatching {
+                    NotificationMediaGlassTheme.applyAfterSystem(effect, view, theme, glassWriter)
+                }.onFailure { error ->
+                    HookLogger.w(
+                        TAG,
+                        "补写柔光玻璃主题参数失败: effect=${effect?.javaClass?.name} reason=${error.message}",
+                    )
+                }
+                return result
             } finally {
                 inFlight.remove(view)
             }
