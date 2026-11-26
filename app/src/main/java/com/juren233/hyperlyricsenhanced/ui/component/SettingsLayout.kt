@@ -12,6 +12,7 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -19,8 +20,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.runtime.key
+import androidx.compose.runtime.remember
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.text.style.TextOverflow
 import top.yukonga.miuix.kmp.utils.PressFeedbackType
 import androidx.compose.foundation.layout.Row
@@ -37,10 +42,18 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.PathParser
+import androidx.compose.ui.graphics.vector.VectorGroup
+import androidx.compose.ui.graphics.vector.VectorPath
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.graphics.vector.PathBuilder
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.unit.Constraints
+import android.icu.text.BreakIterator
+import java.util.Locale
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import top.yukonga.miuix.kmp.basic.Card
@@ -127,18 +140,20 @@ private fun miuixStrokeGlyph(name: String, strokePath: PathBuilder.() -> Unit, d
 object StatusGlyphs {
     val Warning: ImageVector by lazy {
         miuixStrokeGlyph("StatusWarning", {
-            // 三角形顶点 (12,3)、(22,20.5)、(2,20.5)，三个角各以 2 个单位圆角过渡。
-            moveTo(12.99f, 4.74f)
-            lineTo(21.01f, 18.76f)
-            quadTo(22f, 20.5f, 20f, 20.5f)
-            lineTo(4f, 20.5f)
-            quadTo(2f, 20.5f, 2.99f, 18.76f)
-            lineTo(11.01f, 4.74f)
-            quadTo(12f, 3f, 12.99f, 4.74f)
+            // 三角形顶点 (12,3)、(22,20.5)、(2,20.5)，三个角各从顶点沿两条边退 4 个单位、以二次曲线圆过去，
+            // 与日志分析小图标的圆润三角形同一圆角比例（约为边长的五分之一）。
+            moveTo(13.984f, 6.472f)
+            lineTo(20.016f, 17.028f)
+            quadTo(22f, 20.5f, 18f, 20.5f)
+            lineTo(6f, 20.5f)
+            quadTo(2f, 20.5f, 3.984f, 17.028f)
+            lineTo(10.016f, 6.472f)
+            quadTo(12f, 3f, 13.984f, 6.472f)
             close()
-            moveTo(12f, 9.5f)
-            lineTo(12f, 13.8f)
-        }, dotY = 17f)
+            // 感叹号居中：圆点底部到底边内侧、竖线顶端到两条斜边内侧，留白都约 1.9 个单位。
+            moveTo(12f, 9.3f)
+            lineTo(12f, 13.6f)
+        }, dotY = 16.8f)
     }
 
     val Error: ImageVector by lazy {
@@ -153,7 +168,10 @@ object StatusGlyphs {
     }
 }
 
-/** 信息提示卡片：浅色底 + 图标 + 文字。[emphasized] 时文字加大加粗，与 [WarningNoticeCard] 同字号。 */
+/**
+ * 信息提示卡片：浅色底 + 图标 + 文字。[emphasized] 时文字加大加粗，与 [WarningNoticeCard] 同字号。
+ * 配色与大磁贴、主页头卡同一套主题色（[HeroTone.Accent]）：底色取浅色底，图标与文字都用该色调的文字色。
+ */
 @Composable
 fun NoticeCard(
     text: String,
@@ -161,8 +179,17 @@ fun NoticeCard(
     modifier: Modifier = Modifier,
     emphasized: Boolean = false,
 ) {
-    val colors = MiuixTheme.colorScheme
-    NoticeCardLayout(text, icon, colors.tertiaryContainer, colors.onTertiaryContainer, colors.onSurface, emphasized, modifier)
+    val colors = noticeCardColors()
+    NoticeCardLayout(text, icon, colors.container, colors.icon, colors.text, emphasized, modifier)
+}
+
+/** [NoticeCard] 的三种颜色：底色、图标色、文字色。 */
+internal data class NoticeCardColors(val container: Color, val icon: Color, val text: Color)
+
+@Composable
+internal fun noticeCardColors(): NoticeCardColors {
+    val palette = heroPalette(HeroTone.Accent)
+    return NoticeCardColors(container = palette.container, icon = palette.content, text = palette.content)
 }
 
 /**
@@ -233,6 +260,11 @@ enum class HeroTone { Accent, Success, Warning, Error }
 /** 头卡最小高度。 */
 private val HeroMinHeight = 124.dp
 
+/** 右下角装饰图标相对卡片最小高度的比例：124dp 高时图标 124dp、向右下偏出 22dp / 26dp。 */
+private const val HeroDecorationScale = 1f
+private const val HeroDecorationOffsetX = 22f / 124f
+private const val HeroDecorationOffsetY = 26f / 124f
+
 private val HeroSuccessHue = Color(0xFF2DB55D)
 private val HeroWarningHue = Color(0xFFF2A516)
 private val HeroErrorHue = Color(0xFFE5484D)
@@ -242,7 +274,12 @@ internal class TonalPalette(
     val content: Color,
     val secondary: Color,
     val decoration: Color,
+    /** 状态小图标里符号（感叹号、勾）的颜色：浅色下比 [content] 浅一档，深色下与 [content] 相同。 */
+    val glyphInk: Color = content,
 )
+
+/** 浅色下状态图标符号向黑色混入的比例：文字色用 0.45，符号用 0.30 浅一档，在图标的浅色底上对比度仍不低于 3:1。 */
+internal const val GlyphInkLightDarken = 0.30f
 
 /**
  * 浅色底配色，头卡与已开启的磁贴共用：底色由 [hue] 以低透明度叠在卡片底色上得到，
@@ -259,11 +296,12 @@ private fun tonalPalette(hue: Color): TonalPalette {
         content = content,
         secondary = content.copy(alpha = 0.75f),
         decoration = hue.copy(alpha = if (dark) 0.24f else 0.3f),
+        glyphInk = if (dark) content else lerp(hue, Color.Black, GlyphInkLightDarken),
     )
 }
 
 @Composable
-private fun heroPalette(tone: HeroTone): TonalPalette = tonalPalette(
+internal fun heroPalette(tone: HeroTone): TonalPalette = tonalPalette(
     when (tone) {
         HeroTone.Accent -> MiuixTheme.colorScheme.primary
         HeroTone.Success -> HeroSuccessHue
@@ -335,6 +373,7 @@ internal fun animatedHeroPalette(tone: HeroTone): TonalPalette {
         content = blendColors(palettes.map { it.content }, weights),
         secondary = blendColors(palettes.map { it.secondary }, weights),
         decoration = blendColors(palettes.map { it.decoration }, weights),
+        glyphInk = blendColors(palettes.map { it.glyphInk }, weights),
     )
 }
 
@@ -368,12 +407,23 @@ fun HeroCard(
     tone: HeroTone = HeroTone.Accent,
     notes: List<String> = emptyList(),
     onClick: (() -> Unit)? = null,
+    /** 卡片最小高度；右下角装饰图标按同一比例随之缩放（默认即 Apple Music 体验优化页的头卡）。 */
+    minHeight: Dp = HeroMinHeight,
+    /** 装饰图标再按此比例缩小：矮卡片上图标若按高度原样缩放，会顶到右上角的箭头。 */
+    decorationScale: Float = 1f,
 ) {
     val palette = animatedHeroPalette(tone)
     val container = palette.container
     val content = palette.content
     val secondary = palette.secondary
     val decoration = palette.decoration
+    val decorationSize = minHeight * decorationScale * HeroDecorationScale
+    val decorationOffsetX = minHeight * decorationScale * HeroDecorationOffsetX
+    val iconLeftFraction = remember(decorationIcon) { decorationIcon.visibleLeftFraction() }
+    // 和图标同一高度的文字行在右边多让出这么多，换行落在图标左边，不压到图标上。
+    val avoidIcon = Modifier.padding(
+        end = heroTextEndInset(decorationSize, decorationOffsetX, iconLeftFraction) - HeroTextHorizontalPadding,
+    )
     Card(
         modifier = modifier,
         colors = CardDefaults.defaultColors(color = container, contentColor = content),
@@ -381,22 +431,25 @@ fun HeroCard(
         showIndication = onClick != null,
         onClick = onClick,
     ) {
-        Box(modifier = Modifier.fillMaxWidth().heightIn(min = HeroMinHeight)) {
+        Box(modifier = Modifier.fillMaxWidth().heightIn(min = minHeight)) {
             Crossfade(
                 targetState = decorationIcon,
                 animationSpec = stateChangeTween(),
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .offset(x = 22.dp, y = 26.dp)
-                    .size(124.dp),
+                    .offset(
+                        x = decorationOffsetX,
+                        y = minHeight * decorationScale * HeroDecorationOffsetY,
+                    )
+                    .size(decorationSize),
                 label = "heroDecorationIcon",
             ) { icon ->
                 Icon(icon, contentDescription = null, tint = decoration, modifier = Modifier.fillMaxSize())
             }
             Column(
                 modifier = Modifier
-                    .heightIn(min = HeroMinHeight)
-                    .padding(horizontal = 18.dp, vertical = 16.dp),
+                    .heightIn(min = minHeight)
+                    .padding(horizontal = HeroTextHorizontalPadding, vertical = 16.dp),
             ) {
                 // 可点击时箭头放在卡片右上角，跟第一行文字（有 overline 时是 overline，否则是标题）同排居中。
                 if (overline != null) {
@@ -416,16 +469,18 @@ fun HeroCard(
                         fontSize = 24.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = content,
-                        modifier = textModifier,
+                        // 有小字时大标题在第二行，和图标同高，也要让开；没有小字时它是带箭头的第一行，不动。
+                        modifier = if (overline != null) textModifier.then(avoidIcon) else textModifier,
                     )
                 }
                 if (subtitle != null) {
                     Spacer(Modifier.height(4.dp))
-                    Text(
+                    HeroBodyText(
                         text = subtitle,
                         fontSize = 14.sp,
                         lineHeight = 19.sp,
                         color = secondary,
+                        modifier = avoidIcon,
                     )
                 }
                 if (notes.isNotEmpty()) {
@@ -435,12 +490,13 @@ fun HeroCard(
                 }
                 notes.forEachIndexed { index, note ->
                     if (index > 0) Spacer(Modifier.height(4.dp))
-                    Text(
+                    HeroBodyText(
                         text = note,
                         fontSize = 12.sp,
                         lineHeight = 16.sp,
                         fontWeight = FontWeight.Medium,
                         color = content,
+                        modifier = avoidIcon,
                     )
                 }
             }
@@ -467,9 +523,271 @@ private fun HeroFirstLine(
             tint = arrowTint,
             modifier = Modifier
                 .padding(start = 8.dp)
-                .size(18.dp),
+                // 让出空白要放在定尺寸之前：放在之后会被 18dp 的固定约束撑回原宽并居中，只挪一半。
+                .trimTrailingSpace(HeroArrowSize * HeroArrowTrailingSpaceFraction)
+                .size(HeroArrowSize),
         )
     }
+}
+
+private val HeroArrowSize = 18.dp
+
+/**
+ * ChevronForward 字形在自己的视口里左右各留约 27% 的空白（Regular 档字形横跨 325.6–881.6 / 1207.2），
+ * 按 18dp 画时右边约 4.85dp 是空的，字形右缘就落在离卡片右边约 22.85dp 处，比左边从 18dp 起的文字往里缩了一截。
+ * 这里按矢量路径的真实右缘算出这段空白占图标宽度的比例，头卡布局时把它让出去，字形右缘正好落在内边距线上。
+ */
+internal val HeroArrowTrailingSpaceFraction: Float by lazy { MiuixIcons.ChevronForward.trailingSpaceFraction() }
+
+/** 矢量图标里所有路径的最右边到视口右边的空白，占视口宽度的比例（只看路径本身，不含分组的横向变换）。 */
+internal fun ImageVector.trailingSpaceFraction(): Float {
+    var right = 0f
+    fun visit(group: VectorGroup) {
+        for (node in group) when (node) {
+            is VectorPath -> right = maxOf(right, PathParser().addPathNodes(node.pathData).toPath().getBounds().right)
+            is VectorGroup -> visit(node)
+        }
+    }
+    visit(root)
+    return ((viewportWidth - right) / viewportWidth).coerceIn(0f, 1f)
+}
+
+/**
+ * 矢量图标真正画到的左缘，占视口宽度的比例：所有路径外接框的最左边，描边路径再减去半个线宽。
+ * 外接框含曲线控制点，算出来只会偏左（让得更多），不会让文字压上去；带变换的分组无法直接算，保守地按 0 算。
+ */
+internal fun ImageVector.visibleLeftFraction(): Float {
+    var left = Float.MAX_VALUE
+    fun visit(group: VectorGroup) {
+        for (node in group) when (node) {
+            is VectorPath -> {
+                val bounds = PathParser().addPathNodes(node.pathData).toPath().getBounds()
+                if (!bounds.isEmpty) {
+                    val half = if (node.stroke != null) node.strokeLineWidth / 2f else 0f
+                    left = minOf(left, bounds.left - half)
+                }
+            }
+            is VectorGroup -> {
+                val transformed = node.rotation != 0f || node.scaleX != 1f || node.scaleY != 1f ||
+                    node.translationX != 0f || node.translationY != 0f
+                if (transformed) left = 0f else visit(node)
+            }
+        }
+    }
+    visit(root)
+    if (left == Float.MAX_VALUE) return 0f
+    return (left / viewportWidth).coerceIn(0f, 1f)
+}
+
+/**
+ * 头卡里和右下角装饰图标同一高度的文字（第二行起的标题、副标题、附加提示）右侧要让出的宽度，从卡片右边算起：
+ * 图标格子左缘到卡片右边是「格子边长 − 向右偏出量」，再往里退图标自身左边的留白，就是图标真正画到的左缘；
+ * 文字右缘再离它 [HeroTextIconGap]。不小于卡片原本的右内边距。
+ */
+internal fun heroTextEndInset(decorationSize: Dp, offsetX: Dp, visibleLeftFraction: Float): Dp =
+    maxOf(HeroTextHorizontalPadding, decorationSize - offsetX - decorationSize * visibleLeftFraction + HeroTextIconGap)
+
+/**
+ * 头卡的说明文字（副标题、附加提示）：中文按标点断行，不把一个词拆到两行。
+ * 先用同一套字号量好每一行，把换行符插进文字里再交给 [Text]，所以 [Text] 自己不会再折行。
+ */
+@Composable
+private fun HeroBodyText(
+    text: String,
+    fontSize: TextUnit,
+    lineHeight: TextUnit,
+    color: Color,
+    modifier: Modifier = Modifier,
+    fontWeight: FontWeight? = null,
+) {
+    // 与 miuix Text 的默认样式合并方式一致，量出来的宽度才和最终排版一样。
+    val style = MiuixTheme.textStyles.main.merge(fontSize = fontSize, lineHeight = lineHeight, fontWeight = fontWeight)
+    val measurer = rememberTextMeasurer()
+    BoxWithConstraints(modifier) {
+        val maxWidth = constraints.maxWidth
+        val broken = remember(text, style, maxWidth) {
+            if (maxWidth == Constraints.Infinity) {
+                text
+            } else {
+                heroLineBreaks(text, maxWidth.toFloat()) { line ->
+                    measurer.measure(line, style, softWrap = false, maxLines = 1).size.width.toFloat()
+                }
+            }
+        }
+        Text(text = broken, style = style, color = color)
+    }
+}
+
+/** 可以在其后断行的标点：中文全角标点在任何位置都可以；英文标点只有后面跟空格时才算（「8.5.0」里的点不算）。 */
+private const val HeroCjkBreakPunctuation = "，。、；：！？）」』…"
+private const val HeroLatinBreakPunctuation = ",.;:!?)"
+
+/** 不能放在行首的字符：跟着前一个字走。 */
+private const val HeroNoLineStart = "，。、；：！？）」』…·,.;:!?)%"
+
+private fun isHeroCjk(c: Char) = c in '\u4E00'..'\u9FFF' || c in '\u3400'..'\u4DBF' || c in '\u3000'..'\u303F' || c in '\uFF00'..'\uFFEF'
+
+/** 当前行占到这么宽就直接在标点或中英文空格处换行；不到时先试着在中英文空格处把这一行补满一些。 */
+private const val HeroMinLineFill = 0.55f
+
+/** 当前行短于这个宽度（一两个字）时，宁可按词补满，也不留一行孤字。 */
+private const val HeroTinyLineFill = 0.2f
+
+/**
+ * 给头卡说明文字定断行，返回插好换行符的文字。断点的优先级：
+ * 1. 标点后面（「，」「。」等）；
+ * 2. 中英文之间的空格（「选择 Lyricon」中间）；英文词之间的空格不算，「Apple Music」不拆；
+ * 3. 前两种都放不下时才在词与词之间断（ICU 中文分词），英文单词、数字版本号仍是整体。
+ * 当前行不到 [HeroMinLineFill] 宽时，先试着在中英文空格处补字；补不进去仍在标点处换行，
+ * 只有当前行短于 [HeroTinyLineFill] 时才按词补。在词间断出来的最后一行只剩一两个字时，从上一行挪一个词下来。
+ * 不含汉字的文字（英文界面）原样返回，交给系统按词断行。
+ */
+internal fun heroLineBreaks(text: String, maxWidth: Float, measure: (String) -> Float): String {
+    if (text.none(::isHeroCjk) || '\n' in text || maxWidth <= 0f) return text
+    val builder = HeroLineBuilder(maxWidth, measure)
+    heroSplit(text, 0).forEach { builder.place(it, 0) }
+    return builder.finish()
+}
+
+/** 把文字按某一级断点切开，每一块都带着它后面的空格。第 2 级按词切。 */
+private fun heroSplit(text: String, level: Int): List<String> {
+    if (level >= 2) return heroWordUnits(text)
+    val pieces = mutableListOf<String>()
+    val current = StringBuilder()
+    fun flush() {
+        if (current.isNotEmpty()) pieces += current.toString()
+        current.clear()
+    }
+    var i = 0
+    while (i < text.length) {
+        val c = text[i]
+        val next = text.getOrNull(i + 1)
+        current.append(c)
+        val breakAfter = when (level) {
+            0 -> c in HeroCjkBreakPunctuation || (c in HeroLatinBreakPunctuation && (next == null || next == ' '))
+            else -> c == ' ' && (isHeroCjk(text.getOrNull(i - 1) ?: ' ') || isHeroCjk(next ?: ' '))
+        }
+        // 断点后面紧跟的空格并进前一块，下一行不以空格开头。
+        if (breakAfter) {
+            while (i + 1 < text.length && text[i + 1] == ' ') {
+                current.append(' ')
+                i++
+            }
+            flush()
+        }
+        i++
+    }
+    flush()
+    return pieces
+}
+
+/**
+ * 按词切开（系统自带的 ICU 中文分词），前两级都放不下时只在词与词之间断：
+ * 标点和空格跟着前一个词；英文、数字连着的部分（「8.5.0-canary-250092」）合成一块，不拆。
+ */
+private fun heroWordUnits(text: String): List<String> {
+    val iterator = BreakIterator.getWordInstance(Locale.SIMPLIFIED_CHINESE)
+    iterator.setText(text)
+    val units = mutableListOf<String>()
+    var start = iterator.first()
+    var end = iterator.next()
+    while (end != BreakIterator.DONE) {
+        val word = text.substring(start, end)
+        val previous = units.lastOrNull()
+        val attach = previous != null && (
+            word.isBlank() ||
+                word.all { it in HeroNoLineStart } ||
+                (!previous.last().isWhitespace() && !isHeroCjk(previous.last()) && !isHeroCjk(word.first()))
+            )
+        if (attach) units[units.lastIndex] = previous + word else units += word
+        start = end
+        end = iterator.next()
+    }
+    return units
+}
+
+private class HeroLineBuilder(private val maxWidth: Float, private val measure: (String) -> Float) {
+    private val lines = mutableListOf<String>()
+    /** 每一行（从第二行起）开头那次换行是哪一级断点：0 标点、1 中英文空格、2 词与词之间。 */
+    private val breakLevels = mutableListOf<Int>()
+    private var current = StringBuilder()
+
+    private fun width(s: String) = measure(s.trimEnd())
+    private fun fits(s: String) = width(s) <= maxWidth
+
+    private fun newLine(level: Int, start: String) {
+        lines += current.toString().trimEnd()
+        breakLevels += level
+        current = StringBuilder(start.trimStart())
+    }
+
+    fun place(piece: String, level: Int) {
+        if (fits(current.toString() + piece)) {
+            current.append(piece)
+            return
+        }
+        if (current.isBlank()) {
+            // 一整段在空行里都放不下：拆成下一级再放；一个词也放不下（超长英文单词）就整个放进去，交给系统折行。
+            if (level < 2) heroSplit(piece, level + 1).forEach { place(it, level + 1) } else current.append(piece)
+            return
+        }
+        val fill = width(current.toString()) / maxWidth
+        if (level < 2 && fits(piece.trimStart())) {
+            // 这一段在新的一行放得下：当前行够满就在这里换行。
+            if (fill >= HeroMinLineFill) {
+                newLine(level, piece)
+                return
+            }
+            // 当前行偏短：先看这一段开头能不能在中英文空格处干净地补进当前行。
+            if (level == 0) {
+                val chunks = heroSplit(piece, 1)
+                if (chunks.size > 1 && fits(current.toString() + chunks.first())) {
+                    chunks.forEach { place(it, 1) }
+                    return
+                }
+            }
+            // 补不进去也宁可在标点处换行；只有当前行短到一两个字时才按词补满。
+            if (fill >= HeroTinyLineFill) {
+                newLine(level, piece)
+                return
+            }
+        }
+        if (level < 2) {
+            heroSplit(piece, level + 1).forEach { place(it, level + 1) }
+            return
+        }
+        newLine(2, piece)
+    }
+
+    fun finish(): String {
+        // 在词间断出来的最后一行只剩一两个字：从上一行挪一个词下来，直到最后一行超过两个字或上一行不能再挪。
+        repeat(2) {
+            val last = current.toString().trim()
+            if (lines.isEmpty() || breakLevels.last() != 2 || last.count { !it.isWhitespace() } > 2) return@repeat
+            val previous = lines.last()
+            val units = heroSplit(previous, 2)
+            if (units.size < 2) return@repeat
+            val moved = units.last()
+            val candidate = moved + current.toString()
+            if (!fits(candidate)) return@repeat
+            lines[lines.lastIndex] = units.dropLast(1).joinToString("").trimEnd()
+            current = StringBuilder(candidate)
+        }
+        return (lines + current.toString().trimEnd()).joinToString("\n")
+    }
+}
+
+/** 头卡文字左右内边距。 */
+private val HeroTextHorizontalPadding = 18.dp
+
+/** 文字右缘与装饰图标可见左缘之间留的空。 */
+internal val HeroTextIconGap = 10.dp
+
+/** 布局宽度少报 [space]：内容照原尺寸画，右侧这段空白伸进外面的内边距里，不占行宽。 */
+private fun Modifier.trimTrailingSpace(space: Dp): Modifier = layout { measurable, constraints ->
+    val placeable = measurable.measure(constraints)
+    val trim = space.roundToPx().coerceIn(0, placeable.width)
+    layout(placeable.width - trim, placeable.height) { placeable.place(0, 0) }
 }
 
 /** 一枚磁贴：图标在上，标题与状态在下；[active] 时换成主题色的浅色底（与主页头卡同一套配色）。 */
