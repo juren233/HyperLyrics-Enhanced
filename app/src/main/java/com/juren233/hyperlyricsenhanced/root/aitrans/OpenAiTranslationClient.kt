@@ -79,12 +79,17 @@ internal object OpenAiTranslationClient {
                     val responseObj = json.decodeFromString<OpenAiChatResponse>(responseBody)
                     val content = responseObj.choices.firstOrNull()?.message?.content ?: run {
                     HookLogger.w("OpenAiTranslationClient", "翻译响应为空")
+                        AiTranslationHealthLog.onFailure()
                         return@withContext null
                     }
                 HookLogger.d("OpenAiTranslationClient", "翻译请求完成: code=$responseCode")
-                    AITranslationResponseParser.parse(content, requestIndices)
+                    val items = AITranslationResponseParser.parse(content, requestIndices)
+                    // 解析不出任何一行（响应里没有 JSON 等）不算成功。
+                    if (items.isNotEmpty()) AiTranslationHealthLog.onSuccess() else AiTranslationHealthLog.onFailure()
+                    items
                 } else {
                 HookLogger.e("OpenAiTranslationClient", "翻译请求失败: code=$responseCode")
+                    AiTranslationHealthLog.onFailure()
                     null
                 }
             }
@@ -92,6 +97,7 @@ internal object OpenAiTranslationClient {
             throw e
         } catch (_: EOFException) {
             HookLogger.w("OpenAiTranslationClient", "翻译连接意外关闭: reason=EOF")
+            AiTranslationHealthLog.onFailure()
             null
         } catch (e: Exception) {
             HookLogger.e(
@@ -99,6 +105,7 @@ internal object OpenAiTranslationClient {
                 "翻译网络请求异常: type=${e.javaClass.simpleName}",
                 e
             )
+            AiTranslationHealthLog.onFailure()
             null
         }
     }
