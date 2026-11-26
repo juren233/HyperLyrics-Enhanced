@@ -9,6 +9,8 @@ import com.juren233.hyperlyricsenhanced.common.HyperLogger
 import com.juren233.hyperlyricsenhanced.common.LogLevelPolicy
 import com.juren233.hyperlyricsenhanced.common.LogLevelPreference
 import com.juren233.hyperlyricsenhanced.ui.page.log.LogEntry
+import com.juren233.hyperlyricsenhanced.root.utils.ShellUtils
+import com.juren233.hyperlyricsenhanced.utils.loganalysis.ModuleLogSourceStatus
 import com.juren233.hyperlyricsenhanced.common.UIConstants
 import kotlinx.coroutines.withContext
 import java.io.BufferedReader
@@ -400,6 +402,46 @@ object LogManager : HyperLogger {
         if (value.length <= maxChars) return value
         val contentChars = (maxChars - TRUNCATION_MARKER.length).coerceAtLeast(0)
         return value.take(contentChars) + TRUNCATION_MARKER
+    }
+
+    /**
+     * 日志分析用：把 LSPosed 模块日志逐行交给 [onLine]，不在内存里攒条目（日志页只留 2000 条，
+     * 分析需要看完整的 16MB）。先单独确认 root，避免把「没给 root」误报成「找不到 LSPosed」。
+     */
+    internal suspend fun streamModuleLogLines(onLine: (String) -> Unit): ModuleLogSourceStatus =
+        withContext(ModuleDispatchers.IO) {
+            if (!ShellUtils.hasRootAccess()) return@withContext ModuleLogSourceStatus.NoRoot
+            try {
+                val logDir = "/data/adb/lspd/log"
+                val foundDir = readRootLines("ls -d $logDir 2>/dev/null")
+                    .firstOrNull { it.isNotBlank() }
+                    ?: return@withContext ModuleLogSourceStatus.LsposedLogDirNotFound
+                val files = readRootLines("find $foundDir -name 'modules*.log' -type f 2>/dev/null")
+                    .filter { it.isNotBlank() }
+                    .sorted()
+                if (files.isEmpty()) return@withContext ModuleLogSourceStatus.NoLogFiles(foundDir)
+                val process = Runtime.getRuntime().exec(arrayOf("su", "-c", buildXposedSourceCommand(files)))
+                try {
+                    BufferedReader(InputStreamReader(process.inputStream)).useLines { lines ->
+                        lines.forEach(onLine)
+                    }
+                    process.waitFor()
+                } finally {
+                    if (process.isAlive) process.destroyForcibly()
+                }
+                ModuleLogSourceStatus.Ok
+            } catch (e: Exception) {
+                ModuleLogSourceStatus.ReadFailed(e.message.orEmpty())
+            }
+        }
+
+    private fun readRootLines(command: String): List<String> {
+        val process = Runtime.getRuntime().exec(arrayOf("su", "-c", command))
+        return try {
+            BufferedReader(InputStreamReader(process.inputStream)).readLines()
+        } finally {
+            process.waitFor()
+        }
     }
 
     internal fun buildXposedSourceCommand(files: List<String>): String {

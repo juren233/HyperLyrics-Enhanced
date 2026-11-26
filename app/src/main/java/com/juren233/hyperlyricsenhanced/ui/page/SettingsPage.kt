@@ -43,6 +43,9 @@ import com.juren233.hyperlyricsenhanced.ui.component.LyricHookSwitchController
 import com.juren233.hyperlyricsenhanced.ui.component.rememberLyricHookSwitchController
 import com.juren233.hyperlyricsenhanced.ui.navigation.LocalNavigator
 import com.juren233.hyperlyricsenhanced.ui.navigation.Route
+import com.juren233.hyperlyricsenhanced.ui.page.log.LogAnalysisEntry
+import com.juren233.hyperlyricsenhanced.ui.page.log.LogAnalysisStore
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import com.juren233.hyperlyricsenhanced.ui.utils.BlurredBar
 import com.juren233.hyperlyricsenhanced.ui.utils.LocaleUtils
 import com.juren233.hyperlyricsenhanced.ui.utils.pageScrollModifiers
@@ -113,6 +116,11 @@ fun SettingsPage(scrollToFeatureSwitches: Boolean = false) {
         }
     // 主页是否保留：三个歌词入口至少有一个开启。主页保留时不在设置页重复列出它的内容。
     val homePageVisible = featureEntries.homePageVisible
+    // 日志分析状态板常显：每次回到设置页都在后台刷新一次（10 秒内不重复跑），不阻塞页面。
+    LifecycleResumeEffect(Unit) {
+        LogAnalysisStore.refresh(context)
+        onPauseOrDispose { }
+    }
 
     Scaffold(
         snackbarHost = { SnackbarHost(state = snackbarHostState) },
@@ -319,6 +327,10 @@ private fun LazyListScope.settingsSections(
     // 日志
     item(key = "logs_title") {
         SmallTitle(text = stringResource(R.string.title_logs))
+    }
+    // 分析卡片放在日志组最上面，进设置页一眼就能看到状态。
+    item(key = "logs_analysis") {
+        LogAnalysisEntry()
     }
     item(key = "logs_content") {
         val navigator = LocalNavigator.current

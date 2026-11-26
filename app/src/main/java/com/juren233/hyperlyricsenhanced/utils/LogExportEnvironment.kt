@@ -74,7 +74,7 @@ internal object LogExportEnvironmentCollector {
         )
     }
 
-    private fun resolveCurrentMusicPackage(context: Context): String? {
+    internal fun resolveCurrentMusicPackage(context: Context): String? {
         DynamicLyricData.currentState.targetPackageName
             .trim()
             .takeIf(String::isNotEmpty)

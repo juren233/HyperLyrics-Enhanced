@@ -37,6 +37,7 @@ import com.juren233.hyperlyricsenhanced.ui.page.setup.setupOutroDestination
 import com.juren233.hyperlyricsenhanced.ui.page.setup.setupOutroTraceLayout
 import com.juren233.hyperlyricsenhanced.ui.page.LicensesPage
 import com.juren233.hyperlyricsenhanced.ui.page.LogPage
+import com.juren233.hyperlyricsenhanced.ui.page.log.LogAnalysisPage
 import com.juren233.hyperlyricsenhanced.ui.page.MoreSettingsPage
 import com.juren233.hyperlyricsenhanced.ui.page.SettingsPage
 import com.juren233.hyperlyricsenhanced.ui.page.PoetryPage
@@ -200,6 +201,7 @@ fun AppNavigation(startRoute: Route) {
             appEntry<Route.ClassicAodSettings>(swipeDismiss = swipeDismiss) { ClassicAodSettingsPage() }
             appEntry<Route.DynamicIslandNotification>(swipeDismiss = swipeDismiss) { DynamicIslandNotificationPage() }
             appEntry<Route.Log>(swipeDismiss = swipeDismiss) { LogPage() }
+            appEntry<Route.LogAnalysis>(swipeDismiss = swipeDismiss) { LogAnalysisPage() }
             appEntry<Route.Licenses>(swipeDismiss = swipeDismiss) { LicensesPage() }
             appEntry<Route.Poetry>(swipeDismiss = swipeDismiss) { PoetryPage() }
             appEntry<Route.Help>(swipeDismiss = swipeDismiss) { HelpPage() }

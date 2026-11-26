@@ -19,6 +19,11 @@ object OfficialProviderScopeManager {
 
     fun requestConfiguredScopes(service: XposedService? = RootApplication.xposedService) {
         service ?: return
+        requestMissingScopes(service, installedConfiguredScopes())
+    }
+
+    /** 已启用插件需要、且目标 App 已安装的作用域。日志分析用它判断作用域是否缺失。 */
+    internal fun installedConfiguredScopes(): Set<String> {
         val desiredScopes = OfficialProviderCatalog.definitions
             .filter { definition ->
                 !definition.systemMediaRuntime &&
@@ -30,7 +35,7 @@ object OfficialProviderScopeManager {
                 }
             }
             .flatMapTo(linkedSetOf(), ::scopeTargets)
-        requestMissingScopes(service, installedScopes(desiredScopes))
+        return installedScopes(desiredScopes)
     }
 
     fun requestPluginScopes(

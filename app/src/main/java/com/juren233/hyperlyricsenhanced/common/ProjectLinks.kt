@@ -10,4 +10,5 @@ package com.juren233.hyperlyricsenhanced.common
 object ProjectLinks {
     const val REPOSITORY = "https://github.com/juren233/HyperLyrics-Enhanced"
     const val RELEASES = "$REPOSITORY/releases"
+    const val NEW_ISSUE = "$REPOSITORY/issues/new/choose"
 }

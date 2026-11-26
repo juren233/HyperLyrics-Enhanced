@@ -48,7 +48,7 @@ android {
         applicationId = "com.juren233.hyperlyricsenhanced"
         minSdk = 33
         targetSdk = 37
-        versionCode = 250077
+        versionCode = 250093
         versionName = ciVersionName ?: "8.5.0-canary"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -138,6 +138,8 @@ android {
     }
 
     testOptions {
+        // 只在本地渲染界面预览时打开（-PhleTestResources），平时的单测和 CI 不受影响。
+        unitTests.isIncludeAndroidResources = providers.gradleProperty("hleTestResources").isPresent
         unitTests.all {
             // Robolectric 在 JDK 17+ 上经 jdk.internal.access.SharedSecrets 读写 FileDescriptor 内部字段，
             // JDK 21 不导出这些内部包时测试在初始化阶段就失败（IllegalAccessException）。
