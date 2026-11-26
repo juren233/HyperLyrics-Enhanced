@@ -9,6 +9,7 @@ package com.juren233.hyperlyricsenhanced.utils.loganalysis
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import androidx.annotation.VisibleForTesting
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.juren233.hyperlyricsenhanced.BuildConfig
@@ -226,9 +227,16 @@ internal object LogAnalysisRunner {
         }
     }.getOrNull()
 
-    /** API 102 才有 getRunningTargets；低版本框架会抛异常，这时退回日志 + pidof 判断。 */
-    private fun runningTargets(service: XposedService): List<RunningHookTarget>? {
-        if (runCatching { service.apiVersion }.getOrDefault(0) < XposedService.API_102) return null
+    /**
+     * API 102 才有 getRunningTargets；框架低于 102 或查询失败时返回 null，退回日志 + pidof 判断。
+     *
+     * 版本号先取到名为 apiVersion 的局部变量再比较：Lint 的 XposedNewApi 检查只认
+     * `apiVersion < API_102` 这种写法作为提前返回的保护，包在 runCatching 里比较它认不出来。
+     */
+    @VisibleForTesting
+    internal fun runningTargets(service: XposedService): List<RunningHookTarget>? {
+        val apiVersion = runCatching { service.apiVersion }.getOrDefault(0)
+        if (apiVersion < XposedService.API_102) return null
         return runCatching {
             service.runningTargets.map { target ->
                 RunningHookTarget(
